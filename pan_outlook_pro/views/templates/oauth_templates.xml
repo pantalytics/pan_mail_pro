@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- OAuth Result Template - Shows result and redirects back to Odoo -->
+    <template id="oauth_result" name="Microsoft OAuth Result">
+        <html>
+            <head>
+                <title t-out="title"/>
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-height: 100vh;
+                        margin: 0;
+                        background-color: #f8f9fa;
+                    }
+                    .container {
+                        text-align: center;
+                        padding: 40px;
+                    }
+                    .icon {
+                        font-size: 64px;
+                        margin-bottom: 20px;
+                    }
+                    .icon.success { color: #28a745; }
+                    .icon.error { color: #dc3545; }
+                    .title {
+                        font-size: 24px;
+                        font-weight: 600;
+                        color: #1a1a1a;
+                        margin-bottom: 12px;
+                    }
+                    .message {
+                        color: #6c757d;
+                        font-size: 15px;
+                        margin-bottom: 24px;
+                        max-width: 400px;
+                    }
+                    .redirect-text {
+                        color: #adb5bd;
+                        font-size: 14px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div t-attf-class="icon #{success and 'success' or 'error'}">
+                        <t t-if="success">&#10003;</t>
+                        <t t-else="">&#10007;</t>
+                    </div>
+                    <div class="title" t-out="title"/>
+                    <div class="message" t-out="message"/>
+                    <div class="redirect-text">Redirecting to Odoo...</div>
+                </div>
+                <script>
+                    setTimeout(function() {
+                        window.location.href = '/web';
+                    }, 2000);
+                </script>
+            </body>
+        </html>
+    </template>
+
+    <!-- Legacy templates kept for compatibility -->
+    <template id="oauth_success" name="Microsoft OAuth Success">
+        <t t-call="pan_outlook_pro.oauth_result">
+            <t t-set="success" t-value="True"/>
+            <t t-set="title">Connected Successfully</t>
+            <t t-set="message">Your Microsoft account is now connected.</t>
+        </t>
+    </template>
+
+    <template id="oauth_error" name="Microsoft OAuth Error">
+        <t t-call="pan_outlook_pro.oauth_result">
+            <t t-set="success" t-value="False"/>
+            <t t-set="title">Connection Failed</t>
+            <t t-set="message" t-value="error_description or error or 'Unknown error'"/>
+        </t>
+    </template>
+</odoo>

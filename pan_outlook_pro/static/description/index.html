@@ -1,0 +1,201 @@
+<section class="oe_container">
+    <div class="oe_row oe_spaced">
+        <h2 class="oe_slogan" style="color:#875A7B;">Outlook Pro</h2>
+        <h3 class="oe_slogan">Complete Microsoft 365 email integration - send and receive with full control</h3>
+    </div>
+</section>
+
+<section class="oe_container">
+    <div class="oe_row oe_spaced">
+        <div class="oe_span12">
+            <h3 class="oe_slogan" style="color:#875A7B;">Outgoing Email</h3>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-paper-plane" style="color:#875A7B;"></i> Send From Dropdown</h4>
+                <p>Select which mailbox to send from directly in the email composer, just like in Outlook.</p>
+            </div>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-users" style="color:#875A7B;"></i> Shared Mailbox Support</h4>
+                <p>Send emails from team mailboxes (e.g., sales@, support@) with proper From headers.</p>
+            </div>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-link" style="color:#875A7B;"></i> Correct Message-ID</h4>
+                <p>Replies from Gmail, Outlook, and other clients thread correctly back to Odoo.</p>
+            </div>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-comment" style="color:#875A7B;"></i> Inline Chatter Support</h4>
+                <p>Works with both inline chatter and full composer popup.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container oe_dark">
+    <div class="oe_row oe_spaced">
+        <div class="oe_span12">
+            <h3 class="oe_slogan" style="color:#875A7B;">Incoming Email</h3>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-inbox" style="color:#875A7B;"></i> Automatic Sync</h4>
+                <p>Incoming emails sync automatically every minute from Microsoft 365 to Odoo chatter.</p>
+            </div>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-exchange" style="color:#875A7B;"></i> 2-Way Sync</h4>
+                <p>Emails you send directly from Outlook also appear in Odoo - full visibility for your team.</p>
+            </div>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-reply" style="color:#875A7B;"></i> Reply Threading</h4>
+                <p>Replies automatically thread to the original record via In-Reply-To headers.</p>
+            </div>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-user-plus" style="color:#875A7B;"></i> Auto-Create Contacts</h4>
+                <p>Unknown senders automatically become contacts with correct name and email.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container">
+    <div class="oe_row oe_spaced">
+        <div class="oe_span12">
+            <h3 class="oe_slogan" style="color:#875A7B;">Security</h3>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-shield" style="color:#875A7B;"></i> OAuth 2.0</h4>
+                <p>Secure authentication with Microsoft 365. No passwords stored.</p>
+            </div>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_demo oe_picture oe_screenshot">
+                <h4><i class="fa fa-lock" style="color:#875A7B;"></i> Encrypted Tokens</h4>
+                <p>OAuth tokens encrypted at rest using Fernet (AES-128) encryption.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container oe_dark">
+    <div class="oe_row oe_spaced">
+        <h3 class="oe_slogan" style="color:#875A7B;">Why This Module?</h3>
+        <div class="oe_span12">
+            <p class="oe_mt32 text-center" style="font-size: 16px;">
+                This module solves common issues with Odoo's built-in email options:
+            </p>
+            <table class="table table-bordered" style="margin-top: 20px;">
+                <thead>
+                    <tr>
+                        <th>Method</th>
+                        <th>Outgoing</th>
+                        <th>Incoming</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Standard SMTP</strong></td>
+                        <td>Requires insecure DNS settings</td>
+                        <td>No Graph API support</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Odoo Microsoft Outlook App</strong></td>
+                        <td>Sends from "notifications@..."</td>
+                        <td>Basic fetchmail only</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Outlook Pro</strong></td>
+                        <td style="color: green;"><i class="fa fa-check"></i> Correct From address</td>
+                        <td style="color: green;"><i class="fa fa-check"></i> Full 2-way sync</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container">
+    <div class="oe_row oe_spaced">
+        <h3 class="oe_slogan" style="color:#875A7B;">Setup Requirements</h3>
+        <div class="oe_span12">
+            <ol style="font-size: 15px; line-height: 2;">
+                <li><strong>Azure App Registration</strong> - Create a single-tenant app in Azure Portal</li>
+                <li><strong>API Permissions</strong> - Grant delegated permissions (with admin consent):
+                    <ul style="margin-top: 5px; font-size: 14px;">
+                        <li>Mail.Send, Mail.Send.Shared (for sending)</li>
+                        <li>Mail.Read, Mail.Read.Shared (for receiving)</li>
+                    </ul>
+                </li>
+                <li><strong>Configure in Odoo</strong> - Enter Client ID, Secret, and Tenant ID in Settings</li>
+                <li><strong>Connect Users</strong> - Each user connects their Microsoft account via My Preferences</li>
+            </ol>
+            <p class="text-muted" style="margin-top: 20px;">
+                Detailed setup instructions are provided in the Settings page after installation.
+            </p>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container oe_dark">
+    <div class="oe_row oe_spaced">
+        <h3 class="oe_slogan" style="color:#875A7B;">Data & Privacy</h3>
+        <div class="oe_span12">
+            <div class="alert alert-info" style="font-size: 14px;">
+                <h4><i class="fa fa-info-circle"></i> Data Disclosure</h4>
+                <p>This module communicates with Microsoft Graph API to send and receive emails:</p>
+                <ul>
+                    <li><strong>Outgoing:</strong> Email content sent to Microsoft for delivery</li>
+                    <li><strong>Incoming:</strong> Email content fetched from Microsoft and stored in Odoo</li>
+                    <li><strong>OAuth Tokens:</strong> Stored encrypted in your Odoo database (Fernet encryption)</li>
+                    <li><strong>No data is sent to the module author or any third party</strong></li>
+                </ul>
+                <p>All communication is directly between your Odoo instance and Microsoft's servers.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container">
+    <div class="oe_row oe_spaced">
+        <h3 class="oe_slogan" style="color:#875A7B;">Technical Details</h3>
+        <div class="oe_span6">
+            <ul style="font-size: 14px; line-height: 1.8;">
+                <li><strong>Odoo Version:</strong> 19.0</li>
+                <li><strong>License:</strong> LGPL-3</li>
+                <li><strong>Dependencies:</strong> mail, base</li>
+                <li><strong>Python:</strong> cryptography library required</li>
+            </ul>
+        </div>
+        <div class="oe_span6">
+            <ul style="font-size: 14px; line-height: 1.8;">
+                <li><strong>Microsoft API:</strong> Graph API v1.0</li>
+                <li><strong>Auth:</strong> OAuth 2.0 Authorization Code Flow</li>
+                <li><strong>Encryption:</strong> Fernet (AES-128-CBC)</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container">
+    <div class="oe_row oe_spaced">
+        <div class="oe_span12 text-center">
+            <h3 class="oe_slogan" style="color:#875A7B;">Support</h3>
+            <p style="font-size: 16px;">
+                <i class="fa fa-envelope"></i> support@pantalytics.com<br/>
+                <i class="fa fa-globe"></i> <a href="https://www.pantalytics.com">www.pantalytics.com</a>
+            </p>
+        </div>
+    </div>
+</section>

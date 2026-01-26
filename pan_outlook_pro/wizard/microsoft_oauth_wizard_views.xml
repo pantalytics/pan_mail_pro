@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- OAuth Wizard Form -->
+    <record id="view_microsoft_oauth_wizard_form" model="ir.ui.view">
+        <field name="name">microsoft.oauth.wizard.form</field>
+        <field name="model">microsoft.oauth.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Connect to Microsoft">
+                <field name="state" invisible="1"/>
+
+                <!-- Start State -->
+                <group invisible="state != 'start'">
+                    <div class="alert alert-info" role="alert">
+                        <strong>Connect your Microsoft account</strong>
+                        <p>You will be redirected to Microsoft to authorize Odoo to send emails from your mailboxes.</p>
+                        <p>Required permissions: Mail.Send, Mail.Send.Shared</p>
+                    </div>
+                </group>
+
+                <!-- Success State -->
+                <group invisible="state != 'success'">
+                    <div class="alert alert-success" role="alert">
+                        <strong>✓ Connected successfully!</strong>
+                        <p>Your Microsoft account has been connected. You can now test the connection.</p>
+                    </div>
+                </group>
+
+                <!-- Test State -->
+                <group invisible="state != 'test'">
+                    <field name="test_success" invisible="1"/>
+                    <div class="alert alert-success" role="alert" invisible="not test_success">
+                        <field name="test_message" nolabel="1" readonly="1" widget="text"/>
+                    </div>
+                    <div class="alert alert-danger" role="alert" invisible="test_success">
+                        <field name="test_message" nolabel="1" readonly="1" widget="text"/>
+                    </div>
+                </group>
+
+                <footer>
+                    <!-- Start buttons -->
+                    <button name="action_connect_microsoft"
+                            string="Connect to Microsoft"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'start'"/>
+
+                    <!-- Success buttons -->
+                    <button name="action_test_connection"
+                            string="Test Connection"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state not in ['success', 'test']"/>
+
+                    <button name="action_disconnect"
+                            string="Disconnect"
+                            type="object"
+                            class="btn-secondary"
+                            confirm="Are you sure you want to disconnect your Microsoft account?"
+                            invisible="state not in ['success', 'test']"/>
+
+                    <button name="action_close"
+                            string="Close"
+                            type="object"
+                            class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action to open wizard -->
+    <record id="action_microsoft_oauth_wizard" model="ir.actions.act_window">
+        <field name="name">Connect to Microsoft</field>
+        <field name="res_model">microsoft.oauth.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

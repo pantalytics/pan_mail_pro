@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_microsoft_graph_client_user,microsoft.graph.client.user,model_microsoft_graph_client,base.group_user,1,1,1,0
+access_microsoft_oauth_wizard_user,microsoft.oauth.wizard.user,model_microsoft_oauth_wizard,base.group_user,1,1,1,1
+access_microsoft_mailbox_user,x_microsoft.mailbox.user,model_x_microsoft_mailbox,base.group_user,1,0,0,0
+access_microsoft_mailbox_system,x_microsoft.mailbox.system,model_x_microsoft_mailbox,base.group_system,1,1,1,1
+access_microsoft_incoming_mail_processor_user,microsoft.incoming.mail.processor.user,model_microsoft_incoming_mail_processor,base.group_user,1,0,0,0
+access_microsoft_incoming_mail_processor_system,microsoft.incoming.mail.processor.system,model_microsoft_incoming_mail_processor,base.group_system,1,1,1,1

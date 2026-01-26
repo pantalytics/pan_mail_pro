@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- List View -->
+    <record id="view_microsoft_mailbox_list" model="ir.ui.view">
+        <field name="name">x_microsoft.mailbox.list</field>
+        <field name="model">x_microsoft.mailbox</field>
+        <field name="arch" type="xml">
+            <list string="Microsoft Mailboxes">
+                <field name="sequence" widget="handle"/>
+                <field name="email"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_microsoft_mailbox_form" model="ir.ui.view">
+        <field name="name">x_microsoft.mailbox.form</field>
+        <field name="model">x_microsoft.mailbox</field>
+        <field name="arch" type="xml">
+            <form string="Microsoft Mailbox">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="email" placeholder="e.g., support@company.com" string="Email Address"/>
+                        </group>
+                    </group>
+
+                    <separator string="Email Sync"/>
+
+                    <group>
+                        <group>
+                            <field name="x_sync_mode" string="Sync Mode" widget="radio"/>
+                        </group>
+                    </group>
+
+                    <group invisible="x_sync_mode == 'none'">
+                        <group>
+                            <field name="x_incoming_user_id" string="Sync User"
+                                   required="x_sync_mode in ('1way', '2way')"
+                                   help="User whose Microsoft account fetches emails. Must have Mail.Read permission."/>
+                        </group>
+                    </group>
+
+                    <div class="text-muted mb-3" invisible="x_sync_mode == 'none'">
+                        <span invisible="x_sync_mode != '2way'">See replies your team sends directly from Outlook, not just incoming emails.</span>
+                        <span invisible="x_sync_mode != '1way'">Only emails received in this mailbox will sync to Odoo.</span>
+                    </div>
+
+                    <group invisible="x_sync_mode == 'none'">
+                        <group>
+                            <field name="x_create_activity" string="Create activity for new emails"/>
+                            <field name="x_activity_user_id" string="Assign to"
+                                   invisible="not x_create_activity"/>
+                        </group>
+                        <group>
+                            <field name="state" string="Status" readonly="1"/>
+                            <field name="x_last_sync_date" string="Last sync" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <group invisible="x_sync_mode == 'none'">
+                        <div class="d-flex align-items-center gap-2">
+                            <button name="action_test_incoming"
+                                    string="Test Connection"
+                                    type="object"
+                                    class="btn-secondary"
+                                    icon="fa-plug"/>
+                            <button name="action_sync_now"
+                                    string="Sync Now"
+                                    type="object"
+                                    class="btn-primary"
+                                    icon="fa-refresh"/>
+                        </div>
+                    </group>
+
+                    <group invisible="state != 'error'">
+                        <div class="alert alert-danger" role="alert">
+                            <strong>Error:</strong> <field name="x_error_message" nolabel="1" readonly="1"/>
+                        </div>
+                    </group>
+
+                    <!-- Hidden fields -->
+                    <field name="x_incoming_enabled" invisible="1"/>
+                    <field name="x_sync_inbox" invisible="1"/>
+                    <field name="x_sync_sent" invisible="1"/>
+                    <field name="active" invisible="1"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_microsoft_mailbox" model="ir.actions.act_window">
+        <field name="name">Microsoft Mailboxes</field>
+        <field name="res_model">x_microsoft.mailbox</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add your first Microsoft mailbox
+            </p>
+            <p>
+                Add the email addresses of Microsoft 365 mailboxes that users can send from.<br/>
+                These can be personal mailboxes, shared mailboxes, or group mailboxes.<br/>
+                <br/>
+                <strong>Note:</strong> Users must have "Send As" permissions in Microsoft 365 for these mailboxes.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu Item (will be added to Settings) -->
+    <menuitem id="menu_microsoft_mailbox"
+              name="Microsoft Mailboxes"
+              parent="base.menu_administration"
+              action="action_microsoft_mailbox"
+              sequence="100"
+              groups="base.group_system"/>
+</odoo>

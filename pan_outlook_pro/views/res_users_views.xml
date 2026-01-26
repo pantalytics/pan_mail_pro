@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Extend Full User Form (Settings > Users > User) -->
+    <record id="view_users_form_inherit_microsoft_oauth" model="ir.ui.view">
+        <field name="name">res.users.form.inherit.microsoft.oauth</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form"/>
+        <field name="priority">20</field>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='preferences']" position="after">
+                <page string="Email Integration" name="email_integration">
+                    <group string="Microsoft Account" name="microsoft_oauth_integration">
+                        <field name="x_microsoft_oauth_connected" invisible="1"/>
+
+                        <!-- Mailbox selection (always visible) -->
+                        <field name="x_microsoft_default_mailbox_id"
+                               string="Default Send From"
+                               options="{'no_create': True, 'no_open': True}"/>
+                        <div colspan="2" class="text-muted small mb-3">
+                            <i class="fa fa-info-circle"/> You must have SendAs permission in Azure for the selected mailbox.
+                        </div>
+
+                        <!-- Connection status and buttons -->
+                        <div colspan="2">
+                            <div invisible="not x_microsoft_oauth_connected">
+                                <span class="badge text-bg-success">Connected to Microsoft</span>
+                            </div>
+
+                            <div invisible="x_microsoft_oauth_connected">
+                                <span class="badge text-bg-secondary">Not connected</span>
+                            </div>
+
+                            <div class="mt-2">
+                                <button type="action"
+                                        name="%(action_microsoft_oauth_wizard)d"
+                                        string="Connect Microsoft Account"
+                                        class="btn-primary"
+                                        icon="fa-link"
+                                        invisible="x_microsoft_oauth_connected"/>
+
+                                <button type="object"
+                                        name="action_disconnect_microsoft"
+                                        string="Disconnect"
+                                        class="btn-outline-danger"
+                                        icon="fa-unlink"
+                                        confirm="Are you sure you want to disconnect your Microsoft account?"
+                                        invisible="not x_microsoft_oauth_connected"/>
+                            </div>
+                        </div>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Extend My Preferences popup (view_users_form_simple_modif) -->
+    <record id="view_users_preferences_inherit_microsoft_oauth" model="ir.ui.view">
+        <field name="name">res.users.preferences.inherit.microsoft.oauth</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
+        <field name="priority">20</field>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='page_security']" position="after">
+                <page string="Email" name="email_integration">
+                    <group name="microsoft_oauth_integration">
+                        <field name="x_microsoft_oauth_connected" invisible="1"/>
+
+                        <!-- Mailbox selection (always visible) -->
+                        <field name="x_microsoft_default_mailbox_id"
+                               string="Default Send From"
+                               options="{'no_create': True, 'no_open': True}"/>
+                        <div colspan="2" class="text-muted small mb-3">
+                            <i class="fa fa-info-circle"/> Select your mailbox, then connect your Microsoft account.
+                        </div>
+
+                        <!-- Connection status and buttons -->
+                        <div colspan="2">
+                            <div invisible="not x_microsoft_oauth_connected">
+                                <span class="badge text-bg-success">Connected to Microsoft</span>
+                            </div>
+
+                            <div invisible="x_microsoft_oauth_connected">
+                                <span class="badge text-bg-secondary">Not connected</span>
+                            </div>
+
+                            <div class="mt-2">
+                                <button type="action"
+                                        name="%(action_microsoft_oauth_wizard)d"
+                                        string="Connect Microsoft Account"
+                                        class="btn-primary"
+                                        icon="fa-link"
+                                        invisible="x_microsoft_oauth_connected"/>
+
+                                <button type="object"
+                                        name="action_disconnect_microsoft"
+                                        string="Disconnect"
+                                        class="btn-outline-danger"
+                                        icon="fa-unlink"
+                                        confirm="Are you sure you want to disconnect your Microsoft account?"
+                                        invisible="not x_microsoft_oauth_connected"/>
+                            </div>
+                        </div>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>
