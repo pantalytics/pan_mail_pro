@@ -2,6 +2,53 @@
 
 Complete Microsoft 365 email integration for Odoo - send and receive with full control.
 
+## Installation as Git Submodule (Odoo.sh)
+
+### 1. Add Submodule in Odoo.sh
+
+1. In Odoo.sh, go to **Settings → Submodules**
+2. Click **Add submodule**
+3. Enter the SSH URL: `git@github.com:pantalytics/odoo-outlook-pro.git`
+4. Copy the **Public Key** that is displayed
+
+### 2. Add Deploy Key in GitHub
+
+1. Go to the source repo: `github.com/pantalytics/odoo-outlook-pro`
+2. Go to **Settings → Deploy keys**
+3. Click **Add deploy key**
+4. Paste the public key from Odoo.sh
+5. Save
+
+### 3. Add Submodule to Your Local Project
+
+```bash
+# Clone with HTTPS first (easier for local development)
+git submodule add https://github.com/pantalytics/odoo-outlook-pro.git pan_outlook_pro
+
+# Change URL to SSH in .gitmodules (required for Odoo.sh)
+# Edit .gitmodules and replace:
+#   url = https://github.com/pantalytics/odoo-outlook-pro.git
+# With:
+#   url = git@github.com:pantalytics/odoo-outlook-pro.git
+
+# Sync and commit
+git submodule sync
+git add .gitmodules pan_outlook_pro
+git commit -m "Add pan_outlook_pro submodule"
+git push
+```
+
+### Important Notes
+
+| Requirement | Correct | Wrong |
+|-------------|---------|-------|
+| Folder name | `pan_outlook_pro` (underscores) | `odoo-outlook-pro` (hyphens) |
+| URL for Odoo.sh | `git@github.com:...` (SSH) | `https://github.com/...` (HTTPS) |
+
+> **Why underscores?** Odoo uses the folder name as the technical module name. Module names cannot contain hyphens (`-`), only letters, numbers, and underscores.
+
+---
+
 ## Features
 
 **Outgoing Email:**
