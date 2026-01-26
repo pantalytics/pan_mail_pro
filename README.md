@@ -8,12 +8,12 @@ Complete Microsoft 365 email integration for Odoo - send and receive with full c
 
 1. In Odoo.sh, go to **Settings → Submodules**
 2. Click **Add submodule**
-3. Enter the SSH URL: `git@github.com:pantalytics/odoo-outlook-pro.git`
+3. Enter the SSH URL: `git@github.com:pantalytics/pan_outlook_pro.git`
 4. Copy the **Public Key** that is displayed
 
 ### 2. Add Deploy Key in GitHub
 
-1. Go to the source repo: `github.com/pantalytics/odoo-outlook-pro`
+1. Go to the source repo: `github.com/pantalytics/pan_outlook_pro`
 2. Go to **Settings → Deploy keys**
 3. Click **Add deploy key**
 4. Paste the public key from Odoo.sh
@@ -22,30 +22,16 @@ Complete Microsoft 365 email integration for Odoo - send and receive with full c
 ### 3. Add Submodule to Your Local Project
 
 ```bash
-# Clone with HTTPS first (easier for local development)
-git submodule add https://github.com/pantalytics/odoo-outlook-pro.git pan_outlook_pro
+# Add submodule (use SSH URL directly for Odoo.sh compatibility)
+git submodule add git@github.com:pantalytics/pan_outlook_pro.git
 
-# Change URL to SSH in .gitmodules (required for Odoo.sh)
-# Edit .gitmodules and replace:
-#   url = https://github.com/pantalytics/odoo-outlook-pro.git
-# With:
-#   url = git@github.com:pantalytics/odoo-outlook-pro.git
-
-# Sync and commit
-git submodule sync
+# Commit and push
 git add .gitmodules pan_outlook_pro
 git commit -m "Add pan_outlook_pro submodule"
 git push
 ```
 
-### Important Notes
-
-| Requirement | Correct | Wrong |
-|-------------|---------|-------|
-| Folder name | `pan_outlook_pro` (underscores) | `odoo-outlook-pro` (hyphens) |
-| URL for Odoo.sh | `git@github.com:...` (SSH) | `https://github.com/...` (HTTPS) |
-
-> **Why underscores?** Odoo uses the folder name as the technical module name. Module names cannot contain hyphens (`-`), only letters, numbers, and underscores.
+> **Note:** Use SSH URL (`git@github.com:...`) for Odoo.sh compatibility. HTTPS URLs won't work with deploy keys.
 
 ---
 
@@ -178,6 +164,38 @@ Emails will sync automatically every minute. On first sync, only the timestamp i
 ---
 
 ## Security
+
+### Delegated Permissions (Least Privilege)
+
+This module uses **Delegated Permissions only** - the app acts on behalf of the signed-in user, not as an administrator.
+
+| Type | Description | Risk |
+|------|-------------|------|
+| **Delegated** (we use this) | App acts on behalf of signed-in user | Low - user can only do what they're already allowed to do |
+| Application | App acts independently, without user | High - access to ALL mailboxes in tenant |
+
+**Required permissions:**
+
+| Permission | Type | Purpose |
+|------------|------|---------|
+| `Mail.Send` | Delegated | Send from user's own mailbox |
+| `Mail.Send.Shared` | Delegated | Send from shared mailboxes where user has SendAs permission |
+| `Mail.Read` | Delegated | Fetch Message-ID after sending (for reply threading) |
+| `Mail.Read.Shared` | Delegated | Fetch Message-ID from shared mailbox sent items |
+| `User.Read` | Delegated | Basic profile info during OAuth login |
+| `offline_access` | Delegated | Refresh tokens for continued access |
+
+**No Application Permissions needed** - this module has no admin-level access to your tenant.
+
+### Why This Is Secure
+
+1. **No central access to all mailboxes** - Each user only accesses their own mailboxes
+2. **Double authorization** - User must complete OAuth flow AND have Exchange SendAs permission
+3. **Azure/Exchange is the authority** - Odoo cannot bypass Microsoft's permission checks
+4. **Easy revocation**:
+   - Remove Exchange SendAs permission → immediate loss of access
+   - User revokes app consent in Azure → tokens invalidated
+   - Admin clicks "Disconnect" in Odoo → tokens deleted
 
 ### Token Encryption
 
