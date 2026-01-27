@@ -50,7 +50,22 @@
                                     </li>
                                     <li class="mb-2">Go to <strong>API permissions</strong> → <strong>+ Add a permission</strong> → <strong>Microsoft Graph</strong> → <strong>Delegated permissions</strong>
                                         <ul class="mt-1">
-                                            <li>Search and add: <strong>Mail.Send</strong> and <strong>Mail.Send.Shared</strong></li>
+                                            <li>Search and add these permissions:</li>
+                                        </ul>
+                                        <table class="table table-sm table-bordered mt-2 mb-2" style="max-width: 500px;">
+                                            <thead class="table-light">
+                                                <tr><th>Permission</th><th>Purpose</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr><td><code>Mail.Send</code></td><td>Send from own mailbox</td></tr>
+                                                <tr><td><code>Mail.Send.Shared</code></td><td>Send from shared mailboxes</td></tr>
+                                                <tr><td><code>Mail.Read</code></td><td>Read own mailbox (for sync)</td></tr>
+                                                <tr><td><code>Mail.Read.Shared</code></td><td>Read shared mailboxes (for sync)</td></tr>
+                                                <tr><td><code>User.Read</code></td><td>Read user profile</td></tr>
+                                                <tr><td><code>offline_access</code></td><td>Refresh tokens (stay logged in)</td></tr>
+                                            </tbody>
+                                        </table>
+                                        <ul class="mt-1">
                                             <li>Click <strong>Grant admin consent for [Your Organization]</strong></li>
                                         </ul>
                                     </li>
@@ -59,15 +74,15 @@
                             </div>
 
                             <div class="row mt16">
-                                <label for="x_microsoft_client_id" class="col-lg-3 o_light_label" string="Client ID"/>
+                                <label for="x_microsoft_client_id" class="col-lg-3 o_light_label" string="Application (client) ID"/>
                                 <field name="x_microsoft_client_id" placeholder="12345678-1234-1234-1234-123456789abc"/>
                             </div>
                             <div class="row mt16">
-                                <label for="x_microsoft_client_secret" class="col-lg-3 o_light_label" string="Client Secret"/>
+                                <label for="x_microsoft_client_secret" class="col-lg-3 o_light_label" string="Client Secret Value"/>
                                 <field name="x_microsoft_client_secret" password="True" placeholder="Enter the secret value from Azure"/>
                             </div>
                             <div class="row mt16">
-                                <label for="x_microsoft_tenant_id" class="col-lg-3 o_light_label" string="Tenant ID"/>
+                                <label for="x_microsoft_tenant_id" class="col-lg-3 o_light_label" string="Directory (tenant) ID"/>
                                 <field name="x_microsoft_tenant_id" placeholder="12345678-1234-1234-1234-123456789abc"/>
                             </div>
 
@@ -177,37 +192,31 @@
                         <setting string="Notification Email Settings" help="Configure how system notifications (activity reminders, mentions) are sent" class="col-12 col-lg-12">
 
                             <div class="text-muted mb-3">
-                                System notifications (activity reminders, mentions, etc.) are sent from this mailbox.
-                                The notification sender must have SendAs permission for the selected mailbox.
+                                System notifications (activity reminders, mentions, etc.) are sent from a dedicated notification mailbox.
+                                Configure this in the Mailbox List by creating a mailbox with type "Notification".
                             </div>
 
                             <div class="alert alert-light border mb-3" role="status">
-                                <strong><i class="fa fa-lightbulb-o me-1"/> Recommendation:</strong>
-                                Create a shared mailbox in Microsoft 365 (e.g. <code>notifications@yourcompany.com</code>)
-                                and grant your Odoo admin user "Send As" permission for this mailbox.
-                                This keeps system notifications separate from personal email.
+                                <strong><i class="fa fa-lightbulb-o me-1"/> How to configure:</strong>
+                                <ol class="mb-0 mt-2">
+                                    <li>Click "Manage Mailbox List" above</li>
+                                    <li>Create a new mailbox (e.g. <code>notifications@yourcompany.com</code>)</li>
+                                    <li>Set Mailbox Type to <strong>"Notification Mailbox"</strong></li>
+                                    <li>Select a Sending User (must have Microsoft OAuth connected)</li>
+                                </ol>
                             </div>
 
-                            <div class="row mt16">
-                                <label for="x_microsoft_notification_mailbox_id" class="col-lg-3 o_light_label" string="Notification Mailbox"/>
-                                <field name="x_microsoft_notification_mailbox_id" options="{'no_create': True}" placeholder="Select a mailbox..."/>
-                            </div>
-                            <div class="row mt16 mb-3">
-                                <label for="x_microsoft_notification_user_id" class="col-lg-3 o_light_label" string="Notification Sender"/>
-                                <field name="x_microsoft_notification_user_id" options="{'no_create': True}" placeholder="Select a user with Microsoft OAuth..."/>
-                            </div>
-
-                            <!-- Status indicator (at bottom) -->
+                            <!-- Status indicator -->
                             <div class="d-flex align-items-center">
                                 <!-- Not configured -->
                                 <div invisible="x_microsoft_notification_configured" class="text-warning">
                                     <i class="fa fa-exclamation-triangle me-2"/>
-                                    <span>Select a notification mailbox and sender above, then click Save.</span>
+                                    <span>No notification mailbox configured. Create one in the Mailbox List.</span>
                                 </div>
                                 <!-- Configured -->
                                 <div invisible="not x_microsoft_notification_configured" class="text-success">
                                     <i class="fa fa-check-circle me-2"/>
-                                    <strong>Notification settings configured</strong>
+                                    <strong>Notification mailbox configured</strong>
                                 </div>
                             </div>
                         </setting>

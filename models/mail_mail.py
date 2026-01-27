@@ -96,10 +96,11 @@ class MailMail(models.Model):
         # Get Graph API client
         graph_client = self.env['microsoft.graph.client']
 
-        # Send email - pass mailbox record so it can use UPN if configured
+        # Send email using user's delegated token (principle of least privilege)
         result = graph_client.send_email_via_graph(
             mail_record=self,
             mailbox=mailbox,
+            user=user,
         )
 
         if result['success']:
@@ -149,16 +150,19 @@ class MailMail(models.Model):
         """
         Determine which mailbox and user to use for sending.
 
-        NO FALLBACKS - explicit configuration required:
-        1. Internal user notification → system notification mailbox (from settings)
-        2. Regular email → author must have OAuth + default mailbox configured
+        Logic based on mailbox type:
+        1. Internal user notification → notification mailbox (type='notification')
+        2. Regular email → author's default mailbox (personal or shared)
+
+        For personal mailboxes: author sends with their own OAuth token
+        For shared/notification mailboxes: uses the configured sending user's token
 
         Returns:
             tuple: (mailbox, user) or (None, None) if not configured
         """
         self.ensure_one()
 
-        # 1. For notifications to internal users, use system notification mailbox
+        # 1. For notifications to internal users, use notification mailbox
         if self._is_internal_user_notification():
             return self._get_notification_mailbox_and_user()
 
@@ -172,54 +176,93 @@ class MailMail(models.Model):
             _logger.error(f"[Graph API] Author {self.author_id.name} is not linked to any Odoo user")
             return (None, None)
 
-        user = self.author_id.user_ids[0]
-
-        # User must have OAuth connected
-        if not user.x_microsoft_oauth_connected:
-            _logger.error(f"[Graph API] User {user.name} has no Microsoft account connected")
-            return (None, None)
+        author_user = self.author_id.user_ids[0]
 
         # User must have a default mailbox
-        if not user.x_microsoft_default_mailbox_id:
-            _logger.error(f"[Graph API] User {user.name} has no default mailbox configured")
+        if not author_user.x_microsoft_default_mailbox_id:
+            _logger.error(f"[Graph API] User {author_user.name} has no default mailbox configured")
             return (None, None)
 
-        return (user.x_microsoft_default_mailbox_id, user)
+        mailbox = author_user.x_microsoft_default_mailbox_id
+
+        # Determine which user's token to use based on mailbox type
+        if mailbox.x_mailbox_type == 'personal':
+            # Personal mailbox: author sends with their own token
+            if not author_user.x_microsoft_oauth_connected:
+                _logger.error(f"[Graph API] User {author_user.name} has no Microsoft account connected")
+                return (None, None)
+            return (mailbox, author_user)
+        else:
+            # Shared mailbox: use the mailbox's configured sending user
+            sending_user = mailbox.get_sending_user()
+            if not sending_user:
+                _logger.error(f"[Graph API] Shared mailbox {mailbox.email} has no sending user configured")
+                return (None, None)
+            if not sending_user.x_microsoft_oauth_connected:
+                _logger.error(f"[Graph API] Sending user {sending_user.name} has no Microsoft account connected")
+                return (None, None)
+            return (mailbox, sending_user)
 
     def _get_notification_mailbox_and_user(self):
         """
-        Get the system notification mailbox and user from settings.
+        Get the notification mailbox (type='notification') and its sending user.
 
         Returns:
             tuple: (mailbox, user) or (None, None) if not configured
         """
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
+        # Find the notification mailbox by type
+        mailbox = self.env['x_microsoft.mailbox'].search([
+            ('x_mailbox_type', '=', 'notification'),
+            ('active', '=', True),
+        ], limit=1)
 
-        mailbox_id = IrConfigParameter.get_param('x_pan_outlook_pro.notification_mailbox_id')
-        user_id = IrConfigParameter.get_param('x_pan_outlook_pro.notification_user_id')
-
-        if not mailbox_id or not user_id:
+        if not mailbox:
+            _logger.error("[Graph API] No notification mailbox configured")
             return (None, None)
 
-        mailbox = self.env['x_microsoft.mailbox'].browse(int(mailbox_id)).exists()
-        user = self.env['res.users'].browse(int(user_id)).exists()
-
-        if not mailbox or not user:
+        sending_user = mailbox.get_sending_user()
+        if not sending_user:
+            _logger.error(f"[Graph API] Notification mailbox {mailbox.email} has no sending user configured")
             return (None, None)
 
-        return (mailbox, user)
+        if not sending_user.x_microsoft_oauth_connected:
+            _logger.error(f"[Graph API] Notification sending user {sending_user.name} has no Microsoft account connected")
+            return (None, None)
+
+        return (mailbox, sending_user)
 
     def _get_missing_mailbox_error(self):
         """Generate appropriate error message for missing mailbox configuration."""
         self.ensure_one()
 
         if self._is_internal_user_notification():
-            return _(
-                'System notification mailbox not configured. '
-                'Go to Settings → Outlook Pro and configure the Notification Mailbox.'
-            )
+            # Check if notification mailbox exists
+            mailbox = self.env['x_microsoft.mailbox'].search([
+                ('x_mailbox_type', '=', 'notification'),
+                ('active', '=', True),
+            ], limit=1)
 
-        # Check specific failure reason
+            if not mailbox:
+                return _(
+                    'No Notification mailbox configured. '
+                    'Go to Settings → Outlook Pro → Manage Mailbox List and create a mailbox with type "Notification".'
+                )
+
+            if not mailbox.x_sending_user_id:
+                return _(
+                    'Notification mailbox "%s" has no Sending User configured. '
+                    'Edit the mailbox and select a user with Microsoft OAuth connected.'
+                ) % mailbox.email
+
+            if not mailbox.x_sending_user_id.x_microsoft_oauth_connected:
+                return _(
+                    'Notification mailbox sending user "%s" has no Microsoft account connected. '
+                    'The user must connect their Microsoft account first.'
+                ) % mailbox.x_sending_user_id.name
+
+            return _('Unknown notification mailbox configuration error.')
+
+        # Check specific failure reason for regular emails
         if not self.author_id:
             return _('Email has no author. Cannot determine which mailbox to use.')
 
@@ -231,17 +274,34 @@ class MailMail(models.Model):
 
         user = self.author_id.user_ids[0]
 
-        if not user.x_microsoft_oauth_connected:
-            return _(
-                'User "%s" has no Microsoft account connected. '
-                'Go to My Profile → Email and click "Connect Microsoft Account".'
-            ) % user.name
-
         if not user.x_microsoft_default_mailbox_id:
             return _(
                 'User "%s" has no default mailbox configured. '
                 'Go to My Profile → Email and select a Default Send From mailbox.'
             ) % user.name
+
+        mailbox = user.x_microsoft_default_mailbox_id
+
+        # Check based on mailbox type
+        if mailbox.x_mailbox_type == 'personal':
+            if not user.x_microsoft_oauth_connected:
+                return _(
+                    'User "%s" has no Microsoft account connected. '
+                    'Go to My Profile → Email and click "Connect Microsoft Account".'
+                ) % user.name
+        else:
+            # Shared mailbox
+            if not mailbox.x_sending_user_id:
+                return _(
+                    'Shared mailbox "%s" has no Sending User configured. '
+                    'Edit the mailbox and select a user with Microsoft OAuth connected.'
+                ) % mailbox.email
+
+            if not mailbox.x_sending_user_id.x_microsoft_oauth_connected:
+                return _(
+                    'Shared mailbox sending user "%s" has no Microsoft account connected. '
+                    'The user must connect their Microsoft account first.'
+                ) % mailbox.x_sending_user_id.name
 
         return _('Unknown mailbox configuration error.')
 

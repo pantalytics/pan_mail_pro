@@ -167,49 +167,6 @@ class MicrosoftGraphClient(models.AbstractModel):
         return user.x_microsoft_access_token
 
     @api.model
-    def get_app_token(self):
-        """
-        Get an application-only token using client credentials flow.
-
-        This token can be used to send emails from any mailbox in the tenant
-        without requiring individual user OAuth consent, as long as the Azure
-        app has Mail.Send application permission.
-
-        Returns:
-            str: Access token for application-level API calls
-        """
-        config = self._get_config_params()
-
-        if not config['client_id'] or not config['client_secret'] or not config['tenant_id']:
-            raise UserError(_('Microsoft Azure app not configured. Go to Settings → Outlook Pro.'))
-
-        token_url = f"https://login.microsoftonline.com/{config['tenant_id']}/oauth2/v2.0/token"
-
-        data = {
-            'client_id': config['client_id'],
-            'client_secret': config['client_secret'],
-            'scope': 'https://graph.microsoft.com/.default',
-            'grant_type': 'client_credentials',
-        }
-
-        try:
-            response = requests.post(token_url, data=data, timeout=10)
-            response.raise_for_status()
-            token_data = response.json()
-
-            access_token = token_data.get('access_token')
-            if not access_token:
-                raise UserError(_('No access token received from Microsoft'))
-
-            _logger.info("[Graph API] Successfully obtained app-only token via client credentials")
-            return access_token
-
-        except requests.exceptions.RequestException as e:
-            error_detail = self._extract_graph_error(e)
-            _logger.error(f"[Graph API] Failed to get app token: {error_detail}")
-            raise UserError(_('Failed to get Microsoft app token: %s') % error_detail)
-
-    @api.model
     def test_connection(self, user):
         """Test Graph API connection by fetching user info"""
         token = self.get_valid_token(user)
@@ -238,30 +195,31 @@ class MicrosoftGraphClient(models.AbstractModel):
             }
 
     @api.model
-    def send_email_via_graph(self, mail_record, mailbox):
+    def send_email_via_graph(self, mail_record, mailbox, user):
         """
-        Send email via Microsoft Graph API using application permissions.
+        Send email via Microsoft Graph API using delegated permissions.
 
-        Uses client credentials flow (app-only token) to send from any mailbox
-        in the tenant.
+        Uses the user's OAuth token to send from the specified mailbox.
+        Requires Mail.Send (own mailbox) or Mail.Send.Shared (shared mailbox) permission.
 
         Args:
             mail_record: mail.mail record to send
             mailbox: x_microsoft.mailbox record to send from
+            user: res.users record with valid Microsoft OAuth token
 
         Returns:
             dict: {'success': bool, 'error': str (if failed), 'message_id': str (if success)}
         """
         try:
-            # Use application token instead of user token
-            token = self.get_app_token()
+            # Use delegated token from the user (principle of least privilege)
+            token = self.get_valid_token(user)
 
             # Get the correct identifier for Graph API (UPN or email)
             graph_user_id = mailbox.get_graph_user_id()
             mailbox_email = mailbox.email
 
-            _logger.info(f"[Graph API] Using app-only token to send from mailbox: {mailbox_email}")
-            _logger.info(f"[Graph API] Graph API user identifier: {graph_user_id}")
+            _logger.info(f"[Graph API] Using delegated token for user {user.login} to send from mailbox: {mailbox_email}")
+            _logger.info(f"[Graph API] Target mailbox identifier: {graph_user_id}")
 
             # Parse To recipients from both email_to and recipient_ids (partners)
             to_recipients = []
@@ -371,7 +329,8 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'Content-Type': 'application/json',
             }
 
-            # Use /users/{upn}/sendMail with app permissions (not /me/sendMail)
+            # Use /users/{upn}/sendMail with delegated Mail.Send.Shared permission
+            # This allows sending from shared mailboxes the user has access to
             url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/sendMail'
 
             # Build recipient list for logging
@@ -434,7 +393,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         but we need it for proper reply threading.
 
         Args:
-            token: Valid OAuth access token (app token)
+            token: Valid OAuth access token (delegated token)
             graph_user_id: UPN or email for Graph API /users/{id} calls
             subject: Email subject to search for
             recipient_email: Optional recipient email to filter
@@ -449,7 +408,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             }
 
             # Search Sent Items for the most recent email with matching subject
-            # Use /users/{upn} path with app permissions
+            # Use /users/{upn} path with delegated Mail.Read.Shared permission
             url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/mailFolders/SentItems/messages'
             params = {
                 '$select': 'internetMessageId,subject,sentDateTime',

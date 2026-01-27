@@ -69,21 +69,6 @@ class ResConfigSettings(models.TransientModel):
         help='The redirect URI to configure in Azure App Registration'
     )
 
-    # System Notification Settings
-    # Used for activity reminders, mentions, and other system-generated emails
-    x_microsoft_notification_mailbox_id = fields.Many2one(
-        'x_microsoft.mailbox',
-        string='Notification Mailbox',
-        help='Mailbox used for system notifications (activity reminders, mentions, etc.)'
-    )
-    x_microsoft_notification_user_id = fields.Many2one(
-        'res.users',
-        string='Notification Sender',
-        domain="[('x_microsoft_oauth_connected', '=', True)]",
-        help='User whose Microsoft account sends system notifications. '
-             'Must have SendAs permission for the notification mailbox.'
-    )
-
     # OAuth URLs (auto-computed but can be overridden)
     x_microsoft_auth_url = fields.Char(
         string='Authorization URL',
@@ -130,40 +115,8 @@ class ResConfigSettings(models.TransientModel):
                 encrypted_secret or ''
             )
 
-    @api.model
-    def get_values(self):
-        """Load notification settings from ir.config_parameter"""
-        res = super().get_values()
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-
-        # Load notification mailbox
-        mailbox_id = IrConfigParameter.get_param('x_pan_outlook_pro.notification_mailbox_id')
-        if mailbox_id:
-            res['x_microsoft_notification_mailbox_id'] = int(mailbox_id)
-
-        # Load notification user
-        user_id = IrConfigParameter.get_param('x_pan_outlook_pro.notification_user_id')
-        if user_id:
-            res['x_microsoft_notification_user_id'] = int(user_id)
-
-        return res
-
-    def set_values(self):
-        """Save notification settings to ir.config_parameter"""
-        super().set_values()
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-
-        # Save notification mailbox
-        IrConfigParameter.set_param(
-            'x_pan_outlook_pro.notification_mailbox_id',
-            self.x_microsoft_notification_mailbox_id.id if self.x_microsoft_notification_mailbox_id else ''
-        )
-
-        # Save notification user
-        IrConfigParameter.set_param(
-            'x_pan_outlook_pro.notification_user_id',
-            self.x_microsoft_notification_user_id.id if self.x_microsoft_notification_user_id else ''
-        )
+    # Removed get_values/set_values for notification settings
+    # Notification mailbox is now determined by mailbox type='notification'
 
     def _compute_config_status(self):
         """Compute the Azure configuration status"""
@@ -196,18 +149,23 @@ class ResConfigSettings(models.TransientModel):
             record.x_microsoft_mailbox_count = mailbox_count
 
     def _compute_notification_configured(self):
-        """Check if notification settings are fully configured"""
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-        mailbox_id = IrConfigParameter.get_param('x_pan_outlook_pro.notification_mailbox_id')
-        user_id = IrConfigParameter.get_param('x_pan_outlook_pro.notification_user_id')
+        """Check if a notification mailbox is configured"""
+        notification_mailbox = self.env['x_microsoft.mailbox'].sudo().search([
+            ('x_mailbox_type', '=', 'notification'),
+            ('active', '=', True),
+            ('x_sending_user_id', '!=', False),
+        ], limit=1)
 
         for record in self:
-            record.x_microsoft_notification_configured = bool(mailbox_id and user_id)
+            record.x_microsoft_notification_configured = bool(notification_mailbox)
 
     def action_test_azure_configuration(self):
         """
-        Test the Azure App configuration by validating the tenant
-        and attempting to get a token using client credentials.
+        Test the Azure App configuration by validating the tenant ID.
+
+        Note: Client ID and Client Secret are validated when a user connects
+        their Microsoft account (OAuth flow). This follows the principle of
+        least privilege - we don't use application permissions.
         """
         self.ensure_one()
         IrConfigParameter = self.env['ir.config_parameter'].sudo()
@@ -221,59 +179,35 @@ class ResConfigSettings(models.TransientModel):
         if not client_id or not tenant_id or not encrypted_secret:
             raise UserError(_('Please fill in Client ID, Client Secret, and Tenant ID before testing.'))
 
-        # Decrypt client secret
+        # Decrypt client secret to verify it's valid
         client_secret = encryption_utils.decrypt_value(self.env, encrypted_secret)
         if not client_secret:
             raise UserError(_('Client secret could not be decrypted. Please re-enter it.'))
 
-        # Step 1: Verify tenant exists by checking OpenID configuration
+        # Verify tenant exists by checking OpenID configuration
         try:
             openid_url = f'https://login.microsoftonline.com/{tenant_id}/.well-known/openid-configuration'
             response = requests.get(openid_url, timeout=10)
             if response.status_code != 200:
                 self._save_test_result('error', _('Invalid Tenant ID - tenant not found'))
                 raise UserError(_('Invalid Tenant ID. The tenant "%s" was not found.') % tenant_id)
-        except requests.exceptions.RequestException as e:
-            self._save_test_result('error', _('Network error: %s') % str(e))
-            raise UserError(_('Could not connect to Microsoft: %s') % str(e))
 
-        # Step 2: Try to get a token using client credentials flow
-        # This validates client_id and client_secret
-        token_url = f'https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token'
-        token_data = {
-            'grant_type': 'client_credentials',
-            'client_id': client_id,
-            'client_secret': client_secret,
-            'scope': 'https://graph.microsoft.com/.default',
-        }
+            # Verify we got valid OpenID configuration
+            openid_config = response.json()
+            if 'authorization_endpoint' not in openid_config:
+                self._save_test_result('error', _('Invalid OpenID configuration'))
+                raise UserError(_('Invalid response from Microsoft. Please check the Tenant ID.'))
 
-        try:
-            response = requests.post(token_url, data=token_data, timeout=10)
-            result = response.json()
+            # Success - tenant is valid, credentials will be validated during OAuth
+            self._save_test_result(
+                'verified',
+                _('Tenant ID verified. Client credentials will be validated when a user connects their Microsoft account.')
+            )
 
-            if response.status_code == 200 and 'access_token' in result:
-                # Success! Save result and reload the settings page
-                self._save_test_result('verified', _('Azure configuration verified successfully'))
-
-                # Return action to reload settings with success notification
-                return {
-                    'type': 'ir.actions.client',
-                    'tag': 'reload',
-                }
-            else:
-                # Token request failed
-                error = result.get('error', 'unknown_error')
-                error_desc = result.get('error_description', 'Unknown error')
-
-                if 'invalid_client' in error or 'AADSTS7000215' in error_desc:
-                    msg = _('Invalid Client Secret. Please check and re-enter it.')
-                elif 'unauthorized_client' in error or 'AADSTS700016' in error_desc:
-                    msg = _('Invalid Client ID. Application not found in tenant.')
-                else:
-                    msg = _('Authentication failed: %s') % error_desc
-
-                self._save_test_result('error', msg)
-                raise UserError(msg)
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'reload',
+            }
 
         except requests.exceptions.RequestException as e:
             self._save_test_result('error', _('Network error: %s') % str(e))
