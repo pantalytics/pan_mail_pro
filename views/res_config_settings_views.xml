@@ -167,7 +167,7 @@
 
                             <button type="action" name="%(action_microsoft_mailbox)d" string="Manage Mailbox List" class="btn-secondary mb-3" icon="fa-envelope"/>
 
-                            <!-- Status indicator (at bottom) -->
+                            <!-- Status indicator -->
                             <div class="d-flex align-items-center">
                                 <!-- No mailboxes -->
                                 <div invisible="x_microsoft_mailbox_count > 0" class="text-warning">
@@ -196,7 +196,7 @@
                             <div class="alert alert-light border mb-3" role="status">
                                 <strong><i class="fa fa-lightbulb-o me-1"/> How to configure:</strong>
                                 <ol class="mb-0 mt-2">
-                                    <li>Click "Manage Mailbox List" above</li>
+                                    <li>Click "Manage Mailbox List" above (Step 3)</li>
                                     <li>Create a new mailbox (e.g. <code>notifications@yourcompany.com</code>)</li>
                                     <li>Set Mailbox Type to <strong>"Notification Mailbox"</strong></li>
                                     <li>Select a Sending User (must have Microsoft OAuth connected)</li>

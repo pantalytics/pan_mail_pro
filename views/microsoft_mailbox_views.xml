@@ -134,11 +134,4 @@
         </field>
     </record>
 
-    <!-- Menu Item (will be added to Settings) -->
-    <menuitem id="menu_microsoft_mailbox"
-              name="Microsoft Mailboxes"
-              parent="base.menu_administration"
-              action="action_microsoft_mailbox"
-              sequence="100"
-              groups="base.group_system"/>
 </odoo>
