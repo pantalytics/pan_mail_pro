@@ -65,9 +65,6 @@
                                                 <tr><td><code>offline_access</code></td><td>Refresh tokens (stay logged in)</td></tr>
                                             </tbody>
                                         </table>
-                                        <ul class="mt-1">
-                                            <li>Click <strong>Grant admin consent for [Your Organization]</strong></li>
-                                        </ul>
                                     </li>
                                     <li class="mb-2"><strong>Fill in the fields below and click Save</strong></li>
                                 </ol>
@@ -236,9 +233,18 @@
                                     <li class="mb-2">Go to <strong>My Profile</strong> (click your name in the top-right → My Profile)</li>
                                     <li class="mb-2">Open the <strong>Preferences</strong> tab</li>
                                     <li class="mb-2">In the <strong>Email</strong> section, click <strong>"Connect Microsoft Account"</strong></li>
-                                    <li class="mb-2">Sign in with your Microsoft work account and grant permissions</li>
+                                    <li class="mb-2">Sign in with your Microsoft work account and approve the permissions</li>
                                     <li class="mb-2">Select your <strong>Default Mailbox</strong> for sending emails</li>
                                 </ol>
+                            </div>
+
+                            <div class="alert alert-light border mb-3" role="status">
+                                <strong><i class="fa fa-building me-1"/> Permission approval (depends on tenant settings):</strong>
+                                <ul class="mb-0 mt-2">
+                                    <li><strong>User consent enabled:</strong> User approves permissions directly during sign-in</li>
+                                    <li><strong>Admin consent workflow:</strong> User requests access → Admin approves → User can connect</li>
+                                    <li><strong>Admin pre-approval:</strong> Admin grants consent for all users in Azure Portal (API permissions → Grant admin consent)</li>
+                                </ul>
                             </div>
 
                             <div class="text-muted">
