@@ -22,3 +22,6 @@ Thumbs.db
 
 # Odoo
 *.pyc
+
+# Local development (Docker)
+.local/
