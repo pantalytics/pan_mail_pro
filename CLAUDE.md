@@ -116,3 +116,77 @@ Note: Submodules point to a specific commit, not a branch. Odoo.sh uses the comm
 - No `numbercall` on cron jobs (deprecated)
 - Use `invisible` instead of `attrs` in views
 - Stored computed fields need `@api.depends` decorator
+
+### OWL Frontend Development (Odoo 17+)
+
+Adding custom buttons to list views requires JavaScript (OWL). The old `<header>` approach only works for bulk actions on selected records.
+
+**Pattern for custom list view buttons:**
+
+1. **JavaScript Controller** (`static/src/js/my_list_controller.js`):
+```javascript
+/** @odoo-module */
+import { ListController } from "@web/views/list/list_controller";
+import { listView } from "@web/views/list/list_view";
+import { registry } from "@web/core/registry";
+import { useService } from "@web/core/utils/hooks";
+
+export class MyListController extends ListController {
+    setup() {
+        super.setup();
+        this.actionService = useService("action");
+    }
+
+    onCustomAction() {
+        this.actionService.doAction({
+            type: "ir.actions.act_url",
+            url: "/my/url",
+            target: "self",
+        });
+    }
+}
+
+export const myListView = {
+    ...listView,
+    Controller: MyListController,
+    buttonTemplate: "my_module.MyListButtons",
+};
+
+registry.category("views").add("my_list", myListView);
+```
+
+2. **XML Button Template** (`static/src/xml/my_list_view.xml`):
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="my_module.MyListButtons">
+        <button type="button" class="btn btn-secondary"
+                t-on-click="() => this.onCustomAction()">
+            <i class="fa fa-arrow-left me-1"/>My Button
+        </button>
+    </t>
+</templates>
+```
+
+3. **Register assets in `__manifest__.py`**:
+```python
+'assets': {
+    'web.assets_backend': [
+        'my_module/static/src/js/my_list_controller.js',
+        'my_module/static/src/xml/my_list_view.xml',
+    ],
+},
+```
+
+4. **Use in list view XML**:
+```xml
+<list string="My List" js_class="my_list">
+    <field name="name"/>
+</list>
+```
+
+**Note:** `web.ListView.Buttons` is empty in Odoo 17+. Define your own template directly.
+
+**Resources:**
+- [Odoo 19 Documentation - Customize a view type](https://www.odoo.com/documentation/19.0/developer/howtos/javascript_view.html)
+- [Odoo 18 OWL List Button Tutorial](https://teguhteja.id/odoo-18-owl-list-button-ui-power-unleashed-6-steps/)

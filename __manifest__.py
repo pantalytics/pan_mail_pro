@@ -95,6 +95,12 @@
         'views/res_users_views.xml',
         'views/mail_compose_message_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'pan_outlook_pro/static/src/js/mailbox_list_controller.js',
+            'pan_outlook_pro/static/src/xml/mailbox_list_view.xml',
+        ],
+    },
     'images': [
         'static/description/banner.png',
         'static/description/screenshot_composer.png',

@@ -5,7 +5,7 @@
         <field name="name">x_microsoft.mailbox.list</field>
         <field name="model">x_microsoft.mailbox</field>
         <field name="arch" type="xml">
-            <list string="Microsoft Mailboxes">
+            <list string="Microsoft Mailboxes" js_class="mailbox_list">
                 <field name="sequence" widget="handle"/>
                 <field name="email"/>
                 <field name="x_mailbox_type" string="Type"/>
