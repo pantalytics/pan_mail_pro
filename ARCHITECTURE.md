@@ -56,6 +56,18 @@ pan_outlook_pro/
 | **Shared** | Everyone | Sender's own token | Team mailbox (sales@company.com) |
 | **Notification** | Everyone | Owner's token | System emails (notifications@company.com) |
 
+### Graph API Endpoints per Mailbox Type
+
+| Type | Send Endpoint | Sent Items Location | Required Permissions |
+|------|---------------|---------------------|----------------------|
+| **Personal** | `/me/sendMail` | User's own Sent Items | `Mail.Send` |
+| **Shared** | `/users/{email}/sendMail` | Shared mailbox Sent Items | `Mail.Send.Shared` + SendAs in Exchange |
+| **Notification** | `/users/{email}/sendMail` | Notification mailbox Sent Items | `Mail.Send.Shared` + SendAs in Exchange |
+
+**Note:**
+- `{email}` = the mailbox email address (e.g., `team1@company.com`). Microsoft Graph also accepts Object ID or UPN, but we use the email address.
+- For shared and notification mailboxes, using `/users/{email}/sendMail` stores the sent email in the mailbox's Sent Items folder (not the user's personal Sent Items). This is the preferred behavior for team visibility.
+
 ### Personal Mailbox
 
 - Auto-created when user connects Microsoft account (if admin setting allows)

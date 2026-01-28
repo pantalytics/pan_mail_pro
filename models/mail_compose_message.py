@@ -26,15 +26,18 @@ class MailComposeMessage(models.TransientModel):
 
         return result
 
+    def action_send_mail(self):
+        """Override to pass selected mailbox via context to mail.mail creation."""
+        # Pass the selected mailbox via context so mail.mail.create() can use it
+        if self.x_microsoft_send_from_id:
+            self = self.with_context(microsoft_mailbox_id=self.x_microsoft_send_from_id.id)
+
+        return super().action_send_mail()
+
     def _action_send_mail_comment(self, res_ids):
-        """Post chatter message, then update related mail.mail records."""
-        messages = super()._action_send_mail_comment(res_ids)
+        """Post chatter message with mailbox context."""
+        # Pass mailbox via context
+        if self.x_microsoft_send_from_id:
+            self = self.with_context(microsoft_mailbox_id=self.x_microsoft_send_from_id.id)
 
-        if self.x_microsoft_send_from_id and messages:
-            mails = self.env['mail.mail'].sudo().search([
-                ('mail_message_id', 'in', messages.ids),
-            ])
-            if mails:
-                mails.write({'x_microsoft_mailbox_id': self.x_microsoft_send_from_id.id})
-
-        return messages
+        return super()._action_send_mail_comment(res_ids)

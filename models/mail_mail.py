@@ -16,8 +16,15 @@ class MailMail(models.Model):
         help='Microsoft mailbox to send this email from'
     )
 
-    # Removed create() override - mailbox is determined at send time based on author
-    # This prevents issues where env.user differs from the actual email author
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Set mailbox from context if provided by mail.compose.message."""
+        mailbox_id = self.env.context.get('microsoft_mailbox_id')
+        if mailbox_id:
+            for vals in vals_list:
+                if not vals.get('x_microsoft_mailbox_id'):
+                    vals['x_microsoft_mailbox_id'] = mailbox_id
+        return super().create(vals_list)
 
     def send(self, auto_commit=False, raise_exception=False, post_send_callback=None):
         """
@@ -178,12 +185,15 @@ class MailMail(models.Model):
 
         author_user = self.author_id.user_ids[0]
 
-        # User must have a default mailbox
-        if not author_user.x_microsoft_default_mailbox_id:
+        # Use explicitly selected mailbox (from composer dropdown) or fall back to default
+        if self.x_microsoft_mailbox_id:
+            mailbox = self.x_microsoft_mailbox_id
+            _logger.info(f"[Graph API] Using explicitly selected mailbox: {mailbox.email}")
+        elif author_user.x_microsoft_default_mailbox_id:
+            mailbox = author_user.x_microsoft_default_mailbox_id
+        else:
             _logger.error(f"[Graph API] User {author_user.name} has no default mailbox configured")
             return (None, None)
-
-        mailbox = author_user.x_microsoft_default_mailbox_id
 
         # Both personal and shared mailboxes: author sends with their own token
         # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365

@@ -329,8 +329,10 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'Content-Type': 'application/json',
             }
 
-            # Use /users/{upn}/sendMail with delegated Mail.Send.Shared permission
-            # This allows sending from shared mailboxes the user has access to
+            # Use /users/{mailbox}/sendMail with delegated Mail.Send.Shared permission
+            # This stores sent items in the shared mailbox's Sent Items folder
+            # For personal mailboxes, this is the user's own mailbox
+            # Requires: Mail.Send.Shared permission + SendAs rights in Exchange
             url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/sendMail'
 
             # Build recipient list for logging

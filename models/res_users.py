@@ -138,3 +138,19 @@ class ResUsers(models.Model):
                 'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
             }
         }
+
+    def write(self, vals):
+        """
+        Override write to allow users to set their own default mailbox.
+        Regular users cannot write to res.users, but they should be able
+        to set their own Microsoft default mailbox setting.
+        """
+        # Check if only updating default mailbox for own record
+        if (len(vals) == 1 and
+                'x_microsoft_default_mailbox_id' in vals and
+                len(self) == 1 and
+                self.id == self.env.uid):
+            # User is only changing their own default mailbox - allow via sudo
+            return super(ResUsers, self.sudo()).write(vals)
+
+        return super().write(vals)
