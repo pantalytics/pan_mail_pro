@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- OAuth Result Template - Shows result and redirects back to Odoo -->
+    <!-- OAuth Result Template -->
     <template id="oauth_result" name="Microsoft OAuth Result">
         <html>
             <head>
@@ -37,7 +37,7 @@
                         margin-bottom: 24px;
                         max-width: 400px;
                     }
-                    .redirect-text {
+                    .hint {
                         color: #adb5bd;
                         font-size: 14px;
                     }
@@ -51,13 +51,24 @@
                     </div>
                     <div class="title" t-out="title"/>
                     <div class="message" t-out="message"/>
-                    <div class="redirect-text">Redirecting to Odoo...</div>
+                    <t t-if="success">
+                        <div class="hint">You can close this tab.</div>
+                        <script>
+                            // Reload the Odoo tab to show updated status
+                            if (window.opener) {
+                                window.opener.location.reload();
+                            }
+                        </script>
+                    </t>
+                    <t t-else="">
+                        <div class="hint">Redirecting to Odoo...</div>
+                        <script>
+                            setTimeout(function() {
+                                window.location.href = '/web';
+                            }, 3000);
+                        </script>
+                    </t>
                 </div>
-                <script>
-                    setTimeout(function() {
-                        window.location.href = '/web';
-                    }, 2000);
-                </script>
             </body>
         </html>
     </template>

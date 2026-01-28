@@ -93,6 +93,25 @@ class ResUsers(models.Model):
         for user in self:
             user.x_microsoft_oauth_connected = bool(user.x_microsoft_refresh_token_encrypted)
 
+    def action_connect_microsoft(self):
+        """
+        Start OAuth flow by redirecting directly to Microsoft login.
+        No intermediate wizard - goes straight to Microsoft.
+        """
+        self.ensure_one()
+
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        redirect_uri = f"{base_url}/microsoft_oauth/callback"
+
+        graph_client = self.env['microsoft.graph.client']
+        auth_url = graph_client.get_authorization_url(redirect_uri)
+
+        return {
+            'type': 'ir.actions.act_url',
+            'url': auth_url,
+            'target': 'new',
+        }
+
     def action_disconnect_microsoft(self):
         """
         Disconnect Microsoft account by clearing all OAuth tokens.

@@ -179,13 +179,18 @@ class ResConfigSettings(models.TransientModel):
             record.x_current_user_oauth_connected = self.env.user.x_microsoft_oauth_connected
 
     def action_connect_microsoft_admin(self):
-        """Start the Microsoft OAuth flow for the admin user"""
+        """Start OAuth flow by redirecting directly to Microsoft login"""
         self.ensure_one()
+
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        redirect_uri = f"{base_url}/microsoft_oauth/callback"
+
+        graph_client = self.env['microsoft.graph.client']
+        auth_url = graph_client.get_authorization_url(redirect_uri)
+
         return {
-            'name': _('Connect Microsoft Account'),
-            'type': 'ir.actions.act_window',
-            'res_model': 'microsoft.oauth.wizard',
-            'view_mode': 'form',
+            'type': 'ir.actions.act_url',
+            'url': auth_url,
             'target': 'new',
         }
 
