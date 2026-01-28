@@ -6,6 +6,7 @@ This module fetches emails from Microsoft 365 mailboxes and routes them
 to the correct partner using message_post() for proper threading.
 """
 import logging
+from markupsafe import Markup
 
 from odoo import models, api, fields, _
 
@@ -240,9 +241,11 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                         except Exception as e:
                             _logger.warning(f"[Incoming Mail] Failed to create attachment: {e}")
 
-        # Build email body
+        # Build email body - mark as safe HTML to preserve formatting
         body = full_message.get('body', {})
         body_content = body.get('content', '')
+        if body.get('contentType') == 'html' and body_content:
+            body_content = Markup(body_content)
 
         # Post message to the target record:
         # - If reply: post to the same record as the parent (sale.order, lead, etc.)
