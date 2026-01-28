@@ -35,6 +35,12 @@ class ResConfigSettings(models.TransientModel):
         string='Notification Configured'
     )
 
+    # Current user OAuth status (for admin setup flow)
+    x_current_user_oauth_connected = fields.Boolean(
+        compute='_compute_current_user_oauth_connected',
+        string='Current User OAuth Connected'
+    )
+
     # Mailbox settings
     x_microsoft_allow_personal_mailboxes = fields.Boolean(
         string='Allow Personal Mailboxes',
@@ -166,6 +172,22 @@ class ResConfigSettings(models.TransientModel):
 
         for record in self:
             record.x_microsoft_notification_configured = bool(notification_mailbox)
+
+    def _compute_current_user_oauth_connected(self):
+        """Check if the current user has Microsoft OAuth connected"""
+        for record in self:
+            record.x_current_user_oauth_connected = self.env.user.x_microsoft_oauth_connected
+
+    def action_connect_microsoft_admin(self):
+        """Start the Microsoft OAuth flow for the admin user"""
+        self.ensure_one()
+        return {
+            'name': _('Connect Microsoft Account'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'microsoft.oauth.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+        }
 
     def action_test_azure_configuration(self):
         """

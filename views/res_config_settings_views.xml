@@ -123,8 +123,46 @@
                         </setting>
                     </block>
 
-                    <!-- STEP 3: Mailboxes -->
-                    <block title="Step 3: Available Mailboxes" class="o_setting_box_fullwidth">
+                    <!-- STEP 3: Admin Connect Microsoft -->
+                    <block title="Step 3: Connect Your Microsoft Account" class="o_setting_box_fullwidth" invisible="x_microsoft_config_status not in ('configured', 'verified')">
+                        <setting string="Admin OAuth Connection" help="Connect your Microsoft account to enable sending" class="col-12 col-lg-12">
+                            <field name="x_current_user_oauth_connected" invisible="1"/>
+
+                            <div class="text-muted mb-3">
+                                <strong>Before configuring mailboxes</strong>, you (the admin) must connect your own Microsoft account.
+                                This is required to set up the notification mailbox in Step 5.
+                            </div>
+
+                            <div class="d-flex align-items-center mb-3">
+                                <!-- Not connected -->
+                                <div invisible="x_current_user_oauth_connected">
+                                    <button name="action_connect_microsoft_admin" type="object"
+                                            string="Connect Microsoft Account" class="btn-primary me-3"
+                                            icon="fa-windows"/>
+                                    <span class="text-muted">Sign in with your Microsoft work account</span>
+                                </div>
+
+                                <!-- Connected -->
+                                <div invisible="not x_current_user_oauth_connected" class="text-success">
+                                    <i class="fa fa-check-circle me-2"/>
+                                    <strong>Microsoft Account Connected</strong>
+                                    <span class="text-muted ms-2">- You can now configure mailboxes</span>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-light border mb-0" role="status" invisible="x_current_user_oauth_connected">
+                                <strong><i class="fa fa-info-circle me-1"/> Why connect now?</strong>
+                                <ul class="mb-0 mt-2">
+                                    <li>The notification mailbox (Step 5) requires a "Sending User" with Microsoft OAuth connected</li>
+                                    <li>As admin, you'll typically be the Sending User for system notifications</li>
+                                    <li>Other users will connect later via their profile (Step 6)</li>
+                                </ul>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- STEP 4: Mailboxes -->
+                    <block title="Step 4: Available Mailboxes" class="o_setting_box_fullwidth">
                         <field name="x_microsoft_mailbox_count" invisible="1"/>
                         <setting string="Configure Email Mailboxes" help="Add your Microsoft 365 mailboxes to Odoo" class="col-12 col-lg-12">
 
@@ -160,7 +198,7 @@
                                         <strong><i class="fa fa-bell me-1"/> Notifications</strong>
                                         <p class="text-muted small mb-0">
                                             System notifications (e.g., <code>notifications@</code>).
-                                            Configured in Step 4. Outgoing only.
+                                            Configured in Step 5. Outgoing only.
                                         </p>
                                     </div>
                                 </div>
@@ -190,8 +228,8 @@
                         </setting>
                     </block>
 
-                    <!-- STEP 4: System Notifications -->
-                    <block title="Step 4: System Notifications" class="o_setting_box_fullwidth">
+                    <!-- STEP 5: System Notifications -->
+                    <block title="Step 5: System Notifications" class="o_setting_box_fullwidth">
                         <field name="x_microsoft_notification_configured" invisible="1"/>
                         <setting string="Notification Email Settings" help="Configure how system notifications (activity reminders, mentions) are sent" class="col-12 col-lg-12">
 
@@ -203,10 +241,10 @@
                             <div class="alert alert-light border mb-3" role="status">
                                 <strong><i class="fa fa-lightbulb-o me-1"/> How to configure:</strong>
                                 <ol class="mb-0 mt-2">
-                                    <li>Click "Manage Mailbox List" above (Step 3)</li>
+                                    <li>Click "Manage Mailbox List" in Step 4 above</li>
                                     <li>Create a new mailbox (e.g. <code>notifications@yourcompany.com</code>)</li>
                                     <li>Set Mailbox Type to <strong>"Notification Mailbox"</strong></li>
-                                    <li>Select a Sending User (must have Microsoft OAuth connected)</li>
+                                    <li>Select yourself as the Sending User (you connected in Step 3)</li>
                                 </ol>
                             </div>
 
@@ -226,8 +264,8 @@
                         </setting>
                     </block>
 
-                    <!-- STEP 5: User Instructions -->
-                    <block title="Step 5: User Setup" class="o_setting_box_fullwidth">
+                    <!-- STEP 6: User Instructions -->
+                    <block title="Step 6: User Setup" class="o_setting_box_fullwidth">
                         <setting string="Connect Users to Microsoft" help="Each user must connect their own Microsoft account" class="col-12 col-lg-12">
                             <div class="d-flex align-items-center mb-3 text-info">
                                 <i class="fa fa-info-circle me-2"/>
