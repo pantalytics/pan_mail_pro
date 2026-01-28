@@ -159,6 +159,14 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             message_id=msg_data['id'],
         )
 
+        # Check for Odoo-originated emails (skip to prevent import loops)
+        # We add X-Odoo-* headers to all outgoing emails
+        headers = {h['name'].lower(): h['value']
+                   for h in full_message.get('internetMessageHeaders', [])}
+        if headers.get('x-odoo-model') or headers.get('x-odoo-mail-id'):
+            _logger.info(f"[Incoming Mail] Skipping Odoo-originated email: {internet_message_id}")
+            return False
+
         # Get attachments if present
         attachments = []
         if full_message.get('hasAttachments'):
