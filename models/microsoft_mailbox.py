@@ -66,13 +66,9 @@ class MicrosoftMailbox(models.Model):
         help='Automatically enabled when a sync user is selected'
     )
     x_sync_mode = fields.Selection([
-        ('none', 'No sync (outgoing only)'),
-        ('1way', 'Received emails only'),
-        ('2way', 'Received + Sent from Outlook'),
-    ], string='Sync Mode', default='none',
-        help='None: Only use this mailbox for sending emails.\n'
-             '1-way: Sync emails received in this mailbox to Odoo.\n'
-             '2-way: Also sync emails sent from Outlook back to Odoo.')
+        ('none', 'Send messages only'),
+        ('known_partners', 'Send and receive messages from existing contacts'),
+    ], string='Sync Mode', default='none')
     # Keep for backwards compatibility / internal use
     x_sync_inbox = fields.Boolean(
         string='Sync Inbox',
@@ -92,16 +88,17 @@ class MicrosoftMailbox(models.Model):
         """Incoming sync is enabled when sync_mode is set and owner has OAuth."""
         for record in self:
             record.x_incoming_enabled = (
-                record.x_sync_mode in ('1way', '2way') and
+                record.x_sync_mode == 'known_partners' and
                 bool(record.x_owner_user_id) and
                 record.x_owner_user_id.x_microsoft_oauth_connected
             )
 
     @api.depends('x_sync_mode')
     def _compute_sync_folders(self):
+        """Known partners mode syncs both Inbox + Sent Items."""
         for record in self:
-            record.x_sync_inbox = record.x_sync_mode in ('1way', '2way')
-            record.x_sync_sent = record.x_sync_mode == '2way'
+            record.x_sync_inbox = record.x_sync_mode == 'known_partners'
+            record.x_sync_sent = record.x_sync_mode == 'known_partners'
     x_last_sync_date = fields.Datetime(
         string='Last Sync',
         readonly=True,

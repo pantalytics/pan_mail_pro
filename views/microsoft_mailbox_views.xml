@@ -63,8 +63,7 @@
                     </group>
 
                     <div class="text-muted mb-3" invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
-                        <span invisible="x_sync_mode != '2way'">See replies your team sends directly from Outlook, not just incoming emails.</span>
-                        <span invisible="x_sync_mode != '1way'">Only emails received in this mailbox will sync to Odoo.</span>
+                        Only emails from contacts that already exist in Odoo will be synced. Internal users and unknown senders are skipped.
                     </div>
 
                     <div class="d-flex align-items-center gap-3 mb-3" invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">

@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Add notification banner to standard Email settings -->
+    <record id="res_config_settings_view_form_email_banner" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.outlook.pro.email.banner</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="mail.res_config_settings_view_form"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <!-- Insert banner before the first setting in the Emails block -->
+            <xpath expr="//setting[@id='email_servers_setting']" position="before">
+                <div class="alert alert-info mb-3" role="alert">
+                    <i class="fa fa-info-circle me-2"/>
+                    <strong>Outlook Pro is installed.</strong>
+                    Email sending and receiving is managed via Microsoft Graph API.
+                    Go to <strong>Settings → Outlook Pro</strong> to configure mailboxes.
+                </div>
+            </xpath>
+        </field>
+    </record>
+
     <!-- Extend General Settings -->
     <record id="res_config_settings_view_form" model="ir.ui.view">
         <field name="name">res.config.settings.view.form.inherit.outlook.pro</field>
@@ -216,6 +235,14 @@
                             </div>
 
                             <button type="action" name="%(action_microsoft_mailbox)d" string="Manage Mailbox List" class="btn-secondary mb-3" icon="fa-envelope"/>
+
+                            <div class="row mt-3 mb-3">
+                                <label for="x_microsoft_internal_domains" class="col-lg-3 o_light_label" string="Internal Domains"/>
+                                <field name="x_microsoft_internal_domains" placeholder="company.com, company.nl" class="col-lg-6"/>
+                            </div>
+                            <div class="text-muted small mb-3">
+                                Comma-separated list of your company email domains. Emails from these domains will be excluded from incoming sync.
+                            </div>
 
                             <!-- Status indicator -->
                             <div class="d-flex align-items-center">

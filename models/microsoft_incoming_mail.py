@@ -3,14 +3,9 @@
 Incoming Mail Processor for Microsoft Graph API.
 
 This module fetches emails from Microsoft 365 mailboxes and routes them
-through Odoo's native mail.thread.message_process() for proper threading
-and partner linking.
+to the correct partner using message_post() for proper threading.
 """
-import base64
 import logging
-from email.message import EmailMessage
-from email.utils import format_datetime
-from datetime import datetime
 
 from odoo import models, api, fields, _
 
@@ -21,8 +16,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
     """
     Processor for incoming emails from Microsoft Graph API.
 
-    Uses Odoo's native mail.thread.message_process() for routing,
-    which provides automatic threading, partner creation, and chatter integration.
+    Posts messages directly to partners using message_post(),
+    ensuring proper partner matching and message threading.
     """
     _name = 'microsoft.incoming.mail.processor'
     _description = 'Microsoft Incoming Mail Processor'
@@ -167,6 +162,29 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.info(f"[Incoming Mail] Skipping Odoo-originated email: {internet_message_id}")
             return False
 
+        # Extract sender info for filtering and partner matching
+        from_data = full_message.get('from', {}).get('emailAddress', {})
+        from_email = from_data.get('address', '')
+        from_name = from_data.get('name', '')
+
+        _logger.info(f"[Incoming Mail] From: name='{from_name}', email='{from_email}'")
+
+        # Apply sync mode filter: "known_partners" mode only syncs from existing contacts
+        if mailbox.x_sync_mode == 'known_partners':
+            # Skip emails from internal domains (company employees)
+            if self._is_internal_domain(from_email):
+                _logger.info(f"[Incoming Mail] Skipping internal domain: {from_email}")
+                return False
+
+            partner = self._find_partner(from_email)
+            if not partner:
+                _logger.info(f"[Incoming Mail] Skipping unknown sender (not in contacts): {from_email}")
+                return False
+            if partner.user_ids:
+                _logger.info(f"[Incoming Mail] Skipping internal user: {partner.name} ({from_email})")
+                return False
+            _logger.info(f"[Incoming Mail] Known partner filter passed: {partner.name}")
+
         # Get attachments if present
         attachments = []
         if full_message.get('hasAttachments'):
@@ -179,143 +197,79 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # Determine if this is incoming or outgoing (for 2-way sync)
         is_outgoing = folder == 'SentItems'
 
-        # Pre-create or find partner BEFORE message_process to ensure correct name/email
-        # This prevents message_process from creating partner with wrong name
-        from_data = full_message.get('from', {}).get('emailAddress', {})
-        from_email = from_data.get('address', '')
-        from_name = from_data.get('name', '')
-
-        _logger.info(f"[Incoming Mail] From: name='{from_name}', email='{from_email}'")
-
+        # Find or create the partner (sender) for author_id
         partner = None
         if from_email:
             partner = self._find_or_create_partner(from_email, from_name)
             _logger.info(f"[Incoming Mail] Partner resolved: {partner.name} (id={partner.id}, email={partner.email})")
 
-        # Convert to RFC2822 format
-        rfc2822_msg = self._convert_to_rfc2822(full_message, attachments)
+        if not partner:
+            _logger.warning(f"[Incoming Mail] Could not resolve partner for {from_email}, skipping")
+            return False
 
-        # Use Odoo's native message_process for routing
-        MailThread = self.env['mail.thread']
-        try:
-            thread_id = MailThread.message_process(
-                model='res.partner',  # Default: route to partner
-                message=rfc2822_msg,
-                save_original=False,
-                strip_attachments=False,
-            )
+        # Check for threading: find parent message via In-Reply-To header
+        # If this is a reply, post to the SAME record as the parent message
+        parent_message = False
+        target_record = partner  # Default: post to partner's chatter
+        in_reply_to = headers.get('in-reply-to')
 
-            # Create activity for new emails (only for incoming, not sent items)
-            if mailbox.x_create_activity and thread_id and not is_outgoing:
-                self._create_review_activity(mailbox, thread_id)
+        if in_reply_to:
+            parent_message = self.env['mail.message'].search([
+                ('message_id', '=', in_reply_to)
+            ], limit=1)
+            if parent_message and parent_message.model and parent_message.res_id:
+                # Reply to existing thread - post to the same record
+                target_record = self.env[parent_message.model].browse(parent_message.res_id)
+                _logger.info(f"[Incoming Mail] Reply to {parent_message.model}/{parent_message.res_id}")
 
-            _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {thread_id}")
-            return True
-
-        except Exception as e:
-            _logger.exception(f"[Incoming Mail] Failed to process message: {internet_message_id}")
-            raise
-
-    def _convert_to_rfc2822(self, graph_message, attachments=None):
-        """
-        Convert Microsoft Graph message to RFC2822 email bytes.
-
-        This conversion preserves the headers needed for Odoo's routing:
-        - Message-ID for duplicate detection
-        - In-Reply-To and References for threading
-        - From/To/Cc for partner matching
-
-        Args:
-            graph_message: Full message dict from Graph API
-            attachments: List of attachment dicts from Graph API
-
-        Returns:
-            bytes: RFC2822 formatted email message
-        """
-        msg = EmailMessage()
-
-        # Essential headers for Odoo routing
-        internet_message_id = graph_message.get('internetMessageId')
-        if internet_message_id:
-            msg['Message-ID'] = internet_message_id
-
-        msg['Subject'] = graph_message.get('subject', '')
-
-        # From address
-        from_data = graph_message.get('from', {}).get('emailAddress', {})
-        msg['From'] = self._format_address(from_data)
-
-        # To recipients
-        to_recipients = graph_message.get('toRecipients', [])
-        if to_recipients:
-            msg['To'] = ', '.join(
-                self._format_address(r.get('emailAddress', {}))
-                for r in to_recipients
-            )
-
-        # CC recipients
-        cc_recipients = graph_message.get('ccRecipients', [])
-        if cc_recipients:
-            msg['Cc'] = ', '.join(
-                self._format_address(r.get('emailAddress', {}))
-                for r in cc_recipients
-            )
-
-        # Date
-        received_dt = graph_message.get('receivedDateTime')
-        if received_dt:
-            # Parse ISO format and format for email
-            try:
-                dt = datetime.fromisoformat(received_dt.replace('Z', '+00:00'))
-                msg['Date'] = format_datetime(dt)
-            except (ValueError, TypeError):
-                pass
-
-        # Critical: threading headers from internetMessageHeaders
-        # These are essential for Odoo to route replies correctly
-        headers = {}
-        for header in graph_message.get('internetMessageHeaders', []):
-            headers[header['name'].lower()] = header['value']
-
-        if headers.get('in-reply-to'):
-            msg['In-Reply-To'] = headers['in-reply-to']
-        if headers.get('references'):
-            msg['References'] = headers['references']
-
-        # Body
-        body = graph_message.get('body', {})
-        body_content = body.get('content', '')
-        if body.get('contentType') == 'html':
-            msg.set_content(body_content, subtype='html')
-        else:
-            msg.set_content(body_content)
-
-        # Attachments
+        # Prepare attachment data for message_post
+        attachment_ids = []
         if attachments:
             for attachment in attachments:
                 if attachment.get('@odata.type') == '#microsoft.graph.fileAttachment':
                     content_bytes = attachment.get('contentBytes')
                     if content_bytes:
                         try:
-                            file_content = base64.b64decode(content_bytes)
-                            content_type = attachment.get('contentType', 'application/octet-stream')
-
-                            # Parse content type
-                            if '/' in content_type:
-                                maintype, subtype = content_type.split('/', 1)
-                            else:
-                                maintype, subtype = 'application', 'octet-stream'
-
-                            msg.add_attachment(
-                                file_content,
-                                maintype=maintype,
-                                subtype=subtype,
-                                filename=attachment.get('name', 'attachment'),
-                            )
+                            att = self.env['ir.attachment'].create({
+                                'name': attachment.get('name', 'attachment'),
+                                'datas': content_bytes,  # Already base64 encoded
+                                'res_model': target_record._name,
+                                'res_id': target_record.id,
+                            })
+                            attachment_ids.append(att.id)
                         except Exception as e:
-                            _logger.warning(f"[Incoming Mail] Failed to add attachment: {e}")
+                            _logger.warning(f"[Incoming Mail] Failed to create attachment: {e}")
 
-        return msg.as_bytes()
+        # Build email body
+        body = full_message.get('body', {})
+        body_content = body.get('content', '')
+
+        # Post message to the target record:
+        # - If reply: post to the same record as the parent (sale.order, lead, etc.)
+        # - If new: post to the contact's chatter
+        try:
+            message = target_record.message_post(
+                body=body_content,
+                subject=full_message.get('subject', ''),
+                message_type='email',
+                subtype_xmlid='mail.mt_comment',
+                author_id=partner.id,  # The sender is the author
+                email_from=f'"{from_name}" <{from_email}>' if from_name else from_email,
+                message_id=internet_message_id,
+                parent_id=parent_message.id if parent_message else False,
+                attachment_ids=attachment_ids,
+            )
+
+            # Create activity for new emails (only for incoming, not sent items, and only for new threads)
+            if mailbox.x_create_activity and not is_outgoing and not parent_message:
+                self._create_review_activity(mailbox, partner.id)
+
+            _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
+            return True
+
+        except Exception as e:
+            _logger.exception(f"[Incoming Mail] Failed to process message: {internet_message_id}")
+            raise
 
     def _create_review_activity(self, mailbox, partner_id):
         """
@@ -358,6 +312,59 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             ('message_id', '=', internet_message_id)
         ], limit=1))
 
+    def _is_internal_domain(self, email):
+        """
+        Check if email is from an internal company domain.
+
+        Uses the 'Internal Domains' setting from Outlook Pro configuration.
+
+        Args:
+            email: Email address to check
+
+        Returns:
+            bool: True if email is from an internal domain
+        """
+        if not email or '@' not in email:
+            return False
+
+        sender_domain = email.lower().split('@')[1]
+
+        # Get internal domains from settings (comma-separated)
+        domains_str = self.env['ir.config_parameter'].sudo().get_param(
+            'x_pan_outlook_pro.internal_domains', ''
+        )
+        if not domains_str:
+            return False
+
+        # Parse comma-separated domains and normalize
+        internal_domains = [d.strip().lower() for d in domains_str.split(',') if d.strip()]
+
+        return sender_domain in internal_domains
+
+    def _find_partner(self, email):
+        """
+        Find existing partner by email (without creating).
+
+        Used for sync mode filtering - only sync emails from known contacts.
+
+        Args:
+            email: Email address to search
+
+        Returns:
+            res.partner record or False if not found
+        """
+        if not email:
+            return False
+
+        Partner = self.env['res.partner']
+        email_normalized = email.lower().strip()
+
+        return Partner.search([
+            '|',
+            ('email', '=ilike', email_normalized),
+            ('email_normalized', '=', email_normalized),
+        ], limit=1)
+
     def _find_or_create_partner(self, email, name=None):
         """
         Find existing partner by email or create a new one.
@@ -373,25 +380,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         Returns:
             res.partner record
         """
-        Partner = self.env['res.partner']
-
-        # Normalize email for search
-        email_normalized = email.lower().strip()
-
-        # Search for existing partner by email
-        partner = Partner.search([
-            '|',
-            ('email', '=ilike', email_normalized),
-            ('email_normalized', '=', email_normalized),
-        ], limit=1)
-
+        # First try to find existing partner
+        partner = self._find_partner(email)
         if partner:
             _logger.debug(f"[Incoming Mail] Found existing partner: {partner.name} for {email}")
             return partner
 
         # Create new partner with correct name and email
         partner_name = name if name else email.split('@')[0]  # Use local part as fallback
-        partner = Partner.create({
+        partner = self.env['res.partner'].create({
             'name': partner_name,
             'email': email,
             'is_company': False,
@@ -399,26 +396,3 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         _logger.info(f"[Incoming Mail] Created new partner: {partner.name} ({email})")
 
         return partner
-
-    def _format_address(self, email_dict):
-        """
-        Format a Graph API email address dict to RFC2822 format.
-
-        Args:
-            email_dict: {'name': '...', 'address': '...'}
-
-        Returns:
-            str: RFC2822 formatted address like '"Name" <email@example.com>'
-        """
-        name = email_dict.get('name', '')
-        address = email_dict.get('address', '')
-
-        if not address:
-            return ''
-
-        if name:
-            # Escape quotes in name
-            name = name.replace('"', '\\"')
-            return f'"{name}" <{address}>'
-
-        return address

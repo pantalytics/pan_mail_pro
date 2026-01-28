@@ -49,6 +49,14 @@ class ResConfigSettings(models.TransientModel):
         default=True,
     )
 
+    # Email sync settings
+    x_microsoft_internal_domains = fields.Char(
+        string='Internal Domains',
+        help='Comma-separated list of your company email domains (e.g., "company.com, company.nl"). '
+             'Emails from these domains will be excluded from sync.',
+        config_parameter='x_pan_outlook_pro.internal_domains',
+    )
+
     # Microsoft OAuth Configuration
     x_microsoft_client_id = fields.Char(
         string='Microsoft Client ID',

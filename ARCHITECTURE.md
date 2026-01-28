@@ -91,7 +91,89 @@ pan_outlook_pro/
 
 ---
 
-## 3. Email Flows
+## 3. Sync Modes
+
+### Overview
+
+Each mailbox can be configured with a sync mode that determines how incoming emails are handled.
+
+| Mode | Inbox | Sent Items | Filter | Use Case |
+|------|-------|------------|--------|----------|
+| **Send only** | - | - | - | Send-only mailbox |
+| **Known partners** | ✓ | ✓ | Existing partners only | Safe default, no spam |
+
+### Send Only (No Sync)
+
+- Mailbox is only used for sending emails from Odoo
+- No incoming emails are synchronized
+- Default for new mailboxes
+
+### Known Partners Only (Recommended)
+
+**Decision:** Only sync emails from senders that already exist as partners in Odoo.
+
+**Filter logic:**
+```python
+# 1. Skip if sender is from internal domain (uses "Internal Domains" setting)
+if sender_domain in internal_domains_setting:
+    skip("Internal domain")
+
+# 2. Find partner by sender email
+partner = find_partner(from_email)
+
+# 3. Skip if sender not in Odoo
+if not partner:
+    skip("Unknown sender")
+
+# 4. Skip if sender is an internal user (employee with Odoo account)
+if partner.user_ids:
+    skip("Internal user")
+
+# 5. Process the email
+process_email()
+```
+
+**What gets synced:**
+
+| Scenario | Internal domain? | Partner exists? | Has user? | Result |
+|----------|------------------|-----------------|-----------|--------|
+| Reply from customer | - | ✓ | - | **Sync** |
+| New email from existing customer | - | ✓ | - | **Sync** |
+| Colleague (any @company.com) | ✓ | - | - | Skip |
+| Colleague with Odoo account | - | ✓ | ✓ | Skip |
+| Spam/marketing | - | - | - | Skip |
+| Unknown sender | - | - | - | Skip |
+
+**Why this approach:**
+- Simple "Internal Domains" setting in Outlook Pro configuration
+- Explicit control over which domains are excluded
+- Internal employees filtered via domain OR via `partner.user_ids` (defense in depth)
+- Replies always work (partner was created when we sent to them)
+- Spam/marketing naturally filtered (not in contacts)
+- Simple to understand and maintain
+
+### Full Sync (Future Roadmap)
+
+**Status:** Not implemented. This option is not available in the UI.
+
+**Planned features (roadmap):**
+- Sync all emails including unknown senders
+- Staging inbox for manual triage
+- AI suggestions for routing
+- Rules engine for auto-classification
+
+### Pre-filters (Always Applied)
+
+Before the sync mode filter, these checks always run:
+
+| Check | Header/Condition | Action |
+|-------|------------------|--------|
+| Odoo-originated | `X-Odoo-Model` or `X-Odoo-Mail-Id` present | Skip |
+| Duplicate | `Message-ID` already in Odoo | Skip |
+
+---
+
+## 4. Email Flows
 
 ### Outgoing Email Flow
 
@@ -134,25 +216,36 @@ Cron job (every 1 min)
       │
       ▼
 ┌─────────────────────────────────────────────┐
-│ _convert_to_rfc2822()                        │
-│ - Preserve Message-ID                        │
-│ - Preserve In-Reply-To                       │
+│ Filter checks                                │
+│ - Skip if from internal domain               │
+│ - Skip if sender not in contacts             │
+│ - Skip if sender is internal user            │
 └─────────────────────────────────────────────┘
       │
       ▼
 ┌─────────────────────────────────────────────┐
-│ mail.thread.message_process()  ← NATIVE      │
-│                                              │
-│ 1. Parse email headers                       │
-│ 2. Check In-Reply-To → find parent message   │
-│ 3. If reply: post to existing record         │
-│ 4. If new: find/create partner, post there   │
+│ Check In-Reply-To header                     │
+│ - Find parent message by Message-ID          │
 └─────────────────────────────────────────────┘
+      │
+      ├── Reply found ──────────────────────┐
+      │                                      ▼
+      │                    ┌─────────────────────────────────┐
+      │                    │ Post to parent's record         │
+      │                    │ (sale.order, lead, partner...)  │
+      │                    └─────────────────────────────────┘
+      │
+      └── No reply ─────────────────────────┐
+                                             ▼
+                           ┌─────────────────────────────────┐
+                           │ Post to contact's chatter       │
+                           │ (res.partner)                   │
+                           └─────────────────────────────────┘
       │
       ▼
 ┌─────────────────────────────────────────────┐
 │ mail.message created                         │
-│ + optional mail.activity                     │
+│ + optional mail.activity (new threads only)  │
 └─────────────────────────────────────────────┘
 ```
 
@@ -185,9 +278,9 @@ Cron job (every 1 min)
 
 ---
 
-## 4. Design Decisions
+## 5. Design Decisions
 
-### 4.1 Token Encryption
+### 5.1 Token Encryption
 
 **Decision:** Fernet symmetric encryption with auto-generated key in database.
 
@@ -202,7 +295,7 @@ Cron job (every 1 min)
 - Auto-generated on first use
 - All encryption via `models/encryption_utils.py`
 
-### 4.2 Polling over Webhooks
+### 5.2 Polling over Webhooks
 
 **Decision:** Poll Microsoft Graph API every 1 minute instead of using webhooks.
 
@@ -211,7 +304,7 @@ Cron job (every 1 min)
 - Reuses existing OAuth token infrastructure
 - 1-minute delay acceptable for email sync
 
-### 4.3 Native mail.thread.message_process()
+### 5.3 Native mail.thread.message_process()
 
 **Decision:** Use Odoo's native `message_process()` instead of custom inbox model.
 
@@ -220,7 +313,7 @@ Cron job (every 1 min)
 - Standard data structures = easier AI integration later
 - Less custom code = less maintenance
 
-### 4.4 Reply Threading via Microsoft Message-ID
+### 5.4 Reply Threading via Microsoft Message-ID
 
 **Decision:** After sending, fetch actual Message-ID from Sent Items.
 
@@ -235,7 +328,7 @@ time.sleep(1)  # Wait for message in Sent Items
 actual_message_id = self._fetch_sent_message_id(token, subject)
 ```
 
-### 4.5 First Sync Skips History
+### 5.5 First Sync Skips History
 
 **Decision:** On first sync, set timestamp to "now" and skip fetching.
 
@@ -244,7 +337,7 @@ actual_message_id = self._fetch_sent_message_id(token, subject)
 - Prevents flooding chatter with historical messages
 - Clean start for new mailbox configuration
 
-### 4.6 Pre-create Partners
+### 5.6 Pre-create Partners
 
 **Decision:** Find/create partner BEFORE calling `message_process()`.
 
@@ -252,7 +345,7 @@ actual_message_id = self._fetch_sent_message_id(token, subject)
 - Odoo's auto-creation sometimes uses email subject as partner name
 - Pre-creation ensures correct name from email "From" header
 
-### 4.7 Personal Mailbox Auto-creation
+### 5.7 Personal Mailbox Auto-creation
 
 **Decision:** Auto-create personal mailbox when user connects Microsoft account.
 
@@ -261,7 +354,7 @@ actual_message_id = self._fetch_sent_message_id(token, subject)
 - Admin can disable via setting if not wanted
 - Mailbox immediately available in composer dropdown
 
-### 4.8 Shared Mailbox: User's Own Token
+### 5.8 Shared Mailbox: User's Own Token
 
 **Decision:** Each user sends from shared mailbox using their own OAuth token.
 
@@ -273,7 +366,7 @@ actual_message_id = self._fetch_sent_message_id(token, subject)
 
 ---
 
-## 5. API Permissions
+## 6. API Permissions
 
 All permissions are **Delegated** (user context, not application).
 
@@ -293,7 +386,7 @@ All permissions are **Delegated** (user context, not application).
 
 ---
 
-## 6. Field Naming Convention
+## 7. Field Naming Convention
 
 All custom fields use `x_` prefix per Odoo.sh guidelines:
 - `x_microsoft_access_token`
@@ -302,7 +395,7 @@ All custom fields use `x_` prefix per Odoo.sh guidelines:
 
 ---
 
-## 7. Custom Email Headers
+## 8. Custom Email Headers
 
 Added to outgoing emails for external workflow integration:
 
@@ -315,7 +408,7 @@ Added to outgoing emails for external workflow integration:
 
 ---
 
-## 8. Known Limitations
+## 9. Known Limitations
 
 ### Cannot Query SendAs Permissions via Graph API
 
@@ -328,7 +421,7 @@ Microsoft Graph API does not provide an endpoint to query which shared mailboxes
 
 ---
 
-## 9. Requirements Checklist
+## 10. Requirements Checklist
 
 ### Outgoing Email
 
@@ -349,9 +442,12 @@ Microsoft Graph API does not provide an endpoint to query which shared mailboxes
 | Sync from Microsoft 365 mailboxes | Done |
 | Reply threading via In-Reply-To | Done |
 | 2-way sync (Inbox + Sent Items) | Done |
-| Auto-create partners | Done |
+| Skip Odoo-originated emails | Done |
 | Skip history on first sync | Done |
 | Activity creation for assignment | Done |
+| Known partners only mode | Done |
+| Skip internal users (employees) | Done |
+| Full sync mode (with triage) | Future |
 
 ### Security
 
@@ -364,7 +460,7 @@ Microsoft Graph API does not provide an endpoint to query which shared mailboxes
 
 ---
 
-## 10. Log Tags
+## 11. Log Tags
 
 Use these tags when debugging:
 
