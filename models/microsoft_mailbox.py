@@ -44,18 +44,10 @@ class MicrosoftMailbox(models.Model):
     x_owner_user_id = fields.Many2one(
         'res.users',
         string='Owner',
-        help='For personal mailboxes: the user who owns this mailbox. '
-             'Only this user can see and send from this mailbox.',
-        index=True
-    )
-
-    x_sending_user_id = fields.Many2one(
-        'res.users',
-        string='Sending User',
         domain="[('x_microsoft_oauth_connected', '=', True)]",
-        help='User whose Microsoft account is used to send emails from this mailbox. '
-             'Required for Shared and Notification mailboxes. '
-             'For Personal mailboxes, the mailbox owner sends with their own account.'
+        help='Personal mailbox: the user who owns and sends from this mailbox.\n'
+             'Notification mailbox: the user whose OAuth token is used to send system emails.',
+        index=True
     )
 
     # -------------------------------------------------------------------------
@@ -249,18 +241,15 @@ class MicrosoftMailbox(models.Model):
                 if existing:
                     raise ValidationError(_('This email address is already registered!'))
 
-    @api.constrains('x_mailbox_type', 'x_sending_user_id')
-    def _check_sending_user_required(self):
-        """Ensure notification mailboxes have a sending user configured."""
+    @api.constrains('x_mailbox_type', 'x_owner_user_id')
+    def _check_owner_required(self):
+        """Ensure personal and notification mailboxes have an owner configured."""
         for record in self:
-            # Only notification mailboxes require a configured sending user
-            # Shared mailboxes: each user sends with their own OAuth token
-            # Personal mailboxes: owner sends with their own OAuth token
-            if record.x_mailbox_type == 'notification' and not record.x_sending_user_id:
+            if record.x_mailbox_type in ('personal', 'notification') and not record.x_owner_user_id:
                 raise ValidationError(_(
-                    'Notification mailbox requires a Sending User. '
+                    '%s mailbox requires an Owner. '
                     'Please select a user with Microsoft OAuth connected.'
-                ))
+                ) % record.x_mailbox_type.capitalize())
 
     @api.constrains('x_mailbox_type')
     def _check_single_notification_mailbox(self):
@@ -287,8 +276,8 @@ class MicrosoftMailbox(models.Model):
         """
         self.ensure_one()
         if self.x_mailbox_type == 'notification':
-            # Notification mailbox: use the configured sending user for system emails
-            return self.x_sending_user_id
+            # Notification mailbox: use the owner's OAuth token for system emails
+            return self.x_owner_user_id
         else:
             # Personal and Shared mailboxes: current user sends with their own OAuth token
             # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365

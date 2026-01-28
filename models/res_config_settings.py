@@ -167,7 +167,7 @@ class ResConfigSettings(models.TransientModel):
         notification_mailbox = self.env['x_microsoft.mailbox'].sudo().search([
             ('x_mailbox_type', '=', 'notification'),
             ('active', '=', True),
-            ('x_sending_user_id', '!=', False),
+            ('x_owner_user_id', '!=', False),
         ], limit=1)
 
         for record in self:

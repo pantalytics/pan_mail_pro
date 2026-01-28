@@ -54,7 +54,7 @@ pan_outlook_pro/
 |------|--------------|-------------------|----------|
 | **Personal** | Only owner | Owner's token | User's own mailbox (john@company.com) |
 | **Shared** | Everyone | Sender's own token | Team mailbox (sales@company.com) |
-| **Notification** | Everyone | Configured Sending User | System emails (notifications@company.com) |
+| **Notification** | Everyone | Owner's token | System emails (notifications@company.com) |
 
 ### Personal Mailbox
 
@@ -74,7 +74,7 @@ pan_outlook_pro/
 ### Notification Mailbox
 
 - For system notifications (activity reminders, mentions to internal users)
-- One centralized "Sending User" whose OAuth token is used
+- Uses the Owner's OAuth token (same field as personal mailboxes)
 - Only one active notification mailbox allowed
 
 ---
@@ -95,9 +95,9 @@ User clicks "Send"
       ▼
 ┌─────────────────────────────────────────────┐
 │ mail.mail._send()                            │
-│ - Determines mailbox + sending user          │
+│ - Determines mailbox + user for OAuth token  │
 │ - Personal/Shared: current user's token      │
-│ - Notification: configured user's token      │
+│ - Notification: owner's token                │
 └─────────────────────────────────────────────┘
       │
       ▼

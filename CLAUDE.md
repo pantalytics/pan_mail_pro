@@ -38,7 +38,7 @@ Send and receive emails via Microsoft Graph API with OAuth 2.0 delegated permiss
 |------|--------------|------------------|
 | Personal | Only owner | Owner's token |
 | Shared | Everyone | Sender's own token |
-| Notification | Everyone | Configured Sending User |
+| Notification | Everyone | Owner's token |
 
 ## Development
 

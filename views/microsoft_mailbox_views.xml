@@ -10,7 +10,6 @@
                 <field name="email"/>
                 <field name="x_mailbox_type" string="Type"/>
                 <field name="x_owner_user_id" string="Owner" optional="show"/>
-                <field name="x_sending_user_id" string="Sending User" optional="hide"/>
             </list>
         </field>
     </record>
@@ -29,11 +28,12 @@
                         </group>
                     </group>
 
-                    <!-- Owner (for personal mailboxes) -->
-                    <group invisible="x_mailbox_type != 'personal'">
+                    <!-- Owner (for personal and notification mailboxes) -->
+                    <group invisible="x_mailbox_type == 'shared'">
                         <group>
                             <field name="x_owner_user_id" string="Owner"
-                                   help="The user who owns this personal mailbox. Only this user can see and send from it."/>
+                                   required="x_mailbox_type in ('personal', 'notification')"
+                                   help="Personal: The user who owns this mailbox. Notification: The user whose account sends system emails."/>
                         </group>
                     </group>
 
@@ -47,28 +47,20 @@
                         Each user needs Mail.Send.Shared permission and "Send As" rights on this mailbox in Microsoft 365.
                     </div>
                     <div class="alert alert-warning mb-3" role="alert" invisible="x_mailbox_type != 'notification'">
-                        <strong>Notification Mailbox:</strong> Used for system notifications to internal users.
-                        Only one notification mailbox can be active. The Sending User's account will be used.
+                        <strong>Notification Mailbox:</strong> Used for system notifications to internal users (outgoing only).
+                        Only one notification mailbox can be active. The owner's Microsoft account will be used to send.
                     </div>
 
-                    <!-- Sending User (only required for notification mailbox) -->
-                    <group invisible="x_mailbox_type != 'notification'">
-                        <group>
-                            <field name="x_sending_user_id" string="Sending User"
-                                   required="x_mailbox_type == 'notification'"
-                                   help="User whose Microsoft account is used to send system notifications."/>
-                        </group>
-                    </group>
+                    <!-- Email Sync (hidden for notification mailboxes - outgoing only) -->
+                    <separator string="Email Sync" invisible="x_mailbox_type == 'notification'"/>
 
-                    <separator string="Email Sync"/>
-
-                    <group>
+                    <group invisible="x_mailbox_type == 'notification'">
                         <group>
                             <field name="x_sync_mode" string="Sync Mode" widget="radio"/>
                         </group>
                     </group>
 
-                    <group invisible="x_sync_mode == 'none'">
+                    <group invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
                         <group>
                             <field name="x_incoming_user_id" string="Sync User"
                                    required="x_sync_mode in ('1way', '2way')"
@@ -76,12 +68,12 @@
                         </group>
                     </group>
 
-                    <div class="text-muted mb-3" invisible="x_sync_mode == 'none'">
+                    <div class="text-muted mb-3" invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
                         <span invisible="x_sync_mode != '2way'">See replies your team sends directly from Outlook, not just incoming emails.</span>
                         <span invisible="x_sync_mode != '1way'">Only emails received in this mailbox will sync to Odoo.</span>
                     </div>
 
-                    <group invisible="x_sync_mode == 'none'">
+                    <group invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
                         <group>
                             <field name="x_create_activity" string="Create activity for new emails"/>
                             <field name="x_activity_user_id" string="Assign to"
@@ -93,7 +85,7 @@
                         </group>
                     </group>
 
-                    <group invisible="x_sync_mode == 'none'">
+                    <group invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
                         <div class="d-flex align-items-center gap-2">
                             <button name="action_test_incoming"
                                     string="Test Connection"
@@ -108,7 +100,7 @@
                         </div>
                     </group>
 
-                    <group invisible="state != 'error'">
+                    <group invisible="x_mailbox_type == 'notification' or state != 'error'">
                         <div class="alert alert-danger" role="alert">
                             <strong>Error:</strong> <field name="x_error_message" nolabel="1" readonly="1"/>
                         </div>

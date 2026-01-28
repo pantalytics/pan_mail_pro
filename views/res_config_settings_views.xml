@@ -66,6 +66,11 @@
                                             </tbody>
                                         </table>
                                     </li>
+                                    <li class="mb-2">Click <strong>Grant admin consent for [your tenant]</strong> (button above the permissions list)
+                                        <ul class="mt-1">
+                                            <li><em>Why?</em> Most organizations require admin approval for new apps. This pre-approves the app so users don't see "Need admin approval" errors.</li>
+                                        </ul>
+                                    </li>
                                     <li class="mb-2"><strong>Fill in the fields below and click Save</strong></li>
                                 </ol>
                             </div>
@@ -153,8 +158,8 @@
                             <div class="alert alert-light border mb-0" role="status" invisible="x_current_user_oauth_connected">
                                 <strong><i class="fa fa-info-circle me-1"/> Why connect now?</strong>
                                 <ul class="mb-0 mt-2">
-                                    <li>The notification mailbox (Step 5) requires a "Sending User" with Microsoft OAuth connected</li>
-                                    <li>As admin, you'll typically be the Sending User for system notifications</li>
+                                    <li>The notification mailbox (Step 5) requires an Owner with Microsoft OAuth connected</li>
+                                    <li>As admin, you'll typically be the Owner for system notifications</li>
                                     <li>Other users will connect later via their profile (Step 6)</li>
                                 </ul>
                             </div>
@@ -244,7 +249,7 @@
                                     <li>Click "Manage Mailbox List" in Step 4 above</li>
                                     <li>Create a new mailbox (e.g. <code>notifications@yourcompany.com</code>)</li>
                                     <li>Set Mailbox Type to <strong>"Notification Mailbox"</strong></li>
-                                    <li>Select yourself as the Sending User (you connected in Step 3)</li>
+                                    <li>Select yourself as the Owner (you connected in Step 3)</li>
                                 </ol>
                             </div>
 
@@ -283,14 +288,6 @@
                                 </ol>
                             </div>
 
-                            <div class="alert alert-light border mb-3" role="status">
-                                <strong><i class="fa fa-building me-1"/> Permission approval (depends on tenant settings):</strong>
-                                <ul class="mb-0 mt-2">
-                                    <li><strong>User consent enabled:</strong> User approves permissions directly during sign-in</li>
-                                    <li><strong>Admin consent workflow:</strong> User requests access → Admin approves → User can connect</li>
-                                    <li><strong>Admin pre-approval:</strong> Admin grants consent for all users in Azure Portal (API permissions → Grant admin consent)</li>
-                                </ul>
-                            </div>
 
                             <div class="text-muted">
                                 <i class="fa fa-lightbulb-o me-1"/>

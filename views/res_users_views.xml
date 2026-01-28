@@ -45,8 +45,12 @@
                     </group>
 
                     <group string="Email Preferences" invisible="not x_microsoft_oauth_connected">
+                        <div colspan="2" class="text-muted mb-3">
+                            For shared mailboxes, you need "Send As" permission in Microsoft 365.
+                        </div>
                         <field name="x_microsoft_default_mailbox_id"
                                string="Default Mailbox"
+                               domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
                     </group>
                 </page>
@@ -99,8 +103,12 @@
                     </group>
 
                     <group string="Email Preferences" invisible="not x_microsoft_oauth_connected">
+                        <div colspan="2" class="text-muted mb-3">
+                            For shared mailboxes, you need "Send As" permission in Microsoft 365.
+                        </div>
                         <field name="x_microsoft_default_mailbox_id"
                                string="Default Mailbox"
+                               domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
                     </group>
                 </page>

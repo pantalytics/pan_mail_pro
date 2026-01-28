@@ -42,52 +42,15 @@ git push
 
 ## Setup
 
-### 1. Azure App Registration
+After installing the module, go to **Settings** → scroll to **Outlook Pro**.
 
-1. Go to [Azure App Registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
-2. Click **New registration**
-3. Configure:
-   - **Name**: `Odoo Outlook Pro`
-   - **Supported account types**: `Accounts in this organizational directory only`
-4. Click **Register**
-5. Copy **Application (client) ID** and **Directory (tenant) ID**
+The settings page contains step-by-step instructions for:
+1. Creating an Azure App Registration
+2. Configuring API permissions and granting admin consent
+3. Connecting your Microsoft account
+4. Setting up mailboxes
 
-### 2. Create Client Secret
-
-1. Go to **Certificates & secrets**
-2. Click **New client secret**
-3. Set expiry (e.g., 24 months)
-4. **Copy the secret value immediately**
-
-### 3. Configure API Permissions
-
-1. Go to **API permissions** → **Add a permission**
-2. Select **Microsoft Graph** → **Delegated permissions**
-3. Add:
-   - `openid`, `profile`, `email`, `offline_access`
-   - `User.Read`
-   - `Mail.Send`, `Mail.Send.Shared`
-   - `Mail.Read`, `Mail.Read.Shared`
-4. Click **Grant admin consent**
-
-### 4. Configure in Odoo
-
-1. Go to **Settings** → scroll to **Outlook Pro**
-2. Enter Client ID, Client Secret, and Tenant ID
-3. Copy the **Redirect URI** shown
-4. Click **Save**
-
-### 5. Add Redirect URI in Azure
-
-1. In Azure, go to **Authentication**
-2. Click **Add a platform** → **Web**
-3. Paste the redirect URI from Odoo
-4. Click **Configure**
-
-### 6. Test Configuration
-
-1. Click **Test Configuration** in Odoo settings
-2. Should show "Tenant ID verified"
+Follow the instructions in Odoo - they include links to the correct Azure Portal pages and explain each step.
 
 ---
 
