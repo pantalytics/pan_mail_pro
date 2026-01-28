@@ -201,6 +201,10 @@ class MicrosoftMailbox(models.Model):
         processor = self.env['microsoft.incoming.mail.processor']
         processor._process_mailbox(self)
 
+        # Mark as active on success (clear any previous error)
+        if self.state != 'active':
+            self.write({'state': 'active', 'x_error_message': False})
+
         # Reload the form to show updated status
         return {
             'type': 'ir.actions.act_window',
@@ -239,15 +243,23 @@ class MicrosoftMailbox(models.Model):
                 if existing:
                     raise ValidationError(_('This email address is already registered!'))
 
-    @api.constrains('x_mailbox_type', 'x_owner_user_id')
+    @api.constrains('x_mailbox_type', 'x_owner_user_id', 'x_sync_mode')
     def _check_owner_required(self):
-        """Ensure personal and notification mailboxes have an owner configured."""
+        """Ensure owner is set when required."""
         for record in self:
             if record.x_mailbox_type in ('personal', 'notification') and not record.x_owner_user_id:
                 raise ValidationError(_(
                     '%s mailbox requires an Owner. '
                     'Please select a user with Microsoft OAuth connected.'
                 ) % record.x_mailbox_type.capitalize())
+            # Shared mailbox with sync enabled requires owner
+            if (record.x_mailbox_type == 'shared' and
+                    record.x_sync_mode != 'none' and
+                    not record.x_owner_user_id):
+                raise ValidationError(_(
+                    'Shared mailbox with sync enabled requires an Owner. '
+                    'The Owner\'s Microsoft account will be used to read emails.'
+                ))
 
     @api.constrains('x_mailbox_type')
     def _check_single_notification_mailbox(self):

@@ -28,14 +28,16 @@
                         </group>
                     </group>
 
-                    <!-- Owner (for personal and notification mailboxes) -->
-                    <group invisible="x_mailbox_type == 'shared'">
+                    <!-- Owner -->
+                    <group>
                         <group>
                             <field name="x_owner_user_id" string="Owner"
-                                   required="x_mailbox_type in ('personal', 'notification')"
-                                   help="Personal: The user who owns this mailbox. Notification: The user whose account sends system emails."/>
+                                   required="x_mailbox_type in ('personal', 'notification') or (x_mailbox_type == 'shared' and x_sync_mode != 'none')"/>
                         </group>
                     </group>
+                    <div class="text-muted mb-3" invisible="x_mailbox_type != 'shared'">
+                        For sync, the Owner's Microsoft account reads this mailbox. For sending, each user sends with their own account.
+                    </div>
 
                     <!-- Help text based on mailbox type -->
                     <div class="alert alert-info mb-3" role="alert" invisible="x_mailbox_type != 'personal'">

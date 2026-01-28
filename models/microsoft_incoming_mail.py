@@ -65,9 +65,18 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         """
         _logger.info(f"[Incoming Mail] Processing mailbox: {mailbox.email}")
 
-        # First sync: set last_sync_date to now to avoid fetching old emails
+        # First sync: test connection, then set last_sync_date to now
         if not mailbox.x_last_sync_date:
-            _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, setting sync date to now (no old emails will be fetched)")
+            _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, testing connection...")
+            # Test connection by fetching 1 message (don't import, just verify access)
+            graph_client = self.env['microsoft.graph.client']
+            graph_client.fetch_messages(
+                user=mailbox.x_owner_user_id,
+                mailbox_email=mailbox.email,
+                folder='Inbox',
+                top=1,  # Just test, don't fetch all
+            )
+            _logger.info(f"[Incoming Mail] Connection test passed for {mailbox.email}, setting sync date to now")
             mailbox.write({'x_last_sync_date': fields.Datetime.now()})
             return  # Skip this run, start fetching from next cron run
 
