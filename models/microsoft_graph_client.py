@@ -619,3 +619,29 @@ class MicrosoftGraphClient(models.AbstractModel):
         except Exception as e:
             _logger.warning(f"[Graph API] Could not fetch token identity: {e}")
             return "UNKNOWN (failed to fetch /me)"
+
+    def get_user_email(self, token):
+        """
+        Get the email address of the authenticated Microsoft user.
+
+        Args:
+            token: Valid OAuth access token
+
+        Returns:
+            str: Email address or None if not available
+        """
+        try:
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json',
+            }
+
+            response = requests.get('https://graph.microsoft.com/v1.0/me', headers=headers, timeout=10)
+            response.raise_for_status()
+            user_info = response.json()
+
+            return user_info.get('mail') or user_info.get('userPrincipalName')
+
+        except Exception as e:
+            _logger.warning(f"[Graph API] Could not fetch user email: {e}")
+            return None

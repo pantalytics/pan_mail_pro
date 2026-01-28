@@ -9,8 +9,8 @@ class MailComposeMessage(models.TransientModel):
     x_microsoft_send_from_id = fields.Many2one(
         'x_microsoft.mailbox',
         string='Send From',
-        domain=[('active', '=', True)],
         help='Select which Microsoft mailbox to send this email from'
+        # Domain is set dynamically in the view to filter by owner for personal mailboxes
     )
 
     @api.model

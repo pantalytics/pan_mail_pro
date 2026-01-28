@@ -9,7 +9,8 @@
                 <field name="sequence" widget="handle"/>
                 <field name="email"/>
                 <field name="x_mailbox_type" string="Type"/>
-                <field name="x_sending_user_id" string="Sending User" optional="show"/>
+                <field name="x_owner_user_id" string="Owner" optional="show"/>
+                <field name="x_sending_user_id" string="Sending User" optional="hide"/>
             </list>
         </field>
     </record>
@@ -28,27 +29,34 @@
                         </group>
                     </group>
 
+                    <!-- Owner (for personal mailboxes) -->
+                    <group invisible="x_mailbox_type != 'personal'">
+                        <group>
+                            <field name="x_owner_user_id" string="Owner"
+                                   help="The user who owns this personal mailbox. Only this user can see and send from it."/>
+                        </group>
+                    </group>
+
                     <!-- Help text based on mailbox type -->
                     <div class="alert alert-info mb-3" role="alert" invisible="x_mailbox_type != 'personal'">
-                        <strong>Personal Mailbox:</strong> Each user sends emails using their own Microsoft account.
-                        No additional configuration needed here - users connect their account in their profile.
+                        <strong>Personal Mailbox:</strong> This mailbox belongs to the owner specified above.
+                        Only the owner can see and send from this mailbox in the composer dropdown.
                     </div>
                     <div class="alert alert-info mb-3" role="alert" invisible="x_mailbox_type != 'shared'">
-                        <strong>Shared Mailbox:</strong> Multiple users can send from this mailbox.
-                        The Sending User's Microsoft account will be used for all outgoing emails.
-                        Make sure this user has "Send As" permission on this mailbox in Microsoft 365.
+                        <strong>Shared Mailbox:</strong> All users can send from this mailbox using their own Microsoft account.
+                        Each user needs Mail.Send.Shared permission and "Send As" rights on this mailbox in Microsoft 365.
                     </div>
                     <div class="alert alert-warning mb-3" role="alert" invisible="x_mailbox_type != 'notification'">
                         <strong>Notification Mailbox:</strong> Used for system notifications to internal users.
                         Only one notification mailbox can be active. The Sending User's account will be used.
                     </div>
 
-                    <!-- Sending User (required for shared and notification) -->
-                    <group invisible="x_mailbox_type == 'personal'">
+                    <!-- Sending User (only required for notification mailbox) -->
+                    <group invisible="x_mailbox_type != 'notification'">
                         <group>
                             <field name="x_sending_user_id" string="Sending User"
-                                   required="x_mailbox_type in ('shared', 'notification')"
-                                   help="User whose Microsoft account is used to send emails from this mailbox."/>
+                                   required="x_mailbox_type == 'notification'"
+                                   help="User whose Microsoft account is used to send system notifications."/>
                         </group>
                     </group>
 

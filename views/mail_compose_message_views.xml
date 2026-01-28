@@ -10,6 +10,7 @@
             <xpath expr="//field[@name='email_from']" position="after">
                 <field name="x_microsoft_send_from_id"
                        placeholder="Select mailbox to send from..."
+                       domain="['&amp;', ('active', '=', True), '|', ('x_mailbox_type', 'in', ['shared', 'notification']), '|', ('x_owner_user_id', '=', uid), ('x_owner_user_id', '=', False)]"
                        options="{'no_create': True, 'no_open': True}"/>
             </xpath>
         </field>

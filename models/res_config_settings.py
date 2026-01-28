@@ -35,6 +35,14 @@ class ResConfigSettings(models.TransientModel):
         string='Notification Configured'
     )
 
+    # Mailbox settings
+    x_microsoft_allow_personal_mailboxes = fields.Boolean(
+        string='Allow Personal Mailboxes',
+        help='When enabled, a personal mailbox is automatically created when a user connects their Microsoft account.',
+        config_parameter='x_pan_outlook_pro.allow_personal_mailboxes',
+        default=True,
+    )
+
     # Microsoft OAuth Configuration
     x_microsoft_client_id = fields.Char(
         string='Microsoft Client ID',

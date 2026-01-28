@@ -41,6 +41,14 @@ class MicrosoftMailbox(models.Model):
              'Shared: Multiple users can send from this mailbox (e.g., support@company.com)\n'
              'Notification: System notifications mailbox (e.g., notifications@company.com)')
 
+    x_owner_user_id = fields.Many2one(
+        'res.users',
+        string='Owner',
+        help='For personal mailboxes: the user who owns this mailbox. '
+             'Only this user can see and send from this mailbox.',
+        index=True
+    )
+
     x_sending_user_id = fields.Many2one(
         'res.users',
         string='Sending User',
@@ -243,11 +251,14 @@ class MicrosoftMailbox(models.Model):
 
     @api.constrains('x_mailbox_type', 'x_sending_user_id')
     def _check_sending_user_required(self):
-        """Ensure shared and notification mailboxes have a sending user configured."""
+        """Ensure notification mailboxes have a sending user configured."""
         for record in self:
-            if record.x_mailbox_type in ('shared', 'notification') and not record.x_sending_user_id:
+            # Only notification mailboxes require a configured sending user
+            # Shared mailboxes: each user sends with their own OAuth token
+            # Personal mailboxes: owner sends with their own OAuth token
+            if record.x_mailbox_type == 'notification' and not record.x_sending_user_id:
                 raise ValidationError(_(
-                    'Shared and Notification mailboxes require a Sending User. '
+                    'Notification mailbox requires a Sending User. '
                     'Please select a user with Microsoft OAuth connected.'
                 ))
 
@@ -272,16 +283,16 @@ class MicrosoftMailbox(models.Model):
         Get the user whose OAuth token should be used for sending from this mailbox.
 
         Returns:
-            res.users: The user to use for sending, or False if not configured
+            res.users: The user to use for sending, or False if current user should be used
         """
         self.ensure_one()
-        if self.x_mailbox_type == 'personal':
-            # For personal mailboxes, the sending user is determined by the email author
-            # This is handled in mail_mail._get_mailbox_and_user()
-            return False
-        else:
-            # For shared and notification mailboxes, use the configured sending user
+        if self.x_mailbox_type == 'notification':
+            # Notification mailbox: use the configured sending user for system emails
             return self.x_sending_user_id
+        else:
+            # Personal and Shared mailboxes: current user sends with their own OAuth token
+            # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365
+            return False
 
     def get_graph_user_id(self):
         """

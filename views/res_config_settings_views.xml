@@ -128,6 +128,13 @@
                         <field name="x_microsoft_mailbox_count" invisible="1"/>
                         <setting string="Configure Email Mailboxes" help="Add your Microsoft 365 mailboxes to Odoo" class="col-12 col-lg-12">
 
+                            <div class="d-flex align-items-center mb-3">
+                                <field name="x_microsoft_allow_personal_mailboxes" class="oe_inline"/>
+                                <label for="x_microsoft_allow_personal_mailboxes" class="ms-2">
+                                    Auto-create personal mailbox when user connects Microsoft account
+                                </label>
+                            </div>
+
                             <div class="text-muted mb-3">
                                 First create mailboxes in Microsoft 365 Admin Center, then register them here so users can select them in Odoo.
                             </div>
