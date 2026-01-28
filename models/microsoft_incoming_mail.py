@@ -35,7 +35,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         """
         mailboxes = self.env['x_microsoft.mailbox'].search([
             ('x_incoming_enabled', '=', True),
-            ('x_incoming_user_id', '!=', False),
+            ('x_owner_user_id', '!=', False),
             ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
         ])
 
@@ -103,7 +103,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         # Fetch messages since last sync
         messages = graph_client.fetch_messages(
-            user=mailbox.x_incoming_user_id,
+            user=mailbox.x_owner_user_id,
             mailbox_email=mailbox.email,
             folder=folder,
             since_datetime=mailbox.x_last_sync_date,
@@ -145,7 +145,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # Get full message with headers for threading
         graph_client = self.env['microsoft.graph.client']
         full_message = graph_client.get_message_with_headers(
-            user=mailbox.x_incoming_user_id,
+            user=mailbox.x_owner_user_id,
             mailbox_email=mailbox.email,
             message_id=msg_data['id'],
         )
@@ -154,7 +154,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         attachments = []
         if full_message.get('hasAttachments'):
             attachments = graph_client.get_message_attachments(
-                user=mailbox.x_incoming_user_id,
+                user=mailbox.x_owner_user_id,
                 mailbox_email=mailbox.email,
                 message_id=msg_data['id'],
             )

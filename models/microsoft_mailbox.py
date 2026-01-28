@@ -87,12 +87,14 @@ class MicrosoftMailbox(models.Model):
         store=True
     )
 
-    @api.depends('x_sync_mode', 'x_incoming_user_id')
+    @api.depends('x_sync_mode', 'x_owner_user_id')
     def _compute_incoming_enabled(self):
+        """Incoming sync is enabled when sync_mode is set and owner has OAuth."""
         for record in self:
             record.x_incoming_enabled = (
                 record.x_sync_mode in ('1way', '2way') and
-                bool(record.x_incoming_user_id)
+                bool(record.x_owner_user_id) and
+                record.x_owner_user_id.x_microsoft_oauth_connected
             )
 
     @api.depends('x_sync_mode')
@@ -130,11 +132,11 @@ class MicrosoftMailbox(models.Model):
         """Test incoming mail configuration by fetching a few messages."""
         self.ensure_one()
 
-        if not self.x_incoming_user_id:
-            raise UserError(_('Please select a user to sync as.'))
+        if not self.x_owner_user_id:
+            raise UserError(_('Please select an Owner for this mailbox.'))
 
-        if not self.x_incoming_user_id.x_microsoft_oauth_connected:
-            raise UserError(_('The selected user is not connected to Microsoft. '
+        if not self.x_owner_user_id.x_microsoft_oauth_connected:
+            raise UserError(_('The Owner is not connected to Microsoft. '
                               'Please connect their account first.'))
 
         graph_client = self.env['microsoft.graph.client']
@@ -142,7 +144,7 @@ class MicrosoftMailbox(models.Model):
         try:
             # Try to fetch 1 message to test connection
             messages = graph_client.fetch_messages(
-                user=self.x_incoming_user_id,
+                user=self.x_owner_user_id,
                 mailbox_email=self.email,
                 folder='Inbox',
                 top=1
@@ -189,34 +191,30 @@ class MicrosoftMailbox(models.Model):
         if self.x_sync_mode == 'none':
             raise UserError(_('Sync mode is set to "No sync". Change it to enable syncing.'))
 
-        if not self.x_incoming_user_id:
-            raise UserError(_('Please select a Sync User first.'))
+        if not self.x_owner_user_id:
+            raise UserError(_('Please select an Owner first.'))
+
+        if not self.x_owner_user_id.x_microsoft_oauth_connected:
+            raise UserError(_('Owner "%s" is not connected to Microsoft.') % self.x_owner_user_id.name)
 
         # Trigger the processor for this mailbox
         processor = self.env['microsoft.incoming.mail.processor']
         processor._process_mailbox(self)
 
-        # Reload the form to show updated last sync time
+        # Reload the form to show updated status
         return {
             'type': 'ir.actions.act_window',
             'res_model': 'x_microsoft.mailbox',
             'res_id': self.id,
             'view_mode': 'form',
+            'views': [(False, 'form')],
             'target': 'current',
         }
 
     @api.onchange('x_sync_mode')
     def _onchange_sync_mode(self):
-        """Clear sync user when switching to no sync."""
+        """Reset state when switching to no sync."""
         if self.x_sync_mode == 'none':
-            self.x_incoming_user_id = False
-            self.state = 'draft'
-            self.x_error_message = False
-
-    @api.onchange('x_incoming_user_id')
-    def _onchange_incoming_user_id(self):
-        """Reset state when sync user is cleared."""
-        if not self.x_incoming_user_id:
             self.state = 'draft'
             self.x_error_message = False
 
