@@ -170,8 +170,38 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             return token_data.get('access_token')
         except requests.exceptions.RequestException as e:
-            _logger.error(f"Failed to refresh token for user {user.id}: {e}")
-            raise UserError(_('Failed to refresh Microsoft token: %s') % str(e))
+            error_code = None
+            error_description = str(e)
+
+            # Extract error details from Microsoft response
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_json = e.response.json()
+                    error_code = error_json.get('error')
+                    error_description = error_json.get('error_description', str(e))
+                except (ValueError, KeyError):
+                    pass
+
+            _logger.error(f"Failed to refresh token for user {user.id}: {error_code} - {error_description}")
+
+            # Check for permanent failures that require re-authentication
+            # invalid_grant: token revoked, expired, or user changed password
+            # invalid_client: app credentials changed
+            permanent_errors = ('invalid_grant', 'invalid_client', 'unauthorized_client')
+            if error_code in permanent_errors:
+                _logger.warning(f"[OAuth] Permanent token failure for user {user.id}, clearing tokens")
+                # Clear invalid tokens so user can reconnect
+                user.sudo().write({
+                    'x_microsoft_access_token_encrypted': False,
+                    'x_microsoft_refresh_token_encrypted': False,
+                    'x_microsoft_token_expiry': False,
+                })
+                raise UserError(_(
+                    'Your Microsoft connection has expired or been revoked. '
+                    'Please reconnect your Microsoft account.'
+                ))
+
+            raise UserError(_('Failed to refresh Microsoft token: %s') % error_description)
 
     @api.model
     def get_valid_token(self, user):
