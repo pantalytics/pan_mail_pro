@@ -110,11 +110,13 @@ Each mailbox can be configured with a sync mode that determines how incoming ema
 
 ### Known Partners Only (Recommended)
 
-**Decision:** Only sync emails from senders that already exist as partners in Odoo.
+**Decision:** Only sync emails from/to contacts that already exist as partners in Odoo.
 
-**Filter logic:**
+**Filter logic differs between Inbox and Sent Items:**
+
+**Inbox (incoming emails):**
 ```python
-# 1. Skip if sender is from internal domain (uses "Internal Domains" setting)
+# 1. Skip if sender is from internal domain
 if sender_domain in internal_domains_setting:
     skip("Internal domain")
 
@@ -133,7 +135,31 @@ if partner.user_ids:
 process_email()
 ```
 
-**What gets synced:**
+**Sent Items (outgoing emails for 2-way sync):**
+```python
+# 1. NO internal domain check (we sent it, we know it's valid)
+
+# 2. Find partner by RECIPIENT email (first toRecipient)
+partner = find_partner(to_email)
+
+# 3. Skip if recipient not in Odoo
+if not partner:
+    skip("Unknown recipient")
+
+# 4. Skip if recipient is an internal user (colleague with Odoo account)
+if partner.user_ids:
+    skip("Internal user")
+
+# 5. Process the email (author = mailbox owner)
+process_email()
+```
+
+**Why Sent Items uses different logic:**
+- **No internal domain check:** The sender is always "us" (the mailbox). Checking the internal domain would skip ALL sent emails.
+- **Use recipient, not sender:** We want to sync emails TO external contacts, not from ourselves.
+- **Still skip internal users:** Emails to colleagues don't need to be synced (they have Odoo inbox).
+
+**What gets synced (Inbox):**
 
 | Scenario | Internal domain? | Partner exists? | Has user? | Result |
 |----------|------------------|-----------------|-----------|--------|
@@ -144,23 +170,114 @@ process_email()
 | Spam/marketing | - | - | - | Skip |
 | Unknown sender | - | - | - | Skip |
 
+**What gets synced (Sent Items):**
+
+| Scenario | Partner exists? | Has user? | Result |
+|----------|-----------------|-----------|--------|
+| Email to customer | ✓ | - | **Sync** |
+| Email to new lead | ✓ | - | **Sync** |
+| Email to colleague | ✓ | ✓ | Skip |
+| Email to unknown recipient | - | - | Skip |
+
 **Why this approach:**
 - Simple "Internal Domains" setting in Outlook Pro configuration
 - Explicit control over which domains are excluded
-- Internal employees filtered via domain OR via `partner.user_ids` (defense in depth)
+- Internal employees filtered via domain (Inbox) OR via `partner.user_ids` (both folders)
 - Replies always work (partner was created when we sent to them)
 - Spam/marketing naturally filtered (not in contacts)
 - Simple to understand and maintain
 
-### Full Sync (Future Roadmap)
+### Roadmap: Email Routing Options
 
-**Status:** Not implemented. This option is not available in the UI.
+**Status:** Planned for v1.1
 
-**Planned features (roadmap):**
-- Sync all emails including unknown senders
-- Staging inbox for manual triage
-- AI suggestions for routing
-- Rules engine for auto-classification
+**Current behavior:** New incoming emails are posted to the partner's chatter.
+
+**Planned:** Add configurable routing per mailbox to automatically create records:
+
+| Route Option | Target Model | Use Case |
+|--------------|--------------|----------|
+| Contact Chatter | `res.partner` | Current behavior |
+| **CRM Lead** | `crm.lead` (type=lead) | Default for sales mailboxes |
+| CRM Opportunity | `crm.lead` (type=opportunity) | Direct pipeline |
+| Helpdesk Ticket | `helpdesk.ticket` | Support mailboxes |
+
+**Routing logic:**
+```
+Email arrives
+    │
+    ▼
+Reply check (In-Reply-To header)
+    │
+    ├── Match found → Post to existing thread (any model)
+    │
+    └── No match → Route based on mailbox setting:
+                   → CRM Lead (default for new conversations)
+                   → Helpdesk Ticket
+                   → Partner Chatter (fallback)
+```
+
+**Benefits for AI integration:**
+- Each conversation = 1 Lead record
+- Leads linked to `partner_id` → aggregate per company
+- Structured data for AI summaries per customer
+
+### Roadmap: Unknown Contact Triage (AI-Assisted)
+
+**Status:** Planned for v2.0
+
+**Goal:** Allow syncing emails from unknown senders with AI-powered qualification.
+
+**Approach:** Use existing Odoo models with ICP (Ideal Customer Profile) qualification.
+
+**New field on `res.partner`:**
+```python
+x_icp_qualified = fields.Selection([
+    ('pending', 'Pending Review'),      # New contact, not yet qualified
+    ('qualified', 'Qualified (ICP)'),   # Matches Ideal Customer Profile
+    ('not_qualified', 'Not Qualified'), # Does not match ICP, skip emails
+], default='pending', string='ICP Status')
+```
+
+**Triage flow:**
+```
+Unknown sender email arrives
+    │
+    ▼
+┌─────────────────────────────────────┐
+│ Auto-create contact (pending)       │
+│ x_icp_qualified = 'pending'         │
+└─────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────┐
+│ AI analyzes email + company info    │
+│ → Suggests: Qualified / Not         │
+└─────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────┐
+│ User reviews & approves             │
+│ Sets x_icp_qualified                │
+└─────────────────────────────────────┘
+    │
+    ▼
+Future emails from this contact:
+├── qualified → Sync normally
+└── not_qualified → Skip
+```
+
+**Why this approach:**
+- Uses existing `res.partner` model (no new tables)
+- Simple boolean-like qualification
+- AI suggests, human approves (human-in-the-loop)
+- Once qualified, no further triage needed
+- Scales: millions of contacts, only review new ones
+
+**AI Integration points:**
+1. **Qualification suggestion:** Analyze email content, company domain, LinkedIn data
+2. **Customer summary:** Aggregate all Leads per company for account overview
+3. **Smart routing:** Suggest Lead vs Ticket based on content
 
 ### Pre-filters (Always Applied)
 

@@ -13,8 +13,9 @@ Complete Microsoft 365 email integration for Odoo - send and receive with full c
 **Incoming Email:**
 - Automatic sync from Microsoft 365 mailboxes (1 min interval)
 - 2-way sync: Inbox and Sent Items
-- Reply threading via In-Reply-To headers
+- Reply threading via In-Reply-To headers + Microsoft conversationId fallback
 - Known partners filter: only sync emails from existing contacts
+- New emails create CRM Leads with activity for mailbox owner
 
 **Security:**
 - OAuth 2.0 with delegated permissions only (least privilege)
@@ -105,7 +106,11 @@ Go to **Settings** → **Outlook Pro** → **Manage Mailbox List**
 
 ### Reply threading not working
 
-Check logs for "Retrieved Microsoft Message-ID". The module fetches Microsoft's Message-ID after sending for correct threading.
+Threading uses two methods:
+1. **In-Reply-To header** - Standard email threading (works for Inbox)
+2. **Microsoft conversationId** - Fallback when headers unavailable (works for Sent Items)
+
+Check logs for "Threading reply to" entries. If replies go to the wrong record, ensure the original email was synced first (conversationId must be stored).
 
 ### Emails not syncing
 
@@ -138,6 +143,22 @@ This module uses **Delegated Permissions only** - the app acts on behalf of the 
 | Shared mailbox | User needs M365 SendAs permission |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
+
+---
+
+## Roadmap
+
+### v1.1 - Configurable Routing
+- Per-mailbox routing: Lead, Opportunity, Helpdesk Ticket
+- Currently all new emails create CRM Leads
+
+### v2.0 - AI-Assisted Triage
+- Sync emails from unknown senders
+- AI suggests contact qualification (ICP match)
+- Human approves, future emails auto-routed
+- Customer summaries per company
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed roadmap.
 
 ---
 

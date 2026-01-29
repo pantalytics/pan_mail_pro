@@ -157,32 +157,47 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         # Check for Odoo-originated emails (skip to prevent import loops)
         # We add X-Odoo-* headers to all outgoing emails
-        headers = {h['name'].lower(): h['value']
-                   for h in full_message.get('internetMessageHeaders', [])}
+        raw_headers = full_message.get('internetMessageHeaders', [])
+        headers = {h['name'].lower(): h['value'] for h in raw_headers}
         if headers.get('x-odoo-model') or headers.get('x-odoo-mail-id'):
             _logger.info(f"[Incoming Mail] Skipping Odoo-originated email: {internet_message_id}")
             return False
 
-        # Extract sender info for filtering and partner matching
-        from_data = full_message.get('from', {}).get('emailAddress', {})
-        from_email = from_data.get('address', '')
-        from_name = from_data.get('name', '')
+        # Determine if this is incoming or outgoing (for 2-way sync)
+        is_outgoing = folder == 'SentItems'
 
-        _logger.info(f"[Incoming Mail] From: name='{from_name}', email='{from_email}'")
+        # For incoming: use sender (from). For outgoing: use first recipient (to)
+        if is_outgoing:
+            # Sent Items: get the recipient
+            to_recipients = full_message.get('toRecipients', [])
+            if not to_recipients:
+                _logger.info(f"[Incoming Mail] Skipping sent email without recipients: {internet_message_id}")
+                return False
+            contact_data = to_recipients[0].get('emailAddress', {})
+            contact_email = contact_data.get('address', '')
+            contact_name = contact_data.get('name', '')
+            _logger.info(f"[Incoming Mail] Sent to: name='{contact_name}', email='{contact_email}'")
+        else:
+            # Inbox: use the sender
+            from_data = full_message.get('from', {}).get('emailAddress', {})
+            contact_email = from_data.get('address', '')
+            contact_name = from_data.get('name', '')
+            _logger.info(f"[Incoming Mail] From: name='{contact_name}', email='{contact_email}'")
 
         # Apply sync mode filter: "known_partners" mode only syncs from existing contacts
+        # For Sent Items, we skip internal domain check (we sent it, we want it synced)
         if mailbox.x_sync_mode == 'known_partners':
-            # Skip emails from internal domains (company employees)
-            if self._is_internal_domain(from_email):
-                _logger.info(f"[Incoming Mail] Skipping internal domain: {from_email}")
+            # Skip emails from/to internal domains (only for incoming)
+            if not is_outgoing and self._is_internal_domain(contact_email):
+                _logger.info(f"[Incoming Mail] Skipping internal domain: {contact_email}")
                 return False
 
-            partner = self._find_partner(from_email)
+            partner = self._find_partner(contact_email)
             if not partner:
-                _logger.info(f"[Incoming Mail] Skipping unknown sender (not in contacts): {from_email}")
+                _logger.info(f"[Incoming Mail] Skipping unknown contact (not in Odoo): {contact_email}")
                 return False
             if partner.user_ids:
-                _logger.info(f"[Incoming Mail] Skipping internal user: {partner.name} ({from_email})")
+                _logger.info(f"[Incoming Mail] Skipping internal user: {partner.name} ({contact_email})")
                 return False
             _logger.info(f"[Incoming Mail] Known partner filter passed: {partner.name}")
 
@@ -195,33 +210,50 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 message_id=msg_data['id'],
             )
 
-        # Determine if this is incoming or outgoing (for 2-way sync)
-        is_outgoing = folder == 'SentItems'
-
-        # Find or create the partner (sender) for author_id
+        # Find or create the partner (contact) for chatter posting
         partner = None
-        if from_email:
-            partner = self._find_or_create_partner(from_email, from_name)
+        if contact_email:
+            partner = self._find_or_create_partner(contact_email, contact_name)
             _logger.info(f"[Incoming Mail] Partner resolved: {partner.name} (id={partner.id}, email={partner.email})")
 
         if not partner:
-            _logger.warning(f"[Incoming Mail] Could not resolve partner for {from_email}, skipping")
+            _logger.warning(f"[Incoming Mail] Could not resolve partner for {contact_email}, skipping")
             return False
 
-        # Check for threading: find parent message via In-Reply-To header
+        # Check for threading: find parent message via In-Reply-To header or conversationId
         # If this is a reply, post to the SAME record as the parent message
         parent_message = False
         target_record = partner  # Default: post to partner's chatter
         in_reply_to = headers.get('in-reply-to')
+        conversation_id = full_message.get('conversationId')
 
+        # Try In-Reply-To header first (standard email threading)
         if in_reply_to:
             parent_message = self.env['mail.message'].search([
                 ('message_id', '=', in_reply_to)
             ], limit=1)
-            if parent_message and parent_message.model and parent_message.res_id:
-                # Reply to existing thread - post to the same record
-                target_record = self.env[parent_message.model].browse(parent_message.res_id)
-                _logger.info(f"[Incoming Mail] Reply to {parent_message.model}/{parent_message.res_id}")
+
+        # Fallback to Microsoft conversationId if In-Reply-To didn't work
+        # This is especially useful for Sent Items where Graph API may not return headers
+        if not parent_message and conversation_id:
+            parent_message = self.env['mail.message'].search([
+                ('x_microsoft_conversation_id', '=', conversation_id),
+                ('model', '!=', False),
+                ('res_id', '!=', False),
+            ], order='id asc', limit=1)
+
+        if parent_message and parent_message.model and parent_message.res_id:
+            # Reply to existing thread - post to the same record
+            target_record = self.env[parent_message.model].browse(parent_message.res_id)
+            _logger.info(f"[Incoming Mail] Threading reply to {parent_message.model}/{parent_message.res_id}")
+
+        # For new incoming emails (not replies, not sent items), create CRM Lead
+        if not parent_message and not is_outgoing:
+            target_record = self._get_or_create_lead_for_email(
+                partner=partner,
+                subject=full_message.get('subject', ''),
+                contact_email=contact_email,
+            )
 
         # Prepare attachment data for message_post
         attachment_ids = []
@@ -247,25 +279,50 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         if body.get('contentType') == 'html' and body_content:
             body_content = Markup(body_content)
 
+        # Determine author: for incoming it's the contact, for outgoing it depends on mailbox type
+        if is_outgoing:
+            from_data = full_message.get('from', {}).get('emailAddress', {})
+            author_email = from_data.get('address', mailbox.email)
+            author_name = from_data.get('name', '')
+
+            if mailbox.x_mailbox_type == 'shared':
+                # Shared mailbox: use a partner for the mailbox itself (e.g., "team1" for team1@company.com)
+                author = self._find_or_create_partner(mailbox.email)
+                _logger.info(f"[Incoming Mail] Shared mailbox author: {author.name}")
+            else:
+                # Personal/notification: use the owner's partner
+                author = mailbox.x_owner_user_id.partner_id
+        else:
+            # Received email: author is the sender (the contact)
+            author = partner
+            author_email = contact_email
+            author_name = contact_name
+
         # Post message to the target record:
         # - If reply: post to the same record as the parent (sale.order, lead, etc.)
-        # - If new: post to the contact's chatter
+        # - If new incoming: post to a new CRM Lead (or partner if CRM not installed)
+        # - If sent item: post to the contact's chatter
         try:
             message = target_record.message_post(
                 body=body_content,
                 subject=full_message.get('subject', ''),
                 message_type='email',
                 subtype_xmlid='mail.mt_comment',
-                author_id=partner.id,  # The sender is the author
-                email_from=f'"{from_name}" <{from_email}>' if from_name else from_email,
+                author_id=author.id,
+                email_from=f'"{author_name}" <{author_email}>' if author_name else author_email,
                 message_id=internet_message_id,
                 parent_id=parent_message.id if parent_message else False,
                 attachment_ids=attachment_ids,
             )
 
+            # Store Microsoft conversationId for threading future replies
+            # This is crucial because Graph API doesn't always return In-Reply-To headers
+            if conversation_id:
+                message.write({'x_microsoft_conversation_id': conversation_id})
+
             # Create activity for new emails (only for incoming, not sent items, and only for new threads)
             if mailbox.x_create_activity and not is_outgoing and not parent_message:
-                self._create_review_activity(mailbox, partner.id)
+                self._create_review_activity(mailbox, target_record)
 
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
             return True
@@ -274,27 +331,34 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.exception(f"[Incoming Mail] Failed to process message: {internet_message_id}")
             raise
 
-    def _create_review_activity(self, mailbox, partner_id):
+    def _create_review_activity(self, mailbox, target_record):
         """
-        Create an activity for the team to review a new email.
+        Create an activity for the mailbox owner to review a new email.
 
         Args:
             mailbox: x_microsoft.mailbox record
-            partner_id: ID of the partner the message was posted to
+            target_record: The record the message was posted to (crm.lead or res.partner)
         """
-        if not mailbox.x_activity_user_id:
-            return  # No user assigned, skip activity creation
+        if not mailbox.x_owner_user_id:
+            return  # No owner, skip activity creation
+
+        # Ensure we have valid model and id
+        model_name = target_record._name
+        record_id = target_record.id
+        if not model_name or not record_id:
+            _logger.warning(f"[Incoming Mail] Cannot create activity: model={model_name}, id={record_id}")
+            return
 
         try:
             self.env['mail.activity'].create({
-                'res_model': 'res.partner',
-                'res_id': partner_id,
+                'res_model_id': self.env['ir.model']._get_id(model_name),
+                'res_id': record_id,
                 'activity_type_id': self.env.ref('mail.mail_activity_data_todo').id,
                 'summary': _('Review incoming email from %s') % mailbox.email,
-                'user_id': mailbox.x_activity_user_id.id,
+                'user_id': mailbox.x_owner_user_id.id,
                 'date_deadline': fields.Date.today(),
             })
-            _logger.debug(f"[Incoming Mail] Created activity for partner {partner_id}")
+            _logger.info(f"[Incoming Mail] Created activity on {model_name}/{record_id} for {mailbox.x_owner_user_id.name}")
         except Exception as e:
             _logger.warning(f"[Incoming Mail] Failed to create activity: {e}")
 
@@ -399,3 +463,30 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         _logger.info(f"[Incoming Mail] Created new partner: {partner.name} ({email})")
 
         return partner
+
+    def _get_or_create_lead_for_email(self, partner, subject, contact_email):
+        """
+        Create a CRM Lead for a new incoming email.
+
+        For new emails (not replies), we create a CRM Lead to track the conversation.
+        This enables AI-powered customer summaries by aggregating leads per company.
+
+        Args:
+            partner: res.partner record for the sender
+            subject: Email subject
+            contact_email: Sender email address
+
+        Returns:
+            crm.lead record
+        """
+        lead_name = subject if subject else f"Email from {partner.name}"
+
+        lead = self.env['crm.lead'].create({
+            'name': lead_name,
+            'partner_id': partner.id,
+            'email_from': contact_email,
+            'type': 'lead',
+        })
+
+        _logger.info(f"[Incoming Mail] Created CRM Lead: {lead.name} (id={lead.id})")
+        return lead

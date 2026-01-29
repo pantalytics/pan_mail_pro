@@ -481,7 +481,6 @@ class MicrosoftGraphClient(models.AbstractModel):
             params['$filter'] = f"receivedDateTime gt {filter_time}"
 
         try:
-            _logger.info(f"[Graph API] Fetching messages from {mailbox_email}/{folder}")
             response = requests.get(url, headers=headers, params=params, timeout=30)
             response.raise_for_status()
 
@@ -519,7 +518,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         url = f'https://graph.microsoft.com/v1.0/users/{mailbox_email}/messages/{message_id}'
 
         params = {
-            '$select': 'id,internetMessageId,internetMessageHeaders,subject,from,'
+            '$select': 'id,internetMessageId,internetMessageHeaders,conversationId,subject,from,'
                        'toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,isRead',
         }
 
