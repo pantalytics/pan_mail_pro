@@ -14,7 +14,7 @@ Complete Microsoft 365 email integration for Odoo - send and receive with full c
 - Automatic sync from Microsoft 365 mailboxes (1 min interval)
 - 2-way sync: Inbox and Sent Items
 - Reply threading via In-Reply-To headers
-- Auto-create contacts for unknown senders
+- Known partners filter: only sync emails from existing contacts
 
 **Security:**
 - OAuth 2.0 with delegated permissions only (least privilege)
@@ -87,14 +87,17 @@ Go to **Settings** → **Outlook Pro** → **Manage Mailbox List**
 
 1. Open a mailbox
 2. Select **Sync Mode**:
-   - **No sync** - Outgoing only
-   - **Received emails only** - Sync inbox
-   - **Received + Sent from Outlook** - Full 2-way sync
-3. Select **Sync User** (must have Microsoft connected)
-4. Optionally enable **Create activity for new emails**
-5. Save
+   - **Send messages only** - Outgoing only (no sync)
+   - **Send and receive messages from existing contacts** - 2-way sync (Inbox + Sent Items), only from known partners
+3. Set the **Owner** (must have Microsoft connected)
+4. Save
 
-Emails sync automatically every minute. First sync only sets timestamp - no historical emails imported.
+**Sync behavior:**
+- Only emails from contacts that already exist in Odoo are synced
+- Internal domains (configured in Outlook Pro settings) are excluded
+- Internal users (employees with Odoo accounts) are excluded
+- Emails sync automatically every minute
+- First sync only sets timestamp - no historical emails imported
 
 ---
 
