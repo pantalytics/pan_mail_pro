@@ -4,12 +4,17 @@ import logging
 import mimetypes
 import requests
 import secrets
+import time
 from datetime import datetime, timedelta
 from odoo import models, api, _
 from odoo.exceptions import UserError
 from . import encryption_utils
 
 _logger = logging.getLogger(__name__)
+
+# Rate limiting configuration
+MAX_RETRIES = 3
+INITIAL_BACKOFF_SECONDS = 2
 
 
 class MicrosoftGraphClient(models.AbstractModel):
@@ -434,7 +439,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             params['$filter'] = f"receivedDateTime gt {filter_time}"
 
         try:
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response = self._request_with_retry('get', url, headers=headers, params=params, timeout=30)
             response.raise_for_status()
 
             data = response.json()
@@ -476,7 +481,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         }
 
         try:
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response = self._request_with_retry('get', url, headers=headers, params=params, timeout=30)
             response.raise_for_status()
             return response.json()
 
@@ -508,7 +513,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         url = f'https://graph.microsoft.com/v1.0/users/{mailbox_email}/messages/{message_id}/attachments'
 
         try:
-            response = requests.get(url, headers=headers, timeout=30)
+            response = self._request_with_retry('get', url, headers=headers, timeout=30)
             response.raise_for_status()
 
             data = response.json()
@@ -539,6 +544,83 @@ class MicrosoftGraphClient(models.AbstractModel):
             except (ValueError, KeyError, AttributeError):
                 pass
         return error_detail
+
+    def _request_with_retry(self, method, url, headers, timeout=30, **kwargs):
+        """
+        Execute HTTP request with rate limiting and exponential backoff.
+
+        Handles Microsoft Graph API rate limiting (HTTP 429) by:
+        - Reading Retry-After header when present
+        - Using exponential backoff for transient errors
+        - Retrying up to MAX_RETRIES times
+
+        Args:
+            method: HTTP method ('get', 'post', etc.)
+            url: Request URL
+            headers: Request headers
+            timeout: Request timeout in seconds
+            **kwargs: Additional arguments for requests (json, data, params, etc.)
+
+        Returns:
+            requests.Response: The successful response
+
+        Raises:
+            requests.exceptions.RequestException: If all retries fail
+        """
+        last_exception = None
+        backoff = INITIAL_BACKOFF_SECONDS
+
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = getattr(requests, method)(url, headers=headers, timeout=timeout, **kwargs)
+
+                # Check for rate limiting
+                if response.status_code == 429:
+                    retry_after = response.headers.get('Retry-After')
+                    if retry_after:
+                        wait_time = int(retry_after)
+                    else:
+                        wait_time = backoff
+
+                    if attempt < MAX_RETRIES:
+                        _logger.warning(f"[Graph API] Rate limited (429), waiting {wait_time}s before retry {attempt + 1}/{MAX_RETRIES}")
+                        time.sleep(wait_time)
+                        backoff *= 2  # Exponential backoff
+                        continue
+                    else:
+                        response.raise_for_status()  # Raise on final attempt
+
+                # Check for other server errors that might be transient
+                if response.status_code in (500, 502, 503, 504) and attempt < MAX_RETRIES:
+                    _logger.warning(f"[Graph API] Server error ({response.status_code}), retrying in {backoff}s ({attempt + 1}/{MAX_RETRIES})")
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+
+                return response
+
+            except requests.exceptions.Timeout as e:
+                last_exception = e
+                if attempt < MAX_RETRIES:
+                    _logger.warning(f"[Graph API] Request timeout, retrying in {backoff}s ({attempt + 1}/{MAX_RETRIES})")
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                raise
+
+            except requests.exceptions.ConnectionError as e:
+                last_exception = e
+                if attempt < MAX_RETRIES:
+                    _logger.warning(f"[Graph API] Connection error, retrying in {backoff}s ({attempt + 1}/{MAX_RETRIES})")
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                raise
+
+        # Should not reach here, but just in case
+        if last_exception:
+            raise last_exception
+        raise requests.exceptions.RequestException("Max retries exceeded")
 
     @api.model
     def _get_token_identity(self, token):
