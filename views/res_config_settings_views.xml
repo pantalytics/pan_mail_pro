@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Add notification banner to standard Email settings -->
+    <record id="res_config_settings_view_form_email_banner" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.outlook.pro.email.banner</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="mail.res_config_settings_view_form"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <!-- Insert banner before the first setting in the Emails block -->
+            <xpath expr="//setting[@id='email_servers_setting']" position="before">
+                <div class="alert alert-info mb-3" role="alert">
+                    <i class="fa fa-info-circle me-2"/>
+                    <strong>Outlook Pro is installed.</strong>
+                    Email sending and receiving is managed via Microsoft Graph API.
+                    Go to <strong>Settings → Outlook Pro</strong> to configure mailboxes.
+                </div>
+            </xpath>
+        </field>
+    </record>
+
     <!-- Extend General Settings -->
     <record id="res_config_settings_view_form" model="ir.ui.view">
         <field name="name">res.config.settings.view.form.inherit.outlook.pro</field>
@@ -50,8 +69,25 @@
                                     </li>
                                     <li class="mb-2">Go to <strong>API permissions</strong> → <strong>+ Add a permission</strong> → <strong>Microsoft Graph</strong> → <strong>Delegated permissions</strong>
                                         <ul class="mt-1">
-                                            <li>Search and add: <strong>Mail.Send</strong> and <strong>Mail.Send.Shared</strong></li>
-                                            <li>Click <strong>Grant admin consent for [Your Organization]</strong></li>
+                                            <li>Search and add these permissions:</li>
+                                        </ul>
+                                        <table class="table table-sm table-bordered mt-2 mb-2" style="max-width: 500px;">
+                                            <thead class="table-light">
+                                                <tr><th>Permission</th><th>Purpose</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr><td><code>Mail.Send</code></td><td>Send from own mailbox</td></tr>
+                                                <tr><td><code>Mail.Send.Shared</code></td><td>Send from shared mailboxes</td></tr>
+                                                <tr><td><code>Mail.Read</code></td><td>Read own mailbox (for sync)</td></tr>
+                                                <tr><td><code>Mail.Read.Shared</code></td><td>Read shared mailboxes (for sync)</td></tr>
+                                                <tr><td><code>User.Read</code></td><td>Read user profile</td></tr>
+                                                <tr><td><code>offline_access</code></td><td>Refresh tokens (stay logged in)</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </li>
+                                    <li class="mb-2">Click <strong>Grant admin consent for [your tenant]</strong> (button above the permissions list)
+                                        <ul class="mt-1">
+                                            <li><em>Why?</em> Most organizations require admin approval for new apps. This pre-approves the app so users don't see "Need admin approval" errors.</li>
                                         </ul>
                                     </li>
                                     <li class="mb-2"><strong>Fill in the fields below and click Save</strong></li>
@@ -59,15 +95,15 @@
                             </div>
 
                             <div class="row mt16">
-                                <label for="x_microsoft_client_id" class="col-lg-3 o_light_label" string="Client ID"/>
+                                <label for="x_microsoft_client_id" class="col-lg-3 o_light_label" string="Application (client) ID"/>
                                 <field name="x_microsoft_client_id" placeholder="12345678-1234-1234-1234-123456789abc"/>
                             </div>
                             <div class="row mt16">
-                                <label for="x_microsoft_client_secret" class="col-lg-3 o_light_label" string="Client Secret"/>
+                                <label for="x_microsoft_client_secret" class="col-lg-3 o_light_label" string="Client Secret Value"/>
                                 <field name="x_microsoft_client_secret" password="True" placeholder="Enter the secret value from Azure"/>
                             </div>
                             <div class="row mt16">
-                                <label for="x_microsoft_tenant_id" class="col-lg-3 o_light_label" string="Tenant ID"/>
+                                <label for="x_microsoft_tenant_id" class="col-lg-3 o_light_label" string="Directory (tenant) ID"/>
                                 <field name="x_microsoft_tenant_id" placeholder="12345678-1234-1234-1234-123456789abc"/>
                             </div>
 
@@ -111,10 +147,55 @@
                         </setting>
                     </block>
 
-                    <!-- STEP 3: Mailboxes -->
-                    <block title="Step 3: Available Mailboxes" class="o_setting_box_fullwidth">
+                    <!-- STEP 3: Admin Connect Microsoft -->
+                    <block title="Step 3: Connect Your Microsoft Account" class="o_setting_box_fullwidth" invisible="x_microsoft_config_status not in ('configured', 'verified')">
+                        <setting string="Admin OAuth Connection" help="Connect your Microsoft account to enable sending" class="col-12 col-lg-12">
+                            <field name="x_current_user_oauth_connected" invisible="1"/>
+
+                            <div class="text-muted mb-3">
+                                <strong>Before configuring mailboxes</strong>, you (the admin) must connect your own Microsoft account.
+                                This is required to set up the notification mailbox in Step 5.
+                            </div>
+
+                            <div class="d-flex align-items-center mb-3">
+                                <!-- Not connected -->
+                                <div invisible="x_current_user_oauth_connected">
+                                    <button name="action_connect_microsoft_admin" type="object"
+                                            string="Connect Microsoft Account" class="btn-primary me-3"
+                                            icon="fa-windows"/>
+                                    <span class="text-muted">Sign in with your Microsoft work account</span>
+                                </div>
+
+                                <!-- Connected -->
+                                <div invisible="not x_current_user_oauth_connected" class="text-success">
+                                    <i class="fa fa-check-circle me-2"/>
+                                    <strong>Microsoft Account Connected</strong>
+                                    <span class="text-muted ms-2">- You can now configure mailboxes</span>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-light border mb-0" role="status" invisible="x_current_user_oauth_connected">
+                                <strong><i class="fa fa-info-circle me-1"/> Why connect now?</strong>
+                                <ul class="mb-0 mt-2">
+                                    <li>The notification mailbox (Step 5) requires an Owner with Microsoft OAuth connected</li>
+                                    <li>As admin, you'll typically be the Owner for system notifications</li>
+                                    <li>Other users will connect later via their profile (Step 6)</li>
+                                </ul>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- STEP 4: Mailboxes -->
+                    <block title="Step 4: Available Mailboxes" class="o_setting_box_fullwidth">
                         <field name="x_microsoft_mailbox_count" invisible="1"/>
                         <setting string="Configure Email Mailboxes" help="Add your Microsoft 365 mailboxes to Odoo" class="col-12 col-lg-12">
+
+                            <div class="d-flex align-items-center mb-3">
+                                <field name="x_microsoft_allow_personal_mailboxes" class="oe_inline"/>
+                                <label for="x_microsoft_allow_personal_mailboxes" class="ms-2">
+                                    Auto-create personal mailbox when user connects Microsoft account
+                                </label>
+                            </div>
 
                             <div class="text-muted mb-3">
                                 First create mailboxes in Microsoft 365 Admin Center, then register them here so users can select them in Odoo.
@@ -141,7 +222,7 @@
                                         <strong><i class="fa fa-bell me-1"/> Notifications</strong>
                                         <p class="text-muted small mb-0">
                                             System notifications (e.g., <code>notifications@</code>).
-                                            Configured in Step 4. Outgoing only.
+                                            Configured in Step 5. Outgoing only.
                                         </p>
                                     </div>
                                 </div>
@@ -155,7 +236,15 @@
 
                             <button type="action" name="%(action_microsoft_mailbox)d" string="Manage Mailbox List" class="btn-secondary mb-3" icon="fa-envelope"/>
 
-                            <!-- Status indicator (at bottom) -->
+                            <div class="row mt-3 mb-3">
+                                <label for="x_microsoft_internal_domains" class="col-lg-3 o_light_label" string="Internal Domains"/>
+                                <field name="x_microsoft_internal_domains" placeholder="company.com, company.nl" class="col-lg-6"/>
+                            </div>
+                            <div class="text-muted small mb-3">
+                                Comma-separated list of your company email domains. Emails from these domains will be excluded from incoming sync.
+                            </div>
+
+                            <!-- Status indicator -->
                             <div class="d-flex align-items-center">
                                 <!-- No mailboxes -->
                                 <div invisible="x_microsoft_mailbox_count > 0" class="text-warning">
@@ -171,50 +260,44 @@
                         </setting>
                     </block>
 
-                    <!-- STEP 4: System Notifications -->
-                    <block title="Step 4: System Notifications" class="o_setting_box_fullwidth">
+                    <!-- STEP 5: System Notifications -->
+                    <block title="Step 5: System Notifications" class="o_setting_box_fullwidth">
                         <field name="x_microsoft_notification_configured" invisible="1"/>
                         <setting string="Notification Email Settings" help="Configure how system notifications (activity reminders, mentions) are sent" class="col-12 col-lg-12">
 
                             <div class="text-muted mb-3">
-                                System notifications (activity reminders, mentions, etc.) are sent from this mailbox.
-                                The notification sender must have SendAs permission for the selected mailbox.
+                                System notifications (activity reminders, mentions, etc.) are sent from a dedicated notification mailbox.
+                                Configure this in the Mailbox List by creating a mailbox with type "Notification".
                             </div>
 
                             <div class="alert alert-light border mb-3" role="status">
-                                <strong><i class="fa fa-lightbulb-o me-1"/> Recommendation:</strong>
-                                Create a shared mailbox in Microsoft 365 (e.g. <code>notifications@yourcompany.com</code>)
-                                and grant your Odoo admin user "Send As" permission for this mailbox.
-                                This keeps system notifications separate from personal email.
+                                <strong><i class="fa fa-lightbulb-o me-1"/> How to configure:</strong>
+                                <ol class="mb-0 mt-2">
+                                    <li>Click "Manage Mailbox List" in Step 4 above</li>
+                                    <li>Create a new mailbox (e.g. <code>notifications@yourcompany.com</code>)</li>
+                                    <li>Set Mailbox Type to <strong>"Notification Mailbox"</strong></li>
+                                    <li>Select yourself as the Owner (you connected in Step 3)</li>
+                                </ol>
                             </div>
 
-                            <div class="row mt16">
-                                <label for="x_microsoft_notification_mailbox_id" class="col-lg-3 o_light_label" string="Notification Mailbox"/>
-                                <field name="x_microsoft_notification_mailbox_id" options="{'no_create': True}" placeholder="Select a mailbox..."/>
-                            </div>
-                            <div class="row mt16 mb-3">
-                                <label for="x_microsoft_notification_user_id" class="col-lg-3 o_light_label" string="Notification Sender"/>
-                                <field name="x_microsoft_notification_user_id" options="{'no_create': True}" placeholder="Select a user with Microsoft OAuth..."/>
-                            </div>
-
-                            <!-- Status indicator (at bottom) -->
+                            <!-- Status indicator -->
                             <div class="d-flex align-items-center">
                                 <!-- Not configured -->
                                 <div invisible="x_microsoft_notification_configured" class="text-warning">
                                     <i class="fa fa-exclamation-triangle me-2"/>
-                                    <span>Select a notification mailbox and sender above, then click Save.</span>
+                                    <span>No notification mailbox configured. Create one in the Mailbox List.</span>
                                 </div>
                                 <!-- Configured -->
                                 <div invisible="not x_microsoft_notification_configured" class="text-success">
                                     <i class="fa fa-check-circle me-2"/>
-                                    <strong>Notification settings configured</strong>
+                                    <strong>Notification mailbox configured</strong>
                                 </div>
                             </div>
                         </setting>
                     </block>
 
-                    <!-- STEP 5: User Instructions -->
-                    <block title="Step 5: User Setup" class="o_setting_box_fullwidth">
+                    <!-- STEP 6: User Instructions -->
+                    <block title="Step 6: User Setup" class="o_setting_box_fullwidth">
                         <setting string="Connect Users to Microsoft" help="Each user must connect their own Microsoft account" class="col-12 col-lg-12">
                             <div class="d-flex align-items-center mb-3 text-info">
                                 <i class="fa fa-info-circle me-2"/>
@@ -227,10 +310,11 @@
                                     <li class="mb-2">Go to <strong>My Profile</strong> (click your name in the top-right → My Profile)</li>
                                     <li class="mb-2">Open the <strong>Preferences</strong> tab</li>
                                     <li class="mb-2">In the <strong>Email</strong> section, click <strong>"Connect Microsoft Account"</strong></li>
-                                    <li class="mb-2">Sign in with your Microsoft work account and grant permissions</li>
+                                    <li class="mb-2">Sign in with your Microsoft work account and approve the permissions</li>
                                     <li class="mb-2">Select your <strong>Default Mailbox</strong> for sending emails</li>
                                 </ol>
                             </div>
+
 
                             <div class="text-muted">
                                 <i class="fa fa-lightbulb-o me-1"/>

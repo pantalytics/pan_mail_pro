@@ -5,9 +5,11 @@
         <field name="name">x_microsoft.mailbox.list</field>
         <field name="model">x_microsoft.mailbox</field>
         <field name="arch" type="xml">
-            <list string="Microsoft Mailboxes">
+            <list string="Microsoft Mailboxes" js_class="mailbox_list">
                 <field name="sequence" widget="handle"/>
                 <field name="email"/>
+                <field name="x_mailbox_type" string="Type"/>
+                <field name="x_owner_user_id" string="Owner" optional="show"/>
             </list>
         </field>
     </record>
@@ -22,67 +24,71 @@
                     <group>
                         <group>
                             <field name="email" placeholder="e.g., support@company.com" string="Email Address"/>
+                            <field name="x_mailbox_type" string="Mailbox Type" widget="radio"/>
                         </group>
                     </group>
 
-                    <separator string="Email Sync"/>
-
+                    <!-- Owner -->
                     <group>
+                        <group>
+                            <field name="x_owner_user_id" string="Owner"
+                                   required="x_mailbox_type in ('personal', 'notification') or (x_mailbox_type == 'shared' and x_sync_mode != 'none')"/>
+                        </group>
+                    </group>
+                    <div class="text-muted mb-3" invisible="x_mailbox_type != 'shared'">
+                        For sync, the Owner's Microsoft account reads this mailbox. For sending, each user sends with their own account.
+                    </div>
+
+                    <!-- Help text based on mailbox type -->
+                    <div class="alert alert-info mb-3" role="alert" invisible="x_mailbox_type != 'personal'">
+                        <strong>Personal Mailbox:</strong> This mailbox belongs to the owner specified above.
+                        Only the owner can see and send from this mailbox in the composer dropdown.
+                    </div>
+                    <div class="alert alert-info mb-3" role="alert" invisible="x_mailbox_type != 'shared'">
+                        <strong>Shared Mailbox:</strong> All users can send from this mailbox using their own Microsoft account.
+                        Each user needs Mail.Send.Shared permission and "Send As" rights on this mailbox in Microsoft 365.
+                    </div>
+                    <div class="alert alert-warning mb-3" role="alert" invisible="x_mailbox_type != 'notification'">
+                        <strong>Notification Mailbox:</strong> Used for system notifications to internal users (outgoing only).
+                        Only one notification mailbox can be active. The owner's Microsoft account will be used to send.
+                    </div>
+
+                    <!-- Email Sync (hidden for notification mailboxes - outgoing only) -->
+                    <separator string="Email Sync" invisible="x_mailbox_type == 'notification'"/>
+
+                    <group invisible="x_mailbox_type == 'notification'">
                         <group>
                             <field name="x_sync_mode" string="Sync Mode" widget="radio"/>
                         </group>
                     </group>
 
-                    <group invisible="x_sync_mode == 'none'">
-                        <group>
-                            <field name="x_incoming_user_id" string="Sync User"
-                                   required="x_sync_mode in ('1way', '2way')"
-                                   help="User whose Microsoft account fetches emails. Must have Mail.Read permission."/>
-                        </group>
-                    </group>
-
-                    <div class="text-muted mb-3" invisible="x_sync_mode == 'none'">
-                        <span invisible="x_sync_mode != '2way'">See replies your team sends directly from Outlook, not just incoming emails.</span>
-                        <span invisible="x_sync_mode != '1way'">Only emails received in this mailbox will sync to Odoo.</span>
+                    <div class="text-muted mb-3" invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
+                        Only emails from contacts that already exist in Odoo will be synced. Internal users and unknown senders are skipped.
                     </div>
 
-                    <group invisible="x_sync_mode == 'none'">
-                        <group>
-                            <field name="x_create_activity" string="Create activity for new emails"/>
-                            <field name="x_activity_user_id" string="Assign to"
-                                   invisible="not x_create_activity"/>
-                        </group>
-                        <group>
-                            <field name="state" string="Status" readonly="1"/>
-                            <field name="x_last_sync_date" string="Last sync" readonly="1"/>
-                        </group>
-                    </group>
+                    <div class="d-flex align-items-center gap-3 mb-3" invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
+                        <button name="action_sync_now"
+                                string="Sync Now"
+                                type="object"
+                                class="btn-primary"
+                                icon="fa-refresh"/>
+                        <span class="text-muted" invisible="not x_last_sync_date">
+                            Last synced: <field name="x_last_sync_date" readonly="1" nolabel="1"/>
+                        </span>
+                    </div>
 
-                    <group invisible="x_sync_mode == 'none'">
-                        <div class="d-flex align-items-center gap-2">
-                            <button name="action_test_incoming"
-                                    string="Test Connection"
-                                    type="object"
-                                    class="btn-secondary"
-                                    icon="fa-plug"/>
-                            <button name="action_sync_now"
-                                    string="Sync Now"
-                                    type="object"
-                                    class="btn-primary"
-                                    icon="fa-refresh"/>
-                        </div>
-                    </group>
-
-                    <group invisible="state != 'error'">
-                        <div class="alert alert-danger" role="alert">
-                            <strong>Error:</strong> <field name="x_error_message" nolabel="1" readonly="1"/>
-                        </div>
-                    </group>
+                    <div class="alert alert-danger mb-3" role="alert" invisible="x_mailbox_type == 'notification' or state != 'error'">
+                        <strong>Sync failed:</strong> <field name="x_error_message" nolabel="1" readonly="1"/>
+                    </div>
 
                     <!-- Hidden fields -->
+                    <field name="state" invisible="1"/>
                     <field name="x_incoming_enabled" invisible="1"/>
+                    <field name="x_incoming_user_id" invisible="1"/>
                     <field name="x_sync_inbox" invisible="1"/>
                     <field name="x_sync_sent" invisible="1"/>
+                    <field name="x_create_activity" invisible="1"/>
+                    <field name="x_activity_user_id" invisible="1"/>
                     <field name="active" invisible="1"/>
                 </sheet>
             </form>
@@ -107,11 +113,4 @@
         </field>
     </record>
 
-    <!-- Menu Item (will be added to Settings) -->
-    <menuitem id="menu_microsoft_mailbox"
-              name="Microsoft Mailboxes"
-              parent="base.menu_administration"
-              action="action_microsoft_mailbox"
-              sequence="100"
-              groups="base.group_system"/>
 </odoo>

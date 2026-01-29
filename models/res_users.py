@@ -93,6 +93,25 @@ class ResUsers(models.Model):
         for user in self:
             user.x_microsoft_oauth_connected = bool(user.x_microsoft_refresh_token_encrypted)
 
+    def action_connect_microsoft(self):
+        """
+        Start OAuth flow by redirecting directly to Microsoft login.
+        No intermediate wizard - goes straight to Microsoft.
+        """
+        self.ensure_one()
+
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        redirect_uri = f"{base_url}/microsoft_oauth/callback"
+
+        graph_client = self.env['microsoft.graph.client']
+        auth_url = graph_client.get_authorization_url(redirect_uri)
+
+        return {
+            'type': 'ir.actions.act_url',
+            'url': auth_url,
+            'target': 'new',
+        }
+
     def action_disconnect_microsoft(self):
         """
         Disconnect Microsoft account by clearing all OAuth tokens.
@@ -119,3 +138,19 @@ class ResUsers(models.Model):
                 'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
             }
         }
+
+    def write(self, vals):
+        """
+        Override write to allow users to set their own default mailbox.
+        Regular users cannot write to res.users, but they should be able
+        to set their own Microsoft default mailbox setting.
+        """
+        # Check if only updating default mailbox for own record
+        if (len(vals) == 1 and
+                'x_microsoft_default_mailbox_id' in vals and
+                len(self) == 1 and
+                self.id == self.env.uid):
+            # User is only changing their own default mailbox - allow via sudo
+            return super(ResUsers, self.sudo()).write(vals)
+
+        return super().write(vals)

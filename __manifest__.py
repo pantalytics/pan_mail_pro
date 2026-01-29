@@ -80,7 +80,7 @@
     'category': 'Discuss',
     'version': '19.0.1.0.0',
     'license': 'LGPL-3',
-    'depends': ['mail', 'base'],
+    'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
         'python': ['cryptography'],
     },
@@ -95,6 +95,12 @@
         'views/res_users_views.xml',
         'views/mail_compose_message_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'pan_outlook_pro/static/src/js/mailbox_list_controller.js',
+            'pan_outlook_pro/static/src/xml/mailbox_list_view.xml',
+        ],
+    },
     'images': [
         'static/description/banner.png',
         'static/description/screenshot_composer.png',

@@ -55,11 +55,38 @@ class MicrosoftOAuthController(http.Controller):
             _logger.info(f"[OAuth] Connected Microsoft account for Odoo user: {request.env.user.name} (ID: {request.env.user.id})")
             _logger.info(f"[OAuth] Microsoft identity connected: {ms_identity}")
 
+            # Auto-create personal mailbox if setting is enabled
+            allow_personal = request.env['ir.config_parameter'].sudo().get_param(
+                'x_pan_outlook_pro.allow_personal_mailboxes', 'True'
+            )
+            if allow_personal and allow_personal.lower() != 'false':
+                ms_email = graph_client.get_user_email(token_data['access_token'])
+                if ms_email:
+                    # Check if mailbox already exists
+                    existing = request.env['x_microsoft.mailbox'].sudo().search([
+                        ('email', '=ilike', ms_email)
+                    ], limit=1)
+                    if not existing:
+                        mailbox = request.env['x_microsoft.mailbox'].sudo().create({
+                            'email': ms_email,
+                            'x_mailbox_type': 'personal',
+                            'x_owner_user_id': request.env.user.id,
+                        })
+                        # Set as user's default mailbox
+                        request.env.user.sudo().write({
+                            'x_microsoft_default_mailbox_id': mailbox.id,
+                        })
+                        _logger.info(f"[OAuth] Auto-created personal mailbox: {ms_email} for user {request.env.user.login}")
+                    elif existing.x_mailbox_type == 'personal' and not existing.x_owner_user_id:
+                        # Update existing personal mailbox to set owner if not set
+                        existing.sudo().write({'x_owner_user_id': request.env.user.id})
+                        _logger.info(f"[OAuth] Updated owner for existing mailbox: {ms_email}")
+
             # Render minimal page that shows notification and redirects
             return request.render('pan_outlook_pro.oauth_result', {
                 'success': True,
                 'title': 'Microsoft Connected',
-                'message': 'Your Microsoft account has been connected. Please select a default mailbox.',
+                'message': 'Your Microsoft account has been connected successfully.',
             })
 
         except Exception as e:

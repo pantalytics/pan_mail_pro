@@ -39,3 +39,14 @@ def _disable_smtp_servers(env):
     IrConfigParameter.set_param('base_setup.default_external_email_server', 'False')
 
     _logger.info('[Outlook Pro] Disabled "Use Custom Email Servers" setting - all emails route through Graph API')
+
+    # Enable "Use Leads" in CRM settings
+    # Outlook Pro requires leads for incoming email routing
+    try:
+        group_use_lead = env.ref('crm.group_use_lead', raise_if_not_found=False)
+        group_user = env.ref('base.group_user', raise_if_not_found=False)
+        if group_use_lead and group_user:
+            group_user.write({'implied_ids': [(4, group_use_lead.id)]})
+            _logger.info('[Outlook Pro] Enabled "Use Leads" in CRM settings')
+    except Exception as e:
+        _logger.warning(f'[Outlook Pro] Could not enable Use Leads: {e}')

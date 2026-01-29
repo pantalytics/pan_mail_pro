@@ -30,6 +30,27 @@ class MicrosoftMailbox(models.Model):
     )
 
     # -------------------------------------------------------------------------
+    # Mailbox Type Configuration
+    # -------------------------------------------------------------------------
+    x_mailbox_type = fields.Selection([
+        ('personal', 'Personal Mailbox'),
+        ('shared', 'Shared Mailbox'),
+        ('notification', 'Notification Mailbox'),
+    ], string='Mailbox Type', default='personal', required=True,
+        help='Personal: User sends from their own mailbox (e.g., john@company.com)\n'
+             'Shared: Multiple users can send from this mailbox (e.g., support@company.com)\n'
+             'Notification: System notifications mailbox (e.g., notifications@company.com)')
+
+    x_owner_user_id = fields.Many2one(
+        'res.users',
+        string='Owner',
+        domain="[('x_microsoft_oauth_connected', '=', True)]",
+        help='Personal mailbox: the user who owns and sends from this mailbox.\n'
+             'Notification mailbox: the user whose OAuth token is used to send system emails.',
+        index=True
+    )
+
+    # -------------------------------------------------------------------------
     # Incoming Mail Configuration
     # -------------------------------------------------------------------------
     x_incoming_user_id = fields.Many2one(
@@ -45,13 +66,9 @@ class MicrosoftMailbox(models.Model):
         help='Automatically enabled when a sync user is selected'
     )
     x_sync_mode = fields.Selection([
-        ('none', 'No sync (outgoing only)'),
-        ('1way', 'Received emails only'),
-        ('2way', 'Received + Sent from Outlook'),
-    ], string='Sync Mode', default='none',
-        help='None: Only use this mailbox for sending emails.\n'
-             '1-way: Sync emails received in this mailbox to Odoo.\n'
-             '2-way: Also sync emails sent from Outlook back to Odoo.')
+        ('none', 'Send messages only'),
+        ('known_partners', 'Send and receive messages from existing contacts'),
+    ], string='Sync Mode', default='none')
     # Keep for backwards compatibility / internal use
     x_sync_inbox = fields.Boolean(
         string='Sync Inbox',
@@ -66,19 +83,22 @@ class MicrosoftMailbox(models.Model):
         store=True
     )
 
-    @api.depends('x_sync_mode', 'x_incoming_user_id')
+    @api.depends('x_sync_mode', 'x_owner_user_id')
     def _compute_incoming_enabled(self):
+        """Incoming sync is enabled when sync_mode is set and owner has OAuth."""
         for record in self:
             record.x_incoming_enabled = (
-                record.x_sync_mode in ('1way', '2way') and
-                bool(record.x_incoming_user_id)
+                record.x_sync_mode == 'known_partners' and
+                bool(record.x_owner_user_id) and
+                record.x_owner_user_id.x_microsoft_oauth_connected
             )
 
     @api.depends('x_sync_mode')
     def _compute_sync_folders(self):
+        """Known partners mode syncs both Inbox + Sent Items."""
         for record in self:
-            record.x_sync_inbox = record.x_sync_mode in ('1way', '2way')
-            record.x_sync_sent = record.x_sync_mode == '2way'
+            record.x_sync_inbox = record.x_sync_mode == 'known_partners'
+            record.x_sync_sent = record.x_sync_mode == 'known_partners'
     x_last_sync_date = fields.Datetime(
         string='Last Sync',
         readonly=True,
@@ -109,11 +129,11 @@ class MicrosoftMailbox(models.Model):
         """Test incoming mail configuration by fetching a few messages."""
         self.ensure_one()
 
-        if not self.x_incoming_user_id:
-            raise UserError(_('Please select a user to sync as.'))
+        if not self.x_owner_user_id:
+            raise UserError(_('Please select an Owner for this mailbox.'))
 
-        if not self.x_incoming_user_id.x_microsoft_oauth_connected:
-            raise UserError(_('The selected user is not connected to Microsoft. '
+        if not self.x_owner_user_id.x_microsoft_oauth_connected:
+            raise UserError(_('The Owner is not connected to Microsoft. '
                               'Please connect their account first.'))
 
         graph_client = self.env['microsoft.graph.client']
@@ -121,7 +141,7 @@ class MicrosoftMailbox(models.Model):
         try:
             # Try to fetch 1 message to test connection
             messages = graph_client.fetch_messages(
-                user=self.x_incoming_user_id,
+                user=self.x_owner_user_id,
                 mailbox_email=self.email,
                 folder='Inbox',
                 top=1
@@ -168,34 +188,34 @@ class MicrosoftMailbox(models.Model):
         if self.x_sync_mode == 'none':
             raise UserError(_('Sync mode is set to "No sync". Change it to enable syncing.'))
 
-        if not self.x_incoming_user_id:
-            raise UserError(_('Please select a Sync User first.'))
+        if not self.x_owner_user_id:
+            raise UserError(_('Please select an Owner first.'))
+
+        if not self.x_owner_user_id.x_microsoft_oauth_connected:
+            raise UserError(_('Owner "%s" is not connected to Microsoft.') % self.x_owner_user_id.name)
 
         # Trigger the processor for this mailbox
         processor = self.env['microsoft.incoming.mail.processor']
         processor._process_mailbox(self)
 
-        # Reload the form to show updated last sync time
+        # Mark as active on success (clear any previous error)
+        if self.state != 'active':
+            self.write({'state': 'active', 'x_error_message': False})
+
+        # Reload the form to show updated status
         return {
             'type': 'ir.actions.act_window',
             'res_model': 'x_microsoft.mailbox',
             'res_id': self.id,
             'view_mode': 'form',
+            'views': [(False, 'form')],
             'target': 'current',
         }
 
     @api.onchange('x_sync_mode')
     def _onchange_sync_mode(self):
-        """Clear sync user when switching to no sync."""
+        """Reset state when switching to no sync."""
         if self.x_sync_mode == 'none':
-            self.x_incoming_user_id = False
-            self.state = 'draft'
-            self.x_error_message = False
-
-    @api.onchange('x_incoming_user_id')
-    def _onchange_incoming_user_id(self):
-        """Reset state when sync user is cleared."""
-        if not self.x_incoming_user_id:
             self.state = 'draft'
             self.x_error_message = False
 
@@ -219,6 +239,56 @@ class MicrosoftMailbox(models.Model):
                 ], limit=1)
                 if existing:
                     raise ValidationError(_('This email address is already registered!'))
+
+    @api.constrains('x_mailbox_type', 'x_owner_user_id', 'x_sync_mode')
+    def _check_owner_required(self):
+        """Ensure owner is set when required."""
+        for record in self:
+            if record.x_mailbox_type in ('personal', 'notification') and not record.x_owner_user_id:
+                raise ValidationError(_(
+                    '%s mailbox requires an Owner. '
+                    'Please select a user with Microsoft OAuth connected.'
+                ) % record.x_mailbox_type.capitalize())
+            # Shared mailbox with sync enabled requires owner
+            if (record.x_mailbox_type == 'shared' and
+                    record.x_sync_mode != 'none' and
+                    not record.x_owner_user_id):
+                raise ValidationError(_(
+                    'Shared mailbox with sync enabled requires an Owner. '
+                    'The Owner\'s Microsoft account will be used to read emails.'
+                ))
+
+    @api.constrains('x_mailbox_type')
+    def _check_single_notification_mailbox(self):
+        """Ensure only one notification mailbox exists."""
+        for record in self:
+            if record.x_mailbox_type == 'notification':
+                existing = self.search([
+                    ('x_mailbox_type', '=', 'notification'),
+                    ('id', '!=', record.id),
+                    ('active', '=', True),
+                ], limit=1)
+                if existing:
+                    raise ValidationError(_(
+                        'Only one active Notification mailbox is allowed. '
+                        'Existing notification mailbox: %s'
+                    ) % existing.email)
+
+    def get_sending_user(self):
+        """
+        Get the user whose OAuth token should be used for sending from this mailbox.
+
+        Returns:
+            res.users: The user to use for sending, or False if current user should be used
+        """
+        self.ensure_one()
+        if self.x_mailbox_type == 'notification':
+            # Notification mailbox: use the owner's OAuth token for system emails
+            return self.x_owner_user_id
+        else:
+            # Personal and Shared mailboxes: current user sends with their own OAuth token
+            # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365
+            return False
 
     def get_graph_user_id(self):
         """
