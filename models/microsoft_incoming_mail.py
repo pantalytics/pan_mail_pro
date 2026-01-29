@@ -319,6 +319,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             # This is crucial because Graph API doesn't always return In-Reply-To headers
             if conversation_id:
                 message.write({'x_microsoft_conversation_id': conversation_id})
+                _logger.info(f"[Incoming Mail] Stored conversationId: {conversation_id}")
 
             # Create activity for new emails (only for incoming, not sent items, and only for new threads)
             if mailbox.x_create_activity and not is_outgoing and not parent_message:
