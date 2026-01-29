@@ -366,8 +366,14 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         """
         Check if a message with this ID already exists in Odoo.
 
+        Checks both:
+        1. mail.message.message_id - for messages already imported
+        2. mail.mail.x_microsoft_message_id - for emails sent via our module
+
+        This prevents re-importing Sent Items that were sent from Odoo.
+
         Args:
-            internet_message_id: The Message-ID header value
+            internet_message_id: The Microsoft internetMessageId
 
         Returns:
             bool: True if duplicate exists
@@ -375,9 +381,20 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         if not internet_message_id:
             return False
 
-        return bool(self.env['mail.message'].search([
+        # Check mail.message (already imported messages)
+        if self.env['mail.message'].search([
             ('message_id', '=', internet_message_id)
-        ], limit=1))
+        ], limit=1):
+            return True
+
+        # Check mail.mail (emails sent via our module)
+        if self.env['mail.mail'].search([
+            ('x_microsoft_message_id', '=', internet_message_id)
+        ], limit=1):
+            _logger.info(f"[Incoming Mail] Skipping Odoo-sent email (found in mail.mail): {internet_message_id}")
+            return True
+
+        return False
 
     def _is_internal_domain(self, email):
         """

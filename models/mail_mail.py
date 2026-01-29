@@ -16,6 +16,18 @@ class MailMail(models.Model):
         help='Microsoft mailbox to send this email from'
     )
 
+    x_microsoft_message_id = fields.Char(
+        string='Microsoft Message ID',
+        help='Microsoft internetMessageId - used to prevent duplicate imports from Sent Items',
+        index=True,
+    )
+
+    x_microsoft_conversation_id = fields.Char(
+        string='Microsoft Conversation ID',
+        help='Microsoft conversationId - used for email threading',
+        index=True,
+    )
+
     @api.model_create_multi
     def create(self, vals_list):
         """Set mailbox from context if provided by mail.compose.message."""
@@ -127,12 +139,17 @@ class MailMail(models.Model):
         )
 
         if result['success']:
-            # Mark as sent
+            # Mark as sent and store Microsoft IDs for duplicate detection and threading
+            microsoft_message_id = result.get('microsoft_message_id')
+            microsoft_conversation_id = result.get('microsoft_conversation_id')
+
             self.write({
                 'state': 'sent',
-                'message_id': result.get('message_id', self.message_id),
+                'x_microsoft_message_id': microsoft_message_id,
+                'x_microsoft_conversation_id': microsoft_conversation_id,
             })
             _logger.info(f"Email {self.id} sent successfully via Graph API from {mailbox.email}")
+            _logger.info(f"[Graph API] Stored Microsoft IDs - Message: {microsoft_message_id}, Conversation: {microsoft_conversation_id}")
             return (True, None)
         else:
             # Mark as exception

@@ -2,7 +2,6 @@
 import base64
 import logging
 import mimetypes
-import time
 import requests
 from datetime import datetime, timedelta
 from odoo import models, api, _
@@ -197,10 +196,10 @@ class MicrosoftGraphClient(models.AbstractModel):
     @api.model
     def send_email_via_graph(self, mail_record, mailbox, user):
         """
-        Send email via Microsoft Graph API using delegated permissions.
+        Send email via Microsoft Graph API using Draft → Send flow.
 
-        Uses the user's OAuth token to send from the specified mailbox.
-        Requires Mail.Send (own mailbox) or Mail.Send.Shared (shared mailbox) permission.
+        Creates a draft first (which returns internetMessageId and conversationId),
+        then sends it. This enables proper duplicate detection and threading.
 
         Args:
             mail_record: mail.mail record to send
@@ -208,7 +207,12 @@ class MicrosoftGraphClient(models.AbstractModel):
             user: res.users record with valid Microsoft OAuth token
 
         Returns:
-            dict: {'success': bool, 'error': str (if failed), 'message_id': str (if success)}
+            dict: {
+                'success': bool,
+                'error': str (if failed),
+                'microsoft_message_id': str (internetMessageId from Microsoft),
+                'microsoft_conversation_id': str (conversationId from Microsoft)
+            }
         """
         try:
             # Use delegated token from the user (principle of least privilege)
@@ -219,7 +223,6 @@ class MicrosoftGraphClient(models.AbstractModel):
             mailbox_email = mailbox.email
 
             _logger.info(f"[Graph API] Using delegated token for user {user.login} to send from mailbox: {mailbox_email}")
-            _logger.info(f"[Graph API] Target mailbox identifier: {graph_user_id}")
 
             # Parse To recipients from both email_to and recipient_ids (partners)
             to_recipients = []
@@ -276,8 +279,6 @@ class MicrosoftGraphClient(models.AbstractModel):
                     'value': str(mail_record.mail_message_id.id)
                 })
 
-            _logger.info(f"[Graph API] Adding custom headers: {internet_message_headers}")
-
             # Build attachments list from mail.mail attachment_ids
             attachments = []
             if mail_record.attachment_ids:
@@ -294,10 +295,8 @@ class MicrosoftGraphClient(models.AbstractModel):
                             'contentType': content_type,
                             'contentBytes': attachment_data.decode('utf-8') if isinstance(attachment_data, bytes) else attachment_data
                         })
-                        _logger.info(f"[Graph API] Adding attachment: {attachment.name} ({content_type})")
 
-            # Build message payload
-            # Explicitly set 'from' to ensure correct email address is shown
+            # Build message payload for draft creation
             message = {
                 'subject': mail_record.subject or '(No Subject)',
                 'body': {
@@ -316,53 +315,39 @@ class MicrosoftGraphClient(models.AbstractModel):
             # Add attachments if present
             if attachments:
                 message['attachments'] = attachments
-                _logger.info(f"[Graph API] Total attachments: {len(attachments)}")
 
-            message_payload = {
-                'message': message,
-                'saveToSentItems': True
-            }
-
-            # Send via Graph API
             headers = {
                 'Authorization': f'Bearer {token}',
                 'Content-Type': 'application/json',
             }
 
-            # Use /users/{mailbox}/sendMail with delegated Mail.Send.Shared permission
-            # This stores sent items in the shared mailbox's Sent Items folder
-            # For personal mailboxes, this is the user's own mailbox
-            # Requires: Mail.Send.Shared permission + SendAs rights in Exchange
-            url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/sendMail'
-
             # Build recipient list for logging
             recipient_emails = [r['emailAddress'].get('address', 'NO_ADDRESS') for r in to_recipients]
             _logger.info(f"[Graph API] Sending email from {mailbox_email} to {recipient_emails}")
-            _logger.info(f"[Graph API] Full toRecipients payload: {to_recipients}")
 
-            response = requests.post(url, headers=headers, json=message_payload, timeout=30)
-            response.raise_for_status()
+            # Step 1: Create draft message - this gives us internetMessageId and conversationId
+            draft_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages'
+            draft_response = requests.post(draft_url, headers=headers, json=message, timeout=30)
+            draft_response.raise_for_status()
+
+            draft_data = draft_response.json()
+            draft_id = draft_data.get('id')
+            microsoft_message_id = draft_data.get('internetMessageId')
+            microsoft_conversation_id = draft_data.get('conversationId')
+
+            _logger.info(f"[Graph API] Created draft - Message-ID: {microsoft_message_id}, Conversation-ID: {microsoft_conversation_id}")
+
+            # Step 2: Send the draft
+            send_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/send'
+            send_response = requests.post(send_url, headers=headers, timeout=30)
+            send_response.raise_for_status()
 
             _logger.info(f"[Graph API] Successfully sent email: {mail_record.subject}")
 
-            # Fetch the actual Message-ID from Sent Items for reply threading
-            time.sleep(1)  # Brief delay to ensure message is in Sent Items
-            actual_message_id = self._fetch_sent_message_id(
-                token=token,
-                graph_user_id=graph_user_id,
-                subject=mail_record.subject,
-                recipient_email=recipient_emails[0] if recipient_emails else None
-            )
-
-            if actual_message_id:
-                _logger.info(f"[Graph API] Retrieved Microsoft Message-ID: {actual_message_id}")
-            else:
-                _logger.warning("[Graph API] Could not retrieve Microsoft Message-ID, using fallback")
-                actual_message_id = mail_record.message_id or f'<{mail_record.id}@odoo.graph.api>'
-
             return {
                 'success': True,
-                'message_id': actual_message_id
+                'microsoft_message_id': microsoft_message_id,
+                'microsoft_conversation_id': microsoft_conversation_id,
             }
 
         except requests.exceptions.RequestException as e:
@@ -386,56 +371,6 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'success': False,
                 'error': str(e)
             }
-
-    def _fetch_sent_message_id(self, token, graph_user_id, subject, recipient_email=None):
-        """
-        Fetch the internetMessageId of a recently sent email from Sent Items.
-
-        This is needed because Graph API's sendMail doesn't return the Message-ID,
-        but we need it for proper reply threading.
-
-        Args:
-            token: Valid OAuth access token (delegated token)
-            graph_user_id: UPN or email for Graph API /users/{id} calls
-            subject: Email subject to search for
-            recipient_email: Optional recipient email to filter
-
-        Returns:
-            str: The internetMessageId or None if not found
-        """
-        try:
-            headers = {
-                'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json',
-            }
-
-            # Search Sent Items for the most recent email with matching subject
-            # Use /users/{upn} path with delegated Mail.Read.Shared permission
-            url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/mailFolders/SentItems/messages'
-            params = {
-                '$select': 'internetMessageId,subject,sentDateTime',
-                '$orderby': 'sentDateTime desc',
-                '$top': 5,  # Get last 5 to be safe
-            }
-
-            response = requests.get(url, headers=headers, params=params, timeout=15)
-            response.raise_for_status()
-
-            messages = response.json().get('value', [])
-
-            # Find the message with matching subject
-            for msg in messages:
-                if msg.get('subject') == subject:
-                    internet_message_id = msg.get('internetMessageId')
-                    _logger.debug(f"[Graph API] Found sent message with ID: {internet_message_id}")
-                    return internet_message_id
-
-            _logger.debug(f"[Graph API] No matching sent message found for subject: {subject}")
-            return None
-
-        except Exception as e:
-            _logger.warning(f"[Graph API] Failed to fetch sent message ID: {e}")
-            return None
 
     # -------------------------------------------------------------------------
     # Incoming Mail Methods
