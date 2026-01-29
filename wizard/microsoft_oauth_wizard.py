@@ -28,9 +28,14 @@ class MicrosoftOAuthWizard(models.TransientModel):
         base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
         redirect_uri = f"{base_url}/microsoft_oauth/callback"
 
-        # Get authorization URL
+        # Get authorization URL with CSRF state token
         graph_client = self.env['microsoft.graph.client']
-        auth_url = graph_client.get_authorization_url(redirect_uri)
+
+        # Generate and store CSRF state token for current user
+        state = graph_client.generate_oauth_state()
+        self.env.user.sudo().write({'x_microsoft_oauth_state': state})
+
+        auth_url = graph_client.get_authorization_url(redirect_uri, state=state)
 
         # Redirect to Microsoft login (same window)
         return {
@@ -79,6 +84,7 @@ class MicrosoftOAuthWizard(models.TransientModel):
             'x_microsoft_refresh_token': False,
             'x_microsoft_token_expiry': False,
             'x_microsoft_default_mailbox_id': False,
+            'x_microsoft_oauth_state': False,
         })
 
         return {

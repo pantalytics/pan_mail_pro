@@ -12,8 +12,9 @@ class MicrosoftOAuthController(http.Controller):
     def oauth_callback(self, **kwargs):
         """Handle OAuth callback from Microsoft"""
 
-        # Get authorization code from query params
+        # Get authorization code and state from query params
         authorization_code = kwargs.get('code')
+        received_state = kwargs.get('state')
         error = kwargs.get('error')
         error_description = kwargs.get('error_description')
 
@@ -24,6 +25,19 @@ class MicrosoftOAuthController(http.Controller):
                 'title': 'Connection Failed',
                 'message': f'{error}: {error_description}',
             })
+
+        # Validate CSRF state parameter
+        stored_state = request.env.user.sudo().x_microsoft_oauth_state
+        if not received_state or not stored_state or received_state != stored_state:
+            _logger.error(f"[OAuth] CSRF state validation failed for user {request.env.user.id}")
+            return request.render('pan_outlook_pro.oauth_result', {
+                'success': False,
+                'title': 'Connection Failed',
+                'message': 'Security validation failed. Please try connecting again.',
+            })
+
+        # Clear the state token immediately after validation (one-time use)
+        request.env.user.sudo().write({'x_microsoft_oauth_state': False})
 
         if not authorization_code:
             _logger.error("No authorization code received")

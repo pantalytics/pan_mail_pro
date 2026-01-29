@@ -194,7 +194,12 @@ class ResConfigSettings(models.TransientModel):
         redirect_uri = f"{base_url}/microsoft_oauth/callback"
 
         graph_client = self.env['microsoft.graph.client']
-        auth_url = graph_client.get_authorization_url(redirect_uri)
+
+        # Generate and store CSRF state token for current user
+        state = graph_client.generate_oauth_state()
+        self.env.user.sudo().write({'x_microsoft_oauth_state': state})
+
+        auth_url = graph_client.get_authorization_url(redirect_uri, state=state)
 
         return {
             'type': 'ir.actions.act_url',

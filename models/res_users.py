@@ -39,6 +39,14 @@ class ResUsers(models.Model):
         store=True
     )
 
+    # Temporary OAuth state for CSRF protection (cleared after callback)
+    x_microsoft_oauth_state = fields.Char(
+        string='OAuth State',
+        groups='base.group_system',
+        copy=False,
+        help='Temporary CSRF state token for OAuth flow'
+    )
+
     # Computed fields for backwards compatibility (decrypt on read)
     x_microsoft_access_token = fields.Char(
         string='Microsoft Access Token',
@@ -104,7 +112,12 @@ class ResUsers(models.Model):
         redirect_uri = f"{base_url}/microsoft_oauth/callback"
 
         graph_client = self.env['microsoft.graph.client']
-        auth_url = graph_client.get_authorization_url(redirect_uri)
+
+        # Generate and store CSRF state token
+        state = graph_client.generate_oauth_state()
+        self.sudo().write({'x_microsoft_oauth_state': state})
+
+        auth_url = graph_client.get_authorization_url(redirect_uri, state=state)
 
         return {
             'type': 'ir.actions.act_url',
@@ -125,6 +138,7 @@ class ResUsers(models.Model):
             'x_microsoft_refresh_token_encrypted': False,
             'x_microsoft_token_expiry': False,
             'x_microsoft_default_mailbox_id': False,
+            'x_microsoft_oauth_state': False,
         })
 
         return {

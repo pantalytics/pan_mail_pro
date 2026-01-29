@@ -3,6 +3,7 @@ import base64
 import logging
 import mimetypes
 import requests
+import secrets
 from datetime import datetime, timedelta
 from odoo import models, api, _
 from odoo.exceptions import UserError
@@ -37,8 +38,21 @@ class MicrosoftGraphClient(models.AbstractModel):
         }
 
     @api.model
-    def get_authorization_url(self, redirect_uri):
-        """Generate OAuth authorization URL"""
+    def generate_oauth_state(self):
+        """Generate a cryptographically secure state token for CSRF protection."""
+        return secrets.token_urlsafe(32)
+
+    @api.model
+    def get_authorization_url(self, redirect_uri, state=None):
+        """Generate OAuth authorization URL with CSRF state parameter.
+
+        Args:
+            redirect_uri: The OAuth callback URL
+            state: CSRF state token (generated via generate_oauth_state())
+
+        Returns:
+            str: The authorization URL to redirect the user to
+        """
         config = self._get_config_params()
         tenant_id = config['tenant_id']
         client_id = config['client_id']
@@ -68,6 +82,10 @@ class MicrosoftGraphClient(models.AbstractModel):
             'scope': ' '.join(scopes),
             'response_mode': 'query',
         }
+
+        # Add state parameter for CSRF protection
+        if state:
+            params['state'] = state
 
         query_string = '&'.join([f'{k}={requests.utils.quote(str(v))}' for k, v in params.items()])
         return f"{auth_url}?{query_string}"
