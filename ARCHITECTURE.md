@@ -56,17 +56,27 @@ pan_outlook_pro/
 | **Shared** | Everyone | Sender's own token | Team mailbox (sales@company.com) |
 | **Notification** | Everyone | Owner's token | System emails (notifications@company.com) |
 
-### Graph API Endpoints per Mailbox Type
+### Graph API Send Flow (Draft → Send)
 
-| Type | Send Endpoint | Sent Items Location | Required Permissions |
-|------|---------------|---------------------|----------------------|
-| **Personal** | `/me/sendMail` | User's own Sent Items | `Mail.Send` |
-| **Shared** | `/users/{email}/sendMail` | Shared mailbox Sent Items | `Mail.Send.Shared` + SendAs in Exchange |
-| **Notification** | `/users/{email}/sendMail` | Notification mailbox Sent Items | `Mail.Send.Shared` + SendAs in Exchange |
+We use a **Draft → Send** flow instead of the simpler `sendMail` endpoint:
+
+1. **Create draft**: `POST /users/{email}/messages` → returns `internetMessageId` and `conversationId`
+2. **Send draft**: `POST /users/{email}/messages/{id}/send`
+
+**Why not use `sendMail`?**
+- `sendMail` doesn't return the Microsoft message IDs
+- We need `internetMessageId` to prevent duplicate imports from Sent Items sync
+- We need `conversationId` for email threading
+
+| Type | Draft Endpoint | Required Permissions |
+|------|----------------|----------------------|
+| **Personal** | `/users/{email}/messages` | `Mail.ReadWrite` |
+| **Shared** | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
+| **Notification** | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
 
 **Note:**
-- `{email}` = the mailbox email address (e.g., `team1@company.com`). Microsoft Graph also accepts Object ID or UPN, but we use the email address.
-- For shared and notification mailboxes, using `/users/{email}/sendMail` stores the sent email in the mailbox's Sent Items folder (not the user's personal Sent Items). This is the preferred behavior for team visibility.
+- `{email}` = the mailbox email address (e.g., `team1@company.com`)
+- Sent emails are stored in the mailbox's Sent Items folder
 
 ### Personal Mailbox
 
@@ -80,7 +90,7 @@ pan_outlook_pro/
 - Visible to all users in composer dropdown
 - Each user sends with their **own** OAuth token
 - User needs:
-  - `Mail.Send.Shared` permission in Azure
+  - `Mail.ReadWrite.Shared` permission in Azure
   - "Send As" rights on the mailbox in Microsoft 365
 
 ### Notification Mailbox
@@ -283,10 +293,11 @@ Future emails from this contact:
 
 Before the sync mode filter, these checks always run:
 
-| Check | Header/Condition | Action |
-|-------|------------------|--------|
-| Odoo-originated | `X-Odoo-Model` or `X-Odoo-Mail-Id` present | Skip |
-| Duplicate | `Message-ID` already in Odoo | Skip |
+| Check | Condition | Action |
+|-------|-----------|--------|
+| Odoo-originated (headers) | `X-Odoo-Model` or `X-Odoo-Mail-Id` header present | Skip |
+| Odoo-originated (sent) | `internetMessageId` matches `mail.mail.x_microsoft_message_id` | Skip |
+| Duplicate | `internetMessageId` already in `mail.message.message_id` | Skip |
 
 ---
 
