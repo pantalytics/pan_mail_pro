@@ -137,9 +137,6 @@ class ResConfigSettings(models.TransientModel):
                 encrypted_secret or ''
             )
 
-    # Removed get_values/set_values for notification settings
-    # Notification mailbox is now determined by mailbox type='notification'
-
     def _compute_config_status(self):
         """Compute the Azure configuration status"""
         IrConfigParameter = self.env['ir.config_parameter'].sudo()
@@ -266,4 +263,4 @@ class ResConfigSettings(models.TransientModel):
         IrConfigParameter = self.env['ir.config_parameter'].sudo()
         IrConfigParameter.set_param('x_pan_outlook_pro.config_test_result', status)
         IrConfigParameter.set_param('x_pan_outlook_pro.config_test_message', message)
-        _logger.info(f"[Outlook Pro] Config test result: {status} - {message}")
+        _logger.info(f"[Graph API] Config test result: {status} - {message}")

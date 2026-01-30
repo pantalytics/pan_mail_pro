@@ -159,7 +159,7 @@ class MailMail(models.Model):
                 })
                 _logger.info(f"[Graph API] Updated mail.message {self.mail_message_id.id} with Microsoft IDs for threading")
 
-            _logger.info(f"Email {self.id} sent successfully via Graph API from {mailbox.email}")
+            _logger.info(f"[Graph API] Email {self.id} sent successfully from {mailbox.email}")
             _logger.info(f"[Graph API] Stored Microsoft IDs - Message: {microsoft_message_id}, Conversation: {microsoft_conversation_id}")
             return (True, None)
         else:
@@ -169,7 +169,7 @@ class MailMail(models.Model):
                 'state': 'exception',
                 'failure_reason': error_msg,
             })
-            _logger.error(f"Email {self.id} failed to send via Graph API: {error_msg}")
+            _logger.error(f"[Graph API] Email {self.id} failed to send: {error_msg}")
             return (False, error_msg)
 
     def _is_internal_user_notification(self):

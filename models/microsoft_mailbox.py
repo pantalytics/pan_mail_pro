@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import re
 from odoo import fields, models, api, _
 from odoo.exceptions import ValidationError, UserError
 
@@ -267,7 +268,6 @@ class MicrosoftMailbox(models.Model):
     @api.constrains('email')
     def _check_email_format(self):
         """Validate email format"""
-        import re
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         for record in self:
             if record.email and not re.match(email_pattern, record.email):

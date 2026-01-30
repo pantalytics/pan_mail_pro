@@ -25,9 +25,9 @@ class MailComposeMessage(models.TransientModel):
         user = self.env.user
         for record in self:
             if not user.x_microsoft_oauth_connected:
-                record.x_microsoft_setup_warning = "⚠️ Connect your Microsoft account in My Preferences → Outlook Pro tab."
+                record.x_microsoft_setup_warning = "Connect your Microsoft account in My Preferences → Outlook Pro tab."
             elif not user.x_microsoft_default_mailbox_id:
-                record.x_microsoft_setup_warning = "⚠️ Select a default mailbox in My Preferences → Outlook Pro tab."
+                record.x_microsoft_setup_warning = "Select a default mailbox in My Preferences → Outlook Pro tab."
             else:
                 record.x_microsoft_setup_warning = False
 

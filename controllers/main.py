@@ -19,7 +19,7 @@ class MicrosoftOAuthController(http.Controller):
         error_description = kwargs.get('error_description')
 
         if error:
-            _logger.error(f"OAuth error: {error} - {error_description}")
+            _logger.error(f"[OAuth] Error from Microsoft: {error} - {error_description}")
             return request.render('pan_outlook_pro.oauth_result', {
                 'success': False,
                 'title': 'Connection Failed',
@@ -40,7 +40,7 @@ class MicrosoftOAuthController(http.Controller):
         request.env.user.sudo().write({'x_microsoft_oauth_state': False})
 
         if not authorization_code:
-            _logger.error("No authorization code received")
+            _logger.error("[OAuth] No authorization code received")
             return request.render('pan_outlook_pro.oauth_result', {
                 'success': False,
                 'title': 'Connection Failed',
@@ -113,7 +113,7 @@ class MicrosoftOAuthController(http.Controller):
             })
 
         except Exception as e:
-            _logger.exception("Failed to handle OAuth callback")
+            _logger.exception("[OAuth] Failed to handle OAuth callback")
             return request.render('pan_outlook_pro.oauth_result', {
                 'success': False,
                 'title': 'Connection Failed',
