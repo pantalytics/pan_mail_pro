@@ -227,7 +227,7 @@
                             </div>
 
                             <div class="mb-3">
-                                <a href="https://admin.microsoft.com/#/SharedMailboxes" target="_blank" class="btn btn-link ps-0">
+                                <a href="https://admin.microsoft.com/#/SharedMailboxes" target="_blank" class="btn btn-link ps-0" role="button">
                                     <i class="fa fa-external-link me-1"/> Create shared mailboxes in Microsoft 365 Admin Center
                                 </a>
                             </div>
