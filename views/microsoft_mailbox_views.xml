@@ -46,7 +46,7 @@
                     </div>
                     <div class="alert alert-info mb-3" role="alert" invisible="x_mailbox_type != 'shared'">
                         <strong>Shared Mailbox:</strong> All users can send from this mailbox using their own Microsoft account.
-                        Each user needs Mail.Send.Shared permission and "Send As" rights on this mailbox in Microsoft 365.
+                        Each user needs Mail.ReadWrite.Shared permission and "Send As" rights on this mailbox in Microsoft 365.
                     </div>
                     <div class="alert alert-warning mb-3" role="alert" invisible="x_mailbox_type != 'notification'">
                         <strong>Notification Mailbox:</strong> Used for system notifications to internal users (outgoing only).

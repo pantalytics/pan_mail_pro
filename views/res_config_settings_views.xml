@@ -76,10 +76,8 @@
                                                 <tr><th>Permission</th><th>Purpose</th></tr>
                                             </thead>
                                             <tbody>
-                                                <tr><td><code>Mail.Send</code></td><td>Send from own mailbox</td></tr>
-                                                <tr><td><code>Mail.Send.Shared</code></td><td>Send from shared mailboxes</td></tr>
-                                                <tr><td><code>Mail.Read</code></td><td>Read own mailbox (for sync)</td></tr>
-                                                <tr><td><code>Mail.Read.Shared</code></td><td>Read shared mailboxes (for sync)</td></tr>
+                                                <tr><td><code>Mail.ReadWrite</code></td><td>Send and read own mailbox</td></tr>
+                                                <tr><td><code>Mail.ReadWrite.Shared</code></td><td>Send and read shared mailboxes</td></tr>
                                                 <tr><td><code>User.Read</code></td><td>Read user profile</td></tr>
                                                 <tr><td><code>offline_access</code></td><td>Refresh tokens (stay logged in)</td></tr>
                                             </tbody>

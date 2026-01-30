@@ -490,14 +490,10 @@ All permissions are **Delegated** (user context, not application).
 | Permission | Purpose |
 |------------|---------|
 | `openid` | OAuth login |
-| `profile` | User profile info |
-| `email` | User email address |
 | `offline_access` | Refresh tokens |
 | `User.Read` | Basic profile during OAuth |
-| `Mail.Send` | Send from own mailbox |
-| `Mail.Send.Shared` | Send from shared mailboxes |
-| `Mail.Read` | Fetch Message-ID from Sent Items |
-| `Mail.Read.Shared` | Read shared mailbox for sync |
+| `Mail.ReadWrite` | Send emails (via draft), read Sent Items |
+| `Mail.ReadWrite.Shared` | Shared mailbox: send + read |
 
 **No Application Permissions needed** - this module has no admin-level access.
 
