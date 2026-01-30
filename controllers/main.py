@@ -69,6 +69,15 @@ class MicrosoftOAuthController(http.Controller):
             _logger.info(f"[OAuth] Connected Microsoft account for Odoo user: {request.env.user.name} (ID: {request.env.user.id})")
             _logger.info(f"[OAuth] Microsoft identity connected: {ms_identity}")
 
+            # Reset any mailboxes in error state for this user so cron will retry
+            error_mailboxes = request.env['x_microsoft.mailbox'].sudo().search([
+                ('x_owner_user_id', '=', request.env.user.id),
+                ('state', '=', 'error'),
+            ])
+            if error_mailboxes:
+                error_mailboxes.write({'state': 'draft', 'x_error_message': False})
+                _logger.info(f"[OAuth] Reset {len(error_mailboxes)} mailbox(es) from error to draft state")
+
             # Auto-create personal mailbox if setting is enabled
             allow_personal = request.env['ir.config_parameter'].sudo().get_param(
                 'x_pan_outlook_pro.allow_personal_mailboxes', 'True'
