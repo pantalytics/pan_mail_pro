@@ -5,6 +5,7 @@ Incoming Mail Processor for Microsoft Graph API.
 This module fetches emails from Microsoft 365 mailboxes and routes them
 to the correct partner using message_post() for proper threading.
 """
+import base64
 import logging
 from markupsafe import Markup
 
@@ -203,12 +204,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         # Get attachments if present
         attachments = []
-        if full_message.get('hasAttachments'):
+        has_attachments = full_message.get('hasAttachments', False)
+        _logger.info(f"[Incoming Mail] hasAttachments={has_attachments}")
+        if has_attachments:
             attachments = graph_client.get_message_attachments(
                 user=mailbox.x_owner_user_id,
                 mailbox_email=mailbox.email,
                 message_id=msg_data['id'],
             )
+            _logger.info(f"[Incoming Mail] Fetched {len(attachments)} attachment(s)")
 
         # Find or create the partner (contact) for chatter posting
         partner = None
@@ -256,22 +260,44 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             )
 
         # Prepare attachment data for message_post
+        # Inline attachments (embedded images) use 3-tuple format so Odoo converts cid: to /web/image/
+        # Regular attachments use ir.attachment records
         attachment_ids = []
+        inline_attachments = []  # 3-tuples: (filename, content, {'cid': content_id})
+
         if attachments:
             for attachment in attachments:
-                if attachment.get('@odata.type') == '#microsoft.graph.fileAttachment':
-                    content_bytes = attachment.get('contentBytes')
-                    if content_bytes:
-                        try:
-                            att = self.env['ir.attachment'].create({
-                                'name': attachment.get('name', 'attachment'),
-                                'datas': content_bytes,  # Already base64 encoded
-                                'res_model': target_record._name,
-                                'res_id': target_record.id,
-                            })
-                            attachment_ids.append(att.id)
-                        except Exception as e:
-                            _logger.warning(f"[Incoming Mail] Failed to create attachment: {e}")
+                att_type = attachment.get('@odata.type', 'unknown')
+                att_name = attachment.get('name', 'unnamed')
+                is_inline = attachment.get('isInline', False)
+                content_id = attachment.get('contentId')
+                _logger.info(f"[Incoming Mail] Attachment: {att_name}, type={att_type}, isInline={is_inline}, contentId={content_id}")
+
+                if att_type == '#microsoft.graph.fileAttachment':
+                    content_bytes_b64 = attachment.get('contentBytes')
+                    if content_bytes_b64:
+                        name = att_name
+
+                        if is_inline and content_id:
+                            # Inline attachment: use 3-tuple format for Odoo's cid: conversion
+                            try:
+                                content_binary = base64.b64decode(content_bytes_b64)
+                                inline_attachments.append((name, content_binary, {'cid': content_id}))
+                                _logger.info(f"[Incoming Mail] Inline attachment: {name} (cid:{content_id})")
+                            except Exception as e:
+                                _logger.warning(f"[Incoming Mail] Failed to decode inline attachment {name}: {e}")
+                        else:
+                            # Regular attachment: create ir.attachment record
+                            try:
+                                att = self.env['ir.attachment'].create({
+                                    'name': name,
+                                    'datas': content_bytes_b64,  # Already base64 encoded
+                                    'res_model': target_record._name,
+                                    'res_id': target_record.id,
+                                })
+                                attachment_ids.append(att.id)
+                            except Exception as e:
+                                _logger.warning(f"[Incoming Mail] Failed to create attachment: {e}")
 
         # Build email body - mark as safe HTML to preserve formatting
         body = full_message.get('body', {})
@@ -313,6 +339,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 message_id=internet_message_id,
                 parent_id=parent_message.id if parent_message else False,
                 attachment_ids=attachment_ids,
+                attachments=inline_attachments,  # 3-tuples for inline image cid: conversion
             )
 
             # Store Microsoft conversationId for threading future replies
