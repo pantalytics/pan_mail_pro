@@ -13,6 +13,24 @@ class MailComposeMessage(models.TransientModel):
         # Domain is set dynamically in the view to filter by owner for personal mailboxes
     )
 
+    x_microsoft_setup_warning = fields.Char(
+        string='Setup Warning',
+        compute='_compute_microsoft_setup_warning',
+        store=False
+    )
+
+    @api.depends_context('uid')
+    def _compute_microsoft_setup_warning(self):
+        """Check if user needs to complete Microsoft setup."""
+        user = self.env.user
+        for record in self:
+            if not user.x_microsoft_oauth_connected:
+                record.x_microsoft_setup_warning = "⚠️ Connect your Microsoft account in My Preferences → Outlook Pro tab."
+            elif not user.x_microsoft_default_mailbox_id:
+                record.x_microsoft_setup_warning = "⚠️ Select a default mailbox in My Preferences → Outlook Pro tab."
+            else:
+                record.x_microsoft_setup_warning = False
+
     @api.model
     def default_get(self, fields_list):
         """Set default mailbox from user preferences"""

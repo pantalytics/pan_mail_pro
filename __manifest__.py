@@ -99,9 +99,6 @@
         'web.assets_backend': [
             'pan_outlook_pro/static/src/js/mailbox_list_controller.js',
             'pan_outlook_pro/static/src/xml/mailbox_list_view.xml',
-            # TODO: Fix systray component for user notifications
-            # 'pan_outlook_pro/static/src/js/microsoft_status_systray.js',
-            # 'pan_outlook_pro/static/src/xml/microsoft_status_systray.xml',
         ],
     },
     'images': [
