@@ -62,20 +62,27 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         """
         _logger.info(f"[Incoming Mail] Processing mailbox: {mailbox.email}")
 
-        # First sync: test connection, then set last_sync_date to now
+        # First sync: if x_sync_start_date is set, use it for historical sync
+        # Otherwise just test connection and start from now
         if not mailbox.x_last_sync_date:
-            _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, testing connection...")
-            # Test connection by fetching 1 message (don't import, just verify access)
-            graph_client = self.env['microsoft.graph.client']
-            graph_client.fetch_messages(
-                user=mailbox.x_owner_user_id,
-                mailbox_email=mailbox.email,
-                folder='Inbox',
-                top=1,  # Just test, don't fetch all
-            )
-            _logger.info(f"[Incoming Mail] Connection test passed for {mailbox.email}, setting sync date to now")
-            mailbox.write({'x_last_sync_date': fields.Datetime.now()})
-            return  # Skip this run, start fetching from next cron run
+            if mailbox.x_sync_start_date:
+                # Historical sync: start from configured date
+                _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, starting from {mailbox.x_sync_start_date}")
+                mailbox.write({'x_last_sync_date': mailbox.x_sync_start_date})
+                # Continue to fetch messages below
+            else:
+                # No start date: just test connection and start from now
+                _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, testing connection...")
+                graph_client = self.env['microsoft.graph.client']
+                graph_client.fetch_messages(
+                    user=mailbox.x_owner_user_id,
+                    mailbox_email=mailbox.email,
+                    folder='Inbox',
+                    top=1,  # Just test, don't fetch all
+                )
+                _logger.info(f"[Incoming Mail] Connection test passed for {mailbox.email}, setting sync date to now")
+                mailbox.write({'x_last_sync_date': fields.Datetime.now()})
+                return  # Skip this run, start fetching from next cron run
 
         processed_count = 0
 

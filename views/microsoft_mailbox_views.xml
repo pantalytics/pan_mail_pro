@@ -68,6 +68,10 @@
                     <group invisible="x_mailbox_type == 'notification'">
                         <group>
                             <field name="x_sync_mode" string="Sync Mode" widget="radio"/>
+                            <field name="x_sync_start_date" string="Sync From"
+                                   invisible="x_sync_mode == 'none'"
+                                   readonly="x_last_sync_date"
+                                   help="Set a date in the past to import historical emails on first sync. Cannot be changed after sync starts."/>
                         </group>
                     </group>
 

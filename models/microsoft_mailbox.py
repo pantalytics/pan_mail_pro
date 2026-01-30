@@ -99,6 +99,10 @@ class MicrosoftMailbox(models.Model):
         for record in self:
             record.x_sync_inbox = record.x_sync_mode == 'known_partners'
             record.x_sync_sent = record.x_sync_mode == 'known_partners'
+    x_sync_start_date = fields.Datetime(
+        string='Sync From Date',
+        help='Fetch emails starting from this date. Leave empty to only sync new emails.'
+    )
     x_last_sync_date = fields.Datetime(
         string='Last Sync',
         readonly=True,
