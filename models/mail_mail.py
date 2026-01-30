@@ -148,6 +148,17 @@ class MailMail(models.Model):
                 'x_microsoft_message_id': microsoft_message_id,
                 'x_microsoft_conversation_id': microsoft_conversation_id,
             })
+
+            # Also update mail_message for threading to work
+            # When reply comes in with In-Reply-To header containing the Microsoft ID,
+            # we can find this message via x_microsoft_message_id
+            if self.mail_message_id and microsoft_message_id:
+                self.mail_message_id.write({
+                    'x_microsoft_message_id': microsoft_message_id,
+                    'x_microsoft_conversation_id': microsoft_conversation_id,
+                })
+                _logger.info(f"[Graph API] Updated mail.message {self.mail_message_id.id} with Microsoft IDs for threading")
+
             _logger.info(f"Email {self.id} sent successfully via Graph API from {mailbox.email}")
             _logger.info(f"[Graph API] Stored Microsoft IDs - Message: {microsoft_message_id}, Conversation: {microsoft_conversation_id}")
             return (True, None)

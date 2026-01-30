@@ -240,9 +240,17 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         # Try In-Reply-To header first (standard email threading)
         if in_reply_to:
+            # First check our custom x_microsoft_message_id field
+            # This contains the Microsoft internetMessageId we stored after sending
             parent_message = self.env['mail.message'].search([
-                ('message_id', '=', in_reply_to)
+                ('x_microsoft_message_id', '=', in_reply_to)
             ], limit=1)
+
+            # Fallback to standard Odoo message_id field
+            if not parent_message:
+                parent_message = self.env['mail.message'].search([
+                    ('message_id', '=', in_reply_to)
+                ], limit=1)
 
         # Fallback to Microsoft conversationId if In-Reply-To didn't work
         # This is especially useful for Sent Items where Graph API may not return headers
