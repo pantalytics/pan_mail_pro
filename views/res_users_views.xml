@@ -1,5 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Extend User List View for admin overview -->
+    <record id="view_users_list_inherit_microsoft" model="ir.ui.view">
+        <field name="name">res.users.list.inherit.microsoft</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='login']" position="after">
+                <field name="x_microsoft_oauth_connected" string="MS Connected" optional="hide"/>
+                <field name="x_microsoft_health_status" string="MS Health" widget="badge"
+                       decoration-success="x_microsoft_health_status == 'healthy'"
+                       decoration-warning="x_microsoft_health_status == 'warning'"
+                       decoration-danger="x_microsoft_health_status == 'error'"
+                       decoration-muted="x_microsoft_health_status == 'not_configured'"
+                       optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
     <!-- Extend Full User Form (Settings > Users > User) -->
     <record id="view_users_form_inherit_microsoft_oauth" model="ir.ui.view">
         <field name="name">res.users.form.inherit.microsoft.oauth</field>

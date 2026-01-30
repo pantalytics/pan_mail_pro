@@ -39,6 +39,14 @@ class ResUsers(models.Model):
         store=True
     )
 
+    # Health status for admin overview
+    x_microsoft_health_status = fields.Selection([
+        ('healthy', 'Healthy'),
+        ('warning', 'Warning'),
+        ('error', 'Error'),
+        ('not_configured', 'Not Configured'),
+    ], string='Microsoft Health', compute='_compute_microsoft_health_status', store=False)
+
     # Temporary OAuth state for CSRF protection (cleared after callback)
     x_microsoft_oauth_state = fields.Char(
         string='OAuth State',
@@ -100,6 +108,38 @@ class ResUsers(models.Model):
         """Check if user has a Microsoft OAuth connection (refresh token exists)"""
         for user in self:
             user.x_microsoft_oauth_connected = bool(user.x_microsoft_refresh_token_encrypted)
+
+    def _compute_microsoft_health_status(self):
+        """Compute Microsoft health status for admin overview."""
+        Mailbox = self.env['x_microsoft.mailbox'].sudo()
+        for user in self:
+            # Get mailboxes where this user is owner
+            user_mailboxes = Mailbox.search([('x_owner_user_id', '=', user.id)])
+
+            if not user_mailboxes:
+                # No mailboxes assigned - check if connected anyway
+                if user.x_microsoft_oauth_connected:
+                    user.x_microsoft_health_status = 'healthy'
+                else:
+                    user.x_microsoft_health_status = 'not_configured'
+                continue
+
+            # Has mailboxes - check status
+            if not user.x_microsoft_oauth_connected:
+                # Not connected but has mailboxes that need OAuth
+                user.x_microsoft_health_status = 'error'
+                continue
+
+            # Connected - check mailbox health
+            error_mailboxes = user_mailboxes.filtered(lambda m: m.x_health_status == 'error')
+            warning_mailboxes = user_mailboxes.filtered(lambda m: m.x_health_status == 'warning')
+
+            if error_mailboxes:
+                user.x_microsoft_health_status = 'error'
+            elif warning_mailboxes:
+                user.x_microsoft_health_status = 'warning'
+            else:
+                user.x_microsoft_health_status = 'healthy'
 
     def action_connect_microsoft(self):
         """
