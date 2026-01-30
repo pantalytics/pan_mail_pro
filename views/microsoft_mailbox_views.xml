@@ -5,11 +5,20 @@
         <field name="name">x_microsoft.mailbox.list</field>
         <field name="model">x_microsoft.mailbox</field>
         <field name="arch" type="xml">
-            <list string="Microsoft Mailboxes" js_class="mailbox_list">
+            <list string="Microsoft Mailboxes" js_class="mailbox_list"
+                  decoration-danger="x_health_status == 'error'"
+                  decoration-warning="x_health_status == 'warning'">
                 <field name="sequence" widget="handle"/>
                 <field name="email"/>
                 <field name="x_mailbox_type" string="Type"/>
                 <field name="x_owner_user_id" string="Owner" optional="show"/>
+                <field name="x_sync_mode" string="Sync"/>
+                <field name="x_health_status" string="Health" widget="badge"
+                       decoration-success="x_health_status == 'healthy'"
+                       decoration-warning="x_health_status == 'warning'"
+                       decoration-danger="x_health_status == 'error'"/>
+                <field name="x_last_sync_date" string="Last Sync" optional="show"/>
+                <field name="x_error_message" string="Error" optional="hide"/>
             </list>
         </field>
     </record>

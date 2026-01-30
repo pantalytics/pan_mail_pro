@@ -125,6 +125,47 @@ class MicrosoftMailbox(models.Model):
         help='Error message from last failed sync attempt'
     )
 
+    # -------------------------------------------------------------------------
+    # Health Status (computed for list view)
+    # -------------------------------------------------------------------------
+    x_health_status = fields.Selection([
+        ('healthy', 'Healthy'),
+        ('warning', 'Warning'),
+        ('error', 'Error'),
+    ], string='Health', compute='_compute_health_status', store=False)
+
+    @api.depends('state', 'x_sync_mode', 'x_mailbox_type', 'x_owner_user_id', 'x_owner_user_id.x_microsoft_oauth_connected')
+    def _compute_health_status(self):
+        """Compute health status based on state and configuration."""
+        for record in self:
+            # Check 1: Sync errors
+            if record.state == 'error':
+                record.x_health_status = 'error'
+                continue
+
+            # Check 2: Owner OAuth status (for personal/notification mailboxes)
+            if record.x_mailbox_type in ('personal', 'notification'):
+                if not record.x_owner_user_id:
+                    record.x_health_status = 'error'
+                    continue
+                if not record.x_owner_user_id.x_microsoft_oauth_connected:
+                    record.x_health_status = 'error'
+                    continue
+
+            # Check 3: Shared mailbox with sync enabled needs connected owner
+            if record.x_mailbox_type == 'shared' and record.x_sync_mode != 'none':
+                if record.x_owner_user_id and not record.x_owner_user_id.x_microsoft_oauth_connected:
+                    record.x_health_status = 'error'
+                    continue
+
+            # Check 4: Sync enabled but never synced yet
+            if record.x_sync_mode != 'none' and record.state == 'draft':
+                record.x_health_status = 'warning'
+                continue
+
+            # All checks passed
+            record.x_health_status = 'healthy'
+
     def action_test_incoming(self):
         """Test incoming mail configuration by fetching a few messages."""
         self.ensure_one()
