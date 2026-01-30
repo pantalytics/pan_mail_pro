@@ -68,16 +68,15 @@ class MicrosoftGraphClient(models.AbstractModel):
         auth_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
 
         # Required scopes for sending and reading mail from shared mailboxes
+        # Mail.ReadWrite is needed for Draft→Send flow (creating drafts requires write access)
         scopes = [
             'openid',
             'profile',
             'email',
             'offline_access',
-            'https://graph.microsoft.com/User.Read',
-            'https://graph.microsoft.com/Mail.Send',
-            'https://graph.microsoft.com/Mail.Send.Shared',
-            'https://graph.microsoft.com/Mail.Read',
-            'https://graph.microsoft.com/Mail.Read.Shared',
+            'User.Read',
+            'Mail.ReadWrite',
+            'Mail.ReadWrite.Shared',
         ]
 
         params = {
