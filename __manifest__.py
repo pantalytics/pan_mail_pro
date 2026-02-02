@@ -93,6 +93,7 @@
         'views/templates/oauth_templates.xml',
         'views/res_config_settings_views.xml',
         'views/res_users_views.xml',
+        'views/res_partner_views.xml',
         'views/mail_compose_message_views.xml',
     ],
     'assets': {

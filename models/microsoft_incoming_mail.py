@@ -192,22 +192,45 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             contact_name = from_data.get('name', '')
             _logger.info(f"[Incoming Mail] From: name='{contact_name}', email='{contact_email}'")
 
-        # Apply sync mode filter: "known_partners" mode only syncs from existing contacts
-        # For Sent Items, we skip internal domain check (we sent it, we want it synced)
-        if mailbox.x_sync_mode == 'known_partners':
-            # Skip emails from/to internal domains (only for incoming)
-            if not is_outgoing and self._is_internal_domain(contact_email):
-                _logger.info(f"[Incoming Mail] Skipping internal domain: {contact_email}")
-                return False
+        # Skip emails from/to internal domains (only for incoming, not sent items)
+        if not is_outgoing and self._is_internal_domain(contact_email):
+            _logger.info(f"[Incoming Mail] Skipping internal domain: {contact_email}")
+            return False
 
-            partner = self._find_partner(contact_email)
-            if not partner:
-                _logger.info(f"[Incoming Mail] Skipping unknown contact (not in Odoo): {contact_email}")
-                return False
-            if partner.user_ids:
-                _logger.info(f"[Incoming Mail] Skipping internal user: {partner.name} ({contact_email})")
+        # Find existing partner (if any)
+        partner = self._find_partner(contact_email)
+
+        # Check if partner is blocked
+        if partner and partner.x_email_sync_blocked:
+            _logger.info(f"[Incoming Mail] Skipping blocked contact: {partner.name} ({contact_email})")
+            return False
+
+        # Skip internal users (Odoo employees)
+        if partner and partner.user_ids:
+            _logger.info(f"[Incoming Mail] Skipping internal user: {partner.name} ({contact_email})")
+            return False
+
+        # Determine if this is a known or unknown contact
+        is_known_contact = bool(partner)
+
+        # Apply routing rules based on sync mode and contact type
+        if mailbox.x_sync_mode == 'known_partners':
+            # Only process known contacts
+            if not is_known_contact:
+                _logger.info(f"[Incoming Mail] Skipping unknown contact (sync mode=known_partners): {contact_email}")
                 return False
             _logger.info(f"[Incoming Mail] Known partner filter passed: {partner.name}")
+
+        elif mailbox.x_sync_mode == 'all':
+            # 'all' mode: process both known and unknown contacts
+            if not is_known_contact:
+                # Unknown contact - check routing setting
+                if mailbox.x_routing_unknown_contact == 'approval':
+                    # TODO: Queue for approval - for now, skip
+                    _logger.info(f"[Incoming Mail] Unknown contact queued for approval (not implemented yet): {contact_email}")
+                    return False
+                # 'auto' mode: will create partner below
+            _logger.info(f"[Incoming Mail] All contacts mode: processing {'known' if is_known_contact else 'unknown'} contact")
 
         # Get attachments if present
         attachments = []
@@ -266,9 +289,10 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             target_record = self.env[parent_message.model].browse(parent_message.res_id)
             _logger.info(f"[Incoming Mail] Threading reply to {parent_message.model}/{parent_message.res_id}")
 
-        # For new incoming emails (not replies, not sent items), create CRM Lead
+        # For new incoming emails (not replies, not sent items), create record based on routing
         if not parent_message and not is_outgoing:
-            target_record = self._get_or_create_lead_for_email(
+            target_record = self._create_record_for_email(
+                mailbox=mailbox,
                 partner=partner,
                 subject=full_message.get('subject', ''),
                 contact_email=contact_email,
@@ -524,29 +548,165 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         return partner
 
-    def _get_or_create_lead_for_email(self, partner, subject, contact_email):
+    def _find_alias_for_mailbox(self, mailbox_email):
         """
-        Create a CRM Lead for a new incoming email.
+        Find an Odoo mail.alias that matches the mailbox email address.
 
-        For new emails (not replies), we create a CRM Lead to track the conversation.
-        This enables AI-powered customer summaries by aggregating leads per company.
+        Odoo aliases are typically configured as 'sales@yourdomain.com' when apps
+        like CRM or Helpdesk are installed. This method finds matching aliases
+        to use their routing configuration (model, team_id, etc.).
 
         Args:
+            mailbox_email: The email address of the Microsoft mailbox
+
+        Returns:
+            mail.alias record or False if not found
+        """
+        if not mailbox_email:
+            return False
+
+        # Search for alias by full email address
+        # alias_full_name contains the complete email like 'sales@company.com'
+        alias = self.env['mail.alias'].search([
+            ('alias_full_name', '=ilike', mailbox_email)
+        ], limit=1)
+
+        if alias:
+            _logger.info(f"[Incoming Mail] Found Odoo alias: {alias.alias_full_name} -> {alias.alias_model_id.model if alias.alias_model_id else 'no model'}")
+            return alias
+
+        # Also try matching by alias_name (local part before @)
+        local_part = mailbox_email.split('@')[0].lower() if '@' in mailbox_email else ''
+        if local_part:
+            alias = self.env['mail.alias'].search([
+                ('alias_name', '=ilike', local_part)
+            ], limit=1)
+            if alias:
+                _logger.info(f"[Incoming Mail] Found Odoo alias by name: {alias.alias_name} -> {alias.alias_model_id.model if alias.alias_model_id else 'no model'}")
+                return alias
+
+        return False
+
+    def _create_record_for_email(self, mailbox, partner, subject, contact_email):
+        """
+        Create a record for a new incoming email based on routing configuration.
+
+        Routing options (user must configure one):
+        1. Smart routing (AI) - if enabled (coming soon)
+        2. Odoo alias - if mail.alias exists for this mailbox email
+
+        If neither is configured, email is posted to partner's chatter with a warning.
+
+        Args:
+            mailbox: x_microsoft.mailbox record with routing configuration
             partner: res.partner record for the sender
             subject: Email subject
             contact_email: Sender email address
 
         Returns:
-            crm.lead record
+            Created record (crm.lead, helpdesk.ticket, etc.) or partner as fallback
         """
-        lead_name = subject if subject else f"Email from {partner.name}"
+        import ast
 
-        lead = self.env['crm.lead'].create({
-            'name': lead_name,
-            'partner_id': partner.id,
-            'email_from': contact_email,
-            'type': 'lead',
-        })
+        model = None
+        alias_defaults = {}
+        record_name = subject if subject else f"Email from {partner.name}"
 
-        _logger.info(f"[Incoming Mail] Created CRM Lead: {lead.name} (id={lead.id})")
-        return lead
+        # Option 1: Smart routing (AI decides)
+        if mailbox and mailbox.x_routing_smart:
+            # TODO: Implement AI classification here
+            # For now, default to CRM Lead
+            _logger.info("[Incoming Mail] Smart routing enabled but not implemented, defaulting to CRM Lead")
+            model = 'crm.lead'
+
+        # Option 2: Odoo alias configuration
+        if not model and mailbox:
+            alias = self._find_alias_for_mailbox(mailbox.email)
+            if alias and alias.alias_model_id:
+                model = alias.alias_model_id.model
+                # Parse alias_defaults for extra values (team_id, user_id, etc.)
+                if alias.alias_defaults:
+                    try:
+                        alias_defaults = ast.literal_eval(alias.alias_defaults)
+                        _logger.info(f"[Incoming Mail] Using Odoo alias -> {model} with defaults: {alias_defaults}")
+                    except (ValueError, SyntaxError) as e:
+                        _logger.warning(f"[Incoming Mail] Failed to parse alias_defaults: {e}")
+                        alias_defaults = {}
+                else:
+                    _logger.info(f"[Incoming Mail] Using Odoo alias -> {model}")
+
+        # No routing configured - post to partner with warning
+        if not model:
+            _logger.warning(f"[Incoming Mail] No routing configured for mailbox {mailbox.email}. "
+                          f"Please enable Smart Routing or configure an Odoo alias "
+                          f"(Settings → Technical → Aliases). Posting to partner chatter.")
+            return partner
+
+        # Create record based on determined model
+        if model == 'crm.lead':
+            create_vals = {
+                'name': record_name,
+                'partner_id': partner.id,
+                'email_from': contact_email,
+                'type': 'lead',
+            }
+            # Apply alias defaults (e.g., team_id)
+            for key, value in alias_defaults.items():
+                if key not in create_vals and hasattr(self.env['crm.lead'], key):
+                    create_vals[key] = value
+            record = self.env['crm.lead'].create(create_vals)
+            _logger.info(f"[Incoming Mail] Created CRM Lead: {record.name} (id={record.id})")
+
+        elif model == 'helpdesk.ticket':
+            # Check if helpdesk module is installed
+            if 'helpdesk.ticket' not in self.env:
+                _logger.warning("[Incoming Mail] Helpdesk module not installed, posting to partner")
+                return partner
+
+            create_vals = {
+                'name': record_name,
+                'partner_id': partner.id,
+                'partner_email': contact_email,
+            }
+            # Apply alias defaults (e.g., team_id)
+            for key, value in alias_defaults.items():
+                if key not in create_vals and hasattr(self.env['helpdesk.ticket'], key):
+                    create_vals[key] = value
+            record = self.env['helpdesk.ticket'].create(create_vals)
+            _logger.info(f"[Incoming Mail] Created Helpdesk Ticket: {record.name} (id={record.id})")
+
+        else:
+            # Try to create in the specified model generically
+            if model in self.env:
+                try:
+                    Model = self.env[model]
+                    create_vals = {'name': record_name}
+                    # Add partner if model has the field
+                    if hasattr(Model, 'partner_id'):
+                        create_vals['partner_id'] = partner.id
+                    # Apply alias defaults
+                    for key, value in alias_defaults.items():
+                        if key not in create_vals and hasattr(Model, key):
+                            create_vals[key] = value
+                    record = Model.create(create_vals)
+                    _logger.info(f"[Incoming Mail] Created {model}: {record_name} (id={record.id})")
+                except Exception as e:
+                    _logger.warning(f"[Incoming Mail] Failed to create record in {model}: {e}, posting to partner")
+                    return partner
+            else:
+                _logger.warning(f"[Incoming Mail] Model '{model}' not found, posting to partner")
+                return partner
+
+        return record
+
+    def _get_or_create_lead_for_email(self, partner, subject, contact_email):
+        """
+        DEPRECATED: Use _create_record_for_email instead.
+        Kept for backwards compatibility.
+        """
+        return self._create_record_for_email(
+            mailbox=None,
+            partner=partner,
+            subject=subject,
+            contact_email=contact_email,
+        )

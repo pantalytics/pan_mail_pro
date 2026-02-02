@@ -66,10 +66,70 @@ class MicrosoftMailbox(models.Model):
         store=True,
         help='Automatically enabled when a sync user is selected'
     )
+    # x_sync_mode is the source of truth, kept for backwards compatibility
     x_sync_mode = fields.Selection([
         ('none', 'Send messages only'),
         ('known_partners', 'Send and receive messages from existing contacts'),
+        ('all', 'Send and receive all messages'),
     ], string='Sync Mode', default='none')
+
+    # -------------------------------------------------------------------------
+    # Simplified UI fields (Apple-style progressive disclosure)
+    # These compute from / write to x_sync_mode
+    # -------------------------------------------------------------------------
+    x_incoming_sync = fields.Boolean(
+        string='Sync Incoming Email',
+        compute='_compute_incoming_sync',
+        inverse='_inverse_incoming_sync',
+        store=True,
+        help='Enable syncing of incoming emails to Odoo'
+    )
+    x_sync_unknown_contacts = fields.Boolean(
+        string='Include Unknown Senders',
+        compute='_compute_sync_unknown_contacts',
+        inverse='_inverse_sync_unknown_contacts',
+        store=True,
+        help='Also sync emails from senders not yet in Odoo'
+    )
+
+    @api.depends('x_sync_mode')
+    def _compute_incoming_sync(self):
+        for record in self:
+            record.x_incoming_sync = record.x_sync_mode != 'none'
+
+    def _inverse_incoming_sync(self):
+        for record in self:
+            if not record.x_incoming_sync:
+                record.x_sync_mode = 'none'
+            elif record.x_sync_unknown_contacts:
+                record.x_sync_mode = 'all'
+            else:
+                record.x_sync_mode = 'known_partners'
+
+    @api.depends('x_sync_mode')
+    def _compute_sync_unknown_contacts(self):
+        for record in self:
+            record.x_sync_unknown_contacts = record.x_sync_mode == 'all'
+
+    def _inverse_sync_unknown_contacts(self):
+        for record in self:
+            if record.x_incoming_sync:
+                record.x_sync_mode = 'all' if record.x_sync_unknown_contacts else 'known_partners'
+
+    # -------------------------------------------------------------------------
+    # Routing Configuration (for new incoming emails, not replies)
+    # -------------------------------------------------------------------------
+    x_routing_smart = fields.Boolean(
+        string='Smart Routing',
+        default=False,
+        help='Let AI decide where to route emails (CRM Lead, Helpdesk Ticket, etc.)'
+    )
+
+    x_routing_unknown_contact = fields.Selection([
+        ('auto', 'Create automatically'),
+        ('approval', 'Queue for review'),
+    ], string='New Contacts', default='auto',
+        help='What to do with emails from senders not yet in Odoo')
     # Keep for backwards compatibility / internal use
     x_sync_inbox = fields.Boolean(
         string='Sync Inbox',
@@ -89,17 +149,18 @@ class MicrosoftMailbox(models.Model):
         """Incoming sync is enabled when sync_mode is set and owner has OAuth."""
         for record in self:
             record.x_incoming_enabled = (
-                record.x_sync_mode == 'known_partners' and
+                record.x_sync_mode in ('known_partners', 'all') and
                 bool(record.x_owner_user_id) and
                 record.x_owner_user_id.x_microsoft_oauth_connected
             )
 
     @api.depends('x_sync_mode')
     def _compute_sync_folders(self):
-        """Known partners mode syncs both Inbox + Sent Items."""
+        """Sync modes enable both Inbox + Sent Items."""
         for record in self:
-            record.x_sync_inbox = record.x_sync_mode == 'known_partners'
-            record.x_sync_sent = record.x_sync_mode == 'known_partners'
+            sync_enabled = record.x_sync_mode in ('known_partners', 'all')
+            record.x_sync_inbox = sync_enabled
+            record.x_sync_sent = sync_enabled
     x_sync_start_date = fields.Datetime(
         string='Sync From Date',
         help='Fetch emails starting from this date. Leave empty to only sync new emails.'

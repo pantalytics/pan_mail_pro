@@ -13,12 +13,13 @@ Complete Microsoft 365 email integration for Odoo - send and receive emails via 
 
 | Model | Purpose |
 |-------|---------|
-| `x_microsoft.mailbox` | Mailbox configuration (email, type, sync settings) |
+| `x_microsoft.mailbox` | Mailbox configuration (email, type, sync, routing) |
 | `microsoft.graph.client` | Graph API helper (all API calls) |
 | `microsoft.incoming.mail.processor` | Incoming email sync (cron) |
 | `mail.mail` | Outgoing email override (Graph API send) |
 | `mail.compose.message` | Composer "Send From" dropdown |
 | `res.users` | User OAuth tokens |
+| `res.partner` | Contact block list field (`x_email_sync_blocked`) |
 | `res.config.settings` | Module settings (client_id, secret, tenant) |
 
 ### Module Structure
@@ -28,10 +29,11 @@ pan_outlook_pro/
 ├── models/
 │   ├── mail_mail.py              # Outgoing email override
 │   ├── mail_compose_message.py   # Composer integration
-│   ├── microsoft_mailbox.py      # Mailbox configuration
+│   ├── microsoft_mailbox.py      # Mailbox configuration + routing
 │   ├── microsoft_incoming_mail.py # Incoming email processor
 │   ├── microsoft_graph_client.py  # Graph API client
 │   ├── res_users.py              # User OAuth tokens
+│   ├── res_partner.py            # Contact block list field
 │   ├── res_config_settings.py    # Module settings
 │   └── encryption_utils.py       # Fernet encryption
 ├── controllers/
@@ -111,6 +113,7 @@ Each mailbox can be configured with a sync mode that determines how incoming ema
 |------|-------|------------|--------|----------|
 | **Send only** | - | - | - | Send-only mailbox |
 | **Known partners** | ✓ | ✓ | Existing partners only | Safe default, no spam |
+| **All** | ✓ | ✓ | Configurable per contact type | Full control with routing rules |
 
 ### Send Only (No Sync)
 
@@ -197,39 +200,66 @@ process_email()
 - Spam/marketing naturally filtered (not in contacts)
 - Simple to understand and maintain
 
-### Roadmap: Email Routing Options
+### Email Routing Configuration
 
-**Status:** Planned for v1.1
+**Status:** Implemented
 
-**Current behavior:** New incoming emails are posted to the partner's chatter.
+Each mailbox has routing settings that control how new emails (non-replies) are processed.
 
-**Planned:** Add configurable routing per mailbox to automatically create records:
+#### UI Fields (Progressive Disclosure)
 
-| Route Option | Target Model | Use Case |
-|--------------|--------------|----------|
-| Contact Chatter | `res.partner` | Current behavior |
-| **CRM Lead** | `crm.lead` (type=lead) | Default for sales mailboxes |
-| CRM Opportunity | `crm.lead` (type=opportunity) | Direct pipeline |
-| Helpdesk Ticket | `helpdesk.ticket` | Support mailboxes |
+| Field | Type | Description |
+|-------|------|-------------|
+| `x_incoming_sync` | Boolean toggle | Enable/disable incoming email sync |
+| `x_routing_smart` | Boolean toggle | Let AI decide routing (future) |
+| `x_sync_unknown_contacts` | Boolean | Also sync from senders not in Odoo |
+| `x_routing_unknown_contact` | Selection | What to do with unknown senders |
 
-**Routing logic:**
+#### Routing Priority
+
+1. **Smart Routing (AI)** - if enabled, AI classifies email intent (coming soon)
+2. **Odoo Alias** - if `mail.alias` exists for mailbox email, use its config (model + defaults)
+3. **Fallback** - post to partner's chatter with warning log
+
+#### Unknown Contact Options (when `x_sync_unknown_contacts` = True)
+
+| Option | Behavior |
+|--------|----------|
+| **Create automatically** | Create partner + record |
+| **Queue for review** | Hold for manual approval (future) |
+
+#### Block List
+
+Contacts can be individually blocked from email sync via `x_email_sync_blocked` on `res.partner`. Blocked contacts are skipped regardless of routing settings.
+
+#### Routing Logic
+
 ```
 Email arrives
     │
     ▼
-Reply check (In-Reply-To header)
+Pre-filters (duplicates, Odoo-originated, internal domain)
     │
-    ├── Match found → Post to existing thread (any model)
+    ▼
+Reply check (In-Reply-To / conversationId)
     │
-    └── No match → Route based on mailbox setting:
-                   → CRM Lead (default for new conversations)
-                   → Helpdesk Ticket
-                   → Partner Chatter (fallback)
+    ├── Reply found → Post to existing thread
+    │
+    └── New email:
+        │
+        ├── Partner blocked? → Skip
+        │
+        ├── Unknown contact + x_sync_unknown_contacts = False → Skip
+        │
+        └── Route to model:
+            ├── Smart Routing enabled → AI decides (future)
+            ├── Odoo alias exists → Use alias config (model + team_id)
+            └── No routing → Post to partner chatter + warning
 ```
 
 **Benefits for AI integration:**
-- Each conversation = 1 Lead record
-- Leads linked to `partner_id` → aggregate per company
+- Each conversation = 1 Lead/Ticket record
+- Records linked to `partner_id` → aggregate per company
 - Structured data for AI summaries per customer
 
 ### Roadmap: Unknown Contact Triage (AI-Assisted)
@@ -571,7 +601,12 @@ Microsoft Graph API does not provide an endpoint to query which shared mailboxes
 | Activity creation for assignment | Done |
 | Known partners only mode | Done |
 | Skip internal users (employees) | Done |
-| Full sync mode (with triage) | Future |
+| Configurable routing per mailbox | Done |
+| Target model selection (Lead/Ticket) | Done |
+| Contact block list | Done |
+| Unknown contact handling (all sync mode) | Done |
+| Smart routing toggle (AI decides) | Placeholder |
+| AI triage queue (approval mode) | Future |
 
 ### Security
 
