@@ -102,6 +102,7 @@ We use a **Draft → Send** flow instead of the simpler `sendMail` endpoint:
 - For system notifications (activity reminders, mentions to internal users)
 - Uses the Owner's OAuth token (same field as personal mailboxes)
 - Only one active notification mailbox allowed
+- **Required for incoming sync:** When enabling incoming sync on any mailbox, a notification mailbox must exist (enforced via constraint). This handles emails triggered by external authors.
 
 ---
 
@@ -398,8 +399,9 @@ Cron job (every 1 min)
       └── No reply ─────────────────────────┐
                                              ▼
                            ┌─────────────────────────────────┐
-                           │ Post to contact's chatter       │
-                           │ (res.partner)                   │
+                           │ Route via alias config          │
+                           │ Model.message_new(msg_dict)     │
+                           │ → helpdesk.ticket, crm.lead, etc│
                            └─────────────────────────────────┘
       │
       ▼
@@ -464,14 +466,27 @@ Cron job (every 1 min)
 - Reuses existing OAuth token infrastructure
 - 1-minute delay acceptable for email sync
 
-### 5.3 Native mail.thread.message_process()
+### 5.3 Native message_new() for Incoming Emails
 
-**Decision:** Use Odoo's native `message_process()` instead of custom inbox model.
+**Decision:** Use Odoo's native `message_new()` for creating records from incoming emails.
 
 **Why:**
+- This is exactly what Odoo's standard SMTP mail gateway uses
+- Handles record creation + initial message posting correctly
+- Triggers auto-replies (e.g., Helpdesk acknowledgment) properly
+- Does NOT send duplicate follower notifications to the sender
 - Proven Odoo code for threading, attachments, partner creation
-- Standard data structures = easier AI integration later
-- Less custom code = less maintenance
+
+**Critical insight:** Manually creating records + calling `message_post()` triggers follower notifications, which causes senders to receive duplicate emails. The `message_new()` approach avoids this entirely.
+
+```python
+# CORRECT - uses Odoo's native flow
+record = self.env['helpdesk.ticket'].message_new(msg_dict, custom_values={'team_id': team.id})
+
+# WRONG - triggers unwanted notifications
+record = self.env['helpdesk.ticket'].create(vals)
+record.message_post(body=body, ...)  # Sender gets notified!
+```
 
 ### 5.4 Reply Threading via Microsoft Message-ID
 
@@ -626,7 +641,36 @@ Microsoft Graph API does not provide an endpoint to query which shared mailboxes
 
 ---
 
-## 11. Log Tags
+## 11. Unit Tests
+
+Tests are in `tests/test_incoming_mail.py`. Run with:
+
+```bash
+docker-compose stop odoo
+docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
+  -d test_db -u pan_outlook_pro --test-enable --test-tags=pan_outlook_pro --stop-after-init
+docker-compose start odoo
+```
+
+### Test Coverage
+
+| Test Class | Purpose |
+|------------|---------|
+| `TestInternalDomain` | Internal domain filtering logic |
+| `TestDuplicateDetection` | Duplicate message detection |
+| `TestPartnerMatching` | Partner finding and creation |
+| `TestAliasRouting` | Email routing via aliases |
+
+### Adding New Tests
+
+1. Add test methods to `tests/test_incoming_mail.py`
+2. Use `@tagged('pan_outlook_pro', 'post_install', '-at_install')` decorator
+3. Extend `TransactionCase` for database tests
+4. Tests run in transactions (auto-rollback)
+
+---
+
+## 12. Log Tags
 
 Use these tags when debugging:
 

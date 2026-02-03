@@ -91,18 +91,24 @@ Go to **Settings** → **Outlook Pro** → **Manage Mailbox List**
 
 ### Incoming Email Sync
 
+**Prerequisite:** Create a **Notification mailbox** first (required for handling emails from external authors).
+
 1. Open a mailbox
 2. Select **Sync Mode**:
    - **Send messages only** - Outgoing only (no sync)
    - **Send and receive messages from existing contacts** - 2-way sync, only from known partners
    - **All** - 2-way sync with configurable routing rules per contact type
-3. Set the **Owner** (must have Microsoft connected)
-4. Optionally set **Sync Start Date** for historical email import
-5. Save
+3. Configure **Routing**:
+   - Select a **Team** (alias) to route emails to (e.g., Helpdesk, Sales)
+   - Emails create tickets/leads in the selected team
+4. Set the **Owner** (must have Microsoft connected)
+5. Optionally set **Sync Start Date** for historical email import
+6. Save
 
 **Sync behavior:**
-- Internal domains (configured in Outlook Pro settings) are excluded
-- Internal users (employees with Odoo accounts) are excluded
+- Internal domain is auto-detected from company email or mailboxes
+- Enable "Exclude Internal Emails" in Settings → Outlook Pro to filter internal traffic
+- Internal users (employees with Odoo accounts) are always excluded
 - Emails sync automatically every minute
 - Set a sync start date to import historical emails (default: sync from now)
 
@@ -175,3 +181,15 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for:
 - Email flow diagrams
 - Design decisions
 - API documentation
+
+### Running Tests
+
+```bash
+cd .local
+docker-compose stop odoo
+docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
+  -d test_db -u pan_outlook_pro --test-enable --test-tags=pan_outlook_pro --stop-after-init
+docker-compose start odoo
+```
+
+Tests cover: internal domain filtering, duplicate detection, partner matching, alias routing.
