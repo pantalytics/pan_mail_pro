@@ -226,7 +226,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             # 'all' mode: process both known and unknown contacts
             if not is_known_contact:
                 # Unknown contact - check routing setting
-                if mailbox.x_routing_unknown_contact == 'approval':
+                if mailbox.x_queue_unknown_contacts:
                     # TODO: Queue for approval - for now, skip
                     _logger.info(f"[Incoming Mail] Unknown contact queued for approval (not implemented yet): {contact_email}")
                     return False

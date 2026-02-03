@@ -34,13 +34,13 @@ class MicrosoftMailbox(models.Model):
     # Mailbox Type Configuration
     # -------------------------------------------------------------------------
     x_mailbox_type = fields.Selection([
-        ('personal', 'Personal Mailbox'),
-        ('shared', 'Shared Mailbox'),
-        ('notification', 'Notification Mailbox'),
-    ], string='Mailbox Type', default='personal', required=True,
-        help='Personal: User sends from their own mailbox (e.g., john@company.com)\n'
-             'Shared: Multiple users can send from this mailbox (e.g., support@company.com)\n'
-             'Notification: System notifications mailbox (e.g., notifications@company.com)')
+        ('personal', 'Personal'),
+        ('shared', 'Shared'),
+        ('notification', 'Notification'),
+    ], string='Type', default='personal', required=True,
+        help='Personal: Only the owner can send from this mailbox\n'
+             'Shared: All users can send using their own Microsoft account\n'
+             'Notification: Used for system emails, owner\'s account is used to send')
 
     x_owner_user_id = fields.Many2one(
         'res.users',
@@ -78,14 +78,14 @@ class MicrosoftMailbox(models.Model):
     # These compute from / write to x_sync_mode
     # -------------------------------------------------------------------------
     x_incoming_sync = fields.Boolean(
-        string='Sync Incoming Email',
+        string='Enable',
         compute='_compute_incoming_sync',
         inverse='_inverse_incoming_sync',
         store=True,
-        help='Enable syncing of incoming emails to Odoo'
+        help='Sync incoming emails from this mailbox to Odoo'
     )
     x_sync_unknown_contacts = fields.Boolean(
-        string='Include Unknown Senders',
+        string='Include',
         compute='_compute_sync_unknown_contacts',
         inverse='_inverse_sync_unknown_contacts',
         store=True,
@@ -120,28 +120,27 @@ class MicrosoftMailbox(models.Model):
     # Routing Configuration (for new incoming emails, not replies)
     # -------------------------------------------------------------------------
     x_routing_smart = fields.Boolean(
-        string='Smart Routing',
+        string='AI Routing',
         default=False,
-        help='Let AI decide where to route emails (CRM Lead, Helpdesk Ticket, etc.)'
+        help='Let AI decide where to route (CRM, Helpdesk, etc.)'
     )
 
     x_route_to_team = fields.Boolean(
-        string='Route to Team',
+        string='To Team',
         default=False,
-        help='Route emails to a team (CRM, Helpdesk) instead of contact chatter'
+        help='Route to a team instead of contact chatter'
     )
 
-    x_routing_unknown_contact = fields.Selection([
-        ('auto', 'Create automatically'),
-        ('approval', 'Queue for review'),
-    ], string='New Contacts', default='auto',
-        help='What to do with emails from senders not yet in Odoo')
+    x_queue_unknown_contacts = fields.Boolean(
+        string='Queue for Review',
+        default=False,
+        help='Hold for manual review instead of auto-creating contacts'
+    )
 
     x_exclude_internal = fields.Boolean(
-        string='Exclude Internal Emails',
+        string='Exclude Internal',
         default=True,
-        help='When enabled, emails from your company domain will be excluded from sync. '
-             'Disable this for team mailboxes where internal forwarding should be logged.'
+        help='Skip emails from your company domain. Disable for team mailboxes where internal forwarding should be logged.'
     )
     # Keep for backwards compatibility / internal use
     x_sync_inbox = fields.Boolean(
@@ -175,11 +174,12 @@ class MicrosoftMailbox(models.Model):
             record.x_sync_inbox = sync_enabled
             record.x_sync_sent = sync_enabled
     x_sync_start_date = fields.Datetime(
-        string='Sync From Date',
-        help='Fetch emails starting from this date. Leave empty to only sync new emails.'
+        string='Import From',
+        default=fields.Datetime.now,
+        help='Import emails starting from this date. Default is today.'
     )
     x_last_sync_date = fields.Datetime(
-        string='Last Sync',
+        string='Last Synced',
         readonly=True,
         help='Timestamp of last successful sync'
     )
@@ -214,10 +214,10 @@ class MicrosoftMailbox(models.Model):
     # Health Status (computed for list view)
     # -------------------------------------------------------------------------
     x_health_status = fields.Selection([
-        ('healthy', 'Healthy'),
+        ('healthy', 'OK'),
         ('warning', 'Warning'),
         ('error', 'Error'),
-    ], string='Health', compute='_compute_health_status', store=False)
+    ], string='Status', compute='_compute_health_status', store=False)
 
     @api.depends('state', 'x_sync_mode', 'x_mailbox_type', 'x_owner_user_id', 'x_owner_user_id.x_microsoft_oauth_connected')
     def _compute_health_status(self):
@@ -430,6 +430,15 @@ class MicrosoftMailbox(models.Model):
             if record.x_routing_smart:
                 raise ValidationError(_(
                     'Smart AI Routing is not yet implemented. This feature will be available in a future release.'
+                ))
+
+    @api.constrains('x_queue_unknown_contacts')
+    def _check_queue_unknown_contacts_not_implemented(self):
+        """Prevent enabling queue for review until the feature is implemented."""
+        for record in self:
+            if record.x_queue_unknown_contacts:
+                raise ValidationError(_(
+                    'Queue for Review is not yet implemented. This feature will be available in a future release.'
                 ))
 
     def get_sending_user(self):

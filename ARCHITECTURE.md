@@ -216,7 +216,7 @@ Each mailbox has routing settings that control how new emails (non-replies) are 
 | `x_incoming_sync` | Boolean toggle | Enable/disable incoming email sync |
 | `x_routing_smart` | Boolean toggle | Let AI decide routing (future) |
 | `x_sync_unknown_contacts` | Boolean | Also sync from senders not in Odoo |
-| `x_routing_unknown_contact` | Selection | What to do with unknown senders |
+| `x_queue_unknown_contacts` | Boolean | Queue unknown senders for review (future) |
 
 #### Routing Priority
 
