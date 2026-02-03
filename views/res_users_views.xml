@@ -27,47 +27,24 @@
         <field name="arch" type="xml">
             <xpath expr="//page[@name='preferences']" position="after">
                 <page string="Outlook Pro" name="outlook_pro">
-                    <group string="Microsoft Account">
-                        <field name="x_microsoft_oauth_connected" invisible="1"/>
+                    <field name="x_microsoft_oauth_connected" invisible="1"/>
 
-                        <div colspan="2" class="text-muted mb-4">
-                            Connect your Microsoft 365 account to send emails via Outlook.
-                        </div>
-
-                        <!-- Not Connected State -->
-                        <div colspan="2" invisible="x_microsoft_oauth_connected">
-                            <div class="mb-3">
-                                <span class="badge rounded-pill text-bg-secondary fs-6 px-3 py-2">
-                                    Status: Not Connected
-                                </span>
-                            </div>
+                    <!-- Not Connected -->
+                    <group invisible="x_microsoft_oauth_connected">
+                        <div colspan="2">
+                            <div class="text-muted mb-3">Send emails via your Microsoft 365 account</div>
                             <button type="object"
                                     name="action_connect_microsoft"
-                                    string="Connect Microsoft 365 account"
-                                    class="btn-primary"/>
-                        </div>
-
-                        <!-- Connected State -->
-                        <div colspan="2" invisible="not x_microsoft_oauth_connected">
-                            <div class="mb-3">
-                                <span class="badge rounded-pill text-bg-success fs-6 px-3 py-2">
-                                    Status: Connected
-                                </span>
-                            </div>
-                            <button type="object"
-                                    name="action_disconnect_microsoft"
-                                    string="Disconnect Microsoft Account"
-                                    class="btn-secondary"
-                                    confirm="This will remove access to send emails via Microsoft. Are you sure?"/>
+                                    string="Connect Microsoft 365"
+                                    class="btn-primary" icon="fa-windows"/>
                         </div>
                     </group>
 
-                    <group string="Email Preferences" invisible="not x_microsoft_oauth_connected">
-                        <div colspan="2" class="text-muted mb-3">
-                            For shared mailboxes, you need "Send As" permission in Microsoft 365.
-                        </div>
+                    <!-- Connected -->
+                    <group invisible="not x_microsoft_oauth_connected">
+                        <field name="x_microsoft_oauth_connected" widget="boolean_toggle" string="Connected"/>
                         <field name="x_microsoft_default_mailbox_id"
-                               string="Default Mailbox"
+                               string="Send from"
                                domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
                     </group>
@@ -85,47 +62,24 @@
         <field name="arch" type="xml">
             <xpath expr="//page[@name='page_security']" position="after">
                 <page string="Outlook Pro" name="outlook_pro">
-                    <group string="Microsoft Account">
-                        <field name="x_microsoft_oauth_connected" invisible="1"/>
+                    <field name="x_microsoft_oauth_connected" invisible="1"/>
 
-                        <div colspan="2" class="text-muted mb-4">
-                            Connect your Microsoft 365 account to send emails via Outlook.
-                        </div>
-
-                        <!-- Not Connected State -->
-                        <div colspan="2" invisible="x_microsoft_oauth_connected">
-                            <div class="mb-3">
-                                <span class="badge rounded-pill text-bg-secondary fs-6 px-3 py-2">
-                                    Status: Not Connected
-                                </span>
-                            </div>
+                    <!-- Not Connected -->
+                    <group invisible="x_microsoft_oauth_connected">
+                        <div colspan="2">
+                            <div class="text-muted mb-3">Send emails via your Microsoft 365 account</div>
                             <button type="object"
                                     name="action_connect_microsoft"
-                                    string="Connect Microsoft 365 account"
-                                    class="btn-primary"/>
-                        </div>
-
-                        <!-- Connected State -->
-                        <div colspan="2" invisible="not x_microsoft_oauth_connected">
-                            <div class="mb-3">
-                                <span class="badge rounded-pill text-bg-success fs-6 px-3 py-2">
-                                    Status: Connected
-                                </span>
-                            </div>
-                            <button type="object"
-                                    name="action_disconnect_microsoft"
-                                    string="Disconnect Microsoft Account"
-                                    class="btn-secondary"
-                                    confirm="This will remove access to send emails via Microsoft. Are you sure?"/>
+                                    string="Connect Microsoft 365"
+                                    class="btn-primary" icon="fa-windows"/>
                         </div>
                     </group>
 
-                    <group string="Email Preferences" invisible="not x_microsoft_oauth_connected">
-                        <div colspan="2" class="text-muted mb-3">
-                            For shared mailboxes, you need "Send As" permission in Microsoft 365.
-                        </div>
+                    <!-- Connected -->
+                    <group invisible="not x_microsoft_oauth_connected">
+                        <field name="x_microsoft_oauth_connected" widget="boolean_toggle" string="Connected"/>
                         <field name="x_microsoft_default_mailbox_id"
-                               string="Default Mailbox"
+                               string="Send from"
                                domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
                     </group>

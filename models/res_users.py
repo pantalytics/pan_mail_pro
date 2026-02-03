@@ -34,8 +34,9 @@ class ResUsers(models.Model):
 
     # OAuth status (stored to allow domain filtering in mailbox config)
     x_microsoft_oauth_connected = fields.Boolean(
-        string='Microsoft Connected',
+        string='Connected',
         compute='_compute_microsoft_oauth_connected',
+        inverse='_inverse_microsoft_oauth_connected',
         store=True
     )
 
@@ -108,6 +109,12 @@ class ResUsers(models.Model):
         """Check if user has a Microsoft OAuth connection (refresh token exists)"""
         for user in self:
             user.x_microsoft_oauth_connected = bool(user.x_microsoft_refresh_token_encrypted)
+
+    def _inverse_microsoft_oauth_connected(self):
+        """Disconnect when toggle is turned off"""
+        for user in self:
+            if not user.x_microsoft_oauth_connected:
+                user.action_disconnect_microsoft()
 
     def _compute_microsoft_health_status(self):
         """Compute Microsoft health status for admin overview."""
