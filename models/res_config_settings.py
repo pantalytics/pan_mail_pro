@@ -50,27 +50,27 @@ class ResConfigSettings(models.TransientModel):
 
     # Microsoft OAuth Configuration
     x_microsoft_client_id = fields.Char(
-        string='Microsoft Client ID',
+        string='Client ID',
         help='Application (client) ID from Azure App Registration',
         config_parameter='x_pan_outlook_pro.client_id'
     )
 
     # Encrypted client secret (hidden, for internal storage only)
     x_microsoft_client_secret_encrypted = fields.Char(
-        string='Microsoft Client Secret (Encrypted)',
+        string='Client Secret (Encrypted)',
         help='Encrypted client secret - stored securely'
     )
 
     # Computed field for backwards compatibility
     x_microsoft_client_secret = fields.Char(
-        string='Microsoft Client Secret',
+        string='Client Secret',
         help='Client secret from Azure App Registration',
         compute='_compute_decrypted_client_secret',
         inverse='_inverse_client_secret'
     )
 
     x_microsoft_tenant_id = fields.Char(
-        string='Microsoft Tenant ID',
+        string='Tenant ID',
         help='Directory (tenant) ID from Azure App Registration',
         config_parameter='x_pan_outlook_pro.tenant_id'
     )

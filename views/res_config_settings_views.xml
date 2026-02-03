@@ -34,176 +34,129 @@
                     <field name="x_microsoft_notification_configured" invisible="1"/>
 
                     <!-- ============================================ -->
-                    <!-- STATUS BAR -->
+                    <!-- CONFIGURATION -->
                     <!-- ============================================ -->
-                    <div class="d-flex gap-4 mb-4 p-3 bg-light rounded">
-                        <div class="d-flex align-items-center">
-                            <i class="fa fa-cloud me-2 text-success" invisible="x_microsoft_config_status not in ('configured', 'verified')"/>
-                            <i class="fa fa-cloud me-2 text-muted" invisible="x_microsoft_config_status in ('configured', 'verified')"/>
-                            <span invisible="x_microsoft_config_status not in ('configured', 'verified')">Azure</span>
-                            <span class="text-muted" invisible="x_microsoft_config_status in ('configured', 'verified')">Azure</span>
+                    <h2>Configuration</h2>
+                    <div class="row mt-4 mb-4 o_settings_container">
+                        <!-- LEFT: Credentials -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Credentials</span>
+                                <div class="text-muted mb-3">Copy from your Azure app registration</div>
+                                <div class="content-group">
+                                    <div class="row mt-2">
+                                        <label class="col-lg-3 o_light_label" for="x_microsoft_client_id">Client ID</label>
+                                        <field name="x_microsoft_client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" class="o_field_widget"/>
+                                    </div>
+                                    <div class="row mt-2">
+                                        <label class="col-lg-3 o_light_label" for="x_microsoft_client_secret">Secret</label>
+                                        <field name="x_microsoft_client_secret" password="True" placeholder="Client secret value"/>
+                                    </div>
+                                    <div class="row mt-2">
+                                        <label class="col-lg-3 o_light_label" for="x_microsoft_tenant_id">Tenant ID</label>
+                                        <field name="x_microsoft_tenant_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                                    </div>
+                                    <div class="mt-3" invisible="x_microsoft_config_status == 'not_configured'">
+                                        <span class="text-success" invisible="x_microsoft_config_status != 'verified'">
+                                            <i class="fa fa-check-circle me-1"/>Verified
+                                        </span>
+                                        <span class="text-danger" invisible="x_microsoft_config_status != 'error'">
+                                            <i class="fa fa-times-circle me-1"/><field name="x_microsoft_config_status_message" class="d-inline" readonly="1"/>
+                                        </span>
+                                        <button name="action_test_azure_configuration" type="object"
+                                                string="Test Connection" class="btn-secondary"
+                                                invisible="x_microsoft_config_status != 'configured'"/>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="d-flex align-items-center">
-                            <i class="fa fa-user me-2 text-success" invisible="not x_current_user_oauth_connected"/>
-                            <i class="fa fa-user me-2 text-muted" invisible="x_current_user_oauth_connected"/>
-                            <span invisible="not x_current_user_oauth_connected">Connected</span>
-                            <span class="text-muted" invisible="x_current_user_oauth_connected">Not connected</span>
-                        </div>
-                        <div class="d-flex align-items-center">
-                            <i class="fa fa-envelope me-2 text-success" invisible="x_microsoft_mailbox_count == 0"/>
-                            <i class="fa fa-envelope me-2 text-muted" invisible="x_microsoft_mailbox_count > 0"/>
-                            <span invisible="x_microsoft_mailbox_count == 0"><field name="x_microsoft_mailbox_count" class="d-inline" readonly="1"/> mailbox(es)</span>
-                            <span class="text-muted" invisible="x_microsoft_mailbox_count > 0">No mailboxes</span>
-                        </div>
-                        <div class="d-flex align-items-center">
-                            <i class="fa fa-bell me-2 text-success" invisible="not x_microsoft_notification_configured"/>
-                            <i class="fa fa-bell me-2 text-muted" invisible="x_microsoft_notification_configured"/>
-                            <span invisible="not x_microsoft_notification_configured">Notifications</span>
-                            <span class="text-muted" invisible="x_microsoft_notification_configured">No notifications</span>
+                        <!-- RIGHT: Instructions + Callback URL (hide when verified) -->
+                        <div class="col-12 col-lg-6 o_setting_box" invisible="x_microsoft_config_status == 'verified'">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Instructions</span>
+                                <div class="content-group">
+                                    <ol class="mb-3 ps-3">
+                                        <li>Open <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Azure Portal → App registrations</a></li>
+                                        <li>Click <strong>+ New registration</strong>, name it <code>Odoo Email Integration</code></li>
+                                        <li>Set Redirect URI (Web) to the value below</li>
+                                        <li>Copy <strong>Client ID</strong> and <strong>Tenant ID</strong> from Overview</li>
+                                        <li>Create a <strong>Client Secret</strong> in Certificates &amp; secrets</li>
+                                        <li>Add API permissions:
+                                            <ul class="mb-0">
+                                                <li><code>Mail.ReadWrite</code></li>
+                                                <li><code>Mail.ReadWrite.Shared</code></li>
+                                                <li><code>User.Read</code></li>
+                                                <li><code>offline_access</code></li>
+                                            </ul>
+                                        </li>
+                                        <li>Click <strong>Grant admin consent</strong></li>
+                                    </ol>
+                                    <div class="mt-4">
+                                        <span class="o_form_label">Callback URL</span>
+                                        <div class="text-muted mb-2">Copy to Azure → Authentication → Redirect URIs</div>
+                                        <field name="x_microsoft_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- SETUP GUIDE (first for new users) -->
+                    <!-- STATUS (compact) -->
                     <!-- ============================================ -->
-                    <block title="Setup Guide" invisible="x_microsoft_config_status in ('configured', 'verified')">
-                        <setting string="First-time setup" help="Follow these steps to configure Microsoft 365 integration">
-                            <details class="mt-2" open="open">
-                                <summary class="btn btn-link ps-0"><i class="fa fa-book me-2"/>Azure App Setup</summary>
-                                <div class="mt-3 p-3 border rounded bg-white">
-                                    <ol class="mb-0">
-                                        <li class="mb-2">Open <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Azure Portal → App registrations</a></li>
-                                        <li class="mb-2">Click <strong>+ New registration</strong></li>
-                                        <li class="mb-2">Name: <code>Odoo Email Integration</code></li>
-                                        <li class="mb-2">Account type: <em>Single tenant</em></li>
-                                        <li class="mb-2">Redirect URI: <em>Web</em> → copy from field below</li>
-                                        <li class="mb-2">Copy <strong>Client ID</strong> and <strong>Tenant ID</strong> from Overview</li>
-                                        <li class="mb-2">Go to <strong>Certificates &amp; secrets</strong> → create secret → copy <strong>Value</strong></li>
-                                        <li class="mb-2">Go to <strong>API permissions</strong> → add: <code>Mail.ReadWrite</code>, <code>Mail.ReadWrite.Shared</code>, <code>User.Read</code>, <code>offline_access</code></li>
-                                        <li class="mb-2">Click <strong>Grant admin consent</strong></li>
-                                    </ol>
+                    <div class="row mt-4 o_settings_container" invisible="x_microsoft_config_status == 'not_configured'">
+                        <!-- Account -->
+                        <div class="col-12 col-lg-4 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Account</span>
+                                <div class="text-muted small">Your Microsoft 365 login</div>
+                                <div class="mt-2">
+                                    <button name="action_connect_microsoft_admin" type="object"
+                                            string="Connect Microsoft" class="btn-primary" icon="fa-windows"
+                                            invisible="x_current_user_oauth_connected"/>
+                                    <span class="text-success" invisible="not x_current_user_oauth_connected">
+                                        <i class="fa fa-check-circle me-1"/>Connected
+                                    </span>
                                 </div>
-                            </details>
-                        </setting>
-                    </block>
-
-                    <!-- ============================================ -->
-                    <!-- AZURE CREDENTIALS -->
-                    <!-- ============================================ -->
-                    <block title="Azure Credentials">
-                        <setting string="Microsoft Azure App" help="Credentials from your Azure App Registration">
-                            <div class="row mt-2">
-                                <label for="x_microsoft_redirect_uri" class="col-lg-3 o_light_label"/>
-                                <field name="x_microsoft_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
                             </div>
-                            <div class="row mt-2">
-                                <label for="x_microsoft_client_id" class="col-lg-3 o_light_label"/>
-                                <field name="x_microsoft_client_id" placeholder="Application (client) ID"/>
-                            </div>
-                            <div class="row mt-2">
-                                <label for="x_microsoft_client_secret" class="col-lg-3 o_light_label"/>
-                                <field name="x_microsoft_client_secret" password="True" placeholder="Client secret value"/>
-                            </div>
-                            <div class="row mt-2">
-                                <label for="x_microsoft_tenant_id" class="col-lg-3 o_light_label"/>
-                                <field name="x_microsoft_tenant_id" placeholder="Directory (tenant) ID"/>
-                            </div>
-
-                            <div class="mt-3">
-                                <button name="action_test_azure_configuration" type="object"
-                                        string="Test Connection" class="btn-secondary" icon="fa-plug"
-                                        invisible="x_microsoft_config_status == 'not_configured'"/>
-                                <span class="text-success ms-3" invisible="x_microsoft_config_status != 'verified'">
-                                    <i class="fa fa-check-circle me-1"/>Connected
-                                </span>
-                                <span class="text-danger ms-3" invisible="x_microsoft_config_status != 'error'">
-                                    <i class="fa fa-times-circle me-1"/><field name="x_microsoft_config_status_message" class="d-inline"/>
-                                </span>
-                            </div>
-                        </setting>
-                    </block>
-
-                    <!-- ============================================ -->
-                    <!-- YOUR CONNECTION -->
-                    <!-- ============================================ -->
-                    <block title="Your Connection" invisible="x_microsoft_config_status == 'not_configured'">
-                        <setting string="Microsoft Account" help="Connect your Microsoft account to send emails">
-                            <div class="d-flex align-items-center">
-                                <button name="action_connect_microsoft_admin" type="object"
-                                        string="Connect Microsoft" class="btn-primary" icon="fa-windows"
-                                        invisible="x_current_user_oauth_connected"/>
-                                <span class="text-success" invisible="not x_current_user_oauth_connected">
-                                    <i class="fa fa-check-circle me-2"/>Your Microsoft account is connected
-                                </span>
-                            </div>
-                        </setting>
-                    </block>
-
-                    <!-- ============================================ -->
-                    <!-- MAILBOXES -->
-                    <!-- ============================================ -->
-                    <block title="Mailboxes" invisible="x_microsoft_config_status == 'not_configured'">
-                        <setting string="Email addresses" help="Configure mailboxes for sending and receiving">
-                            <button type="action" name="%(action_microsoft_mailbox)d"
-                                    string="Manage Mailboxes" class="btn-primary" icon="fa-envelope"/>
-                            <span class="text-muted ms-3">
-                                <field name="x_microsoft_mailbox_count" class="d-inline" readonly="1"/> configured
-                            </span>
-                        </setting>
-                    </block>
-
-                    <!-- ============================================ -->
-                    <!-- OPTIONS -->
-                    <!-- ============================================ -->
-                    <block title="Options">
-                        <setting string="Internal Domains" help="Emails from these domains are considered internal. Configure per-mailbox whether to filter them.">
-                            <div class="mt-2">
-                                <span class="text-muted" invisible="not x_microsoft_alias_domains">
-                                    Alias domains: <strong><field name="x_microsoft_alias_domains" readonly="1" class="d-inline"/></strong>
-                                </span>
-                                <span class="text-warning" invisible="x_microsoft_alias_domains">
-                                    No alias domain configured.
-                                </span>
-                            </div>
-                            <div class="mt-2">
-                                <button type="action" name="%(mail.mail_alias_domain_action)d"
-                                        string="Configure Alias Domains" class="btn-link ps-0" icon="fa-cog"/>
-                            </div>
-                        </setting>
-                    </block>
-
-                    <!-- ============================================ -->
-                    <!-- HELP (for configured users) -->
-                    <!-- ============================================ -->
-                    <block title="Help" invisible="x_microsoft_config_status not in ('configured', 'verified')">
-                        <setting string="Documentation" help="Setup guides and troubleshooting">
-                            <details class="mt-2">
-                                <summary class="btn btn-link ps-0"><i class="fa fa-users me-2"/>User Setup</summary>
-                                <div class="mt-3 p-3 border rounded bg-white">
-                                    <p class="mb-2"><strong>Each user needs to:</strong></p>
-                                    <ol class="mb-0">
-                                        <li class="mb-1">Go to <strong>My Profile → Preferences</strong></li>
-                                        <li class="mb-1">Click <strong>Connect Microsoft Account</strong></li>
-                                        <li class="mb-1">Sign in and approve permissions</li>
-                                        <li class="mb-1">Select default mailbox</li>
-                                    </ol>
+                        </div>
+                        <!-- Mailboxes -->
+                        <div class="col-12 col-lg-4 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Mailboxes</span>
+                                <div class="text-muted small">Configure sending and sync</div>
+                                <div class="mt-2">
+                                    <field name="x_microsoft_mailbox_count" class="d-inline" readonly="1"/>
                                 </div>
-                            </details>
-                            <details class="mt-2">
-                                <summary class="btn btn-link ps-0"><i class="fa fa-envelope me-2"/>Mailbox Types</summary>
-                                <div class="mt-3 p-3 border rounded bg-white">
-                                    <ul class="mb-0">
-                                        <li><strong>Personal:</strong> Individual user mailbox (john@company.com)</li>
-                                        <li><strong>Shared:</strong> Team mailbox (sales@company.com) - requires M365 Send As permission</li>
-                                        <li><strong>Notification:</strong> System notifications mailbox</li>
-                                    </ul>
-                                    <a href="https://admin.microsoft.com/#/SharedMailboxes" target="_blank" class="btn btn-link ps-0 mt-2">
-                                        <i class="fa fa-external-link me-1"/>Create shared mailboxes in M365 Admin
-                                    </a>
+                                <div class="mt-1">
+                                    <button type="action" name="%(action_microsoft_mailbox)d"
+                                            string="Manage" icon="oi-arrow-right" class="oe_link"/>
                                 </div>
-                            </details>
-                        </setting>
-                    </block>
+                            </div>
+                        </div>
+                        <!-- Domains -->
+                        <div class="col-12 col-lg-4 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Internal Domains</span>
+                                <div class="text-muted small">Your company's email domains</div>
+                                <div class="mt-2">
+                                    <span invisible="not x_microsoft_alias_domains">
+                                        <field name="x_microsoft_alias_domains" readonly="1" class="d-inline"/>
+                                    </span>
+                                    <span class="text-muted" invisible="x_microsoft_alias_domains">—</span>
+                                </div>
+                                <div class="mt-1">
+                                    <button type="action" name="%(mail.mail_alias_domain_action)d"
+                                            string="Manage" icon="oi-arrow-right" class="oe_link"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                 </app>
             </xpath>

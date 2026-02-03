@@ -123,6 +123,63 @@ When enabling incoming sync on any mailbox, a Notification mailbox must exist. T
 - Emails from external authors (no Odoo user)
 - System notifications triggered by incoming mail
 
+## Odoo Settings Page Layout (res.config.settings)
+
+### Two-column layout in settings - WHAT WORKS
+
+For custom two-column layouts in Odoo 19 settings pages, **don't use** nested `<group>` elements inside `<setting>` - they don't render side-by-side.
+
+**Working pattern** (Bootstrap grid + Odoo CSS classes):
+
+```xml
+<h2>Section Title</h2>
+<div class="row mt-4 mb-4 o_settings_container">
+    <!-- LEFT COLUMN -->
+    <div class="col-12 col-lg-6 o_setting_box">
+        <div class="o_setting_left_pane"/>
+        <div class="o_setting_right_pane">
+            <span class="o_form_label">Column Title</span>
+            <div class="text-muted mb-3">Description</div>
+            <div class="content-group">
+                <div class="row mt-2">
+                    <label class="col-lg-3 o_light_label" for="field_name">Label</label>
+                    <field name="field_name"/>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- RIGHT COLUMN -->
+    <div class="col-12 col-lg-6 o_setting_box">
+        <div class="o_setting_left_pane"/>
+        <div class="o_setting_right_pane">
+            <span class="o_form_label">Column Title</span>
+            <div class="content-group">
+                <!-- content here -->
+            </div>
+        </div>
+    </div>
+</div>
+```
+
+### What does NOT work for two-column layouts
+
+1. **Nested `<group>` inside `<setting>`** - groups stack vertically, not side-by-side
+2. **`<group><group/><group/></group>` pattern** - works in forms, NOT in settings
+3. **Bootstrap `row`/`col-6` inside `<setting>`** - gets overridden by settings CSS
+4. **`<block>` with custom grid** - block has its own layout constraints
+
+### Standard settings pattern (single items)
+
+For standard label-on-left, content-on-right settings, use the normal pattern:
+
+```xml
+<block title="Section">
+    <setting string="Label" help="Tooltip text">
+        <field name="field_name"/>
+    </setting>
+</block>
+```
+
 ## OWL Frontend (Odoo 17+)
 
 Custom list view buttons require JavaScript. Pattern:

@@ -9,15 +9,15 @@
                   decoration-danger="x_health_status == 'error'"
                   decoration-warning="x_health_status == 'warning'">
                 <field name="sequence" widget="handle"/>
-                <field name="email" string="Email"/>
-                <field name="x_mailbox_type" string="Type"/>
-                <field name="x_owner_user_id" string="Owner" optional="show"/>
-                <field name="x_incoming_sync" string="Sync" optional="show"/>
+                <field name="email" string="Mailbox"/>
                 <field name="x_health_status" string="Status" widget="badge"
                        decoration-success="x_health_status == 'healthy'"
                        decoration-warning="x_health_status == 'warning'"
                        decoration-danger="x_health_status == 'error'"/>
-                <field name="x_last_sync_date" string="Last Synced" optional="show"/>
+                <field name="x_mailbox_type" string="Type" optional="hide"/>
+                <field name="x_owner_user_id" string="Owner" optional="hide"/>
+                <field name="x_incoming_sync" string="Sync" optional="hide"/>
+                <field name="x_last_sync_date" string="Last Synced" optional="hide"/>
                 <field name="x_error_message" string="Error" optional="hide"/>
             </list>
         </field>
@@ -34,6 +34,11 @@
                     <group string="Mailbox">
                         <group>
                             <field name="email" placeholder="support@company.com"/>
+                            <field name="x_health_status" string="Status" widget="badge"
+                                   decoration-success="x_health_status == 'healthy'"
+                                   decoration-warning="x_health_status == 'warning'"
+                                   decoration-danger="x_health_status == 'error'"
+                                   readonly="1"/>
                             <field name="x_mailbox_type" widget="radio" string="Type"/>
                             <field name="x_owner_user_id"
                                    required="x_mailbox_type in ('personal', 'notification') or x_incoming_sync"/>
@@ -76,47 +81,38 @@
                     <!-- SECTION 3: ROUTING (only when sync enabled) -->
                     <group string="Routing" invisible="x_mailbox_type == 'notification' or not x_incoming_sync">
                         <group>
-                            <field name="x_routing_smart" widget="boolean_toggle"/>
-                            <field name="x_route_to_team" widget="boolean_toggle"
-                                   invisible="x_routing_smart"/>
+                            <field name="x_route_to_team" widget="boolean_toggle"/>
                             <field name="x_alias_id" string="Team"
-                                   invisible="x_routing_smart or not x_route_to_team"
-                                   required="x_route_to_team and not x_routing_smart"
+                                   invisible="not x_route_to_team"
+                                   required="x_route_to_team"
                                    options="{'no_create': True, 'no_create_edit': True}"
                                    placeholder="Select team..."/>
                         </group>
                         <group>
-                            <div class="text-muted"
-                                 invisible="x_routing_smart or x_route_to_team">
+                            <div class="text-muted" invisible="x_route_to_team">
                                 Emails will be posted to the sender's contact record.
-                            </div>
-                            <div class="alert alert-warning mb-0" role="alert"
-                                 invisible="not x_routing_smart">
-                                AI routing coming soon. Currently defaults to CRM Lead.
                             </div>
                         </group>
                     </group>
+                    <!-- Hidden: AI routing not yet implemented -->
+                    <field name="x_routing_smart" invisible="1"/>
 
                     <!-- SECTION 4: UNKNOWN SENDERS (only when sync enabled) -->
                     <group string="Unknown Senders" invisible="x_mailbox_type == 'notification' or not x_incoming_sync">
                         <group>
                             <field name="x_sync_unknown_contacts" string="Include" widget="boolean_toggle"/>
-                            <field name="x_queue_unknown_contacts" widget="boolean_toggle"
-                                   invisible="not x_sync_unknown_contacts"/>
                         </group>
                         <group>
                             <div class="text-muted" invisible="x_sync_unknown_contacts">
                                 Only sync emails from existing contacts.
                             </div>
-                            <div class="text-muted" invisible="not x_sync_unknown_contacts or x_queue_unknown_contacts">
+                            <div class="text-muted" invisible="not x_sync_unknown_contacts">
                                 Auto-create new contacts for unknown senders.
-                            </div>
-                            <div class="alert alert-warning mb-0" role="alert"
-                                 invisible="not x_sync_unknown_contacts or not x_queue_unknown_contacts">
-                                Queue for review not yet available. Unknown senders will be skipped.
                             </div>
                         </group>
                     </group>
+                    <!-- Hidden: Queue for review not yet implemented -->
+                    <field name="x_queue_unknown_contacts" invisible="1"/>
 
                     <!-- SYNC BUTTON -->
                     <group invisible="x_mailbox_type == 'notification' or not x_incoming_sync">
@@ -142,7 +138,6 @@
                     <field name="x_create_activity" invisible="1"/>
                     <field name="x_activity_user_id" invisible="1"/>
                     <field name="active" invisible="1"/>
-                    <field name="x_health_status" invisible="1"/>
                 </sheet>
             </form>
         </field>
