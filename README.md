@@ -14,7 +14,10 @@ Complete Microsoft 365 email integration for Odoo - send and receive with full c
 - Automatic sync from Microsoft 365 mailboxes (1 min interval)
 - 2-way sync: Inbox and Sent Items
 - Reply threading via In-Reply-To headers + Microsoft conversationId fallback
+- Historical email sync with configurable start date
 - Known partners filter: only sync emails from existing contacts
+- "All" sync mode with per-contact routing rules
+- Per-contact block list to exclude specific senders
 - New emails create CRM Leads with activity for mailbox owner
 
 **Security:**
@@ -70,6 +73,8 @@ Follow the instructions in Odoo - they include links to the correct Azure Portal
 2. Select your default **Send From** mailbox
 3. Save
 
+**Note:** If your Microsoft account is not connected or no default mailbox is set, you'll see a warning banner when opening the email composer.
+
 ---
 
 ## Mailbox Configuration
@@ -89,16 +94,21 @@ Go to **Settings** → **Outlook Pro** → **Manage Mailbox List**
 1. Open a mailbox
 2. Select **Sync Mode**:
    - **Send messages only** - Outgoing only (no sync)
-   - **Send and receive messages from existing contacts** - 2-way sync (Inbox + Sent Items), only from known partners
+   - **Send and receive messages from existing contacts** - 2-way sync, only from known partners
+   - **All** - 2-way sync with configurable routing rules per contact type
 3. Set the **Owner** (must have Microsoft connected)
-4. Save
+4. Optionally set **Sync Start Date** for historical email import
+5. Save
 
 **Sync behavior:**
-- Only emails from contacts that already exist in Odoo are synced
 - Internal domains (configured in Outlook Pro settings) are excluded
 - Internal users (employees with Odoo accounts) are excluded
 - Emails sync automatically every minute
-- First sync only sets timestamp - no historical emails imported
+- Set a sync start date to import historical emails (default: sync from now)
+
+**Per-contact block list:**
+- Go to a contact's form view → Email Sync tab
+- Enable "Block Email Sync" to exclude that contact from all mailbox sync
 
 ---
 
@@ -147,10 +157,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
 ---
 
 ## Roadmap
-
-### v1.1 - Configurable Routing
-- Per-mailbox routing: Lead, Opportunity, Helpdesk Ticket
-- Currently all new emails create CRM Leads
 
 ### v2.0 - AI-Assisted Triage
 - Sync emails from unknown senders

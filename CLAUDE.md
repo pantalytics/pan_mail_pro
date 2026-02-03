@@ -27,9 +27,12 @@ Send and receive emails via Microsoft Graph API with OAuth 2.0 delegated permiss
 | File | Purpose |
 |------|---------|
 | `models/mail_mail.py` | Outgoing email override (Graph API send) |
-| `models/microsoft_mailbox.py` | Mailbox configuration model |
+| `models/mail_message.py` | Microsoft message ID storage for threading |
+| `models/mail_compose_message.py` | Composer "Send From" dropdown + setup warning |
+| `models/microsoft_mailbox.py` | Mailbox configuration + routing rules |
 | `models/microsoft_graph_client.py` | All Graph API calls |
 | `models/microsoft_incoming_mail.py` | Incoming email sync (cron) |
+| `models/res_partner.py` | Contact block list field |
 | `controllers/main.py` | OAuth callback handler |
 
 ## Mailbox Types

@@ -180,6 +180,11 @@ class MicrosoftMailbox(models.Model):
         string='Assign Activities To',
         help='User who receives activities for new emails. Leave empty for no assignment.'
     )
+    x_alias_id = fields.Many2one(
+        'mail.alias',
+        string='Route to Alias',
+        help='Incoming emails will be routed to this Odoo alias (e.g., sales@ → CRM Lead, support@ → Helpdesk Ticket)'
+    )
     state = fields.Selection([
         ('draft', 'Not Configured'),
         ('active', 'Active'),

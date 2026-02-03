@@ -17,7 +17,8 @@ Complete Microsoft 365 email integration for Odoo - send and receive emails via 
 | `microsoft.graph.client` | Graph API helper (all API calls) |
 | `microsoft.incoming.mail.processor` | Incoming email sync (cron) |
 | `mail.mail` | Outgoing email override (Graph API send) |
-| `mail.compose.message` | Composer "Send From" dropdown |
+| `mail.message` | Stores Microsoft message IDs for reply threading |
+| `mail.compose.message` | Composer "Send From" dropdown + setup warning |
 | `res.users` | User OAuth tokens |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
 | `res.config.settings` | Module settings (client_id, secret, tenant) |
@@ -28,7 +29,8 @@ Complete Microsoft 365 email integration for Odoo - send and receive emails via 
 pan_outlook_pro/
 ├── models/
 │   ├── mail_mail.py              # Outgoing email override
-│   ├── mail_compose_message.py   # Composer integration
+│   ├── mail_message.py           # Microsoft message ID storage
+│   ├── mail_compose_message.py   # Composer integration + setup warning
 │   ├── microsoft_mailbox.py      # Mailbox configuration + routing
 │   ├── microsoft_incoming_mail.py # Incoming email processor
 │   ├── microsoft_graph_client.py  # Graph API client
@@ -473,27 +475,32 @@ Cron job (every 1 min)
 
 ### 5.4 Reply Threading via Microsoft Message-ID
 
-**Decision:** After sending, fetch actual Message-ID from Sent Items.
+**Decision:** After sending, store Microsoft's `internetMessageId` on `mail.message` for reply threading.
 
 **Why:**
 - Graph API `sendMail` doesn't return Message-ID
 - Microsoft generates its own Message-ID (different from any we set)
 - Need Microsoft's ID for correct reply threading
+- Incoming replies use `In-Reply-To` header to find parent message
 
 **Implementation:**
-```python
-time.sleep(1)  # Wait for message in Sent Items
-actual_message_id = self._fetch_sent_message_id(token, subject)
-```
+1. After sending via Graph API, the `internetMessageId` is returned from the draft
+2. Store it on `mail.message.x_microsoft_message_id`
+3. Incoming mail processor looks up parent via `In-Reply-To` header matching stored IDs
 
-### 5.5 First Sync Skips History
+### 5.5 Historical Sync Support
 
-**Decision:** On first sync, set timestamp to "now" and skip fetching.
+**Decision:** Configurable sync start date per mailbox, defaulting to "now".
+
+**Configuration:**
+- `x_sync_start_date` field on mailbox allows setting a historical start date
+- If not set, defaults to current timestamp (no historical import)
+- Field becomes readonly after first sync (delete mailbox to reset)
 
 **Why:**
-- Prevents importing hundreds of old emails
-- Prevents flooding chatter with historical messages
-- Clean start for new mailbox configuration
+- Default behavior prevents flooding chatter with old emails
+- Optional historical import for users who need past emails
+- Duplicates are automatically skipped via `internetMessageId` check
 
 ### 5.6 Pre-create Partners
 

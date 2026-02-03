@@ -591,11 +591,10 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         """
         Create a record for a new incoming email based on routing configuration.
 
-        Routing options (user must configure one):
-        1. Smart routing (AI) - if enabled (coming soon)
-        2. Odoo alias - if mail.alias exists for this mailbox email
+        Routing is determined by the mailbox's x_alias_id field, which links to
+        an Odoo mail.alias. The alias determines the model and defaults (team, etc.).
 
-        If neither is configured, email is posted to partner's chatter with a warning.
+        If no alias is configured, email is posted to partner's chatter with a warning.
 
         Args:
             mailbox: x_microsoft.mailbox record with routing configuration
@@ -612,34 +611,34 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         alias_defaults = {}
         record_name = subject if subject else f"Email from {partner.name}"
 
-        # Option 1: Smart routing (AI decides)
+        # Option 1: Smart routing (AI decides) - coming soon
         if mailbox and mailbox.x_routing_smart:
             # TODO: Implement AI classification here
             # For now, default to CRM Lead
             _logger.info("[Incoming Mail] Smart routing enabled but not implemented, defaulting to CRM Lead")
             model = 'crm.lead'
 
-        # Option 2: Odoo alias configuration
-        if not model and mailbox:
-            alias = self._find_alias_for_mailbox(mailbox.email)
+        # Option 2: Use the explicitly configured alias on the mailbox
+        if not model:
+            alias = mailbox.x_alias_id if mailbox else False
             if alias and alias.alias_model_id:
                 model = alias.alias_model_id.model
                 # Parse alias_defaults for extra values (team_id, user_id, etc.)
                 if alias.alias_defaults:
                     try:
                         alias_defaults = ast.literal_eval(alias.alias_defaults)
-                        _logger.info(f"[Incoming Mail] Using Odoo alias -> {model} with defaults: {alias_defaults}")
+                        _logger.info(f"[Incoming Mail] Using alias '{alias.display_name}' -> {model} with defaults: {alias_defaults}")
                     except (ValueError, SyntaxError) as e:
                         _logger.warning(f"[Incoming Mail] Failed to parse alias_defaults: {e}")
                         alias_defaults = {}
                 else:
-                    _logger.info(f"[Incoming Mail] Using Odoo alias -> {model}")
+                    _logger.info(f"[Incoming Mail] Using alias '{alias.display_name}' -> {model}")
 
         # No routing configured - post to partner with warning
         if not model:
             _logger.warning(f"[Incoming Mail] No routing configured for mailbox {mailbox.email}. "
-                          f"Please enable Smart Routing or configure an Odoo alias "
-                          f"(Settings → Technical → Aliases). Posting to partner chatter.")
+                          f"Enable Smart Routing or select an alias in mailbox settings. "
+                          f"Posting to partner chatter.")
             return partner
 
         # Create record based on determined model
