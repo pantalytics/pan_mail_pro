@@ -147,4 +147,12 @@
         </field>
     </record>
 
+    <!-- Menu: Settings → Technical → Email → Microsoft Mailboxes -->
+    <menuitem id="menu_microsoft_mailbox"
+              name="Microsoft Mailboxes"
+              parent="base.menu_email"
+              action="action_microsoft_mailbox"
+              sequence="5"
+              groups="base.group_system"/>
+
 </odoo>
