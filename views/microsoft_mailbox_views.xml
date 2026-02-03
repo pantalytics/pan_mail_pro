@@ -90,6 +90,12 @@
                         <group/>
                     </group>
 
+                    <!-- Warning for unimplemented approval queue -->
+                    <div class="alert alert-warning" role="alert"
+                         invisible="x_mailbox_type == 'notification' or not x_incoming_sync or not x_sync_unknown_contacts or x_routing_unknown_contact != 'approval'">
+                        <strong>Not implemented:</strong> Queue for review is not yet available. Emails from unknown senders will be skipped.
+                    </div>
+
                     <!-- Historical sync option -->
                     <group invisible="x_mailbox_type == 'notification' or not x_incoming_sync">
                         <group>
