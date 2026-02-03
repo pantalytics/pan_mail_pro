@@ -41,14 +41,6 @@ class ResConfigSettings(models.TransientModel):
         string='Current User OAuth Connected'
     )
 
-    # Mailbox settings
-    x_microsoft_allow_personal_mailboxes = fields.Boolean(
-        string='Allow Personal Mailboxes',
-        help='When enabled, a personal mailbox is automatically created when a user connects their Microsoft account.',
-        config_parameter='x_pan_outlook_pro.allow_personal_mailboxes',
-        default=True,
-    )
-
     # Internal domain detection uses Odoo's standard mail.alias.domain
     x_microsoft_alias_domains = fields.Char(
         string='Alias Domains',

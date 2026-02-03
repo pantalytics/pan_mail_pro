@@ -423,6 +423,15 @@ class MicrosoftMailbox(models.Model):
                     'A Team must be selected when "Route to Team" is enabled.'
                 ))
 
+    @api.constrains('x_routing_smart')
+    def _check_smart_routing_not_implemented(self):
+        """Prevent enabling smart routing until AI routing is implemented."""
+        for record in self:
+            if record.x_routing_smart:
+                raise ValidationError(_(
+                    'Smart AI Routing is not yet implemented. This feature will be available in a future release.'
+                ))
+
     def get_sending_user(self):
         """
         Get the user whose OAuth token should be used for sending from this mailbox.

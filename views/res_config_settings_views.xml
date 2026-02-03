@@ -156,9 +156,6 @@
                     <!-- OPTIONS -->
                     <!-- ============================================ -->
                     <block title="Options">
-                        <setting string="Allow Personal Mailboxes" help="Auto-create personal mailbox when user connects Microsoft">
-                            <field name="x_microsoft_allow_personal_mailboxes"/>
-                        </setting>
                         <setting string="Internal Domains" help="Emails from these domains are considered internal. Configure per-mailbox whether to filter them.">
                             <div class="mt-2">
                                 <span class="text-muted" invisible="not x_microsoft_alias_domains">
