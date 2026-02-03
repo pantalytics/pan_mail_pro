@@ -125,11 +125,24 @@ class MicrosoftMailbox(models.Model):
         help='Let AI decide where to route emails (CRM Lead, Helpdesk Ticket, etc.)'
     )
 
+    x_route_to_team = fields.Boolean(
+        string='Route to Team',
+        default=False,
+        help='Route emails to a team (CRM, Helpdesk) instead of contact chatter'
+    )
+
     x_routing_unknown_contact = fields.Selection([
         ('auto', 'Create automatically'),
         ('approval', 'Queue for review'),
     ], string='New Contacts', default='auto',
         help='What to do with emails from senders not yet in Odoo')
+
+    x_exclude_internal = fields.Boolean(
+        string='Exclude Internal Emails',
+        default=True,
+        help='When enabled, emails from your company domain will be excluded from sync. '
+             'Disable this for team mailboxes where internal forwarding should be logged.'
+    )
     # Keep for backwards compatibility / internal use
     x_sync_inbox = fields.Boolean(
         string='Sync Inbox',
@@ -400,6 +413,15 @@ class MicrosoftMailbox(models.Model):
                         'A Notification mailbox is required for incoming email sync. '
                         'Please create a mailbox with type "Notification" first.'
                     ))
+
+    @api.constrains('x_route_to_team', 'x_alias_id')
+    def _check_alias_required_for_team_routing(self):
+        """Ensure alias is set when route_to_team is enabled."""
+        for record in self:
+            if record.x_route_to_team and not record.x_alias_id:
+                raise ValidationError(_(
+                    'A Team must be selected when "Route to Team" is enabled.'
+                ))
 
     def get_sending_user(self):
         """

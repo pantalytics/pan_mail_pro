@@ -49,26 +49,11 @@ class ResConfigSettings(models.TransientModel):
         default=True,
     )
 
-    # Email sync settings - simplified with auto-detection
-    x_microsoft_exclude_internal = fields.Boolean(
-        string='Exclude Internal Emails',
-        help='When enabled, emails from your company domain will be excluded from sync.',
-        config_parameter='x_pan_outlook_pro.exclude_internal',
-        default=True,
-    )
-
-    x_microsoft_detected_domain = fields.Char(
-        string='Company Domain',
-        compute='_compute_detected_domain',
-        help='Auto-detected from company email or mailboxes',
-    )
-
-    # Keep for backwards compatibility and as backing store
-    x_microsoft_internal_domains = fields.Char(
-        string='Internal Domains',
-        help='Comma-separated list of your company email domains (e.g., "company.com, company.nl"). '
-             'Emails from these domains will be excluded from sync.',
-        config_parameter='x_pan_outlook_pro.internal_domains',
+    # Internal domain detection uses Odoo's standard mail.alias.domain
+    x_microsoft_alias_domains = fields.Char(
+        string='Alias Domains',
+        compute='_compute_alias_domains',
+        help='Internal domains from Odoo mail.alias.domain configuration',
     )
 
     # Microsoft OAuth Configuration
@@ -123,23 +108,12 @@ class ResConfigSettings(models.TransientModel):
         for record in self:
             record.x_microsoft_redirect_uri = f"{base_url}/microsoft_oauth/callback"
 
-    def _compute_detected_domain(self):
-        """Auto-detect company domain from company email or first mailbox."""
+    def _compute_alias_domains(self):
+        """Get internal domains from Odoo's standard mail.alias.domain."""
+        alias_domains = self.env['mail.alias.domain'].sudo().search([])
+        domain_names = ', '.join(alias_domains.mapped('name')) if alias_domains else ''
         for record in self:
-            domain = None
-
-            # Try 1: Get from company email
-            company = self.env.company
-            if company.email and '@' in company.email:
-                domain = company.email.split('@')[1].lower()
-
-            # Try 2: Get from first configured mailbox
-            if not domain:
-                mailbox = self.env['x_microsoft.mailbox'].sudo().search([], limit=1)
-                if mailbox and mailbox.email and '@' in mailbox.email:
-                    domain = mailbox.email.split('@')[1].lower()
-
-            record.x_microsoft_detected_domain = domain
+            record.x_microsoft_alias_domains = domain_names
 
     def _compute_decrypted_client_secret(self):
         """Show masked value when encrypted secret exists"""
@@ -297,20 +271,3 @@ class ResConfigSettings(models.TransientModel):
         IrConfigParameter.set_param('x_pan_outlook_pro.config_test_message', message)
         _logger.info(f"[Graph API] Config test result: {status} - {message}")
 
-    def set_values(self):
-        """Override to auto-set internal domain when toggle is enabled."""
-        res = super().set_values()
-
-        # When exclude_internal is enabled, auto-set the domain
-        if self.x_microsoft_exclude_internal and self.x_microsoft_detected_domain:
-            # Only set if not already set or different
-            current = self.env['ir.config_parameter'].sudo().get_param(
-                'x_pan_outlook_pro.internal_domains', ''
-            )
-            if not current:
-                self.env['ir.config_parameter'].sudo().set_param(
-                    'x_pan_outlook_pro.internal_domains',
-                    self.x_microsoft_detected_domain
-                )
-
-        return res

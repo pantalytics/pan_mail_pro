@@ -193,7 +193,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.info(f"[Incoming Mail] From: name='{contact_name}', email='{contact_email}'")
 
         # Skip emails from/to internal domains (only for incoming, not sent items)
-        if not is_outgoing and self._is_internal_domain(contact_email):
+        # This is a per-mailbox setting - team mailboxes may want internal emails logged
+        if not is_outgoing and self._is_internal_domain(contact_email, mailbox):
             _logger.info(f"[Incoming Mail] Skipping internal domain: {contact_email}")
             return False
 
@@ -441,32 +442,37 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         return False
 
-    def _is_internal_domain(self, email):
+    def _is_internal_domain(self, email, mailbox=None):
         """
         Check if email is from an internal company domain.
 
-        Uses the 'Internal Domains' setting from Outlook Pro configuration.
+        Uses Odoo's standard mail.alias.domain to determine internal domains.
+        The per-mailbox 'Exclude Internal Emails' setting controls whether
+        filtering is applied. Team mailboxes may disable this to log
+        internal email forwarding.
 
         Args:
             email: Email address to check
+            mailbox: x_microsoft.mailbox record (optional, for per-mailbox setting)
 
         Returns:
-            bool: True if email is from an internal domain
+            bool: True if email should be skipped as internal
         """
+        # Check per-mailbox setting first
+        if mailbox and not mailbox.x_exclude_internal:
+            return False  # Don't exclude internal emails for this mailbox
+
         if not email or '@' not in email:
             return False
 
         sender_domain = email.lower().split('@')[1]
 
-        # Get internal domains from settings (comma-separated)
-        domains_str = self.env['ir.config_parameter'].sudo().get_param(
-            'x_pan_outlook_pro.internal_domains', ''
-        )
-        if not domains_str:
+        # Get all configured alias domains from Odoo (standard mail.alias.domain)
+        alias_domains = self.env['mail.alias.domain'].sudo().search([])
+        if not alias_domains:
             return False
 
-        # Parse comma-separated domains and normalize
-        internal_domains = [d.strip().lower() for d in domains_str.split(',') if d.strip()]
+        internal_domains = [d.name.lower() for d in alias_domains if d.name]
 
         return sender_domain in internal_domains
 
@@ -547,11 +553,13 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         """
         import ast
 
-        alias = mailbox.x_alias_id if mailbox else False
+        # Check if routing to team is enabled
+        route_to_team = mailbox.x_route_to_team if mailbox else False
+        alias = mailbox.x_alias_id if mailbox and route_to_team else False
 
-        # No alias configured - post to partner's chatter
-        if not alias or not alias.alias_model_id:
-            _logger.warning(f"[Incoming Mail] No alias configured for mailbox {mailbox.email}, posting to partner")
+        # Route to Contact: post to partner's chatter (default behavior)
+        if not route_to_team or not alias or not alias.alias_model_id:
+            _logger.info(f"[Incoming Mail] Routing to contact chatter for mailbox {mailbox.email}")
             message = partner.message_post(
                 body=msg_dict.get('body', ''),
                 subject=msg_dict.get('subject', ''),

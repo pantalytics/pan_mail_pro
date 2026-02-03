@@ -9,19 +9,22 @@ from odoo.tests import TransactionCase, tagged
 
 @tagged('pan_outlook_pro', 'post_install', '-at_install')
 class TestInternalDomain(TransactionCase):
-    """Test internal domain filtering logic."""
+    """Test internal domain filtering logic using Odoo's mail.alias.domain."""
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls.processor = cls.env['microsoft.incoming.mail.processor']
-        # Set internal domains config
-        cls.env['ir.config_parameter'].sudo().set_param(
-            'x_pan_outlook_pro.internal_domains', 'company.com, internal.org'
-        )
+        # Create alias domains (Odoo's standard way to configure internal domains)
+        cls.alias_domain_1 = cls.env['mail.alias.domain'].create({
+            'name': 'company.com',
+        })
+        cls.alias_domain_2 = cls.env['mail.alias.domain'].create({
+            'name': 'internal.org',
+        })
 
     def test_internal_domain_match(self):
-        """Emails from internal domains should be detected."""
+        """Emails from alias domains should be detected as internal."""
         self.assertTrue(self.processor._is_internal_domain('user@company.com'))
         self.assertTrue(self.processor._is_internal_domain('user@internal.org'))
 
@@ -41,12 +44,30 @@ class TestInternalDomain(TransactionCase):
         self.assertFalse(self.processor._is_internal_domain('invalid'))
         self.assertFalse(self.processor._is_internal_domain(None))
 
-    def test_no_internal_domains_configured(self):
-        """When no internal domains configured, nothing is internal."""
-        self.env['ir.config_parameter'].sudo().set_param(
-            'x_pan_outlook_pro.internal_domains', ''
-        )
-        self.assertFalse(self.processor._is_internal_domain('user@company.com'))
+    def test_no_matching_alias_domain(self):
+        """When email domain doesn't match any alias domain, it's not internal."""
+        # external.net is not in our configured alias domains
+        self.assertFalse(self.processor._is_internal_domain('user@external.net'))
+
+    def test_per_mailbox_exclude_internal_enabled(self):
+        """With per-mailbox exclude_internal enabled, internal emails are skipped."""
+        mailbox = self.env['x_microsoft.mailbox'].create({
+            'email': 'support@company.com',
+            'x_mailbox_type': 'shared',
+            'x_exclude_internal': True,  # Default: exclude internal
+        })
+        # Internal email should be skipped
+        self.assertTrue(self.processor._is_internal_domain('user@company.com', mailbox))
+
+    def test_per_mailbox_exclude_internal_disabled(self):
+        """With per-mailbox exclude_internal disabled, internal emails are included."""
+        mailbox = self.env['x_microsoft.mailbox'].create({
+            'email': 'team@company.com',
+            'x_mailbox_type': 'shared',
+            'x_exclude_internal': False,  # Include internal emails for this mailbox
+        })
+        # Internal email should NOT be skipped for this mailbox
+        self.assertFalse(self.processor._is_internal_domain('user@company.com', mailbox))
 
 
 @tagged('pan_outlook_pro', 'post_install', '-at_install')
@@ -154,13 +175,14 @@ class TestAliasRouting(TransactionCase):
             'email': 'sender@example.com',
         })
 
-        # Create a helpdesk team and mailbox with alias
+        # Create a helpdesk team and mailbox with alias + route_to_team enabled
         cls.helpdesk_team = cls.env['helpdesk.team'].create({
             'name': 'Test Support',
         })
         cls.mailbox = cls.env['x_microsoft.mailbox'].create({
             'email': 'support@company.com',
             'x_mailbox_type': 'shared',
+            'x_route_to_team': True,  # Enable team routing
             'x_alias_id': cls.helpdesk_team.alias_id.id,
         })
 

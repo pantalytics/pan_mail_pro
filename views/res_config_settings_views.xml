@@ -159,15 +159,18 @@
                         <setting string="Allow Personal Mailboxes" help="Auto-create personal mailbox when user connects Microsoft">
                             <field name="x_microsoft_allow_personal_mailboxes"/>
                         </setting>
-                        <setting string="Exclude Internal Emails" help="Skip emails from your company domain during sync">
-                            <field name="x_microsoft_exclude_internal"/>
-                            <div invisible="not x_microsoft_exclude_internal" class="text-muted mt-2">
-                                <span invisible="not x_microsoft_detected_domain">
-                                    Excluding: <strong><field name="x_microsoft_detected_domain" readonly="1" class="d-inline"/></strong>
+                        <setting string="Internal Domains" help="Emails from these domains are considered internal. Configure per-mailbox whether to filter them.">
+                            <div class="mt-2">
+                                <span class="text-muted" invisible="not x_microsoft_alias_domains">
+                                    Alias domains: <strong><field name="x_microsoft_alias_domains" readonly="1" class="d-inline"/></strong>
                                 </span>
-                                <span invisible="x_microsoft_detected_domain" class="text-warning">
-                                    No domain detected. Set company email or add a mailbox first.
+                                <span class="text-warning" invisible="x_microsoft_alias_domains">
+                                    No alias domain configured.
                                 </span>
+                            </div>
+                            <div class="mt-2">
+                                <button type="action" name="%(mail.mail_alias_domain_action)d"
+                                        string="Configure Alias Domains" class="btn-link ps-0" icon="fa-cog"/>
                             </div>
                         </setting>
                     </block>

@@ -57,6 +57,9 @@
                     <group string="Incoming Email" invisible="x_mailbox_type == 'notification'">
                         <group>
                             <field name="x_incoming_sync" widget="boolean_toggle"/>
+                            <field name="x_exclude_internal" widget="boolean_toggle"
+                                   invisible="not x_incoming_sync"
+                                   help="Filter out emails from your company domain. Disable for team mailboxes where internal forwarding should be logged."/>
                         </group>
                         <group/>
                     </group>
@@ -66,13 +69,23 @@
                         <group>
                             <field name="x_routing_smart" widget="boolean_toggle"
                                    help="AI decides where to route emails (CRM, Helpdesk, etc.)"/>
-                            <field name="x_alias_id" string="Route to Team"
+                            <field name="x_route_to_team" widget="boolean_toggle"
                                    invisible="x_routing_smart"
+                                   help="Route to a team instead of contact chatter"/>
+                            <field name="x_alias_id" string="Team"
+                                   invisible="x_routing_smart or not x_route_to_team"
+                                   required="x_route_to_team and not x_routing_smart"
                                    options="{'no_create': True, 'no_create_edit': True}"
                                    placeholder="Select team..."/>
                         </group>
                         <group/>
                     </group>
+
+                    <!-- Info text for contact routing -->
+                    <div class="text-muted mb-4"
+                         invisible="x_mailbox_type == 'notification' or not x_incoming_sync or x_routing_smart or x_route_to_team">
+                        New emails will be posted to the contact's chatter.
+                    </div>
 
                     <!-- Info box for smart routing mode -->
                     <div class="alert alert-warning" role="alert"
