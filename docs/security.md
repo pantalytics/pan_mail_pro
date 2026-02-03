@@ -17,14 +17,23 @@ Outlook Pro uses **delegated permissions only** - the app acts on behalf of the 
 
 ### Required Permissions
 
+**Personal mailbox:**
+
 | Permission | Purpose |
 |------------|---------|
-| `Mail.ReadWrite` | Read and sync emails |
-| `Mail.Send` | Send emails on behalf of user |
+| `Mail.ReadWrite` | Create drafts, read emails |
+| `Mail.Send` | Send emails |
 | `offline_access` | Obtain refresh tokens |
 | `User.Read` | Read user profile for identification |
 
-**No admin permissions are required.** Users authorize their own accounts.
+**Shared mailbox (additional):**
+
+| Permission | Purpose |
+|------------|---------|
+| `Mail.ReadWrite.Shared` | Create drafts in shared mailbox |
+| `Mail.Send.Shared` | Send from shared mailbox |
+
+**Note:** All permissions are delegated. Users authorize their own accounts.
 
 ## Token Security
 

@@ -555,10 +555,14 @@ All permissions are **Delegated** (user context, not application).
 | `openid` | OAuth login |
 | `offline_access` | Refresh tokens |
 | `User.Read` | Basic profile during OAuth |
-| `Mail.ReadWrite` | Send emails (via draft), read Sent Items |
-| `Mail.ReadWrite.Shared` | Shared mailbox: send + read |
+| `Mail.ReadWrite` | Create drafts, read Sent Items |
+| `Mail.Send` | Send emails from personal mailbox |
+| `Mail.ReadWrite.Shared` | Create drafts in shared mailbox |
+| `Mail.Send.Shared` | Send emails from shared mailbox |
 
 **No Application Permissions needed** - this module has no admin-level access.
+
+**Note:** For shared mailboxes, users also need **SendAs permission** in Microsoft 365 Exchange Admin Center.
 
 ---
 

@@ -35,10 +35,17 @@ After registration, copy these values (you'll need them in Odoo):
 3. Select **Microsoft Graph**
 4. Select **Delegated permissions**
 5. Add these permissions:
-   - `Mail.ReadWrite`
-   - `Mail.Send`
-   - `offline_access`
-   - `User.Read`
+
+   **Required (personal mailbox):**
+   - `Mail.ReadWrite` - Create drafts, read emails
+   - `Mail.Send` - Send emails
+   - `offline_access` - Refresh tokens
+   - `User.Read` - User profile
+
+   **Required for shared mailboxes:**
+   - `Mail.ReadWrite.Shared` - Create drafts in shared mailbox
+   - `Mail.Send.Shared` - Send from shared mailbox
+
 6. Click **Grant admin consent** (requires Azure admin)
 
 ## Step 5: Configure in Odoo
