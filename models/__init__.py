@@ -5,6 +5,7 @@ from . import res_users
 from . import microsoft_graph_client
 from . import microsoft_mailbox
 from . import microsoft_incoming_mail
+from . import mail_alias
 from . import mail_compose_message
 from . import mail_mail
 from . import mail_message

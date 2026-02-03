@@ -182,8 +182,9 @@ class MicrosoftMailbox(models.Model):
     )
     x_alias_id = fields.Many2one(
         'mail.alias',
-        string='Route to Alias',
-        help='Incoming emails will be routed to this Odoo alias (e.g., sales@ → CRM Lead, support@ → Helpdesk Ticket)'
+        string='Route to Team',
+        domain="[('alias_name', '!=', False)]",
+        help='Select the team where emails should be routed. Teams configure their alias in their own settings (e.g., Sales Team → Alias).'
     )
     state = fields.Selection([
         ('draft', 'Not Configured'),
@@ -384,6 +385,21 @@ class MicrosoftMailbox(models.Model):
                         'Only one active Notification mailbox is allowed. '
                         'Existing notification mailbox: %s'
                     ) % existing.email)
+
+    @api.constrains('x_sync_mode')
+    def _check_notification_mailbox_for_sync(self):
+        """Ensure notification mailbox exists when enabling incoming sync."""
+        for record in self:
+            if record.x_sync_mode != 'none' and record.x_mailbox_type != 'notification':
+                notification_mailbox = self.search([
+                    ('x_mailbox_type', '=', 'notification'),
+                    ('active', '=', True),
+                ], limit=1)
+                if not notification_mailbox:
+                    raise ValidationError(_(
+                        'A Notification mailbox is required for incoming email sync. '
+                        'Please create a mailbox with type "Notification" first.'
+                    ))
 
     def get_sending_user(self):
         """

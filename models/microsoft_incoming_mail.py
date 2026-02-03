@@ -255,28 +255,21 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             return False
 
         # Check for threading: find parent message via In-Reply-To header or conversationId
-        # If this is a reply, post to the SAME record as the parent message
         parent_message = False
-        target_record = partner  # Default: post to partner's chatter
         in_reply_to = headers.get('in-reply-to')
         conversation_id = full_message.get('conversationId')
 
         # Try In-Reply-To header first (standard email threading)
         if in_reply_to:
-            # First check our custom x_microsoft_message_id field
-            # This contains the Microsoft internetMessageId we stored after sending
             parent_message = self.env['mail.message'].search([
                 ('x_microsoft_message_id', '=', in_reply_to)
             ], limit=1)
-
-            # Fallback to standard Odoo message_id field
             if not parent_message:
                 parent_message = self.env['mail.message'].search([
                     ('message_id', '=', in_reply_to)
                 ], limit=1)
 
-        # Fallback to Microsoft conversationId if In-Reply-To didn't work
-        # This is especially useful for Sent Items where Graph API may not return headers
+        # Fallback to Microsoft conversationId
         if not parent_message and conversation_id:
             parent_message = self.env['mail.message'].search([
                 ('x_microsoft_conversation_id', '=', conversation_id),
@@ -284,108 +277,93 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 ('res_id', '!=', False),
             ], order='id asc', limit=1)
 
-        if parent_message and parent_message.model and parent_message.res_id:
-            # Reply to existing thread - post to the same record
-            target_record = self.env[parent_message.model].browse(parent_message.res_id)
-            _logger.info(f"[Incoming Mail] Threading reply to {parent_message.model}/{parent_message.res_id}")
-
-        # For new incoming emails (not replies, not sent items), create record based on routing
-        if not parent_message and not is_outgoing:
-            target_record = self._create_record_for_email(
-                mailbox=mailbox,
-                partner=partner,
-                subject=full_message.get('subject', ''),
-                contact_email=contact_email,
-            )
-
-        # Prepare attachment data for message_post
-        # Inline attachments (embedded images) use 3-tuple format so Odoo converts cid: to /web/image/
-        # Regular attachments use ir.attachment records
-        attachment_ids = []
-        inline_attachments = []  # 3-tuples: (filename, content, {'cid': content_id})
-
-        if attachments:
-            for attachment in attachments:
-                att_type = attachment.get('@odata.type', 'unknown')
-                att_name = attachment.get('name', 'unnamed')
-                is_inline = attachment.get('isInline', False)
-                content_id = attachment.get('contentId')
-                _logger.info(f"[Incoming Mail] Attachment: {att_name}, type={att_type}, isInline={is_inline}, contentId={content_id}")
-
-                if att_type == '#microsoft.graph.fileAttachment':
-                    content_bytes_b64 = attachment.get('contentBytes')
-                    if content_bytes_b64:
-                        name = att_name
-
-                        if is_inline and content_id:
-                            # Inline attachment: use 3-tuple format for Odoo's cid: conversion
-                            try:
-                                content_binary = base64.b64decode(content_bytes_b64)
-                                inline_attachments.append((name, content_binary, {'cid': content_id}))
-                                _logger.info(f"[Incoming Mail] Inline attachment: {name} (cid:{content_id})")
-                            except Exception as e:
-                                _logger.warning(f"[Incoming Mail] Failed to decode inline attachment {name}: {e}")
-                        else:
-                            # Regular attachment: create ir.attachment record
-                            try:
-                                att = self.env['ir.attachment'].create({
-                                    'name': name,
-                                    'datas': content_bytes_b64,  # Already base64 encoded
-                                    'res_model': target_record._name,
-                                    'res_id': target_record.id,
-                                })
-                                attachment_ids.append(att.id)
-                            except Exception as e:
-                                _logger.warning(f"[Incoming Mail] Failed to create attachment: {e}")
-
         # Build email body - mark as safe HTML to preserve formatting
         body = full_message.get('body', {})
         body_content = body.get('content', '')
         if body.get('contentType') == 'html' and body_content:
             body_content = Markup(body_content)
 
-        # Determine author: for incoming it's the contact, for outgoing it depends on mailbox type
-        if is_outgoing:
-            from_data = full_message.get('from', {}).get('emailAddress', {})
-            author_email = from_data.get('address', mailbox.email)
-            author_name = from_data.get('name', '')
+        # Prepare attachments as (filename, content) tuples for message_new/message_post
+        email_attachments = []
+        if attachments:
+            for attachment in attachments:
+                att_type = attachment.get('@odata.type', 'unknown')
+                att_name = attachment.get('name', 'unnamed')
+                if att_type == '#microsoft.graph.fileAttachment':
+                    content_bytes_b64 = attachment.get('contentBytes')
+                    if content_bytes_b64:
+                        try:
+                            content_binary = base64.b64decode(content_bytes_b64)
+                            email_attachments.append((att_name, content_binary))
+                        except Exception as e:
+                            _logger.warning(f"[Incoming Mail] Failed to decode attachment {att_name}: {e}")
 
-            if mailbox.x_mailbox_type == 'shared':
-                # Shared mailbox: use a partner for the mailbox itself (e.g., "team1" for team1@company.com)
-                author = self._find_or_create_partner(mailbox.email)
-                _logger.info(f"[Incoming Mail] Shared mailbox author: {author.name}")
-            else:
-                # Personal/notification: use the owner's partner
-                author = mailbox.x_owner_user_id.partner_id
-        else:
-            # Received email: author is the sender (the contact)
-            author = partner
-            author_email = contact_email
-            author_name = contact_name
+        # Build msg_dict in Odoo's expected format for message_new()
+        email_from = f'"{contact_name}" <{contact_email}>' if contact_name else contact_email
+        msg_dict = {
+            'message_type': 'email',
+            'subject': full_message.get('subject', ''),
+            'from': email_from,
+            'to': mailbox.email,
+            'body': body_content,
+            'attachments': email_attachments,
+            'message_id': internet_message_id,
+            'author_id': partner.id,
+            'email_from': email_from,
+        }
 
-        # Post message to the target record:
-        # - If reply: post to the same record as the parent (sale.order, lead, etc.)
-        # - If new incoming: post to a new CRM Lead (or partner if CRM not installed)
-        # - If sent item: post to the contact's chatter
         try:
-            message = target_record.message_post(
-                body=body_content,
-                subject=full_message.get('subject', ''),
-                message_type='email',
-                subtype_xmlid='mail.mt_comment',
-                author_id=author.id,
-                email_from=f'"{author_name}" <{author_email}>' if author_name else author_email,
-                message_id=internet_message_id,
-                parent_id=parent_message.id if parent_message else False,
-                attachment_ids=attachment_ids,
-                attachments=inline_attachments,  # 3-tuples for inline image cid: conversion
-            )
+            # For REPLIES: post to existing thread
+            if parent_message and parent_message.model and parent_message.res_id:
+                target_record = self.env[parent_message.model].browse(parent_message.res_id)
+                message = target_record.message_post(
+                    body=body_content,
+                    subject=full_message.get('subject', ''),
+                    message_type='email',
+                    subtype_xmlid='mail.mt_comment',
+                    author_id=partner.id,
+                    email_from=email_from,
+                    message_id=internet_message_id,
+                    parent_id=parent_message.id,
+                    attachments=email_attachments,
+                )
+                _logger.info(f"[Incoming Mail] Posted reply to {parent_message.model}/{parent_message.res_id}")
+
+            # For SENT ITEMS: post to partner's chatter
+            elif is_outgoing:
+                from_data = full_message.get('from', {}).get('emailAddress', {})
+                author_email = from_data.get('address', mailbox.email)
+                author_name = from_data.get('name', '')
+                if mailbox.x_mailbox_type == 'shared':
+                    author = self._find_or_create_partner(mailbox.email)
+                else:
+                    author = mailbox.x_owner_user_id.partner_id
+
+                target_record = partner
+                message = target_record.message_post(
+                    body=body_content,
+                    subject=full_message.get('subject', ''),
+                    message_type='email',
+                    subtype_xmlid='mail.mt_comment',
+                    author_id=author.id,
+                    email_from=f'"{author_name}" <{author_email}>' if author_name else author_email,
+                    message_id=internet_message_id,
+                    attachments=email_attachments,
+                )
+                _logger.info(f"[Incoming Mail] Posted sent item to partner {partner.name}")
+
+            # For NEW INCOMING: use Odoo's native message_new() - handles everything correctly
+            else:
+                target_record, message = self._route_email_via_alias(
+                    mailbox=mailbox,
+                    partner=partner,
+                    msg_dict=msg_dict,
+                    contact_email=contact_email,
+                )
 
             # Store Microsoft conversationId for threading future replies
-            # This is crucial because Graph API doesn't always return In-Reply-To headers
-            if conversation_id:
+            if conversation_id and message:
                 message.write({'x_microsoft_conversation_id': conversation_id})
-                _logger.info(f"[Incoming Mail] Stored conversationId: {conversation_id}")
 
             # Create activity for new emails (only for incoming, not sent items, and only for new threads)
             if mailbox.x_create_activity and not is_outgoing and not parent_message:
@@ -548,164 +526,62 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         return partner
 
-    def _find_alias_for_mailbox(self, mailbox_email):
+    def _route_email_via_alias(self, mailbox, partner, msg_dict, contact_email):
         """
-        Find an Odoo mail.alias that matches the mailbox email address.
+        Route incoming email using Odoo's native message_new() method.
 
-        Odoo aliases are typically configured as 'sales@yourdomain.com' when apps
-        like CRM or Helpdesk are installed. This method finds matching aliases
-        to use their routing configuration (model, team_id, etc.).
-
-        Args:
-            mailbox_email: The email address of the Microsoft mailbox
-
-        Returns:
-            mail.alias record or False if not found
-        """
-        if not mailbox_email:
-            return False
-
-        # Search for alias by full email address
-        # alias_full_name contains the complete email like 'sales@company.com'
-        alias = self.env['mail.alias'].search([
-            ('alias_full_name', '=ilike', mailbox_email)
-        ], limit=1)
-
-        if alias:
-            _logger.info(f"[Incoming Mail] Found Odoo alias: {alias.alias_full_name} -> {alias.alias_model_id.model if alias.alias_model_id else 'no model'}")
-            return alias
-
-        # Also try matching by alias_name (local part before @)
-        local_part = mailbox_email.split('@')[0].lower() if '@' in mailbox_email else ''
-        if local_part:
-            alias = self.env['mail.alias'].search([
-                ('alias_name', '=ilike', local_part)
-            ], limit=1)
-            if alias:
-                _logger.info(f"[Incoming Mail] Found Odoo alias by name: {alias.alias_name} -> {alias.alias_model_id.model if alias.alias_model_id else 'no model'}")
-                return alias
-
-        return False
-
-    def _create_record_for_email(self, mailbox, partner, subject, contact_email):
-        """
-        Create a record for a new incoming email based on routing configuration.
-
-        Routing is determined by the mailbox's x_alias_id field, which links to
-        an Odoo mail.alias. The alias determines the model and defaults (team, etc.).
-
-        If no alias is configured, email is posted to partner's chatter with a warning.
+        This leverages Odoo's built-in mail handling which:
+        - Creates the record (ticket, lead, etc.)
+        - Posts the initial message
+        - Triggers auto-replies if configured (e.g., Helpdesk acknowledgment)
+        - Does NOT send duplicate notifications to the sender
 
         Args:
             mailbox: x_microsoft.mailbox record with routing configuration
             partner: res.partner record for the sender
-            subject: Email subject
+            msg_dict: Parsed email dict in Odoo format
             contact_email: Sender email address
 
         Returns:
-            Created record (crm.lead, helpdesk.ticket, etc.) or partner as fallback
+            tuple: (record, message) - the created record and its first message
         """
         import ast
 
-        model = None
-        alias_defaults = {}
-        record_name = subject if subject else f"Email from {partner.name}"
+        alias = mailbox.x_alias_id if mailbox else False
 
-        # Option 1: Smart routing (AI decides) - coming soon
-        if mailbox and mailbox.x_routing_smart:
-            # TODO: Implement AI classification here
-            # For now, default to CRM Lead
-            _logger.info("[Incoming Mail] Smart routing enabled but not implemented, defaulting to CRM Lead")
-            model = 'crm.lead'
+        # No alias configured - post to partner's chatter
+        if not alias or not alias.alias_model_id:
+            _logger.warning(f"[Incoming Mail] No alias configured for mailbox {mailbox.email}, posting to partner")
+            message = partner.message_post(
+                body=msg_dict.get('body', ''),
+                subject=msg_dict.get('subject', ''),
+                message_type='email',
+                subtype_xmlid='mail.mt_comment',
+                author_id=partner.id,
+                email_from=msg_dict.get('email_from'),
+                message_id=msg_dict.get('message_id'),
+                attachments=msg_dict.get('attachments', []),
+            )
+            return partner, message
 
-        # Option 2: Use the explicitly configured alias on the mailbox
-        if not model:
-            alias = mailbox.x_alias_id if mailbox else False
-            if alias and alias.alias_model_id:
-                model = alias.alias_model_id.model
-                # Parse alias_defaults for extra values (team_id, user_id, etc.)
-                if alias.alias_defaults:
-                    try:
-                        alias_defaults = ast.literal_eval(alias.alias_defaults)
-                        _logger.info(f"[Incoming Mail] Using alias '{alias.display_name}' -> {model} with defaults: {alias_defaults}")
-                    except (ValueError, SyntaxError) as e:
-                        _logger.warning(f"[Incoming Mail] Failed to parse alias_defaults: {e}")
-                        alias_defaults = {}
-                else:
-                    _logger.info(f"[Incoming Mail] Using alias '{alias.display_name}' -> {model}")
+        model = alias.alias_model_id.model
+        _logger.info(f"[Incoming Mail] Routing via alias '{alias.display_name}' -> {model}")
 
-        # No routing configured - post to partner with warning
-        if not model:
-            _logger.warning(f"[Incoming Mail] No routing configured for mailbox {mailbox.email}. "
-                          f"Enable Smart Routing or select an alias in mailbox settings. "
-                          f"Posting to partner chatter.")
-            return partner
+        # Parse alias_defaults for team_id, user_id, etc.
+        custom_values = {}
+        if alias.alias_defaults:
+            try:
+                custom_values = ast.literal_eval(alias.alias_defaults)
+            except (ValueError, SyntaxError):
+                pass
 
-        # Create record based on determined model
-        if model == 'crm.lead':
-            create_vals = {
-                'name': record_name,
-                'partner_id': partner.id,
-                'email_from': contact_email,
-                'type': 'lead',
-            }
-            # Apply alias defaults (e.g., team_id)
-            for key, value in alias_defaults.items():
-                if key not in create_vals and hasattr(self.env['crm.lead'], key):
-                    create_vals[key] = value
-            record = self.env['crm.lead'].create(create_vals)
-            _logger.info(f"[Incoming Mail] Created CRM Lead: {record.name} (id={record.id})")
+        # Use Odoo's native message_new() - this is what the standard mail gateway uses
+        # It creates the record AND posts the initial message correctly
+        Model = self.env[model]
+        record = Model.message_new(msg_dict, custom_values=custom_values)
 
-        elif model == 'helpdesk.ticket':
-            # Check if helpdesk module is installed
-            if 'helpdesk.ticket' not in self.env:
-                _logger.warning("[Incoming Mail] Helpdesk module not installed, posting to partner")
-                return partner
+        # Get the message that was created by message_new
+        message = record.message_ids[:1] if record.message_ids else False
 
-            create_vals = {
-                'name': record_name,
-                'partner_id': partner.id,
-                'partner_email': contact_email,
-            }
-            # Apply alias defaults (e.g., team_id)
-            for key, value in alias_defaults.items():
-                if key not in create_vals and hasattr(self.env['helpdesk.ticket'], key):
-                    create_vals[key] = value
-            record = self.env['helpdesk.ticket'].create(create_vals)
-            _logger.info(f"[Incoming Mail] Created Helpdesk Ticket: {record.name} (id={record.id})")
-
-        else:
-            # Try to create in the specified model generically
-            if model in self.env:
-                try:
-                    Model = self.env[model]
-                    create_vals = {'name': record_name}
-                    # Add partner if model has the field
-                    if hasattr(Model, 'partner_id'):
-                        create_vals['partner_id'] = partner.id
-                    # Apply alias defaults
-                    for key, value in alias_defaults.items():
-                        if key not in create_vals and hasattr(Model, key):
-                            create_vals[key] = value
-                    record = Model.create(create_vals)
-                    _logger.info(f"[Incoming Mail] Created {model}: {record_name} (id={record.id})")
-                except Exception as e:
-                    _logger.warning(f"[Incoming Mail] Failed to create record in {model}: {e}, posting to partner")
-                    return partner
-            else:
-                _logger.warning(f"[Incoming Mail] Model '{model}' not found, posting to partner")
-                return partner
-
-        return record
-
-    def _get_or_create_lead_for_email(self, partner, subject, contact_email):
-        """
-        DEPRECATED: Use _create_record_for_email instead.
-        Kept for backwards compatibility.
-        """
-        return self._create_record_for_email(
-            mailbox=None,
-            partner=partner,
-            subject=subject,
-            contact_email=contact_email,
-        )
+        _logger.info(f"[Incoming Mail] Created {model} via message_new: {record.display_name} (id={record.id})")
+        return record, message

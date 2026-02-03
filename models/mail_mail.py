@@ -223,9 +223,11 @@ class MailMail(models.Model):
             return (None, None)
 
         # Author must be linked to exactly one Odoo user
+        # Exception: if author is external (no user), use notification mailbox
+        # This handles emails triggered by incoming mail (e.g., auto-replies, activity notifications)
         if not self.author_id.user_ids:
-            _logger.error(f"[Graph API] Author {self.author_id.name} is not linked to any Odoo user")
-            return (None, None)
+            _logger.info(f"[Graph API] Author {self.author_id.name} is external, using notification mailbox")
+            return self._get_notification_mailbox_and_user()
 
         author_user = self.author_id.user_ids[0]
 

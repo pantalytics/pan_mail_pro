@@ -156,16 +156,18 @@
                     <!-- OPTIONS -->
                     <!-- ============================================ -->
                     <block title="Options">
-                        <setting>
-                            <field name="x_microsoft_allow_personal_mailboxes" class="oe_inline"/>
-                            <label for="x_microsoft_allow_personal_mailboxes"/>
-                            <div class="text-muted">
-                                Auto-create personal mailbox when user connects Microsoft
-                            </div>
+                        <setting string="Allow Personal Mailboxes" help="Auto-create personal mailbox when user connects Microsoft">
+                            <field name="x_microsoft_allow_personal_mailboxes"/>
                         </setting>
-                        <setting string="Internal Domains" help="Emails from these domains are excluded from sync">
-                            <div class="row">
-                                <field name="x_microsoft_internal_domains" placeholder="company.com, company.nl" class="col-lg-6"/>
+                        <setting string="Exclude Internal Emails" help="Skip emails from your company domain during sync">
+                            <field name="x_microsoft_exclude_internal"/>
+                            <div invisible="not x_microsoft_exclude_internal" class="text-muted mt-2">
+                                <span invisible="not x_microsoft_detected_domain">
+                                    Excluding: <strong><field name="x_microsoft_detected_domain" readonly="1" class="d-inline"/></strong>
+                                </span>
+                                <span invisible="x_microsoft_detected_domain" class="text-warning">
+                                    No domain detected. Set company email or add a mailbox first.
+                                </span>
                             </div>
                         </setting>
                     </block>

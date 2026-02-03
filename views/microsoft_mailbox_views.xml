@@ -66,28 +66,29 @@
                         <group>
                             <field name="x_routing_smart" widget="boolean_toggle"
                                    help="AI decides where to route emails (CRM, Helpdesk, etc.)"/>
-                            <field name="x_alias_id" string="Route to"
+                            <field name="x_alias_id" string="Route to Team"
                                    invisible="x_routing_smart"
                                    options="{'no_create': True, 'no_create_edit': True}"
-                                   placeholder="Select team alias..."/>
+                                   placeholder="Select team..."/>
                         </group>
+                        <group/>
+                    </group>
+
+                    <!-- Info box for smart routing mode -->
+                    <div class="alert alert-warning" role="alert"
+                         invisible="x_mailbox_type == 'notification' or not x_incoming_sync or not x_routing_smart">
+                        <strong>Smart Routing:</strong> AI-based routing coming soon. Currently defaults to CRM Lead.
+                    </div>
+
+                    <!-- Unknown Senders (only when sync enabled) -->
+                    <group string="Unknown Senders" invisible="x_mailbox_type == 'notification' or not x_incoming_sync">
                         <group>
                             <field name="x_sync_unknown_contacts" widget="boolean_toggle"/>
                             <field name="x_routing_unknown_contact"
                                    invisible="not x_sync_unknown_contacts"/>
                         </group>
+                        <group/>
                     </group>
-
-                    <!-- Info boxes for routing mode -->
-                    <div class="alert alert-info" role="alert"
-                         invisible="x_mailbox_type == 'notification' or not x_incoming_sync or x_routing_smart">
-                        <strong>Alias Routing:</strong> Emails will be routed to the selected team/alias.
-                        Teams manage their aliases in their settings (e.g., Sales Team → Alias).
-                    </div>
-                    <div class="alert alert-warning" role="alert"
-                         invisible="x_mailbox_type == 'notification' or not x_incoming_sync or not x_routing_smart">
-                        <strong>Smart Routing:</strong> AI-based routing coming soon. Currently defaults to CRM Lead.
-                    </div>
 
                     <!-- Historical sync option -->
                     <group invisible="x_mailbox_type == 'notification' or not x_incoming_sync">
