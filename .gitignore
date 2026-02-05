@@ -22,7 +22,6 @@ Thumbs.db
 
 # Odoo
 *.pyc
-pan_outlook_pro
 
 # Local development (Docker)
 .local/
