@@ -48,42 +48,81 @@ Send and receive emails via Microsoft Graph API with OAuth 2.0 delegated permiss
 
 ## Development
 
-Docker setup lives in the parent repo `odoo-pantalytics/.local/`.
+Each addon repo can be tested independently with its own `.local/` directory. A shared Dockerfile lives in the parent folder since Odoo Enterprise source is shared.
+
+### Directory structure
+```
+~/Documents/GitHub/
+├── .docker/
+│   └── Dockerfile               ← Shared Dockerfile (Enterprise + deps)
+├── .dockerignore                 ← Limits build context to odoo-enterprise/
+├── odoo-enterprise/              ← Odoo 19 Enterprise source (shared)
+├── pan_outlook_pro/              ← This repo
+│   └── .local/                   ← Per-repo Docker config (gitignored)
+│       ├── docker-compose.yml
+│       └── odoo.conf
+├── odoo-pantalytics/
+│   └── .local/                   ← Per-repo Docker config
+└── odoo-customer-goudsmit/
+    └── .local/                   ← Per-repo Docker config
+```
+
+### Container filesystem
+```
+/opt/odoo/odoo-enterprise/       ← COPIED into image (rebuild needed for changes)
+/mnt/extra-addons/               ← BIND MOUNT from host (live editing, no commit needed)
+/var/lib/odoo/                   ← NAMED VOLUME (persistent filestore + sessions)
+/etc/odoo/odoo.conf              ← BIND MOUNT from host (live editing)
+```
+
+### Volume mounts per repo
+
+| Repo | Mount | Effect |
+|------|-------|--------|
+| pan_outlook_pro | `..:/mnt/extra-addons/pan_outlook_pro` | Single addon, direct from repo |
+| odoo-pantalytics | `../addons:/mnt/extra-addons` | All addons via submodules |
+| odoo-customer-goudsmit | `../addons:/mnt/extra-addons` | All addons via submodules |
+
+Key config: `data_dir = /var/lib/odoo` in odoo.conf MUST match the volume mount in docker-compose.yml.
 
 ### Local Docker Setup
 ```bash
-cd ../odoo-pantalytics/.local
-docker-compose up -d
-# Odoo at http://localhost:8069
-# Database: test_db
+cd .local
+docker-compose up -d             # Odoo at http://localhost:8069, db: test_db
 ```
 
 ### Restart after Python changes
 ```bash
-cd ../odoo-pantalytics/.local
+cd .local
 docker-compose restart odoo
 ```
 
-### Upgrade module (apply model changes)
+### Upgrade module (apply model/view/data changes)
 ```bash
-cd ../odoo-pantalytics/.local
+cd .local
 docker-compose exec -T odoo python -m odoo -c /etc/odoo/odoo.conf -d test_db -u pan_outlook_pro --stop-after-init
 docker-compose restart odoo
 ```
 
 ### View logs
 ```bash
-cd ../odoo-pantalytics/.local
+cd .local
 docker-compose logs -f odoo
 ```
 
 ### Run unit tests
 ```bash
-cd ../odoo-pantalytics/.local
+cd .local
 docker-compose stop odoo
 docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
   -d test_db -u pan_outlook_pro --test-enable --test-tags=pan_outlook_pro --stop-after-init
 docker-compose start odoo
+```
+
+### Rebuild image (only when Dockerfile or odoo-enterprise changes)
+```bash
+cd .local
+docker-compose build odoo && docker-compose up -d
 ```
 
 ## Conventions
@@ -224,10 +263,17 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 
 ## Lessons Learned
 
-- **Fresh Docker build = missing assets**: After a fresh build, filestore is empty. Run `docker-compose exec -T odoo python -m odoo -c /etc/odoo/odoo.conf -d test_db -u web,base,base_setup --stop-after-init` to regenerate app icons and assets.
-- **Old Docker containers cause socket errors**: When moving `.local/` directory, always stop/remove old containers before rebuilding.
+### Docker
+- **`data_dir` must match volume mount**: `data_dir = /var/lib/odoo` in odoo.conf must match `odoo-data:/var/lib/odoo` in docker-compose.yml. Mismatch = filestore lost on restart.
+- **Stale asset attachments after volume reset**: If assets 404, run: `docker-compose exec -T db psql -U odoo -d test_db -c "DELETE FROM ir_attachment WHERE url LIKE '/web/assets/%';"` then restart. Odoo regenerates them.
+- **`--dev=reload` crashes on macOS Docker**: watchdog inotify doesn't work reliably in Docker on macOS. Use `dev_mode = xml` only in odoo.conf.
+- **Don't duplicate dev_mode**: Set `dev_mode` in odoo.conf only, not also `--dev=all` in docker-compose command.
+- **`.dockerignore` at build context root**: Build context is `../../` (GitHub parent). Without `.dockerignore`, all repos are sent to Docker daemon. Add `*` + `!odoo-enterprise/`.
+- **`addons_path` needs 3 entries**: `/opt/odoo/odoo-enterprise` (enterprise addons like account), `/opt/odoo/odoo-enterprise/odoo/addons` (core addons like base, web), `/mnt/extra-addons` (custom addons).
+- **Never `docker-compose down -v`**: The `-v` flag deletes volumes including filestore. Use `docker-compose down` without `-v`.
+
+### OAuth / Graph API
 - **OAuth tokens only contain requested scopes**: Adding permissions in Azure Portal is not enough - the scopes must also be listed in the authorization URL in `microsoft_graph_client.py`. Users need to re-authenticate after scope changes.
-- **Submodule sync required for Docker testing**: Changes in `pan_outlook_pro` must be committed+pushed, then pull in submodule before Docker sees them. Workflow: commit → push → `cd ../odoo-pantalytics/addons/pan_outlook_pro && git pull origin 19.0` → upgrade module → restart.
 
 ## Documentation
 

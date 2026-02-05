@@ -1,14 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Add email sync blocked field to partner form -->
+    <!-- Add Outlook Pro tab to partner form -->
     <record id="view_partner_form_inherit_outlook_pro" model="ir.ui.view">
         <field name="name">res.partner.form.inherit.outlook.pro</field>
         <field name="model">res.partner</field>
         <field name="inherit_id" ref="base.view_partner_form"/>
         <field name="arch" type="xml">
-            <xpath expr="//field[@name='email']" position="after">
-                <field name="x_email_sync_blocked" string="Block Email Sync"
-                       help="Block incoming email sync from this contact"/>
+            <xpath expr="//page[last()]" position="after">
+                <page string="Outlook Pro" name="outlook_pro">
+                    <group>
+                        <group>
+                            <field name="x_email_sync_blocked" widget="boolean_toggle"
+                                   string="Block Sync"/>
+                        </group>
+                    </group>
+                </page>
             </xpath>
         </field>
     </record>

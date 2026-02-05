@@ -33,8 +33,6 @@
                     <field name="x_microsoft_mailbox_count" invisible="1"/>
                     <field name="x_microsoft_notification_configured" invisible="1"/>
 
-                    <div class="text-muted small mb-4">Version <field name="x_microsoft_module_version" readonly="1" class="d-inline"/></div>
-
                     <!-- ============================================ -->
                     <!-- CONFIGURATION -->
                     <!-- ============================================ -->
@@ -159,6 +157,30 @@
                                 <div class="mt-1">
                                     <button type="action" name="%(mail.mail_alias_domain_action)d"
                                             string="Manage" icon="oi-arrow-right" class="oe_link"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- ABOUT -->
+                    <!-- ============================================ -->
+                    <h2>About</h2>
+                    <div class="row mt-4 o_settings_container">
+                        <div class="col-12 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <div class="row">
+                                    <div class="col-auto">
+                                        <span class="o_form_label">Version</span>
+                                        <div class="mt-1"><field name="x_microsoft_module_version" readonly="1"/></div>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-muted small">
+                                    © Pantalytics B.V. All rights reserved. This software is proprietary and confidential.
+                                    Unauthorized copying, modification, distribution, or use of this module, in whole or in part,
+                                    is strictly prohibited and may result in legal action. Protected under international copyright
+                                    and trade secret law.
                                 </div>
                             </div>
                         </div>
