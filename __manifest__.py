@@ -78,7 +78,7 @@
     'website': "https://www.pantalytics.com",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.0.1',
     'license': 'OPL-1',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -104,6 +104,7 @@
     },
     'images': [
         'static/description/screenshot_composer.png',
+        'static/description/banner.png',
         'static/description/screenshot_settings.png',
         'static/description/screenshot_sync.png',
     ],
