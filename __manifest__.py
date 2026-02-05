@@ -112,6 +112,6 @@
     'auto_install': False,
     'post_init_hook': '_disable_smtp_servers',
 
-    'price': 149.00,
+    'price': 450.00,
     'currency': 'EUR',
 }
