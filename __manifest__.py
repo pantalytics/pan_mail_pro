@@ -79,7 +79,7 @@
     'support': "support@pantalytics.com",
     'category': 'Discuss',
     'version': '19.0.1.0.0',
-    'license': 'OEEL-1',
+    'license': 'OPL-1',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
         'python': ['cryptography'],
