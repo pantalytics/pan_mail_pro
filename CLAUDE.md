@@ -227,6 +227,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **Fresh Docker build = missing assets**: After a fresh build, filestore is empty. Run `docker-compose exec -T odoo python -m odoo -c /etc/odoo/odoo.conf -d test_db -u web,base,base_setup --stop-after-init` to regenerate app icons and assets.
 - **Old Docker containers cause socket errors**: When moving `.local/` directory, always stop/remove old containers before rebuilding.
 - **OAuth tokens only contain requested scopes**: Adding permissions in Azure Portal is not enough - the scopes must also be listed in the authorization URL in `microsoft_graph_client.py`. Users need to re-authenticate after scope changes.
+- **Submodule sync required for Docker testing**: Changes in `pan_outlook_pro` must be committed+pushed, then pull in submodule before Docker sees them. Workflow: commit → push → `cd ../odoo-pantalytics/addons/pan_outlook_pro && git pull origin 19.0` → upgrade module → restart.
 
 ## Documentation
 
