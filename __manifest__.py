@@ -79,7 +79,7 @@
     'support': "support@pantalytics.com",
     'category': 'Discuss',
     'version': '19.0.1.0.0',
-    'license': 'LGPL-3',
+    'license': 'OEEL-1',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
         'python': ['cryptography'],
@@ -113,11 +113,6 @@
     'auto_install': False,
     'post_init_hook': '_disable_smtp_servers',
 
-    # App Store pricing - HIGH PRICE FOR TESTING
-    # TODO: Change to 149.00 EUR when ready to launch
-    'price': 9999.00,
+    'price': 149.00,
     'currency': 'EUR',
-
-    # App Store metadata
-    'live_test_url': 'https://www.pantalytics.com/outlook-pro-demo',
 }
