@@ -103,7 +103,7 @@
         ],
     },
     'images': [
-        'static/description/banner_screenshot.png',
+        'static/description/banner.png',
         'static/description/composer_screenshot.png',
         'static/description/settings_screenshot.png',
         'static/description/sync_screenshot.png',
