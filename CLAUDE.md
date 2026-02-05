@@ -21,6 +21,7 @@ Send and receive emails via Microsoft Graph API with OAuth 2.0 delegated permiss
 - [ ] Stored computed fields have `@api.depends` decorator
 - [ ] Use `groups` attribute for field access control
 - [ ] XML ids follow pattern: `module_name.record_name`
+- [ ] Bump version in `__manifest__.py` (format: `19.0.X.Y.Z`)
 
 ## Key Files
 
@@ -47,9 +48,11 @@ Send and receive emails via Microsoft Graph API with OAuth 2.0 delegated permiss
 
 ## Development
 
+Docker setup lives in the parent repo `odoo-pantalytics/.local/`.
+
 ### Local Docker Setup
 ```bash
-cd .local
+cd ../odoo-pantalytics/.local
 docker-compose up -d
 # Odoo at http://localhost:8069
 # Database: test_db
@@ -57,22 +60,26 @@ docker-compose up -d
 
 ### Restart after Python changes
 ```bash
+cd ../odoo-pantalytics/.local
 docker-compose restart odoo
 ```
 
 ### Upgrade module (apply model changes)
 ```bash
+cd ../odoo-pantalytics/.local
 docker-compose exec -T odoo python -m odoo -c /etc/odoo/odoo.conf -d test_db -u pan_outlook_pro --stop-after-init
 docker-compose restart odoo
 ```
 
 ### View logs
 ```bash
+cd ../odoo-pantalytics/.local
 docker-compose logs -f odoo
 ```
 
 ### Run unit tests
 ```bash
+cd ../odoo-pantalytics/.local
 docker-compose stop odoo
 docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
   -d test_db -u pan_outlook_pro --test-enable --test-tags=pan_outlook_pro --stop-after-init
@@ -210,6 +217,16 @@ registry.category("views").add("my_list", myListView);
 
 3. **Manifest**: Add to `web.assets_backend`
 4. **View**: Use `js_class="my_list"`
+
+## Context Management
+
+After every `/compact`, update the **Lessons Learned** section below with new insights from the session (gotchas, errors, solutions). This ensures continuity across context compactions.
+
+## Lessons Learned
+
+- **Fresh Docker build = missing assets**: After a fresh build, filestore is empty. Run `docker-compose exec -T odoo python -m odoo -c /etc/odoo/odoo.conf -d test_db -u web,base,base_setup --stop-after-init` to regenerate app icons and assets.
+- **Old Docker containers cause socket errors**: When moving `.local/` directory, always stop/remove old containers before rebuilding.
+- **OAuth tokens only contain requested scopes**: Adding permissions in Azure Portal is not enough - the scopes must also be listed in the authorization URL in `microsoft_graph_client.py`. Users need to re-authenticate after scope changes.
 
 ## Documentation
 

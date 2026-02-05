@@ -11,6 +11,12 @@ _logger = logging.getLogger(__name__)
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
+    # Module version
+    x_microsoft_module_version = fields.Char(
+        compute='_compute_module_version',
+        string='Module Version'
+    )
+
     # Configuration status
     x_microsoft_config_status = fields.Selection([
         ('not_configured', 'Not Configured'),
@@ -93,6 +99,15 @@ class ResConfigSettings(models.TransientModel):
         default='https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token',
         config_parameter='x_pan_outlook_pro.token_url'
     )
+
+    def _compute_module_version(self):
+        """Read installed module version from ir.module.module"""
+        module = self.env['ir.module.module'].sudo().search([
+            ('name', '=', 'pan_outlook_pro')
+        ], limit=1)
+        version = module.installed_version or ''
+        for record in self:
+            record.x_microsoft_module_version = version
 
     def _compute_redirect_uri(self):
         """Compute the OAuth redirect URI based on web.base.url"""

@@ -33,6 +33,8 @@
                     <field name="x_microsoft_mailbox_count" invisible="1"/>
                     <field name="x_microsoft_notification_configured" invisible="1"/>
 
+                    <div class="text-muted small mb-4">Version <field name="x_microsoft_module_version" readonly="1" class="d-inline"/></div>
+
                     <!-- ============================================ -->
                     <!-- CONFIGURATION -->
                     <!-- ============================================ -->
@@ -83,12 +85,11 @@
                                         <li>Set Redirect URI (Web) to the value below</li>
                                         <li>Copy <strong>Client ID</strong> and <strong>Tenant ID</strong> from Overview</li>
                                         <li>Create a <strong>Client Secret</strong> in Certificates &amp; secrets</li>
-                                        <li>Add API permissions:
+                                        <li>Add API permissions (Delegated):
                                             <ul class="mb-0">
-                                                <li><code>Mail.ReadWrite</code></li>
-                                                <li><code>Mail.ReadWrite.Shared</code></li>
-                                                <li><code>User.Read</code></li>
-                                                <li><code>offline_access</code></li>
+                                                <li><code>Mail.ReadWrite</code>, <code>Mail.Send</code></li>
+                                                <li><code>Mail.ReadWrite.Shared</code>, <code>Mail.Send.Shared</code></li>
+                                                <li><code>User.Read</code>, <code>offline_access</code></li>
                                             </ul>
                                         </li>
                                         <li>Click <strong>Grant admin consent</strong></li>
