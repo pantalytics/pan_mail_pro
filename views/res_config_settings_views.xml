@@ -1,23 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Banner in standard Email settings -->
-    <record id="res_config_settings_view_form_email_banner" model="ir.ui.view">
-        <field name="name">res.config.settings.view.form.inherit.outlook.pro.email.banner</field>
-        <field name="model">res.config.settings</field>
-        <field name="inherit_id" ref="mail.res_config_settings_view_form"/>
-        <field name="priority">99</field>
-        <field name="arch" type="xml">
-            <xpath expr="//setting[@id='email_servers_setting']" position="before">
-                <div class="alert alert-info mb-3" role="alert">
-                    <i class="fa fa-info-circle me-2" title="Info"/>
-                    <strong>Outlook Pro is installed.</strong>
-                    Email is managed via Microsoft Graph API.
-                    <a href="#" class="alert-link ms-1">Configure in Settings → Outlook Pro</a>
-                </div>
-            </xpath>
-        </field>
-    </record>
-
     <!-- Outlook Pro Settings App -->
     <record id="res_config_settings_view_form" model="ir.ui.view">
         <field name="name">res.config.settings.view.form.inherit.outlook.pro</field>
@@ -187,6 +169,24 @@
                     </div>
 
                 </app>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Banner in standard Email settings -->
+    <record id="res_config_settings_view_form_email_banner" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.outlook.pro.email.banner</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="mail.res_config_settings_view_form"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//setting[@id='email_servers_setting']" position="before">
+                <div class="alert alert-info mb-3" role="alert">
+                    <i class="fa fa-info-circle me-2" title="Info"/>
+                    <strong>Outlook Pro is installed.</strong>
+                    Email is managed via Microsoft Graph API.
+                    <a href="#" class="alert-link ms-1">Configure in Settings → Outlook Pro</a>
+                </div>
             </xpath>
         </field>
     </record>
