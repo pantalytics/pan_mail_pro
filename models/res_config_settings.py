@@ -56,7 +56,7 @@ class ResConfigSettings(models.TransientModel):
 
     # Microsoft OAuth Configuration
     x_microsoft_client_id = fields.Char(
-        string='Client ID',
+        string='Microsoft Client ID',
         help='Application (client) ID from Azure App Registration',
         config_parameter='x_pan_outlook_pro.client_id'
     )
