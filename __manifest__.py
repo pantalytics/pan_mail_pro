@@ -78,7 +78,7 @@
     'website': "https://www.pantalytics.com",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.1.0.1',
+    'version': '19.0.1.0.2',
     'license': 'OPL-1',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {

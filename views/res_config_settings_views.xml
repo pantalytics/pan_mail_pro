@@ -9,7 +9,7 @@
         <field name="arch" type="xml">
             <xpath expr="//setting[@id='email_servers_setting']" position="before">
                 <div class="alert alert-info mb-3" role="alert">
-                    <i class="fa fa-info-circle me-2"/>
+                    <i class="fa fa-info-circle me-2" title="Info"/>
                     <strong>Outlook Pro is installed.</strong>
                     Email is managed via Microsoft Graph API.
                     <a href="#" class="alert-link ms-1">Configure in Settings → Outlook Pro</a>
@@ -59,10 +59,10 @@
                                     </div>
                                     <div class="mt-3" invisible="x_microsoft_config_status == 'not_configured'">
                                         <span class="text-success" invisible="x_microsoft_config_status != 'verified'">
-                                            <i class="fa fa-check-circle me-1"/>Verified
+                                            <i class="fa fa-check-circle me-1" title="Verified"/>Verified
                                         </span>
                                         <span class="text-danger" invisible="x_microsoft_config_status != 'error'">
-                                            <i class="fa fa-times-circle me-1"/><field name="x_microsoft_config_status_message" class="d-inline" readonly="1"/>
+                                            <i class="fa fa-times-circle me-1" title="Error"/><field name="x_microsoft_config_status_message" class="d-inline" readonly="1"/>
                                         </span>
                                         <button name="action_test_azure_configuration" type="object"
                                                 string="Test Connection" class="btn-secondary"
@@ -117,7 +117,7 @@
                                             string="Connect Microsoft" class="btn-primary" icon="fa-windows"
                                             invisible="x_current_user_oauth_connected"/>
                                     <span class="text-success" invisible="not x_current_user_oauth_connected">
-                                        <i class="fa fa-check-circle me-1"/>Connected
+                                        <i class="fa fa-check-circle me-1" title="Connected"/>Connected
                                     </span>
                                 </div>
                             </div>
@@ -130,10 +130,10 @@
                                 <div class="text-muted small">Configure sending and sync</div>
                                 <div class="mt-2">
                                     <span class="text-warning" invisible="x_microsoft_notification_configured">
-                                        <i class="fa fa-exclamation-triangle me-1"/>Notification mailbox required for sync
+                                        <i class="fa fa-exclamation-triangle me-1" title="Warning"/>Notification mailbox required for sync
                                     </span>
                                     <span class="text-success" invisible="not x_microsoft_notification_configured">
-                                        <i class="fa fa-check-circle me-1"/>Ready
+                                        <i class="fa fa-check-circle me-1" title="Ready"/>Ready
                                     </span>
                                 </div>
                                 <div class="mt-1">
