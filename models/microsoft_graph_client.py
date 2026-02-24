@@ -456,7 +456,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         # Build query parameters
         params = {
             '$top': top,
-            '$orderby': 'receivedDateTime desc',
+            '$orderby': 'receivedDateTime asc',
             '$select': 'id,internetMessageId,subject,from,toRecipients,ccRecipients,'
                        'receivedDateTime,bodyPreview,hasAttachments,isRead',
         }

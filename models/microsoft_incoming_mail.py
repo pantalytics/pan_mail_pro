@@ -7,6 +7,7 @@ to the correct partner using message_post() for proper threading.
 """
 import base64
 import logging
+from datetime import datetime as dt_datetime
 from markupsafe import Markup
 
 from odoo import models, api, fields, _
@@ -28,7 +29,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
     def _cron_fetch_incoming_mail(self):
         """
         Cron method to fetch emails from all enabled mailboxes.
-        Called by ir.cron every 5 minutes.
+        Called by ir.cron every 1 minute.
         """
         mailboxes = self.env['x_microsoft.mailbox'].search([
             ('x_incoming_enabled', '=', True),
@@ -85,19 +86,29 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 return  # Skip this run, start fetching from next cron run
 
         processed_count = 0
+        folder_cursors = []
 
         # Fetch from Inbox
         if mailbox.x_sync_inbox:
-            count = self._fetch_folder(mailbox, 'Inbox')
+            count, latest_dt = self._fetch_folder(mailbox, 'Inbox')
             processed_count += count
+            if latest_dt:
+                folder_cursors.append(latest_dt)
 
         # Fetch from Sent Items (2-way sync)
         if mailbox.x_sync_sent:
-            count = self._fetch_folder(mailbox, 'SentItems')
+            count, latest_dt = self._fetch_folder(mailbox, 'SentItems')
             processed_count += count
+            if latest_dt:
+                folder_cursors.append(latest_dt)
 
-        # Update last sync date
-        mailbox.write({'x_last_sync_date': fields.Datetime.now()})
+        # Advance sync cursor incrementally:
+        # Use min of folder progress (safe: won't skip messages in slower folder)
+        # If no messages found, advance to now() (fully caught up)
+        if folder_cursors:
+            mailbox.write({'x_last_sync_date': min(folder_cursors)})
+        else:
+            mailbox.write({'x_last_sync_date': fields.Datetime.now()})
 
         _logger.info(f"[Incoming Mail] Processed {processed_count} message(s) from {mailbox.email}")
 
@@ -105,25 +116,39 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         """
         Fetch messages from a specific folder.
 
+        Messages are sorted ascending (oldest first) so we process
+        incrementally. The cursor advances to the last fetched message's
+        receivedDateTime, ensuring no messages are skipped across runs.
+
         Args:
             mailbox: x_microsoft.mailbox record
             folder: Folder name ('Inbox', 'SentItems', etc.)
 
         Returns:
-            int: Number of messages processed
+            tuple: (processed_count, latest_received_datetime or None)
         """
         graph_client = self.env['microsoft.graph.client']
 
-        # Fetch messages since last sync
+        # Fetch messages since last sync (sorted ascending for incremental cursor)
         messages = graph_client.fetch_messages(
             user=mailbox.x_owner_user_id,
             mailbox_email=mailbox.email,
             folder=folder,
             since_datetime=mailbox.x_last_sync_date,
-            top=50,  # Process in batches
+            top=200,
         )
 
         processed = 0
+        latest_datetime = None
+
+        # Messages sorted ascending — last item has the latest receivedDateTime
+        if messages:
+            last_received = messages[-1].get('receivedDateTime')
+            if last_received:
+                latest_datetime = dt_datetime.fromisoformat(
+                    last_received.replace('Z', '+00:00')
+                ).replace(tzinfo=None)
+
         for msg_data in messages:
             try:
                 if self._process_message(mailbox, msg_data, folder):
@@ -132,7 +157,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 _logger.exception(f"[Incoming Mail] Error processing message {msg_data.get('id')}")
                 # Continue with next message
 
-        return processed
+        return processed, latest_datetime
 
     def _process_message(self, mailbox, msg_data, folder):
         """

@@ -373,6 +373,8 @@ Cron job (every 1 min)
 │ fetch_messages()                             │
 │ - GET /users/{email}/mailFolders/Inbox       │
 │ - Filter: receivedDateTime > last_sync       │
+│ - Sort: receivedDateTime asc (oldest first)  │
+│ - Batch: up to 200 per folder                │
 └─────────────────────────────────────────────┘
       │
       ▼
@@ -407,7 +409,13 @@ Cron job (every 1 min)
       ▼
 ┌─────────────────────────────────────────────┐
 │ mail.message created                         │
-│ + optional mail.activity (new threads only)  │
+└─────────────────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────────────────┐
+│ Advance cursor                               │
+│ - x_last_sync_date = min(folder cursors)     │
+│ - If no messages: x_last_sync_date = now()   │
 └─────────────────────────────────────────────┘
 ```
 
@@ -503,19 +511,44 @@ record.message_post(body=body, ...)  # Sender gets notified!
 2. Store it on `mail.message.x_microsoft_message_id`
 3. Incoming mail processor looks up parent via `In-Reply-To` header matching stored IDs
 
-### 5.5 Historical Sync Support
+### 5.5 Incremental Cursor-Based Sync
 
-**Decision:** Configurable sync start date per mailbox, defaulting to "now".
+**Decision:** Use ascending sort + incremental cursor for reliable email sync.
+
+**Pattern:**
+1. Fetch messages sorted by `receivedDateTime asc` (oldest first)
+2. Process batch of up to 200 messages per folder
+3. Advance `x_last_sync_date` to the `receivedDateTime` of the last fetched message
+4. Next cron run continues from where the previous run stopped
+
+**Why ascending + incremental cursor:**
+- **No data loss:** Each run picks up exactly where the previous one stopped
+- **Self-healing:** If a run fails, the next run retries from the same point
+- **Historical import:** Processes 200 messages per cron run until caught up
+- **No race conditions:** Messages arriving during processing have later timestamps
+
+**Multi-folder cursor (Inbox + SentItems):**
+- Both folders share one cursor (`x_last_sync_date`)
+- After processing both, cursor advances to the **minimum** of the two folders' latest message
+- This ensures no messages are skipped in the slower folder
+- Duplicates from the faster folder are automatically skipped via `internetMessageId` check
 
 **Configuration:**
-- `x_sync_start_date` field on mailbox allows setting a historical start date
-- If not set, defaults to current timestamp (no historical import)
-- Field becomes readonly after first sync (delete mailbox to reset)
-
-**Why:**
-- Default behavior prevents flooding chatter with old emails
-- Optional historical import for users who need past emails
+- `x_sync_start_date`: User-configurable start date (default: now, always editable)
+- `x_last_sync_date`: Auto-advancing cursor, updated after each successful batch
+- Changing `x_sync_start_date` to an earlier date auto-resets `x_last_sync_date`
 - Duplicates are automatically skipped via `internetMessageId` check
+
+**Example: Historical import of 1000 emails:**
+```
+Run 1: fetch 200 oldest since sync_start_date → cursor = msg #200 datetime
+Run 2: fetch 200 oldest since cursor          → cursor = msg #400 datetime
+...
+Run 5: fetch 200 oldest since cursor          → cursor = msg #1000 datetime
+Run 6: fetch 0 messages                       → cursor = now() (caught up)
+```
+
+This is a standard pattern (incremental cursor sync) used by Odoo fetchmail, Stripe webhooks, Salesforce replication, etc.
 
 ### 5.6 Pre-create Partners
 
