@@ -73,7 +73,7 @@ class ResUsers(models.Model):
 
     # Computed fields for backwards compatibility (decrypt on read)
     x_microsoft_access_token = fields.Char(
-        string='Microsoft Access Token',
+        string='Microsoft Outlook Access Token',
         compute='_compute_decrypted_tokens',
         inverse='_inverse_access_token',
         store=False,  # Never store plain text in database
@@ -81,7 +81,7 @@ class ResUsers(models.Model):
         copy=False
     )
     x_microsoft_refresh_token = fields.Char(
-        string='Microsoft Refresh Token',
+        string='Microsoft Outlook Refresh Token',
         compute='_compute_decrypted_tokens',
         inverse='_inverse_refresh_token',
         store=False,  # Never store plain text in database
