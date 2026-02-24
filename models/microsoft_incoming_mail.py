@@ -548,13 +548,22 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             except (ValueError, SyntaxError):
                 pass
 
-        # Use Odoo's native message_new() - this is what the standard mail gateway uses
-        # It creates the record AND posts the initial message correctly
+        # Create the record via message_new() (sets fields like name, partner_id, team_id)
+        # then post the email body separately (message_new only creates the record,
+        # it does NOT post the email content to the chatter)
         Model = self.env[model]
         record = Model.message_new(msg_dict, custom_values=custom_values)
 
-        # Get the message that was created by message_new
-        message = record.message_ids[:1] if record.message_ids else False
+        message = record.message_post(
+            body=msg_dict.get('body', ''),
+            subject=msg_dict.get('subject', ''),
+            message_type='email',
+            subtype_xmlid='mail.mt_comment',
+            author_id=msg_dict.get('author_id'),
+            email_from=msg_dict.get('email_from'),
+            message_id=msg_dict.get('message_id'),
+            attachments=msg_dict.get('attachments', []),
+        )
 
         _logger.info(f"[Incoming Mail] Created {model} via message_new: {record.display_name} (id={record.id})")
         return record, message
