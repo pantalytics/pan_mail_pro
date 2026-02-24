@@ -157,6 +157,14 @@
                                         <span class="o_form_label">Version</span>
                                         <div class="mt-1"><field name="x_microsoft_module_version" readonly="1"/></div>
                                     </div>
+                                    <div class="col-auto">
+                                        <span class="o_form_label">Documentation</span>
+                                        <div class="mt-1">
+                                            <a href="https://pantalytics.gitbook.io/pantalytics-docs/" target="_blank">
+                                                <i class="fa fa-external-link me-1" title="Documentation"/>pantalytics.gitbook.io
+                                            </a>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="mt-3 text-muted small">
                                     © Pantalytics B.V. All rights reserved. This software is proprietary and confidential.

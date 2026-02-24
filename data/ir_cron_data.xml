@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data noupdate="1">
+    <data noupdate="0">
         <!-- Cron job to fetch incoming emails from Microsoft 365 -->
         <record id="ir_cron_microsoft_fetch_incoming_mail" model="ir.cron">
             <field name="name">Microsoft Graph: Fetch Incoming Mail</field>

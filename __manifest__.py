@@ -58,6 +58,10 @@
 
         This module gives you full control via Microsoft Graph API.
 
+        Documentation:
+        --------------
+        Full setup guide: https://pantalytics.gitbook.io/pantalytics-docs/
+
         Setup Instructions:
         -------------------
         After installation, go to Settings → Outlook Pro
@@ -78,7 +82,7 @@
     'website': "https://www.pantalytics.com",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.1.0.4',
+    'version': '19.0.1.0.5',
     'license': 'OPL-1',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {

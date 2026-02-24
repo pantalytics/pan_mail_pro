@@ -2,6 +2,8 @@
 
 Complete Microsoft 365 email integration for Odoo - send and receive with full control.
 
+**[Full documentation](https://pantalytics.gitbook.io/pantalytics-docs/)**
+
 ## Features
 
 **Outgoing Email:**
