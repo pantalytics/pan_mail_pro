@@ -57,23 +57,13 @@
                         <div class="col-12 col-lg-6 o_setting_box" invisible="x_microsoft_config_status == 'verified'">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Instructions</span>
+                                <span class="o_form_label">Setup Guide</span>
                                 <div class="content-group">
-                                    <ol class="mb-3 ps-3">
-                                        <li>Open <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Azure Portal → App registrations</a></li>
-                                        <li>Click <strong>+ New registration</strong>, name it <code>Odoo Email Integration</code></li>
-                                        <li>Set Redirect URI (Web) to the value below</li>
-                                        <li>Copy <strong>Client ID</strong> and <strong>Tenant ID</strong> from Overview</li>
-                                        <li>Create a <strong>Client Secret</strong> in Certificates &amp; secrets</li>
-                                        <li>Add API permissions (Delegated):
-                                            <ul class="mb-0">
-                                                <li><code>Mail.ReadWrite</code>, <code>Mail.Send</code></li>
-                                                <li><code>Mail.ReadWrite.Shared</code>, <code>Mail.Send.Shared</code></li>
-                                                <li><code>User.Read</code>, <code>offline_access</code></li>
-                                            </ul>
-                                        </li>
-                                        <li>Click <strong>Grant admin consent</strong></li>
-                                    </ol>
+                                    <div class="mb-3">
+                                        <a href="https://pantalytics.gitbook.io/pantalytics-docs/getting-started/azure-setup" target="_blank">
+                                            <i class="fa fa-external-link me-1" title="Setup guide"/>Step-by-step Azure setup instructions
+                                        </a>
+                                    </div>
                                     <div class="mt-4">
                                         <span class="o_form_label">Callback URL</span>
                                         <div class="text-muted mb-2">Copy to Azure → Authentication → Redirect URIs</div>
