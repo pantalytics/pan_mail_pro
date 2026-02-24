@@ -366,47 +366,12 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             if conversation_id and message:
                 message.write({'x_microsoft_conversation_id': conversation_id})
 
-            # Create activity for new emails (only for incoming, not sent items, and only for new threads)
-            if mailbox.x_create_activity and not is_outgoing and not parent_message:
-                self._create_review_activity(mailbox, target_record)
-
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
             return True
 
         except Exception as e:
             _logger.exception(f"[Incoming Mail] Failed to process message: {internet_message_id}")
             raise
-
-    def _create_review_activity(self, mailbox, target_record):
-        """
-        Create an activity for the mailbox owner to review a new email.
-
-        Args:
-            mailbox: x_microsoft.mailbox record
-            target_record: The record the message was posted to (crm.lead or res.partner)
-        """
-        if not mailbox.x_owner_user_id:
-            return  # No owner, skip activity creation
-
-        # Ensure we have valid model and id
-        model_name = target_record._name
-        record_id = target_record.id
-        if not model_name or not record_id:
-            _logger.warning(f"[Incoming Mail] Cannot create activity: model={model_name}, id={record_id}")
-            return
-
-        try:
-            self.env['mail.activity'].create({
-                'res_model_id': self.env['ir.model']._get_id(model_name),
-                'res_id': record_id,
-                'activity_type_id': self.env.ref('mail.mail_activity_data_todo').id,
-                'summary': _('Review incoming email from %s') % mailbox.email,
-                'user_id': mailbox.x_owner_user_id.id,
-                'date_deadline': fields.Date.today(),
-            })
-            _logger.info(f"[Incoming Mail] Created activity on {model_name}/{record_id} for {mailbox.x_owner_user_id.name}")
-        except Exception as e:
-            _logger.warning(f"[Incoming Mail] Failed to create activity: {e}")
 
     def _is_duplicate(self, internet_message_id):
         """

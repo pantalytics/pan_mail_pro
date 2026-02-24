@@ -135,8 +135,6 @@
                     <field name="x_incoming_user_id" invisible="1"/>
                     <field name="x_sync_inbox" invisible="1"/>
                     <field name="x_sync_sent" invisible="1"/>
-                    <field name="x_create_activity" invisible="1"/>
-                    <field name="x_activity_user_id" invisible="1"/>
                     <field name="active" invisible="1"/>
                 </sheet>
             </form>

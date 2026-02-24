@@ -183,16 +183,6 @@ class MicrosoftMailbox(models.Model):
         readonly=True,
         help='Timestamp of last successful sync'
     )
-    x_create_activity = fields.Boolean(
-        string='Create Activity for New Emails',
-        default=True,
-        help='Create a "Review Email" activity when a new email arrives'
-    )
-    x_activity_user_id = fields.Many2one(
-        'res.users',
-        string='Assign Activities To',
-        help='User who receives activities for new emails. Leave empty for no assignment.'
-    )
     x_alias_id = fields.Many2one(
         'mail.alias',
         string='Route to Team',
