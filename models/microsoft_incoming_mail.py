@@ -344,6 +344,27 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             'email_from': email_from,
         }
 
+        # For incoming emails with route_to_team: override res.partner threading.
+        # Sent items create threads on partner chatter, but incoming emails
+        # should be routed to the configured team (CRM, Helpdesk) instead.
+        if (parent_message and not is_outgoing and mailbox.x_route_to_team
+                and parent_message.model == 'res.partner'):
+            # Try to find an existing record on a non-partner model
+            alt_parent = False
+            if conversation_id:
+                alt_parent = self.env['mail.message'].search([
+                    ('x_microsoft_conversation_id', '=', conversation_id),
+                    ('model', '!=', False),
+                    ('model', '!=', 'res.partner'),
+                    ('res_id', '!=', False),
+                ], order='id asc', limit=1)
+            if alt_parent:
+                parent_message = alt_parent
+                _logger.info(f"[Incoming Mail] Re-routed from res.partner to {alt_parent.model}/{alt_parent.res_id}")
+            else:
+                parent_message = False
+                _logger.info(f"[Incoming Mail] Ignoring res.partner parent, routing via alias")
+
         try:
             # For REPLIES: post to existing thread
             if parent_message and parent_message.model and parent_message.res_id:
