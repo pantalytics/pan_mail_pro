@@ -79,7 +79,7 @@
         - No data is sent to the module author or any third party
     """,
     'author': "Pantalytics B.V. by Rutger Hofste",
-    'website': "https://www.pantalytics.com",
+    'website': "https://www.pantalytics.com/apps/outlook-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
     'version': '19.0.1.0.5',
