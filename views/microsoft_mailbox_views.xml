@@ -70,7 +70,7 @@
                         </group>
                         <group>
                             <div class="text-muted" invisible="not x_incoming_sync">
-                                Change "Import From" to re-sync from an earlier date. Duplicates are skipped automatically.
+                                Emails are imported from oldest to newest, up to 200 per minute. You can change "Import From" to re-sync from an earlier date — duplicates are skipped automatically.
                             </div>
                         </group>
                     </group>
