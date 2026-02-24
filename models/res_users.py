@@ -6,6 +6,21 @@ from . import encryption_utils
 class ResUsers(models.Model):
     _inherit = 'res.users'
 
+    @property
+    def SELF_READABLE_FIELDS(self):
+        return super().SELF_READABLE_FIELDS + [
+            'x_microsoft_default_mailbox_id',
+            'x_microsoft_oauth_connected',
+            'x_microsoft_health_status',
+        ]
+
+    @property
+    def SELF_WRITEABLE_FIELDS(self):
+        return super().SELF_WRITEABLE_FIELDS + [
+            'x_microsoft_default_mailbox_id',
+            'x_microsoft_oauth_connected',
+        ]
+
     # Microsoft OAuth tokens (stored encrypted in database)
     x_microsoft_access_token_encrypted = fields.Char(
         string='Microsoft Access Token (Encrypted)',
@@ -200,18 +215,3 @@ class ResUsers(models.Model):
             }
         }
 
-    def write(self, vals):
-        """
-        Override write to allow users to set their own default mailbox.
-        Regular users cannot write to res.users, but they should be able
-        to set their own Microsoft default mailbox setting.
-        """
-        # Check if only updating default mailbox for own record
-        if (len(vals) == 1 and
-                'x_microsoft_default_mailbox_id' in vals and
-                len(self) == 1 and
-                self.id == self.env.uid):
-            # User is only changing their own default mailbox - allow via sudo
-            return super(ResUsers, self.sudo()).write(vals)
-
-        return super().write(vals)
