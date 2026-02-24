@@ -17,7 +17,7 @@
                 <field name="x_mailbox_type" string="Type" optional="hide"/>
                 <field name="x_owner_user_id" string="Owner" optional="hide"/>
                 <field name="x_incoming_sync" string="Sync" optional="hide"/>
-                <field name="x_last_sync_date" string="Last Synced" optional="hide"/>
+                <field name="x_last_sync_date" string="Last Synced" widget="timeago" optional="hide"/>
                 <field name="x_error_message" string="Error" optional="hide"/>
             </list>
         </field>
@@ -64,16 +64,13 @@
                             <field name="x_exclude_internal" widget="boolean_toggle"
                                    invisible="not x_incoming_sync"/>
                             <field name="x_sync_start_date"
-                                   invisible="not x_incoming_sync or x_last_sync_date"/>
+                                   invisible="not x_incoming_sync"/>
+                            <field name="x_last_sync_date" readonly="1" widget="timeago"
+                                   invisible="not x_incoming_sync or not x_last_sync_date"/>
                         </group>
                         <group>
                             <div class="text-muted" invisible="not x_incoming_sync">
-                                <span invisible="x_last_sync_date">
-                                    Set "Import From" to sync historical emails.
-                                </span>
-                                <span invisible="not x_last_sync_date">
-                                    Last synced: <field name="x_last_sync_date" readonly="1" class="d-inline"/>
-                                </span>
+                                Change "Import From" to re-sync from an earlier date. Duplicates are skipped automatically.
                             </div>
                         </group>
                     </group>

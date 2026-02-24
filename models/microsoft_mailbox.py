@@ -328,6 +328,15 @@ class MicrosoftMailbox(models.Model):
             'target': 'current',
         }
 
+    def write(self, vals):
+        """Reset x_last_sync_date when x_sync_start_date is moved to an earlier date."""
+        if 'x_sync_start_date' in vals and vals['x_sync_start_date']:
+            new_start = fields.Datetime.to_datetime(vals['x_sync_start_date'])
+            for record in self:
+                if record.x_last_sync_date and new_start < record.x_last_sync_date:
+                    vals['x_last_sync_date'] = new_start
+        return super().write(vals)
+
     @api.onchange('x_sync_mode')
     def _onchange_sync_mode(self):
         """Reset state when switching to no sync."""
