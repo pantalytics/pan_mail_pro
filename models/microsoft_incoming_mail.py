@@ -301,11 +301,17 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         # Build msg_dict in Odoo's expected format for message_new()
         email_from = f'"{contact_name}" <{contact_email}>' if contact_name else contact_email
+        cc_recipients = full_message.get('ccRecipients', [])
+        cc_addresses = ', '.join(
+            r.get('emailAddress', {}).get('address', '')
+            for r in cc_recipients
+        )
         msg_dict = {
             'message_type': 'email',
             'subject': full_message.get('subject', ''),
             'from': email_from,
             'to': mailbox.email,
+            'cc': cc_addresses,
             'body': body_content,
             'attachments': email_attachments,
             'message_id': internet_message_id,
@@ -327,6 +333,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     message_id=internet_message_id,
                     parent_id=parent_message.id,
                     attachments=email_attachments,
+                    incoming_email_to=msg_dict.get('to', ''),
+                    incoming_email_cc=msg_dict.get('cc', ''),
                 )
                 _logger.info(f"[Incoming Mail] Posted reply to {parent_message.model}/{parent_message.res_id}")
 
@@ -534,6 +542,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 email_from=msg_dict.get('email_from'),
                 message_id=msg_dict.get('message_id'),
                 attachments=msg_dict.get('attachments', []),
+                incoming_email_to=msg_dict.get('to', ''),
+                incoming_email_cc=msg_dict.get('cc', ''),
             )
             return partner, message
 
@@ -548,12 +558,19 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             except (ValueError, SyntaxError):
                 pass
 
-        # Create the record via message_new() (sets fields like name, partner_id, team_id)
-        # then post the email body separately (message_new only creates the record,
-        # it does NOT post the email content to the chatter)
-        Model = self.env[model]
+        # Create the record via message_new() with context flags matching
+        # Odoo's standard _message_route_process() behavior:
+        # - mail_create_nosubscribe: don't auto-subscribe the sender as follower
+        # - mail_create_nolog: don't post a "Record created" log message
+        Model = self.env[model].with_context(
+            mail_create_nosubscribe=True,
+            mail_create_nolog=True,
+        )
         record = Model.message_new(msg_dict, custom_values=custom_values)
 
+        # Post the email body to the chatter (message_new only creates the record).
+        # incoming_email_to/cc prevent Odoo from sending notifications back to
+        # recipients who were already on the original email (including the sender).
         message = record.message_post(
             body=msg_dict.get('body', ''),
             subject=msg_dict.get('subject', ''),
@@ -563,6 +580,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             email_from=msg_dict.get('email_from'),
             message_id=msg_dict.get('message_id'),
             attachments=msg_dict.get('attachments', []),
+            incoming_email_to=msg_dict.get('to', ''),
+            incoming_email_cc=msg_dict.get('cc', ''),
         )
 
         _logger.info(f"[Incoming Mail] Created {model} via message_new: {record.display_name} (id={record.id})")
