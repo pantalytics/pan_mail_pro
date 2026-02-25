@@ -82,7 +82,7 @@
     'website': "https://www.pantalytics.com/apps/outlook-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.1.0.14',
+    'version': '19.0.1.0.15',
     'license': 'OPL-1',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {

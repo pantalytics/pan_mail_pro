@@ -286,7 +286,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         body = full_message.get('body', {})
         body_content = body.get('content', '')
 
-        # Process attachments: inline images → embed in HTML, regular → file attachments
+        # Process attachments:
+        # - Inline (isInline=true): 3-tuple format so Odoo converts cid: → /web/image/
+        # - Regular: 2-tuple format stored as ir.attachment
         email_attachments = []
         if attachments:
             for attachment in attachments:
@@ -298,15 +300,12 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 if not content_bytes_b64:
                     continue
                 try:
+                    content_binary = base64.b64decode(content_bytes_b64)
                     if attachment.get('isInline') and attachment.get('contentId'):
-                        # Inline attachment: replace cid: reference with data URI
-                        content_type = attachment.get('contentType', 'application/octet-stream')
-                        data_uri = f'data:{content_type};base64,{content_bytes_b64}'
-                        cid = attachment['contentId']
-                        body_content = body_content.replace(f'cid:{cid}', data_uri)
+                        # Inline: 3-tuple lets Odoo handle cid: conversion
+                        email_attachments.append((att_name, content_binary, {'cid': attachment['contentId']}))
                     else:
-                        # Regular attachment: add as file
-                        content_binary = base64.b64decode(content_bytes_b64)
+                        # Regular: 2-tuple stored as file attachment
                         email_attachments.append((att_name, content_binary))
                 except Exception as e:
                     _logger.warning(f"[Incoming Mail] Failed to process attachment {att_name}: {e}")
