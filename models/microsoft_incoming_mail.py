@@ -259,10 +259,11 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.info(f"[Incoming Mail] All contacts mode: processing {'known' if is_known_contact else 'unknown'} contact")
 
         # Get attachments if present
+        # Note: hasAttachments is false for inline-only images, so also check for cid: in body
         attachments = []
         has_attachments = full_message.get('hasAttachments', False)
-        _logger.info(f"[Incoming Mail] hasAttachments={has_attachments}")
-        if has_attachments:
+        body_may_have_inline = 'cid:' in full_message.get('body', {}).get('content', '')
+        if has_attachments or body_may_have_inline:
             attachments = graph_client.get_message_attachments(
                 user=mailbox.x_owner_user_id,
                 mailbox_email=mailbox.email,
