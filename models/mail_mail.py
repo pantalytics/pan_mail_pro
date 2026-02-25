@@ -238,14 +238,14 @@ class MailMail(models.Model):
         elif author_user.x_microsoft_default_mailbox_id:
             mailbox = author_user.x_microsoft_default_mailbox_id
         else:
-            _logger.error(f"[Graph API] User {author_user.name} has no default mailbox configured")
-            return (None, None)
+            _logger.info(f"[Graph API] User {author_user.name} has no default mailbox, falling back to notification mailbox")
+            return self._get_notification_mailbox_and_user()
 
         # Both personal and shared mailboxes: author sends with their own token
         # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365
         if not author_user.x_microsoft_oauth_connected:
-            _logger.error(f"[Graph API] User {author_user.name} has no Microsoft account connected")
-            return (None, None)
+            _logger.info(f"[Graph API] User {author_user.name} has no Microsoft connection, falling back to notification mailbox")
+            return self._get_notification_mailbox_and_user()
         return (mailbox, author_user)
 
     def _get_notification_mailbox_and_user(self):
