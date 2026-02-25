@@ -285,23 +285,34 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # Build email body - mark as safe HTML to preserve formatting
         body = full_message.get('body', {})
         body_content = body.get('content', '')
-        if body.get('contentType') == 'html' and body_content:
-            body_content = Markup(body_content)
 
-        # Prepare attachments as (filename, content) tuples for message_new/message_post
+        # Process attachments: inline images → embed in HTML, regular → file attachments
         email_attachments = []
         if attachments:
             for attachment in attachments:
                 att_type = attachment.get('@odata.type', 'unknown')
                 att_name = attachment.get('name', 'unnamed')
-                if att_type == '#microsoft.graph.fileAttachment':
-                    content_bytes_b64 = attachment.get('contentBytes')
-                    if content_bytes_b64:
-                        try:
-                            content_binary = base64.b64decode(content_bytes_b64)
-                            email_attachments.append((att_name, content_binary))
-                        except Exception as e:
-                            _logger.warning(f"[Incoming Mail] Failed to decode attachment {att_name}: {e}")
+                if att_type != '#microsoft.graph.fileAttachment':
+                    continue
+                content_bytes_b64 = attachment.get('contentBytes')
+                if not content_bytes_b64:
+                    continue
+                try:
+                    if attachment.get('isInline') and attachment.get('contentId'):
+                        # Inline attachment: replace cid: reference with data URI
+                        content_type = attachment.get('contentType', 'application/octet-stream')
+                        data_uri = f'data:{content_type};base64,{content_bytes_b64}'
+                        cid = attachment['contentId']
+                        body_content = body_content.replace(f'cid:{cid}', data_uri)
+                    else:
+                        # Regular attachment: add as file
+                        content_binary = base64.b64decode(content_bytes_b64)
+                        email_attachments.append((att_name, content_binary))
+                except Exception as e:
+                    _logger.warning(f"[Incoming Mail] Failed to process attachment {att_name}: {e}")
+
+        if body.get('contentType') == 'html' and body_content:
+            body_content = Markup(body_content)
 
         # Build msg_dict in Odoo's expected format for message_new()
         email_from = f'"{contact_name}" <{contact_email}>' if contact_name else contact_email
