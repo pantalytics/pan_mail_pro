@@ -2,6 +2,7 @@
 import base64
 import logging
 import mimetypes
+import re
 import requests
 import secrets
 import time
@@ -15,6 +16,10 @@ _logger = logging.getLogger(__name__)
 # Rate limiting configuration
 MAX_RETRIES = 3
 INITIAL_BACKOFF_SECONDS = 2
+
+# Attachment size threshold: Graph API allows max 3MB per direct attachment upload.
+# Larger files must use the upload session API (supports up to 150MB).
+DIRECT_ATTACHMENT_LIMIT = 3 * 1024 * 1024  # 3MB in bytes
 
 
 class MicrosoftGraphClient(models.AbstractModel):
@@ -246,6 +251,139 @@ class MicrosoftGraphClient(models.AbstractModel):
             }
 
     @api.model
+    def _prepare_inline_images(self, body_html):
+        """
+        Convert /web/image/ references in HTML body to cid: inline attachments.
+
+        Parses the body for <img src="/web/image/ID..."> references, loads the
+        corresponding ir.attachment records, and replaces the URLs with cid:
+        references. Returns the modified body and Graph API inline attachment dicts.
+
+        Args:
+            body_html: HTML body string
+
+        Returns:
+            tuple: (processed_body, inline_attachments, inline_attachment_ids)
+                - processed_body: HTML with cid: references
+                - inline_attachments: list of Graph API attachment dicts (isInline=True)
+                - inline_attachment_ids: set of ir.attachment IDs used inline
+        """
+        if not body_html:
+            return body_html, [], set()
+
+        inline_attachments = []
+        inline_att_ids = set()
+        counter = [0]
+
+        def _replace_with_cid(match):
+            try:
+                att_id = int(match.group(1))
+            except (ValueError, TypeError):
+                return match.group(0)
+
+            attachment = self.env['ir.attachment'].sudo().browse(att_id)
+            if not attachment.exists() or not attachment.datas:
+                return match.group(0)
+
+            counter[0] += 1
+            content_id = f"odoo_inline_image_{counter[0]}"
+
+            content_type = attachment.mimetype or mimetypes.guess_type(attachment.name or '')[0] or 'application/octet-stream'
+            att_data = attachment.datas
+
+            inline_attachments.append({
+                '@odata.type': '#microsoft.graph.fileAttachment',
+                'name': attachment.name or f'image{counter[0]}.png',
+                'contentType': content_type,
+                'contentBytes': att_data.decode('utf-8') if isinstance(att_data, bytes) else att_data,
+                'isInline': True,
+                'contentId': content_id,
+            })
+            inline_att_ids.add(att_id)
+
+            return f'src="cid:{content_id}"'
+
+        processed_body = re.sub(r'src="[^"]*?/web/image/(\d+)[^"]*"', _replace_with_cid, body_html)
+
+        if inline_attachments:
+            _logger.info(f"[Graph API] Converted {len(inline_attachments)} inline image(s) to cid: references")
+
+        return processed_body, inline_attachments, inline_att_ids
+
+    @api.model
+    def _add_attachment_to_draft(self, headers, graph_user_id, draft_id, attachment_dict):
+        """
+        Add a small attachment (< 3MB) directly to a draft message.
+
+        Uses POST /messages/{id}/attachments with the attachment JSON payload.
+        This is the standard approach for attachments under 3MB.
+        """
+        url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/attachments'
+        response = requests.post(url, headers=headers, json=attachment_dict, timeout=30)
+        response.raise_for_status()
+        _logger.info(f"[Graph API] Added attachment '{attachment_dict['name']}' to draft")
+
+    @api.model
+    def _upload_large_attachment(self, headers, graph_user_id, draft_id, name, content_type, raw_bytes, is_inline=False):
+        """
+        Upload a large attachment (>= 3MB) via upload session.
+
+        Uses the Graph API upload session flow:
+        1. Create upload session with attachment metadata
+        2. Upload file in chunks (each chunk < 4MB, must be multiple of 320KB)
+        3. Session completes automatically after last chunk
+
+        Args:
+            headers: Auth headers (used for session creation only, not for chunk uploads)
+            graph_user_id: Microsoft user ID / UPN
+            draft_id: Draft message ID
+            name: Attachment filename
+            content_type: MIME type
+            raw_bytes: Raw file content (not base64)
+            is_inline: Whether this is an inline image
+        """
+        total_size = len(raw_bytes)
+        _logger.info(f"[Graph API] Uploading large attachment '{name}' ({total_size} bytes) via upload session")
+
+        # Step 1: Create upload session
+        session_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/attachments/createUploadSession'
+        session_payload = {
+            'AttachmentItem': {
+                '@odata.type': 'microsoft.graph.attachmentItem',
+                'attachmentType': 'file',
+                'name': name,
+                'size': total_size,
+                'contentType': content_type,
+                'isInline': is_inline,
+            }
+        }
+        session_response = requests.post(session_url, headers=headers, json=session_payload, timeout=30)
+        session_response.raise_for_status()
+        upload_url = session_response.json()['uploadUrl']
+
+        # Step 2: Upload in chunks (max 4MB, must be multiple of 320KB)
+        # Use ~4MB chunks (4 * 1024 * 1024 = 4194304, nearest 320KB multiple = 4177920)
+        chunk_size = 320 * 1024 * 13  # ~4MB, multiple of 320KB
+        offset = 0
+
+        while offset < total_size:
+            chunk_end = min(offset + chunk_size, total_size) - 1
+            chunk_data = raw_bytes[offset:chunk_end + 1]
+
+            # Upload URL has embedded auth — do NOT include Authorization header
+            chunk_headers = {
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': str(len(chunk_data)),
+                'Content-Range': f'bytes {offset}-{chunk_end}/{total_size}',
+            }
+
+            chunk_response = requests.put(upload_url, headers=chunk_headers, data=chunk_data, timeout=60)
+            chunk_response.raise_for_status()
+            offset = chunk_end + 1
+
+        _logger.info(f"[Graph API] Upload complete for '{name}'")
+
+    @api.model
     def send_email_via_graph(self, mail_record, mailbox, user):
         """
         Send email via Microsoft Graph API using Draft → Send flow.
@@ -331,29 +469,37 @@ class MicrosoftGraphClient(models.AbstractModel):
                     'value': str(mail_record.mail_message_id.id)
                 })
 
-            # Build attachments list from mail.mail attachment_ids
-            attachments = []
+            # Process body: convert /web/image/ URLs to cid: inline attachments
+            # This embeds images directly in the email so they work regardless
+            # of whether the Odoo server is publicly accessible
+            body_html = mail_record.body_html or mail_record.body or ''
+            body_html, inline_attachments, inline_att_ids = self._prepare_inline_images(body_html)
+
+            # Build regular attachments (skip those already embedded inline)
+            regular_attachments = []
             if mail_record.attachment_ids:
                 for attachment in mail_record.attachment_ids:
-                    # Get MIME type
+                    if attachment.id in inline_att_ids:
+                        continue
                     content_type = attachment.mimetype or mimetypes.guess_type(attachment.name)[0] or 'application/octet-stream'
-
-                    # Attachment data is already base64 encoded in Odoo
                     attachment_data = attachment.datas
                     if attachment_data:
-                        attachments.append({
+                        regular_attachments.append({
                             '@odata.type': '#microsoft.graph.fileAttachment',
                             'name': attachment.name,
                             'contentType': content_type,
-                            'contentBytes': attachment_data.decode('utf-8') if isinstance(attachment_data, bytes) else attachment_data
+                            'contentBytes': attachment_data.decode('utf-8') if isinstance(attachment_data, bytes) else attachment_data,
                         })
 
-            # Build message payload for draft creation
+            all_attachments = inline_attachments + regular_attachments
+
+            # Build message payload for draft creation (WITHOUT attachments —
+            # attachments are added separately to avoid the 4MB JSON payload limit)
             message = {
                 'subject': mail_record.subject or '(No Subject)',
                 'body': {
                     'contentType': 'HTML',
-                    'content': mail_record.body_html or mail_record.body or ''
+                    'content': body_html
                 },
                 'toRecipients': to_recipients,
                 'from': {
@@ -364,10 +510,6 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'internetMessageHeaders': internet_message_headers
             }
 
-            # Add attachments if present
-            if attachments:
-                message['attachments'] = attachments
-
             headers = {
                 'Authorization': f'Bearer {token}',
                 'Content-Type': 'application/json',
@@ -377,7 +519,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             recipient_emails = [r['emailAddress'].get('address', 'NO_ADDRESS') for r in to_recipients]
             _logger.info(f"[Graph API] Sending email from {mailbox_email} to {recipient_emails}")
 
-            # Step 1: Create draft message - this gives us internetMessageId and conversationId
+            # Step 1: Create draft (body + headers only)
             draft_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages'
             draft_response = requests.post(draft_url, headers=headers, json=message, timeout=30)
             draft_response.raise_for_status()
@@ -389,7 +531,21 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             _logger.info(f"[Graph API] Created draft - Message-ID: {microsoft_message_id}, Conversation-ID: {microsoft_conversation_id}")
 
-            # Step 2: Send the draft
+            # Step 2: Add attachments to draft
+            for att in all_attachments:
+                raw_bytes = base64.b64decode(att['contentBytes'])
+                if len(raw_bytes) < DIRECT_ATTACHMENT_LIMIT:
+                    self._add_attachment_to_draft(headers, graph_user_id, draft_id, att)
+                else:
+                    self._upload_large_attachment(
+                        headers, graph_user_id, draft_id,
+                        name=att['name'],
+                        content_type=att['contentType'],
+                        raw_bytes=raw_bytes,
+                        is_inline=att.get('isInline', False),
+                    )
+
+            # Step 3: Send the draft
             send_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/send'
             send_response = requests.post(send_url, headers=headers, timeout=30)
             send_response.raise_for_status()

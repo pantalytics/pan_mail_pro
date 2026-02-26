@@ -4,12 +4,12 @@ This guide walks you through creating a Microsoft Entra ID (Azure AD) app regist
 
 ## Step 1: Create App Registration
 
-1. Go to [Azure Portal → App Registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
+1. Go to <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Azure Portal → App Registrations</a>
 2. Click **New registration**
 3. Configure:
    - **Name:** `Odoo Outlook Pro` (or your preference)
    - **Supported account types:** Accounts in this organizational directory only
-   - **Redirect URI:** Web → `https://your-odoo-domain.com/microsoft/callback`
+   - **Redirect URI:** Web → copy the Callback URL from Odoo (Settings → Outlook Pro → Setup Guide). The URL format is `https://your-odoo-domain.com/microsoft/callback`
 4. Click **Register**
 
 ## Step 2: Note Application IDs
