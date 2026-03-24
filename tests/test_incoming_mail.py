@@ -169,6 +169,8 @@ class TestAliasRouting(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        if 'helpdesk.team' not in cls.env:
+            raise unittest.SkipTest("Helpdesk module not installed")
         cls.processor = cls.env['microsoft.incoming.mail.processor']
         cls.partner = cls.env['res.partner'].create({
             'name': 'Test Sender',
