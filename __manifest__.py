@@ -83,7 +83,7 @@
     'support': "support@pantalytics.com",
     'category': 'Discuss',
     'version': '19.0.1.0.17',
-    'license': 'OPL-1',
+    'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
         'python': ['cryptography'],
@@ -116,7 +116,4 @@
     'application': True,
     'auto_install': False,
     'post_init_hook': '_disable_smtp_servers',
-
-    'price': 450.00,
-    'currency': 'EUR',
 }
