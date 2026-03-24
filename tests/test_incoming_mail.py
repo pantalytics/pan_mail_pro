@@ -5,6 +5,8 @@ Unit tests for Microsoft Incoming Mail Processor.
 Run with: python -m odoo -d test_db --test-enable --test-tags=pan_outlook_pro
 """
 from odoo.tests import TransactionCase, tagged
+import unittest
+
 
 
 @tagged('pan_outlook_pro', 'post_install', '-at_install')
