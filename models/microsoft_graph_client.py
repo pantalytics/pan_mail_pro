@@ -418,15 +418,19 @@ class MicrosoftGraphClient(models.AbstractModel):
             to_recipients = []
 
             # Add recipients from email_to field (comma-separated emails)
+            # email_to may contain RFC 5322 format: "Name" <email@example.com>
             if mail_record.email_to:
-                for email in mail_record.email_to.split(','):
-                    email = email.strip()
-                    if email:
-                        to_recipients.append({
-                            'emailAddress': {
-                                'address': email
-                            }
-                        })
+                from email.utils import parseaddr
+                for raw in mail_record.email_to.split(','):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    name, address = parseaddr(raw)
+                    if address:
+                        recipient = {'emailAddress': {'address': address}}
+                        if name:
+                            recipient['emailAddress']['name'] = name
+                        to_recipients.append(recipient)
 
             # Add recipients from recipient_ids (Odoo partners)
             if mail_record.recipient_ids:
