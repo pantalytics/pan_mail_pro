@@ -49,26 +49,42 @@ class MailMail(models.Model):
 
     def send(self, auto_commit=False, raise_exception=False, post_send_callback=None):
         """
-        Override send() to route ALL emails through Microsoft Graph API.
+        Override send() to route emails through Microsoft Graph API.
 
-        No SMTP fallback - all emails must go via Graph API.
-        If module is not configured yet, emails are silently skipped (not blocked).
+        Mass mailing emails (Email Marketing campaigns) are excluded and sent
+        via standard SMTP (e.g. Brevo), since they use mailing.mailing infrastructure.
+        Marketing Automation emails use message_post() and don't set mailing_id,
+        so they correctly route through Graph API.
 
         Args:
             auto_commit: Whether to commit after each email (ignored, we handle our own state)
             raise_exception: Whether to raise exceptions or just log them
             post_send_callback: Odoo 19 callback function called after successful send
         """
+        # Mass mailing emails → standard SMTP (e.g. Brevo)
+        mass_mails = self.filtered(lambda m: m.mailing_id)
+        if mass_mails:
+            _logger.info(f"[Graph API] Routing {len(mass_mails)} mass mailing email(s) via standard SMTP")
+            super(MailMail, mass_mails).send(
+                auto_commit=auto_commit,
+                raise_exception=raise_exception,
+                post_send_callback=post_send_callback,
+            )
+
+        graph_mails = self - mass_mails
+        if not graph_mails:
+            return True
+
         # If no mailboxes configured yet, skip email silently (don't block user actions)
-        if not self._is_outlook_pro_configured():
+        if not graph_mails._is_outlook_pro_configured():
             _logger.warning("[Graph API] No mailboxes configured - emails will not be sent until Outlook Pro is set up")
-            for mail in self:
+            for mail in graph_mails:
                 mail.write({'state': 'cancel'})
             return True
 
-        _logger.info(f"[Graph API] send() called for {len(self)} email(s)")
+        _logger.info(f"[Graph API] send() called for {len(graph_mails)} email(s)")
 
-        for mail in self:
+        for mail in graph_mails:
             try:
                 success, error_msg = mail._send_via_microsoft_graph()
                 if success:
