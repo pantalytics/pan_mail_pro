@@ -415,13 +415,14 @@ class MicrosoftGraphClient(models.AbstractModel):
             _logger.info(f"[Graph API] Using delegated token for user {user.login} to send from mailbox: {mailbox_email}")
 
             # Parse To recipients from both email_to and recipient_ids (partners)
-            to_recipients = []
+            from email.utils import parseaddr
 
-            # Add recipients from email_to field (comma-separated emails)
-            # email_to may contain RFC 5322 format: "Name" <email@example.com>
-            if mail_record.email_to:
-                from email.utils import parseaddr
-                for raw in mail_record.email_to.split(','):
+            def _parse_address_list(raw_value):
+                """Parse a comma-separated RFC 5322 address list into Graph recipient dicts."""
+                result = []
+                if not raw_value:
+                    return result
+                for raw in raw_value.split(','):
                     raw = raw.strip()
                     if not raw:
                         continue
@@ -430,7 +431,10 @@ class MicrosoftGraphClient(models.AbstractModel):
                         recipient = {'emailAddress': {'address': address}}
                         if name:
                             recipient['emailAddress']['name'] = name
-                        to_recipients.append(recipient)
+                        result.append(recipient)
+                return result
+
+            to_recipients = _parse_address_list(mail_record.email_to)
 
             # Add recipients from recipient_ids (Odoo partners)
             if mail_record.recipient_ids:
@@ -443,11 +447,14 @@ class MicrosoftGraphClient(models.AbstractModel):
                             }
                         })
 
+            # Parse CC recipients from email_cc (set by Odoo core when Sign/composer adds CC)
+            cc_recipients = _parse_address_list(mail_record.email_cc)
+
             # Check if we have any recipients at all
-            if not to_recipients:
+            if not to_recipients and not cc_recipients:
                 return {
                     'success': False,
-                    'error': 'No recipients specified (no email_to or recipient_ids with emails)'
+                    'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)'
                 }
 
             # Build custom headers for tracking
@@ -513,6 +520,8 @@ class MicrosoftGraphClient(models.AbstractModel):
                 },
                 'internetMessageHeaders': internet_message_headers
             }
+            if cc_recipients:
+                message['ccRecipients'] = cc_recipients
 
             headers = {
                 'Authorization': f'Bearer {token}',
@@ -521,7 +530,8 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             # Build recipient list for logging
             recipient_emails = [r['emailAddress'].get('address', 'NO_ADDRESS') for r in to_recipients]
-            _logger.info(f"[Graph API] Sending email from {mailbox_email} to {recipient_emails}")
+            cc_emails = [r['emailAddress'].get('address', 'NO_ADDRESS') for r in cc_recipients]
+            _logger.info(f"[Graph API] Sending email from {mailbox_email} to {recipient_emails} cc {cc_emails}")
 
             # Step 1: Create draft (body + headers only)
             draft_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages'
