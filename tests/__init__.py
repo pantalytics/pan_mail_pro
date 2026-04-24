@@ -8,3 +8,4 @@ from . import test_compose_res_partner
 from . import test_internal_notes
 from . import test_attachments
 from . import test_system_notifications
+from . import test_no_mailbox_fallback

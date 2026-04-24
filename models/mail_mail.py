@@ -63,11 +63,8 @@ class MailMail(models.Model):
         """
         # Mass mailing emails → standard SMTP (e.g. Brevo).
         # `mailing_id` only exists when the mass_mailing module is installed;
-        # treat it as "no mass mails" otherwise so this module works standalone.
-        if 'mailing_id' in self._fields:
-            mass_mails = self.filtered(lambda m: m.mailing_id)
-        else:
-            mass_mails = self.env['mail.mail']
+        # use hasattr per-record so this module also works standalone.
+        mass_mails = self.filtered(lambda m: hasattr(m, 'mailing_id') and m.mailing_id)
         if mass_mails:
             _logger.info(f"[Graph API] Routing {len(mass_mails)} mass mailing email(s) via standard SMTP")
             super(MailMail, mass_mails).send(
@@ -80,9 +77,26 @@ class MailMail(models.Model):
         if not graph_mails:
             return True
 
-        # If no mailboxes configured yet, skip email silently (don't block user actions)
+        # If Outlook Pro is not in use yet (no mailboxes anywhere in the system,
+        # including archived ones), fall through to Odoo's standard mail handling.
+        # This keeps demo/QA/dev environments working out-of-the-box: standard SMTP
+        # (or the mail queue) takes over until an admin actually configures Graph
+        # routing. `active_test=False` is essential — once an admin has created a
+        # mailbox (even archived), they've opted in and we should not silently
+        # route via SMTP.
+        if not self.env['x_microsoft.mailbox'].sudo().with_context(active_test=False).search_count([]):
+            _logger.info("[Graph API] No mailboxes configured in system — falling back to standard mail handling")
+            return super(MailMail, graph_mails).send(
+                auto_commit=auto_commit,
+                raise_exception=raise_exception,
+                post_send_callback=post_send_callback,
+            )
+
+        # Mailboxes exist but none active/usable for this batch → cancel.
+        # Protects production against unintended SMTP leakage when an admin
+        # has set up Outlook Pro but routing fails for a specific mail.
         if not graph_mails._is_outlook_pro_configured():
-            _logger.warning("[Graph API] No mailboxes configured - emails will not be sent until Outlook Pro is set up")
+            _logger.warning("[Graph API] Mailboxes exist but none active for this batch — cancelling")
             for mail in graph_mails:
                 mail.write({'state': 'cancel'})
             return True

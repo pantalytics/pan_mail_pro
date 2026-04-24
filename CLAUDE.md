@@ -46,6 +46,10 @@ Send and receive emails via Microsoft Graph API with OAuth 2.0 delegated permiss
 | Shared | Everyone | Sender's own token |
 | Notification | Everyone | Owner's token |
 
+## Graceful degradation
+
+The module is opt-in by data: as long as **no `x_microsoft.mailbox` records exist** in the database, `mail.mail.send()` falls through to `super().send()` so Odoo's standard SMTP / mail queue handles outbound mail. This keeps demo, QA, and dev environments working before Azure is wired up. Once an admin creates the first mailbox, Graph routing activates; mails that can't be routed are then cancelled rather than leaking via SMTP.
+
 ## Development
 
 Each addon repo can be tested independently with its own `.local/` directory. A shared Dockerfile lives in the parent folder since Odoo Enterprise source is shared.
