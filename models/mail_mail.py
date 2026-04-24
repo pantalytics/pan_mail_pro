@@ -61,8 +61,13 @@ class MailMail(models.Model):
             raise_exception: Whether to raise exceptions or just log them
             post_send_callback: Odoo 19 callback function called after successful send
         """
-        # Mass mailing emails → standard SMTP (e.g. Brevo)
-        mass_mails = self.filtered(lambda m: m.mailing_id)
+        # Mass mailing emails → standard SMTP (e.g. Brevo).
+        # `mailing_id` only exists when the mass_mailing module is installed;
+        # treat it as "no mass mails" otherwise so this module works standalone.
+        if 'mailing_id' in self._fields:
+            mass_mails = self.filtered(lambda m: m.mailing_id)
+        else:
+            mass_mails = self.env['mail.mail']
         if mass_mails:
             _logger.info(f"[Graph API] Routing {len(mass_mails)} mass mailing email(s) via standard SMTP")
             super(MailMail, mass_mails).send(
@@ -217,12 +222,13 @@ class MailMail(models.Model):
         """
         Determine which mailbox and user to use for sending.
 
-        Logic based on mailbox type:
-        1. Internal user notification → notification mailbox (type='notification')
-        2. Regular email → author's default mailbox (personal or shared)
+        Resolution order:
+        1. Internal user notification → notification mailbox
+        2. Explicit composer "Send From" dropdown selection → that mailbox
+        3. Author-based default → author's default mailbox
 
-        For personal/shared mailboxes: author sends with their own OAuth token
-        For notification mailboxes: uses the owner's OAuth token
+        For personal/shared mailboxes: sender uses their own OAuth token.
+        For notification mailboxes: uses the owner's OAuth token.
 
         Returns:
             tuple: (mailbox, user) or (None, None) if not configured
@@ -233,7 +239,24 @@ class MailMail(models.Model):
         if self._is_internal_user_notification():
             return self._get_notification_mailbox_and_user()
 
-        # 2. For regular emails, author MUST be a user with OAuth configured
+        # 2. Honor explicit "Send From" selection from the composer.
+        #    The dropdown is a stronger signal than author_id heuristics, which
+        #    misfire when a template's email_from matches the company partner
+        #    (e.g. sale order quotations) instead of the actual sender.
+        if self.x_microsoft_mailbox_id:
+            mailbox = self.x_microsoft_mailbox_id
+            sender = self._resolve_sender_for_selected_mailbox(mailbox)
+            if sender and sender.x_microsoft_oauth_connected:
+                _logger.info(
+                    f"[Graph API] Using explicitly selected mailbox: {mailbox.email} (sender: {sender.name})"
+                )
+                return (mailbox, sender)
+            _logger.warning(
+                f"[Graph API] Selected mailbox {mailbox.email} has no OAuth-connected sender; "
+                f"falling back to author/notification routing"
+            )
+
+        # 3. For regular emails, author MUST be a user with OAuth configured
         if not self.author_id:
             _logger.error(f"[Graph API] Email {self.id} has no author_id set")
             return (None, None)
@@ -247,15 +270,11 @@ class MailMail(models.Model):
 
         author_user = self.author_id.user_ids[0]
 
-        # Use explicitly selected mailbox (from composer dropdown) or fall back to default
-        if self.x_microsoft_mailbox_id:
-            mailbox = self.x_microsoft_mailbox_id
-            _logger.info(f"[Graph API] Using explicitly selected mailbox: {mailbox.email}")
-        elif author_user.x_microsoft_default_mailbox_id:
-            mailbox = author_user.x_microsoft_default_mailbox_id
-        else:
+        if not author_user.x_microsoft_default_mailbox_id:
             _logger.info(f"[Graph API] User {author_user.name} has no default mailbox, falling back to notification mailbox")
             return self._get_notification_mailbox_and_user()
+
+        mailbox = author_user.x_microsoft_default_mailbox_id
 
         # Both personal and shared mailboxes: author sends with their own token
         # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365
@@ -263,6 +282,24 @@ class MailMail(models.Model):
             _logger.info(f"[Graph API] User {author_user.name} has no Microsoft connection, falling back to notification mailbox")
             return self._get_notification_mailbox_and_user()
         return (mailbox, author_user)
+
+    def _resolve_sender_for_selected_mailbox(self, mailbox):
+        """Pick the OAuth-connected user whose token should send from `mailbox`.
+
+        - notification/personal: owner is the only viable token holder
+        - shared: prefer the author's user (correct in cron context where
+          env.user is the cron runner), then fall back to env.user
+        """
+        self.ensure_one()
+        if mailbox.x_mailbox_type in ('notification', 'personal'):
+            return mailbox.x_owner_user_id
+        # Shared mailbox: anyone with SendAs rights can send with their own token.
+        if self.author_id and self.author_id.user_ids:
+            return self.author_id.user_ids[0]
+        env_user = self.env.user
+        if env_user and not env_user._is_public():
+            return env_user
+        return self.env['res.users']
 
     def _get_notification_mailbox_and_user(self):
         """

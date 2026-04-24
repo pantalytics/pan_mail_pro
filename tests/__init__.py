@@ -1,3 +1,10 @@
 # -*- coding: utf-8 -*-
 from . import test_incoming_mail
 from . import test_outgoing_mail
+from . import test_mailbox_routing
+from . import test_compose_sale_order
+from . import test_compose_crm_lead
+from . import test_compose_res_partner
+from . import test_internal_notes
+from . import test_attachments
+from . import test_system_notifications
