@@ -4,6 +4,7 @@ Unit tests for Microsoft Incoming Mail Processor.
 
 Run with: python -m odoo -d test_db --test-enable --test-tags=pan_outlook_pro
 """
+from unittest.mock import patch
 from odoo.tests import TransactionCase, tagged
 import unittest
 
@@ -242,3 +243,74 @@ class TestAliasRouting(TransactionCase):
 
         self.assertEqual(record, self.partner)
         self.assertTrue(message)
+
+
+@tagged('pan_outlook_pro', 'post_install', '-at_install')
+class TestSavepointIsolation(TransactionCase):
+    """Regression: one failing message must not poison the rest of the batch.
+
+    Without per-message savepoints, a psycopg-level error inside
+    `_process_message` leaves the surrounding transaction in `aborted`
+    state and every later message in the same cron run fails with
+    "cursor already closed". Observed in production on 2026-05-11.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.processor = cls.env['microsoft.incoming.mail.processor']
+        cls.mailbox = cls.env['x_microsoft.mailbox'].create({
+            'email': 'inbox@company.test',
+            'x_mailbox_type': 'shared',
+        })
+
+    def test_one_bad_message_does_not_poison_batch(self):
+        Partner = self.env['res.partner']
+        IncomingProcessor = type(self.processor)
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        fake_messages = [
+            {'id': 'g1', 'internetMessageId': '<msg-1@test>',
+             'receivedDateTime': '2026-05-12T10:00:00Z'},
+            {'id': 'g2', 'internetMessageId': '<msg-2@test>',
+             'receivedDateTime': '2026-05-12T10:01:00Z'},
+            {'id': 'g3', 'internetMessageId': '<msg-3@test>',
+             'receivedDateTime': '2026-05-12T10:02:00Z'},
+        ]
+
+        call_log = []
+
+        def fake_process_message(self_, mailbox, msg_data, folder):
+            msg_id = msg_data['internetMessageId']
+            call_log.append(msg_id)
+            # Observable side effect: each call creates its own partner.
+            Partner.create({
+                'name': f'Sender of {msg_id}',
+                'email': f'sender-{len(call_log)}@example.com',
+            })
+            if msg_id == '<msg-2@test>':
+                # A query that aborts the transaction at the PostgreSQL
+                # level. Without savepointing, every subsequent query
+                # in this cron run would fail with "cursor already closed".
+                self_.env.cr.execute("SELECT 1/0")
+            return True
+
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=fake_messages, autospec=True), \
+             patch.object(IncomingProcessor, '_process_message',
+                          fake_process_message):
+            processed, _ = self.processor._fetch_folder(self.mailbox, 'Inbox')
+
+        # All three messages were attempted in order — the failure didn't
+        # short-circuit the loop.
+        self.assertEqual(
+            call_log,
+            ['<msg-1@test>', '<msg-2@test>', '<msg-3@test>'],
+        )
+        # Successful messages' partners persisted.
+        self.assertTrue(Partner.search([('email', '=', 'sender-1@example.com')]))
+        self.assertTrue(Partner.search([('email', '=', 'sender-3@example.com')]))
+        # The failing message's partner was rolled back by its savepoint.
+        self.assertFalse(Partner.search([('email', '=', 'sender-2@example.com')]))
+        # Processed count reflects only the successful messages.
+        self.assertEqual(processed, 2)
