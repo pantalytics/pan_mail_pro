@@ -232,8 +232,37 @@ Item 4 is the one that silently breaks and that no test catches.
 
 ## Definition of done
 
-- [ ] `grep -rl "microsoft" models/*.py` returns only `mail_mail.py` (field names) and `res_users.py`
-- [ ] `models/providers/microsoft/` is the only place Graph JSON keys appear
-- [ ] 66 tests green, zero assertion changes
-- [ ] The 5 manual checks above pass
+- [x] `models/providers/microsoft/` is the only place Graph JSON keys appear
+- [x] Tests green, zero assertion changes to the pre-existing suite
+- [x] Steps 1-8 complete
+- [ ] The 5 manual checks below pass ← **only thing left**
 - [ ] `ARCHITECTURE.md` §1 module structure updated
+
+**Status: code complete, pending manual verification.** 76 tests, 0 failed (was 64;
+`test_incoming_sync.py` adds 12). Nothing in the pre-existing suite changed except
+four import paths and one docstring.
+
+> **Criterion corrected.** An earlier draft demanded `grep -rl "microsoft" models/*.py`
+> return almost nothing. That was never achievable in Phase 1 and misreads what is left:
+> `x_microsoft.mailbox` and `x_microsoft_*` are *field and model names*, which stay until
+> the Phase 4 rename by design. The criterion that matters is the Graph-key grep above -
+> it is about coupling, not spelling.
+
+## What the tests turned out not to cover
+
+Worth recording, because the suite looked like it had this covered and did not.
+
+`test_incoming_mail.py`'s 19 tests are all unit tests of helpers - `_is_duplicate`,
+`_find_partner`, `_is_internal_domain`, `_route_email_via_alias`. **Not one of them drives
+`_process_mailbox` or `_process_message`.** The 280-line method this phase rewrote had zero
+coverage, and `mock_graph` in `tests/common.py` patches only `requests.post`/`.put` - the
+incoming path is all `requests.get`, which nothing mocked.
+
+So "0 failed" after step 7 meant nothing. `tests/test_incoming_sync.py` was written to close
+that, entering at `_process_mailbox` because its signature survives the refactor: the same
+tests were run against the pre-refactor processor (14 Graph refs) and the post-refactor one
+(0), passing identically. That is what makes step 7 provably behaviour-preserving rather
+than merely green.
+
+**Lesson for Phase 3:** a green suite is not coverage. Check what a test actually drives
+before trusting it as a safety net.
