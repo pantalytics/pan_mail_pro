@@ -1,0 +1,179 @@
+# Phase 2: Provider and account models
+
+Working checklist for Phase 2 of [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Phase 1 is
+[REFACTOR_PHASE1.md](REFACTOR_PHASE1.md).
+
+**Goal:** make "which provider" and "whose credentials" first-class data instead of hardcoded
+Microsoft assumptions, so a second provider has somewhere to live.
+
+**This is the highest-risk phase in the project.** Phase 1 moved code; this moves *data*. A botched
+token migration disconnects every user in production, and the tokens are Fernet-encrypted, so a
+half-done migration is not obviously wrong by inspection — it fails later, at send time.
+
+**Do not deploy this before Phase 1's manual checks pass.** Building it on a branch is free; shipping
+an unverified refactor plus a data migration together is not.
+
+---
+
+## One model, not two — a correction to the plan
+
+REFACTOR_PLAN.md §3 specifies **two** new models, `pan.mail.provider` and `pan.mail.account`,
+following the `payment.provider` pattern. Building it, the provider record turned out to be bloat.
+Dropping it.
+
+**Odoo's own `google_gmail` sets the precedent, and it is the opposite of `payment.provider`:**
+
+```python
+google_gmail_client_id     = ICP.get_param('google_gmail_client_id')  # config param — ONE set
+google_gmail_refresh_token = fields.Char(...)                         # token on the RECORD
+```
+
+Credentials in config params, tokens on records. That is exactly right here, because the two facts
+have different cardinality:
+
+| Fact | Cardinality | Home |
+|---|---|---|
+| Provider credentials | **One set per provider code.** Nobody has two Azure apps. | `ir.config_parameter`, namespaced per provider — as today |
+| Which provider serves a mailbox | One of a fixed list | `Selection` on the mailbox |
+| Credentials per address | **Many.** Per user, per provider, plus service accounts with no user at all. | `pan.mail.account` — genuinely needs to be a model |
+
+A provider *record* would buy multiple credential sets per provider code — a feature nobody asked for
+— at the cost of a model, a data migration, and rewriting every `config_parameter=` field on the
+settings page. CLAUDE.md: *"Push back on feature requests that cause unnecessary bloat."* That
+applies to my own plan.
+
+It also means **no credential migration at all**: the Microsoft impl keeps reading its existing
+`x_pan_outlook_pro.*` keys, and a future Google impl reads Odoo's own `google_gmail_*` keys. The
+config params were never the problem.
+
+## Why `pan.mail.account` survives the same scrutiny
+
+Because its cardinality really is many-per-thing, and two of those cases have nowhere to live today:
+
+| Fact | Today | Problem |
+|---|---|---|
+| User's tokens | `res.users.x_microsoft_access_token_encrypted` etc. | One token per user. Connect both Microsoft and Google and the second has nowhere to go. |
+| Service mailbox tokens | *nowhere* | A Gmail shared mailbox is a real Workspace account with its own token and no Odoo user to hang it on. |
+
+`pan.mail.account` solves both: **credentials for one email address on one provider**, with `user_id`
+nullable. Set → a user's own connection. Null → a service account.
+
+## The encryption trap
+
+Tokens are Fernet-encrypted via `encryption_utils`, keyed on the database.
+
+**Copy the ciphertext. Do not decrypt and re-encrypt.** Same key, same DB — moving the encrypted
+string is lossless and cannot fail halfway. A decrypt/re-encrypt cycle can silently produce garbage
+if the key is rotated or missing, and you would not find out until the next send.
+
+This also means the migration is pure SQL and needs no ORM, which matters: `_compute_decrypted_tokens`
+raises on a bad ciphertext, so an ORM-based migration would explode mid-flight and leave half the
+users migrated.
+
+## The stored-compute trap
+
+`res.users.x_microsoft_oauth_connected` is **stored**, computed from
+`x_microsoft_refresh_token_encrypted`, and used in view domains:
+
+```python
+# microsoft_mailbox.py
+x_owner_user_id = fields.Many2one('res.users', domain="[('x_microsoft_oauth_connected', '=', True)]")
+x_incoming_user_id = fields.Many2one('res.users', domain="[('x_microsoft_oauth_connected', '=', True)]")
+```
+
+Repointing it at `pan.mail.account` changes its `@api.depends`, which forces a recompute across every
+user. Get the depends wrong and the field silently goes False — mailbox owner dropdowns empty out and
+`_get_mailbox_and_user` starts falling back to the notification mailbox. Loud in production, invisible
+in tests that create their own fixtures.
+
+---
+
+## Steps
+
+Each step is one commit, tests green at every step.
+
+### 1. `x_provider` on the mailbox — real dispatch
+
+```python
+# microsoft_mailbox.py
+x_provider = fields.Selection([('microsoft', 'Microsoft 365')],
+                              required=True, default='microsoft')
+
+def _get_provider(self):
+    return self.env['pan.mail.provider.%s' % self.x_provider]
+```
+
+Replaces the Phase 1 stub that hardcoded Microsoft. No credential migration — each provider impl
+keeps owning its own config keys.
+
+`default='microsoft'` is correct *only* while Microsoft is the only option: it makes existing
+mailboxes migrate themselves with no script. Revisit when a second provider lands — at that point a
+default becomes a footgun.
+
+**Done when:** tests green; existing mailboxes get `x_provider = 'microsoft'`; graceful degradation
+still holds (`mail.mail.send()` falls through to `super()` when no mailboxes exist at all).
+
+### 2. `pan.mail.account` — credentials per address
+
+```python
+class PanMailAccount(models.Model):
+    _name = 'pan.mail.account'
+    provider (selection, required), email (required), user_id (nullable), active
+    access_token_encrypted, refresh_token_encrypted, token_expiry, oauth_state
+    access_token, refresh_token (compute/inverse, never stored)
+    _unique_user_provider = UNIQUE(user_id, provider)   # NULL user_id repeats freely in postgres,
+                                                        # which is what service accounts need
+```
+
+Model only. Nothing writes to it yet.
+
+### 3. Migrate user tokens
+
+`migrations/19.0.2.0.0/post-migrate.py`, pure SQL:
+
+```sql
+INSERT INTO pan_mail_account (provider_id, user_id, email, access_token_encrypted, ...)
+SELECT :provider_id, u.id, p.email, u.x_microsoft_access_token_encrypted, ...
+FROM res_users u JOIN res_partner p ON p.id = u.partner_id
+WHERE u.x_microsoft_refresh_token_encrypted IS NOT NULL;
+```
+
+**Copy, do not move.** Leave the `res.users` columns in place this release — they are the rollback.
+Drop them in a later one, once production has run on accounts for a while.
+
+Verification query to run against a restored backup *before* trusting it:
+```sql
+SELECT (SELECT count(*) FROM res_users WHERE x_microsoft_refresh_token_encrypted IS NOT NULL)
+     = (SELECT count(*) FROM pan_mail_account WHERE refresh_token_encrypted IS NOT NULL) AS ok;
+```
+
+### 4. `res.users.x_microsoft_*` become proxies
+
+Keep the fields, repoint them at the account so nothing else in the codebase changes yet:
+`x_microsoft_oauth_connected` computes from `account_ids` filtered on the Microsoft provider.
+
+Mind the stored-compute trap above. `@api.depends('pan_mail_account_ids.refresh_token_encrypted')`.
+
+### 5. `_get_sending_account` returns an account, not a user
+
+The interface already names it "account"; today it returns `res.users` because that is where tokens
+live. This is the step that makes the name true.
+
+Touches `graph_client.get_valid_token(user)` / `refresh_access_token(user)` and every `fetch_*(user=...)`
+call. Mechanical but wide — worth its own commit, and the point where `tests/common.py`'s
+`fake_get_valid_token` needs revisiting.
+
+---
+
+## Verification
+
+Unit tests cover none of the migration. Before calling Phase 2 done:
+
+1. Restore a **production backup**, run the migration, run the verification query in step 3
+2. Confirm every previously-connected user still shows `x_microsoft_oauth_connected = True`
+3. Send one mail from a personal mailbox and one from a shared mailbox
+4. Let the incoming cron run once
+5. Confirm the mailbox owner dropdown still lists users (the stored-compute trap)
+
+Rehearse on a restored backup twice. Not a dev DB — dev DBs do not have the messy real token states
+that break migrations.

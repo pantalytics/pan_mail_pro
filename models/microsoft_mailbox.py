@@ -29,6 +29,13 @@ class MicrosoftMailbox(models.Model):
         default=True,
         help='Uncheck to hide this mailbox from users'
     )
+    x_provider = fields.Selection(
+        [('microsoft', 'Microsoft 365')],
+        string='Provider',
+        required=True,
+        default='microsoft',
+        help='Which email service backs this mailbox.'
+    )
 
     # -------------------------------------------------------------------------
     # Mailbox Type Configuration
@@ -443,13 +450,14 @@ class MicrosoftMailbox(models.Model):
     def _get_provider(self):
         """Return the provider implementation serving this mailbox.
 
-        Hardcoded while Microsoft is the only provider. Becomes a lookup on the
-        mailbox's provider_id once that field exists.
+        Providers are AbstractModels, so this is a registry lookup rather than a
+        record: `x_provider` names which one.
 
         Returns:
-            pan.mail.provider.base: the provider (an AbstractModel, so stateless)
+            pan.mail.provider.base: the provider (stateless)
         """
-        return self.env['pan.mail.provider.microsoft']
+        self.ensure_one()
+        return self.env['pan.mail.provider.%s' % self.x_provider]
 
     def get_graph_user_id(self):
         """
