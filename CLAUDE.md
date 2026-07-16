@@ -123,6 +123,14 @@ docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
 docker-compose start odoo
 ```
 
+**If it reports `0 tests`**, the module isn't installed in `test_db` — `-u` (update) silently does
+nothing for an uninstalled module. Check with:
+```bash
+docker-compose exec -T db psql -U odoo -d test_db -c \
+  "SELECT name,state FROM ir_module_module WHERE name='pan_outlook_pro';"
+```
+If `uninstalled`, use `-i` instead of `-u` once, then `-u` works from then on.
+
 ### Rebuild image (only when Dockerfile or odoo-enterprise changes)
 ```bash
 cd .local
