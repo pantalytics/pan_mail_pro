@@ -201,9 +201,9 @@ class OutlookProTestCase(TransactionCase):
         Client = type(self.env['microsoft.graph.client'])
         with patch.object(Client, 'get_valid_token', autospec=True,
                           side_effect=fake_get_valid_token), \
-             patch('odoo.addons.pan_outlook_pro.models.microsoft_graph_client.requests.post',
+             patch('odoo.addons.pan_outlook_pro.models.providers.microsoft.graph_client.requests.post',
                    side_effect=fake_post), \
-             patch('odoo.addons.pan_outlook_pro.models.microsoft_graph_client.requests.put',
+             patch('odoo.addons.pan_outlook_pro.models.providers.microsoft.graph_client.requests.put',
                    side_effect=fake_put):
             yield calls
 

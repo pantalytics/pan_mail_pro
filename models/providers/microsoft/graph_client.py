@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timedelta
 from odoo import models, api, _
 from odoo.exceptions import UserError
-from . import encryption_utils
+from ... import encryption_utils
 
 _logger = logging.getLogger(__name__)
 

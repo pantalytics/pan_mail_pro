@@ -61,7 +61,7 @@ class TestGraphSendPayload(TransactionCase):
             type(self.client), 'get_valid_token', return_value='fake_token'
         ), patch.object(
             type(self.mailbox), 'get_graph_user_id', return_value='sender@company.com'
-        ), patch('odoo.addons.pan_outlook_pro.models.microsoft_graph_client.requests.post', side_effect=fake_post):
+        ), patch('odoo.addons.pan_outlook_pro.models.providers.microsoft.graph_client.requests.post', side_effect=fake_post):
             result = self.client.send_email_via_graph(mail, self.mailbox, self.user)
 
         return result, captured.get('draft')
