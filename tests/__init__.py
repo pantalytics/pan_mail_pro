@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from . import test_incoming_mail
+from . import test_incoming_sync
 from . import test_outgoing_mail
 from . import test_mailbox_routing
 from . import test_compose_sale_order
