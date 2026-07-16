@@ -440,6 +440,17 @@ class MicrosoftMailbox(models.Model):
                     'Queue for Review is not yet implemented. This feature will be available in a future release.'
                 ))
 
+    def _get_provider(self):
+        """Return the provider implementation serving this mailbox.
+
+        Hardcoded while Microsoft is the only provider. Becomes a lookup on the
+        mailbox's provider_id once that field exists.
+
+        Returns:
+            pan.mail.provider.base: the provider (an AbstractModel, so stateless)
+        """
+        return self.env['pan.mail.provider.microsoft']
+
     def get_sending_user(self):
         """
         Get the user whose OAuth token should be used for sending from this mailbox.
