@@ -179,20 +179,14 @@ class MailMail(models.Model):
 
         _logger.info(f"[Graph API] Sending email {self.id} from mailbox {mailbox.email}")
 
-        # Get Graph API client
-        graph_client = self.env['microsoft.graph.client']
-
-        # Send email using user's delegated token (principle of least privilege)
-        result = graph_client.send_email_via_graph(
-            mail_record=self,
-            mailbox=mailbox,
-            user=user,
-        )
+        # Send using the mailbox's provider, with the user's delegated token
+        # (principle of least privilege).
+        result = mailbox._get_provider()._send(self, mailbox, user)
 
         if result['success']:
             # Mark as sent and store Microsoft IDs for duplicate detection and threading
-            microsoft_message_id = result.get('microsoft_message_id')
-            microsoft_conversation_id = result.get('microsoft_conversation_id')
+            microsoft_message_id = result.get('message_id')
+            microsoft_conversation_id = result.get('thread_id')
 
             self.write({
                 'state': 'sent',
