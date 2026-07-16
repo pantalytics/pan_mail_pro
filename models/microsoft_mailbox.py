@@ -451,22 +451,6 @@ class MicrosoftMailbox(models.Model):
         """
         return self.env['pan.mail.provider.microsoft']
 
-    def get_sending_user(self):
-        """
-        Get the user whose OAuth token should be used for sending from this mailbox.
-
-        Returns:
-            res.users: The user to use for sending, or False if current user should be used
-        """
-        self.ensure_one()
-        if self.x_mailbox_type == 'notification':
-            # Notification mailbox: use the owner's OAuth token for system emails
-            return self.x_owner_user_id
-        else:
-            # Personal and Shared mailboxes: current user sends with their own OAuth token
-            # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365
-            return False
-
     def get_graph_user_id(self):
         """
         Get the identifier to use for Microsoft Graph API calls.

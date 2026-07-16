@@ -270,7 +270,7 @@ class MailMail(models.Model):
         #    (e.g. sale order quotations) instead of the actual sender.
         if self.x_microsoft_mailbox_id:
             mailbox = self.x_microsoft_mailbox_id
-            sender = self._resolve_sender_for_selected_mailbox(mailbox)
+            sender = mailbox._get_provider()._get_sending_account(mailbox, self)
             if sender and sender.x_microsoft_oauth_connected:
                 _logger.info(
                     f"[Graph API] Using explicitly selected mailbox: {mailbox.email} (sender: {sender.name})"
@@ -308,24 +308,6 @@ class MailMail(models.Model):
             return self._get_notification_mailbox_and_user()
         return (mailbox, author_user)
 
-    def _resolve_sender_for_selected_mailbox(self, mailbox):
-        """Pick the OAuth-connected user whose token should send from `mailbox`.
-
-        - notification/personal: owner is the only viable token holder
-        - shared: prefer the author's user (correct in cron context where
-          env.user is the cron runner), then fall back to env.user
-        """
-        self.ensure_one()
-        if mailbox.x_mailbox_type in ('notification', 'personal'):
-            return mailbox.x_owner_user_id
-        # Shared mailbox: anyone with SendAs rights can send with their own token.
-        if self.author_id and self.author_id.user_ids:
-            return self.author_id.user_ids[0]
-        env_user = self.env.user
-        if env_user and not env_user._is_public():
-            return env_user
-        return self.env['res.users']
-
     def _get_notification_mailbox_and_user(self):
         """
         Get the notification mailbox (type='notification') and its owner.
@@ -343,7 +325,7 @@ class MailMail(models.Model):
             _logger.error("[Graph API] No notification mailbox configured")
             return (None, None)
 
-        owner = mailbox.get_sending_user()  # Returns owner for notification mailboxes
+        owner = mailbox._get_provider()._get_sending_account(mailbox, self)
         if not owner:
             _logger.error(f"[Graph API] Notification mailbox {mailbox.email} has no owner configured")
             return (None, None)

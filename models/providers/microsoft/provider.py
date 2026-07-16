@@ -29,3 +29,24 @@ class PanMailProviderMicrosoft(models.AbstractModel):
             'message_id': result.get('microsoft_message_id'),
             'thread_id': result.get('microsoft_conversation_id'),
         }
+
+    def _get_sending_account(self, mailbox, mail):
+        """Pick the OAuth-connected user whose token should send `mail`.
+
+        Personal and notification mailboxes have exactly one viable token
+        holder: the owner. Shared mailboxes are the interesting case - a
+        Microsoft user with SendAs rights sends with their *own* token
+        (Mail.Send.Shared), so the answer depends on who wrote the mail.
+
+        Prefer the author over env.user: in cron context env.user is the cron
+        runner, not the sender.
+        """
+        mail.ensure_one()
+        if mailbox.x_mailbox_type in ('notification', 'personal'):
+            return mailbox.x_owner_user_id
+        if mail.author_id and mail.author_id.user_ids:
+            return mail.author_id.user_ids[0]
+        env_user = self.env.user
+        if env_user and not env_user._is_public():
+            return env_user
+        return self.env['res.users']

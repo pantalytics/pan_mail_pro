@@ -22,8 +22,8 @@ class TestMailboxRouting(OutlookProTestCase):
 
     def _make_mail(self, **overrides):
         """Create mail.mail as the salesperson user but with admin rights —
-        we want env.user = salesperson (so _resolve_sender_for_selected_mailbox
-        picks them up) without hitting mail.mail's admin-only ACL."""
+        we want env.user = salesperson (so _get_sending_account picks them up)
+        without hitting mail.mail's admin-only ACL."""
         vals = {
             'subject': 'Quotation 0001',
             'body_html': '<p>Body</p>',
