@@ -2,6 +2,7 @@
 from . import encryption_utils
 from . import providers
 from . import res_config_settings
+from . import pan_mail_account
 from . import res_users
 from . import microsoft_mailbox
 from . import pan_mail_fetcher

@@ -5,3 +5,5 @@ access_microsoft_mailbox_user,x_microsoft.mailbox.user,model_x_microsoft_mailbox
 access_microsoft_mailbox_system,x_microsoft.mailbox.system,model_x_microsoft_mailbox,base.group_system,1,1,1,1
 access_microsoft_incoming_mail_processor_user,microsoft.incoming.mail.processor.user,model_microsoft_incoming_mail_processor,base.group_user,1,0,0,0
 access_microsoft_incoming_mail_processor_system,microsoft.incoming.mail.processor.system,model_microsoft_incoming_mail_processor,base.group_system,1,1,1,1
+access_pan_mail_account_user,pan.mail.account.user,model_pan_mail_account,base.group_user,1,0,0,0
+access_pan_mail_account_system,pan.mail.account.system,model_pan_mail_account,base.group_system,1,1,1,1

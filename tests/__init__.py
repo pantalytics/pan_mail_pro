@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from . import test_mail_account
 from . import test_incoming_mail
 from . import test_incoming_sync
 from . import test_outgoing_mail
