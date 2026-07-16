@@ -41,7 +41,15 @@ mistake that fails silently rather than loudly.
                                            # X-Odoo-* loop guard reads this, and
                                            # header case is not guaranteed by
                                            # any provider.
-        'attachments': [
+
+        # --- attachments ----------------------------------------------------
+        'has_attachments':     bool,       # Provider's own flag. Not reliable on
+                                           # its own: Graph reports False for
+                                           # inline-only images, so callers also
+                                           # sniff body_html for 'cid:'.
+        'attachments':         [],         # ALWAYS EMPTY from _get_message.
+                                           # Filled by a separate
+                                           # _get_attachments() call - see below.
             {
                 'name':         str,
                 'content':      bytes,     # DECODED. Graph hands back base64
@@ -55,7 +63,19 @@ mistake that fails silently rather than loudly.
         ],
     }
 
-Three decisions that are easy to get wrong later:
+Why attachments are fetched separately
+--------------------------------------
+`_get_message` deliberately does NOT fetch attachments; `_get_attachments` is a
+second call the caller makes only once it has decided the message is worth
+keeping. The skip checks (dedup, X-Odoo loop guard, internal domain, block list,
+sync mode) run first, and on a mailbox syncing only known contacts most messages
+never survive them. Folding the fetch into `_get_message` would download every
+attachment of every message we are about to throw away, on a 1-minute cron.
+
+The cost is that `attachments` is empty until it isn't, which is ugly. The
+alternative was worse.
+
+Four decisions that are easy to get wrong later:
 
 1. `date` is naive UTC. `_fetch_folder` already strips tzinfo before advancing
    the sync cursor; a tz-aware datetime here would raise on comparison against
