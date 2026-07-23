@@ -1,10 +1,30 @@
 # -*- coding: utf-8 -*-
 from odoo import fields, models, api
-from . import encryption_utils
 
 
 class ResUsers(models.Model):
+    """Microsoft credentials moved to pan.mail.account; these fields are proxies.
+
+    The x_microsoft_* token fields below no longer store anything. They read and
+    write the user's Microsoft `pan.mail.account`, so every existing caller -
+    the OAuth callback, the token refresh, mail_mail, the tests - keeps working
+    unchanged while the credentials live in one place that a second provider can
+    also use.
+
+    The res_users columns still exist in the database, holding whatever the
+    19.0.1.2.0 migration copied. Do not drop them yet: they are the rollback for
+    this release, and Odoo leaves them alone now that the fields are unstored.
+    """
     _inherit = 'res.users'
+
+    x_pan_mail_account_ids = fields.One2many(
+        'pan.mail.account',
+        'user_id',
+        string='Email Accounts',
+        # Archived users get archived accounts; their credentials must still be
+        # readable, or a stored recompute would silently report them disconnected.
+        context={'active_test': False},
+    )
 
     @property
     def SELF_READABLE_FIELDS(self):
@@ -21,21 +41,30 @@ class ResUsers(models.Model):
             'x_microsoft_oauth_connected',
         ]
 
-    # Microsoft OAuth tokens (stored encrypted in database)
+    # Microsoft OAuth tokens - proxies onto the user's Microsoft account
     x_microsoft_access_token_encrypted = fields.Char(
         string='Microsoft Access Token (Encrypted)',
+        compute='_compute_microsoft_credentials',
+        inverse='_inverse_access_token_encrypted',
+        store=False,
         groups='base.group_system',
         copy=False,
         help='Encrypted access token - do not edit manually'
     )
     x_microsoft_refresh_token_encrypted = fields.Char(
         string='Microsoft Refresh Token (Encrypted)',
+        compute='_compute_microsoft_credentials',
+        inverse='_inverse_refresh_token_encrypted',
+        store=False,
         groups='base.group_system',
         copy=False,
         help='Encrypted refresh token - do not edit manually'
     )
     x_microsoft_token_expiry = fields.Datetime(
         string='Token Expiry',
+        compute='_compute_microsoft_credentials',
+        inverse='_inverse_token_expiry',
+        store=False,
         groups='base.group_system',
         copy=False
     )
@@ -63,7 +92,11 @@ class ResUsers(models.Model):
         ('not_configured', 'Not Configured'),
     ], string='Microsoft Health', compute='_compute_microsoft_health_status', store=False)
 
-    # Temporary OAuth state for CSRF protection (cleared after callback)
+    # Temporary OAuth state for CSRF protection (cleared after callback).
+    # Deliberately NOT proxied onto pan.mail.account: the state is written when
+    # the flow starts, which is before the account exists, and proxying it would
+    # create an empty account every time someone opens the connect page and
+    # walks away. It is a property of the browser round trip, not of credentials.
     x_microsoft_oauth_state = fields.Char(
         string='OAuth State',
         groups='base.group_system',
@@ -89,41 +122,113 @@ class ResUsers(models.Model):
         copy=False
     )
 
-    @api.depends('x_microsoft_access_token_encrypted', 'x_microsoft_refresh_token_encrypted')
-    def _compute_decrypted_tokens(self):
-        """Decrypt tokens when reading from database"""
-        for user in self:
-            user.x_microsoft_access_token = encryption_utils.decrypt_value(
-                self.env,
-                user.x_microsoft_access_token_encrypted
-            ) if user.x_microsoft_access_token_encrypted else False
+    # -------------------------------------------------------------------------
+    # pan.mail.account plumbing
+    #
+    # Everything below reads and writes accounts with sudo(). The access rule
+    # that matters is already on the res.users fields themselves
+    # (groups='base.group_system'); re-checking it on the account would break
+    # the cron and the mail queue, which read another user's token by design.
+    # -------------------------------------------------------------------------
 
-            user.x_microsoft_refresh_token = encryption_utils.decrypt_value(
-                self.env,
-                user.x_microsoft_refresh_token_encrypted
-            ) if user.x_microsoft_refresh_token_encrypted else False
+    def _microsoft_accounts(self):
+        """Map user id -> Microsoft account, in one query for the whole recordset."""
+        accounts = self.env['pan.mail.account'].sudo().with_context(active_test=False).search([
+            ('user_id', 'in', self.ids), ('provider', '=', 'microsoft'),
+        ])
+        return {account.user_id.id: account for account in accounts}
+
+    def _write_microsoft_credentials(self, values):
+        """Write onto each user's Microsoft account, creating it when needed.
+
+        Creating on demand is what makes a fresh OAuth connection land on an
+        account without the controller knowing accounts exist. Clearing tokens
+        for a user who never had an account creates nothing - a blank account
+        would show up in the UI as a connection that was never made.
+        """
+        accounts = self._microsoft_accounts()
+        for user in self:
+            account = accounts.get(user.id)
+            if not account:
+                if not any(values.values()):
+                    continue
+                account = self.env['pan.mail.account'].sudo().create({
+                    'provider': 'microsoft',
+                    'user_id': user.id,
+                    'email': user.email or user.login,
+                })
+            account.write(values)
+
+    @api.depends('x_pan_mail_account_ids.provider',
+                 'x_pan_mail_account_ids.access_token_encrypted',
+                 'x_pan_mail_account_ids.refresh_token_encrypted',
+                 'x_pan_mail_account_ids.token_expiry')
+    def _compute_microsoft_credentials(self):
+        accounts = self._microsoft_accounts()
+        for user in self:
+            account = accounts.get(user.id)
+            user.x_microsoft_access_token_encrypted = account.access_token_encrypted if account else False
+            user.x_microsoft_refresh_token_encrypted = account.refresh_token_encrypted if account else False
+            user.x_microsoft_token_expiry = account.token_expiry if account else False
+
+    def _inverse_access_token_encrypted(self):
+        for user in self:
+            user._write_microsoft_credentials({
+                'access_token_encrypted': user.x_microsoft_access_token_encrypted or False,
+            })
+
+    def _inverse_refresh_token_encrypted(self):
+        for user in self:
+            user._write_microsoft_credentials({
+                'refresh_token_encrypted': user.x_microsoft_refresh_token_encrypted or False,
+            })
+
+    def _inverse_token_expiry(self):
+        for user in self:
+            user._write_microsoft_credentials({
+                'token_expiry': user.x_microsoft_token_expiry or False,
+            })
+
+    @api.depends('x_pan_mail_account_ids.provider',
+                 'x_pan_mail_account_ids.access_token_encrypted',
+                 'x_pan_mail_account_ids.refresh_token_encrypted')
+    def _compute_decrypted_tokens(self):
+        """Plain-text view onto the account's tokens.
+
+        The account decrypts; this model no longer knows the encryption scheme.
+        """
+        accounts = self._microsoft_accounts()
+        for user in self:
+            account = accounts.get(user.id)
+            user.x_microsoft_access_token = account.access_token if account else False
+            user.x_microsoft_refresh_token = account.refresh_token if account else False
 
     def _inverse_access_token(self):
-        """Encrypt access token when writing to database"""
         for user in self:
-            user.x_microsoft_access_token_encrypted = encryption_utils.encrypt_value(
-                self.env,
-                user.x_microsoft_access_token
-            ) if user.x_microsoft_access_token else False
+            user._write_microsoft_credentials({
+                'access_token': user.x_microsoft_access_token or False,
+            })
 
     def _inverse_refresh_token(self):
-        """Encrypt refresh token when writing to database"""
         for user in self:
-            user.x_microsoft_refresh_token_encrypted = encryption_utils.encrypt_value(
-                self.env,
-                user.x_microsoft_refresh_token
-            ) if user.x_microsoft_refresh_token else False
+            user._write_microsoft_credentials({
+                'refresh_token': user.x_microsoft_refresh_token or False,
+            })
 
-    @api.depends('x_microsoft_refresh_token_encrypted')
+    @api.depends('x_pan_mail_account_ids.provider',
+                 'x_pan_mail_account_ids.refresh_token_encrypted')
     def _compute_microsoft_oauth_connected(self):
-        """Check if user has a Microsoft OAuth connection (refresh token exists)"""
+        """A refresh token on the Microsoft account is what "connected" means.
+
+        This field is STORED and used in view domains (the mailbox owner
+        dropdown). Getting the depends above wrong does not fail loudly - the
+        field just stops recomputing, the dropdowns empty out, and sending falls
+        back to the notification mailbox. Change with care.
+        """
+        accounts = self._microsoft_accounts()
         for user in self:
-            user.x_microsoft_oauth_connected = bool(user.x_microsoft_refresh_token_encrypted)
+            account = accounts.get(user.id)
+            user.x_microsoft_oauth_connected = bool(account and account.refresh_token_encrypted)
 
     def _inverse_microsoft_oauth_connected(self):
         """Disconnect when toggle is turned off"""

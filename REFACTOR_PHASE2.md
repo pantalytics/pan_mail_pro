@@ -113,6 +113,8 @@ default becomes a footgun.
 **Done when:** tests green; existing mailboxes get `x_provider = 'microsoft'`; graceful degradation
 still holds (`mail.mail.send()` falls through to `super()` when no mailboxes exist at all).
 
+**Status: done.**
+
 ### 2. `pan.mail.account` — credentials per address
 
 ```python
@@ -127,9 +129,11 @@ class PanMailAccount(models.Model):
 
 Model only. Nothing writes to it yet.
 
+**Status: done.**
+
 ### 3. Migrate user tokens
 
-`migrations/19.0.2.0.0/post-migrate.py`, pure SQL:
+`migrations/19.0.1.2.0/post-migrate.py`, pure SQL:
 
 ```sql
 INSERT INTO pan_mail_account (provider_id, user_id, email, access_token_encrypted, ...)
@@ -147,12 +151,38 @@ SELECT (SELECT count(*) FROM res_users WHERE x_microsoft_refresh_token_encrypted
      = (SELECT count(*) FROM pan_mail_account WHERE refresh_token_encrypted IS NOT NULL) AS ok;
 ```
 
+**Status: done.** The script runs that query itself and logs an error on a mismatch, rather than
+leaving it for someone to remember. Version is `19.0.1.2.0`, not the `19.0.2.0.0` sketched above —
+this is a step in a refactor, not a new major.
+
+`tests/test_account_migration.py` loads the script by path and runs it against real rows. Note the
+fixture has to write the res_users columns in **raw SQL**: after step 4 the ORM fields are proxies,
+so creating a user through the ORM would create the account too and the migration would correctly do
+nothing. That test would have been green and worthless.
+
 ### 4. `res.users.x_microsoft_*` become proxies
 
 Keep the fields, repoint them at the account so nothing else in the codebase changes yet:
 `x_microsoft_oauth_connected` computes from `account_ids` filtered on the Microsoft provider.
 
-Mind the stored-compute trap above. `@api.depends('pan_mail_account_ids.refresh_token_encrypted')`.
+Mind the stored-compute trap above. `@api.depends('x_pan_mail_account_ids.refresh_token_encrypted')`.
+
+**Status: done.** Four things worth knowing, all of them decided while building it:
+
+- **The token fields became unstored, not just repointed.** `x_microsoft_access_token_encrypted`,
+  `..._refresh_token_encrypted` and `x_microsoft_token_expiry` are now compute/inverse pairs over the
+  account. Odoo leaves the old columns in the table, which is what keeps the rollback intact — and
+  what lets the migration test reproduce a pre-migration database.
+- **The inverse creates the account on demand.** That is what lets `controllers/main.py` and
+  `refresh_access_token()` keep writing to `res.users` unchanged. Clearing tokens for a user who has
+  no account creates nothing: a blank account reads as a connection that was never made.
+- **`x_microsoft_oauth_state` was deliberately *not* proxied.** It is written when the OAuth flow
+  starts, before any account exists, so proxying it would create an empty account every time someone
+  opened the connect page and walked away. It is a property of the browser round trip.
+- **The migration realigns the stored flag.** Odoo does not recompute a stored field just because its
+  `@api.depends` changed, so `x_microsoft_oauth_connected` would keep its old value — right for every
+  migrated user, wrong for any the copy missed. One `UPDATE` in the same script makes the field and
+  the accounts agree in both directions.
 
 ### 5. `_get_sending_account` returns an account, not a user
 
