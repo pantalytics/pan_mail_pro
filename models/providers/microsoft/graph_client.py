@@ -142,9 +142,9 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise UserError(_('Failed to authenticate with Microsoft: %s') % error_detail)
 
     @api.model
-    def refresh_access_token(self, user):
+    def refresh_access_token(self, account):
         """Refresh access token using refresh token"""
-        if not user.x_microsoft_refresh_token:
+        if not account.refresh_token:
             raise UserError(_('No refresh token available. Please reconnect your Microsoft account.'))
 
         config = self._get_config_params()
@@ -153,7 +153,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         data = {
             'client_id': config['client_id'],
             'client_secret': config['client_secret'],
-            'refresh_token': user.x_microsoft_refresh_token,
+            'refresh_token': account.refresh_token,
             'grant_type': 'refresh_token',
         }
 
@@ -165,11 +165,10 @@ class MicrosoftGraphClient(models.AbstractModel):
             expires_in = token_data.get('expires_in', 3600)
             expiry = datetime.now() + timedelta(seconds=expires_in)
 
-            # Use sudo() because token fields have groups='base.group_system'
-            user.sudo().write({
-                'x_microsoft_access_token': token_data.get('access_token'),
-                'x_microsoft_refresh_token': token_data.get('refresh_token', user.x_microsoft_refresh_token),
-                'x_microsoft_token_expiry': expiry,
+            account.sudo().write({
+                'access_token': token_data.get('access_token'),
+                'refresh_token': token_data.get('refresh_token', account.refresh_token),
+                'token_expiry': expiry,
             })
 
             return token_data.get('access_token')
@@ -186,19 +185,19 @@ class MicrosoftGraphClient(models.AbstractModel):
                 except (ValueError, KeyError):
                     pass
 
-            _logger.error(f"Failed to refresh token for user {user.id}: {error_code} - {error_description}")
+            _logger.error(f"Failed to refresh token for {account.email}: {error_code} - {error_description}")
 
             # Check for permanent failures that require re-authentication
             # invalid_grant: token revoked, expired, or user changed password
             # invalid_client: app credentials changed
             permanent_errors = ('invalid_grant', 'invalid_client', 'unauthorized_client')
             if error_code in permanent_errors:
-                _logger.warning(f"[OAuth] Permanent token failure for user {user.id}, clearing tokens")
+                _logger.warning(f"[OAuth] Permanent token failure for {account.email}, clearing tokens")
                 # Clear invalid tokens so user can reconnect
-                user.sudo().write({
-                    'x_microsoft_access_token_encrypted': False,
-                    'x_microsoft_refresh_token_encrypted': False,
-                    'x_microsoft_token_expiry': False,
+                account.sudo().write({
+                    'access_token_encrypted': False,
+                    'refresh_token_encrypted': False,
+                    'token_expiry': False,
                 })
                 raise UserError(_(
                     'Your Microsoft connection has expired or been revoked. '
@@ -208,24 +207,24 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise UserError(_('Failed to refresh Microsoft token: %s') % error_description)
 
     @api.model
-    def get_valid_token(self, user):
-        """Get a valid access token, refreshing if necessary"""
+    def get_valid_token(self, account):
+        """Get a valid access token for `account`, refreshing if necessary."""
         # Check if token is expired or about to expire (5 min buffer)
-        if user.x_microsoft_token_expiry:
+        if account.token_expiry:
             buffer_time = datetime.now() + timedelta(minutes=5)
-            if user.x_microsoft_token_expiry <= buffer_time:
-                _logger.info(f"Token expired for user {user.id}, refreshing...")
-                return self.refresh_access_token(user)
+            if account.token_expiry <= buffer_time:
+                _logger.info(f"Token expired for {account.email}, refreshing...")
+                return self.refresh_access_token(account)
 
-        if not user.x_microsoft_access_token:
+        if not account.access_token:
             raise UserError(_('No access token available. Please connect your Microsoft account.'))
 
-        return user.x_microsoft_access_token
+        return account.access_token
 
     @api.model
-    def test_connection(self, user):
+    def test_connection(self, account):
         """Test Graph API connection by fetching user info"""
-        token = self.get_valid_token(user)
+        token = self.get_valid_token(account)
 
         headers = {
             'Authorization': f'Bearer {token}',
@@ -384,7 +383,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         _logger.info(f"[Graph API] Upload complete for '{name}'")
 
     @api.model
-    def send_email_via_graph(self, mail_record, mailbox, user):
+    def send_email_via_graph(self, mail_record, mailbox, account):
         """
         Send email via Microsoft Graph API using Draft → Send flow.
 
@@ -394,7 +393,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         Args:
             mail_record: mail.mail record to send
             mailbox: x_microsoft.mailbox record to send from
-            user: res.users record with valid Microsoft OAuth token
+            account: pan.mail.account holding a valid Microsoft OAuth token
 
         Returns:
             dict: {
@@ -405,14 +404,14 @@ class MicrosoftGraphClient(models.AbstractModel):
             }
         """
         try:
-            # Use delegated token from the user (principle of least privilege)
-            token = self.get_valid_token(user)
+            # Use delegated token from the account (principle of least privilege)
+            token = self.get_valid_token(account)
 
             # Get the correct identifier for Graph API (UPN or email)
             graph_user_id = mailbox.get_graph_user_id()
             mailbox_email = mailbox.email
 
-            _logger.info(f"[Graph API] Using delegated token for user {user.login} to send from mailbox: {mailbox_email}")
+            _logger.info(f"[Graph API] Using delegated token for {account.email} to send from mailbox: {mailbox_email}")
 
             # Parse To recipients from both email_to and recipient_ids (partners)
             from email.utils import parseaddr
@@ -603,12 +602,12 @@ class MicrosoftGraphClient(models.AbstractModel):
     # -------------------------------------------------------------------------
 
     @api.model
-    def fetch_messages(self, user, mailbox_email, folder='Inbox', since_datetime=None, top=50):
+    def fetch_messages(self, account, mailbox_email, folder='Inbox', since_datetime=None, top=50):
         """
         Fetch messages from a Microsoft mailbox folder via Graph API.
 
         Args:
-            user: res.users record with OAuth tokens
+            account: pan.mail.account holding OAuth tokens
             mailbox_email: Email address of the mailbox to fetch from
             folder: Folder name ('Inbox', 'SentItems', etc.)
             since_datetime: Only fetch messages received after this datetime
@@ -617,7 +616,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         Returns:
             list[dict]: List of message objects from Graph API
         """
-        token = self.get_valid_token(user)
+        token = self.get_valid_token(account)
 
         headers = {
             'Authorization': f'Bearer {token}',
@@ -657,19 +656,19 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise UserError(_('Failed to fetch messages from Microsoft: %s') % error_detail)
 
     @api.model
-    def get_message_with_headers(self, user, mailbox_email, message_id):
+    def get_message_with_headers(self, account, mailbox_email, message_id):
         """
         Get full message details including internet headers for threading.
 
         Args:
-            user: res.users record with OAuth tokens
+            account: pan.mail.account holding OAuth tokens
             mailbox_email: Email address of the mailbox
             message_id: Graph API message ID
 
         Returns:
             dict: Full message object with headers
         """
-        token = self.get_valid_token(user)
+        token = self.get_valid_token(account)
 
         headers = {
             'Authorization': f'Bearer {token}',
@@ -694,19 +693,19 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise UserError(_('Failed to get message details: %s') % error_detail)
 
     @api.model
-    def get_message_attachments(self, user, mailbox_email, message_id):
+    def get_message_attachments(self, account, mailbox_email, message_id):
         """
         Get attachments for a message.
 
         Args:
-            user: res.users record with OAuth tokens
+            account: pan.mail.account holding OAuth tokens
             mailbox_email: Email address of the mailbox
             message_id: Graph API message ID
 
         Returns:
             list[dict]: List of attachment objects
         """
-        token = self.get_valid_token(user)
+        token = self.get_valid_token(account)
 
         headers = {
             'Authorization': f'Bearer {token}',

@@ -144,7 +144,7 @@ class OutlookProTestCase(TransactionCase):
           - 'attach':        list of attachment payloads sent directly
           - 'upload_session':list of (name, content_type, total_bytes) tuples
           - 'upload_chunks': list of (url, byte_count) tuples for PUT chunks
-          - 'token_user':    last user passed to get_valid_token
+          - 'token_account': last account passed to get_valid_token
         """
         calls = {
             'draft': None,
@@ -152,11 +152,11 @@ class OutlookProTestCase(TransactionCase):
             'attach': [],
             'upload_session': [],
             'upload_chunks': [],
-            'token_user': None,
+            'token_account': None,
         }
 
-        def fake_get_valid_token(client_self, user):
-            calls['token_user'] = user
+        def fake_get_valid_token(client_self, account):
+            calls['token_account'] = account
             return 'fake-bearer-token'
 
         def fake_post(url, headers=None, json=None, data=None, timeout=None, **kwargs):

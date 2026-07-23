@@ -264,7 +264,7 @@ class MicrosoftMailbox(models.Model):
         try:
             # Try to fetch 1 message to test connection
             messages = graph_client.fetch_messages(
-                user=self.x_owner_user_id,
+                account=self._get_provider()._account_for_user(self.x_owner_user_id),
                 mailbox_email=self.email,
                 folder='Inbox',
                 top=1

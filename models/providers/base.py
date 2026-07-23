@@ -30,7 +30,7 @@ class PanMailProviderBase(models.AbstractModel):
         Args:
             mail: mail.mail record to send
             mailbox: the mailbox to send from
-            account: credentials to authenticate with (today: a res.users)
+            account: pan.mail.account to authenticate with
 
         Returns:
             dict: {
@@ -52,7 +52,23 @@ class PanMailProviderBase(models.AbstractModel):
         one set of credentials per mailbox.
 
         Returns:
-            res.users: the account to send with, or an empty recordset
+            pan.mail.account: the account to send with, or an empty recordset
+        """
+        raise NotImplementedError
+
+    def _account_for_user(self, user):
+        """Return this provider's credentials for `user`, if any.
+
+        Separate from `_get_sending_account` because the two questions are not
+        the same one. "Whose credentials send this mail" is answered per mailbox
+        and can land on an account with no user at all - a Gmail shared mailbox
+        is its own Workspace account. "Which account holds this user's
+        credentials" is what mailbox routing asks when it has already decided a
+        person, and a provider without per-user credentials answers it with an
+        empty recordset.
+
+        Returns:
+            pan.mail.account: the user's account, or an empty recordset
         """
         raise NotImplementedError
 

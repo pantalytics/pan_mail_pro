@@ -156,8 +156,8 @@ class MailMail(models.Model):
 
         _logger.info(f"[Graph API] Processing email {self.id}: subject='{self.subject}', to={self.email_to}")
 
-        # Determine mailbox and user based on email type
-        mailbox, user = self._get_mailbox_and_user()
+        # Determine mailbox and account based on email type
+        mailbox, account = self._get_mailbox_and_account()
 
         if not mailbox:
             error_msg = self._get_missing_mailbox_error()
@@ -168,8 +168,8 @@ class MailMail(models.Model):
             })
             return (False, error_msg, None)
 
-        if not user or not user.x_microsoft_access_token:
-            error_msg = self._get_missing_user_error(user)
+        if not account or not account.access_token:
+            error_msg = self._get_missing_account_error(account)
             _logger.error(f"[Graph API] {error_msg}")
             self.write({
                 'state': 'exception',
@@ -179,9 +179,9 @@ class MailMail(models.Model):
 
         _logger.info(f"[Graph API] Sending email {self.id} from mailbox {mailbox.email}")
 
-        # Send using the mailbox's provider, with the user's delegated token
-        # (principle of least privilege).
-        result = mailbox._get_provider()._send(self, mailbox, user)
+        # Send using the mailbox's provider, with the account's delegated
+        # token (principle of least privilege).
+        result = mailbox._get_provider()._send(self, mailbox, account)
 
         if result['success']:
             # Mark as sent and store Microsoft IDs for duplicate detection and threading
@@ -243,9 +243,9 @@ class MailMail(models.Model):
                 return True
         return False
 
-    def _get_mailbox_and_user(self):
+    def _get_mailbox_and_account(self):
         """
-        Determine which mailbox and user to use for sending.
+        Determine which mailbox and account to use for sending.
 
         Resolution order:
         1. Internal user notification → notification mailbox
@@ -256,13 +256,13 @@ class MailMail(models.Model):
         For notification mailboxes: uses the owner's OAuth token.
 
         Returns:
-            tuple: (mailbox, user) or (None, None) if not configured
+            tuple: (mailbox, pan.mail.account) or (None, None) if not configured
         """
         self.ensure_one()
 
         # 1. For notifications to internal users, use notification mailbox
         if self._is_internal_user_notification():
-            return self._get_notification_mailbox_and_user()
+            return self._get_notification_mailbox_and_account()
 
         # 2. Honor explicit "Send From" selection from the composer.
         #    The dropdown is a stronger signal than author_id heuristics, which
@@ -271,9 +271,9 @@ class MailMail(models.Model):
         if self.x_microsoft_mailbox_id:
             mailbox = self.x_microsoft_mailbox_id
             sender = mailbox._get_provider()._get_sending_account(mailbox, self)
-            if sender and sender.x_microsoft_oauth_connected:
+            if sender and sender.connected:
                 _logger.info(
-                    f"[Graph API] Using explicitly selected mailbox: {mailbox.email} (sender: {sender.name})"
+                    f"[Graph API] Using explicitly selected mailbox: {mailbox.email} (sender: {sender.email})"
                 )
                 return (mailbox, sender)
             _logger.warning(
@@ -291,13 +291,13 @@ class MailMail(models.Model):
         # This handles emails triggered by incoming mail (e.g., auto-replies, activity notifications)
         if not self.author_id.user_ids:
             _logger.info(f"[Graph API] Author {self.author_id.name} is external, using notification mailbox")
-            return self._get_notification_mailbox_and_user()
+            return self._get_notification_mailbox_and_account()
 
         author_user = self.author_id.user_ids[0]
 
         if not author_user.x_microsoft_default_mailbox_id:
             _logger.info(f"[Graph API] User {author_user.name} has no default mailbox, falling back to notification mailbox")
-            return self._get_notification_mailbox_and_user()
+            return self._get_notification_mailbox_and_account()
 
         mailbox = author_user.x_microsoft_default_mailbox_id
 
@@ -305,15 +305,17 @@ class MailMail(models.Model):
         # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365
         if not author_user.x_microsoft_oauth_connected:
             _logger.info(f"[Graph API] User {author_user.name} has no Microsoft connection, falling back to notification mailbox")
-            return self._get_notification_mailbox_and_user()
-        return (mailbox, author_user)
+            return self._get_notification_mailbox_and_account()
+        # The author sends with their own credentials - not the mailbox's, which
+        # for a shared mailbox would be someone else's token entirely.
+        return (mailbox, mailbox._get_provider()._account_for_user(author_user))
 
-    def _get_notification_mailbox_and_user(self):
+    def _get_notification_mailbox_and_account(self):
         """
-        Get the notification mailbox (type='notification') and its owner.
+        Get the notification mailbox (type='notification') and its owner's account.
 
         Returns:
-            tuple: (mailbox, user) or (None, None) if not configured
+            tuple: (mailbox, pan.mail.account) or (None, None) if not configured
         """
         # Find the notification mailbox by type
         mailbox = self.env['x_microsoft.mailbox'].search([
@@ -330,8 +332,8 @@ class MailMail(models.Model):
             _logger.error(f"[Graph API] Notification mailbox {mailbox.email} has no owner configured")
             return (None, None)
 
-        if not owner.x_microsoft_oauth_connected:
-            _logger.error(f"[Graph API] Notification mailbox owner {owner.name} has no Microsoft account connected")
+        if not owner.connected:
+            _logger.error(f"[Graph API] Notification mailbox account {owner.email} is not connected")
             return (None, None)
 
         return (mailbox, owner)
@@ -402,8 +404,8 @@ class MailMail(models.Model):
 
         return _('Unknown mailbox configuration error.')
 
-    def _get_missing_user_error(self, user):
-        """Generate appropriate error message for missing user OAuth."""
+    def _get_missing_account_error(self, account):
+        """Generate appropriate error message for missing account credentials."""
         self.ensure_one()
 
         if self._is_internal_user_notification():
@@ -412,13 +414,13 @@ class MailMail(models.Model):
                 'Go to Settings → Outlook Pro and configure the Notification Sender.'
             )
 
-        if not user:
-            return _('No user found to send email. Author must be linked to an Odoo user.')
+        if not account:
+            return _('No connected email account found. Author must be linked to an Odoo user with Microsoft connected.')
 
-        if not user.x_microsoft_access_token:
+        if not account.access_token:
             return _(
-                'User "%s" has no valid Microsoft access token. '
+                'Account "%s" has no valid Microsoft access token. '
                 'Please reconnect Microsoft account in My Profile → Email.'
-            ) % user.name
+            ) % account.email
 
-        return _('Unknown user configuration error.')
+        return _('Unknown account configuration error.')

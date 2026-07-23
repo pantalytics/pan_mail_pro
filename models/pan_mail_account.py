@@ -107,6 +107,26 @@ class PanMailAccount(models.Model):
         'A user can only have one account per provider.',
     )
 
+    @api.model
+    def _for_users(self, users, provider):
+        """Map user id -> account, in one query for the whole recordset.
+
+        Returned records are sudo'd. Reading a token is by definition a
+        privileged operation, and the callers that need one - the mail queue,
+        the incoming cron - run as someone other than the account's owner. The
+        access rule lives on the fields that expose these tokens, not here.
+        """
+        accounts = self.sudo().with_context(active_test=False).search([
+            ('user_id', 'in', users.ids), ('provider', '=', provider),
+        ])
+        return {account.user_id.id: account for account in accounts}
+
+    @api.model
+    def _for_user(self, user, provider):
+        if not user:
+            return self.sudo().browse()
+        return self._for_users(user, provider).get(user.id, self.sudo().browse())
+
     @api.depends('access_token_encrypted', 'refresh_token_encrypted')
     def _compute_decrypted_tokens(self):
         for account in self:

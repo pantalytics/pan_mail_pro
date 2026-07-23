@@ -133,10 +133,7 @@ class ResUsers(models.Model):
 
     def _microsoft_accounts(self):
         """Map user id -> Microsoft account, in one query for the whole recordset."""
-        accounts = self.env['pan.mail.account'].sudo().with_context(active_test=False).search([
-            ('user_id', 'in', self.ids), ('provider', '=', 'microsoft'),
-        ])
-        return {account.user_id.id: account for account in accounts}
+        return self.env['pan.mail.account']._for_users(self, 'microsoft')
 
     def _write_microsoft_credentials(self, values):
         """Write onto each user's Microsoft account, creating it when needed.

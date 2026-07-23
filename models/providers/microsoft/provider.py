@@ -26,7 +26,7 @@ class PanMailProviderMicrosoft(models.AbstractModel):
         result = self.env['microsoft.graph.client'].send_email_via_graph(
             mail_record=mail,
             mailbox=mailbox,
-            user=account,
+            account=account,
         )
         return {
             'success': result['success'],
@@ -37,6 +37,13 @@ class PanMailProviderMicrosoft(models.AbstractModel):
         }
 
     def _get_sending_account(self, mailbox, mail):
+        """Pick the account whose token should send `mail`."""
+        return self._account_for_user(self._get_sending_user(mailbox, mail))
+
+    def _account_for_user(self, user):
+        return self.env['pan.mail.account']._for_user(user, 'microsoft')
+
+    def _get_sending_user(self, mailbox, mail):
         """Pick the OAuth-connected user whose token should send `mail`.
 
         Personal and notification mailboxes have exactly one viable token
@@ -46,6 +53,11 @@ class PanMailProviderMicrosoft(models.AbstractModel):
 
         Prefer the author over env.user: in cron context env.user is the cron
         runner, not the sender.
+
+        Microsoft-specific by construction: every account here hangs off a
+        person. Gmail will answer the same question with a mailbox's service
+        account and no user at all, which is why `_get_sending_account` is the
+        interface method and this one is not.
         """
         mail.ensure_one()
         if mailbox.x_mailbox_type in ('notification', 'personal'):
@@ -62,7 +74,7 @@ class PanMailProviderMicrosoft(models.AbstractModel):
     # -------------------------------------------------------------------------
     def _fetch_message_previews(self, mailbox, folder, since=None, limit=50):
         messages = self.env['microsoft.graph.client'].fetch_messages(
-            user=mailbox.x_owner_user_id,
+            account=self._account_for_user(mailbox.x_owner_user_id),
             mailbox_email=mailbox.email,
             folder=folder,
             since_datetime=since,
@@ -77,7 +89,7 @@ class PanMailProviderMicrosoft(models.AbstractModel):
 
     def _get_message(self, mailbox, provider_message_id):
         raw = self.env['microsoft.graph.client'].get_message_with_headers(
-            user=mailbox.x_owner_user_id,
+            account=self._account_for_user(mailbox.x_owner_user_id),
             mailbox_email=mailbox.email,
             message_id=provider_message_id,
         )
@@ -85,7 +97,7 @@ class PanMailProviderMicrosoft(models.AbstractModel):
 
     def _get_attachments(self, mailbox, provider_message_id):
         raw_attachments = self.env['microsoft.graph.client'].get_message_attachments(
-            user=mailbox.x_owner_user_id,
+            account=self._account_for_user(mailbox.x_owner_user_id),
             mailbox_email=mailbox.email,
             message_id=provider_message_id,
         )

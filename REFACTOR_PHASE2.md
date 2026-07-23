@@ -193,6 +193,28 @@ Touches `graph_client.get_valid_token(user)` / `refresh_access_token(user)` and 
 call. Mechanical but wide — worth its own commit, and the point where `tests/common.py`'s
 `fake_get_valid_token` needs revisiting.
 
+**Status: done.** The Graph client no longer knows `res.users` exists — every entry point that needed
+a token now takes a `pan.mail.account`. Two things the plan did not anticipate:
+
+- **The interface needed a second method, `_account_for_user(user)`.** `_get_sending_account` answers
+  "whose credentials send this mail", which is a per-mailbox question that Gmail will answer with a
+  service account and no user at all. Mailbox routing also asks a different question — "which account
+  holds *this person's* credentials" — when the author's default mailbox has already decided the
+  person. Collapsing the two would have silently changed who sends from a personal mailbox owned by
+  somebody other than the author.
+- **`mail.mail._get_mailbox_and_user` was renamed to `_get_mailbox_and_account`**, along with
+  `_get_notification_mailbox_and_account` and `_get_missing_account_error`. Leaving the old names on
+  methods that now return accounts is how the next reader gets misled.
+
+`test_mailbox_routing`'s 15 rows keep testing the same decision table, asserting on `account.user_id`
+rather than the account itself — the dimension the table exists to pin down is still *whose* token
+sends, and dropping to "an account came back" would have quietly weakened all 15.
+
+**What is deliberately left for Phase 4:** `controllers/main.py` and the OAuth wizard still write
+tokens through the `res.users` proxies rather than to an account directly. That is fine while
+Microsoft is the only provider — the proxy creates the account — and it is the natural place to clean
+up when the fields are renamed.
+
 ---
 
 ## Verification
