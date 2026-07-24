@@ -35,7 +35,7 @@ class PanMailAccount(models.Model):
         help='The address these credentials authenticate.'
     )
     provider = fields.Selection(
-        [('microsoft', 'Microsoft 365')],
+        [('microsoft', 'Microsoft 365'), ('google', 'Google Workspace')],
         string='Provider',
         required=True,
         default='microsoft',

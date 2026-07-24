@@ -30,7 +30,7 @@ class MicrosoftMailbox(models.Model):
         help='Uncheck to hide this mailbox from users'
     )
     x_provider = fields.Selection(
-        [('microsoft', 'Microsoft 365')],
+        [('microsoft', 'Microsoft 365'), ('google', 'Google Workspace')],
         string='Provider',
         required=True,
         default='microsoft',
