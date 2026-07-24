@@ -55,10 +55,13 @@ class PanMailProviderGoogle(models.AbstractModel):
         return ['personal', 'shared', 'notification']
 
     # -------------------------------------------------------------------------
-    # Sending — step 3
+    # Sending
     # -------------------------------------------------------------------------
     def _send(self, mail, mailbox, account):
-        raise NotImplementedError(_('Gmail sending is not implemented yet.'))
+        # The client already returns the neutral shape, so this is a pass-through
+        # rather than the key-translation the Graph provider does. Kept explicit
+        # so the interface method has one obvious home.
+        return self.env['gmail.client'].send_email(mail, mailbox, account)
 
     # -------------------------------------------------------------------------
     # Receiving — step 4

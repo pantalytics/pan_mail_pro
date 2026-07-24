@@ -157,6 +157,125 @@ class TestGoogleProvider(TransactionCase):
         self.assertFalse(self.user.x_google_oauth_connected)
 
     # ------------------------------------------------------------------ #
+    # Sending
+    # ------------------------------------------------------------------ #
+    def _sendable(self):
+        """A google shared mailbox + its live service account, ready to send."""
+        mailbox = self.env['x_microsoft.mailbox'].create({
+            'email': 'sales@test.local', 'x_provider': 'google', 'x_mailbox_type': 'shared',
+        })
+        account = self.Account.create({
+            'email': 'sales@test.local', 'provider': 'google', 'user_id': False,
+            'access_token': 'live-token', 'refresh_token': 'r',
+            'token_expiry': datetime.now() + timedelta(hours=1),
+        })
+        return mailbox, account
+
+    def _capture_send(self):
+        """Patch the Gmail send endpoint, returning (patcher_cm, captured)."""
+        captured = {}
+
+        def _fake_post(url, headers=None, json=None, timeout=None, **kw):
+            captured['url'] = url
+            captured['json'] = json
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = {'id': 'gmail-id-1', 'threadId': 'thread-1'}
+            return resp
+
+        return patch(GMAIL_POST, side_effect=_fake_post), captured
+
+    def _decode_raw(self, captured):
+        import base64
+        from email import message_from_bytes, policy
+        raw = base64.urlsafe_b64decode(captured['json']['raw'])
+        # policy.default gives the modern EmailMessage API (get_body/get_content).
+        return message_from_bytes(raw, policy=policy.default)
+
+    def test_send_builds_message_and_returns_ids(self):
+        mailbox, account = self._sendable()
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>Hi there</p>',
+            'email_to': 'customer@example.com',
+        })
+        cm, captured = self._capture_send()
+        with cm:
+            result = mailbox._get_provider()._send(mail, mailbox, account)
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['thread_id'], 'thread-1')
+        # The Message-ID we return is the one we set on the MIME, not Gmail's id,
+        # and it is domain-anchored to the sending mailbox.
+        self.assertTrue(result['message_id'].startswith('<'))
+        self.assertIn('@test.local>', result['message_id'])
+        self.assertTrue(captured['url'].endswith('/messages/send'))
+
+        mime = self._decode_raw(captured)
+        self.assertEqual(mime['To'], 'customer@example.com')
+        self.assertEqual(mime['From'], 'sales@test.local')
+        self.assertEqual(mime['Subject'], 'Hello')
+        self.assertEqual(mime['Message-ID'], result['message_id'])
+        self.assertIn('Hi there', mime.get_body(('html',)).get_content())
+
+    def test_send_sets_the_odoo_loop_guard_headers(self):
+        """Outgoing mail must carry X-Odoo-* so the incoming sync skips it and
+        never re-imports our own sent messages."""
+        mailbox, account = self._sendable()
+        partner = self.env['res.partner'].create({'name': 'C', 'email': 'c@example.com'})
+        mail = self.env['mail.mail'].create({
+            'subject': 'x', 'body_html': '<p>x</p>', 'email_to': 'c@example.com',
+            'model': 'res.partner', 'res_id': partner.id,
+        })
+        cm, captured = self._capture_send()
+        with cm:
+            mailbox._get_provider()._send(mail, mailbox, account)
+
+        mime = self._decode_raw(captured)
+        self.assertEqual(mime['X-Odoo-Model'], 'res.partner')
+        self.assertEqual(mime['X-Odoo-Record-Id'], str(partner.id))
+        self.assertEqual(mime['X-Odoo-Mail-Id'], str(mail.id))
+
+    def test_send_collects_recipients_from_partners_and_cc(self):
+        mailbox, account = self._sendable()
+        p1 = self.env['res.partner'].create({'name': 'One', 'email': 'one@example.com'})
+        mail = self.env['mail.mail'].create({
+            'subject': 'x', 'body_html': '<p>x</p>',
+            'recipient_ids': [(6, 0, [p1.id])], 'email_cc': 'boss@example.com',
+        })
+        cm, captured = self._capture_send()
+        with cm:
+            mailbox._get_provider()._send(mail, mailbox, account)
+
+        mime = self._decode_raw(captured)
+        self.assertIn('one@example.com', mime['To'])
+        self.assertIn('boss@example.com', mime['Cc'])
+
+    def test_send_attaches_files(self):
+        mailbox, account = self._sendable()
+        mail = self.env['mail.mail'].create({
+            'subject': 'x', 'body_html': '<p>x</p>', 'email_to': 'c@example.com',
+            'attachment_ids': [(0, 0, {
+                'name': 'report.pdf', 'raw': b'%PDF-1.4 data', 'mimetype': 'application/pdf',
+            })],
+        })
+        cm, captured = self._capture_send()
+        with cm:
+            mailbox._get_provider()._send(mail, mailbox, account)
+
+        mime = self._decode_raw(captured)
+        names = [p.get_filename() for p in mime.walk() if p.get_filename()]
+        self.assertIn('report.pdf', names)
+
+    def test_send_without_recipients_is_a_no_recipients_error(self):
+        mailbox, account = self._sendable()
+        mail = self.env['mail.mail'].create({'subject': 'x', 'body_html': '<p>x</p>'})
+        with patch(GMAIL_POST) as post:
+            result = mailbox._get_provider()._send(mail, mailbox, account)
+            post.assert_not_called()  # never hit the network without a recipient
+        self.assertFalse(result['success'])
+        self.assertEqual(result['error_code'], 'no_recipients')
+
+    # ------------------------------------------------------------------ #
     # OAuth URL
     # ------------------------------------------------------------------ #
     def test_authorization_url_requests_offline_consent_and_gmail_scopes(self):
