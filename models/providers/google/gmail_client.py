@@ -182,6 +182,29 @@ class GmailClient(models.AbstractModel):
         return account.access_token
 
     # -------------------------------------------------------------------------
+    # Identity
+    # -------------------------------------------------------------------------
+    @api.model
+    def get_user_email(self, access_token):
+        """Return the authenticated account's own address.
+
+        Used right after the OAuth exchange to auto-create the personal mailbox,
+        the same way the Graph client does. The Gmail profile endpoint is covered
+        by the gmail.modify scope we already hold, so no extra consent.
+        """
+        try:
+            response = requests.get(
+                'https://gmail.googleapis.com/gmail/v1/users/me/profile',
+                headers={'Authorization': f'Bearer {access_token}'},
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json().get('emailAddress')
+        except requests.exceptions.RequestException as e:
+            _logger.warning('[Gmail API] Could not fetch user email: %s', self._error_detail(e))
+            return None
+
+    # -------------------------------------------------------------------------
     # Error helpers
     # -------------------------------------------------------------------------
     def _error_json(self, exc):

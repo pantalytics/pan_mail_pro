@@ -6,6 +6,12 @@ from odoo.http import request
 _logger = logging.getLogger(__name__)
 
 
+def _oauth_error(title, message):
+    return request.render('pan_outlook_pro.oauth_result', {
+        'success': False, 'title': title, 'message': message,
+    })
+
+
 class MicrosoftOAuthController(http.Controller):
 
     @http.route('/microsoft_oauth/callback', type='http', auth='user', website=True)
@@ -115,3 +121,86 @@ class MicrosoftOAuthController(http.Controller):
                 'title': 'Connection Failed',
                 'message': str(e),
             })
+
+
+class GoogleOAuthController(http.Controller):
+
+    @http.route('/google_oauth/callback', type='http', auth='user', website=True)
+    def oauth_callback(self, **kwargs):
+        """Handle the OAuth callback from Google.
+
+        Mirrors the Microsoft callback, but writes credentials straight to the
+        user's pan.mail.account (Google has no res.users proxies) and auto-creates
+        a google personal mailbox.
+        """
+        error = kwargs.get('error')
+        if error:
+            _logger.error("[OAuth] Error from Google: %s - %s", error, kwargs.get('error_description'))
+            return _oauth_error('Connection Failed', f"{error}: {kwargs.get('error_description')}")
+
+        received_state = kwargs.get('state')
+        user = request.env.user
+        stored_state = user.sudo().x_google_oauth_state
+        if not received_state or not stored_state or received_state != stored_state:
+            _logger.error("[OAuth] CSRF state validation failed for user %s", user.id)
+            return _oauth_error('Connection Failed',
+                                'Security validation failed. Please try connecting again.')
+
+        # One-time use: clear immediately after validating.
+        user.sudo().write({'x_google_oauth_state': False})
+
+        authorization_code = kwargs.get('code')
+        if not authorization_code:
+            return _oauth_error('Connection Failed', 'No authorization code received from Google')
+
+        try:
+            base_url = request.env['ir.config_parameter'].sudo().get_param('web.base.url')
+            redirect_uri = f"{base_url}/google_oauth/callback"
+
+            gmail_client = request.env['gmail.client']
+            token_data = gmail_client.exchange_code_for_tokens(authorization_code, redirect_uri)
+            google_email = gmail_client.get_user_email(token_data['access_token'])
+
+            request.env['pan.mail.account'].sudo()._store_tokens(
+                'google', user, google_email,
+                token_data['access_token'], token_data['refresh_token'], token_data['token_expiry'],
+            )
+            _logger.info("[OAuth] Connected Google account %s for Odoo user %s",
+                         google_email, user.login)
+
+            # Reset any of this user's google mailboxes stuck in error so the
+            # cron retries them.
+            error_mailboxes = request.env['x_microsoft.mailbox'].sudo().search([
+                ('x_owner_user_id', '=', user.id),
+                ('x_provider', '=', 'google'),
+                ('state', '=', 'error'),
+            ])
+            if error_mailboxes:
+                error_mailboxes.write({'state': 'draft', 'x_error_message': False})
+
+            # Auto-create the personal google mailbox.
+            if google_email:
+                existing = request.env['x_microsoft.mailbox'].sudo().search([
+                    ('email', '=ilike', google_email)
+                ], limit=1)
+                if not existing:
+                    request.env['x_microsoft.mailbox'].sudo().create({
+                        'email': google_email,
+                        'x_provider': 'google',
+                        'x_mailbox_type': 'personal',
+                        'x_owner_user_id': user.id,
+                    })
+                    _logger.info("[OAuth] Auto-created google personal mailbox %s for %s",
+                                 google_email, user.login)
+                elif existing.x_mailbox_type == 'personal' and not existing.x_owner_user_id:
+                    existing.write({'x_owner_user_id': user.id})
+
+            return request.render('pan_outlook_pro.oauth_result', {
+                'success': True,
+                'title': 'Google Connected',
+                'message': 'Your Google account has been connected successfully.',
+            })
+
+        except Exception as e:
+            _logger.exception("[OAuth] Failed to handle Google OAuth callback")
+            return _oauth_error('Connection Failed', str(e))

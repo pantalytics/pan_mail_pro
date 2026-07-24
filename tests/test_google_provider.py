@@ -107,6 +107,56 @@ class TestGoogleProvider(TransactionCase):
         self.assertEqual(mailbox._get_provider()._get_sending_account(mailbox, mail), account)
 
     # ------------------------------------------------------------------ #
+    # OAuth flow — connect, store, connected flag, disconnect
+    # ------------------------------------------------------------------ #
+    def test_connect_stores_state_and_returns_consent_url(self):
+        action = self.user.action_connect_google()
+        self.assertEqual(action['type'], 'ir.actions.act_url')
+        self.assertIn('accounts.google.com', action['url'])
+        # The state in the URL must match what was stored, or the callback rejects it.
+        self.assertTrue(self.user.sudo().x_google_oauth_state)
+        self.assertIn(f"state={self.user.sudo().x_google_oauth_state}", action['url'])
+
+    def test_store_tokens_creates_then_updates_one_account(self):
+        Account = self.Account
+        acc = Account._store_tokens(
+            'google', self.user, 'gmail_user@test.local', 'AT1', 'RT1',
+            datetime.now() + timedelta(hours=1))
+        self.assertEqual(acc.provider, 'google')
+        self.assertEqual(acc.refresh_token, 'RT1')
+
+        # Re-authorizing: Google omits the refresh token, and the same account
+        # must be reused, not duplicated.
+        again = Account._store_tokens(
+            'google', self.user, 'gmail_user@test.local', 'AT2', None,
+            datetime.now() + timedelta(hours=1))
+        self.assertEqual(again, acc)
+        again.invalidate_recordset()
+        self.assertEqual(again.access_token, 'AT2')
+        self.assertEqual(again.refresh_token, 'RT1')  # preserved
+        self.assertEqual(
+            Account.search_count([('user_id', '=', self.user.id), ('provider', '=', 'google')]), 1)
+
+    def test_google_connected_flag_is_independent_of_microsoft(self):
+        self.assertFalse(self.user.x_google_oauth_connected)
+        # A Microsoft account must not flip the Google flag.
+        self.Account.create({
+            'email': 'gmail_user@test.local', 'provider': 'microsoft',
+            'user_id': self.user.id, 'refresh_token': 'ms'})
+        self.assertFalse(self.user.x_google_oauth_connected)
+
+        self._google_account(refresh_token='goog')
+        self.assertTrue(self.user.x_google_oauth_connected)
+
+    def test_disconnect_google_clears_the_account(self):
+        self._google_account(access_token='a', refresh_token='r')
+        self.user.action_disconnect_google()
+
+        account = self.Account.search([('user_id', '=', self.user.id), ('provider', '=', 'google')])
+        self.assertFalse(account.refresh_token_encrypted)
+        self.assertFalse(self.user.x_google_oauth_connected)
+
+    # ------------------------------------------------------------------ #
     # OAuth URL
     # ------------------------------------------------------------------ #
     def test_authorization_url_requests_offline_consent_and_gmail_scopes(self):

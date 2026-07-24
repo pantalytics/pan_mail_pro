@@ -108,6 +108,35 @@ class PanMailAccount(models.Model):
     )
 
     @api.model
+    def _store_tokens(self, provider, user, email, access_token, refresh_token, token_expiry):
+        """Upsert the OAuth tokens for one user's account on one provider.
+
+        The direct path for providers built after Phase 2 (Google): the OAuth
+        callback writes credentials straight to the account instead of through
+        the res.users proxies that exist only for Microsoft's legacy callers.
+
+        refresh_token is written only when present - Google returns it on the
+        first consent but not on later re-authorizations, and overwriting it with
+        an empty value would disconnect the account.
+        """
+        account = self.sudo().with_context(active_test=False).search([
+            ('user_id', '=', user.id), ('provider', '=', provider),
+        ], limit=1)
+
+        vals = {'access_token': access_token, 'token_expiry': token_expiry}
+        if refresh_token:
+            vals['refresh_token'] = refresh_token
+
+        if account:
+            if email and not account.email:
+                vals['email'] = email
+            account.write(vals)
+        else:
+            vals.update({'provider': provider, 'user_id': user.id, 'email': email})
+            account = self.create(vals)
+        return account
+
+    @api.model
     def _for_users(self, users, provider):
         """Map user id -> account, in one query for the whole recordset.
 

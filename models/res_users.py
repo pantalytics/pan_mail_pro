@@ -104,6 +104,23 @@ class ResUsers(models.Model):
         help='Temporary CSRF state token for OAuth flow'
     )
 
+    # Google's own CSRF nonce - separate field so a user could, in principle,
+    # have both flows in flight without one clobbering the other. Same rationale
+    # as the Microsoft one: written before the account exists, so it lives here.
+    x_google_oauth_state = fields.Char(
+        string='Google OAuth State',
+        groups='base.group_system',
+        copy=False,
+        help='Temporary CSRF state token for the Google OAuth flow'
+    )
+
+    x_google_oauth_connected = fields.Boolean(
+        string='Google Connected',
+        compute='_compute_google_oauth_connected',
+        store=True,
+        help='Whether this user has a connected Google account.'
+    )
+
     # Computed fields for backwards compatibility (decrypt on read)
     x_microsoft_access_token = fields.Char(
         string='Microsoft Outlook Access Token',
@@ -233,6 +250,14 @@ class ResUsers(models.Model):
             if not user.x_microsoft_oauth_connected:
                 user.action_disconnect_microsoft()
 
+    @api.depends('x_pan_mail_account_ids.provider',
+                 'x_pan_mail_account_ids.refresh_token_encrypted')
+    def _compute_google_oauth_connected(self):
+        accounts = self.env['pan.mail.account']._for_users(self, 'google')
+        for user in self:
+            account = accounts.get(user.id)
+            user.x_google_oauth_connected = bool(account and account.refresh_token_encrypted)
+
     def _compute_microsoft_health_status(self):
         """Compute Microsoft health status for admin overview."""
         Mailbox = self.env['x_microsoft.mailbox'].sudo()
@@ -311,6 +336,54 @@ class ResUsers(models.Model):
             'params': {
                 'title': 'Disconnected',
                 'message': 'Microsoft account has been disconnected.',
+                'type': 'success',
+                'sticky': False,
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
+            }
+        }
+
+    def action_connect_google(self):
+        """Start the Google OAuth flow, straight to the consent screen."""
+        self.ensure_one()
+
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        redirect_uri = f"{base_url}/google_oauth/callback"
+
+        gmail_client = self.env['gmail.client']
+        state = gmail_client.generate_oauth_state()
+        self.sudo().write({'x_google_oauth_state': state})
+
+        return {
+            'type': 'ir.actions.act_url',
+            'url': gmail_client.get_authorization_url(redirect_uri, state=state),
+            'target': 'new',
+        }
+
+    def action_disconnect_google(self):
+        """Disconnect the Google account by clearing its credentials.
+
+        Unlike Microsoft, Google's tokens live only on the account (no res.users
+        proxies), so this clears the account directly.
+        """
+        self.ensure_one()
+
+        account = self.env['pan.mail.account'].sudo().with_context(active_test=False).search([
+            ('user_id', '=', self.id), ('provider', '=', 'google'),
+        ])
+        account.write({
+            'access_token_encrypted': False,
+            'refresh_token_encrypted': False,
+            'token_expiry': False,
+            'oauth_state': False,
+        })
+        self.sudo().write({'x_google_oauth_state': False})
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Disconnected',
+                'message': 'Google account has been disconnected.',
                 'type': 'success',
                 'sticky': False,
                 'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
