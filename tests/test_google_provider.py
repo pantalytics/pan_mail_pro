@@ -288,6 +288,129 @@ class TestGoogleProvider(TransactionCase):
         self.assertIn('state=abc', url)
 
     # ------------------------------------------------------------------ #
+    # Incoming — normalization and fetch
+    # ------------------------------------------------------------------ #
+    def _b64(self, text):
+        import base64
+        return base64.urlsafe_b64encode(text.encode()).decode()
+
+    def _gmail_message(self, headers, html=None, plain=None, parts_extra=None,
+                       gmail_id='g1', thread_id='t1', internal_date='1700000000000'):
+        header_list = [{'name': k, 'value': v} for k, v in headers.items()]
+        parts = []
+        if plain is not None:
+            parts.append({'mimeType': 'text/plain', 'body': {'data': self._b64(plain)}})
+        if html is not None:
+            parts.append({'mimeType': 'text/html', 'body': {'data': self._b64(html)}})
+        parts.extend(parts_extra or [])
+        return {
+            'id': gmail_id, 'threadId': thread_id, 'internalDate': internal_date,
+            'payload': {'headers': header_list, 'mimeType': 'multipart/mixed', 'parts': parts},
+        }
+
+    def test_normalize_maps_gmail_into_the_neutral_shape(self):
+        raw = self._gmail_message(
+            {'Message-Id': '<abc@mail.gmail.com>', 'Subject': 'Re: Quote',
+             'From': 'Jane Doe <jane@example.com>', 'To': 'sales@test.local',
+             'Cc': 'boss@example.com, cc2@example.com',
+             'In-Reply-To': '<parent@x>', 'References': '<root@x> <parent@x>'},
+            html='<p>Hello</p>')
+        msg = self.env['pan.mail.provider.google']._normalize_message(raw)
+
+        self.assertEqual(msg['message_id'], '<abc@mail.gmail.com>')
+        self.assertEqual(msg['provider_message_id'], 'g1')
+        self.assertEqual(msg['thread_id'], 't1')
+        self.assertEqual(msg['in_reply_to'], '<parent@x>')
+        self.assertEqual(msg['references'], ['<root@x>', '<parent@x>'])
+        self.assertEqual(msg['subject'], 'Re: Quote')
+        self.assertEqual(msg['from'], ('Jane Doe', 'jane@example.com'))
+        self.assertEqual(msg['to'], [('', 'sales@test.local')])
+        self.assertEqual([e for _n, e in msg['cc']], ['boss@example.com', 'cc2@example.com'])
+        self.assertEqual(msg['body_html'], '<p>Hello</p>')
+        self.assertTrue(msg['is_html'])
+        self.assertEqual(msg['date'], datetime(2023, 11, 14, 22, 13, 20))  # epoch ms -> naive UTC
+        # message.py: attachments always empty from _get_message.
+        self.assertEqual(msg['attachments'], [])
+
+    def test_normalize_falls_back_to_plain_text(self):
+        raw = self._gmail_message(
+            {'Message-Id': '<p@x>', 'From': 'a@b.com', 'To': 'c@d.com'},
+            plain='just text')
+        msg = self.env['pan.mail.provider.google']._normalize_message(raw)
+        self.assertEqual(msg['body_html'], 'just text')
+        self.assertFalse(msg['is_html'])
+
+    def test_normalize_prefers_html_over_plain(self):
+        raw = self._gmail_message(
+            {'Message-Id': '<h@x>', 'From': 'a@b.com', 'To': 'c@d.com'},
+            plain='plain', html='<p>rich</p>')
+        msg = self.env['pan.mail.provider.google']._normalize_message(raw)
+        self.assertEqual(msg['body_html'], '<p>rich</p>')
+        self.assertTrue(msg['is_html'])
+
+    def test_previews_are_folder_mapped_and_sorted_ascending(self):
+        provider = self.env['pan.mail.provider.google']
+        mailbox = self.env['x_microsoft.mailbox'].create({
+            'email': 'gmail_user@test.local', 'x_provider': 'google',
+            'x_mailbox_type': 'personal', 'x_owner_user_id': self.user.id,
+        })
+        self._google_account(refresh_token='r', access_token='a',
+                             token_expiry=datetime.now() + timedelta(hours=1))
+
+        # Gmail returns newest-first; ids 'new' then 'old'.
+        listed = [{'id': 'new'}, {'id': 'old'}]
+        meta = {
+            'new': self._gmail_message({'Message-Id': '<new@x>', 'Subject': 'New'},
+                                       gmail_id='new', internal_date='1700000600000'),
+            'old': self._gmail_message({'Message-Id': '<old@x>', 'Subject': 'Old'},
+                                       gmail_id='old', internal_date='1700000000000'),
+        }
+        Client = type(self.env['gmail.client'])
+        with patch.object(Client, 'list_message_ids', return_value=listed) as list_mock, \
+             patch.object(Client, 'get_message', side_effect=lambda acc, gid, **kw: meta[gid]):
+            previews = provider._fetch_message_previews(mailbox, 'Inbox', since=None, limit=50)
+
+        # Folder mapped to the INBOX label.
+        self.assertEqual(list_mock.call_args.args[1], 'INBOX')
+        # Sorted oldest-first for the cursor.
+        self.assertEqual([p['message_id'] for p in previews], ['<old@x>', '<new@x>'])
+        self.assertEqual(previews[-1]['date'], datetime(2023, 11, 14, 22, 23, 20))
+
+    def test_get_attachments_handles_inline_and_regular(self):
+        provider = self.env['pan.mail.provider.google']
+        mailbox = self.env['x_microsoft.mailbox'].create({
+            'email': 'gmail_user@test.local', 'x_provider': 'google',
+            'x_mailbox_type': 'personal', 'x_owner_user_id': self.user.id,
+        })
+        self._google_account(refresh_token='r', access_token='a',
+                             token_expiry=datetime.now() + timedelta(hours=1))
+
+        raw = self._gmail_message(
+            {'Message-Id': '<a@x>', 'From': 'a@b.com', 'To': 'c@d.com'},
+            html='<p>see <img src="cid:logo"></p>',
+            parts_extra=[
+                {'mimeType': 'image/png', 'filename': 'logo.png',
+                 'headers': [{'name': 'Content-Id', 'value': '<logo>'},
+                             {'name': 'Content-Disposition', 'value': 'inline'}],
+                 'body': {'data': self._b64('PNGDATA')}},
+                {'mimeType': 'application/pdf', 'filename': 'doc.pdf',
+                 'headers': [{'name': 'Content-Disposition', 'value': 'attachment'}],
+                 'body': {'attachmentId': 'att-1', 'size': 9}},
+            ])
+        Client = type(self.env['gmail.client'])
+        with patch.object(Client, 'get_message', return_value=raw), \
+             patch.object(Client, 'get_attachment_data', return_value=b'PDFBYTES'):
+            attachments = provider._get_attachments(mailbox, 'g1')
+
+        by_name = {a['name']: a for a in attachments}
+        self.assertEqual(by_name['logo.png']['cid'], 'logo')
+        self.assertTrue(by_name['logo.png']['is_inline'])
+        self.assertEqual(by_name['logo.png']['content'], b'PNGDATA')
+        self.assertFalse(by_name['doc.pdf']['is_inline'])
+        self.assertIsNone(by_name['doc.pdf']['cid'])
+        self.assertEqual(by_name['doc.pdf']['content'], b'PDFBYTES')  # fetched via attachmentId
+
+    # ------------------------------------------------------------------ #
     # Token lifecycle
     # ------------------------------------------------------------------ #
     def _ok_response(self, payload):

@@ -301,6 +301,70 @@ class GmailClient(models.AbstractModel):
             )
 
     # -------------------------------------------------------------------------
+    # Receiving — raw Gmail reads; the provider normalizes on top of these
+    # -------------------------------------------------------------------------
+    def _api_get(self, account, url, params=None):
+        token = self.get_valid_token(account)
+        try:
+            response = requests.get(
+                url,
+                headers={'Authorization': f'Bearer {token}'},
+                params=params or {},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            _logger.error('[Gmail API] GET %s failed: %s', url, self._error_detail(e))
+            raise UserError(_('Gmail request failed: %s') % self._error_detail(e))
+
+    @api.model
+    def list_message_ids(self, account, label, after_epoch=None, limit=50):
+        """List message ids in a label, newest first.
+
+        Gmail's list returns only {id, threadId} - no date, no Message-ID - so
+        the caller must fetch metadata per id to build a preview. `after_epoch`
+        maps to the `after:` search operator; overlap is harmless because the
+        processor dedups on message_id before doing anything expensive.
+        """
+        params = {
+            'labelIds': label,
+            'maxResults': limit,
+            # Chats are not mail; excluding them keeps the sync to real email.
+            'q': '-in:chats',
+        }
+        if after_epoch:
+            params['q'] += f' after:{int(after_epoch)}'
+        data = self._api_get(
+            account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages', params)
+        return data.get('messages', []) or []
+
+    @api.model
+    def get_message(self, account, gmail_id, fmt='full', headers=None):
+        """Fetch one message. fmt='metadata' + headers=[...] for a cheap preview,
+        fmt='full' for the body and attachments."""
+        params = {'format': fmt}
+        if fmt == 'metadata' and headers:
+            params['metadataHeaders'] = headers
+        return self._api_get(
+            account,
+            f'https://gmail.googleapis.com/gmail/v1/users/me/messages/{gmail_id}',
+            params,
+        )
+
+    @api.model
+    def get_attachment_data(self, account, gmail_id, attachment_id):
+        """Fetch and decode one attachment body (Gmail hands it back base64url)."""
+        data = self._api_get(
+            account,
+            f'https://gmail.googleapis.com/gmail/v1/users/me/messages/{gmail_id}'
+            f'/attachments/{attachment_id}',
+            {},
+        )
+        raw = data.get('data')
+        return base64.urlsafe_b64decode(raw) if raw else b''
+
+    # -------------------------------------------------------------------------
     # Identity
     # -------------------------------------------------------------------------
     @api.model
