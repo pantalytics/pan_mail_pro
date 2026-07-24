@@ -52,7 +52,7 @@ class MicrosoftMailbox(models.Model):
     x_owner_user_id = fields.Many2one(
         'res.users',
         string='Owner',
-        domain="[('x_microsoft_oauth_connected', '=', True)]",
+        domain="['|', ('x_microsoft_oauth_connected', '=', True), ('x_google_oauth_connected', '=', True)]",
         help='Personal mailbox: the user who owns and sends from this mailbox.\n'
              'Notification mailbox: the user whose OAuth token is used to send system emails.',
         index=True
@@ -64,8 +64,8 @@ class MicrosoftMailbox(models.Model):
     x_incoming_user_id = fields.Many2one(
         'res.users',
         string='Sync As User',
-        domain="[('x_microsoft_oauth_connected', '=', True)]",
-        help='User whose Microsoft account is used to fetch emails. Must have Mail.Read permission.'
+        domain="['|', ('x_microsoft_oauth_connected', '=', True), ('x_google_oauth_connected', '=', True)]",
+        help='User whose account is used to fetch emails.'
     )
     x_incoming_enabled = fields.Boolean(
         string='Enable Incoming Sync',

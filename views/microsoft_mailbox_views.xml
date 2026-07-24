@@ -39,6 +39,7 @@
                                    decoration-warning="x_health_status == 'warning'"
                                    decoration-danger="x_health_status == 'error'"
                                    readonly="1"/>
+                            <field name="x_provider" string="Provider"/>
                             <field name="x_mailbox_type" widget="radio" string="Type"/>
                             <field name="x_owner_user_id"
                                    required="x_mailbox_type in ('personal', 'notification') or x_incoming_sync"/>

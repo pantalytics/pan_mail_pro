@@ -47,6 +47,11 @@ class ResConfigSettings(models.TransientModel):
         string='Current User OAuth Connected'
     )
 
+    x_current_user_google_connected = fields.Boolean(
+        compute='_compute_current_user_google_connected',
+        string='Current User Google Connected'
+    )
+
     # Internal domain detection uses Odoo's standard mail.alias.domain
     x_microsoft_alias_domains = fields.Char(
         string='Alias Domains',
@@ -250,6 +255,16 @@ class ResConfigSettings(models.TransientModel):
         """Check if the current user has Microsoft OAuth connected"""
         for record in self:
             record.x_current_user_oauth_connected = self.env.user.x_microsoft_oauth_connected
+
+    def _compute_current_user_google_connected(self):
+        """Check if the current user has a Google account connected"""
+        for record in self:
+            record.x_current_user_google_connected = self.env.user.x_google_oauth_connected
+
+    def action_connect_google_admin(self):
+        """Start the Google OAuth flow from the settings page."""
+        self.ensure_one()
+        return self.env.user.action_connect_google()
 
     def action_connect_microsoft_admin(self):
         """Start OAuth flow by redirecting directly to Microsoft login"""
