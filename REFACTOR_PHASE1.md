@@ -236,7 +236,7 @@ Item 4 is the one that silently breaks and that no test catches.
 - [x] Tests green, zero assertion changes to the pre-existing suite
 - [x] Steps 1-8 complete
 - [ ] The 5 manual checks below pass ← **only thing left**
-- [ ] `ARCHITECTURE.md` §1 module structure updated
+- [x] `ARCHITECTURE.md` §1 module structure updated
 
 **Status: code complete, pending manual verification.** 76 tests, 0 failed (was 64;
 `test_incoming_sync.py` adds 12). Nothing in the pre-existing suite changed except
