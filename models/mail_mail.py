@@ -305,14 +305,19 @@ class MailMail(models.Model):
 
         mailbox = author_user.x_microsoft_default_mailbox_id
 
-        # Both personal and shared mailboxes: author sends with their own token
-        # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365
-        if not author_user.x_microsoft_oauth_connected:
-            _logger.info(f"[Graph API] User {author_user.name} has no Microsoft connection, falling back to notification mailbox")
+        # Ask the provider, exactly as the dropdown path does. On Microsoft a
+        # shared mailbox still resolves to the author's own token (SendAs), so
+        # this keeps today's behaviour; on Gmail it resolves to the mailbox's
+        # service account, because there is no send-as to lend a token to.
+        account = self._resolve_account_for_mailbox(mailbox)
+        if not account.connected:
+            _logger.info(
+                f"[Graph API] No connected {mailbox._get_client().provider_label()} "
+                f"account for {author_user.name}'s default mailbox, "
+                f"falling back to notification mailbox"
+            )
             return self._get_notification_mailbox_and_account()
-        # The author sends with their own credentials - not the mailbox's, which
-        # for a shared mailbox would be someone else's token entirely.
-        return (mailbox, mailbox._get_client().account_for_user(author_user))
+        return (mailbox, account)
 
     def _resolve_account_for_mailbox(self, mailbox):
         """Pick the account whose token should send this mail from `mailbox`.
@@ -376,15 +381,18 @@ class MailMail(models.Model):
 
             if not mailbox.x_owner_user_id:
                 return _(
-                    'Notification mailbox "%s" has no Owner configured. '
-                    'Edit the mailbox and select a user with Microsoft OAuth connected.'
-                ) % mailbox.email
+                    'Notification mailbox "%(email)s" has no Owner configured. '
+                    'Edit the mailbox and select a user with %(provider)s connected.',
+                    email=mailbox.email, provider=mailbox._get_client().provider_label(),
+                )
 
-            if not mailbox.x_owner_user_id.x_microsoft_oauth_connected:
+            if not mailbox._has_working_credentials():
                 return _(
-                    'Notification mailbox owner "%s" has no Microsoft account connected. '
-                    'The user must connect their Microsoft account first.'
-                ) % mailbox.x_owner_user_id.name
+                    'Notification mailbox owner "%(owner)s" has no %(provider)s account '
+                    'connected. The user must connect it first.',
+                    owner=mailbox.x_owner_user_id.name,
+                    provider=mailbox._get_client().provider_label(),
+                )
 
             return _('Unknown notification mailbox configuration error.')
 
@@ -395,7 +403,7 @@ class MailMail(models.Model):
         if not self.author_id.user_ids:
             return _(
                 'Author "%s" is not linked to an Odoo user. '
-                'Emails can only be sent by Odoo users with Microsoft OAuth configured.'
+                'Emails can only be sent by Odoo users with a connected email account.'
             ) % self.author_id.name
 
         user = self.author_id.user_ids[0]
@@ -408,18 +416,31 @@ class MailMail(models.Model):
 
         mailbox = user.x_microsoft_default_mailbox_id
 
-        # Both personal and shared mailboxes require user to have OAuth connected
-        if not user.x_microsoft_oauth_connected:
+        # Whether the mailbox is usable is the provider's call, so the message
+        # has to be too: on Microsoft a shared mailbox needs the *user* connected
+        # plus SendAs, on Gmail it needs the shared address authorized itself.
+        client = mailbox._get_client()
+        if not self._resolve_account_for_mailbox(mailbox).connected:
+            provider = client.provider_label()
+            if mailbox.x_mailbox_type == 'shared' and client.supports_shared_mailbox:
+                return _(
+                    'User "%(user)s" has no connected %(provider)s account. '
+                    'To send from shared mailbox "%(email)s", connect your account '
+                    'and ensure you have SendAs permission.',
+                    user=user.name, provider=provider, email=mailbox.email,
+                )
             if mailbox.x_mailbox_type == 'shared':
                 return _(
-                    'User "%s" has no Microsoft account connected. '
-                    'To send from shared mailbox "%s", connect your Microsoft account and ensure you have SendAs permission.'
-                ) % (user.name, mailbox.email)
-            else:
-                return _(
-                    'User "%s" has no Microsoft account connected. '
-                    'Go to My Profile → Outlook Pro and click "Connect Microsoft 365 account".'
-                ) % user.name
+                    'Shared mailbox "%(email)s" has no connected %(provider)s account. '
+                    'Authorize %(email)s itself — on %(provider)s a shared address is '
+                    'its own account.',
+                    email=mailbox.email, provider=provider,
+                )
+            return _(
+                'User "%(user)s" has no connected %(provider)s account. '
+                'Go to My Profile → Outlook Pro and connect it.',
+                user=user.name, provider=provider,
+            )
 
         return _('Unknown mailbox configuration error.')
 

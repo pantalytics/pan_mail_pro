@@ -35,6 +35,18 @@ class MicrosoftMailbox(models.Model):
         self.ensure_one()
         return get_provider_client(self.env, self.x_provider)
 
+    def _has_working_credentials(self):
+        """Whether this mailbox can actually reach its provider right now.
+
+        Deliberately not "is the owner connected to Microsoft". Which credentials
+        a mailbox runs on is the provider's decision: Microsoft reads a mailbox
+        with its owner's delegated token, while a Gmail shared mailbox is its own
+        Workspace account and has no owner to ask. Asking the client keeps that
+        difference in the one place that is allowed to know about it.
+        """
+        self.ensure_one()
+        return bool(self._get_client().resolve_receiving_account(self).connected)
+
     email = fields.Char(
         string='Email Address',
         required=True,
@@ -59,7 +71,8 @@ class MicrosoftMailbox(models.Model):
         ('notification', 'Notification'),
     ], string='Type', default='personal', required=True,
         help='Personal: Only the owner can send from this mailbox\n'
-             'Shared: All users can send using their own Microsoft account\n'
+             'Shared: All users send from this address; which credentials are used '
+             'depends on the provider\n'
              'Notification: Used for system emails, owner\'s account is used to send')
 
     x_owner_user_id = fields.Many2one(
@@ -176,14 +189,26 @@ class MicrosoftMailbox(models.Model):
         store=True
     )
 
-    @api.depends('x_sync_mode', 'x_owner_user_id')
+    @api.depends('x_sync_mode', 'x_provider', 'x_owner_user_id',
+                 'x_owner_user_id.x_pan_mail_account_ids.connected')
     def _compute_incoming_enabled(self):
-        """Incoming sync is enabled when sync_mode is set and owner has OAuth."""
+        """Incoming sync is enabled when sync_mode is set and the mailbox has
+        credentials its provider can actually use.
+
+        The account is in `depends` on purpose: the old version depended only on
+        the mode and the owner, so connecting OAuth *after* configuring the
+        mailbox never flipped this field back on.
+
+        Known limit: a Gmail shared mailbox runs on a service account found by
+        address, not reachable by any field path from here, so authorizing one
+        after the fact does not retrigger this compute. It is correct at create
+        time and whenever the mailbox is edited; a stored field cannot depend on
+        a searched relation.
+        """
         for record in self:
             record.x_incoming_enabled = (
-                record.x_sync_mode in ('known_partners', 'all') and
-                bool(record.x_owner_user_id) and
-                record.x_owner_user_id.x_microsoft_oauth_connected
+                record.x_sync_mode in ('known_partners', 'all')
+                and record._has_working_credentials()
             )
 
     @api.depends('x_sync_mode')
@@ -229,7 +254,8 @@ class MicrosoftMailbox(models.Model):
         ('error', 'Error'),
     ], string='Status', compute='_compute_health_status', store=False)
 
-    @api.depends('state', 'x_sync_mode', 'x_mailbox_type', 'x_owner_user_id', 'x_owner_user_id.x_microsoft_oauth_connected')
+    @api.depends('state', 'x_sync_mode', 'x_mailbox_type', 'x_provider', 'x_owner_user_id',
+                 'x_owner_user_id.x_pan_mail_account_ids.connected')
     def _compute_health_status(self):
         """Compute health status based on state and configuration."""
         for record in self:
@@ -243,13 +269,13 @@ class MicrosoftMailbox(models.Model):
                 if not record.x_owner_user_id:
                     record.x_health_status = 'error'
                     continue
-                if not record.x_owner_user_id.x_microsoft_oauth_connected:
+                if not record._has_working_credentials():
                     record.x_health_status = 'error'
                     continue
 
             # Check 3: Shared mailbox with sync enabled needs connected owner
             if record.x_mailbox_type == 'shared' and record.x_sync_mode != 'none':
-                if record.x_owner_user_id and not record.x_owner_user_id.x_microsoft_oauth_connected:
+                if not record._has_working_credentials():
                     record.x_health_status = 'error'
                     continue
 
@@ -261,18 +287,35 @@ class MicrosoftMailbox(models.Model):
             # All checks passed
             record.x_health_status = 'healthy'
 
+    def _no_credentials_error(self):
+        """Why this mailbox has no usable credentials, in the provider's terms."""
+        self.ensure_one()
+        provider = self._get_client().provider_label()
+        if self.x_mailbox_type == 'shared' and not self._get_client().supports_shared_mailbox:
+            # Gmail: a shared address is its own account, so there is nothing an
+            # owner could connect on its behalf.
+            return _(
+                'Shared mailbox "%(email)s" has no connected %(provider)s account. '
+                'Authorize %(email)s itself — on %(provider)s a shared address is '
+                'its own account, not a delegation of someone else\'s.',
+                email=self.email, provider=provider,
+            )
+        if not self.x_owner_user_id:
+            return _('Please select an Owner for mailbox "%s" first.') % self.email
+        return _(
+            'Owner "%(owner)s" has no connected %(provider)s account. '
+            'The user must connect it first.',
+            owner=self.x_owner_user_id.name, provider=provider,
+        )
+
     def action_test_incoming(self):
         """Test incoming mail configuration by fetching a few messages."""
         self.ensure_one()
 
-        if not self.x_owner_user_id:
-            raise UserError(_('Please select an Owner for this mailbox.'))
-
-        if not self.x_owner_user_id.x_microsoft_oauth_connected:
-            raise UserError(_('The Owner is not connected to Microsoft. '
-                              'Please connect their account first.'))
-
         client = self._get_client()
+
+        if not self._has_working_credentials():
+            raise UserError(self._no_credentials_error())
 
         try:
             # Try to fetch 1 message to test connection
@@ -324,11 +367,8 @@ class MicrosoftMailbox(models.Model):
         if self.x_sync_mode == 'none':
             raise UserError(_('Sync mode is set to "No sync". Change it to enable syncing.'))
 
-        if not self.x_owner_user_id:
-            raise UserError(_('Please select an Owner first.'))
-
-        if not self.x_owner_user_id.x_microsoft_oauth_connected:
-            raise UserError(_('Owner "%s" is not connected to Microsoft.') % self.x_owner_user_id.name)
+        if not self._has_working_credentials():
+            raise UserError(self._no_credentials_error())
 
         # Trigger the processor for this mailbox
         processor = self.env['microsoft.incoming.mail.processor']

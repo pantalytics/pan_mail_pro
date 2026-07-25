@@ -501,3 +501,136 @@ class TestGoogleProvider(TransactionCase):
                 self.client.get_valid_token(account)
 
         self.assertNotIn('reconnect', str(ctx.exception).lower())
+
+
+@tagged('pan_outlook_pro', 'post_install', '-at_install')
+class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
+    """Phase 3: a Gmail mailbox must actually work, not merely be selectable.
+
+    The orchestration layer used to ask `x_microsoft_oauth_connected` everywhere,
+    so a Gmail mailbox with a perfectly good Google account reported `error`,
+    never enabled incoming sync, and fell back to the notification mailbox on
+    send. The owner dropdown listed Google-connected users, which made the gap
+    look like it was closed when it was not. These tests fail against that code.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Account = cls.env['pan.mail.account']
+        cls.Mailbox = cls.env['x_microsoft.mailbox']
+        cls.user = cls.env['res.users'].create({
+            'name': 'Gmail Only', 'login': 'gmail_only@test.local',
+            'email': 'gmail_only@test.local',
+            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+        })
+        # Connected to Google and *only* Google — the case that used to break.
+        cls.account = cls.Account.create({
+            'email': 'gmail_only@test.local', 'provider': 'gmail',
+            'user_id': cls.user.id, 'refresh_token': 'goog-refresh',
+        })
+
+    def _gmail_mailbox(self, **vals):
+        base = {'email': 'gmail_only@test.local', 'x_provider': 'gmail',
+                'x_mailbox_type': 'personal', 'x_owner_user_id': self.user.id}
+        base.update(vals)
+        return self.Mailbox.create(base)
+
+    # ------------------------------------------------------------------ #
+    # Health + incoming sync
+    # ------------------------------------------------------------------ #
+    def test_gmail_mailbox_with_connected_owner_is_healthy(self):
+        mailbox = self._gmail_mailbox()
+        self.assertFalse(self.user.x_microsoft_oauth_connected,
+                         "fixture must be Google-only for this to mean anything")
+        self.assertEqual(mailbox.x_health_status, 'healthy')
+
+    def test_gmail_mailbox_without_credentials_is_an_error(self):
+        self.account.write({'refresh_token_encrypted': False})
+        mailbox = self._gmail_mailbox()
+        self.assertEqual(mailbox.x_health_status, 'error')
+
+    def test_gmail_mailbox_enables_incoming_sync(self):
+        mailbox = self._gmail_mailbox(x_sync_mode='all')
+        self.assertTrue(mailbox.x_incoming_enabled)
+
+    def test_connecting_later_flips_incoming_enabled_on(self):
+        """The old depends listed only the mode and the owner, so authorizing
+        after configuring the mailbox left sync silently off."""
+        self.account.write({'refresh_token_encrypted': False})
+        mailbox = self._gmail_mailbox(x_sync_mode='all')
+        self.assertFalse(mailbox.x_incoming_enabled)
+
+        self.account.write({'refresh_token': 'reconnected'})
+        self.assertTrue(mailbox.x_incoming_enabled)
+
+    def test_shared_gmail_mailbox_is_healthy_on_its_service_account(self):
+        """No owner at all: on Gmail a shared address is its own account."""
+        self.Account.create({
+            'email': 'sales@test.local', 'provider': 'gmail',
+            'user_id': False, 'refresh_token': 'service-refresh',
+        })
+        mailbox = self.Mailbox.create({
+            'email': 'sales@test.local', 'x_provider': 'gmail',
+            'x_mailbox_type': 'shared', 'x_sync_mode': 'all',
+        })
+        self.assertFalse(mailbox.x_owner_user_id)
+        self.assertTrue(mailbox._has_working_credentials())
+        self.assertTrue(mailbox.x_incoming_enabled)
+
+    # ------------------------------------------------------------------ #
+    # Sending — the author's default-mailbox path
+    # ------------------------------------------------------------------ #
+    def test_gmail_user_sends_from_their_default_mailbox(self):
+        mailbox = self._gmail_mailbox()
+        self.user.x_microsoft_default_mailbox_id = mailbox
+        mail = self.env['mail.mail'].with_user(self.user).sudo().create({
+            'subject': 'Hi', 'body_html': '<p>x</p>',
+            'email_to': 'customer@example.com',
+            'author_id': self.user.partner_id.id,
+        })
+
+        resolved_mailbox, account = mail._get_mailbox_and_account()
+
+        self.assertEqual(resolved_mailbox, mailbox)
+        self.assertEqual(account, self.account)
+
+    def test_shared_gmail_default_mailbox_sends_as_the_service_account(self):
+        """Gmail has no SendAs: a shared mailbox must send with its own
+        credentials, not the author's personal token."""
+        service = self.Account.create({
+            'email': 'sales@test.local', 'provider': 'gmail',
+            'user_id': False, 'refresh_token': 'service-refresh',
+        })
+        mailbox = self.Mailbox.create({
+            'email': 'sales@test.local', 'x_provider': 'gmail',
+            'x_mailbox_type': 'shared',
+        })
+        self.user.x_microsoft_default_mailbox_id = mailbox
+        mail = self.env['mail.mail'].with_user(self.user).sudo().create({
+            'subject': 'Hi', 'body_html': '<p>x</p>',
+            'email_to': 'customer@example.com',
+            'author_id': self.user.partner_id.id,
+        })
+
+        resolved_mailbox, account = mail._get_mailbox_and_account()
+
+        self.assertEqual(resolved_mailbox, mailbox)
+        self.assertEqual(account, service)
+        self.assertFalse(account.user_id)
+        self.assertNotEqual(account, self.account)
+
+    def test_missing_credentials_error_names_the_right_provider(self):
+        """A Gmail user must not be told to connect Microsoft."""
+        self.account.write({'refresh_token_encrypted': False})
+        mailbox = self._gmail_mailbox()
+        self.user.x_microsoft_default_mailbox_id = mailbox
+        mail = self.env['mail.mail'].with_user(self.user).sudo().create({
+            'subject': 'Hi', 'body_html': '<p>x</p>',
+            'email_to': 'customer@example.com',
+            'author_id': self.user.partner_id.id,
+        })
+
+        message = mail._get_missing_mailbox_error()
+        self.assertIn('Gmail', message)
+        self.assertNotIn('Microsoft', message)
