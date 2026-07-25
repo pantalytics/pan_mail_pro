@@ -12,7 +12,7 @@ appear below this line.
 import logging
 from markupsafe import Markup
 
-from odoo import models, api, fields, _
+from odoo import models, api, fields
 
 _logger = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             try:
                 if self._process_message(mailbox, preview, folder):
                     processed += 1
-            except Exception as e:
+            except Exception:
                 _logger.exception(
                     f"[Incoming Mail] Error processing message {preview.get('provider_message_id')}"
                 )
@@ -399,7 +399,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
             return True
 
-        except Exception as e:
+        except Exception:
             _logger.exception(f"[Incoming Mail] Failed to process message: {internet_message_id}")
             raise
 

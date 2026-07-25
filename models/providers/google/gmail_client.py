@@ -245,7 +245,7 @@ class GmailClient(models.AbstractModel):
         self._attach_files(msg, mail_record.attachment_ids)
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-        url = f'https://gmail.googleapis.com/gmail/v1/users/me/messages/send'
+        url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send'
         try:
             response = requests.post(
                 url,

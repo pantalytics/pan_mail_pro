@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timezone
 from email.utils import getaddresses, parseaddr
 
-from odoo import models, _
+from odoo import models
 
 _logger = logging.getLogger(__name__)
 

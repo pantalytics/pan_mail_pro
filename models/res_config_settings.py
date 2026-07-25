@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import requests
-from odoo import fields, models, api, _
+from odoo import fields, models, _
 from odoo.exceptions import UserError
 from . import encryption_utils
 

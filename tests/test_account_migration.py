@@ -10,9 +10,14 @@ The fixture writes tokens into the res_users columns with raw SQL, because that
 is the only way to reproduce a pre-migration database now that the ORM fields
 are proxies onto the account. Creating a user through the ORM would create the
 account too, and the migration would correctly do nothing - a green test that
-proves nothing. It also pins down a load-bearing assumption: the columns still
-exist after the fields became unstored. If Odoo ever drops them, the UPDATE
-below fails and takes the rollback path with it.
+proves nothing.
+
+The columns themselves have to be recreated first. They only survive on a
+database that was upgraded from <= 19.0.1.1.1; on a fresh install Odoo never
+creates them, because the fields are store=False. A developer database has them
+and CI does not, which is exactly the kind of split that hides a broken
+migration until release day - so the fixture creates them when absent instead of
+assuming either shape.
 
 What this cannot test is a *production* token population: expired tokens, users
 whose partner email drifted from their login, tokens encrypted before a key
@@ -49,6 +54,23 @@ class TestAccountMigration(TransactionCase):
         super().setUpClass()
         cls.migration = _load_migration()
         cls.Account = cls.env['pan.mail.account']
+        cls._ensure_legacy_columns()
+
+    @classmethod
+    def _ensure_legacy_columns(cls):
+        """Give the test database the pre-migration res_users shape.
+
+        Types match what Odoo generated when the fields were still stored
+        (Char -> varchar, Datetime -> timestamp). TransactionCase rolls the DDL
+        back with everything else, so an upgraded database is left untouched and
+        a fresh one does not keep the columns.
+        """
+        cls.env.cr.execute("""
+            ALTER TABLE res_users
+                ADD COLUMN IF NOT EXISTS x_microsoft_access_token_encrypted varchar,
+                ADD COLUMN IF NOT EXISTS x_microsoft_refresh_token_encrypted varchar,
+                ADD COLUMN IF NOT EXISTS x_microsoft_token_expiry timestamp
+        """)
 
     def _run_migration(self):
         """Run the script the way Odoo would: raw cursor, no ORM cache."""
