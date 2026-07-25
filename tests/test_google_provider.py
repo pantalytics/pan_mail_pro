@@ -529,6 +529,14 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
             'email': 'gmail_only@test.local', 'provider': 'gmail',
             'user_id': cls.user.id, 'refresh_token': 'goog-refresh',
         })
+        # Enabling incoming sync on any mailbox requires a Notification mailbox
+        # to exist — see the constraint in microsoft_mailbox.py. It handles mail
+        # from authors with no Odoo user, so it is a real product rule, not test
+        # scaffolding.
+        cls.notification_mailbox = cls.Mailbox.create({
+            'email': 'notifications@test.local', 'x_provider': 'gmail',
+            'x_mailbox_type': 'notification', 'x_owner_user_id': cls.user.id,
+        })
 
     def _gmail_mailbox(self, **vals):
         base = {'email': 'gmail_only@test.local', 'x_provider': 'gmail',
