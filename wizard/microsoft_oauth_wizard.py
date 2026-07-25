@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from odoo import models, fields, _
 
+from ..models.mail_provider_client import get_provider_client
+
 
 class MicrosoftOAuthWizard(models.TransientModel):
     _name = 'microsoft.oauth.wizard'
@@ -29,7 +31,7 @@ class MicrosoftOAuthWizard(models.TransientModel):
         redirect_uri = f"{base_url}/microsoft_oauth/callback"
 
         # Get authorization URL with CSRF state token
-        graph_client = self.env['microsoft.graph.client']
+        graph_client = get_provider_client(self.env)
 
         # Generate and store CSRF state token for current user
         state = graph_client.generate_oauth_state()
@@ -48,7 +50,7 @@ class MicrosoftOAuthWizard(models.TransientModel):
         """Test the Graph API connection"""
         self.ensure_one()
 
-        graph_client = self.env['microsoft.graph.client']
+        graph_client = get_provider_client(self.env)
         result = graph_client.test_connection(self.env.user)
 
         if result['success']:

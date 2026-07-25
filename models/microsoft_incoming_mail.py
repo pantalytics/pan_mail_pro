@@ -5,12 +5,12 @@ Incoming Mail Processor for Microsoft Graph API.
 This module fetches emails from Microsoft 365 mailboxes and routes them
 to the correct partner using message_post() for proper threading.
 """
-import base64
 import logging
-from datetime import datetime as dt_datetime
 from markupsafe import Markup
 
 from odoo import models, api, fields, _
+
+from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
 _logger = logging.getLogger(__name__)
 
@@ -77,12 +77,11 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             else:
                 # No start date: just test connection and start from now
                 _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, testing connection...")
-                graph_client = self.env['microsoft.graph.client']
-                graph_client.fetch_messages(
+                mailbox._get_client().fetch_messages(
                     user=mailbox.x_owner_user_id,
-                    mailbox_email=mailbox.email,
-                    folder='Inbox',
-                    top=1,  # Just test, don't fetch all
+                    mailbox=mailbox,
+                    folder=FOLDER_INBOX,
+                    limit=1,  # Just test, don't fetch all
                 )
                 _logger.info(f"[Incoming Mail] Connection test passed for {mailbox.email}, setting sync date to now")
                 mailbox.write({'x_last_sync_date': fields.Datetime.now()})
@@ -93,14 +92,14 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         # Fetch from Inbox
         if mailbox.x_sync_inbox:
-            count, latest_dt = self._fetch_folder(mailbox, 'Inbox')
+            count, latest_dt = self._fetch_folder(mailbox, FOLDER_INBOX)
             processed_count += count
             if latest_dt:
                 folder_cursors.append(latest_dt)
 
         # Fetch from Sent Items (2-way sync)
         if mailbox.x_sync_sent:
-            count, latest_dt = self._fetch_folder(mailbox, 'SentItems')
+            count, latest_dt = self._fetch_folder(mailbox, FOLDER_SENT)
             processed_count += count
             if latest_dt:
                 folder_cursors.append(latest_dt)
@@ -121,106 +120,99 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         Messages are sorted ascending (oldest first) so we process
         incrementally. The cursor advances to the last fetched message's
-        receivedDateTime, ensuring no messages are skipped across runs.
+        date, ensuring no messages are skipped across runs.
 
         Args:
-            mailbox: x_microsoft.mailbox record
-            folder: Folder name ('Inbox', 'SentItems', etc.)
+            mailbox: mailbox record
+            folder: FOLDER_INBOX or FOLDER_SENT
 
         Returns:
             tuple: (processed_count, latest_received_datetime or None)
         """
-        graph_client = self.env['microsoft.graph.client']
-
         # Fetch messages since last sync (sorted ascending for incremental cursor)
-        messages = graph_client.fetch_messages(
+        messages = mailbox._get_client().fetch_messages(
             user=mailbox.x_owner_user_id,
-            mailbox_email=mailbox.email,
+            mailbox=mailbox,
             folder=folder,
             since_datetime=mailbox.x_last_sync_date,
-            top=200,
+            limit=200,
         )
 
         processed = 0
         latest_datetime = None
 
-        # Messages sorted ascending — last item has the latest receivedDateTime
+        # Messages sorted ascending — the last item carries the latest date
         if messages:
-            last_received = messages[-1].get('receivedDateTime')
-            if last_received:
-                latest_datetime = dt_datetime.fromisoformat(
-                    last_received.replace('Z', '+00:00')
-                ).replace(tzinfo=None)
+            latest_datetime = messages[-1].get('date')
 
-        for msg_data in messages:
+        for message in messages:
             try:
                 with self.env.cr.savepoint():
-                    if self._process_message(mailbox, msg_data, folder):
+                    if self._process_message(mailbox, message, folder):
                         processed += 1
             except Exception:
                 # Without the savepoint, one DB error would leave the whole
                 # transaction in `aborted` state and every later message in
                 # this batch would fail with "cursor already closed".
-                _logger.exception(f"[Incoming Mail] Error processing message {msg_data.get('id')}")
+                _logger.exception(
+                    f"[Incoming Mail] Error processing message {message.get('provider_message_id')}"
+                )
 
         return processed, latest_datetime
 
-    def _process_message(self, mailbox, msg_data, folder):
+    def _process_message(self, mailbox, message, folder):
         """
         Process a single message using Odoo's native routing.
 
         Args:
-            mailbox: x_microsoft.mailbox record
-            msg_data: Message data from Graph API (preview)
-            folder: Folder name
+            mailbox: mailbox record
+            message: normalized message dict from the provider client (preview)
+            folder: FOLDER_INBOX or FOLDER_SENT
 
         Returns:
             bool: True if message was processed, False if skipped
         """
-        internet_message_id = msg_data.get('internetMessageId')
+        internet_message_id = message.get('message_id')
 
         # Check for duplicate
         if self._is_duplicate(internet_message_id):
             _logger.debug(f"[Incoming Mail] Skipping duplicate: {internet_message_id}")
             return False
 
-        _logger.info(f"[Incoming Mail] Processing: {msg_data.get('subject', '(no subject)')}")
+        _logger.info(f"[Incoming Mail] Processing: {message.get('subject') or '(no subject)'}")
 
         # Get full message with headers for threading
-        graph_client = self.env['microsoft.graph.client']
-        full_message = graph_client.get_message_with_headers(
+        full_message = mailbox._get_client().get_message(
             user=mailbox.x_owner_user_id,
-            mailbox_email=mailbox.email,
-            message_id=msg_data['id'],
+            mailbox=mailbox,
+            provider_message_id=message['provider_message_id'],
         )
 
         # Check for Odoo-originated emails (skip to prevent import loops)
         # We add X-Odoo-* headers to all outgoing emails
-        raw_headers = full_message.get('internetMessageHeaders', [])
-        headers = {h['name'].lower(): h['value'] for h in raw_headers}
+        headers = full_message.get('headers', {})
         if headers.get('x-odoo-model') or headers.get('x-odoo-mail-id'):
             _logger.info(f"[Incoming Mail] Skipping Odoo-originated email: {internet_message_id}")
             return False
 
         # Determine if this is incoming or outgoing (for 2-way sync)
-        is_outgoing = folder == 'SentItems'
+        is_outgoing = folder == FOLDER_SENT
 
         # For incoming: use sender (from). For outgoing: use first recipient (to)
         if is_outgoing:
             # Sent Items: get the recipient
-            to_recipients = full_message.get('toRecipients', [])
+            to_recipients = full_message.get('to') or []
             if not to_recipients:
                 _logger.info(f"[Incoming Mail] Skipping sent email without recipients: {internet_message_id}")
                 return False
-            contact_data = to_recipients[0].get('emailAddress', {})
-            contact_email = contact_data.get('address', '')
-            contact_name = contact_data.get('name', '')
+            contact_email = to_recipients[0].get('email', '')
+            contact_name = to_recipients[0].get('name', '')
             _logger.info(f"[Incoming Mail] Sent to: name='{contact_name}', email='{contact_email}'")
         else:
             # Inbox: use the sender
-            from_data = full_message.get('from', {}).get('emailAddress', {})
-            contact_email = from_data.get('address', '')
-            contact_name = from_data.get('name', '')
+            sender = full_message.get('from') or {}
+            contact_email = sender.get('email', '')
+            contact_name = sender.get('name', '')
             _logger.info(f"[Incoming Mail] From: name='{contact_name}', email='{contact_email}'")
 
         # Skip emails from/to internal domains (only for incoming, not sent items)
@@ -265,15 +257,14 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.info(f"[Incoming Mail] All contacts mode: processing {'known' if is_known_contact else 'unknown'} contact")
 
         # Get attachments if present
-        # Note: hasAttachments is false for inline-only images, so also check for cid: in body
+        # Note: has_attachments is false for inline-only images, so also check for cid: in body
         attachments = []
-        has_attachments = full_message.get('hasAttachments', False)
-        body_may_have_inline = 'cid:' in full_message.get('body', {}).get('content', '')
-        if has_attachments or body_may_have_inline:
-            attachments = graph_client.get_message_attachments(
+        body_may_have_inline = 'cid:' in (full_message.get('body_html') or '')
+        if full_message.get('has_attachments') or body_may_have_inline:
+            attachments = mailbox._get_client().get_message_attachments(
                 user=mailbox.x_owner_user_id,
-                mailbox_email=mailbox.email,
-                message_id=msg_data['id'],
+                mailbox=mailbox,
+                provider_message_id=message['provider_message_id'],
             )
             _logger.info(f"[Incoming Mail] Fetched {len(attachments)} attachment(s)")
 
@@ -287,45 +278,32 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.warning(f"[Incoming Mail] Could not resolve partner for {contact_email}, skipping")
             return False
 
-        conversation_id = full_message.get('conversationId')
+        conversation_id = full_message.get('thread_id')
 
         # Build email body - mark as safe HTML to preserve formatting
-        body = full_message.get('body', {})
-        body_content = body.get('content', '')
+        body_content = full_message.get('body_html') or ''
 
-        # Process attachments:
-        # - Inline (isInline=true): 3-tuple format so Odoo converts cid: → /web/image/
-        # - Regular: 2-tuple format stored as ir.attachment
+        # Process attachments into Odoo's expected tuple format:
+        # - Inline: 3-tuple so Odoo converts cid: → /web/image/
+        # - Regular: 2-tuple stored as ir.attachment
         email_attachments = []
-        if attachments:
-            for attachment in attachments:
-                att_type = attachment.get('@odata.type', 'unknown')
-                att_name = attachment.get('name', 'unnamed')
-                if att_type != '#microsoft.graph.fileAttachment':
-                    continue
-                content_bytes_b64 = attachment.get('contentBytes')
-                if not content_bytes_b64:
-                    continue
-                try:
-                    content_binary = base64.b64decode(content_bytes_b64)
-                    if attachment.get('isInline') and attachment.get('contentId'):
-                        # Inline: 3-tuple lets Odoo handle cid: conversion
-                        email_attachments.append((att_name, content_binary, {'cid': attachment['contentId']}))
-                    else:
-                        # Regular: 2-tuple stored as file attachment
-                        email_attachments.append((att_name, content_binary))
-                except Exception as e:
-                    _logger.warning(f"[Incoming Mail] Failed to process attachment {att_name}: {e}")
+        for attachment in attachments:
+            if attachment['is_inline'] and attachment['content_id']:
+                email_attachments.append((
+                    attachment['name'],
+                    attachment['content'],
+                    {'cid': attachment['content_id']},
+                ))
+            else:
+                email_attachments.append((attachment['name'], attachment['content']))
 
-        if body.get('contentType') == 'html' and body_content:
+        if full_message.get('body_is_html') and body_content:
             body_content = Markup(body_content)
 
         # Build msg_dict in Odoo's expected format for message_new()
         email_from = f'"{contact_name}" <{contact_email}>' if contact_name else contact_email
-        cc_recipients = full_message.get('ccRecipients', [])
         cc_addresses = ', '.join(
-            r.get('emailAddress', {}).get('address', '')
-            for r in cc_recipients
+            r.get('email', '') for r in full_message.get('cc') or []
         )
         msg_dict = {
             'message_type': 'email',
@@ -344,9 +322,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         post_author_id = partner.id
         post_email_from = email_from
         if is_outgoing:
-            from_data = full_message.get('from', {}).get('emailAddress', {})
-            author_email = from_data.get('address', mailbox.email)
-            author_name = from_data.get('name', '')
+            sender = full_message.get('from') or {}
+            author_email = sender.get('email') or mailbox.email
+            author_name = sender.get('name', '')
             if mailbox.x_mailbox_type == 'shared':
                 author = self._find_or_create_partner(mailbox.email)
             else:

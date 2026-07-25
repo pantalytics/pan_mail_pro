@@ -15,6 +15,7 @@
                        decoration-warning="x_health_status == 'warning'"
                        decoration-danger="x_health_status == 'error'"/>
                 <field name="x_mailbox_type" string="Type" optional="hide"/>
+                <field name="x_provider" string="Provider" optional="hide"/>
                 <field name="x_owner_user_id" string="Owner" optional="hide"/>
                 <field name="x_incoming_sync" string="Sync" optional="hide"/>
                 <field name="x_last_sync_date" string="Last Synced" widget="timeago" optional="hide"/>
@@ -34,6 +35,7 @@
                     <group string="Mailbox">
                         <group>
                             <field name="email" placeholder="support@company.com"/>
+                            <field name="x_provider"/>
                             <field name="x_health_status" string="Status" widget="badge"
                                    decoration-success="x_health_status == 'healthy'"
                                    decoration-warning="x_health_status == 'warning'"

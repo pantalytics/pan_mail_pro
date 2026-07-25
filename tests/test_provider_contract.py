@@ -1,0 +1,206 @@
+# -*- coding: utf-8 -*-
+"""
+Tests for the provider-agnostic client contract.
+
+These guard the seam itself rather than any one provider: that a mailbox
+resolves to a client, that the client declares what it can service, and that
+Graph payloads are translated into the normalized shapes every caller depends
+on. A second provider (Gmail) has to satisfy the same assertions.
+"""
+from datetime import datetime
+
+from odoo.exceptions import UserError, ValidationError
+from odoo.tests import TransactionCase, tagged
+
+from odoo.addons.pan_outlook_pro.models.mail_provider_client import (
+    DEFAULT_PROVIDER,
+    FOLDER_INBOX,
+    FOLDER_SENT,
+    PROVIDER_CLIENTS,
+    get_provider_client,
+)
+
+
+@tagged('post_install', '-at_install', 'pan_outlook_pro')
+class TestProviderRegistry(TransactionCase):
+    """The registry is the only place a provider code becomes a model."""
+
+    def test_every_registered_provider_resolves_to_a_client(self):
+        for code in PROVIDER_CLIENTS:
+            client = get_provider_client(self.env, code)
+            self.assertEqual(
+                client.provider_code(), code,
+                f"client for '{code}' reports a different provider_code",
+            )
+
+    def test_unknown_provider_raises(self):
+        with self.assertRaises(UserError):
+            get_provider_client(self.env, 'carrier-pigeon')
+
+    def test_mailbox_resolves_to_its_client(self):
+        mailbox = self.env['x_microsoft.mailbox'].create({
+            'email': 'contract@company.test',
+            'x_mailbox_type': 'shared',
+        })
+        self.assertEqual(mailbox.x_provider, DEFAULT_PROVIDER)
+        self.assertEqual(mailbox._get_client().provider_code(), DEFAULT_PROVIDER)
+
+
+@tagged('post_install', '-at_install', 'pan_outlook_pro')
+class TestProviderCapabilities(TransactionCase):
+    """Providers differ in how 'send as somebody else' works."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = get_provider_client(self.env, 'outlook')
+
+    def test_outlook_supports_shared_mailboxes(self):
+        # Microsoft 365 sends from a shared mailbox with the user's own token.
+        self.assertTrue(self.client.supports_shared_mailbox)
+        for mailbox_type in ('personal', 'shared', 'notification'):
+            self.client.check_mailbox_supported(mailbox_type)
+
+    def test_unsupported_mailbox_type_is_rejected(self):
+        with self.assertRaises(UserError):
+            self.client.check_mailbox_supported('carrier-pigeon')
+
+    def test_mailbox_type_is_validated_against_provider_on_create(self):
+        """A mailbox its provider cannot service must fail at config time,
+        not at send time."""
+        Mailbox = self.env['x_microsoft.mailbox']
+        original = type(self.client).supported_mailbox_types
+        type(self.client).supported_mailbox_types = ('personal',)
+        self.addCleanup(
+            setattr, type(self.client), 'supported_mailbox_types', original
+        )
+        with self.assertRaises((UserError, ValidationError)):
+            Mailbox.create({
+                'email': 'unsupported@company.test',
+                'x_mailbox_type': 'shared',
+            })
+
+    def test_notification_mailbox_sends_with_owner_token(self):
+        """Notification mail must not depend on who triggered it."""
+        owner = self.env['res.users'].create({
+            'name': 'Notify Owner',
+            'login': 'notify-owner@company.test',
+            'email': 'notify-owner@company.test',
+        })
+        other = self.env['res.users'].create({
+            'name': 'Someone Else',
+            'login': 'someone-else@company.test',
+            'email': 'someone-else@company.test',
+        })
+        mailbox = self.env['x_microsoft.mailbox'].new({
+            'email': 'notifications@company.test',
+            'x_mailbox_type': 'notification',
+            'x_owner_user_id': owner.id,
+        })
+        resolved = self.client.resolve_sending_user(mailbox, author_user=other)
+        self.assertEqual(resolved, owner)
+
+    def test_shared_mailbox_sends_with_author_token(self):
+        """Shared mailboxes rely on the author's own SendAs rights, which
+        matters in cron context where env.user is the cron runner."""
+        author = self.env['res.users'].create({
+            'name': 'Author',
+            'login': 'author@company.test',
+            'email': 'author@company.test',
+        })
+        mailbox = self.env['x_microsoft.mailbox'].new({
+            'email': 'team@company.test',
+            'x_mailbox_type': 'shared',
+        })
+        resolved = self.client.resolve_sending_user(mailbox, author_user=author)
+        self.assertEqual(resolved, author)
+
+
+@tagged('post_install', '-at_install', 'pan_outlook_pro')
+class TestGraphNormalization(TransactionCase):
+    """Graph payload shapes must not leak past the client."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = get_provider_client(self.env, 'outlook')
+
+    def test_folder_ids_map_to_graph_names(self):
+        self.assertEqual(self.client._graph_folder(FOLDER_INBOX), 'Inbox')
+        self.assertEqual(self.client._graph_folder(FOLDER_SENT), 'SentItems')
+        with self.assertRaises(UserError):
+            self.client._graph_folder('drafts')
+
+    def test_full_message_is_normalized(self):
+        raw = {
+            'id': 'AAMkAG...',
+            'internetMessageId': '<abc@contoso.com>',
+            'conversationId': 'conv-123',
+            'subject': 'Quote request',
+            'from': {'emailAddress': {'address': 'ann@client.test', 'name': 'Ann'}},
+            'toRecipients': [
+                {'emailAddress': {'address': 'sales@company.test', 'name': 'Sales'}},
+            ],
+            'ccRecipients': [
+                {'emailAddress': {'address': 'bob@client.test', 'name': 'Bob'}},
+            ],
+            'receivedDateTime': '2026-05-12T10:00:00Z',
+            'body': {'contentType': 'html', 'content': '<p>Hello</p>'},
+            'hasAttachments': True,
+            'isRead': False,
+            'internetMessageHeaders': [
+                {'name': 'X-Odoo-Model', 'value': 'crm.lead'},
+            ],
+        }
+
+        msg = self.client._normalize_message(raw)
+
+        self.assertEqual(msg['provider_message_id'], 'AAMkAG...')
+        self.assertEqual(msg['message_id'], '<abc@contoso.com>')
+        self.assertEqual(msg['thread_id'], 'conv-123')
+        self.assertEqual(msg['from'], {'email': 'ann@client.test', 'name': 'Ann'})
+        self.assertEqual(msg['to'], [{'email': 'sales@company.test', 'name': 'Sales'}])
+        self.assertEqual(msg['cc'], [{'email': 'bob@client.test', 'name': 'Bob'}])
+        self.assertEqual(msg['date'], datetime(2026, 5, 12, 10, 0, 0))
+        self.assertEqual(msg['body_html'], '<p>Hello</p>')
+        self.assertTrue(msg['body_is_html'])
+        self.assertTrue(msg['has_attachments'])
+        self.assertFalse(msg['is_read'])
+        # Headers are lowercased so callers can look them up predictably.
+        self.assertEqual(msg['headers']['x-odoo-model'], 'crm.lead')
+
+    def test_list_message_without_body_falls_back_to_preview(self):
+        """List responses carry only bodyPreview; callers still get body_html."""
+        msg = self.client._normalize_message({
+            'id': 'g1',
+            'internetMessageId': '<preview@test>',
+            'bodyPreview': 'Short preview',
+        })
+        self.assertEqual(msg['body_html'], 'Short preview')
+        self.assertFalse(msg['body_is_html'])
+        self.assertIsNone(msg['date'])
+        self.assertEqual(msg['to'], [])
+        self.assertEqual(msg['from'], {'email': '', 'name': ''})
+
+    def test_unparseable_date_does_not_raise(self):
+        msg = self.client._normalize_message({
+            'id': 'g1',
+            'receivedDateTime': 'not-a-date',
+        })
+        self.assertIsNone(msg['date'])
+
+    def test_send_result_is_normalized(self):
+        """send_message translates Graph's key names to the contract's."""
+        Client = type(self.client)
+        original = Client.send_email_via_graph
+        Client.send_email_via_graph = lambda self_, mail_record, mailbox, user: {
+            'success': True,
+            'microsoft_message_id': '<sent@contoso.com>',
+            'microsoft_conversation_id': 'conv-999',
+        }
+        self.addCleanup(setattr, Client, 'send_email_via_graph', original)
+
+        result = self.client.send_message(mail_record=None, mailbox=None, user=None)
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['message_id'], '<sent@contoso.com>')
+        self.assertEqual(result['thread_id'], 'conv-999')
+        self.assertIsNone(result['error'])

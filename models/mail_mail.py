@@ -179,39 +179,37 @@ class MailMail(models.Model):
 
         _logger.info(f"[Graph API] Sending email {self.id} from mailbox {mailbox.email}")
 
-        # Get Graph API client
-        graph_client = self.env['microsoft.graph.client']
-
-        # Send email using user's delegated token (principle of least privilege)
-        result = graph_client.send_email_via_graph(
+        # Send via the mailbox's provider client using the user's delegated
+        # token (principle of least privilege).
+        result = mailbox._get_client().send_message(
             mail_record=self,
             mailbox=mailbox,
             user=user,
         )
 
         if result['success']:
-            # Mark as sent and store Microsoft IDs for duplicate detection and threading
-            microsoft_message_id = result.get('microsoft_message_id')
-            microsoft_conversation_id = result.get('microsoft_conversation_id')
+            # Store provider IDs for duplicate detection and threading
+            provider_message_id = result.get('message_id')
+            provider_thread_id = result.get('thread_id')
 
             self.write({
                 'state': 'sent',
-                'x_microsoft_message_id': microsoft_message_id,
-                'x_microsoft_conversation_id': microsoft_conversation_id,
+                'x_microsoft_message_id': provider_message_id,
+                'x_microsoft_conversation_id': provider_thread_id,
             })
 
             # Also update mail_message for threading to work
-            # When reply comes in with In-Reply-To header containing the Microsoft ID,
-            # we can find this message via x_microsoft_message_id
-            if self.mail_message_id and microsoft_message_id:
+            # When a reply comes in with an In-Reply-To header containing this
+            # ID, we can find this message via x_microsoft_message_id
+            if self.mail_message_id and provider_message_id:
                 self.mail_message_id.write({
-                    'x_microsoft_message_id': microsoft_message_id,
-                    'x_microsoft_conversation_id': microsoft_conversation_id,
+                    'x_microsoft_message_id': provider_message_id,
+                    'x_microsoft_conversation_id': provider_thread_id,
                 })
-                _logger.info(f"[Graph API] Updated mail.message {self.mail_message_id.id} with Microsoft IDs for threading")
+                _logger.info(f"[Graph API] Updated mail.message {self.mail_message_id.id} with provider IDs for threading")
 
             _logger.info(f"[Graph API] Email {self.id} sent successfully from {mailbox.email}")
-            _logger.info(f"[Graph API] Stored Microsoft IDs - Message: {microsoft_message_id}, Conversation: {microsoft_conversation_id}")
+            _logger.info(f"[Graph API] Stored provider IDs - Message: {provider_message_id}, Thread: {provider_thread_id}")
             return (True, None, None)
         else:
             # Mark as exception
@@ -317,20 +315,17 @@ class MailMail(models.Model):
     def _resolve_sender_for_selected_mailbox(self, mailbox):
         """Pick the OAuth-connected user whose token should send from `mailbox`.
 
-        - notification/personal: owner is the only viable token holder
-        - shared: prefer the author's user (correct in cron context where
-          env.user is the cron runner), then fall back to env.user
+        Which token applies is provider-specific — Microsoft 365 lets a user
+        send from a shared mailbox with their own token, while a provider
+        without shared mailboxes has to resolve to a delegated account — so the
+        decision belongs to the provider client.
+
+        The author's user is passed in explicitly because it is the correct
+        sender in cron context, where env.user is the cron runner.
         """
         self.ensure_one()
-        if mailbox.x_mailbox_type in ('notification', 'personal'):
-            return mailbox.x_owner_user_id
-        # Shared mailbox: anyone with SendAs rights can send with their own token.
-        if self.author_id and self.author_id.user_ids:
-            return self.author_id.user_ids[0]
-        env_user = self.env.user
-        if env_user and not env_user._is_public():
-            return env_user
-        return self.env['res.users']
+        author_user = self.author_id.user_ids[0] if self.author_id and self.author_id.user_ids else None
+        return mailbox._get_client().resolve_sending_user(mailbox, author_user=author_user)
 
     def _get_notification_mailbox_and_user(self):
         """

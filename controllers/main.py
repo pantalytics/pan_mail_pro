@@ -3,6 +3,8 @@ import logging
 from odoo import http
 from odoo.http import request
 
+from ..models.mail_provider_client import get_provider_client
+
 _logger = logging.getLogger(__name__)
 
 
@@ -52,7 +54,7 @@ class MicrosoftOAuthController(http.Controller):
             base_url = request.env['ir.config_parameter'].sudo().get_param('web.base.url')
             redirect_uri = f"{base_url}/microsoft_oauth/callback"
 
-            graph_client = request.env['microsoft.graph.client']
+            graph_client = get_provider_client(request.env)
             token_data = graph_client.exchange_code_for_tokens(authorization_code, redirect_uri)
 
             # Save tokens to current user
