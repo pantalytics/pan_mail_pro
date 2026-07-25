@@ -171,6 +171,61 @@ cd .local
 docker-compose build odoo && docker-compose up -d
 ```
 
+## CI/CD (GitHub Actions)
+
+Three workflows in `.github/workflows/`:
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo |
+| `gitleaks.yml` | every push + PR | secret scan |
+| `release.yml` | push to `19.0` | tags the merge commit `v<manifest version>` if that tag does not exist yet |
+
+### How tests run
+
+The `test` job installs the module into the **official `odoo:<series>` community
+image** and runs `--test-enable --test-tags=pan_outlook_pro` against a Postgres
+service container. No Enterprise source and no Azure credentials are needed:
+`mail`, `base` and `crm` all ship in community, and the Helpdesk tests skip
+themselves when `helpdesk.team` is absent.
+
+The series is **derived from `__manifest__.py`**, not hardcoded: `19.0.1.3.0`
+→ `odoo:19.0`. An addon repo carries one Odoo version per branch, so a future
+`18.0` branch tests against Odoo 18 without editing the workflow.
+
+Reproduce a CI run locally (this is exactly what the job does):
+```bash
+docker run --rm -v "$PWD:/mnt/extra-addons/pan_outlook_pro:ro" \
+  --entrypoint odoo odoo:19.0 -d ci_test \
+  --db_host=<db> --db_user=odoo --db_password=odoo \
+  --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
+  -i pan_outlook_pro --test-enable --test-tags=pan_outlook_pro \
+  --stop-after-init --without-demo=all --max-cron-threads=0
+```
+
+**Fresh install vs. upgraded database.** CI always installs fresh, the local
+Docker database is upgraded. Tests that touch columns of unstored fields (the
+migration tests) must create those columns themselves — see
+`tests/test_account_migration.py::_ensure_legacy_columns`.
+
+## Working from the Claude Code mobile app
+
+`19.0` is protected: no direct pushes, PR + green CI required. The full loop
+from a phone:
+
+```bash
+git checkout -b feature/<name>
+# ... changes ...
+git commit -am "..."            # bump __manifest__.py version if code changed
+git push -u origin HEAD
+gh pr create --fill --base 19.0
+gh pr merge --auto --squash --delete-branch
+```
+
+`--auto` is the part that makes this work without a desktop: GitHub merges the
+PR by itself the moment CI turns green, so there is nothing to come back to.
+Check status later with `gh pr checks` or `gh run watch`.
+
 ## Conventions
 
 - All custom fields use `x_` prefix (Odoo.sh requirement)

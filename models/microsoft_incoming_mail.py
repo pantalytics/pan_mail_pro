@@ -8,7 +8,7 @@ to the correct partner using message_post() for proper threading.
 import logging
 from markupsafe import Markup
 
-from odoo import models, api, fields, _
+from odoo import models, api, fields
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
@@ -423,7 +423,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
             return True
 
-        except Exception as e:
+        except Exception:
             _logger.exception(f"[Incoming Mail] Failed to process message: {internet_message_id}")
             raise
 

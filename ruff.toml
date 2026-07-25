@@ -1,0 +1,21 @@
+# Ruff configuration — kept deliberately narrow.
+#
+# Only rules that catch real defects are enabled: syntax errors, undefined
+# names, unused imports and unused locals. Style and formatting rules are left
+# off, because retro-fitting them to a mature addon produces a large diff and no
+# behaviour change. Add rules when there is a bug they would have caught.
+line-length = 120
+target-version = "py310"
+
+exclude = [
+    "__pycache__",
+    "migrations",  # version-pinned scripts; never edited after release
+]
+
+[lint]
+select = ["E9", "F"]
+
+[lint.per-file-ignores]
+# Odoo addons import their submodules purely for the side effect of registering
+# models, so "imported but unused" is the correct thing to do in __init__.py.
+"__init__.py" = ["F401"]
