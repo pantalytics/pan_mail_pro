@@ -48,6 +48,11 @@ class ResConfigSettings(models.TransientModel):
         string='Current User OAuth Connected'
     )
 
+    x_current_user_google_connected = fields.Boolean(
+        compute='_compute_current_user_google_connected',
+        string='Current User Google Connected'
+    )
+
     # Internal domain detection uses Odoo's standard mail.alias.domain
     x_microsoft_alias_domains = fields.Char(
         string='Alias Domains',
@@ -87,6 +92,31 @@ class ResConfigSettings(models.TransientModel):
         string='Redirect URI',
         compute='_compute_redirect_uri',
         help='The redirect URI to configure in Azure App Registration'
+    )
+
+    # -------------------------------------------------------------------------
+    # Google OAuth Configuration
+    #
+    # One credential set per provider, same home as Microsoft's (config params
+    # under x_pan_outlook_pro.*). The secret is Fernet-encrypted like Microsoft's.
+    # -------------------------------------------------------------------------
+    x_google_client_id = fields.Char(
+        string='Google Client ID',
+        help='OAuth client ID from the Google Cloud Console (Desktop or Web app)',
+        config_parameter='x_pan_outlook_pro.google_client_id'
+    )
+
+    x_google_client_secret = fields.Char(
+        string='Google Client Secret',
+        help='OAuth client secret from the Google Cloud Console',
+        compute='_compute_decrypted_google_secret',
+        inverse='_inverse_google_secret'
+    )
+
+    x_google_redirect_uri = fields.Char(
+        string='Google Redirect URI',
+        compute='_compute_google_redirect_uri',
+        help='The redirect URI to configure on the Google OAuth client'
     )
 
     # OAuth URLs (auto-computed but can be overridden)
@@ -151,6 +181,36 @@ class ResConfigSettings(models.TransientModel):
                 encrypted_secret or ''
             )
 
+    def _compute_google_redirect_uri(self):
+        """Compute the Google OAuth redirect URI based on web.base.url"""
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+        for record in self:
+            record.x_google_redirect_uri = f"{base_url}/google_oauth/callback"
+
+    def _compute_decrypted_google_secret(self):
+        """Show a masked value when an encrypted Google secret exists."""
+        IrConfigParameter = self.env['ir.config_parameter'].sudo()
+        for record in self:
+            encrypted_secret = IrConfigParameter.get_param(
+                'x_pan_outlook_pro.google_client_secret_encrypted'
+            )
+            record.x_google_client_secret = '********' if encrypted_secret else False
+
+    def _inverse_google_secret(self):
+        """Encrypt the Google client secret when writing."""
+        IrConfigParameter = self.env['ir.config_parameter'].sudo()
+        for record in self:
+            # Masked placeholder means the user didn't touch it.
+            if record.x_google_client_secret == '********':
+                continue
+            encrypted_secret = encryption_utils.encrypt_value(
+                self.env, record.x_google_client_secret
+            ) if record.x_google_client_secret else False
+            IrConfigParameter.set_param(
+                'x_pan_outlook_pro.google_client_secret_encrypted',
+                encrypted_secret or ''
+            )
+
     def _compute_config_status(self):
         """Compute the Azure configuration status"""
         IrConfigParameter = self.env['ir.config_parameter'].sudo()
@@ -196,6 +256,16 @@ class ResConfigSettings(models.TransientModel):
         """Check if the current user has Microsoft OAuth connected"""
         for record in self:
             record.x_current_user_oauth_connected = self.env.user.x_microsoft_oauth_connected
+
+    def _compute_current_user_google_connected(self):
+        """Check if the current user has a Google account connected"""
+        for record in self:
+            record.x_current_user_google_connected = self.env.user.x_google_oauth_connected
+
+    def action_connect_google_admin(self):
+        """Start the Google OAuth flow from the settings page."""
+        self.ensure_one()
+        return self.env.user.action_connect_google()
 
     def action_connect_microsoft_admin(self):
         """Start OAuth flow by redirecting directly to Microsoft login"""

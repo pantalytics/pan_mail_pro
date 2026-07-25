@@ -4,9 +4,11 @@ Project context for Claude Code AI assistant.
 
 ## Module Overview
 
-**pan_outlook_pro** - Microsoft 365 email integration for Odoo 19.0 Enterprise Edition.
+**pan_outlook_pro** - Microsoft 365 and Google Workspace email integration for Odoo 19.0 Enterprise Edition.
 
-Send and receive emails via Microsoft Graph API with OAuth 2.0 delegated permissions.
+Send and receive emails via the Microsoft Graph and Gmail APIs, with OAuth 2.0
+delegated permissions. The module name still says Outlook; the rename to
+`pan_email_pro` is a separate phase.
 
 ## Development Principles
 
@@ -33,10 +35,13 @@ Send and receive emails via Microsoft Graph API with OAuth 2.0 delegated permiss
 | `models/mail_compose_message.py` | Composer "Send From" dropdown + setup warning |
 | `models/mail_alias.py` | Cleaner alias display (name only, no domain) |
 | `models/microsoft_mailbox.py` | Mailbox configuration + routing rules |
-| `models/microsoft_graph_client.py` | Microsoft 365 implementation of the contract |
-| `models/microsoft_incoming_mail.py` | Incoming email sync (uses `message_new()`) |
+| `models/pan_mail_account.py` | Credentials for one address on one provider |
+| `models/providers/microsoft/graph_client.py` | Microsoft 365 implementation of the contract |
+| `models/providers/google/gmail_client.py` | Gmail implementation of the contract |
+| `models/pan_mail_fetcher.py` | Incoming email sync (uses `message_new()`) |
 | `models/res_partner.py` | Contact block list field |
-| `controllers/main.py` | OAuth callback handler |
+| `controllers/main.py` | OAuth callback handlers (Microsoft + Google) |
+| `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
 
 ## Provider Architecture
@@ -47,9 +52,11 @@ what Odoo needs rather than by any single provider's API:
 ```
 Odoo (mail.mail, mail.thread, res.users)
     ↓
-mail.provider.client          ← the contract
+mail.provider.client                      ← the contract
     ↓
-microsoft.graph.client        ← provider implementation
+microsoft.graph.client / google.gmail.client   ← provider implementations
+    ↓
+pan.mail.account                          ← credentials, one per address+provider
 ```
 
 **The rule:** nothing outside a provider implementation may build provider URLs,
@@ -57,28 +64,46 @@ import provider SDKs, or reason about provider-specific payload shapes.
 Everything crossing the boundary uses the normalized message / attachment /
 send-result shapes documented in `models/mail_provider_client.py`.
 
+Provider implementations live under `models/providers/<vendor>/`, so the
+boundary is a directory you can grep rather than a convention you have to
+remember. There is exactly **one** layer: the client *is* the contract
+implementation. An earlier branch had a separate `pan.mail.provider.*` adapter
+in front of each client; it did nothing the client could not do itself and was
+dropped in the merge.
+
+Credentials do not cross the boundary either. A provider is handed a
+`pan.mail.account` and is the one that decides *which* account applies —
+`resolve_sending_account()` / `resolve_receiving_account()` — because that is
+where providers genuinely diverge.
+
 ### Adding a provider
 
 1. Add the code to `PROVIDER_CLIENTS` and `PROVIDER_SELECTION` in `mail_provider_client.py`
-2. Create a model with `_inherit = 'mail.provider.client'` implementing the contract
+2. Create `models/providers/<vendor>/<name>_client.py` with
+   `_inherit = 'mail.provider.client'` implementing the contract
 3. Declare its capabilities (`supports_shared_mailbox`, `supported_mailbox_types`)
 4. Add an ACL row in `security/ir.model.access.csv`
+
+The same code is used by `x_microsoft.mailbox.x_provider` **and**
+`pan.mail.account.provider` — both read `PROVIDER_SELECTION`, so an account and
+the mailbox it serves can never disagree about the provider's name.
 
 No call site outside the client changes. `tests/test_provider_contract.py` covers
 the seam; a new provider must satisfy the same assertions.
 
 ### Capability differences
 
-Providers disagree about sending as somebody else, so `resolve_sending_user()`
+Providers disagree about sending as somebody else, so `resolve_sending_account()`
 is the client's job:
 
-| | Microsoft 365 | Gmail |
+| | Microsoft 365 (`outlook`) | Gmail (`gmail`) |
 |---|---|---|
-| Shared mailbox | Yes (SendAs + own token) | No equivalent |
+| Shared mailbox | Yes (SendAs + author's own token) | Its own Workspace account (`user_id` null) |
 | Delegation | — | Delegated account / Google Group |
 | Folders | `Inbox` / `SentItems` | `INBOX` / `SENT` labels |
 | Thread key | `conversationId` | `threadId` |
 | Send flow | draft → send | RFC822 MIME |
+| Message-ID | returned by the API | set by us on the MIME |
 
 ## Mailbox Types
 
@@ -164,6 +189,14 @@ docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
   -d test_db -u pan_outlook_pro --test-enable --test-tags=pan_outlook_pro --stop-after-init
 docker-compose start odoo
 ```
+
+**If it reports `0 tests`**, the module isn't installed in `test_db` — `-u` (update) silently does
+nothing for an uninstalled module. Check with:
+```bash
+docker-compose exec -T db psql -U odoo -d test_db -c \
+  "SELECT name,state FROM ir_module_module WHERE name='pan_outlook_pro';"
+```
+If `uninstalled`, use `-i` instead of `-u` once, then `-u` works from then on.
 
 ### Rebuild image (only when Dockerfile or odoo-enterprise changes)
 ```bash
@@ -374,7 +407,19 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **Never `docker-compose down -v`**: The `-v` flag deletes volumes including filestore. Use `docker-compose down` without `-v`.
 
 ### OAuth / Graph API
-- **OAuth tokens only contain requested scopes**: Adding permissions in Azure Portal is not enough - the scopes must also be listed in the authorization URL in `microsoft_graph_client.py`. Users need to re-authenticate after scope changes.
+- **OAuth tokens only contain requested scopes**: Adding permissions in Azure Portal is not enough - the scopes must also be listed in the authorization URL in `providers/microsoft/graph_client.py`. Users need to re-authenticate after scope changes.
+- **Google only hands back a refresh token with `access_type=offline` + `prompt=consent`**: without both, a re-authorizing user gets an access token only and the account silently stops working an hour later. Google also omits the refresh token on *refresh*, so never overwrite a stored one with an empty value.
+
+### Migrations
+- **A migration folder below the installed version never runs.** Odoo only runs scripts whose version is *higher* than what is installed. A long-lived branch that pins `migrations/19.0.1.2.0/` while mainline moves to 19.0.2.0.1 ships a migration that is dead on arrival - and silently so, because nothing errors. When merging a branch forward, re-check the migration folder name against the new manifest version, not the old one.
+- **Copy Fernet ciphertext, never decrypt and re-encrypt.** Same key, same DB: moving the encrypted string is lossless and cannot fail halfway. A decrypt/re-encrypt cycle produces garbage you only discover at the next send.
+
+### Merging long-lived branches
+- **Two branches solving the same problem is a design decision, not a merge conflict.** `19.0` and `refactor/provider-abstraction` both built a provider abstraction. Git merged them into a codebase with *both*, which compiles and is wrong. Pick one contract deliberately, migrate the other onto it, and delete the loser - do not let `git merge`'s "keep both" default make the architectural choice.
+- **Prefer the abstraction the mainline already proved.** `mail.provider.client` won because Microsoft was already fully migrated onto it with tests and green CI, and because it is one layer (the client *is* the implementation) rather than two. The refactor's `pan.mail.provider.*` adapters only renamed dict keys.
+- **Losing a branch's abstraction is not losing its substance.** `pan.mail.account`, the token migration, the `pan_mail_fetcher` rename and the whole Gmail client all survived - they were ported onto the winning contract, not discarded with the adapter layer.
+- **A rename plus an edit on the same file is the merge's real trap.** `microsoft_incoming_mail.py -> pan_mail_fetcher.py` on one side, savepoint isolation added on the other. Git resolves the rename but the content conflicts read as pure noise; take the edited side's content wholesale at the renamed path instead of hand-merging hunk by hunk.
+- **Unify selection *values* across models that name the same thing.** The mailbox shipped `x_provider='outlook'` while the branch used `provider='microsoft'`. Both now read `PROVIDER_SELECTION` from the registry, so an account and its mailbox cannot disagree - and no data migration was needed, because the shipped value won.
 
 ## Documentation
 

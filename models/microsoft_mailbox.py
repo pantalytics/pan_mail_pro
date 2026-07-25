@@ -50,7 +50,6 @@ class MicrosoftMailbox(models.Model):
         default=True,
         help='Uncheck to hide this mailbox from users'
     )
-
     # -------------------------------------------------------------------------
     # Mailbox Type Configuration
     # -------------------------------------------------------------------------
@@ -66,7 +65,7 @@ class MicrosoftMailbox(models.Model):
     x_owner_user_id = fields.Many2one(
         'res.users',
         string='Owner',
-        domain="[('x_microsoft_oauth_connected', '=', True)]",
+        domain="['|', ('x_microsoft_oauth_connected', '=', True), ('x_google_oauth_connected', '=', True)]",
         help='Personal mailbox: the user who owns and sends from this mailbox.\n'
              'Notification mailbox: the user whose OAuth token is used to send system emails.',
         index=True
@@ -78,8 +77,8 @@ class MicrosoftMailbox(models.Model):
     x_incoming_user_id = fields.Many2one(
         'res.users',
         string='Sync As User',
-        domain="[('x_microsoft_oauth_connected', '=', True)]",
-        help='User whose Microsoft account is used to fetch emails. Must have Mail.Read permission.'
+        domain="['|', ('x_microsoft_oauth_connected', '=', True), ('x_google_oauth_connected', '=', True)]",
+        help='User whose account is used to fetch emails.'
     )
     x_incoming_enabled = fields.Boolean(
         string='Enable Incoming Sync',
@@ -278,7 +277,7 @@ class MicrosoftMailbox(models.Model):
         try:
             # Try to fetch 1 message to test connection
             messages = client.fetch_messages(
-                user=self.x_owner_user_id,
+                account=client.resolve_receiving_account(self),
                 mailbox=self,
                 folder=FOLDER_INBOX,
                 limit=1,
@@ -471,22 +470,6 @@ class MicrosoftMailbox(models.Model):
                 raise ValidationError(_(
                     'Queue for Review is not yet implemented. This feature will be available in a future release.'
                 ))
-
-    def get_sending_user(self):
-        """
-        Get the user whose OAuth token should be used for sending from this mailbox.
-
-        Returns:
-            res.users: The user to use for sending, or False if current user should be used
-        """
-        self.ensure_one()
-        if self.x_mailbox_type == 'notification':
-            # Notification mailbox: use the owner's OAuth token for system emails
-            return self.x_owner_user_id
-        else:
-            # Personal and Shared mailboxes: current user sends with their own OAuth token
-            # For shared mailboxes, user needs Mail.Send.Shared permission + SendAs rights in M365
-            return False
 
     def get_graph_user_id(self):
         """

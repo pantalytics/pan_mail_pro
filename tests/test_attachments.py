@@ -13,7 +13,7 @@ from unittest.mock import patch
 from odoo.tests import tagged
 
 from .common import OutlookProTestCase
-from odoo.addons.pan_outlook_pro.models import microsoft_graph_client as graph_mod
+from odoo.addons.pan_outlook_pro.models.providers.microsoft import graph_client as graph_mod
 
 
 @tagged('pan_outlook_pro', 'post_install', '-at_install')

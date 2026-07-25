@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Incoming Mail Processor for Microsoft Graph API.
+Incoming Mail Processor.
 
-This module fetches emails from Microsoft 365 mailboxes and routes them
-to the correct partner using message_post() for proper threading.
+Fetches emails from a mailbox via its provider client and routes them to the
+correct partner, using message_new()/message_post() for proper threading.
+
+Provider-neutral: everything here reads the normalized message shape documented
+in `mail_provider_client.py`. No Graph, Gmail or other wire-specific key should
+ever appear below this line.
 """
 import logging
 from markupsafe import Markup
@@ -77,8 +81,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             else:
                 # No start date: just test connection and start from now
                 _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, testing connection...")
-                mailbox._get_client().fetch_messages(
-                    user=mailbox.x_owner_user_id,
+                client = mailbox._get_client()
+                client.fetch_messages(
+                    account=client.resolve_receiving_account(mailbox),
                     mailbox=mailbox,
                     folder=FOLDER_INBOX,
                     limit=1,  # Just test, don't fetch all
@@ -130,8 +135,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             tuple: (processed_count, latest_received_datetime or None)
         """
         # Fetch messages since last sync (sorted ascending for incremental cursor)
-        messages = mailbox._get_client().fetch_messages(
-            user=mailbox.x_owner_user_id,
+        client = mailbox._get_client()
+        messages = client.fetch_messages(
+            account=client.resolve_receiving_account(mailbox),
             mailbox=mailbox,
             folder=folder,
             since_datetime=mailbox.x_last_sync_date,
@@ -182,8 +188,10 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         _logger.info(f"[Incoming Mail] Processing: {message.get('subject') or '(no subject)'}")
 
         # Get full message with headers for threading
-        full_message = mailbox._get_client().get_message(
-            user=mailbox.x_owner_user_id,
+        client = mailbox._get_client()
+        account = client.resolve_receiving_account(mailbox)
+        full_message = client.get_message(
+            account=account,
             mailbox=mailbox,
             provider_message_id=message['provider_message_id'],
         )
@@ -261,8 +269,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         attachments = []
         body_may_have_inline = 'cid:' in (full_message.get('body_html') or '')
         if full_message.get('has_attachments') or body_may_have_inline:
-            attachments = mailbox._get_client().get_message_attachments(
-                user=mailbox.x_owner_user_id,
+            attachments = client.get_message_attachments(
+                account=account,
                 mailbox=mailbox,
                 provider_message_id=message['provider_message_id'],
             )

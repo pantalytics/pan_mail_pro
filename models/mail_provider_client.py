@@ -12,13 +12,20 @@ happens to offer:
     mail.provider.client        <-- this contract
         |
         v
-    microsoft.graph.client / (future) google.gmail.client
+    microsoft.graph.client / google.gmail.client
 
 A provider implementation subclasses this model with `_inherit` and implements
 the abstract methods below. The rule that keeps the seam clean: nothing outside
 a provider implementation may build provider URLs, import provider SDKs, or
 reason about provider-specific payload shapes. Everything crossing this
 boundary uses the normalized structures documented here.
+
+Credentials never cross it either. A provider is handed a `pan.mail.account` —
+credentials for one address on one provider — and it is the provider that
+decides which account applies, because that is where providers genuinely
+diverge: a Microsoft shared mailbox is sent with the author's own token
+(SendAs), while a Gmail shared address is its own Workspace account with no
+Odoo user behind it at all.
 
 Normalized message (returned by fetch_messages / get_message)
 -------------------------------------------------------------
@@ -33,19 +40,36 @@ Normalized message (returned by fetch_messages / get_message)
         'date':                datetime (naive UTC),
         'body_html':           str,
         'body_is_html':        bool,
-        'has_attachments':     bool,
+        'has_attachments':     bool,  # provider's own flag; not reliable alone.
+                                      # Graph reports False for inline-only
+                                      # images, so callers also sniff body_html
+                                      # for 'cid:'.
         'headers':             {lowercased header name: value},
         'is_read':             bool,
     }
+
+Two details that are easy to get wrong and fail silently:
+
+- `date` is NAIVE UTC. It is compared against `x_last_sync_date` to advance the
+  sync cursor, which is naive; a tz-aware value raises at runtime instead.
+- `headers` keys are lowercased by the provider. The X-Odoo-* loop guard reads
+  them, and no provider guarantees header case.
+
+Attachments are deliberately NOT part of the message. `get_message_attachments`
+is a second call the caller makes only once it has decided the message is worth
+keeping: the skip checks (dedup, loop guard, internal domain, block list, sync
+mode) run first, and on a mailbox syncing only known contacts most messages
+never survive them. Folding the fetch into `get_message` would download every
+attachment of every message we are about to throw away, on a 1-minute cron.
 
 Normalized attachment (returned by get_message_attachments)
 ------------------------------------------------------------
     {
         'name':       str,
         'mimetype':   str,
-        'content':    bytes,      # already base64-decoded
+        'content':    bytes,      # already base64-decoded by the provider
         'is_inline':  bool,
-        'content_id': str or None,
+        'content_id': str or None,   # Content-ID without angle brackets
     }
 
 Normalized send result (returned by send_message)
@@ -83,10 +107,12 @@ ERROR_NO_RECIPIENTS = 'no_recipients'
 # -----------------------------------------------------------------------------
 PROVIDER_CLIENTS = {
     'outlook': 'microsoft.graph.client',
+    'gmail': 'google.gmail.client',
 }
 
 PROVIDER_SELECTION = [
     ('outlook', 'Microsoft 365'),
+    ('gmail', 'Gmail'),
 ]
 
 # Provider assumed by flows that are not yet mailbox-scoped (the OAuth connect
@@ -146,21 +172,56 @@ class MailProviderClient(models.AbstractModel):
                 type=mailbox_type,
             ))
 
+    # -------------------------------------------------------------------------
+    # Credential resolution
+    #
+    # "Whose credentials" is a provider question, not a caller question. The
+    # three methods below are the only way callers get an account, and every
+    # one of them may legitimately return an empty recordset — the caller
+    # reports that as "not connected" rather than treating it as a bug.
+    # -------------------------------------------------------------------------
+
     @api.model
-    def resolve_sending_user(self, mailbox, author_user=None):
-        """Pick whose OAuth token should be used to send from `mailbox`.
+    def account_for_user(self, user):
+        """Return this provider's credentials for `user`, if any.
+
+        Distinct from `resolve_sending_account`: this answers "which account
+        holds *this person's* credentials", which is what mailbox routing asks
+        once the author's default mailbox has already decided the person. A
+        provider with no per-user credentials answers with an empty recordset.
+
+        Returns:
+            pan.mail.account: the user's account, or an empty recordset.
+        """
+        raise NotImplementedError
+
+    @api.model
+    def resolve_sending_account(self, mailbox, author_user=None):
+        """Pick the credentials that should send from `mailbox`.
 
         This is the provider-specific half of notification routing. On
         Microsoft 365 a notification mailbox sends with its owner's token and a
-        shared mailbox sends with the author's own token. A provider without
-        shared mailboxes resolves both cases to the delegated account instead.
+        shared mailbox sends with the author's own token (SendAs). Gmail has no
+        SendAs equivalent, so a shared mailbox there resolves to its own service
+        account and the author never enters into it.
 
         Args:
             mailbox:     the mailbox record to send from
-            author_user: res.users of the message author, if known
+            author_user: res.users of the message author, if known. Passed in
+                         rather than read from env.user because in cron context
+                         env.user is the cron runner, not the sender.
 
         Returns:
-            res.users: the user whose token to use, or an empty recordset.
+            pan.mail.account: the account to send with, or an empty recordset.
+        """
+        raise NotImplementedError
+
+    @api.model
+    def resolve_receiving_account(self, mailbox):
+        """Pick the credentials that should read `mailbox`.
+
+        Returns:
+            pan.mail.account: the account to read with, or an empty recordset.
         """
         raise NotImplementedError
 
@@ -183,12 +244,12 @@ class MailProviderClient(models.AbstractModel):
         raise NotImplementedError
 
     @api.model
-    def refresh_access_token(self, user):
-        """Refresh and persist `user`'s access token. Returns the new token."""
+    def refresh_access_token(self, account):
+        """Refresh and persist `account`'s access token. Returns the new token."""
         raise NotImplementedError
 
     @api.model
-    def get_valid_token(self, user):
+    def get_valid_token(self, account):
         """Return a usable access token, refreshing it first if needed."""
         raise NotImplementedError
 
@@ -198,7 +259,7 @@ class MailProviderClient(models.AbstractModel):
         raise NotImplementedError
 
     @api.model
-    def test_connection(self, user):
+    def test_connection(self, account):
         """Verify the stored credentials still work.
 
         Returns:
@@ -211,7 +272,7 @@ class MailProviderClient(models.AbstractModel):
     # -------------------------------------------------------------------------
 
     @api.model
-    def send_message(self, mail_record, mailbox, user):
+    def send_message(self, mail_record, mailbox, account):
         """Send one `mail.mail` and return a normalized send result.
 
         Implementations own everything about how the message is encoded:
@@ -229,7 +290,7 @@ class MailProviderClient(models.AbstractModel):
     # -------------------------------------------------------------------------
 
     @api.model
-    def fetch_messages(self, user, mailbox, folder=FOLDER_INBOX,
+    def fetch_messages(self, account, mailbox, folder=FOLDER_INBOX,
                        since_datetime=None, limit=50):
         """List messages in `folder`, oldest first.
 
@@ -248,12 +309,12 @@ class MailProviderClient(models.AbstractModel):
         raise NotImplementedError
 
     @api.model
-    def get_message(self, user, mailbox, provider_message_id):
+    def get_message(self, account, mailbox, provider_message_id):
         """Fetch one message in full, including headers and body."""
         raise NotImplementedError
 
     @api.model
-    def get_message_attachments(self, user, mailbox, provider_message_id):
+    def get_message_attachments(self, account, mailbox, provider_message_id):
         """Return normalized attachments for a message.
 
         Attachment failures must not sink the message: implementations log and

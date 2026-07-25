@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Decision-table tests for mail.mail._get_mailbox_and_user.
+Decision-table tests for mail.mail._get_mailbox_and_account.
 
 Each test exercises one row of the routing matrix. No HTTP, no composer —
 pure logic. Runs in <1s.
@@ -22,8 +22,8 @@ class TestMailboxRouting(OutlookProTestCase):
 
     def _make_mail(self, **overrides):
         """Create mail.mail as the salesperson user but with admin rights —
-        we want env.user = salesperson (so _resolve_sender_for_selected_mailbox
-        picks them up) without hitting mail.mail's admin-only ACL."""
+        we want env.user = salesperson (so resolve_sending_account picks them up)
+        without hitting mail.mail's admin-only ACL."""
         vals = {
             'subject': 'Quotation 0001',
             'body_html': '<p>Body</p>',
@@ -43,9 +43,9 @@ class TestMailboxRouting(OutlookProTestCase):
             recipient_ids=[(6, 0, [self.other_user.partner_id.id])],
             email_to=False,
         )
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.notification_mailbox)
-        self.assertEqual(user, self.notif_owner)
+        self.assertEqual(account.user_id, self.notif_owner)
 
     def test_14_internal_notification_overrides_dropdown(self):
         """Even if the composer leaked a dropdown value onto the
@@ -55,9 +55,9 @@ class TestMailboxRouting(OutlookProTestCase):
             email_to=False,
             x_microsoft_mailbox_id=self.shared_mailbox.id,
         )
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.notification_mailbox)
-        self.assertEqual(user, self.notif_owner)
+        self.assertEqual(account.user_id, self.notif_owner)
 
     # ------------------------------------------------------------------ #
     # 2-5. Dropdown selected: dropdown wins over author heuristic
@@ -65,10 +65,10 @@ class TestMailboxRouting(OutlookProTestCase):
 
     def test_02_dropdown_shared_with_user_author(self):
         mail = self._make_mail(x_microsoft_mailbox_id=self.shared_mailbox.id)
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.shared_mailbox)
         # Shared mailbox: prefer author's user when present
-        self.assertEqual(user, self.salesperson)
+        self.assertEqual(account.user_id, self.salesperson)
 
     def test_03_dropdown_shared_with_company_author_falls_back_to_env_user(self):
         """The bug-of-the-day: author is the company partner (no user_ids).
@@ -77,21 +77,21 @@ class TestMailboxRouting(OutlookProTestCase):
             author_id=self.company_partner.id,
             x_microsoft_mailbox_id=self.shared_mailbox.id,
         )
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.shared_mailbox)
-        self.assertEqual(user, self.salesperson)
+        self.assertEqual(account.user_id, self.salesperson)
 
     def test_04_dropdown_personal_uses_owner(self):
         mail = self._make_mail(x_microsoft_mailbox_id=self.personal_mailbox.id)
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.personal_mailbox)
-        self.assertEqual(user, self.salesperson)  # owner of personal mailbox
+        self.assertEqual(account.user_id, self.salesperson)  # owner of personal mailbox
 
     def test_05_dropdown_notification_uses_notification_owner(self):
         mail = self._make_mail(x_microsoft_mailbox_id=self.notification_mailbox.id)
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.notification_mailbox)
-        self.assertEqual(user, self.notif_owner)
+        self.assertEqual(account.user_id, self.notif_owner)
 
     # ------------------------------------------------------------------ #
     # 6-7. Dropdown set but sender unavailable → fallback
@@ -110,10 +110,10 @@ class TestMailboxRouting(OutlookProTestCase):
             'author_id': self.other_user.partner_id.id,
             'x_microsoft_mailbox_id': self.shared_mailbox.id,
         })
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         # Dropdown sender resolves to author user (still connected via other_user)
         self.assertEqual(mailbox, self.shared_mailbox)
-        self.assertEqual(user, self.other_user)
+        self.assertEqual(account.user_id, self.other_user)
 
     def test_07_dropdown_personal_owner_disconnected_returns_none(self):
         self.salesperson.sudo().write({'x_microsoft_refresh_token_encrypted': False})
@@ -121,11 +121,11 @@ class TestMailboxRouting(OutlookProTestCase):
             x_microsoft_mailbox_id=self.personal_mailbox.id,
             author_id=self.company_partner.id,  # also no user_ids → no author fallback
         )
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         # Dropdown owner disconnected → falls through; author has no user →
         # tries notification mailbox (which is configured) → succeeds there.
         self.assertEqual(mailbox, self.notification_mailbox)
-        self.assertEqual(user, self.notif_owner)
+        self.assertEqual(account.user_id, self.notif_owner)
 
     # ------------------------------------------------------------------ #
     # 8-12. No dropdown — author-based routing
@@ -133,35 +133,35 @@ class TestMailboxRouting(OutlookProTestCase):
 
     def test_08_no_dropdown_uses_author_default_mailbox(self):
         mail = self._make_mail()  # author=salesperson, no dropdown
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.salesperson.x_microsoft_default_mailbox_id)
-        self.assertEqual(user, self.salesperson)
+        self.assertEqual(account.user_id, self.salesperson)
 
     def test_09_no_dropdown_no_default_mailbox_falls_back_to_notification(self):
         self.salesperson.x_microsoft_default_mailbox_id = False
         mail = self._make_mail()
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.notification_mailbox)
-        self.assertEqual(user, self.notif_owner)
+        self.assertEqual(account.user_id, self.notif_owner)
 
     def test_10_no_dropdown_author_disconnected_falls_back_to_notification(self):
         self.salesperson.sudo().write({'x_microsoft_refresh_token_encrypted': False})
         mail = self._make_mail()
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.notification_mailbox)
-        self.assertEqual(user, self.notif_owner)
+        self.assertEqual(account.user_id, self.notif_owner)
 
     def test_11_no_dropdown_company_partner_author_falls_back_to_notification(self):
         mail = self._make_mail(author_id=self.company_partner.id)
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertEqual(mailbox, self.notification_mailbox)
-        self.assertEqual(user, self.notif_owner)
+        self.assertEqual(account.user_id, self.notif_owner)
 
     def test_12_no_author_returns_none(self):
         mail = self._make_mail(author_id=False)
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertFalse(mailbox)
-        self.assertFalse(user)
+        self.assertFalse(account)
 
     # ------------------------------------------------------------------ #
     # 13. No notification mailbox configured at all
@@ -171,9 +171,9 @@ class TestMailboxRouting(OutlookProTestCase):
         # Disable the only notification mailbox so the search returns empty.
         self.notification_mailbox.active = False
         mail = self._make_mail(author_id=self.company_partner.id)
-        mailbox, user = mail._get_mailbox_and_user()
+        mailbox, account = mail._get_mailbox_and_account()
         self.assertFalse(mailbox)
-        self.assertFalse(user)
+        self.assertFalse(account)
 
     # ------------------------------------------------------------------ #
     # 15. Mass mailing bypasses Graph API entirely
