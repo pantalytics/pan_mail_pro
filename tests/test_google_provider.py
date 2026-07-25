@@ -586,6 +586,33 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         self.assertTrue(mailbox._has_working_credentials())
         self.assertTrue(mailbox.x_incoming_enabled)
 
+    def test_shared_gmail_mailbox_is_configurable_before_it_is_authorized(self):
+        """Creation must not be blocked on credentials that do not exist yet.
+
+        Microsoft demands an Owner on a synced shared mailbox, because reading it
+        means borrowing that person's delegated token. Applying that rule to
+        Gmail would be a deadlock: the shared address is its own account, so
+        there is no owner to name, and the admin could never save the mailbox in
+        order to go and authorize it. The missing credentials surface as an
+        `error` health status instead — the same way every other unconnected
+        mailbox does.
+        """
+        mailbox = self.Mailbox.create({
+            'email': 'unauthorized@test.local', 'x_provider': 'gmail',
+            'x_mailbox_type': 'shared', 'x_sync_mode': 'all',
+        })
+        self.assertFalse(mailbox.x_owner_user_id)
+        self.assertFalse(mailbox._has_working_credentials())
+        self.assertEqual(mailbox.x_health_status, 'error')
+
+    def test_shared_microsoft_mailbox_still_requires_an_owner(self):
+        """The Microsoft rule must survive being made provider-aware."""
+        with self.assertRaises(UserError):
+            self.Mailbox.create({
+                'email': 'shared_ms@test.local', 'x_provider': 'outlook',
+                'x_mailbox_type': 'shared', 'x_sync_mode': 'all',
+            })
+
     # ------------------------------------------------------------------ #
     # Sending — the author's default-mailbox path
     # ------------------------------------------------------------------ #

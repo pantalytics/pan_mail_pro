@@ -424,23 +424,29 @@ class MicrosoftMailbox(models.Model):
                 if existing:
                     raise ValidationError(_('This email address is already registered!'))
 
-    @api.constrains('x_mailbox_type', 'x_owner_user_id', 'x_sync_mode')
+    @api.constrains('x_mailbox_type', 'x_owner_user_id', 'x_sync_mode', 'x_provider')
     def _check_owner_required(self):
-        """Ensure owner is set when required."""
+        """Ensure an owner is set where the provider actually needs one."""
         for record in self:
+            provider = record._get_client().provider_label()
             if record.x_mailbox_type in ('personal', 'notification') and not record.x_owner_user_id:
                 raise ValidationError(_(
-                    '%s mailbox requires an Owner. '
-                    'Please select a user with Microsoft OAuth connected.'
-                ) % record.x_mailbox_type.capitalize())
-            # Shared mailbox with sync enabled requires owner
+                    '%(type)s mailbox requires an Owner. '
+                    'Please select a user with %(provider)s connected.',
+                    type=record.x_mailbox_type.capitalize(), provider=provider,
+                ))
+            # A shared mailbox needs an owner only where reading it means
+            # borrowing a person's delegated token. On Gmail the shared address
+            # is its own Workspace account, so there is nobody to borrow from and
+            # demanding an owner would make the mailbox unconfigurable.
             if (record.x_mailbox_type == 'shared' and
                     record.x_sync_mode != 'none' and
-                    not record.x_owner_user_id):
+                    not record.x_owner_user_id and
+                    record._get_client().supports_shared_mailbox):
                 raise ValidationError(_(
                     'Shared mailbox with sync enabled requires an Owner. '
-                    'The Owner\'s Microsoft account will be used to read emails.'
-                ))
+                    'The Owner\'s %s account will be used to read emails.'
+                ) % provider)
 
     @api.constrains('x_provider', 'x_mailbox_type')
     def _check_provider_supports_mailbox_type(self):
