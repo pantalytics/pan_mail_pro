@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from odoo import models, api, _
 from odoo.exceptions import UserError
 from . import encryption_utils
+from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
 _logger = logging.getLogger(__name__)
 
@@ -23,9 +24,57 @@ DIRECT_ATTACHMENT_LIMIT = 3 * 1024 * 1024  # 3MB in bytes
 
 
 class MicrosoftGraphClient(models.AbstractModel):
-    """Helper model for Microsoft Graph API calls"""
+    """Microsoft 365 implementation of the `mail.provider.client` contract.
+
+    Everything Graph-specific lives here: URLs, OAuth endpoints, the
+    draft-then-send flow, the 3MB attachment threshold, and the shapes of
+    Graph's JSON payloads. Callers see only the normalized structures
+    documented in `mail_provider_client.py`.
+    """
     _name = 'microsoft.graph.client'
+    _inherit = 'mail.provider.client'
     _description = 'Microsoft Graph API Client'
+
+    # Microsoft 365 supports send-as on shared mailboxes: a user sends with
+    # their own delegated token, given SendAs rights in Exchange.
+    supports_shared_mailbox = True
+    supports_delegation = False
+    supported_mailbox_types = ('personal', 'shared', 'notification')
+
+    # Odoo's folder vocabulary -> Graph's well-known folder names.
+    _FOLDER_MAP = {
+        FOLDER_INBOX: 'Inbox',
+        FOLDER_SENT: 'SentItems',
+    }
+
+    @api.model
+    def provider_code(self):
+        return 'outlook'
+
+    @api.model
+    def provider_label(self):
+        return 'Microsoft 365'
+
+    @api.model
+    def resolve_sending_user(self, mailbox, author_user=None):
+        """Notification and personal mailboxes send with the owner's token;
+        shared mailboxes send with the author's own token (SendAs)."""
+        if mailbox.x_mailbox_type in ('notification', 'personal'):
+            return mailbox.x_owner_user_id
+        if author_user:
+            return author_user
+        env_user = self.env.user
+        if env_user and not env_user._is_public():
+            return env_user
+        return self.env['res.users']
+
+    @api.model
+    def _graph_folder(self, folder):
+        """Translate a contract folder id into a Graph folder name."""
+        try:
+            return self._FOLDER_MAP[folder]
+        except KeyError:
+            raise UserError(_('Unknown mail folder: %s') % folder)
 
     @api.model
     def _get_config_params(self):
@@ -598,24 +647,166 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'error': str(e)
             }
 
+    @api.model
+    def send_message(self, mail_record, mailbox, user):
+        """Send one mail.mail and return a normalized send result.
+
+        Thin adapter over `send_email_via_graph`, which owns the Graph-specific
+        draft-then-send flow, inline-image handling and attachment upload.
+        """
+        result = self.send_email_via_graph(
+            mail_record=mail_record,
+            mailbox=mailbox,
+            user=user,
+        )
+        return {
+            'success': result.get('success', False),
+            'error': result.get('error'),
+            'error_code': result.get('error_code'),
+            'message_id': result.get('microsoft_message_id'),
+            'thread_id': result.get('microsoft_conversation_id'),
+        }
+
     # -------------------------------------------------------------------------
-    # Incoming Mail Methods
+    # Incoming Mail — contract implementation
+    #
+    # The public methods below satisfy `mail.provider.client` and hand back
+    # normalized dicts. The `_graph_*` helpers underneath them are the only
+    # code that touches Graph's payload shapes.
     # -------------------------------------------------------------------------
 
     @api.model
-    def fetch_messages(self, user, mailbox_email, folder='Inbox', since_datetime=None, top=50):
+    def fetch_messages(self, user, mailbox, folder=FOLDER_INBOX,
+                       since_datetime=None, limit=50):
+        """List messages in a folder, oldest first (see contract)."""
+        raw_messages = self._graph_fetch_messages(
+            user=user,
+            mailbox_email=mailbox.email,
+            folder=self._graph_folder(folder),
+            since_datetime=since_datetime,
+            top=limit,
+        )
+        return [self._normalize_message(msg) for msg in raw_messages]
+
+    @api.model
+    def get_message(self, user, mailbox, provider_message_id):
+        """Fetch one message in full, including headers and body."""
+        raw = self._graph_get_message(
+            user=user,
+            mailbox_email=mailbox.email,
+            message_id=provider_message_id,
+        )
+        return self._normalize_message(raw)
+
+    @api.model
+    def get_message_attachments(self, user, mailbox, provider_message_id):
+        """Return normalized attachments; never raises (see contract)."""
+        raw_attachments = self._graph_get_attachments(
+            user=user,
+            mailbox_email=mailbox.email,
+            message_id=provider_message_id,
+        )
+
+        attachments = []
+        for raw in raw_attachments:
+            # Graph also returns itemAttachment / referenceAttachment, which
+            # carry no bytes we can store as an ir.attachment.
+            if raw.get('@odata.type') != '#microsoft.graph.fileAttachment':
+                continue
+            content_b64 = raw.get('contentBytes')
+            if not content_b64:
+                continue
+            name = raw.get('name') or 'unnamed'
+            try:
+                content = base64.b64decode(content_b64)
+            except Exception as e:
+                _logger.warning(f"[Graph API] Failed to decode attachment {name}: {e}")
+                continue
+            attachments.append({
+                'name': name,
+                'mimetype': raw.get('contentType') or 'application/octet-stream',
+                'content': content,
+                'is_inline': bool(raw.get('isInline')),
+                'content_id': raw.get('contentId') or None,
+            })
+        return attachments
+
+    # -------------------------------------------------------------------------
+    # Graph -> normalized translation
+    # -------------------------------------------------------------------------
+
+    @api.model
+    def _normalize_recipients(self, raw_recipients):
+        """Turn Graph's [{'emailAddress': {...}}] into [{'email', 'name'}]."""
+        recipients = []
+        for raw in raw_recipients or []:
+            address = raw.get('emailAddress') or {}
+            email = address.get('address')
+            if email:
+                recipients.append({'email': email, 'name': address.get('name') or ''})
+        return recipients
+
+    @api.model
+    def _normalize_message(self, raw):
+        """Map a Graph message onto the normalized shape from the contract."""
+        sender = self._normalize_recipients([raw.get('from')] if raw.get('from') else [])
+
+        received = raw.get('receivedDateTime')
+        date = None
+        if received:
+            try:
+                date = datetime.fromisoformat(
+                    received.replace('Z', '+00:00')
+                ).replace(tzinfo=None)
+            except ValueError:
+                _logger.warning(f"[Graph API] Unparseable receivedDateTime: {received}")
+
+        headers = {
+            h['name'].lower(): h['value']
+            for h in raw.get('internetMessageHeaders') or []
+            if h.get('name')
+        }
+
+        body = raw.get('body') or {}
+        body_html = body.get('content')
+        if body_html is None:
+            # List responses carry only a preview; get_message() has the body.
+            body_html = raw.get('bodyPreview') or ''
+
+        return {
+            'provider_message_id': raw.get('id'),
+            'message_id': raw.get('internetMessageId'),
+            'thread_id': raw.get('conversationId'),
+            'subject': raw.get('subject') or '',
+            'from': sender[0] if sender else {'email': '', 'name': ''},
+            'to': self._normalize_recipients(raw.get('toRecipients')),
+            'cc': self._normalize_recipients(raw.get('ccRecipients')),
+            'date': date,
+            'body_html': body_html,
+            'body_is_html': (body.get('contentType') or '').lower() == 'html',
+            'has_attachments': bool(raw.get('hasAttachments')),
+            'headers': headers,
+            'is_read': bool(raw.get('isRead')),
+        }
+
+    # -------------------------------------------------------------------------
+    # Raw Graph calls
+    # -------------------------------------------------------------------------
+
+    @api.model
+    def _graph_fetch_messages(self, user, mailbox_email, folder='Inbox', since_datetime=None, top=50):
         """
         Fetch messages from a Microsoft mailbox folder via Graph API.
 
         Args:
             user: res.users record with OAuth tokens
             mailbox_email: Email address of the mailbox to fetch from
-            folder: Folder name ('Inbox', 'SentItems', etc.)
+            folder: Graph folder name ('Inbox', 'SentItems', etc.)
             since_datetime: Only fetch messages received after this datetime
             top: Maximum number of messages to fetch
 
         Returns:
-            list[dict]: List of message objects from Graph API
+            list[dict]: List of raw message objects from Graph API
         """
         token = self.get_valid_token(user)
 
@@ -657,7 +848,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise UserError(_('Failed to fetch messages from Microsoft: %s') % error_detail)
 
     @api.model
-    def get_message_with_headers(self, user, mailbox_email, message_id):
+    def _graph_get_message(self, user, mailbox_email, message_id):
         """
         Get full message details including internet headers for threading.
 
@@ -694,7 +885,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise UserError(_('Failed to get message details: %s') % error_detail)
 
     @api.model
-    def get_message_attachments(self, user, mailbox_email, message_id):
+    def _graph_get_attachments(self, user, mailbox_email, message_id):
         """
         Get attachments for a message.
 
@@ -704,7 +895,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             message_id: Graph API message ID
 
         Returns:
-            list[dict]: List of attachment objects
+            list[dict]: List of raw attachment objects
         """
         token = self.get_valid_token(user)
 

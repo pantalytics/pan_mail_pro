@@ -4,6 +4,7 @@ import requests
 from odoo import fields, models, api, _
 from odoo.exceptions import UserError
 from . import encryption_utils
+from .mail_provider_client import get_provider_client
 
 _logger = logging.getLogger(__name__)
 
@@ -203,7 +204,7 @@ class ResConfigSettings(models.TransientModel):
         base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
         redirect_uri = f"{base_url}/microsoft_oauth/callback"
 
-        graph_client = self.env['microsoft.graph.client']
+        graph_client = get_provider_client(self.env)
 
         # Generate and store CSRF state token for current user
         state = graph_client.generate_oauth_state()

@@ -27,16 +27,58 @@ Send and receive emails via Microsoft Graph API with OAuth 2.0 delegated permiss
 
 | File | Purpose |
 |------|---------|
-| `models/mail_mail.py` | Outgoing email override (Graph API send) |
+| `models/mail_provider_client.py` | Provider-agnostic client contract + registry |
+| `models/mail_mail.py` | Outgoing email override (routes via provider client) |
 | `models/mail_message.py` | Microsoft message ID storage for threading |
 | `models/mail_compose_message.py` | Composer "Send From" dropdown + setup warning |
 | `models/mail_alias.py` | Cleaner alias display (name only, no domain) |
 | `models/microsoft_mailbox.py` | Mailbox configuration + routing rules |
-| `models/microsoft_graph_client.py` | All Graph API calls |
+| `models/microsoft_graph_client.py` | Microsoft 365 implementation of the contract |
 | `models/microsoft_incoming_mail.py` | Incoming email sync (uses `message_new()`) |
 | `models/res_partner.py` | Contact block list field |
 | `controllers/main.py` | OAuth callback handler |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
+
+## Provider Architecture
+
+The module supports multiple email providers through one interface, shaped by
+what Odoo needs rather than by any single provider's API:
+
+```
+Odoo (mail.mail, mail.thread, res.users)
+    ↓
+mail.provider.client          ← the contract
+    ↓
+microsoft.graph.client        ← provider implementation
+```
+
+**The rule:** nothing outside a provider implementation may build provider URLs,
+import provider SDKs, or reason about provider-specific payload shapes.
+Everything crossing the boundary uses the normalized message / attachment /
+send-result shapes documented in `models/mail_provider_client.py`.
+
+### Adding a provider
+
+1. Add the code to `PROVIDER_CLIENTS` and `PROVIDER_SELECTION` in `mail_provider_client.py`
+2. Create a model with `_inherit = 'mail.provider.client'` implementing the contract
+3. Declare its capabilities (`supports_shared_mailbox`, `supported_mailbox_types`)
+4. Add an ACL row in `security/ir.model.access.csv`
+
+No call site outside the client changes. `tests/test_provider_contract.py` covers
+the seam; a new provider must satisfy the same assertions.
+
+### Capability differences
+
+Providers disagree about sending as somebody else, so `resolve_sending_user()`
+is the client's job:
+
+| | Microsoft 365 | Gmail |
+|---|---|---|
+| Shared mailbox | Yes (SendAs + own token) | No equivalent |
+| Delegation | — | Delegated account / Google Group |
+| Folders | `Inbox` / `SentItems` | `INBOX` / `SENT` labels |
+| Thread key | `conversationId` | `threadId` |
+| Send flow | draft → send | RFC822 MIME |
 
 ## Mailbox Types
 

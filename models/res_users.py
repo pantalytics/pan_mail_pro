@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from odoo import fields, models, api
 from . import encryption_utils
+from .mail_provider_client import get_provider_client
 
 
 class ResUsers(models.Model):
@@ -173,7 +174,7 @@ class ResUsers(models.Model):
         base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
         redirect_uri = f"{base_url}/microsoft_oauth/callback"
 
-        graph_client = self.env['microsoft.graph.client']
+        graph_client = get_provider_client(self.env)
 
         # Generate and store CSRF state token
         state = graph_client.generate_oauth_state()

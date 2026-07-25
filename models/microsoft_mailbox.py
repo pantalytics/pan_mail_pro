@@ -3,6 +3,12 @@ import logging
 import re
 from odoo import fields, models, api, _
 from odoo.exceptions import ValidationError, UserError
+from .mail_provider_client import (
+    DEFAULT_PROVIDER,
+    FOLDER_INBOX,
+    PROVIDER_SELECTION,
+    get_provider_client,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -13,6 +19,21 @@ class MicrosoftMailbox(models.Model):
     _description = 'Microsoft Mailbox'
     _order = 'sequence, email'
     _rec_name = 'email'
+
+    # Every mailbox is serviced by exactly one provider client, resolved
+    # through the registry in mail_provider_client.py.
+    x_provider = fields.Selection(
+        PROVIDER_SELECTION,
+        string='Provider',
+        default=DEFAULT_PROVIDER,
+        required=True,
+        help='Email provider that services this mailbox.',
+    )
+
+    def _get_client(self):
+        """Return the provider client for this mailbox."""
+        self.ensure_one()
+        return get_provider_client(self.env, self.x_provider)
 
     email = fields.Char(
         string='Email Address',
@@ -252,15 +273,15 @@ class MicrosoftMailbox(models.Model):
             raise UserError(_('The Owner is not connected to Microsoft. '
                               'Please connect their account first.'))
 
-        graph_client = self.env['microsoft.graph.client']
+        client = self._get_client()
 
         try:
             # Try to fetch 1 message to test connection
-            messages = graph_client.fetch_messages(
+            messages = client.fetch_messages(
                 user=self.x_owner_user_id,
-                mailbox_email=self.email,
-                folder='Inbox',
-                top=1
+                mailbox=self,
+                folder=FOLDER_INBOX,
+                limit=1,
             )
 
             self.write({
@@ -381,6 +402,17 @@ class MicrosoftMailbox(models.Model):
                     'Shared mailbox with sync enabled requires an Owner. '
                     'The Owner\'s Microsoft account will be used to read emails.'
                 ))
+
+    @api.constrains('x_provider', 'x_mailbox_type')
+    def _check_provider_supports_mailbox_type(self):
+        """Providers differ in what they can service.
+
+        Microsoft 365 has shared mailboxes (send-as with your own token);
+        a provider without them must reject that configuration up front rather
+        than failing at send time.
+        """
+        for record in self:
+            record._get_client().check_mailbox_supported(record.x_mailbox_type)
 
     @api.constrains('x_mailbox_type')
     def _check_single_notification_mailbox(self):

@@ -4,9 +4,12 @@ Unit tests for Microsoft Incoming Mail Processor.
 
 Run with: python -m odoo -d test_db --test-enable --test-tags=pan_outlook_pro
 """
+from datetime import datetime
 from unittest.mock import patch
 from odoo.tests import TransactionCase, tagged
 import unittest
+
+from odoo.addons.pan_outlook_pro.models.mail_provider_client import FOLDER_INBOX
 
 
 
@@ -269,19 +272,20 @@ class TestSavepointIsolation(TransactionCase):
         IncomingProcessor = type(self.processor)
         GraphClient = type(self.env['microsoft.graph.client'])
 
+        # Normalized messages, as a provider client hands them back.
         fake_messages = [
-            {'id': 'g1', 'internetMessageId': '<msg-1@test>',
-             'receivedDateTime': '2026-05-12T10:00:00Z'},
-            {'id': 'g2', 'internetMessageId': '<msg-2@test>',
-             'receivedDateTime': '2026-05-12T10:01:00Z'},
-            {'id': 'g3', 'internetMessageId': '<msg-3@test>',
-             'receivedDateTime': '2026-05-12T10:02:00Z'},
+            {'provider_message_id': 'g1', 'message_id': '<msg-1@test>',
+             'date': datetime(2026, 5, 12, 10, 0, 0)},
+            {'provider_message_id': 'g2', 'message_id': '<msg-2@test>',
+             'date': datetime(2026, 5, 12, 10, 1, 0)},
+            {'provider_message_id': 'g3', 'message_id': '<msg-3@test>',
+             'date': datetime(2026, 5, 12, 10, 2, 0)},
         ]
 
         call_log = []
 
-        def fake_process_message(self_, mailbox, msg_data, folder):
-            msg_id = msg_data['internetMessageId']
+        def fake_process_message(self_, mailbox, message, folder):
+            msg_id = message['message_id']
             call_log.append(msg_id)
             # Observable side effect: each call creates its own partner.
             Partner.create({
@@ -299,7 +303,7 @@ class TestSavepointIsolation(TransactionCase):
                           return_value=fake_messages, autospec=True), \
              patch.object(IncomingProcessor, '_process_message',
                           fake_process_message):
-            processed, _ = self.processor._fetch_folder(self.mailbox, 'Inbox')
+            processed, _ = self.processor._fetch_folder(self.mailbox, FOLDER_INBOX)
 
         # All three messages were attempted in order — the failure didn't
         # short-circuit the loop.
