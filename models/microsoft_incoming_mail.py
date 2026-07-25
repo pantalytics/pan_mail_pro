@@ -41,11 +41,14 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         for mailbox in mailboxes:
             try:
-                self._process_mailbox(mailbox)
-                # Mark as active if successful
-                if mailbox.state != 'active':
-                    mailbox.write({'state': 'active', 'x_error_message': False})
+                with self.env.cr.savepoint():
+                    self._process_mailbox(mailbox)
+                    # Mark as active if successful
+                    if mailbox.state != 'active':
+                        mailbox.write({'state': 'active', 'x_error_message': False})
             except Exception as e:
+                # Savepoint rolled back: the cursor is usable again, so the
+                # error write below won't hit "current transaction is aborted".
                 _logger.exception(f"[Incoming Mail] Error processing mailbox {mailbox.email}")
                 mailbox.write({
                     'state': 'error',
@@ -151,11 +154,14 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         for msg_data in messages:
             try:
-                if self._process_message(mailbox, msg_data, folder):
-                    processed += 1
-            except Exception as e:
+                with self.env.cr.savepoint():
+                    if self._process_message(mailbox, msg_data, folder):
+                        processed += 1
+            except Exception:
+                # Without the savepoint, one DB error would leave the whole
+                # transaction in `aborted` state and every later message in
+                # this batch would fail with "cursor already closed".
                 _logger.exception(f"[Incoming Mail] Error processing message {msg_data.get('id')}")
-                # Continue with next message
 
         return processed, latest_datetime
 
