@@ -454,7 +454,11 @@ class MicrosoftGraphClient(models.AbstractModel):
             if not to_recipients and not cc_recipients:
                 return {
                     'success': False,
-                    'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)'
+                    'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
+                    # Distinguishable code so mail.mail.send() can skip+cancel this
+                    # mail (typically an internal notification to a user/partner
+                    # without an email address) instead of aborting the whole batch.
+                    'error_code': 'no_recipients',
                 }
 
             # Build custom headers for tracking

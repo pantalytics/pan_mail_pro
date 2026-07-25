@@ -57,6 +57,50 @@ class TestSystemNotifications(OutlookProTestCase):
             self.notification_mailbox.email,
         )
 
+    def test_recipientless_notification_does_not_abort_batch(self):
+        """A notification to an internal user with no email address must be
+        cancelled individually — it must NOT raise and abort the whole batch,
+        which would also block the real, deliverable email sent alongside it.
+
+        Reproduces the production case where the Administrator account had no
+        email but notification_type='email', so every composer send failed with
+        'No recipients specified'."""
+        # Internal user whose partner has no email address.
+        no_email_user = self._silent('res.users').create({
+            'name': 'No Email User',
+            'login': 'no_email@test.local',
+            'notification_type': 'email',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        self.assertFalse(no_email_user.partner_id.email)
+
+        # The real, deliverable email the user actually composed.
+        deliverable = self.env['mail.mail'].sudo().create({
+            'subject': 'Real message',
+            'body_html': '<p>hi</p>',
+            'author_id': self.salesperson.partner_id.id,
+            'recipient_ids': [(6, 0, [self.external_partner.id])],
+        })
+        # The undeliverable internal-user notification created in the same flow.
+        notification = self.env['mail.mail'].sudo().create({
+            'subject': 'Notification copy',
+            'body_html': '<p>hi</p>',
+            'author_id': self.salesperson.partner_id.id,
+            'recipient_ids': [(6, 0, [no_email_user.partner_id.id])],
+        })
+
+        with self.mock_graph():
+            # Must not raise even though `notification` has no deliverable address.
+            (deliverable | notification).send()
+
+        self.assertEqual(
+            deliverable.state, 'sent',
+            "The deliverable email must still send when a recipient-less "
+            "notification is in the same batch")
+        self.assertEqual(
+            notification.state, 'cancel',
+            "A recipient-less internal notification must be cancelled, not raised")
+
     def test_mass_mailing_bypasses_graph(self):
         """Mass mailing emails (with mailing_id) must NOT go through Graph API."""
         if 'mailing_id' not in self.env['mail.mail']._fields:

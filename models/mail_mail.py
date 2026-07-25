@@ -105,11 +105,25 @@ class MailMail(models.Model):
 
         for mail in graph_mails:
             try:
-                success, error_msg = mail._send_via_microsoft_graph()
+                success, error_msg, error_code = mail._send_via_microsoft_graph()
                 if success:
                     # Call post_send_callback if provided (Odoo 19 feature)
                     if post_send_callback:
                         post_send_callback(mail)
+                elif error_code == 'no_recipients':
+                    # This mail has no deliverable recipient — almost always an
+                    # internal notification to a user/partner without an email
+                    # address (e.g. the Administrator account). Standard Odoo
+                    # silently drops such notifications; we must do the same and
+                    # NOT raise, otherwise one undeliverable notification aborts
+                    # the whole batch and blocks the real, deliverable emails
+                    # composed alongside it.
+                    _logger.info(
+                        f"[Graph API] Email {mail.id} has no deliverable recipient "
+                        f"— cancelling (not aborting batch)"
+                    )
+                    mail.write({'state': 'cancel'})
+                    continue
                 else:
                     # Always raise configuration errors so user sees them
                     raise UserError(error_msg or _('Failed to send email via Microsoft Graph API'))
@@ -134,7 +148,9 @@ class MailMail(models.Model):
         Send this email via Microsoft Graph API.
 
         Returns:
-            tuple: (success: bool, error_msg: str or None)
+            tuple: (success: bool, error_msg: str or None, error_code: str or None)
+            `error_code` is a machine-readable tag for the failure (e.g.
+            'no_recipients'); None for success or for unclassified errors.
         """
         self.ensure_one()
 
@@ -150,7 +166,7 @@ class MailMail(models.Model):
                 'state': 'exception',
                 'failure_reason': error_msg,
             })
-            return (False, error_msg)
+            return (False, error_msg, None)
 
         if not user or not user.x_microsoft_access_token:
             error_msg = self._get_missing_user_error(user)
@@ -159,7 +175,7 @@ class MailMail(models.Model):
                 'state': 'exception',
                 'failure_reason': error_msg,
             })
-            return (False, error_msg)
+            return (False, error_msg, None)
 
         _logger.info(f"[Graph API] Sending email {self.id} from mailbox {mailbox.email}")
 
@@ -196,16 +212,17 @@ class MailMail(models.Model):
 
             _logger.info(f"[Graph API] Email {self.id} sent successfully from {mailbox.email}")
             _logger.info(f"[Graph API] Stored Microsoft IDs - Message: {microsoft_message_id}, Conversation: {microsoft_conversation_id}")
-            return (True, None)
+            return (True, None, None)
         else:
             # Mark as exception
             error_msg = result.get('error', 'Unknown error')
+            error_code = result.get('error_code')
             self.write({
                 'state': 'exception',
                 'failure_reason': error_msg,
             })
             _logger.error(f"[Graph API] Email {self.id} failed to send: {error_msg}")
-            return (False, error_msg)
+            return (False, error_msg, error_code)
 
     def _is_internal_user_notification(self):
         """
