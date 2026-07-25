@@ -1,0 +1,46 @@
+name: Release
+
+# Tags the merge commit with the manifest version. That gives every release a
+# fixed point to deploy from or roll back to, which matters because Odoo hosts
+# (Odoo.sh, CloudPepper) pull a git ref rather than a package.
+on:
+  push:
+    branches:
+      - '19.0'
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Tag manifest version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read manifest version
+        id: manifest
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import ast
+          print("version=" + ast.literal_eval(open('__manifest__.py').read())['version'])
+          PY
+
+      # Not every merge is a release — docs and CI changes land without a bump.
+      # Re-tagging an existing version would move the tag under anyone who
+      # already deployed it, so skip instead.
+      - name: Create tag if new
+        env:
+          VERSION: ${{ steps.manifest.outputs.version }}
+        run: |
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${VERSION} already exists — nothing to release."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${VERSION}" -m "pan_outlook_pro ${VERSION}"
+          git push origin "v${VERSION}"
+          echo "Tagged v${VERSION}"

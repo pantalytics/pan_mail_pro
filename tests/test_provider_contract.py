@@ -9,7 +9,7 @@ on. A second provider (Gmail) has to satisfy the same assertions.
 """
 from datetime import datetime
 
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.pan_outlook_pro.models.mail_provider_client import (
@@ -73,7 +73,10 @@ class TestProviderCapabilities(TransactionCase):
         self.addCleanup(
             setattr, type(self.client), 'supported_mailbox_types', original
         )
-        with self.assertRaises((UserError, ValidationError)):
+        # Not a tuple: Odoo's assertRaises override calls issubclass() on the
+        # argument, which raises TypeError on a tuple. ValidationError
+        # subclasses UserError anyway, so this still covers both.
+        with self.assertRaises(UserError):
             Mailbox.create({
                 'email': 'unsupported@company.test',
                 'x_mailbox_type': 'shared',

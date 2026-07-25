@@ -1,0 +1,14 @@
+# Gitleaks config — extends the built-in ruleset.
+# Docs: https://github.com/gitleaks/gitleaks
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist for test fixtures and dummy values"
+
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''(^|/)tests/.*''',
+  '''(^|/)\.env\.example$''',
+]
