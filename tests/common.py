@@ -144,7 +144,7 @@ class OutlookProTestCase(TransactionCase):
           - 'attach':        list of attachment payloads sent directly
           - 'upload_session':list of (name, content_type, total_bytes) tuples
           - 'upload_chunks': list of (url, byte_count) tuples for PUT chunks
-          - 'token_user':    last user passed to get_valid_token
+          - 'token_account': last account passed to get_valid_token
         """
         calls = {
             'draft': None,
@@ -152,11 +152,11 @@ class OutlookProTestCase(TransactionCase):
             'attach': [],
             'upload_session': [],
             'upload_chunks': [],
-            'token_user': None,
+            'token_account': None,
         }
 
-        def fake_get_valid_token(client_self, user):
-            calls['token_user'] = user
+        def fake_get_valid_token(client_self, account):
+            calls['token_account'] = account
             return 'fake-bearer-token'
 
         def fake_post(url, headers=None, json=None, data=None, timeout=None, **kwargs):
@@ -201,9 +201,9 @@ class OutlookProTestCase(TransactionCase):
         Client = type(self.env['microsoft.graph.client'])
         with patch.object(Client, 'get_valid_token', autospec=True,
                           side_effect=fake_get_valid_token), \
-             patch('odoo.addons.pan_outlook_pro.models.microsoft_graph_client.requests.post',
+             patch('odoo.addons.pan_outlook_pro.models.providers.microsoft.graph_client.requests.post',
                    side_effect=fake_post), \
-             patch('odoo.addons.pan_outlook_pro.models.microsoft_graph_client.requests.put',
+             patch('odoo.addons.pan_outlook_pro.models.providers.microsoft.graph_client.requests.put',
                    side_effect=fake_put):
             yield calls
 

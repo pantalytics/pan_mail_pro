@@ -75,6 +75,53 @@
                     </div>
 
                     <!-- ============================================ -->
+                    <!-- GOOGLE WORKSPACE -->
+                    <!-- ============================================ -->
+                    <h2>Google Workspace</h2>
+                    <div class="row mt-4 mb-4 o_settings_container">
+                        <!-- LEFT: Credentials -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Credentials</span>
+                                <div class="text-muted mb-3">Copy from your Google Cloud OAuth client</div>
+                                <div class="content-group">
+                                    <div class="row mt-2">
+                                        <label class="col-lg-3 o_light_label" for="x_google_client_id">Client ID</label>
+                                        <field name="x_google_client_id" placeholder="xxxxxxxx.apps.googleusercontent.com"/>
+                                    </div>
+                                    <div class="row mt-2">
+                                        <label class="col-lg-3 o_light_label" for="x_google_client_secret">Secret</label>
+                                        <field name="x_google_client_secret" password="True" placeholder="Client secret value"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- RIGHT: Redirect URI + Connect -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Setup</span>
+                                <div class="content-group">
+                                    <div class="mb-3">
+                                        <span class="o_form_label">Redirect URI</span>
+                                        <div class="text-muted mb-2">Copy to Google Cloud → Credentials → Authorized redirect URIs</div>
+                                        <field name="x_google_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
+                                    </div>
+                                    <div class="mt-2">
+                                        <button name="action_connect_google_admin" type="object"
+                                                string="Connect Google" class="btn-primary" icon="fa-google"
+                                                invisible="x_current_user_google_connected"/>
+                                        <span class="text-success" invisible="not x_current_user_google_connected">
+                                            <i class="fa fa-check-circle me-1" title="Connected"/>Connected
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
                     <!-- STATUS (compact) -->
                     <!-- ============================================ -->
                     <div class="row mt-4 o_settings_container" invisible="x_microsoft_config_status == 'not_configured'">

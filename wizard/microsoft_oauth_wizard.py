@@ -51,7 +51,7 @@ class MicrosoftOAuthWizard(models.TransientModel):
         self.ensure_one()
 
         graph_client = get_provider_client(self.env)
-        result = graph_client.test_connection(self.env.user)
+        result = graph_client.test_connection(graph_client.account_for_user(self.env.user))
 
         if result['success']:
             self.write({

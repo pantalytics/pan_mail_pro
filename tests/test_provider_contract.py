@@ -33,6 +33,27 @@ class TestProviderRegistry(TransactionCase):
                 f"client for '{code}' reports a different provider_code",
             )
 
+    def test_every_client_implements_the_whole_contract(self):
+        """A provider that inherits the contract but forgets a method would
+        raise NotImplementedError at send time, in production."""
+        contract = self.env['mail.provider.client']
+        required = [
+            'provider_code', 'account_for_user', 'resolve_sending_account',
+            'resolve_receiving_account', 'get_authorization_url',
+            'exchange_code_for_tokens', 'refresh_access_token',
+            'get_valid_token', 'get_user_email', 'test_connection',
+            'send_message', 'fetch_messages', 'get_message',
+            'get_message_attachments',
+        ]
+        for code in PROVIDER_CLIENTS:
+            client = get_provider_client(self.env, code)
+            for name in required:
+                self.assertIsNot(
+                    getattr(type(client), name, None),
+                    getattr(type(contract), name),
+                    f"'{code}' does not implement {name}()",
+                )
+
     def test_unknown_provider_raises(self):
         with self.assertRaises(UserError):
             get_provider_client(self.env, 'carrier-pigeon')
@@ -82,40 +103,51 @@ class TestProviderCapabilities(TransactionCase):
                 'x_mailbox_type': 'shared',
             })
 
+    def _connected_user(self, login):
+        """A user with credentials for this provider, which is what
+        resolve_sending_account hands back."""
+        user = self.env['res.users'].create({
+            'name': login, 'login': login, 'email': login,
+        })
+        self.env['pan.mail.account'].create({
+            'email': login,
+            'provider': self.client.provider_code(),
+            'user_id': user.id,
+        })
+        return user
+
     def test_notification_mailbox_sends_with_owner_token(self):
         """Notification mail must not depend on who triggered it."""
-        owner = self.env['res.users'].create({
-            'name': 'Notify Owner',
-            'login': 'notify-owner@company.test',
-            'email': 'notify-owner@company.test',
-        })
-        other = self.env['res.users'].create({
-            'name': 'Someone Else',
-            'login': 'someone-else@company.test',
-            'email': 'someone-else@company.test',
-        })
+        owner = self._connected_user('notify-owner@company.test')
+        other = self._connected_user('someone-else@company.test')
         mailbox = self.env['x_microsoft.mailbox'].new({
             'email': 'notifications@company.test',
             'x_mailbox_type': 'notification',
             'x_owner_user_id': owner.id,
         })
-        resolved = self.client.resolve_sending_user(mailbox, author_user=other)
-        self.assertEqual(resolved, owner)
+        resolved = self.client.resolve_sending_account(mailbox, author_user=other)
+        self.assertEqual(resolved.user_id, owner)
 
     def test_shared_mailbox_sends_with_author_token(self):
         """Shared mailboxes rely on the author's own SendAs rights, which
         matters in cron context where env.user is the cron runner."""
-        author = self.env['res.users'].create({
-            'name': 'Author',
-            'login': 'author@company.test',
-            'email': 'author@company.test',
-        })
+        author = self._connected_user('author@company.test')
         mailbox = self.env['x_microsoft.mailbox'].new({
             'email': 'team@company.test',
             'x_mailbox_type': 'shared',
         })
-        resolved = self.client.resolve_sending_user(mailbox, author_user=author)
-        self.assertEqual(resolved, author)
+        resolved = self.client.resolve_sending_account(mailbox, author_user=author)
+        self.assertEqual(resolved.user_id, author)
+
+    def test_reading_a_mailbox_uses_the_owners_token(self):
+        owner = self._connected_user('reader@company.test')
+        mailbox = self.env['x_microsoft.mailbox'].new({
+            'email': 'inbox@company.test',
+            'x_mailbox_type': 'personal',
+            'x_owner_user_id': owner.id,
+        })
+        self.assertEqual(
+            self.client.resolve_receiving_account(mailbox).user_id, owner)
 
 
 @tagged('post_install', '-at_install', 'pan_outlook_pro')
@@ -194,14 +226,14 @@ class TestGraphNormalization(TransactionCase):
         """send_message translates Graph's key names to the contract's."""
         Client = type(self.client)
         original = Client.send_email_via_graph
-        Client.send_email_via_graph = lambda self_, mail_record, mailbox, user: {
+        Client.send_email_via_graph = lambda self_, mail_record, mailbox, account: {
             'success': True,
             'microsoft_message_id': '<sent@contoso.com>',
             'microsoft_conversation_id': 'conv-999',
         }
         self.addCleanup(setattr, Client, 'send_email_via_graph', original)
 
-        result = self.client.send_message(mail_record=None, mailbox=None, user=None)
+        result = self.client.send_message(mail_record=None, mailbox=None, account=None)
 
         self.assertTrue(result['success'])
         self.assertEqual(result['message_id'], '<sent@contoso.com>')

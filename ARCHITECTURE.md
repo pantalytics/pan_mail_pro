@@ -7,44 +7,83 @@ Technical documentation for developers working on the Outlook Pro module.
 ## 1. Overview
 
 ### Purpose
-Complete Microsoft 365 email integration for Odoo - send and receive emails via Microsoft Graph API with proper threading and partner management.
+Complete Microsoft 365 and Google Workspace email integration for Odoo - send and receive emails via the Graph and Gmail APIs with proper threading and partner management.
+
+### Provider abstraction
+
+Everything wire-specific — how a mail is sent, how remote messages are listed
+and read, which credentials to use — lives behind one contract,
+`mail.provider.client`. Everything else — mailbox routing, partner matching,
+threading, chatter posting — is provider-neutral and never touches a Graph or
+Gmail JSON key. A mailbox names its provider with `x_provider` and dispatches
+via `mailbox._get_client()`, which resolves the code through the registry in
+`models/mail_provider_client.py`.
+
+There is exactly one layer: the client *is* the contract implementation, and it
+lives in `models/providers/<vendor>/`. Credentials are a `pan.mail.account`, and
+the client is what decides which account applies — `resolve_sending_account()`
+and `resolve_receiving_account()` — because that is where providers genuinely
+diverge.
+
+Model names still read `microsoft.*` and fields `x_microsoft_*`. That is
+deliberate: the rename to provider-neutral names is a single mechanical phase
+(Phase 4) done last, so historical data — notably `x_microsoft_message_id` on
+`mail.message`, which reply threading depends on — migrates once, cleanly.
 
 ### Key Models
 
 | Model | Purpose |
 |-------|---------|
-| `x_microsoft.mailbox` | Mailbox configuration (email, type, sync, routing) |
-| `microsoft.graph.client` | Graph API helper (all API calls) |
-| `microsoft.incoming.mail.processor` | Incoming email sync (cron) |
-| `mail.mail` | Outgoing email override (Graph API send) |
+| `x_microsoft.mailbox` | Mailbox configuration (email, type, sync, routing, `x_provider`) |
+| `mail.provider.client` | The contract (abstract): resolve credentials, send, fetch, normalize |
+| `microsoft.graph.client` | Microsoft 365 implementation — all Graph API calls |
+| `google.gmail.client` | Google Workspace implementation — all Gmail API calls |
+| `pan.mail.account` | Credentials for one email address on one provider (nullable `user_id`) |
+| `microsoft.incoming.mail.processor` | Incoming email sync (cron), provider-neutral |
+| `mail.mail` | Outgoing email override (routes through the mailbox's provider) |
 | `mail.message` | Stores Microsoft message IDs for reply threading |
 | `mail.compose.message` | Composer "Send From" dropdown + setup warning |
-| `res.users` | User OAuth tokens |
+| `res.users` | OAuth token fields — now proxies onto the user's `pan.mail.account` |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
 | `res.config.settings` | Module settings (client_id, secret, tenant) |
+
+`pan.mail.account` holds the credentials that used to live on `res.users`. An
+account with a `user_id` is a person's own connection; an account with none is a
+service account — how a Gmail shared mailbox works, where the address is a real
+Workspace account with no Odoo user behind it. The `res.users.x_microsoft_*`
+fields are unstored compute/inverse proxies onto the user's Microsoft account, so
+every existing caller keeps working while the credentials live in one place.
 
 ### Module Structure
 
 ```
 pan_outlook_pro/
 ├── models/
-│   ├── mail_mail.py              # Outgoing email override
-│   ├── mail_message.py           # Microsoft message ID storage
-│   ├── mail_compose_message.py   # Composer integration + setup warning
-│   ├── microsoft_mailbox.py      # Mailbox configuration + routing
-│   ├── microsoft_incoming_mail.py # Incoming email processor
-│   ├── microsoft_graph_client.py  # Graph API client
-│   ├── res_users.py              # User OAuth tokens
-│   ├── res_partner.py            # Contact block list field
-│   ├── res_config_settings.py    # Module settings
-│   └── encryption_utils.py       # Fernet encryption
+│   ├── mail_provider_client.py    # mail.provider.client — the contract + provider registry
+│   ├── mail_mail.py               # Outgoing override → mailbox._get_client().send_message()
+│   ├── mail_message.py            # Microsoft message ID storage
+│   ├── mail_compose_message.py    # Composer integration + setup warning
+│   ├── microsoft_mailbox.py       # Mailbox configuration + routing + x_provider dispatch
+│   ├── pan_mail_account.py        # Per-address credentials (pan.mail.account)
+│   ├── pan_mail_fetcher.py        # Incoming email processor (provider-neutral)
+│   ├── providers/                 # The only place provider payloads are understood
+│   │   ├── microsoft/
+│   │   │   └── graph_client.py    # microsoft.graph.client — Graph API + normalization
+│   │   └── google/
+│   │       └── gmail_client.py    # google.gmail.client — Gmail API + normalization
+│   ├── res_users.py               # OAuth token proxies onto pan.mail.account
+│   ├── res_partner.py             # Contact block list field
+│   ├── res_config_settings.py     # Module settings
+│   └── encryption_utils.py        # Fernet encryption
 ├── controllers/
-│   └── main.py                   # OAuth callback handler
+│   └── main.py                    # OAuth callback handlers (Microsoft + Google)
 ├── wizard/
-│   └── microsoft_oauth_wizard.py # Connect Microsoft account
+│   └── microsoft_oauth_wizard.py  # Connect Microsoft account
+├── migrations/
+│   └── 19.0.2.1.0/                # Copy user tokens → pan.mail.account
 ├── views/
 ├── data/
-│   └── ir_cron_data.xml          # Incoming mail cron (1 min)
+│   └── ir_cron_data.xml           # Incoming mail cron (1 min)
 └── security/
 ```
 
