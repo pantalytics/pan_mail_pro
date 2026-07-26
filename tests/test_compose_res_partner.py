@@ -16,7 +16,7 @@ from odoo.tests import tagged
 from .common import OutlookProTestCase
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestComposeResPartner(OutlookProTestCase):
 
     def test_inline_chatter_uses_user_default_mailbox(self):

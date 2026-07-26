@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Outlook Pro Settings App -->
+    <!-- Mail Pro Settings App -->
     <record id="res_config_settings_view_form" model="ir.ui.view">
         <field name="name">res.config.settings.view.form.inherit.outlook.pro</field>
         <field name="model">res.config.settings</field>
         <field name="inherit_id" ref="base.res_config_settings_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
-                <app string="Outlook Pro" name="pan_outlook_pro" groups="base.group_system">
+                <app string="Mail Pro" name="pan_mail_pro" groups="base.group_system">
                     <!-- Hidden fields -->
                     <field name="x_microsoft_config_status" invisible="1"/>
                     <field name="x_microsoft_config_status_message" invisible="1"/>
@@ -228,9 +228,9 @@
             <xpath expr="//setting[@id='email_servers_setting']" position="before">
                 <div class="alert alert-info mb-3" role="alert">
                     <i class="fa fa-info-circle me-2" title="Info"/>
-                    <strong>Outlook Pro is installed.</strong>
+                    <strong>Mail Pro is installed.</strong>
                     Email is managed via Microsoft Graph API.
-                    <a href="#" class="alert-link ms-1">Configure in Settings → Outlook Pro</a>
+                    <a href="#" class="alert-link ms-1">Configure in Settings → Mail Pro</a>
                 </div>
             </xpath>
         </field>

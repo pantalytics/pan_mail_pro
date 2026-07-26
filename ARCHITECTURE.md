@@ -1,6 +1,6 @@
 # Architecture
 
-Technical documentation for developers working on the Outlook Pro module.
+Technical documentation for developers working on the Mail Pro module.
 
 ---
 
@@ -57,7 +57,7 @@ every existing caller keeps working while the credentials live in one place.
 ### Module Structure
 
 ```
-pan_outlook_pro/
+pan_mail_pro/
 ├── models/
 │   ├── mail_provider_client.py    # mail.provider.client — the contract + provider registry
 │   ├── mail_mail.py               # Outgoing override → mailbox._get_client().send_message()
@@ -235,7 +235,7 @@ process_email()
 | Email to unknown recipient | - | - | Skip |
 
 **Why this approach:**
-- Simple "Internal Domains" setting in Outlook Pro configuration
+- Simple "Internal Domains" setting in Mail Pro configuration
 - Explicit control over which domains are excluded
 - Internal employees filtered via domain (Inbox) OR via `partner.user_ids` (both folders)
 - Replies always work (partner was created when we sent to them)
@@ -724,7 +724,7 @@ Tests are in `tests/test_incoming_mail.py`. Run with:
 ```bash
 docker-compose stop odoo
 docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
-  -d test_db -u pan_outlook_pro --test-enable --test-tags=pan_outlook_pro --stop-after-init
+  -d test_db -u pan_mail_pro --test-enable --test-tags=pan_mail_pro --stop-after-init
 docker-compose start odoo
 ```
 
@@ -740,7 +740,7 @@ docker-compose start odoo
 ### Adding New Tests
 
 1. Add test methods to `tests/test_incoming_mail.py`
-2. Use `@tagged('pan_outlook_pro', 'post_install', '-at_install')` decorator
+2. Use `@tagged('pan_mail_pro', 'post_install', '-at_install')` decorator
 3. Extend `TransactionCase` for database tests
 4. Tests run in transactions (auto-rollback)
 

@@ -12,7 +12,7 @@ CI enforces the first four automatically; the rest need a human.
 - [ ] New data/asset files added to `__manifest__.py`
 - [ ] Stored computed fields have `@api.depends`
 - [ ] Field access controlled with `groups` where it holds credentials
-- [ ] XML ids follow `pan_outlook_pro.record_name`
+- [ ] XML ids follow `pan_mail_pro.record_name`
 - [ ] Custom fields use the `x_` prefix (Odoo.sh requirement)
 
 ## Testing

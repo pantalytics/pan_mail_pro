@@ -1,10 +1,10 @@
-# Outlook Pro
+# Mail Pro
 
 Complete Microsoft 365 email integration for Odoo - send and receive with full control.
 
-## What is Outlook Pro?
+## What is Mail Pro?
 
-Outlook Pro connects your Odoo instance to Microsoft 365, enabling:
+Mail Pro connects your Odoo instance to Microsoft 365, enabling:
 
 - **Send emails** via Microsoft Graph API from any Odoo form
 - **Receive emails** with automatic sync to CRM Leads or Helpdesk Tickets

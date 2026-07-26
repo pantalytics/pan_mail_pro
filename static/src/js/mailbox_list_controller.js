@@ -12,12 +12,12 @@ export class MailboxListController extends ListController {
     }
 
     /**
-     * Navigate back to Outlook Pro settings
+     * Navigate back to Mail Pro settings
      */
     onBackToSettings() {
         this.actionService.doAction({
             type: "ir.actions.act_url",
-            url: "/odoo/settings#pan_outlook_pro",
+            url: "/odoo/settings#pan_mail_pro",
             target: "self",
         });
     }
@@ -26,7 +26,7 @@ export class MailboxListController extends ListController {
 export const mailboxListView = {
     ...listView,
     Controller: MailboxListController,
-    buttonTemplate: "pan_outlook_pro.MailboxListButtons",
+    buttonTemplate: "pan_mail_pro.MailboxListButtons",
 };
 
 registry.category("views").add("mailbox_list", mailboxListView);

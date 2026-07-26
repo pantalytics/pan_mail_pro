@@ -1,15 +1,15 @@
 # Azure Setup
 
-This guide walks you through creating a Microsoft Entra ID (Azure AD) app registration for Outlook Pro.
+This guide walks you through creating a Microsoft Entra ID (Azure AD) app registration for Mail Pro.
 
 ## Step 1: Create App Registration
 
 1. Go to <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Azure Portal → App Registrations</a>
 2. Click **New registration**
 3. Configure:
-   - **Name:** `Odoo Outlook Pro` (or your preference)
+   - **Name:** `Odoo Mail Pro` (or your preference)
    - **Supported account types:** Accounts in this organizational directory only
-   - **Redirect URI:** Web → copy the Callback URL from Odoo (Settings → Outlook Pro → Setup Guide). The URL format is `https://your-odoo-domain.com/microsoft/callback`
+   - **Redirect URI:** Web → copy the Callback URL from Odoo (Settings → Mail Pro → Setup Guide). The URL format is `https://your-odoo-domain.com/microsoft/callback`
 4. Click **Register**
 
 ## Step 2: Note Application IDs
@@ -50,7 +50,7 @@ After registration, copy these values (you'll need them in Odoo):
 
 ## Step 5: Configure in Odoo
 
-1. Go to **Settings → Outlook Pro**
+1. Go to **Settings → Mail Pro**
 2. Enter:
    - **Client ID:** Your Application (client) ID
    - **Tenant ID:** Your Directory (tenant) ID

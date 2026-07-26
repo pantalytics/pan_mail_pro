@@ -24,7 +24,7 @@ INTERNET_ID = '<inbound-001@example.com>'
 CONV_ID = 'CONV_INBOUND_001'
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestIncomingSync(OutlookProTestCase):
 
     def setUp(self):
@@ -95,7 +95,7 @@ class TestIncomingSync(OutlookProTestCase):
             return self._response({})
 
         return patch(
-            'odoo.addons.pan_outlook_pro.models.providers.microsoft.graph_client.requests.get',
+            'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.get',
             side_effect=fake_get,
         )
 
@@ -183,7 +183,7 @@ class TestIncomingSync(OutlookProTestCase):
             type(self.env['microsoft.graph.client']), 'get_valid_token',
             autospec=True, return_value='fake-bearer-token',
         ), patch(
-            'odoo.addons.pan_outlook_pro.models.providers.microsoft.graph_client.requests.get',
+            'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.get',
             side_effect=fake_get,
         ):
             processor._process_mailbox(self.mailbox)

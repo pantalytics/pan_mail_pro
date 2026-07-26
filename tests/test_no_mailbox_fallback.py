@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Tests for graceful degradation when Outlook Pro is not configured.
+Tests for graceful degradation when Mail Pro is not configured.
 
 When no x_microsoft.mailbox records exist anywhere in the system, the module
 must defer to Odoo's standard mail handling (SMTP / mail queue) instead of
@@ -16,7 +16,7 @@ from unittest.mock import patch
 from odoo.tests import TransactionCase, tagged
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestNoMailboxFallback(TransactionCase):
     """Module is installed but no mailboxes are configured."""
 
@@ -49,7 +49,7 @@ class TestNoMailboxFallback(TransactionCase):
                         "super().send() must run when no mailboxes are configured")
         # Mail must NOT be cancelled
         self.assertNotEqual(mail.state, 'cancel',
-                            "mail.mail must not be cancelled when Outlook Pro is unconfigured")
+                            "mail.mail must not be cancelled when Mail Pro is unconfigured")
 
     def test_no_mailboxes_user_create_does_not_crash(self):
         """Creating a user with email triggers auth_signup's welcome mail.
@@ -69,7 +69,7 @@ class TestNoMailboxFallback(TransactionCase):
         self.assertTrue(user.exists())
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestMailboxesExistButUnusable(TransactionCase):
     """Mailboxes exist but cannot route this specific mail.
 
@@ -81,7 +81,7 @@ class TestMailboxesExistButUnusable(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         # Create a mailbox so search_count([]) > 0, but make it inactive so
-        # _is_outlook_pro_configured() returns False (it filters on active).
+        # _is_mail_pro_configured() returns False (it filters on active).
         cls.env['x_microsoft.mailbox'].sudo().search([]).unlink()
         cls.inactive_mailbox = cls.env['x_microsoft.mailbox'].sudo().create({
             'email': 'inactive@company.test',

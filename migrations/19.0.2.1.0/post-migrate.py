@@ -94,13 +94,13 @@ def migrate(cr, version):
     realigned = cr.rowcount
 
     _logger.info(
-        '[Outlook Pro] Migrated %s user token set(s) to pan.mail.account '
+        '[Mail Pro] Migrated %s user token set(s) to pan.mail.account '
         '(%s connected users, %s connected accounts, %s connection flag(s) realigned)',
         migrated, users_connected, accounts_connected, realigned,
     )
     if users_connected != accounts_connected:
         _logger.error(
-            '[Outlook Pro] Token migration mismatch: %s connected users but %s '
+            '[Mail Pro] Token migration mismatch: %s connected users but %s '
             'connected Microsoft accounts. Sending will fall back to the '
             'res.users columns until this is resolved - do not drop them.',
             users_connected, accounts_connected,

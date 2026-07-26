@@ -2,7 +2,7 @@
 <templates xml:space="preserve">
 
     <!-- Add Back button to the list view layout-buttons slot -->
-    <t t-name="pan_outlook_pro.MailboxListButtons">
+    <t t-name="pan_mail_pro.MailboxListButtons">
         <button type="button" class="btn btn-secondary" t-on-click="() => this.onBackToSettings()">
             <i class="fa fa-arrow-left me-1" title="Back"/>Back
         </button>

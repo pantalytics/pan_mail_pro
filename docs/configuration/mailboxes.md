@@ -4,7 +4,7 @@ Mailboxes define which email addresses can be used to send and receive emails in
 
 ## Accessing Mailbox Configuration
 
-Go to **Settings → Outlook Pro → Manage Mailbox List**
+Go to **Settings → Mail Pro → Manage Mailbox List**
 
 ## Mailbox Types
 

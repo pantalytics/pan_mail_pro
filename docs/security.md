@@ -1,12 +1,12 @@
 # Security
 
-Outlook Pro is designed with security as a priority, following the principle of least privilege.
+Mail Pro is designed with security as a priority, following the principle of least privilege.
 
 ## Authentication
 
 ### OAuth 2.0 with Delegated Permissions
 
-Outlook Pro uses **delegated permissions only** - the app acts on behalf of the signed-in user, never as an administrator.
+Mail Pro uses **delegated permissions only** - the app acts on behalf of the signed-in user, never as an administrator.
 
 | Aspect | Implementation |
 |--------|----------------|

@@ -1,4 +1,4 @@
-# Refactor Plan: pan_outlook_pro → pan_email_pro
+# Refactor Plan: pan_mail_pro → pan_email_pro
 
 Multi-provider email integration (Microsoft 365, Google Workspace, IMAP/SMTP).
 
@@ -237,7 +237,7 @@ New models get final names immediately; existing ones are renamed in Phase 5.
 | **1** | Provider interface + `providers/microsoft/`. Move the 886-line client behind it. Normalize the message dict; rewrite `_fetch_folder`/`_process_message`. **Tests stay green with zero changes to their Graph payload assertions.** | 2–3 wk | internal |
 | **2** | `pan.mail.provider` + `pan.mail.account`. Migrate `res.users.x_microsoft_*` tokens + settings creds. Highest-risk migration: a botched token migration disconnects every user. | 1–2 wk | 19.0.2.0.0 |
 | **3** | `providers/imap/` — SMTP+IMAP XOAUTH2, reusing `google.gmail.mixin`. Delivers **Google and Soverin together**. | 2–3 wk | 19.0.3.0.0 |
-| **4** | Rename: module, models, fields, XML ids, `odoo.addons.pan_outlook_pro` test patch paths. One mechanical commit + migration. | 3–5 d | **pan_email_pro 19.0.4.0.0** |
+| **4** | Rename: module, models, fields, XML ids, `odoo.addons.pan_mail_pro` test patch paths. One mechanical commit + migration. | 3–5 d | **pan_email_pro 19.0.4.0.0** |
 
 Phase 1 is the one to protect. Land it clean and 3 is additive. Land it muddy and every provider
 inherits the mud.
@@ -253,7 +253,7 @@ You accepted breakage. Fine — but the *data* must survive: losing `x_microsoft
 Odoo cannot rename a module from inside its own migration script (chicken-and-egg: migrations only
 run for an already-installed module under that name).
 
-1. Pre-upgrade SQL: `UPDATE ir_module_module SET name='pan_email_pro' WHERE name='pan_outlook_pro'`
+1. Pre-upgrade SQL: `UPDATE ir_module_module SET name='pan_email_pro' WHERE name='pan_mail_pro'`
    and the same on `ir_model_data.module`
 2. Then upgrade `pan_email_pro`; its migrations rename models/tables/columns
 3. Rehearse against a **restored production backup**, not a dev DB. Twice.

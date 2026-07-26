@@ -13,7 +13,7 @@ from odoo.tests import tagged
 from .common import OutlookProTestCase
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestSystemNotifications(OutlookProTestCase):
 
     def test_follower_notification_routes_via_notification_mailbox(self):

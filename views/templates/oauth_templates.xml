@@ -75,7 +75,7 @@
 
     <!-- Legacy templates kept for compatibility -->
     <template id="oauth_success" name="Microsoft OAuth Success">
-        <t t-call="pan_outlook_pro.oauth_result">
+        <t t-call="pan_mail_pro.oauth_result">
             <t t-set="success" t-value="True"/>
             <t t-set="title">Connected Successfully</t>
             <t t-set="message">Your Microsoft account is now connected.</t>
@@ -83,7 +83,7 @@
     </template>
 
     <template id="oauth_error" name="Microsoft OAuth Error">
-        <t t-call="pan_outlook_pro.oauth_result">
+        <t t-call="pan_mail_pro.oauth_result">
             <t t-set="success" t-value="False"/>
             <t t-set="title">Connection Failed</t>
             <t t-set="message" t-value="error_description or error or 'Unknown error'"/>

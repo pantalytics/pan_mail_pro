@@ -1,6 +1,6 @@
 # Incoming Email Sync
 
-Outlook Pro can automatically sync incoming emails to Odoo, creating CRM Leads or Helpdesk Tickets.
+Mail Pro can automatically sync incoming emails to Odoo, creating CRM Leads or Helpdesk Tickets.
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@ Before enabling incoming sync:
 
 ## Enabling Sync
 
-1. Go to **Settings → Outlook Pro → Manage Mailbox List**
+1. Go to **Settings → Mail Pro → Manage Mailbox List**
 2. Open a mailbox
 3. Set **Sync Mode**:
    - **Send messages only** - No incoming sync

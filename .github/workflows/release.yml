@@ -41,6 +41,6 @@ jobs:
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${VERSION}" -m "pan_outlook_pro ${VERSION}"
+          git tag -a "v${VERSION}" -m "pan_mail_pro ${VERSION}"
           git push origin "v${VERSION}"
           echo "Tagged v${VERSION}"

@@ -2,14 +2,14 @@
 """
 Unit tests for outgoing mail via Microsoft Graph API.
 
-Run with: python -m odoo -d test_db --test-enable --test-tags=pan_outlook_pro
+Run with: python -m odoo -d test_db --test-enable --test-tags=pan_mail_pro
 """
 from unittest.mock import patch, MagicMock
 
 from odoo.tests import TransactionCase, tagged
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestGraphSendPayload(TransactionCase):
     """Verify the Graph API draft payload includes To/Cc recipients correctly."""
 
@@ -61,7 +61,7 @@ class TestGraphSendPayload(TransactionCase):
             type(self.client), 'get_valid_token', return_value='fake_token'
         ), patch.object(
             type(self.mailbox), 'get_graph_user_id', return_value='sender@company.com'
-        ), patch('odoo.addons.pan_outlook_pro.models.providers.microsoft.graph_client.requests.post', side_effect=fake_post):
+        ), patch('odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.post', side_effect=fake_post):
             result = self.client.send_email_via_graph(mail, self.mailbox, self.user)
 
         return result, captured.get('draft')

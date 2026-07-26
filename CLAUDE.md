@@ -4,7 +4,7 @@ Project context for Claude Code AI assistant.
 
 ## Module Overview
 
-**pan_outlook_pro** - Microsoft 365 and Google Workspace email integration for Odoo 19.0 Enterprise Edition.
+**pan_mail_pro** - Microsoft 365 and Google Workspace email integration for Odoo 19.0 Enterprise Edition.
 
 Send and receive emails via the Microsoft Graph and Gmail APIs, with OAuth 2.0
 delegated permissions. The module name still says Outlook; the rename to
@@ -128,7 +128,7 @@ Each addon repo can be tested independently with its own `.local/` directory. A 
 │   └── Dockerfile               ← Shared Dockerfile (Enterprise + deps)
 ├── .dockerignore                 ← Limits build context to odoo-enterprise/
 ├── odoo-enterprise/              ← Odoo 19 Enterprise source (shared)
-├── pan_outlook_pro/              ← This repo
+├── pan_mail_pro/              ← This repo
 │   └── .local/                   ← Per-repo Docker config (gitignored)
 │       ├── docker-compose.yml
 │       └── odoo.conf
@@ -150,7 +150,7 @@ Each addon repo can be tested independently with its own `.local/` directory. A 
 
 | Repo | Mount | Effect |
 |------|-------|--------|
-| pan_outlook_pro | `..:/mnt/extra-addons/pan_outlook_pro` | Single addon, direct from repo |
+| pan_mail_pro | `..:/mnt/extra-addons/pan_mail_pro` | Single addon, direct from repo |
 | odoo-pantalytics | `../addons:/mnt/extra-addons` | All addons via submodules |
 | odoo-customer-goudsmit | `../addons:/mnt/extra-addons` | All addons via submodules |
 
@@ -171,7 +171,7 @@ docker-compose restart odoo
 ### Upgrade module (apply model/view/data changes)
 ```bash
 cd .local
-docker-compose exec -T odoo python -m odoo -c /etc/odoo/odoo.conf -d test_db -u pan_outlook_pro --stop-after-init
+docker-compose exec -T odoo python -m odoo -c /etc/odoo/odoo.conf -d test_db -u pan_mail_pro --stop-after-init
 docker-compose restart odoo
 ```
 
@@ -186,7 +186,7 @@ docker-compose logs -f odoo
 cd .local
 docker-compose stop odoo
 docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
-  -d test_db -u pan_outlook_pro --test-enable --test-tags=pan_outlook_pro --stop-after-init
+  -d test_db -u pan_mail_pro --test-enable --test-tags=pan_mail_pro --stop-after-init
 docker-compose start odoo
 ```
 
@@ -194,7 +194,7 @@ docker-compose start odoo
 nothing for an uninstalled module. Check with:
 ```bash
 docker-compose exec -T db psql -U odoo -d test_db -c \
-  "SELECT name,state FROM ir_module_module WHERE name='pan_outlook_pro';"
+  "SELECT name,state FROM ir_module_module WHERE name='pan_mail_pro';"
 ```
 If `uninstalled`, use `-i` instead of `-u` once, then `-u` works from then on.
 
@@ -217,7 +217,7 @@ Three workflows in `.github/workflows/`:
 ### How tests run
 
 The `test` job installs the module into the **official `odoo:<series>` community
-image** and runs `--test-enable --test-tags=pan_outlook_pro` against a Postgres
+image** and runs `--test-enable --test-tags=pan_mail_pro` against a Postgres
 service container. No Enterprise source and no Azure credentials are needed:
 `mail`, `base` and `crm` all ship in community, and the Helpdesk tests skip
 themselves when `helpdesk.team` is absent.
@@ -228,11 +228,11 @@ The series is **derived from `__manifest__.py`**, not hardcoded: `19.0.1.3.0`
 
 Reproduce a CI run locally (this is exactly what the job does):
 ```bash
-docker run --rm -v "$PWD:/mnt/extra-addons/pan_outlook_pro:ro" \
+docker run --rm -v "$PWD:/mnt/extra-addons/pan_mail_pro:ro" \
   --entrypoint odoo odoo:19.0 -d ci_test \
   --db_host=<db> --db_user=odoo --db_password=odoo \
   --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
-  -i pan_outlook_pro --test-enable --test-tags=pan_outlook_pro \
+  -i pan_mail_pro --test-enable --test-tags=pan_mail_pro \
   --stop-after-init --without-demo=all --max-cron-threads=0
 ```
 

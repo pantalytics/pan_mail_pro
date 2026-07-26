@@ -15,7 +15,7 @@ from odoo.tests import tagged
 from .common import OutlookProTestCase
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestComposeCrmLead(OutlookProTestCase):
 
     @classmethod
