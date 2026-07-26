@@ -21,11 +21,15 @@ class MailComposeMessage(models.TransientModel):
 
     @api.depends_context('uid')
     def _compute_microsoft_setup_warning(self):
-        """Check if user needs to complete Microsoft setup."""
+        """Check if the user still needs to connect an email account.
+
+        Any provider counts: a Gmail-only user is set up, and telling them to
+        connect Microsoft would be wrong.
+        """
         user = self.env.user
         for record in self:
-            if not user.x_microsoft_oauth_connected:
-                record.x_microsoft_setup_warning = "Connect your Microsoft account in My Preferences → Outlook Pro tab."
+            if not user.x_pan_mail_account_ids.filtered('connected'):
+                record.x_microsoft_setup_warning = "Connect your email account in My Preferences → Outlook Pro tab."
             elif not user.x_microsoft_default_mailbox_id:
                 record.x_microsoft_setup_warning = "Select a default mailbox in My Preferences → Outlook Pro tab."
             else:
