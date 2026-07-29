@@ -18,17 +18,17 @@ import requests
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
-from odoo.addons.pan_outlook_pro.models.mail_provider_client import (
+from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     FOLDER_INBOX,
     get_provider_client,
 )
 
 # Patch requests.post specifically, not the whole module — the client catches
 # requests.exceptions.RequestException, which must stay a real class.
-GMAIL_POST = 'odoo.addons.pan_outlook_pro.models.providers.google.gmail_client.requests.post'
+GMAIL_POST = 'odoo.addons.pan_mail_pro.models.providers.google.gmail_client.requests.post'
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestGoogleProvider(TransactionCase):
 
     @classmethod
@@ -503,7 +503,7 @@ class TestGoogleProvider(TransactionCase):
         self.assertNotIn('reconnect', str(ctx.exception).lower())
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
     """Phase 3: a Gmail mailbox must actually work, not merely be selectable.
 

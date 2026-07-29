@@ -13,10 +13,10 @@ from unittest.mock import patch
 from odoo.tests import tagged
 
 from .common import OutlookProTestCase
-from odoo.addons.pan_outlook_pro.models.providers.microsoft import graph_client as graph_mod
+from odoo.addons.pan_mail_pro.models.providers.microsoft import graph_client as graph_mod
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestAttachments(OutlookProTestCase):
 
     def _make_mail_with_attachments(self, attachment_ids=None, body_html='<p>Body</p>'):

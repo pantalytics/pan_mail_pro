@@ -1,4 +1,4 @@
-# Outlook Pro
+# Mail Pro
 
 Complete Microsoft 365 email integration for Odoo - send and receive with full control.
 
@@ -34,13 +34,13 @@ Complete Microsoft 365 email integration for Odoo - send and receive with full c
 
 1. In Odoo.sh, go to **Settings → Submodules**
 2. Click **Add submodule**
-3. Enter: `git@github.com:pantalytics/pan_outlook_pro.git`
+3. Enter: `git@github.com:pantalytics/pan_mail_pro.git`
 4. Copy the **Public Key** and add it as Deploy Key in GitHub
 
 ```bash
 # Local: add submodule
-git submodule add git@github.com:pantalytics/pan_outlook_pro.git addons/pan_outlook_pro
-git commit -m "Add pan_outlook_pro submodule"
+git submodule add git@github.com:pantalytics/pan_mail_pro.git addons/pan_mail_pro
+git commit -m "Add pan_mail_pro submodule"
 git push
 ```
 
@@ -48,7 +48,7 @@ git push
 
 ## Setup
 
-After installing the module, go to **Settings** → scroll to **Outlook Pro**.
+After installing the module, go to **Settings** → scroll to **Mail Pro**.
 
 The settings page contains step-by-step instructions for:
 1. Creating an Azure App Registration
@@ -81,7 +81,7 @@ Follow the instructions in Odoo - they include links to the correct Azure Portal
 
 ## Mailbox Configuration
 
-Go to **Settings** → **Outlook Pro** → **Manage Mailbox List**
+Go to **Settings** → **Mail Pro** → **Manage Mailbox List**
 
 ### Mailbox Types
 
@@ -109,7 +109,7 @@ Go to **Settings** → **Outlook Pro** → **Manage Mailbox List**
 
 **Sync behavior:**
 - Internal domain is auto-detected from company email or mailboxes
-- Enable "Exclude Internal Emails" in Settings → Outlook Pro to filter internal traffic
+- Enable "Exclude Internal Emails" in Settings → Mail Pro to filter internal traffic
 - Internal users (employees with Odoo accounts) are always excluded
 - Emails sync automatically every minute
 - Set a sync start date to import historical emails (default: sync from now)
@@ -190,7 +190,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for:
 cd .local
 docker-compose stop odoo
 docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
-  -d test_db -u pan_outlook_pro --test-enable --test-tags=pan_outlook_pro --stop-after-init
+  -d test_db -u pan_mail_pro --test-enable --test-tags=pan_mail_pro --stop-after-init
 docker-compose start odoo
 ```
 

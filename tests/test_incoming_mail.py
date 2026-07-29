@@ -2,18 +2,18 @@
 """
 Unit tests for Microsoft Incoming Mail Processor.
 
-Run with: python -m odoo -d test_db --test-enable --test-tags=pan_outlook_pro
+Run with: python -m odoo -d test_db --test-enable --test-tags=pan_mail_pro
 """
 from datetime import datetime
 from unittest.mock import patch
 from odoo.tests import TransactionCase, tagged
 import unittest
 
-from odoo.addons.pan_outlook_pro.models.mail_provider_client import FOLDER_INBOX
+from odoo.addons.pan_mail_pro.models.mail_provider_client import FOLDER_INBOX
 
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestInternalDomain(TransactionCase):
     """Test internal domain filtering logic using Odoo's mail.alias.domain."""
 
@@ -76,7 +76,7 @@ class TestInternalDomain(TransactionCase):
         self.assertFalse(self.processor._is_internal_domain('user@company.com', mailbox))
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestDuplicateDetection(TransactionCase):
     """Test duplicate message detection."""
 
@@ -120,7 +120,7 @@ class TestDuplicateDetection(TransactionCase):
         self.assertFalse(self.processor._is_duplicate(None))
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestPartnerMatching(TransactionCase):
     """Test partner finding and creation."""
 
@@ -168,7 +168,7 @@ class TestPartnerMatching(TransactionCase):
         self.assertEqual(partner.name, 'noname')
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestAliasRouting(TransactionCase):
     """Test email routing via aliases."""
 
@@ -248,7 +248,7 @@ class TestAliasRouting(TransactionCase):
         self.assertTrue(message)
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestSavepointIsolation(TransactionCase):
     """Regression: one failing message must not poison the rest of the batch.
 

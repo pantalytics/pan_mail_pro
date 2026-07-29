@@ -11,7 +11,7 @@ payload assertions *unchanged*. Nothing user-visible changes. No new fields, no 
 - ❌ Google / IMAP (Phase 3)
 - ❌ New settings or views
 
-**The success criterion is unusually crisp:** `--test-tags=pan_outlook_pro` passes with zero edits to
+**The success criterion is unusually crisp:** `--test-tags=pan_mail_pro` passes with zero edits to
 any test's assertions about Graph JSON. Import paths may change; expectations may not. If a test
 assertion needs changing, the refactor changed behaviour — stop and find out why.
 
@@ -217,7 +217,7 @@ Per step:
 cd .local
 docker-compose stop odoo
 docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
-  -d test_db -u pan_outlook_pro --test-enable --test-tags=pan_outlook_pro --stop-after-init
+  -d test_db -u pan_mail_pro --test-enable --test-tags=pan_mail_pro --stop-after-init
 docker-compose start odoo
 ```
 

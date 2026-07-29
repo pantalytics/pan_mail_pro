@@ -26,7 +26,7 @@
         <field name="priority">20</field>
         <field name="arch" type="xml">
             <xpath expr="//page[@name='preferences']" position="after">
-                <page string="Outlook Pro" name="outlook_pro">
+                <page string="Mail Pro" name="outlook_pro">
                     <field name="x_microsoft_oauth_connected" invisible="1"/>
 
                     <!-- Not Connected -->
@@ -61,7 +61,7 @@
         <field name="priority">20</field>
         <field name="arch" type="xml">
             <xpath expr="//page[@name='page_security']" position="after">
-                <page string="Outlook Pro" name="outlook_pro">
+                <page string="Mail Pro" name="outlook_pro">
                     <field name="x_microsoft_oauth_connected" invisible="1"/>
 
                     <!-- Not Connected -->

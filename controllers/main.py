@@ -9,7 +9,7 @@ _logger = logging.getLogger(__name__)
 
 
 def _oauth_error(title, message):
-    return request.render('pan_outlook_pro.oauth_result', {
+    return request.render('pan_mail_pro.oauth_result', {
         'success': False, 'title': title, 'message': message,
     })
 
@@ -28,7 +28,7 @@ class MicrosoftOAuthController(http.Controller):
 
         if error:
             _logger.error(f"[OAuth] Error from Microsoft: {error} - {error_description}")
-            return request.render('pan_outlook_pro.oauth_result', {
+            return request.render('pan_mail_pro.oauth_result', {
                 'success': False,
                 'title': 'Connection Failed',
                 'message': f'{error}: {error_description}',
@@ -38,7 +38,7 @@ class MicrosoftOAuthController(http.Controller):
         stored_state = request.env.user.sudo().x_microsoft_oauth_state
         if not received_state or not stored_state or received_state != stored_state:
             _logger.error(f"[OAuth] CSRF state validation failed for user {request.env.user.id}")
-            return request.render('pan_outlook_pro.oauth_result', {
+            return request.render('pan_mail_pro.oauth_result', {
                 'success': False,
                 'title': 'Connection Failed',
                 'message': 'Security validation failed. Please try connecting again.',
@@ -49,7 +49,7 @@ class MicrosoftOAuthController(http.Controller):
 
         if not authorization_code:
             _logger.error("[OAuth] No authorization code received")
-            return request.render('pan_outlook_pro.oauth_result', {
+            return request.render('pan_mail_pro.oauth_result', {
                 'success': False,
                 'title': 'Connection Failed',
                 'message': 'No authorization code received from Microsoft',
@@ -110,7 +110,7 @@ class MicrosoftOAuthController(http.Controller):
                     _logger.info(f"[OAuth] Updated owner for existing mailbox: {ms_email}")
 
             # Render minimal page that shows notification and redirects
-            return request.render('pan_outlook_pro.oauth_result', {
+            return request.render('pan_mail_pro.oauth_result', {
                 'success': True,
                 'title': 'Microsoft Connected',
                 'message': 'Your Microsoft account has been connected successfully.',
@@ -118,7 +118,7 @@ class MicrosoftOAuthController(http.Controller):
 
         except Exception as e:
             _logger.exception("[OAuth] Failed to handle OAuth callback")
-            return request.render('pan_outlook_pro.oauth_result', {
+            return request.render('pan_mail_pro.oauth_result', {
                 'success': False,
                 'title': 'Connection Failed',
                 'message': str(e),
@@ -197,7 +197,7 @@ class GoogleOAuthController(http.Controller):
                 elif existing.x_mailbox_type == 'personal' and not existing.x_owner_user_id:
                     existing.write({'x_owner_user_id': user.id})
 
-            return request.render('pan_outlook_pro.oauth_result', {
+            return request.render('pan_mail_pro.oauth_result', {
                 'success': True,
                 'title': 'Google Connected',
                 'message': 'Your Google account has been connected successfully.',

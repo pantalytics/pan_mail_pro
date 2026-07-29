@@ -12,7 +12,7 @@ def _disable_smtp_servers(env):
     """
     Disable existing SMTP servers and native Outlook integration on module install.
 
-    Outlook Pro sends all emails via Microsoft Graph API, so:
+    Mail Pro sends all emails via Microsoft Graph API, so:
     1. All SMTP servers should be disabled to prevent duplicate sends
     2. Native Outlook OAuth servers (smtp_authentication='outlook') must be disabled
        to prevent the native microsoft_outlook module from intercepting emails
@@ -31,22 +31,22 @@ def _disable_smtp_servers(env):
             # Note if this is an Outlook OAuth server
             auth_type = getattr(server, 'smtp_authentication', 'login')
             extra_info = ' (Outlook OAuth)' if auth_type == 'outlook' else ''
-            _logger.info(f'[Outlook Pro] Disabled SMTP server{extra_info}: {server.name} ({server.smtp_host})')
+            _logger.info(f'[Mail Pro] Disabled SMTP server{extra_info}: {server.name} ({server.smtp_host})')
 
     # Disable "Use Custom Email Servers" setting
     # This prevents native Odoo email routing from interfering
     IrConfigParameter = env['ir.config_parameter'].sudo()
     IrConfigParameter.set_param('base_setup.default_external_email_server', 'False')
 
-    _logger.info('[Outlook Pro] Disabled "Use Custom Email Servers" setting - all emails route through Graph API')
+    _logger.info('[Mail Pro] Disabled "Use Custom Email Servers" setting - all emails route through Graph API')
 
     # Enable "Use Leads" in CRM settings
-    # Outlook Pro requires leads for incoming email routing
+    # Mail Pro requires leads for incoming email routing
     try:
         group_use_lead = env.ref('crm.group_use_lead', raise_if_not_found=False)
         group_user = env.ref('base.group_user', raise_if_not_found=False)
         if group_use_lead and group_user:
             group_user.write({'implied_ids': [(4, group_use_lead.id)]})
-            _logger.info('[Outlook Pro] Enabled "Use Leads" in CRM settings')
+            _logger.info('[Mail Pro] Enabled "Use Leads" in CRM settings')
     except Exception as e:
-        _logger.warning(f'[Outlook Pro] Could not enable Use Leads: {e}')
+        _logger.warning(f'[Mail Pro] Could not enable Use Leads: {e}')

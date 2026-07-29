@@ -58,7 +58,7 @@ jobs:
           python - <<'PY'
           import os, sys
           from xml.etree import ElementTree
-          # os.walk, not rglob: the repo carries a `pan_outlook_pro -> .`
+          # os.walk, not rglob: the repo carries a `pan_mail_pro -> .`
           # symlink for the local Docker addons_path, and rglob would follow it
           # forever. os.walk does not follow directory symlinks by default.
           failed = checked = 0
@@ -193,10 +193,10 @@ jobs:
           --health-retries 10
     steps:
       # Check out into a subdirectory so the parent can serve as addons_path
-      # without relying on the in-repo `pan_outlook_pro -> .` symlink.
+      # without relying on the in-repo `pan_mail_pro -> .` symlink.
       - uses: actions/checkout@v7
         with:
-          path: addons/pan_outlook_pro
+          path: addons/pan_mail_pro
 
       - name: Run module tests
         env:
@@ -209,8 +209,8 @@ jobs:
             -d ci_test \
             --db_host=localhost --db_port=5432 --db_user=odoo --db_password=odoo \
             --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
-            -i pan_outlook_pro \
-            --test-enable --test-tags=pan_outlook_pro \
+            -i pan_mail_pro \
+            --test-enable --test-tags=pan_mail_pro \
             --stop-after-init --without-demo=all \
             --max-cron-threads=0 --log-level=info 2>&1 | tee odoo-test.log
 

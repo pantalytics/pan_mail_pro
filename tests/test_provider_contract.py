@@ -12,7 +12,7 @@ from datetime import datetime
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
-from odoo.addons.pan_outlook_pro.models.mail_provider_client import (
+from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     DEFAULT_PROVIDER,
     FOLDER_INBOX,
     FOLDER_SENT,
@@ -21,7 +21,7 @@ from odoo.addons.pan_outlook_pro.models.mail_provider_client import (
 )
 
 
-@tagged('post_install', '-at_install', 'pan_outlook_pro')
+@tagged('post_install', '-at_install', 'pan_mail_pro')
 class TestProviderRegistry(TransactionCase):
     """The registry is the only place a provider code becomes a model."""
 
@@ -67,7 +67,7 @@ class TestProviderRegistry(TransactionCase):
         self.assertEqual(mailbox._get_client().provider_code(), DEFAULT_PROVIDER)
 
 
-@tagged('post_install', '-at_install', 'pan_outlook_pro')
+@tagged('post_install', '-at_install', 'pan_mail_pro')
 class TestProviderCapabilities(TransactionCase):
     """Providers differ in how 'send as somebody else' works."""
 
@@ -150,7 +150,7 @@ class TestProviderCapabilities(TransactionCase):
             self.client.resolve_receiving_account(mailbox).user_id, owner)
 
 
-@tagged('post_install', '-at_install', 'pan_outlook_pro')
+@tagged('post_install', '-at_install', 'pan_mail_pro')
 class TestGraphNormalization(TransactionCase):
     """Graph payload shapes must not leak past the client."""
 

@@ -5,7 +5,7 @@ Each user who wants to send emails via Microsoft 365 needs to connect their acco
 ## Connect Your Microsoft Account
 
 1. Click your **profile picture** (top right) → **My Profile**
-2. Go to the **Outlook Pro** tab
+2. Go to the **Mail Pro** tab
 3. Click **Connect Microsoft 365**
 4. Sign in with your Microsoft account
 5. Grant the requested permissions
@@ -16,7 +16,7 @@ Once connected, a personal mailbox is automatically created for you.
 
 After connecting:
 
-1. Go to **My Profile → Outlook Pro** tab
+1. Go to **My Profile → Mail Pro** tab
 2. Use the **Send from** dropdown to select your default mailbox
 3. Click **Save**
 
@@ -47,7 +47,7 @@ You'll see mailboxes based on your permissions:
 
 To disconnect your Microsoft account:
 
-1. Go to **My Profile → Outlook Pro** tab
+1. Go to **My Profile → Mail Pro** tab
 2. Toggle off the **Connected** switch
 3. Click **Save**
 

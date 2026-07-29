@@ -17,7 +17,7 @@
 **Cause:** User hasn't connected their Microsoft 365 account.
 
 **Solution:**
-1. Go to **My Profile → Outlook Pro** tab
+1. Go to **My Profile → Mail Pro** tab
 2. Click **Connect Microsoft 365**
 3. Complete the OAuth flow
 

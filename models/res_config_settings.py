@@ -134,7 +134,7 @@ class ResConfigSettings(models.TransientModel):
     def _compute_module_version(self):
         """Read installed module version from ir.module.module"""
         module = self.env['ir.module.module'].sudo().search([
-            ('name', '=', 'pan_outlook_pro')
+            ('name', '=', 'pan_mail_pro')
         ], limit=1)
         version = module.installed_version or ''
         for record in self:

@@ -38,9 +38,9 @@ class MailMail(models.Model):
                     vals['x_microsoft_mailbox_id'] = mailbox_id
         return super().create(vals_list)
 
-    def _is_outlook_pro_configured(self):
+    def _is_mail_pro_configured(self):
         """
-        Check if Outlook Pro module is minimally configured.
+        Check if Mail Pro module is minimally configured.
 
         Returns True if at least one active mailbox exists.
         This allows the system to work before setup is complete.
@@ -77,7 +77,7 @@ class MailMail(models.Model):
         if not graph_mails:
             return True
 
-        # If Outlook Pro is not in use yet (no mailboxes anywhere in the system,
+        # If Mail Pro is not in use yet (no mailboxes anywhere in the system,
         # including archived ones), fall through to Odoo's standard mail handling.
         # This keeps demo/QA/dev environments working out-of-the-box: standard SMTP
         # (or the mail queue) takes over until an admin actually configures Graph
@@ -94,8 +94,8 @@ class MailMail(models.Model):
 
         # Mailboxes exist but none active/usable for this batch → cancel.
         # Protects production against unintended SMTP leakage when an admin
-        # has set up Outlook Pro but routing fails for a specific mail.
-        if not graph_mails._is_outlook_pro_configured():
+        # has set up Mail Pro but routing fails for a specific mail.
+        if not graph_mails._is_mail_pro_configured():
             _logger.warning("[Graph API] Mailboxes exist but none active for this batch — cancelling")
             for mail in graph_mails:
                 mail.write({'state': 'cancel'})
@@ -376,7 +376,7 @@ class MailMail(models.Model):
             if not mailbox:
                 return _(
                     'No Notification mailbox configured. '
-                    'Go to Settings → Outlook Pro → Manage Mailbox List and create a mailbox with type "Notification".'
+                    'Go to Settings → Mail Pro → Manage Mailbox List and create a mailbox with type "Notification".'
                 )
 
             if not mailbox.x_owner_user_id:
@@ -438,7 +438,7 @@ class MailMail(models.Model):
                 )
             return _(
                 'User "%(user)s" has no connected %(provider)s account. '
-                'Go to My Profile → Outlook Pro and connect it.',
+                'Go to My Profile → Mail Pro and connect it.',
                 user=user.name, provider=provider,
             )
 
@@ -451,7 +451,7 @@ class MailMail(models.Model):
         if self._is_internal_user_notification():
             return _(
                 'Notification sender not configured or not connected to Microsoft. '
-                'Go to Settings → Outlook Pro and configure the Notification Sender.'
+                'Go to Settings → Mail Pro and configure the Notification Sender.'
             )
 
         if not account:

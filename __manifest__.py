@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 {
-    'name': "Outlook Pro - Microsoft 365 Email Integration",
+    'name': "Mail Pro - Microsoft 365 Email Integration",
     'summary': "Send from shared mailboxes, 2-way sync, proper threading - via Graph API",
     'description': """
-        Outlook Pro - Secure Professional Email Integration
+        Mail Pro - Secure Professional Email Integration
         ====================================================
 
         Full control over your Microsoft 365 email - send from any mailbox, receive everything.
@@ -43,7 +43,7 @@
         3. Set your default mailbox in: Settings → Users → Your User → Email tab
 
         **Receiving:**
-        1. Go to Settings → Outlook Pro → Manage Mailbox List
+        1. Go to Settings → Mail Pro → Manage Mailbox List
         2. Open a mailbox and go to the "Incoming Sync" tab
         3. Enable sync and select a user with Microsoft connection
         4. Emails will appear in the partner's chatter automatically
@@ -64,7 +64,7 @@
 
         Setup Instructions:
         -------------------
-        After installation, go to Settings → Outlook Pro
+        After installation, go to Settings → Mail Pro
         Follow the step-by-step Azure configuration guide.
 
         API Permissions needed:
@@ -79,10 +79,10 @@
         - No data is sent to the module author or any third party
     """,
     'author': "Pantalytics B.V. by Rutger Hofste",
-    'website': "https://www.pantalytics.com/apps/outlook-pro/",
+    'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.2.2.0',
+    'version': '19.0.3.0.0',
     'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -102,8 +102,8 @@
     ],
     'assets': {
         'web.assets_backend': [
-            'pan_outlook_pro/static/src/js/mailbox_list_controller.js',
-            'pan_outlook_pro/static/src/xml/mailbox_list_view.xml',
+            'pan_mail_pro/static/src/js/mailbox_list_controller.js',
+            'pan_mail_pro/static/src/xml/mailbox_list_view.xml',
         ],
     },
     'images': [

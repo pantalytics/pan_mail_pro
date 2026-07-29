@@ -29,7 +29,7 @@ import os
 
 from odoo.tests import TransactionCase, tagged
 
-from odoo.addons.pan_outlook_pro.models import encryption_utils
+from odoo.addons.pan_mail_pro.models import encryption_utils
 
 # Pinned to the version directory on purpose. When a later phase adds another
 # migration, this raises FileNotFoundError instead of silently testing nothing.
@@ -46,7 +46,7 @@ def _load_migration():
     return module
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestAccountMigration(TransactionCase):
 
     @classmethod

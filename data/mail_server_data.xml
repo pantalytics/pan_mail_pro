@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!--
-        Disable SMTP: Outlook Pro sends all emails via Microsoft Graph API.
+        Disable SMTP: Mail Pro sends all emails via Microsoft Graph API.
 
         This creates an invalid outgoing mail server to prevent Odoo from
         using SMTP. On Odoo.sh, the platform requires at least one mail server
@@ -9,7 +9,7 @@
         our module handles all email sending via Graph API.
     -->
     <record id="mail_server_invalid_outlook_pro" model="ir.mail_server">
-        <field name="name">[Outlook Pro] SMTP Disabled</field>
+        <field name="name">[Mail Pro] SMTP Disabled</field>
         <field name="smtp_host">invalid.outlook-pro.disabled</field>
         <field name="smtp_port">25</field>
         <field name="smtp_encryption">none</field>

@@ -5,7 +5,7 @@ from odoo.tests import TransactionCase, tagged
 from odoo.tools import mute_logger
 
 
-@tagged('pan_outlook_pro', 'post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestMailAccount(TransactionCase):
 
     @classmethod
