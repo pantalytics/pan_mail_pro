@@ -185,7 +185,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.debug(f"[Incoming Mail] Skipping duplicate: {internet_message_id}")
             return False
 
-        _logger.info(f"[Incoming Mail] Processing: {message.get('subject') or '(no subject)'}")
+        # Sender, recipient and subject are personal data. They are logged at
+        # DEBUG only, and nowhere else in this method: logs routinely leave the
+        # database (hosting, aggregators) and are out of reach of an erasure
+        # request. INFO identifies a message by its provider id, which is not.
+        _logger.info("[Incoming Mail] Processing message %s", internet_message_id)
+        _logger.debug(
+            "[Incoming Mail] %s subject=%r", internet_message_id,
+            message.get('subject') or '(no subject)',
+        )
 
         # Get full message with headers for threading
         client = mailbox._get_client()
@@ -215,18 +223,18 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 return False
             contact_email = to_recipients[0].get('email', '')
             contact_name = to_recipients[0].get('name', '')
-            _logger.info(f"[Incoming Mail] Sent to: name='{contact_name}', email='{contact_email}'")
+            _logger.debug(f"[Incoming Mail] Sent to: name='{contact_name}', email='{contact_email}'")
         else:
             # Inbox: use the sender
             sender = full_message.get('from') or {}
             contact_email = sender.get('email', '')
             contact_name = sender.get('name', '')
-            _logger.info(f"[Incoming Mail] From: name='{contact_name}', email='{contact_email}'")
+            _logger.debug(f"[Incoming Mail] From: name='{contact_name}', email='{contact_email}'")
 
         # Skip emails from/to internal domains (only for incoming, not sent items)
         # This is a per-mailbox setting - team mailboxes may want internal emails logged
         if not is_outgoing and self._is_internal_domain(contact_email, mailbox):
-            _logger.info(f"[Incoming Mail] Skipping internal domain: {contact_email}")
+            _logger.info("[Incoming Mail] Skipping %s: internal domain", internet_message_id)
             return False
 
         # Find existing partner (if any)
@@ -234,12 +242,12 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         # Check if partner is blocked
         if partner and partner.x_email_sync_blocked:
-            _logger.info(f"[Incoming Mail] Skipping blocked contact: {partner.name} ({contact_email})")
+            _logger.info("[Incoming Mail] Skipping %s: blocked contact", internet_message_id)
             return False
 
         # Skip internal users (Odoo employees)
         if partner and partner.user_ids:
-            _logger.info(f"[Incoming Mail] Skipping internal user: {partner.name} ({contact_email})")
+            _logger.info("[Incoming Mail] Skipping %s: sender is an internal user", internet_message_id)
             return False
 
         # Determine if this is a known or unknown contact
@@ -249,9 +257,12 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         if mailbox.x_sync_mode == 'known_partners':
             # Only process known contacts
             if not is_known_contact:
-                _logger.info(f"[Incoming Mail] Skipping unknown contact (sync mode=known_partners): {contact_email}")
+                _logger.info(
+                    "[Incoming Mail] Skipping %s: unknown contact (sync mode=known_partners)",
+                    internet_message_id,
+                )
                 return False
-            _logger.info(f"[Incoming Mail] Known partner filter passed: {partner.name}")
+            _logger.debug(f"[Incoming Mail] Known partner filter passed: {partner.name}")
 
         elif mailbox.x_sync_mode == 'all':
             # 'all' mode: process both known and unknown contacts
@@ -259,7 +270,10 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 # Unknown contact - check routing setting
                 if mailbox.x_queue_unknown_contacts:
                     # TODO: Queue for approval - for now, skip
-                    _logger.info(f"[Incoming Mail] Unknown contact queued for approval (not implemented yet): {contact_email}")
+                    _logger.info(
+                        "[Incoming Mail] Skipping %s: unknown contact queued for approval "
+                        "(not implemented yet)", internet_message_id,
+                    )
                     return False
                 # 'auto' mode: will create partner below
             _logger.info(f"[Incoming Mail] All contacts mode: processing {'known' if is_known_contact else 'unknown'} contact")
@@ -280,7 +294,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         partner = None
         if contact_email:
             partner = self._find_or_create_partner(contact_email, contact_name)
-            _logger.info(f"[Incoming Mail] Partner resolved: {partner.name} (id={partner.id}, email={partner.email})")
+            _logger.debug(f"[Incoming Mail] Partner resolved: {partner.name} (id={partner.id}, email={partner.email})")
 
         if not partner:
             _logger.warning(f"[Incoming Mail] Could not resolve partner for {contact_email}, skipping")
@@ -414,7 +428,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                         message_id=internet_message_id,
                         attachments=email_attachments,
                     )
-                    _logger.info(f"[Incoming Mail] Posted sent item to partner {partner.name}")
+                    _logger.debug(f"[Incoming Mail] Posted sent item to partner {partner.name}")
                 else:
                     # New incoming email → route via alias or partner chatter
                     target_record, message = self._route_email_via_alias(
@@ -578,7 +592,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             'email': email,
             'is_company': False,
         })
-        _logger.info(f"[Incoming Mail] Created new partner: {partner.name} ({email})")
+        _logger.info("[Incoming Mail] Created new partner id=%s", partner.id)
+        _logger.debug(f"[Incoming Mail] Created new partner: {partner.name} ({email})")
 
         return partner
 
@@ -661,5 +676,5 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             incoming_email_cc=msg_dict.get('cc', ''),
         )
 
-        _logger.info(f"[Incoming Mail] Created {model} via message_new: {record.display_name} (id={record.id})")
+        _logger.info("[Incoming Mail] Created %s id=%s via message_new", model, record.id)
         return record, message

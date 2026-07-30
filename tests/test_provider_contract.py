@@ -40,7 +40,7 @@ class TestProviderRegistry(TransactionCase):
         required = [
             'provider_code', 'account_for_user', 'resolve_sending_account',
             'resolve_receiving_account', 'get_authorization_url',
-            'exchange_code_for_tokens', 'refresh_access_token',
+            '_exchange_code_for_tokens', 'refresh_access_token',
             'get_valid_token', 'get_user_email', 'test_connection',
             'send_message', 'fetch_messages', 'get_message',
             'get_message_attachments',

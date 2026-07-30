@@ -176,7 +176,7 @@ class GoogleGmailClient(models.AbstractModel):
     # Token lifecycle
     # -------------------------------------------------------------------------
     @api.model
-    def exchange_code_for_tokens(self, authorization_code, redirect_uri):
+    def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
         """Trade an authorization code for access + refresh tokens."""
         config = self._get_config_params()
         data = {

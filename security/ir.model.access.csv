@@ -1,11 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_microsoft_graph_client_user,microsoft.graph.client.user,model_microsoft_graph_client,base.group_user,1,1,1,0
 access_microsoft_oauth_wizard_user,microsoft.oauth.wizard.user,model_microsoft_oauth_wizard,base.group_user,1,1,1,1
 access_microsoft_mailbox_user,x_microsoft.mailbox.user,model_x_microsoft_mailbox,base.group_user,1,0,0,0
-access_microsoft_mailbox_system,x_microsoft.mailbox.system,model_x_microsoft_mailbox,base.group_system,1,1,1,1
-access_microsoft_incoming_mail_processor_user,microsoft.incoming.mail.processor.user,model_microsoft_incoming_mail_processor,base.group_user,1,0,0,0
-access_microsoft_incoming_mail_processor_system,microsoft.incoming.mail.processor.system,model_microsoft_incoming_mail_processor,base.group_system,1,1,1,1
-access_mail_provider_client_user,mail.provider.client.user,model_mail_provider_client,base.group_user,1,1,1,0
-access_google_gmail_client_user,google.gmail.client.user,model_google_gmail_client,base.group_user,1,1,1,0
+access_microsoft_mailbox_manager,x_microsoft.mailbox.manager,model_x_microsoft_mailbox,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
 access_pan_mail_account_user,pan.mail.account.user,model_pan_mail_account,base.group_user,1,0,0,0
-access_pan_mail_account_system,pan.mail.account.system,model_pan_mail_account,base.group_system,1,1,1,1
+access_pan_mail_account_manager,pan.mail.account.manager,model_pan_mail_account,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1

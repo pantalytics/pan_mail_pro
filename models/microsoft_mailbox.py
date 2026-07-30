@@ -35,6 +35,31 @@ class MicrosoftMailbox(models.Model):
         self.ensure_one()
         return get_provider_client(self.env, self.x_provider)
 
+    def _is_sendable_by(self, user):
+        """Whether `user` may choose this mailbox as the sender of a mail.
+
+        A personal mailbox sends with its *owner's* delegated token (see
+        `_resolve_sending_user` in the Microsoft client), so letting anyone pick
+        one lets any internal user send mail as a colleague, signed by that
+        colleague's own token. Microsoft does not stop it: it is not a SendAs,
+        it is the owner's credentials being used directly.
+
+        The composer's view domain expresses the same rule, but a view domain is
+        a convenience for the UI, never a boundary — the field is writable over
+        RPC. This method is the boundary.
+
+        Notification mailboxes are owner-only for the same reason. System mail
+        still reaches them through `_get_notification_mailbox_and_account()`,
+        which is a separate path and deliberately not affected.
+        """
+        self.ensure_one()
+        if not self.active:
+            return False
+        if self.x_mailbox_type in ('personal', 'notification'):
+            return bool(self.x_owner_user_id) and self.x_owner_user_id == user
+        # Shared mailboxes are shared on purpose.
+        return True
+
     def _has_working_credentials(self):
         """Whether this mailbox can actually reach its provider right now.
 

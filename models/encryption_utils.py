@@ -6,28 +6,34 @@ Uses Fernet symmetric encryption with auto-generated key stored in database.
 This provides defense-in-depth security on top of Odoo.sh database encryption.
 """
 import logging
+import os
 from cryptography.fernet import Fernet
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
-# System parameter for auto-generated encryption key
+# System parameter for auto-generated encryption key.
+# The name still says outlook: renaming it would orphan every stored token,
+# because the parameter *is* the key. It is deliberately left alone.
 AUTO_KEY_PARAM = 'x_pan_outlook_pro.encryption_key'
+
+# Optional deployment-level override, read before the database.
+ENV_KEY_VAR = 'PAN_MAIL_ENCRYPTION_KEY'
 
 
 def get_encryption_key(env):
     """
-    Get or generate encryption key from database.
+    Get the encryption key: environment first, then database.
 
-    The key is auto-generated on first use and stored in ir.config_parameter.
-    This provides zero-configuration encryption for OAuth tokens.
+    When PAN_MAIL_ENCRYPTION_KEY is set it wins and nothing is written to
+    ir.config_parameter. That is the only configuration in which a database
+    dump does not also contain the key that decrypts its tokens.
 
-    Security note: Key is stored in database (same as encrypted data).
-    This is acceptable for Odoo.sh because:
-    - Odoo.sh database is already encrypted at rest
-    - Provides defense against SQL injection and backup file leaks
-    - Better than storing tokens in plain text
-    - ISO 27001 compliant with database-level encryption
+    Otherwise the key is generated on first use and stored in the database
+    alongside the ciphertext it protects. That is zero-configuration and
+    defends against SQL injection and stolen table extracts, but it does NOT
+    defend against a stolen backup: whoever holds the dump holds both halves.
+    Say so plainly to customers rather than implying otherwise.
 
     Args:
         env: Odoo environment
@@ -35,6 +41,10 @@ def get_encryption_key(env):
     Returns:
         bytes: Encryption key
     """
+    env_key = os.environ.get(ENV_KEY_VAR)
+    if env_key:
+        return env_key.encode('utf-8')
+
     IrConfigParameter = env['ir.config_parameter'].sudo()
     key = IrConfigParameter.get_param(AUTO_KEY_PARAM)
 

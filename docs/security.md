@@ -42,8 +42,25 @@ Mail Pro uses **delegated permissions only** - the app acts on behalf of the sig
 All OAuth tokens are encrypted before storage:
 
 - **Algorithm:** Fernet (AES-128-CBC with HMAC)
-- **Key:** Derived from Odoo database UUID
+- **Key:** A random 32-byte key generated on first use and stored in
+  `ir.config_parameter` under `x_pan_outlook_pro.encryption_key` (the name predates
+  the module rename and cannot change without orphaning existing tokens)
 - **Storage:** Encrypted in PostgreSQL
+
+> **Key and ciphertext live in the same database.** A database dump therefore
+> contains both, which makes any backup of this database credential material and
+> means it must be handled to the same standard as the tokens themselves. Restoring
+> a production dump into a test environment carries working OAuth tokens with it;
+> revoke or clear `pan.mail.account` rows after such a restore.
+>
+> An earlier version of this document stated the key was derived from the Odoo
+> database UUID. That was never what the code did (`models/encryption_utils.py`),
+> and derivation from a value stored in the same database would not have changed
+> the property above.
+
+For deployments that need the key held outside the database, set the
+`PAN_MAIL_ENCRYPTION_KEY` environment variable; when present it takes precedence
+over the stored parameter and nothing is written to `ir.config_parameter`.
 
 ### Token Handling
 
