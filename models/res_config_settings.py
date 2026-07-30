@@ -6,13 +6,46 @@ from odoo.exceptions import UserError
 from . import encryption_utils
 from . import mail_mail
 from . import pan_mail_internal_domains as internal_domains
-from .mail_provider_client import get_provider_client
+from .mail_provider_client import PROVIDER_SELECTION, get_provider_client  # noqa: F401
 
 _logger = logging.getLogger(__name__)
 
 
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
+
+    # -------------------------------------------------------------------------
+    # Provider selection — step one of setup
+    #
+    # Which provider an admin is setting up decides every step shown below it:
+    # Azure asks for a tenant, Google does not, and showing both credential
+    # forms at once is how you get a page that looks broken in either direction.
+    # The choices come from the registry, so a newly registered provider shows
+    # up here without touching this file.
+    #
+    # Selecting a provider is a view choice, not an exclusive commitment. Each
+    # provider stores its own credentials under its own config parameters, so
+    # switching back and forth loses nothing and one database can serve
+    # mailboxes on both providers at the same time.
+    # -------------------------------------------------------------------------
+    x_mail_provider = fields.Selection(
+        PROVIDER_SELECTION,
+        string='Email Provider',
+        config_parameter='x_pan_outlook_pro.setup_provider',
+        help='Where your email is hosted. Determines which setup steps are shown.',
+    )
+
+    # Provider-neutral state of the selected provider, so the steps below the
+    # picker do not each have to know which provider they are looking at.
+    x_provider_credentials_set = fields.Boolean(
+        compute='_compute_provider_state',
+        string='Provider Credentials Set',
+    )
+
+    x_provider_connected = fields.Boolean(
+        compute='_compute_provider_state',
+        string='Provider Account Connected',
+    )
 
     # Module version
     x_microsoft_module_version = fields.Char(
@@ -172,28 +205,81 @@ class ResConfigSettings(models.TransientModel):
         config_parameter='x_pan_outlook_pro.token_url'
     )
 
+    @api.depends(
+        'x_mail_provider',
+        'x_microsoft_client_id', 'x_microsoft_client_secret', 'x_microsoft_tenant_id',
+        'x_google_client_id', 'x_google_client_secret',
+    )
+    def _compute_provider_state(self):
+        """Answer "is the selected provider set up, and am I connected to it".
+
+        Reads the record's own fields rather than the config parameters so the
+        steps below the picker react while the admin is still typing, before
+        anything is saved.
+        """
+        for record in self:
+            if record.x_mail_provider == 'outlook':
+                record.x_provider_credentials_set = bool(
+                    record.x_microsoft_client_id
+                    and record.x_microsoft_tenant_id
+                    and record.x_microsoft_client_secret
+                )
+                record.x_provider_connected = record.x_current_user_oauth_connected
+            elif record.x_mail_provider == 'gmail':
+                record.x_provider_credentials_set = bool(
+                    record.x_google_client_id and record.x_google_client_secret
+                )
+                record.x_provider_connected = record.x_current_user_google_connected
+            elif record.x_mail_provider == 'imap':
+                # IMAP has no global credential and no consent screen: a login
+                # belongs to one address. So "credentials set" means at least
+                # one account exists, and "connected" means at least one of them
+                # is complete. Both are read from the accounts rather than from
+                # fields on this form, which is why they cannot react while the
+                # admin types - there is nothing here to type.
+                accounts = self.env['pan.mail.account'].sudo().with_context(
+                    active_test=False).search([('provider', '=', 'imap')])
+                record.x_provider_credentials_set = bool(accounts)
+                record.x_provider_connected = any(accounts.mapped('connected'))
+            else:
+                record.x_provider_credentials_set = False
+                record.x_provider_connected = False
+
+    def get_values(self):
+        """Pre-select whichever provider already has credentials.
+
+        A database configured before this picker existed has no stored choice.
+        Landing it on an empty dropdown would read as "nothing is set up here"
+        on an Azure tenant that has been sending mail for months.
+        """
+        res = super().get_values()
+        IrConfigParameter = self.env['ir.config_parameter'].sudo()
+        # get_values() runs *after* default_get() has read the config
+        # parameters, so anything set here overrides a stored choice. Only fill
+        # the gap when there is genuinely nothing stored.
+        if not IrConfigParameter.get_param('x_pan_outlook_pro.setup_provider'):
+            if IrConfigParameter.get_param('x_pan_outlook_pro.client_id'):
+                res['x_mail_provider'] = 'outlook'
+            elif IrConfigParameter.get_param('x_pan_outlook_pro.google_client_id'):
+                res['x_mail_provider'] = 'gmail'
+        return res
+
     # -------------------------------------------------------------------------
     # Onboarding
     #
     # Setup has a fixed order, and every step used to be discoverable only by
     # knowing it existed. These fields drive a checklist that states what is
     # done, what is next, and what is blocking — the ordering matters most
-    # around step 3: connecting the admin's own account before creating
-    # notifications@ is what turns that mailbox into a single button instead of
-    # a form you have to understand.
+    # around step 3: connecting your own account before creating notifications@
+    # is what turns that mailbox into a single button instead of a form.
+    #
+    # Which provider is being set up is NOT asked again here. `x_mail_provider`
+    # above already answers it, reads its choices from the provider registry
+    # (so a new provider appears without touching this file), and exposes
+    # `x_provider_credentials_set` / `x_provider_connected` — the two flags
+    # steps 2 and 3 need. A second provider picker would have been a duplicate
+    # that silently lagged the registry by one provider.
     # -------------------------------------------------------------------------
-    x_setup_provider = fields.Selection([
-        ('outlook', 'Microsoft 365'),
-        ('gmail', 'Google Workspace'),
-        ('both', 'Both'),
-    ], string='Email Provider',
-        config_parameter='x_pan_outlook_pro.setup_provider',
-        default=lambda self: self._infer_setup_provider(),
-        help='Which provider this database sends mail through. '
-             'Only the relevant setup steps are shown.')
-
-    x_setup_credentials_done = fields.Boolean(compute='_compute_setup_status')
-    x_setup_account_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_users_done = fields.Boolean(compute='_compute_setup_status')
@@ -211,29 +297,12 @@ class ResConfigSettings(models.TransientModel):
         help='Address system emails are sent from, e.g. notifications@company.com',
     )
 
-    def _infer_setup_provider(self):
-        """Guess the provider from credentials that are already filled in.
-
-        An existing database should not be told to pick a provider it has been
-        using for a year.
-        """
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-        has_ms = bool(IrConfigParameter.get_param('x_pan_outlook_pro.client_id'))
-        has_google = bool(IrConfigParameter.get_param('x_pan_outlook_pro.google_client_id'))
-        if has_ms and has_google:
-            return 'both'
-        if has_google:
-            return 'gmail'
-        if has_ms:
-            return 'outlook'
-        return False
-
     def _default_notification_mailbox_email(self):
         """Pre-fill notifications@<your domain> so step 5 is one click."""
-        domains = self.env['pan.mail.internal.domains'].get_domains()
-        if not domains:
-            domains = self.env['pan.mail.internal.domains'].suggest_domains()
+        Domains = self.env['pan.mail.internal.domains']
+        domains = Domains.get_domains() or Domains.suggest_domains()
         return f'notifications@{domains[0]}' if domains else False
+
 
     def _compute_module_version(self):
         """Read installed module version from ir.module.module"""
@@ -391,25 +460,25 @@ class ResConfigSettings(models.TransientModel):
             record.x_internal_domains_uncovered = uncovered if configured else ''
             record.x_internal_sync_mailbox_count = internal_sync_count
 
-    @api.depends('x_setup_provider', 'x_microsoft_client_id', 'x_microsoft_tenant_id',
-                 'x_google_client_id', 'x_internal_domains', 'x_sync_internal_email')
+    @api.depends('x_mail_provider', 'x_provider_credentials_set', 'x_provider_connected',
+                 'x_internal_domains', 'x_sync_internal_email')
     def _compute_setup_status(self):
-        """One pass over the whole checklist.
+        """The checklist steps that are not about the provider.
+
+        Steps 1-3 (pick a provider, its credentials, connect your account) are
+        `x_mail_provider` plus `_compute_provider_state`. Everything from step 4
+        on is provider-independent — internal domains, the notification mailbox,
+        the users — so it lives here and never asks which provider it is.
 
         Each step answers "can the next one succeed", not "did somebody fill in
-        a field" — a connected account with an expired token is not a done step.
+        a field": a notification mailbox whose owner's token expired is not a
+        done step.
         """
         Mailbox = self.env['x_microsoft.mailbox'].sudo()
         Domains = self.env['pan.mail.internal.domains']
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-
-        ms_secret = bool(IrConfigParameter.get_param('x_pan_outlook_pro.client_secret_encrypted'))
-        google_secret = bool(IrConfigParameter.get_param('x_pan_outlook_pro.google_client_secret_encrypted'))
 
         users = self._mail_pro_users()
-        users_connected = len(users.filtered(
-            lambda u: u.x_microsoft_oauth_connected or u.x_google_oauth_connected
-        ))
+        users_connected = len(users.filtered('x_pan_mail_connected'))
 
         pending = self.env['mail.mail'].sudo().search_count([
             ('state', '=', 'outgoing'),
@@ -421,26 +490,6 @@ class ResConfigSettings(models.TransientModel):
         ], limit=1).filtered(lambda m: m._has_working_credentials()))
 
         for record in self:
-            provider = record.x_setup_provider
-            ms_ready = bool(record.x_microsoft_client_id and record.x_microsoft_tenant_id and ms_secret)
-            google_ready = bool(record.x_google_client_id and google_secret)
-
-            if provider == 'gmail':
-                credentials_done = google_ready
-                account_done = record.x_current_user_google_connected
-            elif provider == 'both':
-                credentials_done = ms_ready and google_ready
-                account_done = (record.x_current_user_oauth_connected
-                                and record.x_current_user_google_connected)
-            elif provider == 'outlook':
-                credentials_done = ms_ready
-                account_done = record.x_current_user_oauth_connected
-            else:
-                credentials_done = False
-                account_done = False
-
-            record.x_setup_credentials_done = credentials_done
-            record.x_setup_account_done = account_done
             record.x_setup_domains_done = (
                 bool(Domains._parse(record.x_internal_domains)) or record.x_sync_internal_email
             )
@@ -450,8 +499,11 @@ class ResConfigSettings(models.TransientModel):
             record.x_setup_users_done = bool(users) and users_connected == len(users)
             record.x_setup_pending_notifications = pending
             record.x_setup_complete = bool(
-                provider and credentials_done and account_done
-                and record.x_setup_domains_done and notification_ok
+                record.x_mail_provider
+                and record.x_provider_credentials_set
+                and record.x_provider_connected
+                and record.x_setup_domains_done
+                and notification_ok
             )
 
     def action_apply_suggested_internal_domains(self):
@@ -489,8 +541,13 @@ class ResConfigSettings(models.TransientModel):
                 'A Notification mailbox already exists (%s). Edit that one instead.'
             ) % existing.email)
 
-        provider = 'gmail' if self.x_setup_provider == 'gmail' else 'outlook'
-        if not (self.env.user.x_microsoft_oauth_connected or self.env.user.x_google_oauth_connected):
+        if not self.x_mail_provider:
+            raise UserError(_('Choose your email provider first.'))
+
+        # The mailbox is served by the provider being set up, whatever that is —
+        # reading the picker rather than mapping known provider codes means a
+        # newly registered provider works here without an edit.
+        if not self.env.user.x_pan_mail_connected:
             raise UserError(_(
                 'Connect your own email account first — the notification mailbox '
                 'sends with its owner\'s credentials.'
@@ -499,7 +556,7 @@ class ResConfigSettings(models.TransientModel):
         mailbox = Mailbox.create({
             'email': email,
             'x_mailbox_type': 'notification',
-            'x_provider': provider,
+            'x_provider': self.x_mail_provider,
             'x_owner_user_id': self.env.user.id,
         })
         _logger.info(f"[Mail Pro] Created notification mailbox {mailbox.email} from setup checklist")
@@ -522,7 +579,7 @@ class ResConfigSettings(models.TransientModel):
         """Show exactly who still has to connect their mailbox."""
         self.ensure_one()
         pending = self._mail_pro_users().filtered(
-            lambda u: not (u.x_microsoft_oauth_connected or u.x_google_oauth_connected)
+            lambda u: not u.x_pan_mail_connected
         )
         return {
             'type': 'ir.actions.act_window',
@@ -537,7 +594,7 @@ class ResConfigSettings(models.TransientModel):
         """Ask every user who has not connected yet to do so."""
         self.ensure_one()
         pending = self._mail_pro_users().filtered(
-            lambda u: not (u.x_microsoft_oauth_connected or u.x_google_oauth_connected)
+            lambda u: not u.x_pan_mail_connected
         )
         sent = pending._send_connect_invites()
         return {

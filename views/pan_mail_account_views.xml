@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- List View -->
+    <record id="view_pan_mail_account_list" model="ir.ui.view">
+        <field name="name">pan.mail.account.list</field>
+        <field name="model">pan.mail.account</field>
+        <field name="arch" type="xml">
+            <list string="Email Accounts" decoration-muted="not connected">
+                <field name="email"/>
+                <field name="provider"/>
+                <field name="user_id" optional="show"/>
+                <field name="connected" widget="boolean_toggle" readonly="1"/>
+                <field name="imap_host" optional="hide"/>
+                <field name="smtp_host" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_pan_mail_account_form" model="ir.ui.view">
+        <field name="name">pan.mail.account.form</field>
+        <field name="model">pan.mail.account</field>
+        <field name="arch" type="xml">
+            <form string="Email Account">
+                <header>
+                    <button name="action_test_connection" type="object"
+                            string="Test Connection" class="btn-primary" icon="fa-plug"/>
+                </header>
+                <sheet>
+                    <widget name="web_ribbon" title="Connected" bg_color="text-bg-success"
+                            invisible="not connected"/>
+                    <group>
+                        <group>
+                            <field name="email" placeholder="info@company.com"/>
+                            <field name="provider"/>
+                            <field name="user_id"
+                                   help="Leave empty for a shared address that belongs to a mailbox rather than a person."
+                                   options="{'no_create': True}"/>
+                        </group>
+                        <group>
+                            <field name="connected" readonly="1"/>
+                            <field name="active" widget="boolean_toggle"/>
+                        </group>
+                    </group>
+
+                    <!-- OAuth providers: nothing to type here, the consent
+                         screen fills it in. -->
+                    <div class="alert alert-info" role="alert" invisible="provider == 'imap'">
+                        These credentials are granted through the provider's consent screen.
+                        Connect the account from
+                        <b>My Profile → Mail Pro</b> (or Settings → Mail Pro for the admin flow).
+                    </div>
+
+                    <notebook invisible="provider != 'imap'">
+                        <page string="Incoming (IMAP)" name="imap">
+                            <group>
+                                <group>
+                                    <field name="imap_host" placeholder="imap.soverin.net"
+                                           required="provider == 'imap'"/>
+                                    <field name="imap_port"/>
+                                    <field name="imap_security"/>
+                                </group>
+                                <group>
+                                    <field name="imap_sent_folder" placeholder="Sent"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Outgoing (SMTP)" name="smtp">
+                            <group>
+                                <group>
+                                    <field name="smtp_host" placeholder="smtp.soverin.net"
+                                           required="provider == 'imap'"/>
+                                    <field name="smtp_port"/>
+                                    <field name="smtp_security"/>
+                                </group>
+                                <group/>
+                            </group>
+                        </page>
+                        <page string="Login" name="login">
+                            <group>
+                                <group>
+                                    <field name="username" placeholder="Defaults to the email address"/>
+                                    <field name="password" password="True"
+                                           required="provider == 'imap'"/>
+                                </group>
+                                <group>
+                                    <div class="text-muted">
+                                        The password is encrypted before it is stored, and is never
+                                        shown again in plain text.
+                                    </div>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_pan_mail_account_search" model="ir.ui.view">
+        <field name="name">pan.mail.account.search</field>
+        <field name="model">pan.mail.account</field>
+        <field name="arch" type="xml">
+            <search string="Email Accounts">
+                <field name="email"/>
+                <field name="user_id"/>
+                <filter name="filter_connected" string="Connected" domain="[('connected', '=', True)]"/>
+                <filter name="filter_disconnected" string="Not Connected" domain="[('connected', '=', False)]"/>
+                <separator/>
+                <filter name="filter_service" string="Shared Address"
+                        domain="[('user_id', '=', False)]"/>
+                <!-- Group-by lives in a bare <group>: Odoo 19's search RNG
+                     rejects the older expand="0" string="Group By" form. -->
+                <group>
+                    <filter name="group_provider" string="Provider" context="{'group_by': 'provider'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_pan_mail_account" model="ir.actions.act_window">
+        <field name="name">Email Accounts</field>
+        <field name="res_model">pan.mail.account</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add an email account
+            </p>
+            <p>
+                Credentials for one address on one provider. Microsoft 365 and Gmail
+                accounts appear here after connecting them; IMAP/SMTP accounts are
+                entered by hand.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu: Settings → Technical → Email → Email Accounts -->
+    <menuitem id="menu_pan_mail_account"
+              name="Email Accounts"
+              parent="base.menu_email"
+              action="action_pan_mail_account"
+              sequence="6"
+              groups="base.group_system"/>
+</odoo>

@@ -139,7 +139,7 @@ class TestSetupChecklist(TransactionCase):
 
     def test_notification_mailbox_is_one_click(self):
         settings = self._settings({
-            'x_setup_provider': 'outlook',
+            'x_mail_provider': 'outlook',
             'x_notification_mailbox_email': 'notifications@checklist.test',
         })
 
@@ -152,6 +152,9 @@ class TestSetupChecklist(TransactionCase):
         self.assertEqual(mailbox.x_owner_user_id, self.admin,
                          "the admin who ran setup owns it — that is why step 3 "
                          "connects their account first")
+        self.assertEqual(mailbox.x_provider, 'outlook',
+                         "the mailbox is served by the provider being set up, "
+                         "whichever one that is")
 
     def test_notification_address_is_prefilled_from_the_domain(self):
         settings = self._settings()
@@ -160,11 +163,13 @@ class TestSetupChecklist(TransactionCase):
 
     def test_refuses_a_second_notification_mailbox(self):
         self._settings({
+            'x_mail_provider': 'outlook',
             'x_notification_mailbox_email': 'notifications@checklist.test',
         }).action_create_notification_mailbox()
 
         with self.assertRaises(UserError):
             self._settings({
+                'x_mail_provider': 'outlook',
                 'x_notification_mailbox_email': 'other@checklist.test',
             }).action_create_notification_mailbox()
 
@@ -187,17 +192,15 @@ class TestSetupChecklist(TransactionCase):
 
         self.assertIn('suggestme.test', settings.x_internal_domains)
 
-    def test_provider_is_inferred_for_existing_databases(self):
-        """An existing install must not be asked to pick what it already uses."""
-        self.env['ir.config_parameter'].sudo().search([
-            ('key', '=', 'x_pan_outlook_pro.setup_provider'),
-        ]).unlink()
+    def test_notification_mailbox_needs_a_provider(self):
+        """Step 1 gates step 5: without a provider there is nothing to serve it."""
         self.env['ir.config_parameter'].sudo().set_param(
-            'x_pan_outlook_pro.client_id', 'some-azure-app'
+            'x_pan_outlook_pro.setup_provider', ''
         )
-
-        self.assertEqual(self.env['res.config.settings'].default_get(
-            ['x_setup_provider'])['x_setup_provider'], 'outlook')
+        with self.assertRaises(UserError):
+            self._settings({
+                'x_notification_mailbox_email': 'notifications@checklist.test',
+            }).action_create_notification_mailbox()
 
     def test_uncovered_mailbox_domain_surfaces_in_settings(self):
         self.env['x_microsoft.mailbox'].create({

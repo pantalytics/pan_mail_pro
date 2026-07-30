@@ -36,11 +36,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         Cron method to fetch emails from all enabled mailboxes.
         Called by ir.cron every 1 minute.
         """
+        # Deliberately not filtered on an owner: whether a mailbox needs one is
+        # the provider's business. A Gmail or IMAP shared mailbox is its own
+        # account with nobody behind it, and requiring an owner here silently
+        # skipped exactly those mailboxes. What matters is usable credentials,
+        # which is what the mailbox asks its client.
         mailboxes = self.env['x_microsoft.mailbox'].search([
             ('x_incoming_enabled', '=', True),
-            ('x_owner_user_id', '!=', False),
             ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
-        ])
+        ]).filtered(lambda m: m._has_working_credentials())
 
         _logger.info(f"[Incoming Mail] Starting sync for {len(mailboxes)} mailbox(es)")
 

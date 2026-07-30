@@ -50,11 +50,24 @@
                             <div class="text-muted" invisible="x_mailbox_type != 'personal'">
                                 Only the owner can send from this mailbox.
                             </div>
-                            <div class="text-muted" invisible="x_mailbox_type != 'shared'">
+                            <div class="text-muted" invisible="x_mailbox_type != 'shared' or x_provider != 'outlook'">
                                 All users can send using their own Microsoft account.
+                            </div>
+                            <div class="text-muted" invisible="x_mailbox_type != 'shared' or x_provider == 'outlook'">
+                                All users can send from this address. It has its own
+                                credentials, so it needs no owner.
                             </div>
                             <div class="text-muted" invisible="x_mailbox_type != 'notification'">
                                 For system emails. The owner's account is used to send.
+                            </div>
+                            <div class="mt-2" invisible="x_provider != 'imap'">
+                                <button name="action_open_account" type="object"
+                                        string="Server Credentials" class="btn-link ps-0"
+                                        icon="fa-key"/>
+                                <div class="text-muted">
+                                    IMAP/SMTP mailboxes are reached with a server, a login
+                                    and a password rather than a consent screen.
+                                </div>
                             </div>
                         </group>
                     </group>

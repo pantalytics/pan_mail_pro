@@ -208,7 +208,11 @@ class MailMail(models.Model):
             })
             return (False, error_msg, None)
 
-        if not account or not account.access_token:
+        # "Are these credentials usable" is the provider's question: Microsoft
+        # and Google answer with a refresh token, IMAP with a host and password
+        # and no token anywhere. Asking the client is what keeps a password
+        # provider from being rejected here for lacking an access token.
+        if not account or not mailbox._get_client().account_is_connected(account):
             error_msg = self._get_missing_account_error(account)
             _logger.error(f"[Graph API] {error_msg}")
             self.write({
@@ -490,17 +494,15 @@ class MailMail(models.Model):
 
         if self._is_internal_user_notification():
             return _(
-                'Notification sender not configured or not connected to Microsoft. '
-                'Go to Settings → Mail Pro and configure the Notification Sender.'
+                'The notification sender is not configured or its email account is '
+                'not connected. Go to Settings → Mail Pro and configure the '
+                'Notification Sender.'
             )
 
         if not account:
-            return _('No connected email account found. Author must be linked to an Odoo user with Microsoft connected.')
+            return _('No connected email account found. Author must be linked to an Odoo user with a connected email account.')
 
-        if not account.access_token:
-            return _(
-                'Account "%s" has no valid Microsoft access token. '
-                'Please reconnect Microsoft account in My Profile → Email.'
-            ) % account.email
-
-        return _('Unknown account configuration error.')
+        return _(
+            'Email account "%s" is not connected. Reconnect it (Microsoft 365 / '
+            'Gmail) or complete its server credentials (IMAP/SMTP).'
+        ) % account.email

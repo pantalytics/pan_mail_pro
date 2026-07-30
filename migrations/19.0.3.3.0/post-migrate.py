@@ -25,6 +25,12 @@ def migrate(cr, version):
     anyway, and it is one field away from working.
 
     Idempotent: a list that is already set is never overwritten.
+
+    The folder name tracks the manifest version, not the version this was
+    written against. Odoo only runs scripts numbered *above* what is installed,
+    so a folder left behind at 19.0.3.1.0 after mainline moved to 19.0.3.2.0
+    would never run — and would fail silently, which is the worst way for a
+    gate's escape hatch to be missing.
     """
     env = api.Environment(cr, SUPERUSER_ID, {})
     Domains = env['pan.mail.internal.domains']
