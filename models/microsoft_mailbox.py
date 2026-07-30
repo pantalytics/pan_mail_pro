@@ -533,15 +533,6 @@ class MicrosoftMailbox(models.Model):
                     'Smart AI Routing is not yet implemented. This feature will be available in a future release.'
                 ))
 
-    @api.constrains('x_queue_unknown_contacts')
-    def _check_queue_unknown_contacts_not_implemented(self):
-        """Prevent enabling queue for review until the feature is implemented."""
-        for record in self:
-            if record.x_queue_unknown_contacts:
-                raise ValidationError(_(
-                    'Queue for Review is not yet implemented. This feature will be available in a future release.'
-                ))
-
     def get_graph_user_id(self):
         """
         Get the identifier to use for Microsoft Graph API calls.

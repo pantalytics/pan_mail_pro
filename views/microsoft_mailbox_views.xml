@@ -110,8 +110,18 @@
                             </div>
                         </group>
                     </group>
-                    <!-- Hidden: Queue for review not yet implemented -->
-                    <field name="x_queue_unknown_contacts" invisible="1"/>
+                    <group string="Review Queue" invisible="x_mailbox_type == 'notification' or not x_incoming_sync or not x_sync_unknown_contacts">
+                        <group>
+                            <field name="x_queue_unknown_contacts" string="Hold for review"
+                                   widget="boolean_toggle"/>
+                        </group>
+                        <group>
+                            <div class="text-muted" invisible="not x_queue_unknown_contacts">
+                                Mail from unknown senders waits in Communication →
+                                Triage instead of creating a contact automatically.
+                            </div>
+                        </group>
+                    </group>
 
                     <!-- SYNC BUTTON -->
                     <group invisible="x_mailbox_type == 'notification' or not x_incoming_sync">

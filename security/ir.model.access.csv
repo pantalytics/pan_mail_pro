@@ -5,3 +5,4 @@ access_microsoft_mailbox_manager,x_microsoft.mailbox.manager,model_x_microsoft_m
 access_pan_mail_account_user,pan.mail.account.user,model_pan_mail_account,base.group_user,1,0,0,0
 access_pan_mail_account_manager,pan.mail.account.manager,model_pan_mail_account,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
 access_pan_mail_coverage_user,pan.mail.coverage.user,model_pan_mail_coverage,base.group_user,1,1,1,0
+access_pan_mail_item_manager,pan.mail.item.manager,model_pan_mail_item,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1

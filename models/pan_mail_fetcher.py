@@ -12,7 +12,7 @@ ever appear below this line.
 import logging
 from markupsafe import Markup
 
-from odoo import models, api, fields
+from odoo import models, api, fields, _
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
@@ -156,12 +156,18 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 with self.env.cr.savepoint():
                     if self._process_message(mailbox, message, folder):
                         processed += 1
-            except Exception:
+            except Exception as error:
                 # Without the savepoint, one DB error would leave the whole
                 # transaction in `aborted` state and every later message in
                 # this batch would fail with "cursor already closed".
                 _logger.exception(
                     f"[Incoming Mail] Error processing message {message.get('provider_message_id')}"
+                )
+                # Recorded *after* the savepoint has exited and rolled back.
+                # Inside it, the write would be undone by the very failure it
+                # is meant to report.
+                self.env['pan.mail.item']._record_skip(
+                    mailbox, message, folder, 'error', detail=str(error)[:200],
                 )
 
         return processed, latest_datetime
@@ -211,6 +217,13 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.info(f"[Incoming Mail] Skipping Odoo-originated email: {internet_message_id}")
             return False
 
+        # An operator re-importing a held item lifts the *filters* — sync mode
+        # and internal-domain exclusion. It deliberately does not lift the
+        # duplicate guard, the Odoo loop guard, or the contact block list: the
+        # block list is in practice an objection to processing, and no button in
+        # this module should be able to override it.
+        force_import = bool(self.env.context.get('pan_mail_force_import'))
+
         # Determine if this is incoming or outgoing (for 2-way sync)
         is_outgoing = folder == FOLDER_SENT
 
@@ -233,7 +246,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         # Skip emails from/to internal domains (only for incoming, not sent items)
         # This is a per-mailbox setting - team mailboxes may want internal emails logged
-        if not is_outgoing and self._is_internal_domain(contact_email, mailbox):
+        if not is_outgoing and not force_import and self._is_internal_domain(contact_email, mailbox):
             _logger.info("[Incoming Mail] Skipping %s: internal domain", internet_message_id)
             return False
 
@@ -256,10 +269,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # Apply routing rules based on sync mode and contact type
         if mailbox.x_sync_mode == 'known_partners':
             # Only process known contacts
-            if not is_known_contact:
+            if not is_known_contact and not force_import:
                 _logger.info(
                     "[Incoming Mail] Skipping %s: unknown contact (sync mode=known_partners)",
                     internet_message_id,
+                )
+                self.env['pan.mail.item']._record_skip(
+                    mailbox, full_message, folder, 'unknown_contact',
+                    detail=_('Sync mode only accepts mail from existing contacts.'),
+                    direction='outgoing' if is_outgoing else 'incoming',
                 )
                 return False
             _logger.debug(f"[Incoming Mail] Known partner filter passed: {partner.name}")
@@ -268,11 +286,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             # 'all' mode: process both known and unknown contacts
             if not is_known_contact:
                 # Unknown contact - check routing setting
-                if mailbox.x_queue_unknown_contacts:
-                    # TODO: Queue for approval - for now, skip
+                if mailbox.x_queue_unknown_contacts and not force_import:
                     _logger.info(
-                        "[Incoming Mail] Skipping %s: unknown contact queued for approval "
-                        "(not implemented yet)", internet_message_id,
+                        "[Incoming Mail] Holding %s for review: unknown contact",
+                        internet_message_id,
+                    )
+                    self.env['pan.mail.item']._record_skip(
+                        mailbox, full_message, folder, 'queued_for_review',
+                        detail=_('This mailbox holds mail from unknown senders for review.'),
+                        direction='outgoing' if is_outgoing else 'incoming',
                     )
                     return False
                 # 'auto' mode: will create partner below
