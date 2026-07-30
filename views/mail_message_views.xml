@@ -43,7 +43,10 @@
                 <field name="subject"/>
                 <field name="author_id"/>
                 <field name="email_from"/>
-                <field name="x_document_name" string="Linked document"/>
+                <!-- x_document_name is deliberately absent: it is a non-stored
+                     compute with no search method, and Odoo rejects an
+                     unsearchable field in a search view. Searching by contact
+                     or subject reaches the same rows. -->
 
                 <filter name="filter_incoming" string="Incoming"
                         domain="[('x_direction', '=', 'incoming')]"/>
@@ -88,9 +91,9 @@
                     one query but one per model in the panel.
                 -->
                 <searchpanel>
-                    <field name="x_mailbox_id" icon="fa-inbox" enable_counters="0"/>
+                    <field name="x_mailbox_id" icon="fa-inbox"/>
                     <field name="x_res_model_id" icon="fa-link" select="multi"
-                           string="Linked to" enable_counters="0"/>
+                           string="Linked to"/>
                 </searchpanel>
             </search>
         </field>
