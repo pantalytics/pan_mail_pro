@@ -168,6 +168,15 @@ class PanMailThreadLink(models.Model):
         help='Most recent message seen in this thread. Used as the parent for '
              'the next reply, so a thread stays a chain instead of a fan.',
     )
+    last_provider_message_id = fields.Char(
+        string='Last Provider Message ID',
+        help="Provider's own resource id for the most recent message in this "
+             "thread — Graph's message id, Gmail's message id. Not the RFC "
+             "Message-ID. Providers that can only reply *to a message* rather "
+             "than *with headers* need this handle, and it belongs here rather "
+             "than on mail.message because a provider resource id is scoped to "
+             "one mailbox, exactly like the rest of this row.",
+    )
     last_seen = fields.Datetime(
         string='Last Seen',
         default=fields.Datetime.now,
@@ -181,7 +190,25 @@ class PanMailThreadLink(models.Model):
     )
 
     @api.model
-    def record(self, mailbox, thread_id, model, res_id, message=None):
+    def find_for_record(self, mailbox, model, res_id):
+        """The thread this mailbox last used for a record, if any.
+
+        The outgoing mirror of matching: before sending, this is how we learn
+        which thread a reply belongs in, so the mail leaves as part of the
+        conversation instead of starting a new one in the recipient's client.
+        """
+        if not mailbox or not model or not res_id:
+            return self.browse()
+        return self.sudo().search([
+            ('provider', '=', mailbox.x_provider),
+            ('mailbox_id', '=', mailbox.id),
+            ('model', '=', model),
+            ('res_id', '=', res_id),
+        ], order='last_seen desc, id desc', limit=1)
+
+    @api.model
+    def record(self, mailbox, thread_id, model, res_id, message=None,
+               provider_message_id=None):
         """Create or refresh the link for (mailbox, thread_id).
 
         Like the ref index, this never raises — a mail that was delivered must
@@ -195,6 +222,8 @@ class PanMailThreadLink(models.Model):
         }
         if message:
             vals['last_message_id'] = message.id
+        if provider_message_id:
+            vals['last_provider_message_id'] = provider_message_id
 
         try:
             # See PanMailMessageRef.record: without the savepoint, a failed

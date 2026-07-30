@@ -140,6 +140,24 @@ Three things this changed, each a silent misroute before:
   old contact chatter post rather than the open ticket.
 - **Scoped, not global.** A thread id was matched across every mailbox at once.
 
+### Outgoing threading
+
+Threading is half a *send* problem. `mail.mail._build_reply_context()` builds a
+provider-neutral hint from Odoo data — `in_reply_to`, `references` (root first),
+`thread_id`, `provider_message_id` — and each client uses what it can honour:
+
+| | Microsoft 365 | Gmail |
+|---|---|---|
+| Standard headers | refused (`internetMessageHeaders` takes `x-` only) | set on the MIME |
+| How it threads | `createReply` on `provider_message_id`, then PATCH | `In-Reply-To` + `References` + `threadId` |
+| When it can't | plain draft, unthreaded | plain send, unthreaded |
+
+The Message-ID we emit is the one the *recipient saw* — Graph mints its own
+`internetMessageId` on send, so `pan.mail.message.ref` is consulted first.
+Emitting Odoo's own id would produce a chain that does not match the one coming
+back. Gmail refuses a `threadId` whose message is not a valid RFC reply, so the
+handle is only claimed when `In-Reply-To` is there to justify it.
+
 **Providers with no thread concept.** IMAP/SMTP supply no thread handle, so the
 matcher synthesises one from the root of the `References` chain. Every
 participant in a thread carries the same root, so rule 3 keeps working without

@@ -179,6 +179,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             bool: True if message was processed, False if skipped
         """
         internet_message_id = message.get('message_id')
+        # Captured before `message` is rebound below to the posted mail.message.
+        # This is the provider's own resource handle, not the RFC Message-ID.
+        provider_message_id = message.get('provider_message_id')
 
         # Check for duplicate
         if self._is_duplicate(internet_message_id):
@@ -407,6 +410,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 target_record=target_record,
                 internet_message_id=internet_message_id,
                 conversation_id=conversation_id,
+                provider_message_id=provider_message_id,
             )
 
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
@@ -417,7 +421,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             raise
 
     def _index_message(self, mailbox, message, target_record, internet_message_id,
-                       conversation_id):
+                       conversation_id, provider_message_id=None):
         """Record what we just learned, so the next reply in this thread matches.
 
         Three writes, each for a different rung of the matching ladder:
@@ -445,6 +449,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     model=target_record._name,
                     res_id=target_record.id,
                     message=message,
+                    provider_message_id=provider_message_id,
                 )
 
     def _is_duplicate(self, internet_message_id):

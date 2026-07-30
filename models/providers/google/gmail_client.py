@@ -260,7 +260,7 @@ class GoogleGmailClient(models.AbstractModel):
     # Sending
     # -------------------------------------------------------------------------
     @api.model
-    def send_message(self, mail_record, mailbox, account):
+    def send_message(self, mail_record, mailbox, account, reply_context=None):
         """Send one mail.mail via the Gmail REST API.
 
         Gmail takes a base64url-encoded RFC822 message, not a JSON body like
@@ -298,6 +298,16 @@ class GoogleGmailClient(models.AbstractModel):
             msg['Cc'] = ', '.join(cc_addrs)
         msg['Message-ID'] = message_id
 
+        # Thread the reply. Gmail will only honour `threadId` when the message
+        # is *also* a valid RFC 2822 reply — In-Reply-To and References must be
+        # set and the subject must match — so these three travel together or
+        # not at all, and Gmail silently starts a new thread if they disagree.
+        reply_context = reply_context or {}
+        if reply_context.get('in_reply_to'):
+            msg['In-Reply-To'] = reply_context['in_reply_to']
+        if reply_context.get('references'):
+            msg['References'] = ' '.join(reply_context['references'])
+
         # The X-Odoo-* loop guard: the incoming sync skips anything carrying
         # these, so our own sent mail is never re-imported from the mailbox.
         if mail_record.model and mail_record.res_id:
@@ -316,12 +326,18 @@ class GoogleGmailClient(models.AbstractModel):
         self._attach_files(msg, mail_record.attachment_ids)
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        payload = {'raw': raw}
+        # Only claim the thread when the headers back it up — a threadId without
+        # a matching In-Reply-To is rejected by Gmail, not silently accepted.
+        if reply_context.get('thread_id') and reply_context.get('in_reply_to'):
+            payload['threadId'] = reply_context['thread_id']
+
         url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send'
         try:
             response = requests.post(
                 url,
                 headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
-                json={'raw': raw},
+                json=payload,
                 timeout=30,
             )
             response.raise_for_status()
