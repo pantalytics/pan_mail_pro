@@ -64,22 +64,41 @@ lokaal → dogfood → klanten.
 Vervangt A3/A4 hierboven; de checklists daar blijven de inhoudelijke
 testgevallen, alleen de omgeving verandert.
 
-- [ ] Testinstance kiezen of aanmaken via CloudPepper (Odoo 19-server;
-      bestaande kandidaat: bean-forge, anders nieuwe instance)
-- [ ] `pan_mail_pro` 19.0.3.0.0 op de instance deployen (git addons attach,
-      branch `19.0`)
+De instance is **https://mailpro-dev.cloudpepper.site** — nieuw aangemaakt, niet
+bean-forge, zodat de demo's niet in de weg zitten en er verder niets in de
+database staat. Server `Pantalytics Demo` (Odoo 19.0 community). Login `admin`,
+wachtwoord in Bitwarden Secrets Manager als `MAILPRO_ODOO_ADMIN_PASSWORD`
+(project `dev`).
+
+- [x] Testinstance kiezen of aanmaken via CloudPepper (30-07) — nieuwe instance
+      `mailpro-dev`, 1 worker (die server heeft 4 GB en draait al vier andere
+      instances)
+- [x] `pan_mail_pro` 19.0.3.0.0 op de instance deployen (git addons attach,
+      branch `19.0`) (30-07) — webhook + auto-upgrade aan, dus een merge naar
+      `19.0` is binnen ~1 minuut live. Log schoon bij eerste start.
 - [ ] Microsoft-config invullen op de settings-pagina (client ID, tenant ID,
       client secret van de bestaande Azure-app `32a681d3-...`)
-- [ ] Redirect-URI `https://<instance>.cloudpepper.site/microsoft_oauth/callback`
+- [ ] Redirect-URI `https://mailpro-dev.cloudpepper.site/microsoft_oauth/callback`
       toevoegen aan de Azure-appregistratie (handmatig, portal.azure.com)
 - [ ] A3-checklist (Outlook) doorlopen op de instance
 - [ ] Google OAuth-client regelen (Cloud Console) met redirect-URI
-      `https://<instance>.cloudpepper.site/google_oauth/callback`
+      `https://mailpro-dev.cloudpepper.site/google_oauth/callback`
 - [ ] A4-checklist (Gmail) doorlopen op de instance
+
+Beide callback-paden zijn geverifieerd tegen `controllers/main.py` (regel 19 en
+130), dus de URI's hierboven kunnen letterlijk in Azure en Google.
 
 Voordelen t.o.v. lokaal: echte https-URL (geen localhost-uitzonderingen in
 Azure/Google nodig), bereikbaar vanuit cloud-sessies, en de omgeving lijkt
 op wat klanten draaien.
+
+Wat hier **niet** kan: de unit tests (`--test-enable` blijft lokaal en CI) en
+alles wat Helpdesk raakt. Odoo's `helpdesk` zit alleen in Enterprise, dus op deze
+community-server is de alias-routing onbereikbaar: `x_route_to_team`, de
+`x_alias_id`-koppeling naar `helpdesk.team` en het aanmaken van een ticket via
+`message_new()`. Die testgevallen blijven lokaal tegen Enterprise-source; een
+derdepartij-`helpdesk_community` helpt niet, want de code noemt `helpdesk.team`
+en `helpdesk.ticket` letterlijk.
 
 ## Fase B — Dogfood (Pantalytics-database)
 
