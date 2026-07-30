@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Who may send from which mailbox.
+"""Who may send from which mailbox.
 
 A personal mailbox sends with its *owner's* delegated token. The composer's
 view domain filters what the dropdown offers, but the field is writable over
@@ -8,7 +7,20 @@ RPC, so without a server-side check any internal user can send mail as a
 colleague — signed by that colleague's own credentials. Microsoft does not
 stop it, because it is not a SendAs.
 
-These tests are the boundary the view cannot be.
+**Where the boundary actually bites**, learned from CI rather than assumed:
+
+- A plain internal user cannot create `mail.mail` at all in Odoo 19 — the ORM
+  refuses before any of this module's code runs. Their only route to sending
+  is `mail.compose.message`, so the `@api.constrains` on the composer field is
+  the check that protects them. An earlier version of this file asserted an
+  AccessError on `mail.mail.create()` as a normal user and passed for the
+  wrong reason: Odoo's own ACL raised it, not our check.
+- A privileged-but-not-superuser actor (an administrator) *can* create
+  `mail.mail` directly, and for them the create/write guard is the boundary.
+  Those tests use the admin user for exactly that reason.
+- Mail created under `sudo()` — every notification Odoo sends — skips the
+  create guard by design. The send-time fallback catches that case, by
+  checking the mail's *author* rather than whoever is executing.
 """
 from odoo.exceptions import AccessError, ValidationError
 from odoo.tests import tagged
@@ -16,8 +28,15 @@ from odoo.tests import tagged
 from .common import OutlookProTestCase
 
 
-@tagged('post_install', '-at_install')
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestMailboxPermission(OutlookProTestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Privileged, but not the superuser: env.su is False, so the guard
+        # applies. This is the actor the create/write check exists for.
+        cls.admin = cls.env.ref('base.user_admin')
 
     def _mail_vals(self, mailbox=None):
         vals = {
@@ -29,50 +48,52 @@ class TestMailboxPermission(OutlookProTestCase):
             vals['x_microsoft_mailbox_id'] = mailbox.id
         return vals
 
-    # -- the core case ---------------------------------------------------- #
+    # -- the rule itself --------------------------------------------------- #
 
-    def test_other_user_cannot_send_from_personal_mailbox(self):
-        """Setting a colleague's personal mailbox directly is refused."""
+    def test_personal_mailbox_belongs_to_its_owner(self):
+        self.assertTrue(self.personal_mailbox._is_sendable_by(self.salesperson))
+        self.assertFalse(self.personal_mailbox._is_sendable_by(self.other_user))
+
+    def test_shared_mailbox_is_shared_on_purpose(self):
+        self.assertTrue(self.shared_mailbox._is_sendable_by(self.other_user))
+        self.assertTrue(self.shared_mailbox._is_sendable_by(self.salesperson))
+
+    def test_notification_mailbox_stays_usable_by_anyone(self):
+        """It sends with the owner's token, but that is what it is for.
+
+        Every internal notification leaves through this mailbox whoever wrote
+        the message. Restricting it would break the module, not secure it.
+        """
+        self.assertTrue(self.notification_mailbox._is_sendable_by(self.other_user))
+
+    def test_archived_mailbox_is_not_sendable(self):
+        self.shared_mailbox.active = False
+        self.assertFalse(self.shared_mailbox._is_sendable_by(self.salesperson))
+
+    # -- enforcement on mail.mail (privileged actor) ----------------------- #
+
+    def test_admin_cannot_send_from_someone_elses_personal_mailbox(self):
         with self.assertRaises(AccessError):
-            self.env['mail.mail'].with_user(self.other_user).create(
+            self.env['mail.mail'].with_user(self.admin).create(
                 self._mail_vals(self.personal_mailbox)
             )
 
-    def test_other_user_cannot_send_via_context(self):
-        """The context key mail.compose.message uses is guarded too."""
+    def test_context_key_is_guarded_too(self):
+        """mail.compose.message passes the mailbox through the context."""
         with self.assertRaises(AccessError):
-            self.env['mail.mail'].with_user(self.other_user).with_context(
+            self.env['mail.mail'].with_user(self.admin).with_context(
                 microsoft_mailbox_id=self.personal_mailbox.id
             ).create(self._mail_vals())
 
-    def test_other_user_cannot_reassign_on_write(self):
-        """A mail created innocently cannot be re-pointed afterwards."""
-        mail = self.env['mail.mail'].with_user(self.other_user).create(
+    def test_reassigning_on_write_is_guarded(self):
+        mail = self.env['mail.mail'].with_user(self.admin).create(
             self._mail_vals(self.shared_mailbox)
         )
         with self.assertRaises(AccessError):
             mail.write({'x_microsoft_mailbox_id': self.personal_mailbox.id})
 
-    def test_composer_field_is_constrained(self):
-        """The composer enforces the same rule its view domain suggests."""
-        composer = self.env['mail.compose.message'].with_user(self.other_user).create({
-            'subject': 'Test',
-            'body': '<p>Test</p>',
-        })
-        with self.assertRaises(ValidationError):
-            composer.x_microsoft_send_from_id = self.personal_mailbox
-
-    # -- what must keep working ------------------------------------------- #
-
-    def test_owner_may_send_from_own_personal_mailbox(self):
-        mail = self.env['mail.mail'].with_user(self.salesperson).create(
-            self._mail_vals(self.personal_mailbox)
-        )
-        self.assertEqual(mail.x_microsoft_mailbox_id, self.personal_mailbox)
-
-    def test_anyone_may_send_from_shared_mailbox(self):
-        """Shared mailboxes are shared on purpose — this must not regress."""
-        mail = self.env['mail.mail'].with_user(self.other_user).create(
+    def test_shared_mailbox_still_works(self):
+        mail = self.env['mail.mail'].with_user(self.admin).create(
             self._mail_vals(self.shared_mailbox)
         )
         self.assertEqual(mail.x_microsoft_mailbox_id, self.shared_mailbox)
@@ -84,13 +105,35 @@ class TestMailboxPermission(OutlookProTestCase):
         )
         self.assertEqual(mail.x_microsoft_mailbox_id, self.personal_mailbox)
 
-    # -- defence in depth at send time ------------------------------------ #
+    # -- enforcement in the composer (the path a normal user has) ---------- #
+
+    def test_composer_field_is_constrained(self):
+        """The only route an ordinary internal user has, and so the one that
+        matters most. The view domain suggests this rule; this enforces it."""
+        composer = self.env['mail.compose.message'].with_user(self.other_user).create({
+            'subject': 'Test',
+            'body': '<p>Test</p>',
+        })
+        with self.assertRaises(ValidationError):
+            composer.x_microsoft_send_from_id = self.personal_mailbox
+
+    def test_composer_allows_the_owner(self):
+        composer = self.env['mail.compose.message'].with_user(self.salesperson).create({
+            'subject': 'Test',
+            'body': '<p>Test</p>',
+        })
+        composer.x_microsoft_send_from_id = self.personal_mailbox
+        self.assertEqual(composer.x_microsoft_send_from_id, self.personal_mailbox)
+
+    # -- defence in depth at send time ------------------------------------- #
 
     def test_send_falls_back_when_author_may_not_use_mailbox(self):
-        """A row that predates the check must not send with the owner's token.
+        """Covers the sudo path, where the create guard deliberately stands
+        aside. Checking the author rather than the executor is what makes this
+        work for mail Odoo created on somebody's behalf.
 
-        It falls back rather than raising: this runs in the mail queue, where an
-        exception would stall every other mail behind it.
+        It falls back rather than raising: this runs in the mail queue, where
+        an exception would stall every other mail behind it.
         """
         mail = self.env['mail.mail'].sudo().create({
             **self._mail_vals(self.personal_mailbox),
@@ -99,10 +142,10 @@ class TestMailboxPermission(OutlookProTestCase):
         mailbox, _account = mail._get_mailbox_and_account()
         self.assertNotEqual(
             mailbox, self.personal_mailbox,
-            "Mail authored by a non-owner must not resolve to a personal mailbox",
+            "mail authored by a non-owner must not resolve to a personal mailbox",
         )
 
-    # -- discovery half of the problem ------------------------------------ #
+    # -- discovery half of the problem ------------------------------------- #
 
     def test_personal_mailbox_not_readable_by_others(self):
         """You cannot pick what you cannot see; the record rule closes that."""

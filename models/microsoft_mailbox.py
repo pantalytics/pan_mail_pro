@@ -48,16 +48,21 @@ class MicrosoftMailbox(models.Model):
         a convenience for the UI, never a boundary — the field is writable over
         RPC. This method is the boundary.
 
-        Notification mailboxes are owner-only for the same reason. System mail
-        still reaches them through `_get_notification_mailbox_and_account()`,
-        which is a separate path and deliberately not affected.
+        Only personal mailboxes are restricted. A notification mailbox also
+        sends with its owner's token, but that is documented behaviour the whole
+        module rests on — every internal notification goes out through it, from
+        any author. Restricting it here broke
+        test_05_dropdown_notification_uses_notification_owner, and rightly so:
+        the hole was somebody sending as a named colleague, not the company's
+        system-mail address doing what it exists to do.
+
+        Shared mailboxes are shared on purpose.
         """
         self.ensure_one()
         if not self.active:
             return False
-        if self.x_mailbox_type in ('personal', 'notification'):
+        if self.x_mailbox_type == 'personal':
             return bool(self.x_owner_user_id) and self.x_owner_user_id == user
-        # Shared mailboxes are shared on purpose.
         return True
 
     def _has_working_credentials(self):
