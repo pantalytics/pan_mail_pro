@@ -19,3 +19,4 @@ from . import test_incoming_sync_gmail
 from . import test_mail_lens
 from . import test_mail_coverage
 from . import test_mail_item
+from . import test_ai_contract

@@ -96,6 +96,64 @@ jobs:
           fi
           echo "OK: no numbercall found."
 
+      - name: Boundary — anthropic imported only inside models/ai/
+        run: |
+          if grep -rn 'import anthropic\|from anthropic' --include='*.py' . \
+             | grep -v '^./models/ai/'; then
+            echo "::error::The AI vendor SDK may only be imported inside models/ai/."
+            echo "Everything else must go through the pan.mail.ai contract."
+            exit 1
+          fi
+          echo "OK: AI vendor boundary intact."
+
+      - name: Boundary — no AI call inside the mail path
+        run: |
+          if grep -n 'get_ai_backend\|pan\.mail\.ai' models/pan_mail_fetcher.py models/mail_mail.py; then
+            echo "::error::AI must never be called from the fetcher or the send path."
+            echo "Both run in a cron inside a savepoint; a slow or failing model"
+            echo "call there stalls a mailbox and rolls the message back."
+            exit 1
+          fi
+          echo "OK: AI cannot block mail."
+
+      - name: Boundary — provider SDKs stay inside models/providers/
+        run: |
+          if grep -rn 'graph\.microsoft\.com\|gmail\.googleapis\.com' \
+             --include='*.py' . | grep -v '^./models/providers/' | grep -v '^./tests/'; then
+            echo "::error::Provider URLs may only appear inside models/providers/."
+            exit 1
+          fi
+          echo "OK: provider boundary intact."
+
+      - name: Migration folder is not below the manifest version
+        run: |
+          VERSION=$(python -c "import ast,pathlib;print(ast.literal_eval(pathlib.Path('__manifest__.py').read_text())['version'])")
+          LATEST=$(ls migrations 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then
+            HIGHEST=$(printf '%s\n%s\n' "$VERSION" "$LATEST" | sort -V | tail -1)
+            if [ "$HIGHEST" != "$VERSION" ]; then
+              echo "::error::migrations/$LATEST is above manifest version $VERSION."
+              exit 1
+            fi
+            if [ "$LATEST" = "$VERSION" ]; then
+              echo "OK: migrations/$LATEST runs on upgrade to $VERSION."
+            else
+              echo "OK: latest migration $LATEST is below $VERSION (already applied)."
+            fi
+          fi
+
+      - name: Models changed implies tests changed
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          git fetch --quiet origin "${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only "$BASE"...HEAD)
+          if echo "$CHANGED" | grep -q '^models/' && ! echo "$CHANGED" | grep -q '^tests/'; then
+            echo "::error::This PR changes models/ but no test. Add or update one."
+            exit 1
+          fi
+          echo "OK: model changes are accompanied by tests."
+
       - name: Manifest data files exist
         run: |
           python - <<'PY'

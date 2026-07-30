@@ -213,6 +213,46 @@
                         </div>
                     </div>
 
+                    <h2>AI Triage</h2>
+                    <div class="row mt-3 mb-4 o_settings_container">
+                        <div class="col-12 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Suggest where unrouted mail belongs</span>
+                                <div class="text-muted mb-3">
+                                    Off by default. When on, mail that could not be filed
+                                    gets a suggested target you can accept or ignore —
+                                    nothing is ever filed automatically.
+                                </div>
+                                <div class="alert alert-warning" role="alert">
+                                    You supply your own API key and this database talks to
+                                    that provider directly. Pantalytics never sees the traffic.
+                                    Only an email's envelope is sent — subject, sender,
+                                    recipient, date, and candidate record names. Message
+                                    bodies and attachments are never sent.
+                                </div>
+                                <div class="content-group">
+                                    <div class="row mt-2">
+                                        <label class="col-lg-3 o_light_label" for="x_pan_ai_backend">Provider</label>
+                                        <field name="x_pan_ai_backend"/>
+                                    </div>
+                                    <div class="row mt-2" invisible="x_pan_ai_backend == 'none'">
+                                        <label class="col-lg-3 o_light_label" for="x_pan_ai_api_key">API Key</label>
+                                        <field name="x_pan_ai_api_key" password="True"
+                                               placeholder="sk-ant-..."/>
+                                    </div>
+                                    <div class="row mt-2" invisible="x_pan_ai_backend == 'none'">
+                                        <div class="col text-muted small">
+                                            Enable the cron
+                                            <em>Mail Pro: suggest a target for triage items</em>
+                                            to start analysing the queue.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </app>
             </xpath>
         </field>

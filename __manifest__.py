@@ -74,9 +74,19 @@
 
         Data Disclosure:
         ----------------
-        - Email content is sent/received via Microsoft Graph API
-        - OAuth tokens are stored encrypted in your Odoo database
-        - No data is sent to the module author or any third party
+        - Email content is sent/received via the Microsoft Graph API or the
+          Gmail API, depending on which provider a mailbox uses.
+        - OAuth tokens are stored encrypted in your Odoo database.
+        - No data is sent to Pantalytics, the module author.
+        - AI triage is OFF by default and OFF per mailbox. If you enable it,
+          you supply your own AI provider API key and your Odoo talks to that
+          provider directly; Pantalytics does not proxy, see, or store any of
+          it. Only an email's envelope is sent - subject, sender, recipient,
+          date, and a shortlist of candidate record names. Message bodies and
+          attachments are never sent to an AI provider.
+        - You are the data controller for anything you send to an AI provider,
+          and that provider is your processor. Check your agreement with them
+          before enabling this.
     """,
     'author': "Pantalytics B.V. by Rutger Hofste",
     'website': "https://www.pantalytics.com/apps/mail-pro/",

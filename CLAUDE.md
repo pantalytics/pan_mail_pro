@@ -41,7 +41,13 @@ delegated permissions. The module name still says Outlook; the rename to
 | `models/pan_mail_fetcher.py` | Incoming email sync (uses `message_new()`) |
 | `models/res_partner.py` | Contact block list field |
 | `controllers/main.py` | OAuth callback handlers (Microsoft + Google) |
+| `models/mail_message.py` | Communication lens fields + click-through |
+| `models/pan_mail_item.py` | Triage queue for mail that lands nowhere |
+| `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
+| `models/ai/pan_mail_ai.py` | AI contract + registry (null backend is the default) |
+| `models/ai/claude/claude_backend.py` | Claude implementation; only file that may import `anthropic` |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
+| `tests/test_ai_contract.py` | Guards the AI seam the same way |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
 
 ## Provider Architecture
@@ -425,6 +431,26 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **Losing a branch's abstraction is not losing its substance.** `pan.mail.account`, the token migration, the `pan_mail_fetcher` rename and the whole Gmail client all survived - they were ported onto the winning contract, not discarded with the adapter layer.
 - **A rename plus an edit on the same file is the merge's real trap.** `microsoft_incoming_mail.py -> pan_mail_fetcher.py` on one side, savepoint isolation added on the other. Git resolves the rename but the content conflicts read as pure noise; take the edited side's content wholesale at the renamed path instead of hand-merging hunk by hunk.
 - **Unify selection *values* across models that name the same thing.** The mailbox shipped `x_provider='outlook'` while the branch used `provider='microsoft'`. Both now read `PROVIDER_SELECTION` from the registry, so an account and its mailbox cannot disagree - and no data migration was needed, because the shipped value won.
+
+### AI
+
+AI is a second seam shaped exactly like the provider seam, for the same reason:
+one abstract contract (`pan.mail.ai`), a registry, and a rule that only an
+implementation knows what a vendor's API looks like. Three properties are
+enforced by tests and by CI greps, not by convention:
+
+- **Opt-in by data.** `none` is a real backend that returns nothing. An
+  unconfigured database behaves as though the feature were absent.
+- **AI cannot block mail.** It is never called from `mail.mail.send()` or
+  `_process_message()` — those run in a one-minute cron inside a savepoint. A
+  separate cron enriches records that already exist.
+- **AI may rank, never invent.** The candidate shortlist is built by
+  deterministic matching; a suggestion naming anything else is discarded.
+
+Bring-your-own-key: the call goes from the customer's Odoo straight to the
+provider. Pantalytics never proxies it, which is what keeps the manifest's
+data-disclosure statement true and keeps Pantalytics out of every customer's
+processor chain. Only an envelope is sent — never a body or an attachment.
 
 ## Documentation
 

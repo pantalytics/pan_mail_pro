@@ -12,6 +12,8 @@
                 <field name="email_from" string="From"/>
                 <field name="subject"/>
                 <field name="reason"/>
+                <field name="ai_suggested_name" string="AI suggests" optional="show"/>
+                <field name="ai_confidence" widget="percentage" optional="hide"/>
                 <field name="mailbox_id"/>
                 <field name="state" widget="badge"
                        decoration-success="state == 'imported'"
@@ -59,6 +61,19 @@
                             <field name="expiry_date"/>
                         </group>
                     </group>
+                    <div class="alert alert-warning" role="status"
+                         invisible="ai_state != 'done' or not ai_suggested_name">
+                        <strong>Suggestion:</strong>
+                        <field name="ai_suggested_name" readonly="1" nolabel="1" class="d-inline"/>
+                        (<field name="ai_confidence" widget="percentage" readonly="1" nolabel="1" class="d-inline"/>)
+                        — <field name="ai_rationale" readonly="1" nolabel="1" class="d-inline"/>
+                        <button name="action_open_suggestion" type="object" string="Open"
+                                class="btn btn-link btn-sm"/>
+                        <div class="text-muted small mt-1">
+                            A suggestion, not a decision. Nothing is filed until you import it.
+                        </div>
+                    </div>
+                    <field name="ai_state" invisible="1"/>
                     <div class="alert alert-info" role="status">
                         Only the envelope is stored here. The message body stays
                         with the mail provider and is fetched when you import it,
@@ -129,6 +144,20 @@
     <!-- Retention. Items expire whether or not anyone worked them: this is
          metadata about somebody's correspondence, and an unworked queue is not
          a reason to keep it. -->
+    <!-- AI enrichment. A separate cron from the fetcher, structurally: it runs
+         over records that already exist, so a slow or failing model call cannot
+         delay mail ingestion or roll a message back. Inactive until a backend
+         is configured. -->
+    <record id="ir_cron_pan_mail_item_ai" model="ir.cron">
+        <field name="name">Mail Pro: suggest a target for triage items</field>
+        <field name="model_id" ref="model_pan_mail_item"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_ai_classify()</field>
+        <field name="interval_number">15</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="False"/>
+    </record>
+
     <record id="ir_cron_pan_mail_item_gc" model="ir.cron">
         <field name="name">Mail Pro: purge expired triage items</field>
         <field name="model_id" ref="model_pan_mail_item"/>

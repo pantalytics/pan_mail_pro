@@ -29,6 +29,8 @@ from dateutil.relativedelta import relativedelta
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
+from .ai.pan_mail_ai import PROMPT_VERSION, get_ai_backend
+
 _logger = logging.getLogger(__name__)
 
 # Above this many pending items in one mailbox, stop recording rather than
@@ -92,6 +94,24 @@ class PanMailItem(models.Model):
         string='Expires', index='btree_not_null', readonly=True,
         help='Deleted automatically after this date, whatever its status.',
     )
+
+    # -- AI triage suggestion (advisory only) ------------------------------ #
+    ai_state = fields.Selection([
+        ('todo', 'Not analysed'),
+        ('done', 'Analysed'),
+        ('skipped', 'Skipped'),
+        ('failed', 'Failed'),
+    ], string='AI Status', default='todo', required=True, index='btree_not_null')
+    ai_backend = fields.Char(string='AI Backend', readonly=True)
+    ai_model = fields.Char(string='AI Model', readonly=True)
+    ai_prompt_version = fields.Char(string='Prompt Version', readonly=True)
+    ai_confidence = fields.Float(string='Confidence', readonly=True)
+    ai_suggested_model = fields.Char(string='Suggested Model', readonly=True)
+    ai_suggested_res_id = fields.Integer(string='Suggested Record', readonly=True)
+    ai_suggested_name = fields.Char(
+        string='Suggestion', compute='_compute_ai_suggested_name')
+    ai_rationale = fields.Char(string='Why', readonly=True)
+    ai_attempts = fields.Integer(string='AI Attempts', default=0, readonly=True)
 
     _sql_constraints = [
         ('uniq_message_per_mailbox', 'UNIQUE(mailbox_id, message_id)',
@@ -210,6 +230,144 @@ class PanMailItem(models.Model):
         if not self.mail_message_id:
             raise UserError(_('This item has not been imported.'))
         return self.mail_message_id.action_open_document()
+
+    # -- AI enrichment ----------------------------------------------------- #
+
+    def _compute_ai_suggested_name(self):
+        for item in self:
+            item.ai_suggested_name = False
+            model, res_id = item.ai_suggested_model, item.ai_suggested_res_id
+            if not model or not res_id or model not in self.env:
+                continue
+            record = self.env[model].browse(res_id).exists()
+            if record:
+                try:
+                    item.ai_suggested_name = record.display_name
+                except Exception:
+                    item.ai_suggested_name = _('(no access)')
+
+    def _build_candidates(self):
+        """The shortlist the model is allowed to rank.
+
+        Built by deterministic matching, never by the model. This is the whole
+        safety property of the feature: the worst outcome is a badly ranked
+        shortlist, not mail filed against a record nobody connected it to.
+        """
+        self.ensure_one()
+        candidates = []
+        partner = self.partner_id
+        if partner:
+            candidates.append({
+                'model': 'res.partner', 'id': partner.id,
+                'name': partner.display_name,
+                'why': 'sender is this contact',
+            })
+            recent = self.env['mail.message'].sudo().search([
+                ('author_id', '=', partner.id),
+                ('model', '!=', False),
+                ('model', '!=', 'res.partner'),
+                ('res_id', '!=', False),
+                ('message_type', '=', 'email'),
+            ], order='date desc', limit=20)
+            seen = set()
+            for message in recent:
+                key = (message.model, message.res_id)
+                if key in seen or message.model not in self.env:
+                    continue
+                seen.add(key)
+                record = self.env[message.model].browse(message.res_id).exists()
+                if not record:
+                    continue
+                candidates.append({
+                    'model': message.model, 'id': message.res_id,
+                    'name': record.display_name,
+                    'why': 'this contact has recent email on it',
+                })
+                if len(candidates) >= 6:
+                    break
+        return candidates
+
+    def _ai_payload(self):
+        self.ensure_one()
+        return {
+            'subject': self.subject,
+            'from': self.email_from,
+            'to': self.email_to,
+            'date': str(self.date or ''),
+            'candidates': self._build_candidates(),
+        }
+
+    @api.model
+    def _cron_ai_classify(self, limit=20):
+        """Enrich pending items with a routing suggestion.
+
+        A separate cron from the fetcher, on purpose and structurally: nothing
+        here can slow mail ingestion or roll a message back, because ingestion
+        already finished before these records existed. Each item gets its own
+        savepoint so one bad response cannot cost the batch.
+        """
+        backend = get_ai_backend(self.env)
+        if not backend.is_available():
+            return 0
+
+        items = self.sudo().search([
+            ('state', '=', 'pending'), ('ai_state', '=', 'todo'),
+        ], limit=limit)
+
+        enriched = 0
+        for item in items:
+            try:
+                with self.env.cr.savepoint():
+                    suggestion = backend.classify(item._ai_payload())
+                    item.write(item._ai_values(suggestion))
+                    enriched += 1
+            except Exception:
+                _logger.exception('[Mail AI] Could not classify item %s', item.id)
+                try:
+                    item.write({
+                        'ai_state': 'failed',
+                        'ai_attempts': item.ai_attempts + 1,
+                    })
+                except Exception:
+                    _logger.exception('[Mail AI] Could not record AI failure')
+        return enriched
+
+    def _ai_values(self, suggestion):
+        self.ensure_one()
+        values = {
+            'ai_attempts': self.ai_attempts + 1,
+            'ai_prompt_version': PROMPT_VERSION,
+            'ai_backend': self.env['ir.config_parameter'].sudo().get_param(
+                'pan_mail_pro.ai_backend', 'none'),
+        }
+        if not suggestion:
+            # "No opinion" is a real answer and a terminal one. Retrying it
+            # would spend money to be told the same thing.
+            values['ai_state'] = 'skipped'
+            return values
+        values.update({
+            'ai_state': 'done',
+            'ai_model': suggestion.get('backend_model'),
+            'ai_confidence': suggestion.get('confidence') or 0.0,
+            'ai_suggested_model': suggestion.get('suggested_model'),
+            'ai_suggested_res_id': suggestion.get('suggested_res_id'),
+            'ai_rationale': suggestion.get('rationale'),
+        })
+        return values
+
+    def action_open_suggestion(self):
+        """Open the record the AI proposed, so a human can judge it."""
+        self.ensure_one()
+        if not self.ai_suggested_model or not self.ai_suggested_res_id:
+            raise UserError(_('There is no suggestion for this item.'))
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self.ai_suggested_model,
+            'res_id': self.ai_suggested_res_id,
+            'view_mode': 'form',
+            'views': [(False, 'form')],
+            'target': 'current',
+        }
 
     # -- housekeeping ------------------------------------------------------ #
 
