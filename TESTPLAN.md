@@ -6,6 +6,12 @@ lokaal → dogfood → klanten.
 
 ## Fase A — Lokaal (Docker)
 
+> **Besluit 30-07:** de functionele tests (A3/A4) draaien we **niet** lokaal
+> maar op een CloudPepper-testinstance — zie Fase A′ hieronder. A1/A2 zijn
+> wel lokaal uitgevoerd en blijven geldig als regressiebewijs. De lokale
+> Docker-omgeving is gestopt; de Microsoft-config die al in de lokale
+> `test_db` was gezet is daarmee irrelevant geworden (kan blijven staan).
+
 ### A1. Omgeving en module-upgrade
 - [x] `docker-compose up -d` in `.local/`, Odoo bereikbaar op :8069 (30-07)
 - [x] Modulestatus: `test_db` had al `pan_mail_pro` 19.0.3.0.0 geïnstalleerd —
@@ -53,6 +59,28 @@ lokaal → dogfood → klanten.
 - [ ] Shared/Workspace-mailbox zonder owner: credentials-check via
       `_has_working_credentials()` werkt
 
+## Fase A′ — Functioneel testen op CloudPepper-testinstance
+
+Vervangt A3/A4 hierboven; de checklists daar blijven de inhoudelijke
+testgevallen, alleen de omgeving verandert.
+
+- [ ] Testinstance kiezen of aanmaken via CloudPepper (Odoo 19-server;
+      bestaande kandidaat: bean-forge, anders nieuwe instance)
+- [ ] `pan_mail_pro` 19.0.3.0.0 op de instance deployen (git addons attach,
+      branch `19.0`)
+- [ ] Microsoft-config invullen op de settings-pagina (client ID, tenant ID,
+      client secret van de bestaande Azure-app `32a681d3-...`)
+- [ ] Redirect-URI `https://<instance>.cloudpepper.site/microsoft_oauth/callback`
+      toevoegen aan de Azure-appregistratie (handmatig, portal.azure.com)
+- [ ] A3-checklist (Outlook) doorlopen op de instance
+- [ ] Google OAuth-client regelen (Cloud Console) met redirect-URI
+      `https://<instance>.cloudpepper.site/google_oauth/callback`
+- [ ] A4-checklist (Gmail) doorlopen op de instance
+
+Voordelen t.o.v. lokaal: echte https-URL (geen localhost-uitzonderingen in
+Azure/Google nodig), bereikbaar vanuit cloud-sessies, en de omgeving lijkt
+op wat klanten draaien.
+
 ## Fase B — Dogfood (Pantalytics-database)
 
 - [ ] Deploy via CloudPepper naar de Pantalytics-instance
@@ -72,12 +100,12 @@ lokaal → dogfood → klanten.
 
 ## Context voor vervolg-sessies
 
-- Fase A draait tegen de **lokale** Docker op Rutgers laptop
-  (`.local/`, `test_db`, http://localhost:8069). Een cloud-sessie kan daar
-  niet bij; fase A-stappen dus alleen in een lokale sessie uitvoeren.
-- Fase B en C kunnen wél vanuit de cloud: Pantalytics-Odoo en de
-  klantendatabases zijn bereikbaar via de Odoo MCP Pro- en
-  CloudPepper-koppelingen.
+- A1/A2 draaiden tegen de **lokale** Docker op Rutgers laptop (inmiddels
+  gestopt). Alle vervolgstappen (A′, B, C) kunnen vanuit een cloud-sessie:
+  de testinstance, Pantalytics-Odoo en de klantendatabases zijn bereikbaar
+  via de CloudPepper- en Odoo MCP Pro-koppelingen.
+- Wat een sessie (lokaal én cloud) niet kan: Azure Portal en Google Cloud
+  Console aanpassen — redirect-URI's en secrets zijn handwerk voor Rutger.
 - Config-parameters heten bewust nog `x_pan_outlook_pro.*` (geen
   datamigratie nodig bij de rename).
 
