@@ -204,6 +204,38 @@ cd .local
 docker-compose build odoo && docker-compose up -d
 ```
 
+### Cloudpepper dev instance
+
+| | |
+|---|---|
+| URL | https://mailpro-dev.cloudpepper.site |
+| Server | `Pantalytics Demo` (Odoo 19.0 **community**), shared with the demo instances |
+| Tracks | branch `19.0`, webhook + auto-upgrade on |
+| Login | `admin` / secret `MAILPRO_ODOO_ADMIN_PASSWORD`, project `dev` in Bitwarden Secrets Manager |
+
+Only `pan_mail_pro` and its dependencies (`mail`, `base`, `crm`) are installed, so
+this is the closest thing to what CI builds — with a public HTTPS URL in front of it.
+
+**What it is for:** OAuth. Azure and Google redirect URIs here have the same shape
+as production, which `localhost:8069` never does. A push to `19.0` is live in about
+a minute, so the round trip from merge to clicking through a real consent screen is
+short.
+
+**What it is not for:**
+- **The test suite.** `--test-enable` is a local-Docker / CI thing; there is no way
+  to run it against this instance. Nothing here replaces `docker-compose run`.
+- **Helpdesk.** `helpdesk.team` is enterprise-only, so the Helpdesk routing in
+  `pan_mail_fetcher.py` and `microsoft_mailbox.py` is unreachable on this instance —
+  its tests skip themselves exactly as they do in CI. Test that path locally against
+  the Enterprise source.
+
+**Auto-upgrade only migrates when the manifest version moves.** Cloudpepper pulls
+the code and runs `-u pan_mail_pro` on every push, but Odoo only executes migration
+scripts when `__manifest__.py`'s version is *higher* than what `ir.module.module`
+records. Python, view and asset changes land on the restart regardless; new fields
+and data migrations need the version bump the Odoo 19 checklist already asks for.
+Forget it and the instance quietly serves the old schema.
+
 ## CI/CD (GitHub Actions)
 
 Three workflows in `.github/workflows/`:
