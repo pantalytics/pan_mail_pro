@@ -1,22 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!--
-        Disable SMTP: Mail Pro sends all emails via Microsoft Graph API.
+        Disable SMTP: Mail Pro sends all emails via the provider API.
 
         This creates an invalid outgoing mail server to prevent Odoo from
         using SMTP. On Odoo.sh, the platform requires at least one mail server
         record, but with invalid credentials it will fail gracefully while
-        our module handles all email sending via Graph API.
+        our module handles all email sending via the provider API.
+
+        It ships INACTIVE and is activated when the first mailbox is created
+        (x_microsoft.mailbox._activate_smtp_takeover). Blocking SMTP at install
+        time left a fresh database unable to send anything at all — not through
+        Mail Pro, which is not configured yet, and not through SMTP either — so
+        the admin could not even invite the users they need.
+
+        noupdate: databases that were installed before this change already have
+        it active and configured; an upgrade must not silently re-open SMTP
+        there.
     -->
-    <record id="mail_server_invalid_outlook_pro" model="ir.mail_server">
-        <field name="name">[Mail Pro] SMTP Disabled</field>
-        <field name="smtp_host">invalid.outlook-pro.disabled</field>
-        <field name="smtp_port">25</field>
-        <field name="smtp_encryption">none</field>
-        <field name="smtp_authentication">login</field>
-        <field name="smtp_user">disabled-by-outlook-pro</field>
-        <field name="smtp_pass">disabled</field>
-        <field name="sequence">0</field>
-        <field name="active">True</field>
-    </record>
+    <data noupdate="1">
+        <record id="mail_server_invalid_outlook_pro" model="ir.mail_server">
+            <field name="name">[Mail Pro] SMTP Disabled</field>
+            <field name="smtp_host">invalid.outlook-pro.disabled</field>
+            <field name="smtp_port">25</field>
+            <field name="smtp_encryption">none</field>
+            <field name="smtp_authentication">login</field>
+            <field name="smtp_user">disabled-by-outlook-pro</field>
+            <field name="smtp_pass">disabled</field>
+            <field name="sequence">0</field>
+            <field name="active" eval="False"/>
+        </record>
+    </data>
 </odoo>

@@ -111,6 +111,10 @@ class TestImapProvider(TransactionCase):
             'name': 'IMAP User', 'login': 'imap_user@test.local',
             'email': 'imap_user@test.local',
         })
+        # Incoming sync is gated on internal domains being declared. A domain
+        # nothing in this fixture uses, so the gate opens without turning any
+        # fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
 
     def _imap_account(self, email='info@company.test', **vals):
         base = {

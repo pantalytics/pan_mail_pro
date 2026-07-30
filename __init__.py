@@ -10,35 +10,29 @@ _logger = logging.getLogger(__name__)
 
 def _disable_smtp_servers(env):
     """
-    Disable existing SMTP servers and native Outlook integration on module install.
+    Post-install hook. Note what it deliberately does *not* do.
 
-    Mail Pro sends all emails via Microsoft Graph API, so:
-    1. All SMTP servers should be disabled to prevent duplicate sends
-    2. Native Outlook OAuth servers (smtp_authentication='outlook') must be disabled
-       to prevent the native microsoft_outlook module from intercepting emails
+    It used to disable every outgoing mail server the moment the module was
+    installed. That broke the first thing an admin does after installing:
+    inviting users. Mail Pro cannot send those invitations yet (no app
+    registration, no notification mailbox), and with SMTP already disabled
+    nothing else could either — a dead zone with no way out.
 
-    This is a post_init_hook called after module installation.
+    So the SMTP takeover now happens when the first mailbox is created, which is
+    the same moment Graph routing activates. See
+    `x_microsoft.mailbox._activate_smtp_takeover()`. On a reinstall over an
+    already-configured database the mailboxes are still there, so we do it right
+    away.
+
     Note: Odoo 19+ passes env directly instead of (cr, registry).
     """
-    # Find all mail servers NOT created by this module
-    existing_servers = env['ir.mail_server'].search([
-        ('smtp_host', '!=', 'invalid.outlook-pro.disabled')
-    ])
-
-    if existing_servers:
-        existing_servers.write({'active': False})
-        for server in existing_servers:
-            # Note if this is an Outlook OAuth server
-            auth_type = getattr(server, 'smtp_authentication', 'login')
-            extra_info = ' (Outlook OAuth)' if auth_type == 'outlook' else ''
-            _logger.info(f'[Mail Pro] Disabled SMTP server{extra_info}: {server.name} ({server.smtp_host})')
-
-    # Disable "Use Custom Email Servers" setting
-    # This prevents native Odoo email routing from interfering
-    IrConfigParameter = env['ir.config_parameter'].sudo()
-    IrConfigParameter.set_param('base_setup.default_external_email_server', 'False')
-
-    _logger.info('[Mail Pro] Disabled "Use Custom Email Servers" setting - all emails route through Graph API')
+    if env['x_microsoft.mailbox'].with_context(active_test=False).search_count([]):
+        env['x_microsoft.mailbox']._activate_smtp_takeover()
+    else:
+        _logger.info(
+            '[Mail Pro] No mailboxes yet — leaving SMTP alone so user invitations '
+            'still work. It is disabled when the first mailbox is created.'
+        )
 
     # Enable "Use Leads" in CRM settings
     # Mail Pro requires leads for incoming email routing

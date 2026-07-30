@@ -42,6 +42,7 @@ name still says Outlook; the rename to `pan_email_pro` is a separate phase.
 | `models/providers/imap_smtp/imap_client.py` | IMAP/SMTP implementation of the contract |
 | `models/providers/mime_utils.py` | Outgoing MIME, shared by the two MIME senders |
 | `models/pan_mail_fetcher.py` | Incoming email sync (uses `message_new()`) |
+| `models/pan_mail_internal_domains.py` | Internal domain list + the fail-closed gate on incoming sync |
 | `models/res_partner.py` | Contact block list field |
 | `controllers/main.py` | OAuth callback handlers (Microsoft + Google) |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
@@ -123,9 +124,27 @@ is the client's job:
 | Shared | Everyone | Sender's own token |
 | Notification | Everyone | Owner's token |
 
+## Internal domains (fail-closed)
+
+Incoming sync will not start until `pan.mail.internal.domains` has a list of the
+company's own domains, or an admin has explicitly switched on "Sync internal
+email". The gate exists in two places on purpose: a constraint on
+`x_microsoft.mailbox` (you cannot save a syncing mailbox without it) and a check
+in `_process_mailbox` (a list emptied later stops the sync and shows up as an
+error on the mailbox).
+
+This replaces reading `mail.alias.domain`, where an empty list meant "nothing is
+internal" — a fresh install therefore synced every internal email into Odoo,
+including confidential ones, and nothing said so. Alias domains now only feed
+`suggest_domains()`.
+
 ## Graceful degradation
 
 The module is opt-in by data: as long as **no `x_microsoft.mailbox` records exist** in the database, `mail.mail.send()` falls through to `super().send()` so Odoo's standard SMTP / mail queue handles outbound mail. This keeps demo, QA, and dev environments working before Azure is wired up. Once an admin creates the first mailbox, Graph routing activates; mails that can't be routed are then cancelled rather than leaking via SMTP.
+
+Creating that first mailbox is also what disables SMTP (`_activate_smtp_takeover`). It used to happen in the install hook, which contradicted the paragraph above: a freshly installed database could not send at all — not through Mail Pro, which is not configured yet, and not through SMTP either. The one thing an admin needs to send at that moment is user invitations, and those are exactly what died.
+
+One window survives by design: the first mailbox exists (routing on, SMTP off) but `notifications@` is not connected yet. Internal notifications are **queued**, not cancelled, in that window and go out by themselves once the notification mailbox works. See `_is_awaiting_notification_mailbox`.
 
 ## Development
 
@@ -501,6 +520,16 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **A passing suite is not the same as a suite that ran.** `0 failed, 0 error(s) of 0 tests` is green. So is a run where nine tests skipped themselves because an optional module was absent. Both mean "we verified nothing" and both looked identical to "everything passed" until the assert step started reading the count and printing the skips.
 - **What CI never runs is where the bugs live.** `migrations/` was excluded from ruff *and* never executed by CI, because CI only ever installed fresh. Two blind spots stacked on the one directory that only ever runs on a customer's database, unattended.
 - **Test the provider you ship, not just the one you just wrote.** The Gmail client had 36 tests including the whole token lifecycle; the Graph client — 1100 lines, in production at every customer — had none for refresh, rotation or revocation. New code attracts tests; the code that already works quietly stops earning them.
+
+### Fail-open configuration
+- **An empty setting must not mean "no restriction" when the restriction is the safety.** `_is_internal_domain` returned False when no domain was configured, so the databases that never set it up were exactly the ones that filtered nothing. The bug is invisible from the code — it reads like a normal guard clause — and only shows up as confidential mail appearing in Odoo. Ask what an unanswered question resolves to.
+- **Gate the configuration, not just the runtime.** Blocking the sync run tells you *after* someone tried; blocking the save tells you before. Both are needed: the constraint stops the mistake being made, the runtime check stops it being un-made later by emptying the list.
+- **Don't infer a security setting from a field that means something else.** `mail.alias.domain` is Odoo's *inbound* alias domain, auto-created at install and not necessarily the company's sending domains. Reusing it made the filter look configured when it was not.
+
+### Onboarding order
+- **Check mainline before building a picker.** This branch grew its own `x_setup_provider` while `19.0` merged a `x_mail_provider` reading `PROVIDER_SELECTION` from the registry. Both stored the same config parameter, so the merge produced two pickers over one value — and mine hardcoded outlook/gmail and would have silently omitted the IMAP provider that landed in between. The registry-driven one won; the checklist steps that are *not* about the provider (domains, notification mailbox, users) were ported on top and read `x_provider_credentials_set` / `x_provider_connected` instead of asking per provider.
+- **A module that takes over a channel must not take it over before it can serve it.** The install hook disabled every SMTP server, but Mail Pro cannot send until an app registration, an OAuth grant and a notification mailbox exist — and the admin needs to email their users to get the OAuth grants. Take over at the moment you can actually deliver (first mailbox created), not at install.
+- **Cancelling mail during setup destroys the evidence and the mail.** Internal notifications in the not-configured-yet window are queued with a readable `failure_reason` instead; the mail queue delivers them once setup finishes. Cancel only what you would never be able to send.
 
 ### Merging long-lived branches
 - **Two branches solving the same problem is a design decision, not a merge conflict.** `19.0` and `refactor/provider-abstraction` both built a provider abstraction. Git merged them into a codebase with *both*, which compiles and is wrong. Pick one contract deliberately, migrate the other onto it, and delete the loser - do not let `git merge`'s "keep both" default make the architectural choice.

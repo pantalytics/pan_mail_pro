@@ -17,6 +17,29 @@
                     <field name="x_microsoft_notification_configured" invisible="1"/>
                     <field name="x_provider_credentials_set" invisible="1"/>
                     <field name="x_provider_connected" invisible="1"/>
+                    <field name="x_setup_domains_done" invisible="1"/>
+                    <field name="x_setup_notification_done" invisible="1"/>
+                    <field name="x_setup_users_done" invisible="1"/>
+                    <field name="x_setup_complete" invisible="1"/>
+                    <field name="x_internal_domains_configured" invisible="1"/>
+
+                    <!-- Setup is not finished and mail is piling up because of it.
+                         Loud, and at the top, because the alternative is an admin
+                         who thinks the invitations they sent simply arrived. -->
+                    <div class="alert alert-warning mt-3" role="alert"
+                         invisible="x_setup_pending_notifications == 0">
+                        <i class="fa fa-clock-o me-2" title="Waiting"/>
+                        <field name="x_setup_pending_notifications" class="d-inline" readonly="1"/>
+                        email(s) — invitations, password resets — are held in the queue
+                        until the notification mailbox works. They are sent automatically
+                        once step 5 is done; nothing is lost.
+                    </div>
+
+                    <div class="alert alert-success mt-3" role="status" invisible="not x_setup_complete">
+                        <i class="fa fa-check-circle me-2" title="Ready"/>
+                        <strong>Mail Pro is ready.</strong>
+                        Email is sent and received through your own mailboxes.
+                    </div>
 
                     <!-- ============================================ -->
                     <!-- STEP 1 - WHERE IS YOUR MAIL? -->
@@ -244,46 +267,160 @@
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- STEP 4 - MAILBOXES AND DOMAINS -->
+                    <!-- STEP 4 - INTERNAL DOMAINS -->
+                    <!-- Before mailboxes on purpose: a mailbox cannot enable -->
+                    <!-- sync until this is answered, so asking afterwards -->
+                    <!-- means walking into a validation error. -->
                     <!-- ============================================ -->
-                    <h2 invisible="not x_provider_credentials_set">4. Mailboxes</h2>
-                    <div class="row mt-4 o_settings_container" invisible="not x_provider_credentials_set">
-                        <!-- Mailboxes -->
+                    <h2 invisible="not x_provider_credentials_set">4. Internal Domains</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Mailboxes</span>
-                                <div class="text-muted small">Configure sending and sync</div>
-                                <div class="mt-2">
-                                    <span class="text-warning" invisible="x_microsoft_notification_configured">
-                                        <i class="fa fa-exclamation-triangle me-1" title="Warning"/>Notification mailbox required for sync
-                                    </span>
-                                    <span class="text-success" invisible="not x_microsoft_notification_configured">
-                                        <i class="fa fa-check-circle me-1" title="Ready"/>Ready
-                                    </span>
+                                <span class="o_form_label">Your domains</span>
+                                <div class="text-muted mb-3">
+                                    Email from these domains is treated as internal and is not synced
+                                    into Odoo. Comma separated.
                                 </div>
+                                <div class="content-group">
+                                    <field name="x_internal_domains" nolabel="1"
+                                           placeholder="company.com, company.be"/>
+                                    <div class="mt-2" invisible="not x_internal_domains_suggested">
+                                        <button name="action_apply_suggested_internal_domains" type="object"
+                                                class="btn-link btn-sm ps-0"
+                                                string="Use suggestion"/>
+                                        <span class="text-muted small">
+                                            <field name="x_internal_domains_suggested" class="d-inline" readonly="1"/>
+                                        </span>
+                                    </div>
+                                    <div class="alert alert-danger mt-3 mb-0" role="alert"
+                                         invisible="x_internal_domains_configured or x_sync_internal_email">
+                                        <i class="fa fa-exclamation-triangle me-2" title="Blocked"/>
+                                        Incoming sync is blocked until this is filled in.
+                                    </div>
+                                    <div class="alert alert-warning mt-3 mb-0" role="alert"
+                                         invisible="not x_internal_domains_uncovered">
+                                        <i class="fa fa-exclamation-triangle me-2" title="Warning"/>
+                                        You have mailboxes on
+                                        <field name="x_internal_domains_uncovered" class="d-inline" readonly="1"/>,
+                                        which is not in the list above. Email from that domain is synced
+                                        as if it were external.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Exceptions</span>
+                                <div class="text-muted mb-3">Turn the filter off deliberately, never by accident.</div>
+                                <div class="content-group">
+                                    <div class="d-flex align-items-center">
+                                        <field name="x_sync_internal_email" widget="boolean_toggle" nolabel="1" class="me-2"/>
+                                        <span>Sync internal email too</span>
+                                    </div>
+                                    <div class="alert alert-warning mt-2 mb-0" role="alert"
+                                         invisible="not x_sync_internal_email">
+                                        <i class="fa fa-exclamation-triangle me-2" title="Warning"/>
+                                        Email between colleagues — including confidential threads — is
+                                        copied into Odoo and readable by everyone with access to the record.
+                                    </div>
+                                    <div class="mt-3" invisible="x_internal_sync_mailbox_count == 0">
+                                        <span class="text-warning">
+                                            <i class="fa fa-exclamation-triangle me-1" title="Warning"/>
+                                            <field name="x_internal_sync_mailbox_count" class="d-inline" readonly="1"/>
+                                            mailbox(es) have "Exclude Internal" switched off.
+                                        </span>
+                                        <div class="mt-1">
+                                            <button type="action" name="%(action_microsoft_mailbox)d"
+                                                    string="Review" icon="oi-arrow-right" class="oe_link"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <span class="o_form_label">Odoo alias domains</span>
+                                        <div class="text-muted small">
+                                            Used for incoming aliases, not for this filter.
+                                        </div>
+                                        <div class="mt-1">
+                                            <span invisible="not x_microsoft_alias_domains">
+                                                <field name="x_microsoft_alias_domains" readonly="1" class="d-inline"/>
+                                            </span>
+                                            <span class="text-muted" invisible="x_microsoft_alias_domains">—</span>
+                                            <button type="action" name="%(mail.mail_alias_domain_action)d"
+                                                    string="Manage" icon="oi-arrow-right" class="oe_link"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- STEP 5 - MAILBOXES -->
+                    <!-- ============================================ -->
+                    <h2 invisible="not x_provider_credentials_set">5. Mailboxes</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Notification mailbox</span>
+                                <div class="text-muted small mb-2">
+                                    The address system emails go out from — user invitations, password
+                                    resets, activity reminders.
+                                </div>
+                                <div class="d-flex align-items-center gap-2" invisible="x_setup_notification_done">
+                                    <field name="x_notification_mailbox_email" nolabel="1"
+                                           placeholder="notifications@company.com" class="w-auto"/>
+                                    <button name="action_create_notification_mailbox" type="object"
+                                            string="Create" class="btn-primary btn-sm"
+                                            invisible="not x_provider_connected"/>
+                                </div>
+                                <div class="text-muted small" invisible="x_setup_notification_done or x_provider_connected">
+                                    Connect your own account in step 3 first — this mailbox sends with
+                                    its owner's credentials.
+                                </div>
+                                <span class="text-success" invisible="not x_setup_notification_done">
+                                    <i class="fa fa-check-circle me-1" title="Ready"/>Ready
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">All mailboxes</span>
+                                <div class="text-muted small">Configure sending and sync</div>
                                 <div class="mt-1">
                                     <button type="action" name="%(action_microsoft_mailbox)d"
                                             string="Manage" icon="oi-arrow-right" class="oe_link"/>
                                 </div>
                             </div>
                         </div>
-                        <!-- Domains -->
-                        <div class="col-12 col-lg-6 o_setting_box">
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- STEP 6 - INVITE YOUR TEAM -->
+                    <!-- ============================================ -->
+                    <h2 invisible="not x_setup_notification_done">6. Your Team</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_setup_notification_done">
+                        <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Internal Domains</span>
-                                <div class="text-muted small">Your company's email domains</div>
-                                <div class="mt-2">
-                                    <span invisible="not x_microsoft_alias_domains">
-                                        <field name="x_microsoft_alias_domains" readonly="1" class="d-inline"/>
-                                    </span>
-                                    <span class="text-muted" invisible="x_microsoft_alias_domains">—</span>
+                                <span class="o_form_label">Connected users</span>
+                                <div class="text-muted small mb-2">
+                                    <field name="x_setup_users_connected" class="d-inline" readonly="1"/>
+                                    of
+                                    <field name="x_setup_users_total" class="d-inline" readonly="1"/>
+                                    users have connected their mailbox.
                                 </div>
-                                <div class="mt-1">
-                                    <button type="action" name="%(mail.mail_alias_domain_action)d"
-                                            string="Manage" icon="oi-arrow-right" class="oe_link"/>
+                                <div invisible="x_setup_users_done">
+                                    <button name="action_send_connect_invites" type="object"
+                                            string="Send invitations" class="btn-primary btn-sm"/>
+                                    <button name="action_open_unconnected_users" type="object"
+                                            string="Show who is missing" class="btn-link btn-sm"/>
                                 </div>
+                                <span class="text-success" invisible="not x_setup_users_done">
+                                    <i class="fa fa-check-circle me-1" title="Done"/>Everyone is connected
+                                </span>
                             </div>
                         </div>
                     </div>
