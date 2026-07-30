@@ -256,6 +256,12 @@ jobs:
         with:
           path: addons/pan_mail_pro
 
+      # --log-handler=odoo.tools.convert:DEBUG is deliberate and permanent.
+      # Without it, a bad view fails with "Invalid view <name> definition" and
+      # "View error context: '-no context-'", which says only *that* the view
+      # is wrong, never *why*. Odoo hides the underlying validation error
+      # behind that handler; leaving it on costs a few extra lines on success
+      # and turns an unreadable failure into an actionable one.
       - name: Run module tests
         env:
           SERIES: ${{ needs.lint.outputs.odoo-series }}
@@ -270,7 +276,8 @@ jobs:
             -i pan_mail_pro \
             --test-enable --test-tags=pan_mail_pro \
             --stop-after-init --without-demo=all \
-            --max-cron-threads=0 --log-level=info 2>&1 | tee odoo-test.log
+            --max-cron-threads=0 --log-level=info \
+            --log-handler=odoo.tools.convert:DEBUG 2>&1 | tee odoo-test.log
 
       # Belt and braces: the step above already fails on a non-zero Odoo exit
       # code. This also asserts on the summary line, so a run that dies before
