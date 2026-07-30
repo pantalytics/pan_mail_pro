@@ -8,6 +8,7 @@ from . import res_users
 from . import microsoft_mailbox
 from . import pan_mail_thread_index
 from . import pan_mail_matcher
+from . import pan_mail_routing_log
 from . import pan_mail_fetcher
 from . import mail_alias
 from . import mail_compose_message

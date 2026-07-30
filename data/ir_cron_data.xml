@@ -13,5 +13,20 @@
             <field name="active" eval="True"/>
             <field name="priority">100</field>
         </record>
+
+        <!-- Routing log housekeeping. One row per incoming mail on a
+             one-minute cron adds up; rows still flagged for review are kept
+             regardless of age. -->
+        <record id="ir_cron_pan_mail_routing_log_gc" model="ir.cron">
+            <field name="name">Mail Pro: Clean Up Routing Log</field>
+            <field name="model_id" ref="model_pan_mail_routing_log"/>
+            <field name="state">code</field>
+            <field name="code">model._gc_routing_logs()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+            <field name="priority">200</field>
+        </record>
     </data>
 </odoo>

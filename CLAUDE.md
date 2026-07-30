@@ -41,6 +41,7 @@ delegated permissions. The module name still says Outlook; the rename to
 | `models/pan_mail_fetcher.py` | Incoming email sync (uses `message_new()`) |
 | `models/pan_mail_matcher.py` | Thread matching: which Odoo record does this mail belong to |
 | `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |
+| `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
 | `models/res_partner.py` | Contact block list field |
 | `controllers/main.py` | OAuth callback handlers (Microsoft + Google) |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
@@ -162,6 +163,29 @@ handle is only claimed when `In-Reply-To` is there to justify it.
 matcher synthesises one from the root of the `References` chain. Every
 participant in a thread carries the same root, so rule 3 keeps working without
 the provider offering anything.
+
+### Routing log
+
+Better matching does not tell anyone where mail landed — it only makes the
+answer right more often. `pan.mail.routing.log` writes one row per delivered
+mail (Settings → Technical → Email → Mail Routing) with the rule, the
+confidence, and every candidate the ladder rejected.
+
+`outcome` separates three things that look identical from inside Odoo:
+`threaded` onto something that existed, `created` something new, `fallback` to
+contact chatter. `needs_review` flags exactly two of them:
+
+- **fallback** — delivered, but to a place nobody is looking.
+- **created *with* candidates** — the expensive, silent one: we may have opened
+  a duplicate ticket for a conversation that was already running.
+
+A `threaded` mail and our own `sent_item` never flag. A queue that cries wolf on
+every routed mail gets ignored, and then it may as well not exist.
+
+Deliberately a record of what happened, **not** a queue that holds mail back.
+Delivery is unchanged. A log that is wrong costs a confusing row; a queue that
+is wrong costs a customer an answer. A daily cron drops rows past
+`pan_mail_pro.routing_log_retention_days` (default 90) unless still flagged.
 
 **Adding AI.** Deliberately absent from rules 1-3: a `References` chain is exact,
 free and reproducible, and a language model would make a solved problem

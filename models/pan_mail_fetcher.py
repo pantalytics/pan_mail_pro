@@ -379,9 +379,11 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     f"[Incoming Mail] Threaded onto {match['model']}/{match['res_id']} "
                     f"by rule '{match['rule']}'"
                 )
+                outcome = 'threaded'
             elif is_outgoing and not mailbox.x_route_to_team:
                 # Sent item we could not thread: the correspondent's chatter is
                 # the only sensible home for it.
+                outcome = 'sent_item'
                 target_record = partner
                 message = target_record.message_post(
                     body=body_content,
@@ -403,6 +405,22 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     msg_dict=msg_dict,
                     contact_email=contact_email,
                 )
+                # Landing on the sender's own chatter means no alias was
+                # configured or none applied — delivered, but nobody is looking
+                # there. Worth telling apart from a record we deliberately
+                # created.
+                outcome = 'fallback' if target_record == partner else 'created'
+
+            self.env['pan.mail.routing.log'].log_decision(
+                mailbox=mailbox,
+                match=match,
+                outcome=outcome,
+                message=message,
+                target_record=target_record,
+                subject=full_message.get('subject'),
+                email_from=email_from,
+                internet_message_id=internet_message_id,
+            )
 
             self._index_message(
                 mailbox=mailbox,
