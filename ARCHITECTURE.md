@@ -235,8 +235,14 @@ process_email()
 | Email to unknown recipient | - | - | Skip |
 
 **Why this approach:**
-- Simple "Internal Domains" setting in Mail Pro configuration
-- Explicit control over which domains are excluded
+- Explicit "Internal Domains" setting in Mail Pro configuration, and a *gate*
+  rather than a preference: a mailbox cannot enable incoming sync while the list
+  is empty, and a sync run aborts if it is emptied later. The list used to be
+  read from `mail.alias.domain`, where "no domains configured" meant "nothing is
+  internal" — so a database that never set it up synced every internal email
+  into Odoo. Fail-closed, because the failure mode is a data leak.
+- Turning the filter off is possible but explicit: globally via "Sync internal
+  email", or per mailbox via "Exclude Internal"
 - Internal employees filtered via domain (Inbox) OR via `partner.user_ids` (both folders)
 - Replies always work (partner was created when we sent to them)
 - Spam/marketing naturally filtered (not in contacts)

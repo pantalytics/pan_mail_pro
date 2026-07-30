@@ -2,6 +2,7 @@
 from . import encryption_utils
 from . import mail_provider_client
 from . import providers
+from . import pan_mail_internal_domains
 from . import res_config_settings
 from . import pan_mail_account
 from . import res_users

@@ -14,6 +14,35 @@ def _oauth_error(title, message):
     })
 
 
+class MailProConnectController(http.Controller):
+    """One-click entry point for the "connect your mailbox" invitation.
+
+    The invitation email cannot link to a button inside the Odoo client, so it
+    links here instead: log in, and land straight on the provider's consent
+    screen. Which provider is decided per user — an admin who invited both
+    Microsoft and Google people should not have to send two different links.
+    """
+
+    @http.route('/mail_pro/connect', type='http', auth='user', website=True)
+    def connect_mailbox(self, provider=None, **kwargs):
+        user = request.env.user
+        setup_provider = request.env['ir.config_parameter'].sudo().get_param(
+            'x_pan_outlook_pro.setup_provider'
+        )
+        provider = provider or (setup_provider if setup_provider in ('outlook', 'gmail') else None)
+
+        if provider == 'gmail':
+            action = user.action_connect_google()
+        elif provider == 'outlook':
+            action = user.action_connect_microsoft()
+        else:
+            # 'both' or unconfigured: send them to their own Mail Pro
+            # preferences, where they can pick.
+            return request.redirect('/odoo/settings#mail_pro')
+
+        return request.redirect(action['url'], local=False)
+
+
 class MicrosoftOAuthController(http.Controller):
 
     @http.route('/microsoft_oauth/callback', type='http', auth='user', website=True)

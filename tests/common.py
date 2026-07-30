@@ -94,6 +94,11 @@ class OutlookProTestCase(TransactionCase):
             'x_microsoft_access_token': 'fake-access',
         })
 
+        # Incoming sync is gated on internal domains being declared. A domain
+        # nothing in this fixture uses, so the gate opens without turning any
+        # fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+
         # Mailboxes
         cls.notification_mailbox = Mailbox.create({
             'email': 'notifications@company.test',

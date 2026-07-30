@@ -13,6 +13,7 @@ import logging
 from markupsafe import Markup
 
 from odoo import models, api, fields
+from odoo.exceptions import UserError
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
@@ -67,8 +68,19 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         Args:
             mailbox: x_microsoft.mailbox record
+
+        Raises:
+            UserError: when internal domains are not configured. Deliberately
+                loud: the alternative is fetching every internal email into
+                Odoo, and a mailbox stuck in `error` with a readable message is
+                far cheaper than a silent data leak. The cron catches this and
+                writes it onto the mailbox.
         """
         _logger.info(f"[Incoming Mail] Processing mailbox: {mailbox.email}")
+
+        gate = self.env['pan.mail.internal.domains'].configuration_error()
+        if gate:
+            raise UserError(gate)
 
         # First sync: if x_sync_start_date is set, use it for historical sync
         # Otherwise just test connection and start from now
@@ -496,10 +508,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         """
         Check if email is from an internal company domain.
 
-        Uses Odoo's standard mail.alias.domain to determine internal domains.
-        The per-mailbox 'Exclude Internal Emails' setting controls whether
-        filtering is applied. Team mailboxes may disable this to log
-        internal email forwarding.
+        The domain list, the global opt-out and the per-mailbox 'Exclude
+        Internal Emails' setting all live in `pan.mail.internal.domains`; this
+        is only the call site.
 
         Args:
             email: Email address to check
@@ -508,23 +519,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         Returns:
             bool: True if email should be skipped as internal
         """
-        # Check per-mailbox setting first
-        if mailbox and not mailbox.x_exclude_internal:
-            return False  # Don't exclude internal emails for this mailbox
-
-        if not email or '@' not in email:
-            return False
-
-        sender_domain = email.lower().split('@')[1]
-
-        # Get all configured alias domains from Odoo (standard mail.alias.domain)
-        alias_domains = self.env['mail.alias.domain'].sudo().search([])
-        if not alias_domains:
-            return False
-
-        internal_domains = [d.name.lower() for d in alias_domains if d.name]
-
-        return sender_domain in internal_domains
+        return self.env['pan.mail.internal.domains'].should_skip(email, mailbox)
 
     def _find_partner(self, email):
         """

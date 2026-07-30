@@ -74,6 +74,13 @@
                             <div class="text-muted" invisible="not x_incoming_sync">
                                 Emails are imported from oldest to newest, up to 200 per minute. You can change "Import From" to re-sync from an earlier date — duplicates are skipped automatically.
                             </div>
+                            <div class="alert alert-warning mt-2" role="alert"
+                                 invisible="not x_incoming_sync or x_exclude_internal">
+                                <i class="fa fa-exclamation-triangle me-2" title="Warning"/>
+                                Email between colleagues is synced into Odoo for this mailbox,
+                                including confidential threads. Everyone with access to the record
+                                can read it.
+                            </div>
                         </group>
                     </group>
 

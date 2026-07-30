@@ -5,6 +5,15 @@ from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
+# Marker written on internal notifications that are waiting for the
+# notification mailbox to be configured. Recognisable so the setup checklist
+# can count them, and so an admin reading the queue knows it is a setup gap
+# rather than a delivery failure.
+NOTIFICATION_PENDING_REASON = (
+    'Waiting for the Notification mailbox to be configured '
+    '(Settings → Mail Pro). This email will be sent automatically once it is.'
+)
+
 
 class MailMail(models.Model):
     """Extend mail.mail to support Microsoft Graph API sending"""
@@ -46,6 +55,22 @@ class MailMail(models.Model):
         This allows the system to work before setup is complete.
         """
         return bool(self.env['x_microsoft.mailbox'].sudo().search_count([('active', '=', True)]))
+
+    def _is_awaiting_notification_mailbox(self):
+        """Is this an internal notification that Mail Pro cannot route *yet*?
+
+        Onboarding has an unavoidable window: the first mailbox exists (so
+        routing is on and SMTP is off) but notifications@ is not connected yet.
+        Every user invitation and password reset lands in that window. Cancelling
+        them there is the worst of the options — the admin sees nothing, and the
+        mail is gone even after they finish the setup — so these are left queued
+        instead and go out on the next mail-queue run.
+        """
+        self.ensure_one()
+        if not self._is_internal_user_notification():
+            return False
+        mailbox, account = self._get_notification_mailbox_and_account()
+        return not (mailbox and account)
 
     def send(self, auto_commit=False, raise_exception=False, post_send_callback=None):
         """
@@ -91,6 +116,21 @@ class MailMail(models.Model):
                 raise_exception=raise_exception,
                 post_send_callback=post_send_callback,
             )
+
+        # Setup still in progress: hold internal notifications in the queue
+        # rather than cancelling them. Checked before the "none configured"
+        # branch below on purpose — that branch cancels, and these are exactly
+        # the mails an admin needs to survive an unfinished setup.
+        awaiting = graph_mails.filtered(lambda m: m._is_awaiting_notification_mailbox())
+        if awaiting:
+            _logger.warning(
+                f"[Graph API] Holding {len(awaiting)} internal notification(s) in the "
+                f"queue — no usable notification mailbox configured yet"
+            )
+            awaiting.write({'failure_reason': NOTIFICATION_PENDING_REASON})
+            graph_mails -= awaiting
+            if not graph_mails:
+                return True
 
         # Mailboxes exist but none active/usable for this batch → cancel.
         # Protects production against unintended SMTP leakage when an admin

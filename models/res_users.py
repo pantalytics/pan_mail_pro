@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
-from odoo import fields, models, api
+import logging
+
+from odoo import fields, models, api, _
 from .mail_provider_client import get_provider_client
+
+_logger = logging.getLogger(__name__)
 
 
 class ResUsers(models.Model):
@@ -290,6 +294,48 @@ class ResUsers(models.Model):
                 user.x_microsoft_health_status = 'warning'
             else:
                 user.x_microsoft_health_status = 'healthy'
+
+    def action_send_connect_invite(self):
+        """Button wrapper around `_send_connect_invites` for the user list."""
+        sent = self._send_connect_invites()
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Invitations Sent'),
+                'message': _('Asked %d user(s) to connect their mailbox.') % sent,
+                'type': 'success' if sent else 'warning',
+                'sticky': False,
+            },
+        }
+
+    def _send_connect_invites(self):
+        """Email these users a one-click link to connect their mailbox.
+
+        Queued rather than force-sent: during onboarding the notification
+        mailbox may not be usable yet, and a queued invitation goes out by
+        itself once it is. A force-send would just raise at the admin.
+
+        Returns:
+            int: number of invitations queued
+        """
+        template = self.env.ref(
+            'pan_mail_pro.mail_template_connect_mailbox', raise_if_not_found=False
+        )
+        if not template:
+            _logger.warning('[Mail Pro] Connect-invite template missing, nothing sent')
+            return 0
+
+        sent = 0
+        for user in self:
+            if not user.partner_id.email:
+                _logger.info(f'[Mail Pro] Skipping connect invite for {user.name}: no email address')
+                continue
+            template.send_mail(user.id, force_send=False)
+            sent += 1
+
+        _logger.info(f'[Mail Pro] Queued {sent} connect invitation(s)')
+        return sent
 
     def action_connect_microsoft(self):
         """
