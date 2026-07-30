@@ -1,4 +1,4 @@
-# Testplan pan_mail_pro v19.0.3.0.0 — rename + provider-refactor
+# Testplan pan_mail_pro v19.0.3.1.0 — rename + provider-refactor + IMAP/SMTP
 
 Doel: aantonen dat na de rename (`pan_outlook_pro` → `pan_mail_pro`) en de
 provider-refactor zowel Outlook als Gmail end-to-end werken, in drie ringen:
@@ -58,6 +58,22 @@ lokaal → dogfood → klanten.
 - [ ] Reply landt in dezelfde thread (threadId)
 - [ ] Shared/Workspace-mailbox zonder owner: credentials-check via
       `_has_working_credentials()` werkt
+
+### A5. IMAP/SMTP functioneel (Soverin)
+- [ ] Email-account aanmaken (Instellingen → Technisch → E-mail → E-mailaccounts),
+      provider *IMAP / SMTP*, adres op `soverin.net` → servers worden voorgevuld
+- [ ] **Test Connection**: IMAP én SMTP allebei groen; verkeerd wachtwoord geeft
+      een foutmelding die zegt wélke helft faalt
+- [ ] Mailbox met provider *IMAP / SMTP* aanmaken op hetzelfde adres;
+      shared mailbox vraagt géén owner
+- [ ] Versturen vanaf de IMAP-mailbox; mail komt aan én staat in de Sent-map van
+      de mailbox zelf (APPEND) — controleer in Roundcube/eigen mailclient
+- [ ] Inkomende mail gesynct (INBOX), oudste eerst, cursor loopt door
+- [ ] Reply van buitenaf landt in dezelfde chatter-thread (References-root)
+- [ ] Eigen verzonden mail wordt niet opnieuw geïmporteerd (X-Odoo-loop guard)
+- [ ] Credentials leeghalen → mailbox `error`, mail cancelled, niet via SMTP gelekt
+- [ ] Server met afwijkende Sent-map (bijv. `INBOX.Verzonden`): override op het
+      account werkt
 
 ## Fase A′ — Functioneel testen op CloudPepper-testinstance
 

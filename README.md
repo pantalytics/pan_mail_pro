@@ -1,6 +1,7 @@
 # Mail Pro
 
-Complete Microsoft 365 email integration for Odoo - send and receive with full control.
+Complete Microsoft 365, Google Workspace and IMAP/SMTP email integration for
+Odoo - send and receive with full control.
 
 **[Full documentation](https://pantalytics.gitbook.io/pantalytics-docs/)**
 
@@ -12,8 +13,14 @@ Complete Microsoft 365 email integration for Odoo - send and receive with full c
 - Auto-create personal mailbox on Microsoft connect
 - Default mailbox per user
 
+**Providers:**
+- Microsoft 365 (Graph API, OAuth 2.0)
+- Google Workspace (Gmail API, OAuth 2.0)
+- Any IMAP/SMTP mailbox - Soverin, Fastmail, your own server - with a server,
+  a login and a password
+
 **Incoming Email:**
-- Automatic sync from Microsoft 365 mailboxes (1 min interval)
+- Automatic sync from every configured mailbox (1 min interval)
 - 2-way sync: Inbox and Sent Items
 - Reply threading via In-Reply-To headers + Microsoft conversationId fallback
 - Historical email sync with configurable start date
@@ -57,6 +64,25 @@ The settings page contains step-by-step instructions for:
 4. Setting up mailboxes
 
 Follow the instructions in Odoo - they include links to the correct Azure Portal pages and explain each step.
+
+### IMAP/SMTP mailboxes (Soverin and friends)
+
+An IMAP mailbox has no consent screen, so its credentials are typed in once:
+
+1. Go to **Settings → Technical → Email → Email Accounts** and create an account.
+2. Set **Provider** to *IMAP / SMTP* and fill in the address. Known hosters
+   (Soverin) fill in their own servers; anything else is typed in.
+3. Enter the IMAP and SMTP servers, the login (defaults to the address) and the
+   password, then press **Test Connection** - both halves are checked, because a
+   mailbox that reads but cannot send is broken.
+4. Leave **Odoo User** empty for a shared address such as `info@`; set it for a
+   person's own mailbox.
+5. Create the mailbox under **Settings → Technical → Email → Microsoft
+   Mailboxes** with the same address and provider *IMAP / SMTP*.
+
+The Sent folder is detected from the server (`\Sent`), and can be overridden on
+the account when a server names it something unusual. Mail sent from Odoo is
+filed there, so it shows up in your own mail client too.
 
 ---
 

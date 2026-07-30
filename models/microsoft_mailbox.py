@@ -78,7 +78,7 @@ class MicrosoftMailbox(models.Model):
     x_owner_user_id = fields.Many2one(
         'res.users',
         string='Owner',
-        domain="['|', ('x_microsoft_oauth_connected', '=', True), ('x_google_oauth_connected', '=', True)]",
+        domain="[('x_pan_mail_connected', '=', True)]",
         help='Personal mailbox: the user who owns and sends from this mailbox.\n'
              'Notification mailbox: the user whose OAuth token is used to send system emails.',
         index=True
@@ -90,7 +90,7 @@ class MicrosoftMailbox(models.Model):
     x_incoming_user_id = fields.Many2one(
         'res.users',
         string='Sync As User',
-        domain="['|', ('x_microsoft_oauth_connected', '=', True), ('x_google_oauth_connected', '=', True)]",
+        domain="[('x_pan_mail_connected', '=', True)]",
         help='User whose account is used to fetch emails.'
     )
     x_incoming_enabled = fields.Boolean(
@@ -292,12 +292,12 @@ class MicrosoftMailbox(models.Model):
         self.ensure_one()
         provider = self._get_client().provider_label()
         if self.x_mailbox_type == 'shared' and not self._get_client().supports_shared_mailbox:
-            # Gmail: a shared address is its own account, so there is nothing an
-            # owner could connect on its behalf.
+            # Gmail and IMAP: a shared address is its own account, so there is
+            # nothing an owner could connect on its behalf.
             return _(
                 'Shared mailbox "%(email)s" has no connected %(provider)s account. '
-                'Authorize %(email)s itself — on %(provider)s a shared address is '
-                'its own account, not a delegation of someone else\'s.',
+                'Give %(email)s its own credentials — on %(provider)s a shared '
+                'address is its own account, not a delegation of someone else\'s.',
                 email=self.email, provider=provider,
             )
         if not self.x_owner_user_id:
@@ -307,6 +307,33 @@ class MicrosoftMailbox(models.Model):
             'The user must connect it first.',
             owner=self.x_owner_user_id.name, provider=provider,
         )
+
+    def action_open_account(self):
+        """Open the email account serving this mailbox, or a prefilled new one.
+
+        Only meaningful for providers whose credentials are typed in rather than
+        granted through a consent screen: an IMAP mailbox is useless until
+        somebody enters its server and password, and this is the shortest path
+        from the mailbox to that form.
+        """
+        self.ensure_one()
+        account = self._get_client().resolve_receiving_account(self)
+        action = {
+            'type': 'ir.actions.act_window',
+            'res_model': 'pan.mail.account',
+            'view_mode': 'form',
+            'views': [(False, 'form')],
+            'target': 'current',
+        }
+        if account:
+            action['res_id'] = account.id
+        else:
+            action['context'] = {
+                'default_email': self.email,
+                'default_provider': self.x_provider,
+                'default_user_id': self.x_owner_user_id.id,
+            }
+        return action
 
     def action_test_incoming(self):
         """Test incoming mail configuration by fetching a few messages."""

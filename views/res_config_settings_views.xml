@@ -122,6 +122,28 @@
                     </div>
 
                     <!-- ============================================ -->
+                    <!-- IMAP / SMTP -->
+                    <!-- ============================================ -->
+                    <h2>IMAP / SMTP</h2>
+                    <div class="row mt-4 mb-4 o_settings_container">
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Mail Accounts</span>
+                                <div class="text-muted mb-3">
+                                    For mailboxes at a plain hoster (Soverin, Fastmail, your own
+                                    server). There is no consent screen: enter the server, login
+                                    and password once per address, then create a mailbox for it.
+                                </div>
+                                <div class="mt-1">
+                                    <button type="action" name="%(action_pan_mail_account)d"
+                                            string="Email Accounts" icon="oi-arrow-right" class="oe_link"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
                     <!-- STATUS (compact) -->
                     <!-- ============================================ -->
                     <div class="row mt-4 o_settings_container" invisible="x_microsoft_config_status == 'not_configured'">
@@ -229,7 +251,7 @@
                 <div class="alert alert-info mb-3" role="alert">
                     <i class="fa fa-info-circle me-2" title="Info"/>
                     <strong>Mail Pro is installed.</strong>
-                    Email is managed via Microsoft Graph API.
+                    Email is managed by Mail Pro (Microsoft 365, Gmail or IMAP/SMTP).
                     <a href="#" class="alert-link ms-1">Configure in Settings → Mail Pro</a>
                 </div>
             </xpath>

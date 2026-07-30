@@ -2,6 +2,7 @@
 from . import test_mail_account
 from . import test_account_migration
 from . import test_google_provider
+from . import test_imap_provider
 from . import test_incoming_mail
 from . import test_incoming_sync
 from . import test_outgoing_mail

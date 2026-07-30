@@ -4,11 +4,12 @@ Project context for Claude Code AI assistant.
 
 ## Module Overview
 
-**pan_mail_pro** - Microsoft 365 and Google Workspace email integration for Odoo 19.0 Enterprise Edition.
+**pan_mail_pro** - Microsoft 365, Google Workspace and IMAP/SMTP email
+integration for Odoo 19.0 Enterprise Edition.
 
-Send and receive emails via the Microsoft Graph and Gmail APIs, with OAuth 2.0
-delegated permissions. The module name still says Outlook; the rename to
-`pan_email_pro` is a separate phase.
+Send and receive emails via the Microsoft Graph API, the Gmail API (both OAuth
+2.0 delegated) or plain IMAP/SMTP with a server, login and password. The module
+name still says Outlook; the rename to `pan_email_pro` is a separate phase.
 
 ## Development Principles
 
@@ -38,11 +39,14 @@ delegated permissions. The module name still says Outlook; the rename to
 | `models/pan_mail_account.py` | Credentials for one address on one provider |
 | `models/providers/microsoft/graph_client.py` | Microsoft 365 implementation of the contract |
 | `models/providers/google/gmail_client.py` | Gmail implementation of the contract |
+| `models/providers/imap_smtp/imap_client.py` | IMAP/SMTP implementation of the contract |
+| `models/providers/mime_utils.py` | Outgoing MIME, shared by the two MIME senders |
 | `models/pan_mail_fetcher.py` | Incoming email sync (uses `message_new()`) |
 | `models/res_partner.py` | Contact block list field |
 | `controllers/main.py` | OAuth callback handlers (Microsoft + Google) |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
+| `tests/test_imap_provider.py` | IMAP/SMTP client (fake imaplib/smtplib, no sockets) |
 
 ## Provider Architecture
 
@@ -54,7 +58,7 @@ Odoo (mail.mail, mail.thread, res.users)
     ↓
 mail.provider.client                      ← the contract
     ↓
-microsoft.graph.client / google.gmail.client   ← provider implementations
+microsoft.graph.client / google.gmail.client / imap.smtp.client   ← implementations
     ↓
 pan.mail.account                          ← credentials, one per address+provider
 ```
@@ -73,8 +77,10 @@ dropped in the merge.
 
 Credentials do not cross the boundary either. A provider is handed a
 `pan.mail.account` and is the one that decides *which* account applies —
-`resolve_sending_account()` / `resolve_receiving_account()` — because that is
-where providers genuinely diverge.
+`resolve_sending_account()` / `resolve_receiving_account()` — and *whether they
+are usable* — `account_is_connected()`, which is a refresh token for OAuth
+providers and a host + login + password for IMAP. That is where providers
+genuinely diverge.
 
 ### Adding a provider
 
@@ -83,6 +89,8 @@ where providers genuinely diverge.
    `_inherit = 'mail.provider.client'` implementing the contract
 3. Declare its capabilities (`supports_shared_mailbox`, `supported_mailbox_types`)
 4. Add an ACL row in `security/ir.model.access.csv`
+5. If it does not use OAuth, override `account_is_connected()` — the default
+   answer is "has a refresh token", which no password provider ever will
 
 The same code is used by `x_microsoft.mailbox.x_provider` **and**
 `pan.mail.account.provider` — both read `PROVIDER_SELECTION`, so an account and
@@ -96,14 +104,16 @@ the seam; a new provider must satisfy the same assertions.
 Providers disagree about sending as somebody else, so `resolve_sending_account()`
 is the client's job:
 
-| | Microsoft 365 (`outlook`) | Gmail (`gmail`) |
-|---|---|---|
-| Shared mailbox | Yes (SendAs + author's own token) | Its own Workspace account (`user_id` null) |
-| Delegation | — | Delegated account / Google Group |
-| Folders | `Inbox` / `SentItems` | `INBOX` / `SENT` labels |
-| Thread key | `conversationId` | `threadId` |
-| Send flow | draft → send | RFC822 MIME |
-| Message-ID | returned by the API | set by us on the MIME |
+| | Microsoft 365 (`outlook`) | Gmail (`gmail`) | IMAP/SMTP (`imap`) |
+|---|---|---|---|
+| Auth | OAuth 2.0 | OAuth 2.0 | server + login + password |
+| Shared mailbox | Yes (SendAs + author's own token) | Its own Workspace account (`user_id` null) | Its own login (`user_id` null) |
+| Delegation | — | Delegated account / Google Group | — |
+| Folders | `Inbox` / `SentItems` | `INBOX` / `SENT` labels | `INBOX` / `\Sent` special-use |
+| Thread key | `conversationId` | `threadId` | root of the `References` chain |
+| Message id | Graph id | Gmail id | `folder:uidvalidity:uid` |
+| Send flow | draft → send | RFC822 MIME | SMTP + IMAP APPEND to Sent |
+| Message-ID | returned by the API | set by us on the MIME | set by us on the MIME |
 
 ## Mailbox Types
 
@@ -414,10 +424,19 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **A migration folder below the installed version never runs.** Odoo only runs scripts whose version is *higher* than what is installed. A long-lived branch that pins `migrations/19.0.1.2.0/` while mainline moves to 19.0.2.0.1 ships a migration that is dead on arrival - and silently so, because nothing errors. When merging a branch forward, re-check the migration folder name against the new manifest version, not the old one.
 - **Copy Fernet ciphertext, never decrypt and re-encrypt.** Same key, same DB: moving the encrypted string is lossless and cannot fail halfway. A decrypt/re-encrypt cycle produces garbage you only discover at the next send.
 
+### IMAP / SMTP
+- **A provider without OAuth is the test of whether the contract is really provider-neutral.** Every place that asked "does this account have a refresh token" was an OAuth assumption wearing a neutral name. `account_is_connected()` moved that answer into the client, and `mail.mail` stopped gating sends on an access token an IMAP account will never have.
+- **An IMAP UID is not a message id.** It is folder-scoped and dies with `UIDVALIDITY`. Store `folder:uidvalidity:uid` and refuse the fetch when the server renumbered — a bare UID silently fetches a *different* message.
+- **`SEARCH SINCE` is date-granular and evaluated in the server's timezone.** Ask a day wide and narrow it in Python; the processor dedups on Message-ID, so overlap costs nothing and a too-narrow window loses mail.
+- **Take the OLDEST N of a backlog, not the newest.** The cursor advances to the last message of the batch, so fetching the newest N steps over everything older and never comes back for it.
+- **SMTP files nothing in Sent.** Graph and Gmail do it for you; here the client APPENDs the copy itself, best-effort — the mail is already delivered, so a failed copy must not be reported as a failed send.
+- **`imaplib.Internaldate2tuple` returns *local* time and `%b` is locale-dependent.** Parse INTERNALDATE with an explicit month table into naive UTC, which is what the sync cursor compares against.
+
 ### Provider neutrality
 - **A provider-aware *dropdown* is not a provider-aware *feature*.** Phase 3 made the mailbox owner domain accept Google-connected users, which made Gmail look supported. Every behavioural check underneath still asked `x_microsoft_oauth_connected`, so a Gmail mailbox listed a valid owner and then reported `error`, never synced, and fell back to the notification mailbox on send. Grep the *checks*, not just the fields.
 - **"Is this user connected" is the wrong question. "Does this mailbox have usable credentials" is the right one.** The first hardcodes a provider; the second is `mailbox._has_working_credentials()`, which asks the client. It is also the only phrasing that works for a Gmail shared mailbox, which has credentials but no owner at all.
-- **A stored compute cannot depend on a searched relation.** `x_incoming_enabled` tracks `x_owner_user_id.x_pan_mail_account_ids.connected`, but a Gmail service account is found by address, so authorizing one later does not retrigger it. Documented in the compute rather than papered over.
+- **A stored compute cannot depend on a searched relation.** `x_incoming_enabled` tracks `x_owner_user_id.x_pan_mail_account_ids.connected`, but a service account is found by address, so authorizing one later does not retrigger it. The read side documents the limit; the write side closes it — `pan.mail.account.create/write` recomputes the mailboxes holding that address.
+- **A cron filtered on `x_owner_user_id != False` silently excluded every shared mailbox that has no owner** — which on Gmail and IMAP is all of them. Filter on usable credentials (`_has_working_credentials()`), which is the question the filter meant to ask.
 
 ### Merging long-lived branches
 - **Two branches solving the same problem is a design decision, not a merge conflict.** `19.0` and `refactor/provider-abstraction` both built a provider abstraction. Git merged them into a codebase with *both*, which compiles and is wrong. Pick one contract deliberately, migrate the other onto it, and delete the loser - do not let `git merge`'s "keep both" default make the architectural choice.
