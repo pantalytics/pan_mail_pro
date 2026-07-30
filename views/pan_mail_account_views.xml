@@ -110,7 +110,9 @@
                 <separator/>
                 <filter name="filter_service" string="Shared Address"
                         domain="[('user_id', '=', False)]"/>
-                <group expand="0" string="Group By">
+                <!-- Group-by lives in a bare <group>: Odoo 19's search RNG
+                     rejects the older expand="0" string="Group By" form. -->
+                <group>
                     <filter name="group_provider" string="Provider" context="{'group_by': 'provider'}"/>
                 </group>
             </search>
