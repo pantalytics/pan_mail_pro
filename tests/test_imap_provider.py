@@ -227,7 +227,7 @@ class TestImapProvider(TransactionCase):
         account = self._imap_account()
         for call in (
             lambda: self.client.get_authorization_url('https://odoo.test/cb'),
-            lambda: self.client.exchange_code_for_tokens('code', 'https://odoo.test/cb'),
+            lambda: self.client._exchange_code_for_tokens('code', 'https://odoo.test/cb'),
             lambda: self.client.refresh_access_token(account),
             lambda: self.client.get_valid_token(account),
         ):

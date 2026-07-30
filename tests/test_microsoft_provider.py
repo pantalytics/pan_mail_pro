@@ -75,7 +75,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
     def test_exchange_code_returns_tokens(self):
         with patch(GRAPH_POST, return_value=self._ok_response(
                 {'access_token': 'AT', 'refresh_token': 'RT', 'expires_in': 3600})):
-            tokens = self.client.exchange_code_for_tokens('code', 'https://odoo.test/cb')
+            tokens = self.client._exchange_code_for_tokens('code', 'https://odoo.test/cb')
 
         self.assertEqual(tokens['access_token'], 'AT')
         self.assertEqual(tokens['refresh_token'], 'RT')
@@ -87,7 +87,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         with patch(GRAPH_POST, side_effect=self._http_error(
                 {'error': 'invalid_client', 'error_description': 'bad secret'})):
             with self.assertRaises(UserError):
-                self.client.exchange_code_for_tokens('code', 'https://odoo.test/cb')
+                self.client._exchange_code_for_tokens('code', 'https://odoo.test/cb')
 
     # ------------------------------------------------------------------ #
     # get_valid_token
