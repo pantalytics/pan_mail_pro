@@ -455,8 +455,60 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         _logger.info(f"[Graph API] Upload complete for '{name}'")
 
+    def _create_draft(self, headers, graph_user_id, message, reply_to_provider_id=None):
+        """Create the draft to send, threaded onto a parent message if we can.
+
+        Graph will not let us set `In-Reply-To` or `References`:
+        `internetMessageHeaders` accepts custom `x-` headers only. So the only
+        way to emit a properly threaded reply is to ask Graph to build one with
+        `createReply` — the draft it hands back already carries the right
+        In-Reply-To, References and conversationId — and then PATCH our own
+        subject, body and recipients over the quoted stub it prefilled.
+
+        Falls back to a plain draft when there is no parent, or when the parent
+        has gone: message ids go stale the moment a user moves or deletes the
+        mail in Outlook, and a mail that threads badly still beats a mail that
+        never goes out.
+
+        Returns the draft's JSON, including `id`, `internetMessageId` and
+        `conversationId`.
+        """
+        base_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages'
+
+        if reply_to_provider_id:
+            try:
+                reply_response = requests.post(
+                    f'{base_url}/{reply_to_provider_id}/createReply',
+                    headers=headers, timeout=30,
+                )
+                reply_response.raise_for_status()
+                draft_id = reply_response.json().get('id')
+                if draft_id:
+                    patch_response = requests.patch(
+                        f'{base_url}/{draft_id}',
+                        headers=headers, json=message, timeout=30,
+                    )
+                    patch_response.raise_for_status()
+                    _logger.info(
+                        f"[Graph API] Threaded reply onto message {reply_to_provider_id}"
+                    )
+                    return patch_response.json()
+                _logger.warning(
+                    f"[Graph API] createReply on {reply_to_provider_id} returned no draft id; "
+                    f"sending unthreaded"
+                )
+            except requests.exceptions.RequestException as e:
+                _logger.warning(
+                    f"[Graph API] createReply on {reply_to_provider_id} failed ({e}); "
+                    f"sending unthreaded"
+                )
+
+        response = requests.post(base_url, headers=headers, json=message, timeout=30)
+        response.raise_for_status()
+        return response.json()
+
     @api.model
-    def send_email_via_graph(self, mail_record, mailbox, account):
+    def send_email_via_graph(self, mail_record, mailbox, account, reply_context=None):
         """
         Send email via Microsoft Graph API using Draft → Send flow.
 
@@ -467,6 +519,10 @@ class MicrosoftGraphClient(models.AbstractModel):
             mail_record: mail.mail record to send
             mailbox: x_microsoft.mailbox record to send from
             account: pan.mail.account holding a valid Microsoft OAuth token
+            reply_context: optional threading hints (see the contract). Only
+                `provider_message_id` is usable here — Graph will not accept
+                In-Reply-To or References — and it selects the createReply
+                draft flow instead of a plain one.
 
         Returns:
             dict: {
@@ -609,12 +665,12 @@ class MicrosoftGraphClient(models.AbstractModel):
             cc_emails = [r['emailAddress'].get('address', 'NO_ADDRESS') for r in cc_recipients]
             _logger.info(f"[Graph API] Sending email from {mailbox_email} to {recipient_emails} cc {cc_emails}")
 
-            # Step 1: Create draft (body + headers only)
-            draft_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages'
-            draft_response = requests.post(draft_url, headers=headers, json=message, timeout=30)
-            draft_response.raise_for_status()
-
-            draft_data = draft_response.json()
+            # Step 1: Create draft (body + headers only), threaded when we know
+            # which message this answers.
+            draft_data = self._create_draft(
+                headers, graph_user_id, message,
+                reply_to_provider_id=(reply_context or {}).get('provider_message_id'),
+            )
             draft_id = draft_data.get('id')
             microsoft_message_id = draft_data.get('internetMessageId')
             microsoft_conversation_id = draft_data.get('conversationId')
@@ -671,7 +727,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             }
 
     @api.model
-    def send_message(self, mail_record, mailbox, account):
+    def send_message(self, mail_record, mailbox, account, reply_context=None):
         """Send one mail.mail and return a normalized send result.
 
         Thin adapter over `send_email_via_graph`, which owns the Graph-specific
@@ -681,6 +737,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             mail_record=mail_record,
             mailbox=mailbox,
             account=account,
+            reply_context=reply_context,
         )
         return {
             'success': result.get('success', False),

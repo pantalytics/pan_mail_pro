@@ -5,6 +5,19 @@ from odoo.exceptions import AccessError, UserError
 
 _logger = logging.getLogger(__name__)
 
+# How far up the parent chain a References header is built. Odoo tends to flatten
+# `parent_id` onto the thread root, so real chains are two or three links; the
+# bound is only there to stop a pathological one from growing without limit.
+REPLY_CHAIN_LIMIT = 10
+# Marker written on internal notifications that are waiting for the
+# notification mailbox to be configured. Recognisable so the setup checklist
+# can count them, and so an admin reading the queue knows it is a setup gap
+# rather than a delivery failure.
+NOTIFICATION_PENDING_REASON = (
+    'Waiting for the Notification mailbox to be configured '
+    '(Settings → Mail Pro). This email will be sent automatically once it is.'
+)
+
 
 class MailMail(models.Model):
     """Extend mail.mail to support Microsoft Graph API sending"""
@@ -83,6 +96,22 @@ class MailMail(models.Model):
         """
         return bool(self.env['x_microsoft.mailbox'].sudo().search_count([('active', '=', True)]))
 
+    def _is_awaiting_notification_mailbox(self):
+        """Is this an internal notification that Mail Pro cannot route *yet*?
+
+        Onboarding has an unavoidable window: the first mailbox exists (so
+        routing is on and SMTP is off) but notifications@ is not connected yet.
+        Every user invitation and password reset lands in that window. Cancelling
+        them there is the worst of the options — the admin sees nothing, and the
+        mail is gone even after they finish the setup — so these are left queued
+        instead and go out on the next mail-queue run.
+        """
+        self.ensure_one()
+        if not self._is_internal_user_notification():
+            return False
+        mailbox, account = self._get_notification_mailbox_and_account()
+        return not (mailbox and account)
+
     def send(self, auto_commit=False, raise_exception=False, post_send_callback=None):
         """
         Override send() to route emails through Microsoft Graph API.
@@ -127,6 +156,21 @@ class MailMail(models.Model):
                 raise_exception=raise_exception,
                 post_send_callback=post_send_callback,
             )
+
+        # Setup still in progress: hold internal notifications in the queue
+        # rather than cancelling them. Checked before the "none configured"
+        # branch below on purpose — that branch cancels, and these are exactly
+        # the mails an admin needs to survive an unfinished setup.
+        awaiting = graph_mails.filtered(lambda m: m._is_awaiting_notification_mailbox())
+        if awaiting:
+            _logger.warning(
+                f"[Graph API] Holding {len(awaiting)} internal notification(s) in the "
+                f"queue — no usable notification mailbox configured yet"
+            )
+            awaiting.write({'failure_reason': NOTIFICATION_PENDING_REASON})
+            graph_mails -= awaiting
+            if not graph_mails:
+                return True
 
         # Mailboxes exist but none active/usable for this batch → cancel.
         # Protects production against unintended SMTP leakage when an admin
@@ -207,7 +251,11 @@ class MailMail(models.Model):
             })
             return (False, error_msg, None)
 
-        if not account or not account.access_token:
+        # "Are these credentials usable" is the provider's question: Microsoft
+        # and Google answer with a refresh token, IMAP with a host and password
+        # and no token anywhere. Asking the client is what keeps a password
+        # provider from being rejected here for lacking an access token.
+        if not account or not mailbox._get_client().account_is_connected(account):
             error_msg = self._get_missing_account_error(account)
             _logger.error(f"[Graph API] {error_msg}")
             self.write({
@@ -224,6 +272,7 @@ class MailMail(models.Model):
             mail_record=self,
             mailbox=mailbox,
             account=account,
+            reply_context=self._build_reply_context(mailbox),
         )
 
         if result['success']:
@@ -254,6 +303,8 @@ class MailMail(models.Model):
                 })
                 _logger.info(f"[Graph API] Updated mail.message {self.mail_message_id.id} with provider IDs for threading")
 
+            self._index_sent_message(mailbox, provider_message_id, provider_thread_id)
+
             _logger.info(f"[Graph API] Email {self.id} sent successfully from {mailbox.email}")
             _logger.info(f"[Graph API] Stored provider IDs - Message: {provider_message_id}, Thread: {provider_thread_id}")
             return (True, None, None)
@@ -267,6 +318,131 @@ class MailMail(models.Model):
             })
             _logger.error(f"[Graph API] Email {self.id} failed to send: {error_msg}")
             return (False, error_msg, error_code)
+
+    def _build_reply_context(self, mailbox):
+        """Everything a provider needs to send this mail *inside* its thread.
+
+        Threading is half a send problem, and it was the half we were not
+        doing: outgoing mail carried no `In-Reply-To` and no `References`, so
+        the recipient's client had nothing to attach the reply to and started a
+        fresh conversation. Their reply then came back with a chain rooted at
+        our unthreaded mail, which is why matching leaned so hard on provider
+        thread ids in the first place.
+
+        Provider-neutral by construction — it is built from Odoo data only, and
+        each provider uses whichever fields it can honour:
+
+            in_reply_to         RFC 5322 Message-ID of the direct parent
+            references          the chain, root first, as References wants it
+            thread_id           provider thread handle for this record
+            provider_message_id parent's provider resource id, mailbox-scoped
+
+        Microsoft cannot be handed headers at all (Graph only accepts custom
+        `x-` ones), so it uses `provider_message_id` to reply *to a message*.
+        Gmail and IMAP take the headers. Nobody needs all four, and a provider
+        that has none of them still sends — just unthreaded, as today.
+        """
+        self.ensure_one()
+        reply_context = {
+            'in_reply_to': None,
+            'references': [],
+            'thread_id': None,
+            'provider_message_id': None,
+        }
+
+        link = self.env['pan.mail.thread.link'].find_for_record(
+            mailbox, self.model, self.res_id)
+        if link:
+            reply_context['thread_id'] = link.thread_id
+            reply_context['provider_message_id'] = link.last_provider_message_id
+
+        chain = []
+        node = self._reply_parent_message()
+        seen = set()
+        while node and len(chain) < REPLY_CHAIN_LIMIT and node.id not in seen:
+            seen.add(node.id)
+            wire_id = self._wire_message_id(node)
+            if wire_id:
+                chain.append(wire_id)
+            node = node.parent_id
+
+        if chain:
+            # Walked child → root; References is ordered root first.
+            chain.reverse()
+            reply_context['references'] = chain
+            reply_context['in_reply_to'] = chain[-1]
+        return reply_context
+
+    def _reply_parent_message(self):
+        """The message this mail is answering, as a mail client would see it.
+
+        `parent_id` when Odoo set one; otherwise the most recent message on the
+        same record. The fallback matters because the chatter composer often
+        leaves `parent_id` empty, and "the last thing said on this record" is
+        what the recipient is looking at anyway.
+        """
+        self.ensure_one()
+        message = self.mail_message_id
+        if message and message.parent_id:
+            return message.parent_id
+        if not self.model or not self.res_id:
+            return self.env['mail.message'].browse()
+
+        domain = [
+            ('model', '=', self.model),
+            ('res_id', '=', self.res_id),
+            ('message_type', 'in', ['email', 'comment']),
+        ]
+        if message:
+            domain.append(('id', '!=', message.id))
+        return self.env['mail.message'].sudo().search(domain, order='id desc', limit=1)
+
+    def _wire_message_id(self, message):
+        """The Message-ID a recipient's client actually saw for `message`.
+
+        Not always the one Odoo generated: Graph mints its own
+        `internetMessageId` on send, and that is the id the recipient will put
+        in `In-Reply-To`. Preferring the provider's own id keeps the chain we
+        emit identical to the chain that comes back.
+        """
+        ref = self.env['pan.mail.message.ref'].sudo().search([
+            ('mail_message_id', '=', message.id),
+            ('source', '=', 'provider'),
+        ], limit=1)
+        return ref.message_id or message.x_microsoft_message_id or message.message_id
+
+    def _index_sent_message(self, mailbox, provider_message_id, provider_thread_id):
+        """Make this outgoing mail findable when the recipient replies.
+
+        The wire Message-ID is rarely the one Odoo generated. Microsoft Graph
+        mints its own `internetMessageId` and offers no way to override it, so
+        the address the recipient's client will put in `In-Reply-To` is not the
+        one stored in `mail.message.message_id`. Both are indexed, and the
+        matcher resolves a References chain against either.
+
+        The thread link is written here too so the *first* reply already has a
+        scoped (mailbox, thread) entry to match on, rather than having to wait
+        until the incoming sync has seen the conversation once.
+        """
+        self.ensure_one()
+        message = self.mail_message_id
+        if not message:
+            return
+
+        Ref = self.env['pan.mail.message.ref']
+        if message.message_id:
+            Ref.record(message, message.message_id, source='odoo')
+        if provider_message_id:
+            Ref.record(message, provider_message_id, source='provider')
+
+        if provider_thread_id and self.model and self.res_id:
+            self.env['pan.mail.thread.link'].record(
+                mailbox=mailbox,
+                thread_id=provider_thread_id,
+                model=self.model,
+                res_id=self.res_id,
+                message=message,
+            )
 
     def _is_internal_user_notification(self):
         """
@@ -508,17 +684,15 @@ class MailMail(models.Model):
 
         if self._is_internal_user_notification():
             return _(
-                'Notification sender not configured or not connected to Microsoft. '
-                'Go to Settings → Mail Pro and configure the Notification Sender.'
+                'The notification sender is not configured or its email account is '
+                'not connected. Go to Settings → Mail Pro and configure the '
+                'Notification Sender.'
             )
 
         if not account:
-            return _('No connected email account found. Author must be linked to an Odoo user with Microsoft connected.')
+            return _('No connected email account found. Author must be linked to an Odoo user with a connected email account.')
 
-        if not account.access_token:
-            return _(
-                'Account "%s" has no valid Microsoft access token. '
-                'Please reconnect Microsoft account in My Profile → Email.'
-            ) % account.email
-
-        return _('Unknown account configuration error.')
+        return _(
+            'Email account "%s" is not connected. Reconnect it (Microsoft 365 / '
+            'Gmail) or complete its server credentials (IMAP/SMTP).'
+        ) % account.email

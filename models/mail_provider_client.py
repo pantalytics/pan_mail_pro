@@ -12,7 +12,7 @@ happens to offer:
     mail.provider.client        <-- this contract
         |
         v
-    microsoft.graph.client / google.gmail.client
+    microsoft.graph.client / google.gmail.client / imap.smtp.client
 
 A provider implementation subclasses this model with `_inherit` and implements
 the abstract methods below. The rule that keeps the seam clean: nothing outside
@@ -25,7 +25,8 @@ credentials for one address on one provider — and it is the provider that
 decides which account applies, because that is where providers genuinely
 diverge: a Microsoft shared mailbox is sent with the author's own token
 (SendAs), while a Gmail shared address is its own Workspace account with no
-Odoo user behind it at all.
+Odoo user behind it at all, and an IMAP/SMTP address is a login with no OAuth
+anywhere in sight.
 
 Normalized message (returned by fetch_messages / get_message)
 -------------------------------------------------------------
@@ -108,11 +109,13 @@ ERROR_NO_RECIPIENTS = 'no_recipients'
 PROVIDER_CLIENTS = {
     'outlook': 'microsoft.graph.client',
     'gmail': 'google.gmail.client',
+    'imap': 'imap.smtp.client',
 }
 
 PROVIDER_SELECTION = [
     ('outlook', 'Microsoft 365'),
     ('gmail', 'Gmail'),
+    ('imap', 'IMAP / SMTP'),
 ]
 
 # Provider assumed by flows that are not yet mailbox-scoped (the OAuth connect
@@ -225,8 +228,28 @@ class MailProviderClient(models.AbstractModel):
         """
         raise NotImplementedError
 
+    @api.model
+    def account_is_connected(self, account):
+        """Whether `account` holds credentials this provider can actually use.
+
+        The default is the OAuth answer: a refresh token is what keeps an
+        account working past the next hour. A provider that does not use OAuth
+        overrides this — an IMAP/SMTP account is "connected" when it has hosts,
+        a username and a password, and it has no token to refresh at all.
+
+        This is what `pan.mail.account.connected` computes, so every caller that
+        asks "does this mailbox have usable credentials" gets a provider-correct
+        answer without knowing which provider it is talking to.
+        """
+        return bool(account.refresh_token_encrypted)
+
     # -------------------------------------------------------------------------
     # Authentication
+    #
+    # These are OAuth-shaped because two of the three providers are. A password
+    # provider implements them by refusing clearly: there is no consent screen
+    # to send an admin to and no token to refresh, and saying so beats an
+    # AttributeError somewhere further down.
     # -------------------------------------------------------------------------
 
     @api.model
@@ -272,7 +295,7 @@ class MailProviderClient(models.AbstractModel):
     # -------------------------------------------------------------------------
 
     @api.model
-    def send_message(self, mail_record, mailbox, account):
+    def send_message(self, mail_record, mailbox, account, reply_context=None):
         """Send one `mail.mail` and return a normalized send result.
 
         Implementations own everything about how the message is encoded:
@@ -280,6 +303,25 @@ class MailProviderClient(models.AbstractModel):
         stores as /web/image/ URLs and every provider wants differently —
         Graph takes JSON fileAttachments with contentId, Gmail wants multipart
         MIME with Content-ID parts).
+
+        `reply_context` (see `mail.mail._build_reply_context`) says how to send
+        this mail *inside* an existing thread. It is optional and every field
+        may be None: a provider uses what it can honour and ignores the rest,
+        and one that honours nothing still sends — just unthreaded.
+
+            {
+                'in_reply_to':         str or None,  # parent's Message-ID
+                'references':          [str, ...],   # chain, root first
+                'thread_id':           str or None,  # provider thread handle
+                'provider_message_id': str or None,  # parent's resource id
+            }
+
+        The split is not arbitrary. Providers that accept standard headers
+        (Gmail, IMAP) thread with `in_reply_to` / `references`; Microsoft Graph
+        refuses to set them — `internetMessageHeaders` takes custom `x-` headers
+        only — so it threads by replying *to a message*, which is what
+        `provider_message_id` is for. `thread_id` is a third, weaker form some
+        APIs want alongside the headers.
 
         Callers only see the normalized send result documented at module level.
         """

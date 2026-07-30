@@ -537,6 +537,10 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
             'email': 'notifications@test.local', 'x_provider': 'gmail',
             'x_mailbox_type': 'notification', 'x_owner_user_id': cls.user.id,
         })
+        # Incoming sync is gated on internal domains being declared. A domain
+        # nothing in this fixture uses, so the gate opens without turning any
+        # fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
 
     def _gmail_mailbox(self, **vals):
         base = {'email': 'gmail_only@test.local', 'x_provider': 'gmail',

@@ -12,14 +12,89 @@
                     <field name="x_microsoft_config_status" invisible="1"/>
                     <field name="x_microsoft_config_status_message" invisible="1"/>
                     <field name="x_current_user_oauth_connected" invisible="1"/>
+                    <field name="x_current_user_google_connected" invisible="1"/>
                     <field name="x_microsoft_mailbox_count" invisible="1"/>
                     <field name="x_microsoft_notification_configured" invisible="1"/>
+                    <field name="x_provider_credentials_set" invisible="1"/>
+                    <field name="x_provider_connected" invisible="1"/>
+                    <field name="x_setup_domains_done" invisible="1"/>
+                    <field name="x_setup_notification_done" invisible="1"/>
+                    <field name="x_setup_users_done" invisible="1"/>
+                    <field name="x_setup_complete" invisible="1"/>
+                    <field name="x_internal_domains_configured" invisible="1"/>
+
+                    <!-- Setup is not finished and mail is piling up because of it.
+                         Loud, and at the top, because the alternative is an admin
+                         who thinks the invitations they sent simply arrived. -->
+                    <div class="alert alert-warning mt-3" role="alert"
+                         invisible="x_setup_pending_notifications == 0">
+                        <i class="fa fa-clock-o me-2" title="Waiting"/>
+                        <field name="x_setup_pending_notifications" class="d-inline" readonly="1"/>
+                        email(s) — invitations, password resets — are held in the queue
+                        until the notification mailbox works. They are sent automatically
+                        once step 5 is done; nothing is lost.
+                    </div>
+
+                    <div class="alert alert-success mt-3" role="status" invisible="not x_setup_complete">
+                        <i class="fa fa-check-circle me-2" title="Ready"/>
+                        <strong>Mail Pro is ready.</strong>
+                        Email is sent and received through your own mailboxes.
+                    </div>
 
                     <!-- ============================================ -->
-                    <!-- CONFIGURATION -->
+                    <!-- STEP 1 - WHERE IS YOUR MAIL? -->
+                    <!-- Everything below follows from this answer, because -->
+                    <!-- the setup steps genuinely differ per provider. -->
                     <!-- ============================================ -->
-                    <h2>Configuration</h2>
+                    <h2>1. Email Provider</h2>
                     <div class="row mt-4 mb-4 o_settings_container">
+                        <!-- LEFT: the picker -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Where is your email hosted?</span>
+                                <div class="text-muted mb-3">
+                                    Choose a provider to see its setup steps. Each provider keeps its own
+                                    credentials, so you can switch back at any time.
+                                </div>
+                                <div class="content-group">
+                                    <div class="row mt-2">
+                                        <field name="x_mail_provider" class="col-lg-8"
+                                               placeholder="Search providers..."/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- RIGHT: how far along this provider is -->
+                        <div class="col-12 col-lg-6 o_setting_box" invisible="not x_mail_provider">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Progress</span>
+                                <div class="mt-2">
+                                    <span class="text-muted" invisible="x_provider_credentials_set">
+                                        <i class="fa fa-circle-o me-1" title="To do"/>Credentials not filled in yet
+                                    </span>
+                                    <span class="text-success" invisible="not x_provider_credentials_set">
+                                        <i class="fa fa-check-circle me-1" title="Done"/>Credentials filled in
+                                    </span>
+                                </div>
+                                <div class="mt-1">
+                                    <span class="text-muted" invisible="x_provider_connected">
+                                        <i class="fa fa-circle-o me-1" title="To do"/>Account not connected
+                                    </span>
+                                    <span class="text-success" invisible="not x_provider_connected">
+                                        <i class="fa fa-check-circle me-1" title="Done"/>Account connected
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- STEP 2A - MICROSOFT 365 CREDENTIALS -->
+                    <!-- ============================================ -->
+                    <h2 invisible="x_mail_provider != 'outlook'">2. Microsoft 365 Credentials</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'outlook'">
                         <!-- LEFT: Credentials -->
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
@@ -75,10 +150,10 @@
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- GOOGLE WORKSPACE -->
+                    <!-- STEP 2B - GOOGLE WORKSPACE CREDENTIALS -->
                     <!-- ============================================ -->
-                    <h2>Google Workspace</h2>
-                    <div class="row mt-4 mb-4 o_settings_container">
+                    <h2 invisible="x_mail_provider != 'gmail'">2. Google Workspace Credentials</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'gmail'">
                         <!-- LEFT: Credentials -->
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
@@ -97,24 +172,21 @@
                                 </div>
                             </div>
                         </div>
-                        <!-- RIGHT: Redirect URI + Connect -->
+                        <!-- RIGHT: Setup guide + Redirect URI -->
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Setup</span>
+                                <span class="o_form_label">Setup Guide</span>
                                 <div class="content-group">
                                     <div class="mb-3">
+                                        <a href="https://console.cloud.google.com/apis/credentials" target="_blank">
+                                            <i class="fa fa-external-link me-1" title="Setup guide"/>Google Cloud → Credentials
+                                        </a>
+                                    </div>
+                                    <div class="mt-4">
                                         <span class="o_form_label">Redirect URI</span>
                                         <div class="text-muted mb-2">Copy to Google Cloud → Credentials → Authorized redirect URIs</div>
                                         <field name="x_google_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
-                                    </div>
-                                    <div class="mt-2">
-                                        <button name="action_connect_google_admin" type="object"
-                                                string="Connect Google" class="btn-primary" icon="fa-google"
-                                                invisible="x_current_user_google_connected"/>
-                                        <span class="text-success" invisible="not x_current_user_google_connected">
-                                            <i class="fa fa-check-circle me-1" title="Connected"/>Connected
-                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -122,61 +194,233 @@
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- STATUS (compact) -->
+                    <!-- STEP 2C - IMAP / SMTP CREDENTIALS -->
+                    <!-- No global credential to fill in: an IMAP login belongs -->
+                    <!-- to one address, so the step is "add the accounts". -->
                     <!-- ============================================ -->
-                    <div class="row mt-4 o_settings_container" invisible="x_microsoft_config_status == 'not_configured'">
-                        <!-- Account -->
+                    <h2 invisible="x_mail_provider != 'imap'">2. Mail Accounts</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'imap'">
+                        <!-- LEFT: where the credentials go -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Credentials</span>
+                                <div class="text-muted mb-3">
+                                    There is no consent screen here. Enter the server, login and
+                                    password once per address; Test Connection checks reading and
+                                    sending separately.
+                                </div>
+                                <div class="mt-1">
+                                    <button type="action" name="%(action_pan_mail_account)d"
+                                            string="Email Accounts" icon="oi-arrow-right" class="oe_link"/>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- RIGHT: what to have ready -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">What You Need</span>
+                                <div class="content-group text-muted">
+                                    <div>IMAP server and port (usually 993, SSL/TLS)</div>
+                                    <div>SMTP server and port (usually 465, SSL/TLS)</div>
+                                    <div>The mailbox password, or an app password where the
+                                         hoster requires one</div>
+                                </div>
+                                <div class="text-muted mt-3">
+                                    Soverin addresses fill their own servers in.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- STEP 3 - CONNECT YOUR ACCOUNT -->
+                    <!-- One step, one button per provider: the branding -->
+                    <!-- differs, the step does not. -->
+                    <!-- ============================================ -->
+                    <h2 invisible="not x_provider_credentials_set">3. Connect Your Account</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
                                 <span class="o_form_label">Account</span>
-                                <div class="text-muted small">Your Microsoft 365 login</div>
+                                <div class="text-muted small">Sign in so Odoo can send and read mail on your behalf</div>
                                 <div class="mt-2">
                                     <button name="action_connect_microsoft_admin" type="object"
                                             string="Connect Microsoft" class="btn-primary" icon="fa-windows"
-                                            invisible="x_current_user_oauth_connected"/>
-                                    <span class="text-success" invisible="not x_current_user_oauth_connected">
+                                            invisible="x_mail_provider != 'outlook' or x_provider_connected"/>
+                                    <button name="action_connect_google_admin" type="object"
+                                            string="Connect Google" class="btn-primary" icon="fa-google"
+                                            invisible="x_mail_provider != 'gmail' or x_provider_connected"/>
+                                    <!-- IMAP has no sign-in: an account is connected the moment
+                                         its credentials are complete, so this step only reports. -->
+                                    <button type="action" name="%(action_pan_mail_account)d"
+                                            string="Review Accounts" icon="oi-arrow-right" class="oe_link"
+                                            invisible="x_mail_provider != 'imap'"/>
+                                    <span class="text-success" invisible="not x_provider_connected">
                                         <i class="fa fa-check-circle me-1" title="Connected"/>Connected
                                     </span>
                                 </div>
                             </div>
                         </div>
-                        <!-- Mailboxes -->
-                        <div class="col-12 o_setting_box">
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- STEP 4 - INTERNAL DOMAINS -->
+                    <!-- Before mailboxes on purpose: a mailbox cannot enable -->
+                    <!-- sync until this is answered, so asking afterwards -->
+                    <!-- means walking into a validation error. -->
+                    <!-- ============================================ -->
+                    <h2 invisible="not x_provider_credentials_set">4. Internal Domains</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
+                        <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Mailboxes</span>
-                                <div class="text-muted small">Configure sending and sync</div>
-                                <div class="mt-2">
-                                    <span class="text-warning" invisible="x_microsoft_notification_configured">
-                                        <i class="fa fa-exclamation-triangle me-1" title="Warning"/>Notification mailbox required for sync
-                                    </span>
-                                    <span class="text-success" invisible="not x_microsoft_notification_configured">
-                                        <i class="fa fa-check-circle me-1" title="Ready"/>Ready
-                                    </span>
+                                <span class="o_form_label">Your domains</span>
+                                <div class="text-muted mb-3">
+                                    Email from these domains is treated as internal and is not synced
+                                    into Odoo. Comma separated.
                                 </div>
+                                <div class="content-group">
+                                    <field name="x_internal_domains" nolabel="1"
+                                           placeholder="company.com, company.be"/>
+                                    <div class="mt-2" invisible="not x_internal_domains_suggested">
+                                        <button name="action_apply_suggested_internal_domains" type="object"
+                                                class="btn-link btn-sm ps-0"
+                                                string="Use suggestion"/>
+                                        <span class="text-muted small">
+                                            <field name="x_internal_domains_suggested" class="d-inline" readonly="1"/>
+                                        </span>
+                                    </div>
+                                    <div class="alert alert-danger mt-3 mb-0" role="alert"
+                                         invisible="x_internal_domains_configured or x_sync_internal_email">
+                                        <i class="fa fa-exclamation-triangle me-2" title="Blocked"/>
+                                        Incoming sync is blocked until this is filled in.
+                                    </div>
+                                    <div class="alert alert-warning mt-3 mb-0" role="alert"
+                                         invisible="not x_internal_domains_uncovered">
+                                        <i class="fa fa-exclamation-triangle me-2" title="Warning"/>
+                                        You have mailboxes on
+                                        <field name="x_internal_domains_uncovered" class="d-inline" readonly="1"/>,
+                                        which is not in the list above. Email from that domain is synced
+                                        as if it were external.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Exceptions</span>
+                                <div class="text-muted mb-3">Turn the filter off deliberately, never by accident.</div>
+                                <div class="content-group">
+                                    <div class="d-flex align-items-center">
+                                        <field name="x_sync_internal_email" widget="boolean_toggle" nolabel="1" class="me-2"/>
+                                        <span>Sync internal email too</span>
+                                    </div>
+                                    <div class="alert alert-warning mt-2 mb-0" role="alert"
+                                         invisible="not x_sync_internal_email">
+                                        <i class="fa fa-exclamation-triangle me-2" title="Warning"/>
+                                        Email between colleagues — including confidential threads — is
+                                        copied into Odoo and readable by everyone with access to the record.
+                                    </div>
+                                    <div class="mt-3" invisible="x_internal_sync_mailbox_count == 0">
+                                        <span class="text-warning">
+                                            <i class="fa fa-exclamation-triangle me-1" title="Warning"/>
+                                            <field name="x_internal_sync_mailbox_count" class="d-inline" readonly="1"/>
+                                            mailbox(es) have "Exclude Internal" switched off.
+                                        </span>
+                                        <div class="mt-1">
+                                            <button type="action" name="%(action_microsoft_mailbox)d"
+                                                    string="Review" icon="oi-arrow-right" class="oe_link"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <span class="o_form_label">Odoo alias domains</span>
+                                        <div class="text-muted small">
+                                            Used for incoming aliases, not for this filter.
+                                        </div>
+                                        <div class="mt-1">
+                                            <span invisible="not x_microsoft_alias_domains">
+                                                <field name="x_microsoft_alias_domains" readonly="1" class="d-inline"/>
+                                            </span>
+                                            <span class="text-muted" invisible="x_microsoft_alias_domains">—</span>
+                                            <button type="action" name="%(mail.mail_alias_domain_action)d"
+                                                    string="Manage" icon="oi-arrow-right" class="oe_link"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- STEP 5 - MAILBOXES -->
+                    <!-- ============================================ -->
+                    <h2 invisible="not x_provider_credentials_set">5. Mailboxes</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Notification mailbox</span>
+                                <div class="text-muted small mb-2">
+                                    The address system emails go out from — user invitations, password
+                                    resets, activity reminders.
+                                </div>
+                                <div class="d-flex align-items-center gap-2" invisible="x_setup_notification_done">
+                                    <field name="x_notification_mailbox_email" nolabel="1"
+                                           placeholder="notifications@company.com" class="w-auto"/>
+                                    <button name="action_create_notification_mailbox" type="object"
+                                            string="Create" class="btn-primary btn-sm"
+                                            invisible="not x_provider_connected"/>
+                                </div>
+                                <div class="text-muted small" invisible="x_setup_notification_done or x_provider_connected">
+                                    Connect your own account in step 3 first — this mailbox sends with
+                                    its owner's credentials.
+                                </div>
+                                <span class="text-success" invisible="not x_setup_notification_done">
+                                    <i class="fa fa-check-circle me-1" title="Ready"/>Ready
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">All mailboxes</span>
+                                <div class="text-muted small">Configure sending and sync</div>
                                 <div class="mt-1">
                                     <button type="action" name="%(action_microsoft_mailbox)d"
                                             string="Manage" icon="oi-arrow-right" class="oe_link"/>
                                 </div>
                             </div>
                         </div>
-                        <!-- Domains -->
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- STEP 6 - INVITE YOUR TEAM -->
+                    <!-- ============================================ -->
+                    <h2 invisible="not x_setup_notification_done">6. Your Team</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_setup_notification_done">
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Internal Domains</span>
-                                <div class="text-muted small">Your company's email domains</div>
-                                <div class="mt-2">
-                                    <span invisible="not x_microsoft_alias_domains">
-                                        <field name="x_microsoft_alias_domains" readonly="1" class="d-inline"/>
-                                    </span>
-                                    <span class="text-muted" invisible="x_microsoft_alias_domains">—</span>
+                                <span class="o_form_label">Connected users</span>
+                                <div class="text-muted small mb-2">
+                                    <field name="x_setup_users_connected" class="d-inline" readonly="1"/>
+                                    of
+                                    <field name="x_setup_users_total" class="d-inline" readonly="1"/>
+                                    users have connected their mailbox.
                                 </div>
-                                <div class="mt-1">
-                                    <button type="action" name="%(mail.mail_alias_domain_action)d"
-                                            string="Manage" icon="oi-arrow-right" class="oe_link"/>
+                                <div invisible="x_setup_users_done">
+                                    <button name="action_send_connect_invites" type="object"
+                                            string="Send invitations" class="btn-primary btn-sm"/>
+                                    <button name="action_open_unconnected_users" type="object"
+                                            string="Show who is missing" class="btn-link btn-sm"/>
                                 </div>
+                                <span class="text-success" invisible="not x_setup_users_done">
+                                    <i class="fa fa-check-circle me-1" title="Done"/>Everyone is connected
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -269,7 +513,7 @@
                 <div class="alert alert-info mb-3" role="alert">
                     <i class="fa fa-info-circle me-2" title="Info"/>
                     <strong>Mail Pro is installed.</strong>
-                    Email is managed via Microsoft Graph API.
+                    Outgoing and incoming email is handled by Mail Pro.
                     <a href="#" class="alert-link ms-1">Configure in Settings → Mail Pro</a>
                 </div>
             </xpath>

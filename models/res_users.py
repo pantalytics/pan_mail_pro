@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
-from odoo import fields, models, api
+import logging
+
+from odoo import fields, models, api, _
 from .mail_provider_client import get_provider_client
+
+_logger = logging.getLogger(__name__)
 
 
 class ResUsers(models.Model):
@@ -120,6 +124,17 @@ class ResUsers(models.Model):
         compute='_compute_google_oauth_connected',
         store=True,
         help='Whether this user has a connected Google account.'
+    )
+
+    # The provider-neutral version of the two flags above, and the one the
+    # mailbox owner dropdowns filter on. A per-provider flag in a view domain is
+    # how the module ended up listing Gmail owners it could not actually use;
+    # "has usable credentials somewhere" is the question those domains mean.
+    x_pan_mail_connected = fields.Boolean(
+        string='Email Account Connected',
+        compute='_compute_pan_mail_connected',
+        store=True,
+        help='Whether this user has a connected email account on any provider.'
     )
 
     # Computed fields for backwards compatibility (decrypt on read)
@@ -259,6 +274,12 @@ class ResUsers(models.Model):
             account = accounts.get(user.id)
             user.x_google_oauth_connected = bool(account and account.refresh_token_encrypted)
 
+    @api.depends('x_pan_mail_account_ids.connected')
+    def _compute_pan_mail_connected(self):
+        for user in self:
+            user.x_pan_mail_connected = any(
+                account.connected for account in user.x_pan_mail_account_ids)
+
     def _compute_microsoft_health_status(self):
         """Compute Microsoft health status for admin overview."""
         Mailbox = self.env['x_microsoft.mailbox'].sudo()
@@ -290,6 +311,48 @@ class ResUsers(models.Model):
                 user.x_microsoft_health_status = 'warning'
             else:
                 user.x_microsoft_health_status = 'healthy'
+
+    def action_send_connect_invite(self):
+        """Button wrapper around `_send_connect_invites` for the user list."""
+        sent = self._send_connect_invites()
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Invitations Sent'),
+                'message': _('Asked %d user(s) to connect their mailbox.') % sent,
+                'type': 'success' if sent else 'warning',
+                'sticky': False,
+            },
+        }
+
+    def _send_connect_invites(self):
+        """Email these users a one-click link to connect their mailbox.
+
+        Queued rather than force-sent: during onboarding the notification
+        mailbox may not be usable yet, and a queued invitation goes out by
+        itself once it is. A force-send would just raise at the admin.
+
+        Returns:
+            int: number of invitations queued
+        """
+        template = self.env.ref(
+            'pan_mail_pro.mail_template_connect_mailbox', raise_if_not_found=False
+        )
+        if not template:
+            _logger.warning('[Mail Pro] Connect-invite template missing, nothing sent')
+            return 0
+
+        sent = 0
+        for user in self:
+            if not user.partner_id.email:
+                _logger.info(f'[Mail Pro] Skipping connect invite for {user.name}: no email address')
+                continue
+            template.send_mail(user.id, force_send=False)
+            sent += 1
+
+        _logger.info(f'[Mail Pro] Queued {sent} connect invitation(s)')
+        return sent
 
     def action_connect_microsoft(self):
         """

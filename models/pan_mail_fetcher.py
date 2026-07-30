@@ -13,6 +13,7 @@ import logging
 from markupsafe import Markup
 
 from odoo import models, api, fields, _
+from odoo.exceptions import UserError
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
@@ -35,11 +36,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         Cron method to fetch emails from all enabled mailboxes.
         Called by ir.cron every 1 minute.
         """
+        # Deliberately not filtered on an owner: whether a mailbox needs one is
+        # the provider's business. A Gmail or IMAP shared mailbox is its own
+        # account with nobody behind it, and requiring an owner here silently
+        # skipped exactly those mailboxes. What matters is usable credentials,
+        # which is what the mailbox asks its client.
         mailboxes = self.env['x_microsoft.mailbox'].search([
             ('x_incoming_enabled', '=', True),
-            ('x_owner_user_id', '!=', False),
             ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
-        ])
+        ]).filtered(lambda m: m._has_working_credentials())
 
         _logger.info(f"[Incoming Mail] Starting sync for {len(mailboxes)} mailbox(es)")
 
@@ -67,8 +72,19 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         Args:
             mailbox: x_microsoft.mailbox record
+
+        Raises:
+            UserError: when internal domains are not configured. Deliberately
+                loud: the alternative is fetching every internal email into
+                Odoo, and a mailbox stuck in `error` with a readable message is
+                far cheaper than a silent data leak. The cron catches this and
+                writes it onto the mailbox.
         """
         _logger.info(f"[Incoming Mail] Processing mailbox: {mailbox.email}")
+
+        gate = self.env['pan.mail.internal.domains'].configuration_error()
+        if gate:
+            raise UserError(gate)
 
         # First sync: if x_sync_start_date is set, use it for historical sync
         # Otherwise just test connection and start from now
@@ -185,6 +201,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             bool: True if message was processed, False if skipped
         """
         internet_message_id = message.get('message_id')
+        # Captured before `message` is rebound below to the posted mail.message.
+        # This is the provider's own resource handle, not the RFC Message-ID.
+        provider_message_id = message.get('provider_message_id')
 
         # Check for duplicate
         if self._is_duplicate(internet_message_id):
@@ -322,7 +341,20 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.warning(f"[Incoming Mail] Could not resolve partner for {contact_email}, skipping")
             return False
 
-        conversation_id = full_message.get('thread_id')
+        # Where does this mail belong? The fetcher decides whether a message is
+        # worth keeping; deciding where it goes is the matcher's job, and it is
+        # provider-neutral — the same ladder serves Graph, Gmail and IMAP.
+        match = self.env['pan.mail.matcher'].match(
+            full_message,
+            mailbox=mailbox,
+            partner=partner,
+            # In team mode a reply must land on the ticket or lead, never back
+            # on the contact's own chatter.
+            exclude_models=('res.partner',) if mailbox.x_route_to_team else (),
+        )
+        # Effective thread id: what the provider said, or — for providers with
+        # no thread concept — the root of the References chain.
+        conversation_id = match['thread_id']
 
         # Build email body - mark as safe HTML to preserve formatting
         body_content = full_message.get('body_html') or ''
@@ -377,102 +409,85 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             post_email_from = f'"{author_name}" <{author_email}>' if author_name else author_email
 
         try:
-            # ROUTE TO TEAM: all emails go to CRM/Helpdesk via alias
-            if mailbox.x_route_to_team:
-                # Find existing team record for this conversation
-                team_record_msg = False
-                if conversation_id:
-                    # Scoped to this mailbox on purpose. A provider thread key is
-                    # only unique within the mailbox that issued it, so an
-                    # unscoped search can thread a reply arriving in one mailbox
-                    # onto a record created from another — handing it to a
-                    # different team's followers. Messages predating x_mailbox_id
-                    # have it unset and are matched as before.
-                    team_record_msg = self.env['mail.message'].search([
-                        ('x_microsoft_conversation_id', '=', conversation_id),
-                        ('model', '!=', False),
-                        ('model', '!=', 'res.partner'),
-                        ('res_id', '!=', False),
-                        ('x_mailbox_id', 'in', [mailbox.id, False]),
-                    ], order='id asc', limit=1)
-
-                if team_record_msg:
-                    # Thread on existing team record
-                    target_record = self.env[team_record_msg.model].browse(team_record_msg.res_id)
-                    message = target_record.message_post(
-                        body=body_content,
-                        subject=full_message.get('subject', ''),
-                        message_type='email',
-                        subtype_xmlid='mail.mt_comment',
-                        author_id=post_author_id,
-                        email_from=post_email_from,
-                        message_id=internet_message_id,
-                        parent_id=team_record_msg.id,
-                        attachments=email_attachments,
-                        incoming_email_to=msg_dict.get('to', ''),
-                        incoming_email_cc=msg_dict.get('cc', ''),
-                    )
-                    _logger.info(f"[Incoming Mail] Threaded on {team_record_msg.model}/{team_record_msg.res_id}")
-                else:
-                    # New conversation → create record via alias
-                    target_record, message = self._route_email_via_alias(
-                        mailbox=mailbox,
-                        partner=partner,
-                        msg_dict=msg_dict,
-                        contact_email=contact_email,
-                    )
-
-            # NO ROUTE TO TEAM: original behavior (partner chatter + threading)
+            if match['model']:
+                # The matcher placed it. Both routing modes take this path —
+                # the only difference between them is which models the matcher
+                # was allowed to consider, which was decided above.
+                target_record = self.env[match['model']].browse(match['res_id'])
+                message = target_record.message_post(
+                    body=body_content,
+                    subject=full_message.get('subject', ''),
+                    message_type='email',
+                    subtype_xmlid='mail.mt_comment',
+                    author_id=post_author_id,
+                    email_from=post_email_from,
+                    message_id=internet_message_id,
+                    parent_id=match['parent_message_id'],
+                    attachments=email_attachments,
+                    incoming_email_to=msg_dict.get('to', ''),
+                    incoming_email_cc=msg_dict.get('cc', ''),
+                )
+                _logger.info(
+                    f"[Incoming Mail] Threaded onto {match['model']}/{match['res_id']} "
+                    f"by rule '{match['rule']}'"
+                )
+                outcome = 'threaded'
+            elif is_outgoing and not mailbox.x_route_to_team:
+                # Sent item we could not thread: the correspondent's chatter is
+                # the only sensible home for it.
+                outcome = 'sent_item'
+                target_record = partner
+                message = target_record.message_post(
+                    body=body_content,
+                    subject=full_message.get('subject', ''),
+                    message_type='email',
+                    subtype_xmlid='mail.mt_comment',
+                    author_id=post_author_id,
+                    email_from=post_email_from,
+                    message_id=internet_message_id,
+                    attachments=email_attachments,
+                )
+                _logger.info(f"[Incoming Mail] Posted sent item to partner {partner.name}")
             else:
-                # Find parent message for threading
-                parent_message = self._find_parent_message(headers, conversation_id, mailbox)
+                # Nothing to thread onto → new record via alias, or the
+                # contact's chatter when no alias is configured.
+                target_record, message = self._route_email_via_alias(
+                    mailbox=mailbox,
+                    partner=partner,
+                    msg_dict=msg_dict,
+                    contact_email=contact_email,
+                )
+                # Landing on the sender's own chatter means no alias was
+                # configured or none applied — delivered, but nobody is looking
+                # there. Worth telling apart from a record we deliberately
+                # created.
+                outcome = 'fallback' if target_record == partner else 'created'
 
-                if parent_message and parent_message.model and parent_message.res_id:
-                    # Reply to existing thread
-                    target_record = self.env[parent_message.model].browse(parent_message.res_id)
-                    message = target_record.message_post(
-                        body=body_content,
-                        subject=full_message.get('subject', ''),
-                        message_type='email',
-                        subtype_xmlid='mail.mt_comment',
-                        author_id=post_author_id,
-                        email_from=post_email_from,
-                        message_id=internet_message_id,
-                        parent_id=parent_message.id,
-                        attachments=email_attachments,
-                        incoming_email_to=msg_dict.get('to', ''),
-                        incoming_email_cc=msg_dict.get('cc', ''),
-                    )
-                    _logger.info(f"[Incoming Mail] Posted reply to {parent_message.model}/{parent_message.res_id}")
-                elif is_outgoing:
-                    # Sent item to partner's chatter
-                    target_record = partner
-                    message = target_record.message_post(
-                        body=body_content,
-                        subject=full_message.get('subject', ''),
-                        message_type='email',
-                        subtype_xmlid='mail.mt_comment',
-                        author_id=post_author_id,
-                        email_from=post_email_from,
-                        message_id=internet_message_id,
-                        attachments=email_attachments,
-                    )
-                    _logger.debug(f"[Incoming Mail] Posted sent item to partner {partner.name}")
-                else:
-                    # New incoming email → route via alias or partner chatter
-                    target_record, message = self._route_email_via_alias(
-                        mailbox=mailbox,
-                        partner=partner,
-                        msg_dict=msg_dict,
-                        contact_email=contact_email,
-                    )
+            self.env['pan.mail.routing.log'].log_decision(
+                mailbox=mailbox,
+                match=match,
+                outcome=outcome,
+                message=message,
+                target_record=target_record,
+                subject=full_message.get('subject'),
+                email_from=email_from,
+                internet_message_id=internet_message_id,
+            )
 
-            # Store the provider thread key for threading future replies, and
-            # stamp the lens fields on the same write — the message is already
-            # being touched here, so this costs no extra query.
+            self._index_message(
+                mailbox=mailbox,
+                message=message,
+                target_record=target_record,
+                internet_message_id=internet_message_id,
+                conversation_id=conversation_id,
+                provider_message_id=provider_message_id,
+            )
+
+            # Lens fields. Written here rather than inside the branches above so
+            # every routing outcome is stamped the same way — mainline's matcher
+            # decides *where* the mail lands, this records *how it arrived*.
             if message:
                 message.write({
-                    'x_microsoft_conversation_id': conversation_id,
                     'x_direction': 'outgoing' if is_outgoing else 'incoming',
                     'x_mailbox_id': mailbox.id,
                     'x_account_id': account.id,
@@ -485,40 +500,37 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.exception(f"[Incoming Mail] Failed to process message: {internet_message_id}")
             raise
 
-    def _find_parent_message(self, headers, conversation_id, mailbox=None):
-        """Find parent message for threading via In-Reply-To or conversationId.
+    def _index_message(self, mailbox, message, target_record, internet_message_id,
+                       conversation_id, provider_message_id=None):
+        """Record what we just learned, so the next reply in this thread matches.
 
-        `mailbox` scopes the conversationId branch. A provider thread key is only
-        unique within the mailbox that issued it, so an unscoped match can thread
-        a reply onto a record that belongs to another mailbox and expose it to a
-        different follower set. In-Reply-To needs no scoping: a Message-ID is
-        globally unique by RFC.
+        Three writes, each for a different rung of the matching ladder:
+
+        - the Message-ID under which this mail can be referenced, but only when
+          it differs from what `message_post` already stored on `mail.message`.
+          On import those are normally identical, so this usually writes nothing.
+        - the (mailbox, thread id) → record link, which is the scoped lookup.
+        - `x_microsoft_conversation_id`, kept as a denormalised copy for the
+          legacy lookup and for databases mid-upgrade.
         """
-        parent_message = False
-        in_reply_to = headers.get('in-reply-to')
+        if not message:
+            return
 
-        if in_reply_to:
-            parent_message = self.env['mail.message'].search([
-                ('x_microsoft_message_id', '=', in_reply_to)
-            ], limit=1)
-            if not parent_message:
-                parent_message = self.env['mail.message'].search([
-                    ('message_id', '=', in_reply_to)
-                ], limit=1)
+        if internet_message_id and message.message_id != internet_message_id:
+            self.env['pan.mail.message.ref'].record(
+                message, internet_message_id, source='provider')
 
-        if not parent_message and conversation_id:
-            domain = [
-                ('x_microsoft_conversation_id', '=', conversation_id),
-                ('model', '!=', False),
-                ('res_id', '!=', False),
-            ]
-            if mailbox:
-                # Messages predating x_mailbox_id have it unset; still matched.
-                domain.append(('x_mailbox_id', 'in', [mailbox.id, False]))
-            parent_message = self.env['mail.message'].search(
-                domain, order='id asc', limit=1)
-
-        return parent_message
+        if conversation_id:
+            message.write({'x_microsoft_conversation_id': conversation_id})
+            if target_record:
+                self.env['pan.mail.thread.link'].record(
+                    mailbox=mailbox,
+                    thread_id=conversation_id,
+                    model=target_record._name,
+                    res_id=target_record.id,
+                    message=message,
+                    provider_message_id=provider_message_id,
+                )
 
     def _is_duplicate(self, internet_message_id):
         """
@@ -558,10 +570,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         """
         Check if email is from an internal company domain.
 
-        Uses Odoo's standard mail.alias.domain to determine internal domains.
-        The per-mailbox 'Exclude Internal Emails' setting controls whether
-        filtering is applied. Team mailboxes may disable this to log
-        internal email forwarding.
+        The domain list, the global opt-out and the per-mailbox 'Exclude
+        Internal Emails' setting all live in `pan.mail.internal.domains`; this
+        is only the call site.
 
         Args:
             email: Email address to check
@@ -570,23 +581,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         Returns:
             bool: True if email should be skipped as internal
         """
-        # Check per-mailbox setting first
-        if mailbox and not mailbox.x_exclude_internal:
-            return False  # Don't exclude internal emails for this mailbox
-
-        if not email or '@' not in email:
-            return False
-
-        sender_domain = email.lower().split('@')[1]
-
-        # Get all configured alias domains from Odoo (standard mail.alias.domain)
-        alias_domains = self.env['mail.alias.domain'].sudo().search([])
-        if not alias_domains:
-            return False
-
-        internal_domains = [d.name.lower() for d in alias_domains if d.name]
-
-        return sender_domain in internal_domains
+        return self.env['pan.mail.internal.domains'].should_skip(email, mailbox)
 
     def _find_partner(self, email):
         """

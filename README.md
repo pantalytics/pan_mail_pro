@@ -1,6 +1,7 @@
 # Mail Pro
 
-Complete Microsoft 365 email integration for Odoo - send and receive with full control.
+Complete Microsoft 365, Google Workspace and IMAP/SMTP email integration for
+Odoo - send and receive with full control.
 
 **[Full documentation](https://pantalytics.gitbook.io/pantalytics-docs/)**
 
@@ -12,8 +13,14 @@ Complete Microsoft 365 email integration for Odoo - send and receive with full c
 - Auto-create personal mailbox on Microsoft connect
 - Default mailbox per user
 
+**Providers:**
+- Microsoft 365 (Graph API, OAuth 2.0)
+- Google Workspace (Gmail API, OAuth 2.0)
+- Any IMAP/SMTP mailbox - Soverin, Fastmail, your own server - with a server,
+  a login and a password
+
 **Incoming Email:**
-- Automatic sync from Microsoft 365 mailboxes (1 min interval)
+- Automatic sync from every configured mailbox (1 min interval)
 - 2-way sync: Inbox and Sent Items
 - Reply threading via In-Reply-To headers + Microsoft conversationId fallback
 - Historical email sync with configurable start date
@@ -50,13 +57,47 @@ git push
 
 After installing the module, go to **Settings** → scroll to **Mail Pro**.
 
-The settings page contains step-by-step instructions for:
-1. Creating an Azure App Registration
-2. Configuring API permissions and granting admin consent
-3. Connecting your Microsoft account
-4. Setting up mailboxes
+The page walks through setup in six steps, and the first one decides the rest:
 
-Follow the instructions in Odoo - they include links to the correct Azure Portal pages and explain each step.
+1. **Email provider** - pick where your mail is hosted (Microsoft 365, Google
+   Workspace or IMAP/SMTP) from the searchable dropdown. Only that provider's
+   steps are shown from here on.
+2. **Credentials** - copy them from your Azure app registration or your Google
+   Cloud OAuth client. The redirect URI to paste back into the provider's
+   console is shown here. IMAP/SMTP has no global credential; see below.
+3. **Connect your account** - sign in and grant consent.
+4. **Internal domains** - your own email domains. Required: no mailbox can sync
+   until this is answered. Odoo suggests them from your mailboxes, company
+   email and alias domains.
+5. **Mailboxes** - create the notification mailbox (one button, owned by you)
+   and configure sending and incoming sync.
+6. **Your team** - invite colleagues to connect their own mailbox.
+
+Each provider keeps its own credentials, so switching the dropdown loses
+nothing and one database can serve mailboxes on several providers.
+
+You can invite users before any of this is finished. Mail Pro leaves SMTP alone
+until the first mailbox exists, and once it does, invitations and password
+resets wait in the queue until step 5 is done rather than being dropped.
+
+### IMAP/SMTP mailboxes (Soverin and friends)
+
+An IMAP mailbox has no consent screen, so its credentials are typed in once:
+
+1. Go to **Settings → Technical → Email → Email Accounts** and create an account.
+2. Set **Provider** to *IMAP / SMTP* and fill in the address. Known hosters
+   (Soverin) fill in their own servers; anything else is typed in.
+3. Enter the IMAP and SMTP servers, the login (defaults to the address) and the
+   password, then press **Test Connection** - both halves are checked, because a
+   mailbox that reads but cannot send is broken.
+4. Leave **Odoo User** empty for a shared address such as `info@`; set it for a
+   person's own mailbox.
+5. Create the mailbox under **Settings → Technical → Email → Microsoft
+   Mailboxes** with the same address and provider *IMAP / SMTP*.
+
+The Sent folder is detected from the server (`\Sent`), and can be overridden on
+the account when a server names it something unusual. Mail sent from Odoo is
+filed there, so it shows up in your own mail client too.
 
 ---
 
@@ -108,8 +149,12 @@ Go to **Settings** → **Mail Pro** → **Manage Mailbox List**
 6. Save
 
 **Sync behavior:**
-- Internal domain is auto-detected from company email or mailboxes
-- Enable "Exclude Internal Emails" in Settings → Mail Pro to filter internal traffic
+- Internal domains must be configured in Settings → Mail Pro before any mailbox
+  can sync. Odoo suggests them from your mailboxes, company email and alias
+  domains; you confirm the list. Email from those domains is never synced.
+- To sync internal email anyway, switch on "Sync internal email" explicitly, or
+  turn off "Exclude Internal" on a single mailbox (e.g. a team mailbox where
+  internal forwards should be logged)
 - Internal users (employees with Odoo accounts) are always excluded
 - Emails sync automatically every minute
 - Set a sync start date to import historical emails (default: sync from now)

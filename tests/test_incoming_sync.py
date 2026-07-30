@@ -204,6 +204,28 @@ class TestIncomingSync(OutlookProTestCase):
         self.assertTrue(reply, "reply should have been imported")
         self.assertEqual(reply.parent_id, parent, "reply must thread onto its parent")
 
+    def test_sync_records_where_the_mail_landed(self):
+        """The fetcher must actually write the routing log, not merely be able to.
+
+        Unit tests cover the log model itself; this covers the wiring, which is
+        the part that silently stops happening when someone refactors the
+        posting branches.
+        """
+        self._sync()
+
+        log = self.env['pan.mail.routing.log'].search([
+            ('mailbox_id', '=', self.mailbox.id),
+        ])
+        self.assertEqual(len(log), 1, "one row per delivered mail")
+        self.assertIn('customer@example.com', log.email_from)
+        self.assertEqual(log.internet_message_id, INTERNET_ID)
+        # No alias configured, nothing to thread onto: contact chatter, which
+        # is exactly the case worth flagging.
+        self.assertEqual(log.outcome, 'fallback')
+        self.assertEqual(log.model, 'res.partner')
+        self.assertEqual(log.res_id, self.external_partner.id)
+        self.assertTrue(log.needs_review)
+
     def test_html_body_is_not_escaped(self):
         self._sync()
 
