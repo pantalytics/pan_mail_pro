@@ -6,6 +6,13 @@
         <field name="model">res.users</field>
         <field name="inherit_id" ref="base.view_users_tree"/>
         <field name="arch" type="xml">
+            <xpath expr="//list" position="inside">
+                <header>
+                    <button name="action_send_connect_invite" type="object"
+                            string="Send Mail Pro Invite"
+                            groups="base.group_system"/>
+                </header>
+            </xpath>
             <xpath expr="//field[@name='login']" position="after">
                 <field name="x_microsoft_oauth_connected" string="MS Connected" optional="hide"/>
                 <field name="x_microsoft_health_status" string="MS Health" widget="badge"

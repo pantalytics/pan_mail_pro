@@ -7,9 +7,12 @@
 line-length = 120
 target-version = "py310"
 
+# `migrations` is deliberately NOT excluded. Those scripts are the least
+# exercised code in the repo — CI installs fresh, so they only ever run on a
+# customer's database during an upgrade. Excluding them from the linter too
+# left a syntax error with nothing at all standing in front of it.
 exclude = [
     "__pycache__",
-    "migrations",  # version-pinned scripts; never edited after release
 ]
 
 [lint]

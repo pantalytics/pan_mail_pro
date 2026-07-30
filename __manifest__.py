@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': "Mail Pro - Microsoft 365 Email Integration",
-    'summary': "Send from shared mailboxes, 2-way sync, proper threading - via Graph API",
+    'summary': "Send from shared mailboxes, 2-way sync, proper threading - via Graph API, Gmail or IMAP/SMTP",
     'description': """
         Mail Pro - Secure Professional Email Integration
         ====================================================
@@ -30,8 +30,14 @@
         - Auto-create contacts for unknown senders
         - Activity creation for team assignment
 
+        **Providers:**
+        - Microsoft 365 via the Graph API (OAuth 2.0)
+        - Google Workspace via the Gmail API (OAuth 2.0)
+        - Any IMAP/SMTP mailbox (Soverin, Fastmail, your own server) via
+          server, login and password
+
         **Security:**
-        - OAuth 2.0 authentication (no passwords stored)
+        - OAuth 2.0 authentication where the provider offers it
         - Encrypted token storage using Fernet encryption
         - Single-tenant Azure App Registration
 
@@ -82,7 +88,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.3.3.0',
+    'version': '19.0.3.4.0',
     'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -92,8 +98,10 @@
         'security/ir.model.access.csv',
         'data/ir_cron_data.xml',
         'data/mail_server_data.xml',
+        'data/mail_template_data.xml',
         'views/microsoft_mailbox_views.xml',
         'views/pan_mail_routing_log_views.xml',
+        'views/pan_mail_account_views.xml',
         'wizard/microsoft_oauth_wizard_views.xml',
         'views/templates/oauth_templates.xml',
         'views/res_config_settings_views.xml',

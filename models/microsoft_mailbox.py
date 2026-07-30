@@ -78,7 +78,7 @@ class MicrosoftMailbox(models.Model):
     x_owner_user_id = fields.Many2one(
         'res.users',
         string='Owner',
-        domain="['|', ('x_microsoft_oauth_connected', '=', True), ('x_google_oauth_connected', '=', True)]",
+        domain="[('x_pan_mail_connected', '=', True)]",
         help='Personal mailbox: the user who owns and sends from this mailbox.\n'
              'Notification mailbox: the user whose OAuth token is used to send system emails.',
         index=True
@@ -90,7 +90,7 @@ class MicrosoftMailbox(models.Model):
     x_incoming_user_id = fields.Many2one(
         'res.users',
         string='Sync As User',
-        domain="['|', ('x_microsoft_oauth_connected', '=', True), ('x_google_oauth_connected', '=', True)]",
+        domain="[('x_pan_mail_connected', '=', True)]",
         help='User whose account is used to fetch emails.'
     )
     x_incoming_enabled = fields.Boolean(
@@ -292,12 +292,12 @@ class MicrosoftMailbox(models.Model):
         self.ensure_one()
         provider = self._get_client().provider_label()
         if self.x_mailbox_type == 'shared' and not self._get_client().supports_shared_mailbox:
-            # Gmail: a shared address is its own account, so there is nothing an
-            # owner could connect on its behalf.
+            # Gmail and IMAP: a shared address is its own account, so there is
+            # nothing an owner could connect on its behalf.
             return _(
                 'Shared mailbox "%(email)s" has no connected %(provider)s account. '
-                'Authorize %(email)s itself — on %(provider)s a shared address is '
-                'its own account, not a delegation of someone else\'s.',
+                'Give %(email)s its own credentials — on %(provider)s a shared '
+                'address is its own account, not a delegation of someone else\'s.',
                 email=self.email, provider=provider,
             )
         if not self.x_owner_user_id:
@@ -307,6 +307,33 @@ class MicrosoftMailbox(models.Model):
             'The user must connect it first.',
             owner=self.x_owner_user_id.name, provider=provider,
         )
+
+    def action_open_account(self):
+        """Open the email account serving this mailbox, or a prefilled new one.
+
+        Only meaningful for providers whose credentials are typed in rather than
+        granted through a consent screen: an IMAP mailbox is useless until
+        somebody enters its server and password, and this is the shortest path
+        from the mailbox to that form.
+        """
+        self.ensure_one()
+        account = self._get_client().resolve_receiving_account(self)
+        action = {
+            'type': 'ir.actions.act_window',
+            'res_model': 'pan.mail.account',
+            'view_mode': 'form',
+            'views': [(False, 'form')],
+            'target': 'current',
+        }
+        if account:
+            action['res_id'] = account.id
+        else:
+            action['context'] = {
+                'default_email': self.email,
+                'default_provider': self.x_provider,
+                'default_user_id': self.x_owner_user_id.id,
+            }
+        return action
 
     def action_test_incoming(self):
         """Test incoming mail configuration by fetching a few messages."""
@@ -387,6 +414,57 @@ class MicrosoftMailbox(models.Model):
             'views': [(False, 'form')],
             'target': 'current',
         }
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Creating the first mailbox is what switches Mail Pro on.
+
+        SMTP is taken over here rather than at install time. The module's
+        graceful-degradation rule says a database with no mailboxes keeps using
+        Odoo's own mail handling — but the install hook used to disable every
+        outgoing mail server immediately, so a fresh install could not send the
+        user invitations an admin needs *before* Mail Pro is configured. Now the
+        takeover happens at the same moment routing does.
+        """
+        is_first = not self.sudo().with_context(active_test=False).search_count([])
+        records = super().create(vals_list)
+        if is_first:
+            self._activate_smtp_takeover()
+        return records
+
+    @api.model
+    def _activate_smtp_takeover(self):
+        """Disable SMTP so mail cannot leave through two doors at once.
+
+        Idempotent, and safe to call from both the install hook and create().
+        """
+        IrConfigParameter = self.env['ir.config_parameter'].sudo()
+        if IrConfigParameter.get_param('x_pan_outlook_pro.smtp_takeover_done') == 'True':
+            return
+
+        MailServer = self.env['ir.mail_server'].sudo().with_context(active_test=False)
+        placeholder = self.env.ref(
+            'pan_mail_pro.mail_server_invalid_outlook_pro', raise_if_not_found=False
+        )
+
+        others = MailServer.search([('active', '=', True)])
+        if placeholder:
+            others -= placeholder
+        if others:
+            others.write({'active': False})
+            for server in others:
+                auth_type = getattr(server, 'smtp_authentication', 'login')
+                extra_info = ' (Outlook OAuth)' if auth_type == 'outlook' else ''
+                _logger.info(
+                    f'[Mail Pro] Disabled SMTP server{extra_info}: {server.name} ({server.smtp_host})'
+                )
+
+        if placeholder and not placeholder.active:
+            placeholder.write({'active': True})
+
+        IrConfigParameter.set_param('base_setup.default_external_email_server', 'False')
+        IrConfigParameter.set_param('x_pan_outlook_pro.smtp_takeover_done', 'True')
+        _logger.info('[Mail Pro] SMTP takeover active — all email routes through the provider API')
 
     def write(self, vals):
         """Reset x_last_sync_date when x_sync_start_date is moved to an earlier date."""
@@ -474,6 +552,23 @@ class MicrosoftMailbox(models.Model):
                         'Only one active Notification mailbox is allowed. '
                         'Existing notification mailbox: %s'
                     ) % existing.email)
+
+    @api.constrains('x_sync_mode', 'x_exclude_internal')
+    def _check_internal_domains_configured(self):
+        """Incoming sync may not be enabled before internal domains exist.
+
+        This is the gate, not the filter. The filter (`should_skip`) used to be
+        the only line of defence and it failed open on an empty domain list, so
+        a database that was never configured synced every internal email into
+        Odoo. Blocking the *configuration* is what makes that unrepeatable; the
+        runtime check in `_process_mailbox` only catches a list emptied later.
+        """
+        gate = self.env['pan.mail.internal.domains'].configuration_error()
+        if not gate:
+            return
+        for record in self:
+            if record.x_sync_mode != 'none':
+                raise ValidationError(gate)
 
     @api.constrains('x_sync_mode')
     def _check_notification_mailbox_for_sync(self):

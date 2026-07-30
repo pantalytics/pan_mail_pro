@@ -11,6 +11,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Nothing here writes to the repository; release.yml asks for contents:write
+# separately. Stated explicitly so a compromised action cannot use the default
+# token to push.
+permissions:
+  contents: read
+
 jobs:
   # ---------------------------------------------------------------------------
   # Static checks: fast, no database. Fails the PR before we spend 4 minutes
@@ -198,6 +204,13 @@ jobs:
         with:
           path: addons/pan_mail_pro
 
+      # `sale` and `mass_mailing` are not module dependencies, but nine tests
+      # skip themselves when they are absent — and a skip is invisible in the
+      # summary, so those paths silently went untested on every run. Both ship
+      # in community, so installing them here costs a minute and buys back the
+      # coverage. `helpdesk` cannot be added: it is Enterprise-only, so
+      # test_route_to_helpdesk stays a genuine CI gap and has to be covered by
+      # the functional testplan.
       - name: Run module tests
         env:
           SERIES: ${{ needs.lint.outputs.odoo-series }}
@@ -209,36 +222,32 @@ jobs:
             -d ci_test \
             --db_host=localhost --db_port=5432 --db_user=odoo --db_password=odoo \
             --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
-            -i pan_mail_pro \
+            -i pan_mail_pro,sale,mass_mailing \
             --test-enable --test-tags=pan_mail_pro \
             --stop-after-init --without-demo=all \
             --max-cron-threads=0 --log-level=info 2>&1 | tee odoo-test.log
 
       # Belt and braces: the step above already fails on a non-zero Odoo exit
-      # code. This also asserts on the summary line, so a run that dies before
-      # reporting one cannot pass silently.
-      #
-      # The pattern is anchored on odoo.tests.result on purpose. A looser match
-      # picks up ordinary log lines from tests that exercise failure paths
-      # ("Email 41 failed to send") and fails a green build.
+      # code. This asserts on the summary line as well, so a run that dies
+      # before reporting one — or reports having run nothing — cannot pass.
       - name: Assert no test failures
+        run: addons/pan_mail_pro/tools/ci_assert_tests.sh odoo-test.log
+
+      # The step above prints skips but cannot know which ones were expected.
+      # This one pins the intent: if a future dependency bump stops `sale` or
+      # `mass_mailing` from installing, those tests would quietly go back to
+      # skipping and the build would stay green.
+      - name: Assert optional test dependencies installed
         run: |
-          SUMMARY=$(grep -oE 'odoo\.tests\.result: [0-9]+ failed, [0-9]+ error\(s\)[^"]*' odoo-test.log | tail -1)
-          if [ -z "$SUMMARY" ]; then
-            echo "::error::Odoo printed no test summary — the run died before finishing."
-            tail -30 odoo-test.log
+          MISSING=$(docker run --rm --network host postgres:15 \
+            psql "postgresql://odoo:odoo@localhost:5432/ci_test" -tAc \
+            "SELECT name FROM ir_module_module
+              WHERE name IN ('sale','mass_mailing','crm') AND state <> 'installed'")
+          if [ -n "$MISSING" ]; then
+            echo "::error::Not installed, so their tests skipped instead of running: $(echo $MISSING | tr '\n' ' ')"
             exit 1
           fi
-          echo "$SUMMARY"
-          case "$SUMMARY" in
-            *": 0 failed, 0 error(s)"*)
-              grep -E 'odoo\.tests\.stats' odoo-test.log | tail -1
-              echo "All tests passed." ;;
-            *)
-              echo "::error::$SUMMARY"
-              grep -E 'tests\.[a-z_]+: (ERROR|FAIL):' odoo-test.log | head -30
-              exit 1 ;;
-          esac
+          echo "sale, mass_mailing and crm are installed — no silent skips from missing modules."
 
       - name: Upload Odoo log
         if: always()
@@ -246,4 +255,119 @@ jobs:
         with:
           name: odoo-test-log
           path: odoo-test.log
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # The `test` job installs fresh. Every customer database instead *upgrades*,
+  # which is a different code path: it runs the scripts in migrations/, and it
+  # runs the test suite against columns and records that already existed. Until
+  # this job existed, neither was exercised anywhere automatic — migrations only
+  # ever ran for the first time on a customer's database.
+  #
+  # Out of scope on purpose: the pan_outlook_pro -> pan_mail_pro rename, which
+  # happens outside Odoo (tools/rename_to_mail_pro.sql) and so cannot be driven
+  # from a module upgrade. That one stays a manual runbook.
+  # ---------------------------------------------------------------------------
+  upgrade:
+    name: Upgrade from last release
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: addons/pan_mail_pro
+          fetch-depth: 0
+
+      # The newest tag of this series that is not HEAD itself. Nothing to
+      # upgrade *from* on a repo with no releases yet, so the job no-ops rather
+      # than failing — a first release must be allowed to happen.
+      - name: Resolve the previous release
+        id: baseline
+        working-directory: addons/pan_mail_pro
+        env:
+          SERIES: ${{ needs.lint.outputs.odoo-series }}
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          for t in $(git tag -l "v${SERIES}.*" --sort=-v:refname); do
+            if [ "$(git rev-parse "${t}^{commit}")" != "$HEAD_SHA" ]; then
+              echo "tag=$t" >> "$GITHUB_OUTPUT"
+              echo "Upgrading from ${t}"
+              exit 0
+            fi
+          done
+          echo "tag=" >> "$GITHUB_OUTPUT"
+          echo "No previous v${SERIES}.* tag — nothing to upgrade from."
+
+      - name: Export the previous release
+        if: steps.baseline.outputs.tag != ''
+        working-directory: addons/pan_mail_pro
+        run: |
+          mkdir -p "${{ github.workspace }}/addons_base/pan_mail_pro"
+          git archive "${{ steps.baseline.outputs.tag }}" \
+            | tar -x -C "${{ github.workspace }}/addons_base/pan_mail_pro"
+          grep "'version'" "${{ github.workspace }}/addons_base/pan_mail_pro/__manifest__.py"
+
+      - name: Install the previous release
+        if: steps.baseline.outputs.tag != ''
+        env:
+          SERIES: ${{ needs.lint.outputs.odoo-series }}
+        run: |
+          set -o pipefail
+          docker run --rm --network host \
+            -v "${{ github.workspace }}/addons_base:/mnt/extra-addons:ro" \
+            --entrypoint odoo "odoo:${SERIES}" \
+            -d ci_upgrade \
+            --db_host=localhost --db_port=5432 --db_user=odoo --db_password=odoo \
+            --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
+            -i pan_mail_pro,sale,mass_mailing \
+            --stop-after-init --without-demo=all \
+            --max-cron-threads=0 --log-level=warn 2>&1 | tee odoo-baseline.log
+
+      # -u is what triggers the migration scripts, and --test-enable then runs
+      # the suite against the upgraded database rather than a fresh one.
+      - name: Upgrade to HEAD and run tests
+        if: steps.baseline.outputs.tag != ''
+        env:
+          SERIES: ${{ needs.lint.outputs.odoo-series }}
+        run: |
+          set -o pipefail
+          docker run --rm --network host \
+            -v "${{ github.workspace }}/addons:/mnt/extra-addons:ro" \
+            --entrypoint odoo "odoo:${SERIES}" \
+            -d ci_upgrade \
+            --db_host=localhost --db_port=5432 --db_user=odoo --db_password=odoo \
+            --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
+            -u pan_mail_pro \
+            --test-enable --test-tags=pan_mail_pro \
+            --stop-after-init \
+            --max-cron-threads=0 --log-level=info 2>&1 | tee odoo-upgrade.log
+
+      # -u on a module that is not installed silently does nothing and still
+      # exits 0, which is the exact failure this whole job would otherwise miss.
+      - name: Assert the upgrade ran its tests
+        if: steps.baseline.outputs.tag != ''
+        run: addons/pan_mail_pro/tools/ci_assert_tests.sh odoo-upgrade.log
+
+      - name: Upload upgrade logs
+        if: always() && steps.baseline.outputs.tag != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: odoo-upgrade-log
+          path: |
+            odoo-baseline.log
+            odoo-upgrade.log
           retention-days: 7

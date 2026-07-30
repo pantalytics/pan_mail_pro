@@ -3,7 +3,17 @@ from odoo import fields, models, api, _
 from odoo.exceptions import ValidationError
 
 from . import encryption_utils
-from .mail_provider_client import DEFAULT_PROVIDER, PROVIDER_SELECTION
+from .mail_provider_client import DEFAULT_PROVIDER, PROVIDER_SELECTION, get_provider_client
+
+# Hosts we can fill in for the admin. Keyed on the mail domain, because that is
+# what an admin types first. Deliberately tiny: this is a convenience, not a
+# provider directory — anything not listed is typed in by hand.
+IMAP_PRESETS = {
+    'soverin.net': {
+        'imap_host': 'imap.soverin.net', 'imap_port': 993, 'imap_security': 'ssl',
+        'smtp_host': 'smtp.soverin.net', 'smtp_port': 465, 'smtp_security': 'ssl',
+    },
+}
 
 
 class PanMailAccount(models.Model):
@@ -18,11 +28,16 @@ class PanMailAccount(models.Model):
     - user_id null  -> a service account. Nobody's personal mailbox. This is how
                        a Gmail shared mailbox works: sales@company.com is a real
                        Workspace user, authorized once, with no Odoo user behind
-                       it. Also how IMAP will work, where there is no OAuth at all.
+                       it. Also how an IMAP shared mailbox works, where there is
+                       no OAuth at all - just a login.
 
-    Tokens are Fernet-encrypted at rest, same scheme as res.users used before -
-    the ciphertext is interchangeable, which is what lets the migration copy
-    rather than re-encrypt.
+    Tokens and passwords are Fernet-encrypted at rest, same scheme as res.users
+    used before - the ciphertext is interchangeable, which is what lets the
+    migration copy rather than re-encrypt.
+
+    Which of the credential fields below matter depends on the provider, and the
+    provider is the one that says so: `connected` asks the client through
+    `account_is_connected()` rather than assuming everybody has a refresh token.
     """
     _name = 'pan.mail.account'
     _description = 'Email Account'
@@ -84,8 +99,56 @@ class PanMailAccount(models.Model):
         string='Connected',
         compute='_compute_connected',
         store=True,
-        help='Whether this account has a refresh token and can obtain new access tokens.'
+        help='Whether this account holds credentials its provider can use.'
     )
+
+    # -------------------------------------------------------------------------
+    # IMAP / SMTP credentials
+    #
+    # Only meaningful for provider='imap'. They live here rather than on a
+    # separate model for the same reason the tokens do: a caller resolving "the
+    # credentials for this address on this provider" must get one record back,
+    # whatever authentication that provider happens to use.
+    # -------------------------------------------------------------------------
+    username = fields.Char(
+        string='Username',
+        help='Login for the IMAP/SMTP server. Leave empty to use the email address.',
+    )
+    password_encrypted = fields.Char(
+        string='Password (Encrypted)',
+        groups='base.group_system',
+        copy=False,
+        help='Encrypted - do not edit manually',
+    )
+    password = fields.Char(
+        string='Password',
+        compute='_compute_decrypted_password',
+        inverse='_inverse_password',
+        store=False,
+        groups='base.group_system',
+        copy=False,
+    )
+
+    imap_host = fields.Char(string='IMAP Server', help='e.g. imap.soverin.net')
+    imap_port = fields.Integer(string='IMAP Port', default=993)
+    imap_security = fields.Selection([
+        ('ssl', 'SSL/TLS'),
+        ('starttls', 'STARTTLS'),
+        ('none', 'None'),
+    ], string='IMAP Security', default='ssl')
+    imap_sent_folder = fields.Char(
+        string='Sent Folder',
+        help='IMAP folder holding sent mail. Leave empty to detect it from the '
+             'server\'s \\Sent flag, falling back to "Sent".',
+    )
+
+    smtp_host = fields.Char(string='SMTP Server', help='e.g. smtp.soverin.net')
+    smtp_port = fields.Integer(string='SMTP Port', default=465)
+    smtp_security = fields.Selection([
+        ('ssl', 'SSL/TLS'),
+        ('starttls', 'STARTTLS'),
+        ('none', 'None'),
+    ], string='SMTP Security', default='ssl')
 
     # Plain-text views onto the encrypted columns. Never stored.
     access_token = fields.Char(
@@ -109,6 +172,69 @@ class PanMailAccount(models.Model):
         'UNIQUE(user_id, provider)',
         'A user can only have one account per provider.',
     )
+
+    # Fields whose change can flip a mailbox between "usable" and "not".
+    _CREDENTIAL_FIELDS = frozenset({
+        'provider', 'email', 'active', 'refresh_token_encrypted',
+        'refresh_token', 'password_encrypted', 'password', 'username',
+        'imap_host', 'smtp_host',
+    })
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        accounts = super().create(vals_list)
+        accounts._touch_dependent_mailboxes()
+        return accounts
+
+    def write(self, vals):
+        res = super().write(vals)
+        if self._CREDENTIAL_FIELDS & set(vals):
+            self._touch_dependent_mailboxes()
+        return res
+
+    def _touch_dependent_mailboxes(self):
+        """Refresh mailbox readiness for the mailboxes these accounts serve.
+
+        `x_incoming_enabled` is a stored compute, and a stored compute can only
+        depend on field paths. A service account is found by *address* - no path
+        leads there from the mailbox - so without this, entering the credentials
+        for a shared mailbox after configuring it would never flip the mailbox
+        back on and the cron would go on skipping it. This is the write-side
+        half of the limitation documented on `_compute_incoming_enabled`.
+        """
+        emails = [account.email for account in self if account.email]
+        if not emails:
+            return
+        mailboxes = self.env['x_microsoft.mailbox'].sudo().with_context(
+            active_test=False).search([('email', 'in', emails)])
+        if mailboxes:
+            mailboxes._compute_incoming_enabled()
+
+    def action_test_connection(self):
+        """Verify these credentials against the provider, from the account form."""
+        self.ensure_one()
+        result = get_provider_client(self.env, self.provider).test_connection(self)
+        if result.get('success'):
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Connection Successful'),
+                    'message': _('Connected as %s.') % (result.get('email') or self.email),
+                    'type': 'success',
+                    'sticky': False,
+                },
+            }
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Connection Failed'),
+                'message': result.get('error') or _('Unknown error'),
+                'type': 'danger',
+                'sticky': True,
+            },
+        }
 
     @api.model
     def _store_tokens(self, provider, user, email, access_token, refresh_token, token_expiry):
@@ -181,11 +307,55 @@ class PanMailAccount(models.Model):
                 self.env, account.refresh_token
             ) if account.refresh_token else False
 
-    @api.depends('refresh_token_encrypted')
-    def _compute_connected(self):
-        """A refresh token is what makes an account usable past the next hour."""
+    @api.depends('password_encrypted')
+    def _compute_decrypted_password(self):
         for account in self:
-            account.connected = bool(account.refresh_token_encrypted)
+            account.password = encryption_utils.decrypt_value(
+                self.env, account.password_encrypted
+            ) if account.password_encrypted else False
+
+    def _inverse_password(self):
+        for account in self:
+            account.password_encrypted = encryption_utils.encrypt_value(
+                self.env, account.password
+            ) if account.password else False
+
+    @api.depends('provider', 'refresh_token_encrypted', 'password_encrypted',
+                 'imap_host', 'smtp_host', 'email', 'username')
+    def _compute_connected(self):
+        """What makes an account usable is the provider's call, not ours.
+
+        For OAuth providers it is a refresh token; for IMAP/SMTP it is a host, a
+        login and a password. Asking the client keeps that difference in the one
+        place allowed to know about it - and keeps every `mailbox.connected`
+        check in the module provider-neutral.
+        """
+        for account in self:
+            if not account.provider:
+                account.connected = False
+                continue
+            client = get_provider_client(self.env, account.provider)
+            account.connected = client.account_is_connected(account)
+
+    def _imap_login(self):
+        """The username an IMAP/SMTP server should be given for this account."""
+        self.ensure_one()
+        return self.username or self.email
+
+    @api.onchange('email', 'provider')
+    def _onchange_email_fills_known_hosts(self):
+        """Prefill the servers for hosters we know, on an empty IMAP account.
+
+        Never overwrites what an admin typed: an unknown domain, or a form that
+        already has a host in it, is left exactly as it is.
+        """
+        for account in self:
+            if account.provider != 'imap' or account.imap_host or account.smtp_host:
+                continue
+            domain = (account.email or '').split('@')[-1].lower()
+            preset = IMAP_PRESETS.get(domain)
+            if preset:
+                account.update(preset)
 
     @api.constrains('user_id', 'email')
     def _check_service_account_has_email(self):

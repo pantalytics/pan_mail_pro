@@ -15,22 +15,16 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import FOLDER_INBOX
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestInternalDomain(TransactionCase):
-    """Test internal domain filtering logic using Odoo's mail.alias.domain."""
+    """Test internal domain filtering against the configured domain list."""
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls.processor = cls.env['microsoft.incoming.mail.processor']
-        # Create alias domains (Odoo's standard way to configure internal domains)
-        cls.alias_domain_1 = cls.env['mail.alias.domain'].create({
-            'name': 'company.com',
-        })
-        cls.alias_domain_2 = cls.env['mail.alias.domain'].create({
-            'name': 'internal.org',
-        })
+        cls.env['pan.mail.internal.domains'].set_domains(['company.com', 'internal.org'])
 
     def test_internal_domain_match(self):
-        """Emails from alias domains should be detected as internal."""
+        """Emails from configured domains should be detected as internal."""
         self.assertTrue(self.processor._is_internal_domain('user@company.com'))
         self.assertTrue(self.processor._is_internal_domain('user@internal.org'))
 
@@ -50,9 +44,8 @@ class TestInternalDomain(TransactionCase):
         self.assertFalse(self.processor._is_internal_domain('invalid'))
         self.assertFalse(self.processor._is_internal_domain(None))
 
-    def test_no_matching_alias_domain(self):
-        """When email domain doesn't match any alias domain, it's not internal."""
-        # external.net is not in our configured alias domains
+    def test_no_matching_domain(self):
+        """When the email domain isn't in the list, it's not internal."""
         self.assertFalse(self.processor._is_internal_domain('user@external.net'))
 
     def test_per_mailbox_exclude_internal_enabled(self):

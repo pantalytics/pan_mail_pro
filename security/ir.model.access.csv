@@ -16,3 +16,4 @@ access_pan_mail_thread_link_user,pan.mail.thread.link.user,model_pan_mail_thread
 access_pan_mail_thread_link_system,pan.mail.thread.link.system,model_pan_mail_thread_link,base.group_system,1,1,1,1
 access_pan_mail_routing_log_user,pan.mail.routing.log.user,model_pan_mail_routing_log,base.group_user,1,0,0,0
 access_pan_mail_routing_log_system,pan.mail.routing.log.system,model_pan_mail_routing_log,base.group_system,1,1,1,1
+access_imap_smtp_client_user,imap.smtp.client.user,model_imap_smtp_client,base.group_user,1,1,1,0

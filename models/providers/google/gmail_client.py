@@ -13,17 +13,16 @@ the same seam the Graph client already gives us.
 """
 import base64
 import logging
-import mimetypes
 import requests
 import secrets
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
-from email.utils import formataddr, getaddresses, make_msgid, parseaddr
+from email.utils import getaddresses, parseaddr
 
 from odoo import models, api, _
 from odoo.exceptions import UserError
 from ... import encryption_utils
 from ...mail_provider_client import ERROR_NO_RECIPIENTS, FOLDER_INBOX, FOLDER_SENT
+from .. import mime_utils
 
 _logger = logging.getLogger(__name__)
 
@@ -274,9 +273,10 @@ class GoogleGmailClient(models.AbstractModel):
         """
         token = self.get_valid_token(account)
         mailbox_email = mailbox.email
+        reply_context = reply_context or {}
 
-        to_addrs = self._collect_recipients(mail_record.email_to, mail_record.recipient_ids)
-        cc_addrs = self._collect_recipients(mail_record.email_cc, None)
+        to_addrs = mime_utils.collect_recipients(mail_record.email_to, mail_record.recipient_ids)
+        cc_addrs = mime_utils.collect_recipients(mail_record.email_cc)
         if not to_addrs and not cc_addrs:
             return {
                 'success': False,
@@ -286,44 +286,10 @@ class GoogleGmailClient(models.AbstractModel):
                 'error_code': ERROR_NO_RECIPIENTS,
             }
 
-        domain = mailbox_email.split('@')[-1] if '@' in mailbox_email else None
-        message_id = make_msgid(domain=domain)
-
-        msg = EmailMessage()
-        msg['Subject'] = mail_record.subject or '(No Subject)'
-        msg['From'] = mailbox_email
-        if to_addrs:
-            msg['To'] = ', '.join(to_addrs)
-        if cc_addrs:
-            msg['Cc'] = ', '.join(cc_addrs)
-        msg['Message-ID'] = message_id
-
-        # Thread the reply. Gmail will only honour `threadId` when the message
-        # is *also* a valid RFC 2822 reply — In-Reply-To and References must be
-        # set and the subject must match — so these three travel together or
-        # not at all, and Gmail silently starts a new thread if they disagree.
-        reply_context = reply_context or {}
-        if reply_context.get('in_reply_to'):
-            msg['In-Reply-To'] = reply_context['in_reply_to']
-        if reply_context.get('references'):
-            msg['References'] = ' '.join(reply_context['references'])
-
-        # The X-Odoo-* loop guard: the incoming sync skips anything carrying
-        # these, so our own sent mail is never re-imported from the mailbox.
-        if mail_record.model and mail_record.res_id:
-            msg['X-Odoo-Model'] = mail_record.model
-            msg['X-Odoo-Record-Id'] = str(mail_record.res_id)
-        msg['X-Odoo-Mail-Id'] = str(mail_record.id)
-        if mail_record.mail_message_id:
-            msg['X-Odoo-Message-Id'] = str(mail_record.mail_message_id.id)
-
-        body_html = mail_record.body_html or mail_record.body or ''
-        # Plain-text part first so set_content makes this the multipart/alternative
-        # root; the HTML is the alternative clients actually render.
-        msg.set_content('This email requires an HTML-capable client.')
-        msg.add_alternative(body_html, subtype='html')
-
-        self._attach_files(msg, mail_record.attachment_ids)
+        message_id = mime_utils.new_message_id(mailbox_email)
+        msg = mime_utils.build_message(
+            mail_record, mailbox_email, to_addrs, cc_addrs, message_id,
+            reply_context=reply_context)
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         payload = {'raw': raw}
@@ -353,41 +319,6 @@ class GoogleGmailClient(models.AbstractModel):
             'message_id': message_id,           # the RFC5322 Message-ID we set
             'thread_id': sent.get('threadId'),  # Gmail's thread handle
         }
-
-    def _collect_recipients(self, raw_list, partners):
-        """Merge a comma-separated address string and Odoo partners into a
-        de-duplicated list of formatted RFC5322 addresses."""
-        seen = set()
-        result = []
-
-        def _add(name, address):
-            if address and address.lower() not in seen:
-                seen.add(address.lower())
-                result.append(formataddr((name, address)) if name else address)
-
-        for raw in (raw_list or '').split(','):
-            raw = raw.strip()
-            if raw:
-                name, address = parseaddr(raw)
-                _add(name, address)
-        for partner in (partners or []):
-            if partner.email:
-                _add(partner.name, partner.email)
-        return result
-
-    def _attach_files(self, msg, attachments):
-        for attachment in attachments:
-            content = attachment.raw  # decoded bytes, not base64
-            if not content:
-                continue
-            content_type = (attachment.mimetype
-                            or mimetypes.guess_type(attachment.name or '')[0]
-                            or 'application/octet-stream')
-            maintype, _, subtype = content_type.partition('/')
-            msg.add_attachment(
-                content, maintype=maintype, subtype=subtype or 'octet-stream',
-                filename=attachment.name or 'attachment',
-            )
 
     # -------------------------------------------------------------------------
     # Receiving — contract implementation

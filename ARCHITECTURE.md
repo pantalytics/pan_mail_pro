@@ -7,7 +7,9 @@ Technical documentation for developers working on the Mail Pro module.
 ## 1. Overview
 
 ### Purpose
-Complete Microsoft 365 and Google Workspace email integration for Odoo - send and receive emails via the Graph and Gmail APIs with proper threading and partner management.
+Complete Microsoft 365, Google Workspace and IMAP/SMTP email integration for
+Odoo - send and receive emails via the Graph API, the Gmail API or the mail
+protocols themselves, with proper threading and partner management.
 
 ### Provider abstraction
 
@@ -18,6 +20,12 @@ threading, chatter posting — is provider-neutral and never touches a Graph or
 Gmail JSON key. A mailbox names its provider with `x_provider` and dispatches
 via `mailbox._get_client()`, which resolves the code through the registry in
 `models/mail_provider_client.py`.
+
+That neutrality is what made the third provider cheap. IMAP/SMTP has no OAuth,
+no server-side message id and no thread id, and none of that reaches a caller:
+credentials answer `account_is_connected()` instead of "has a refresh token", a
+message id is the folder-scoped `folder:uidvalidity:uid` triple, and the thread
+key is the root of the References chain.
 
 There is exactly one layer: the client *is* the contract implementation, and it
 lives in `models/providers/<vendor>/`. Credentials are a `pan.mail.account`, and
@@ -38,6 +46,7 @@ deliberate: the rename to provider-neutral names is a single mechanical phase
 | `mail.provider.client` | The contract (abstract): resolve credentials, send, fetch, normalize |
 | `microsoft.graph.client` | Microsoft 365 implementation — all Graph API calls |
 | `google.gmail.client` | Google Workspace implementation — all Gmail API calls |
+| `imap.smtp.client` | IMAP/SMTP implementation — imaplib + smtplib, no OAuth |
 | `pan.mail.account` | Credentials for one email address on one provider (nullable `user_id`) |
 | `microsoft.incoming.mail.processor` | Incoming email sync (cron), provider-neutral |
 | `mail.mail` | Outgoing email override (routes through the mailbox's provider) |
@@ -69,8 +78,11 @@ pan_mail_pro/
 │   ├── providers/                 # The only place provider payloads are understood
 │   │   ├── microsoft/
 │   │   │   └── graph_client.py    # microsoft.graph.client — Graph API + normalization
-│   │   └── google/
-│   │       └── gmail_client.py    # google.gmail.client — Gmail API + normalization
+│   │   ├── google/
+│   │   │   └── gmail_client.py    # google.gmail.client — Gmail API + normalization
+│   │   ├── imap_smtp/
+│   │   │   └── imap_client.py     # imap.smtp.client — IMAP/SMTP + normalization
+│   │   └── mime_utils.py          # Outgoing MIME, shared by the two MIME senders
 │   ├── res_users.py               # OAuth token proxies onto pan.mail.account
 │   ├── res_partner.py             # Contact block list field
 │   ├── res_config_settings.py     # Module settings
@@ -93,11 +105,15 @@ pan_mail_pro/
 
 ### Overview
 
-| Type | Who sees it? | Who's OAuth token? | Use case |
-|------|--------------|-------------------|----------|
-| **Personal** | Only owner | Owner's token | User's own mailbox (john@company.com) |
-| **Shared** | Everyone | Sender's own token | Team mailbox (sales@company.com) |
-| **Notification** | Everyone | Owner's token | System emails (notifications@company.com) |
+| Type | Who sees it? | Whose credentials? | Use case |
+|------|--------------|--------------------|----------|
+| **Personal** | Only owner | Owner's | User's own mailbox (john@company.com) |
+| **Shared** | Everyone | Sender's own on Microsoft 365; the address's own on Gmail and IMAP | Team mailbox (sales@company.com) |
+| **Notification** | Everyone | Owner's | System emails (notifications@company.com) |
+
+Which credentials a mailbox runs on is asked of the provider
+(`resolve_sending_account` / `resolve_receiving_account`), never assumed by the
+caller: only Microsoft 365 lets one person send as another with their own token.
 
 ### Graph API Send Flow (Draft → Send)
 
@@ -131,10 +147,13 @@ We use a **Draft → Send** flow instead of the simpler `sendMail` endpoint:
 ### Shared Mailbox
 
 - Visible to all users in composer dropdown
-- Each user sends with their **own** OAuth token
-- User needs:
+- **Microsoft 365:** each user sends with their **own** OAuth token. User needs:
   - `Mail.ReadWrite.Shared` permission in Azure
   - "Send As" rights on the mailbox in Microsoft 365
+- **Gmail and IMAP/SMTP:** the address is its own account, with its own
+  credentials and no owner. Nothing is borrowed from the sender, and the mailbox
+  is configured by giving that address credentials of its own
+  (Settings → Technical → Email → Email Accounts).
 
 ### Notification Mailbox
 
@@ -235,8 +254,14 @@ process_email()
 | Email to unknown recipient | - | - | Skip |
 
 **Why this approach:**
-- Simple "Internal Domains" setting in Mail Pro configuration
-- Explicit control over which domains are excluded
+- Explicit "Internal Domains" setting in Mail Pro configuration, and a *gate*
+  rather than a preference: a mailbox cannot enable incoming sync while the list
+  is empty, and a sync run aborts if it is emptied later. The list used to be
+  read from `mail.alias.domain`, where "no domains configured" meant "nothing is
+  internal" — so a database that never set it up synced every internal email
+  into Odoo. Fail-closed, because the failure mode is a data leak.
+- Turning the filter off is possible but explicit: globally via "Sync internal
+  email", or per mailbox via "Exclude Internal"
 - Internal employees filtered via domain (Inbox) OR via `partner.user_ids` (both folders)
 - Replies always work (partner was created when we sent to them)
 - Spam/marketing naturally filtered (not in contacts)
@@ -615,6 +640,35 @@ This is a standard pattern (incremental cursor sync) used by Odoo fetchmail, Str
 - No centralized "super user" needed
 - Audit trail shows actual sender
 - User needs proper M365 permissions anyway
+
+---
+
+### 5.9 IMAP/SMTP: what the protocols make the contract absorb
+
+**Decision:** support plain IMAP + SMTP as a third provider (`imap`), on
+stdlib `imaplib`/`smtplib`, with credentials on `pan.mail.account`.
+
+**Why:** not every mailbox is at Microsoft or Google. A hoster such as Soverin
+offers IMAP and SMTP and nothing else, and the module was already one contract
+away from being able to use it.
+
+Three protocol facts had to land somewhere, and all three land inside the client:
+
+| Fact | Consequence |
+|------|-------------|
+| No OAuth | `account_is_connected()` is a provider question. For IMAP it means host + login + password; the OAuth-shaped contract methods refuse with an explanation instead of pretending. |
+| UIDs are folder-scoped and invalidated by `UIDVALIDITY` | `provider_message_id` is `folder:uidvalidity:uid`. A renumbered folder is refused rather than misread — a bare UID would fetch a different message. |
+| No thread id | The root of the `References` chain is the thread key, so every message in a conversation shares one handle, the way `conversationId` and `threadId` do. |
+
+Two smaller ones: `SEARCH SINCE` is date-granular and server-local, so the
+cursor is asked wide and narrowed in Python; and SMTP files nothing in Sent, so
+the client APPENDs the sent copy itself (best-effort — the mail is already
+delivered, and failing to file a copy is not a send failure).
+
+Outgoing MIME is shared with the Gmail client (`providers/mime_utils.py`).
+That is a function, not a fourth layer: two providers send the same bytes built
+from the same record, and Microsoft does not use it at all because Graph takes
+JSON.
 
 ---
 
