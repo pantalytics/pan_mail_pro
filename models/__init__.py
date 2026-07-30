@@ -11,4 +11,5 @@ from . import mail_alias
 from . import mail_compose_message
 from . import mail_mail
 from . import mail_message
+from . import pan_mail_coverage
 from . import res_partner

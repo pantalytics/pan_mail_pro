@@ -17,3 +17,4 @@ from . import test_provider_contract
 from . import test_mailbox_permission
 from . import test_incoming_sync_gmail
 from . import test_mail_lens
+from . import test_mail_coverage
