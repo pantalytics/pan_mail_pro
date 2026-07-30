@@ -190,7 +190,15 @@ class MailMessage(models.Model):
         """
         if operator not in ('=', '!=', 'in', 'not in'):
             raise UserError(_('Unsupported operator for Delivery: %s') % operator)
-        values = value if isinstance(value, (list, tuple)) else [value]
+
+        # Odoo 19 normalises the domain before calling this: ('=', 'failed')
+        # arrives as ('in', OrderedSet(['failed'])). Testing for list/tuple
+        # therefore wraps the set instead of unpacking it, and the next line
+        # tries to hash it. Accept any non-string iterable.
+        if isinstance(value, str) or not hasattr(value, '__iter__'):
+            values = [value]
+        else:
+            values = list(value)
         negate = operator in ('!=', 'not in')
 
         status_map = {
