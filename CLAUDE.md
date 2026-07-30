@@ -464,6 +464,11 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **OAuth tokens only contain requested scopes**: Adding permissions in Azure Portal is not enough - the scopes must also be listed in the authorization URL in `providers/microsoft/graph_client.py`. Users need to re-authenticate after scope changes.
 - **Google only hands back a refresh token with `access_type=offline` + `prompt=consent`**: without both, a re-authorizing user gets an access token only and the account silently stops working an hour later. Google also omits the refresh token on *refresh*, so never overwrite a stored one with an empty value.
 
+### Settings UI
+- **A settings page that shows every provider at once reads as broken in every direction.** Azure asks for a tenant, Google does not; side by side, each form looks like it is missing fields the other has. Ask "where is your mail?" first and show one provider's steps.
+- **Odoo 19's default selection widget is already a searchable dropdown.** `web.SelectionField` renders a `SelectMenu` with `searchable="!isBottomSheet"`, so a plain `<field name="x"/>` on a Selection gives the search box for free - no custom OWL widget, no `widget=` attribute.
+- **`res.config.settings.get_values()` runs *after* `default_get()` read the config parameters**, and the base implementation returns `{}`. So `if not res.get(field)` is always true there and silently clobbers a stored value; check the `ir.config_parameter` itself before filling a gap.
+
 ### Migrations
 - **A migration folder below the installed version never runs.** Odoo only runs scripts whose version is *higher* than what is installed. A long-lived branch that pins `migrations/19.0.1.2.0/` while mainline moves to 19.0.2.0.1 ships a migration that is dead on arrival - and silently so, because nothing errors. When merging a branch forward, re-check the migration folder name against the new manifest version, not the old one.
 - **Copy Fernet ciphertext, never decrypt and re-encrypt.** Same key, same DB: moving the encrypted string is lossless and cannot fail halfway. A decrypt/re-encrypt cycle produces garbage you only discover at the next send.
