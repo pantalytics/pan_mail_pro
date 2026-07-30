@@ -14,3 +14,4 @@ from . import test_attachments
 from . import test_system_notifications
 from . import test_no_mailbox_fallback
 from . import test_provider_contract
+from . import test_mail_matcher

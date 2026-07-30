@@ -39,10 +39,13 @@ delegated permissions. The module name still says Outlook; the rename to
 | `models/providers/microsoft/graph_client.py` | Microsoft 365 implementation of the contract |
 | `models/providers/google/gmail_client.py` | Gmail implementation of the contract |
 | `models/pan_mail_fetcher.py` | Incoming email sync (uses `message_new()`) |
+| `models/pan_mail_matcher.py` | Thread matching: which Odoo record does this mail belong to |
+| `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |
 | `models/res_partner.py` | Contact block list field |
 | `controllers/main.py` | OAuth callback handlers (Microsoft + Google) |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
+| `tests/test_mail_matcher.py` | Unit tests for the matching ladder |
 
 ## Provider Architecture
 
@@ -104,6 +107,51 @@ is the client's job:
 | Thread key | `conversationId` | `threadId` |
 | Send flow | draft → send | RFC822 MIME |
 | Message-ID | returned by the API | set by us on the MIME |
+
+## Thread Matching
+
+"Where does this reply belong?" is a separate model from the fetcher —
+`pan.mail.matcher` — because it is the decision that goes wrong most visibly and
+the one worth testing without a provider, an HTTP mock or a mailbox.
+
+Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
+(0.8) wins and the ladder stops:
+
+| # | Rule | Conf. | Basis |
+|---|------|-------|-------|
+| 1 | `odoo_headers` | 1.0 | `X-Odoo-Model` / `X-Odoo-Record-Id` |
+| 2 | `references` | 1.0 | `In-Reply-To` + the full `References` chain |
+| 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread id) |
+|   | `thread_link_legacy` | 0.85 | unscoped `x_microsoft_conversation_id` |
+| 4 | `subject_participants` | 0.5 | normalised subject + same partner — proposal only |
+
+Rules 1 and 2 are RFC 5322, so they behave identically on Microsoft 365, Gmail
+and IMAP. Rule 3 is the only provider concept, and it is treated as *a hint
+valid only inside one mailbox* — which is what a `conversationId` or `threadId`
+actually is. Below the threshold `match()` returns candidates but leaves `model`
+empty, so a caller can branch on `model` alone and never route on a guess.
+
+Three things this changed, each a silent misroute before:
+
+- **The chain, not one hop.** Only `In-Reply-To` was read; a client that sets
+  just `References` fell through to the conversation-id lookup.
+- **Newest, not oldest.** The conversation lookup ordered `id asc`, so replies
+  threaded onto whatever record *first* touched the conversation — usually an
+  old contact chatter post rather than the open ticket.
+- **Scoped, not global.** A thread id was matched across every mailbox at once.
+
+**Providers with no thread concept.** IMAP/SMTP supply no thread handle, so the
+matcher synthesises one from the root of the `References` chain. Every
+participant in a thread carries the same root, so rule 3 keeps working without
+the provider offering anything.
+
+**Adding AI.** Deliberately absent from rules 1-3: a `References` chain is exact,
+free and reproducible, and a language model would make a solved problem
+probabilistic. The ambiguous residue — a customer who starts a fresh mail
+instead of replying, a known contact with three open tickets — is where it earns
+its place, and it plugs in as one more rule by overriding `_match_rules()`.
+Running last means it is only ever asked about mail the deterministic rules
+could not place, which is what keeps it affordable on a one-minute cron.
 
 ## Mailbox Types
 
@@ -262,7 +310,7 @@ Check status later with `gh pr checks` or `gh run watch`.
 ## Conventions
 
 - All custom fields use `x_` prefix (Odoo.sh requirement)
-- Log tags: `[Graph API]`, `[Incoming Mail]`, `[OAuth]`
+- Log tags: `[Graph API]`, `[Incoming Mail]`, `[OAuth]`, `[Mail Matcher]`
 - Use `invisible` instead of `attrs` in views (Odoo 19)
 - Stored computed fields need `@api.depends` decorator
 

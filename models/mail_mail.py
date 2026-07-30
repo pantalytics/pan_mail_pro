@@ -208,6 +208,8 @@ class MailMail(models.Model):
                 })
                 _logger.info(f"[Graph API] Updated mail.message {self.mail_message_id.id} with provider IDs for threading")
 
+            self._index_sent_message(mailbox, provider_message_id, provider_thread_id)
+
             _logger.info(f"[Graph API] Email {self.id} sent successfully from {mailbox.email}")
             _logger.info(f"[Graph API] Stored provider IDs - Message: {provider_message_id}, Thread: {provider_thread_id}")
             return (True, None, None)
@@ -221,6 +223,39 @@ class MailMail(models.Model):
             })
             _logger.error(f"[Graph API] Email {self.id} failed to send: {error_msg}")
             return (False, error_msg, error_code)
+
+    def _index_sent_message(self, mailbox, provider_message_id, provider_thread_id):
+        """Make this outgoing mail findable when the recipient replies.
+
+        The wire Message-ID is rarely the one Odoo generated. Microsoft Graph
+        mints its own `internetMessageId` and offers no way to override it, so
+        the address the recipient's client will put in `In-Reply-To` is not the
+        one stored in `mail.message.message_id`. Both are indexed, and the
+        matcher resolves a References chain against either.
+
+        The thread link is written here too so the *first* reply already has a
+        scoped (mailbox, thread) entry to match on, rather than having to wait
+        until the incoming sync has seen the conversation once.
+        """
+        self.ensure_one()
+        message = self.mail_message_id
+        if not message:
+            return
+
+        Ref = self.env['pan.mail.message.ref']
+        if message.message_id:
+            Ref.record(message, message.message_id, source='odoo')
+        if provider_message_id:
+            Ref.record(message, provider_message_id, source='provider')
+
+        if provider_thread_id and self.model and self.res_id:
+            self.env['pan.mail.thread.link'].record(
+                mailbox=mailbox,
+                thread_id=provider_thread_id,
+                model=self.model,
+                res_id=self.res_id,
+                message=message,
+            )
 
     def _is_internal_user_notification(self):
         """
