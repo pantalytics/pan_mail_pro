@@ -245,7 +245,7 @@ Three workflows in `.github/workflows/`:
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo |
+| `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release) |
 | `gitleaks.yml` | every push + PR | secret scan |
 | `release.yml` | push to `19.0` | tags the merge commit `v<manifest version>` if that tag does not exist yet |
 
@@ -256,6 +256,18 @@ image** and runs `--test-enable --test-tags=pan_mail_pro` against a Postgres
 service container. No Enterprise source and no Azure credentials are needed:
 `mail`, `base` and `crm` all ship in community, and the Helpdesk tests skip
 themselves when `helpdesk.team` is absent.
+
+`sale` and `mass_mailing` are installed alongside the module even though they
+are not dependencies. Nine tests skip themselves without them, and a skip does
+not show up in the summary — so those paths were passing by not running. A
+follow-up step asserts both are actually installed, because a skip that comes
+back is otherwise invisible. `helpdesk` is Enterprise, so
+`test_route_to_helpdesk` remains a real CI gap covered only by `TESTPLAN.md`.
+
+Both test jobs end in `tools/ci_assert_tests.sh`, which fails the build when
+Odoo reports no summary, any failure, **or zero tests** — the last one because
+`0 failed, 0 error(s) of 0 tests` is otherwise a green build that verified
+nothing.
 
 The series is **derived from `__manifest__.py`**, not hardcoded: `19.0.1.3.0`
 → `odoo:19.0`. An addon repo carries one Odoo version per branch, so a future
@@ -271,10 +283,17 @@ docker run --rm -v "$PWD:/mnt/extra-addons/pan_mail_pro:ro" \
   --stop-after-init --without-demo=all --max-cron-threads=0
 ```
 
-**Fresh install vs. upgraded database.** CI always installs fresh, the local
-Docker database is upgraded. Tests that touch columns of unstored fields (the
-migration tests) must create those columns themselves — see
+**Fresh install vs. upgraded database.** The `test` job installs fresh; the
+`upgrade` job installs the newest `v<series>.*` tag that is not HEAD and then
+runs `-u pan_mail_pro --test-enable` on that database. So the suite runs twice,
+against both shapes, and the scripts in `migrations/` finally execute somewhere
+other than a customer's database. Tests that touch columns of unstored fields
+must still create those columns themselves — see
 `tests/test_account_migration.py::_ensure_legacy_columns`.
+
+The `pan_outlook_pro` → `pan_mail_pro` rename is *not* covered by that job: it
+happens outside Odoo (`tools/rename_to_mail_pro.sql`), before the registry
+loads, so no module upgrade can drive it. It stays a manual runbook.
 
 ## Working from the Claude Code mobile app
 
@@ -453,6 +472,11 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **A provider-aware *dropdown* is not a provider-aware *feature*.** Phase 3 made the mailbox owner domain accept Google-connected users, which made Gmail look supported. Every behavioural check underneath still asked `x_microsoft_oauth_connected`, so a Gmail mailbox listed a valid owner and then reported `error`, never synced, and fell back to the notification mailbox on send. Grep the *checks*, not just the fields.
 - **"Is this user connected" is the wrong question. "Does this mailbox have usable credentials" is the right one.** The first hardcodes a provider; the second is `mailbox._has_working_credentials()`, which asks the client. It is also the only phrasing that works for a Gmail shared mailbox, which has credentials but no owner at all.
 - **A stored compute cannot depend on a searched relation.** `x_incoming_enabled` tracks `x_owner_user_id.x_pan_mail_account_ids.connected`, but a Gmail service account is found by address, so authorizing one later does not retrigger it. Documented in the compute rather than papered over.
+
+### CI
+- **A passing suite is not the same as a suite that ran.** `0 failed, 0 error(s) of 0 tests` is green. So is a run where nine tests skipped themselves because an optional module was absent. Both mean "we verified nothing" and both looked identical to "everything passed" until the assert step started reading the count and printing the skips.
+- **What CI never runs is where the bugs live.** `migrations/` was excluded from ruff *and* never executed by CI, because CI only ever installed fresh. Two blind spots stacked on the one directory that only ever runs on a customer's database, unattended.
+- **Test the provider you ship, not just the one you just wrote.** The Gmail client had 36 tests including the whole token lifecycle; the Graph client — 1100 lines, in production at every customer — had none for refresh, rotation or revocation. New code attracts tests; the code that already works quietly stops earning them.
 
 ### Merging long-lived branches
 - **Two branches solving the same problem is a design decision, not a merge conflict.** `19.0` and `refactor/provider-abstraction` both built a provider abstraction. Git merged them into a codebase with *both*, which compiles and is wrong. Pick one contract deliberately, migrate the other onto it, and delete the loser - do not let `git merge`'s "keep both" default make the architectural choice.
