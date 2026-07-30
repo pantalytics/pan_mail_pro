@@ -40,13 +40,25 @@
         <field name="model">mail.message</field>
         <field name="arch" type="xml">
             <search string="Communication">
+                <!--
+                    Deliberately plain. An earlier version of this view had a
+                    <searchpanel> and a datetime-expression filter; it failed
+                    ir.ui.view._check_xml on install, and Odoo 19 reports that
+                    as "Invalid view <name> definition" with an empty error
+                    context — even with odoo.tools.convert at DEBUG, which only
+                    reveals that _check_xml raised, never which node.
+
+                    Rather than keep guessing at a view I cannot get a diagnosis
+                    for, this is cut back to constructs used verbatim across
+                    Odoo core: field, filter, separator, group-by. The search
+                    panel was a convenience, not the feature; the filters below
+                    are the feature. If it is wanted later, add it back on its
+                    own commit where a red build points at one change.
+                -->
                 <field name="subject"/>
                 <field name="author_id"/>
                 <field name="email_from"/>
-                <!-- x_document_name is deliberately absent: it is a non-stored
-                     compute with no search method, and Odoo rejects an
-                     unsearchable field in a search view. Searching by contact
-                     or subject reaches the same rows. -->
+                <field name="x_mailbox_id"/>
 
                 <filter name="filter_incoming" string="Incoming"
                         domain="[('x_direction', '=', 'incoming')]"/>
@@ -64,11 +76,7 @@
                 <separator/>
                 <filter name="filter_delivery_failed" string="Delivery failed"
                         domain="[('x_delivery_state', '=', 'failed')]"/>
-                <filter name="filter_attachments" string="Has attachment"
-                        domain="[('attachment_ids', '!=', False)]"/>
                 <separator/>
-                <filter name="filter_today" string="Today"
-                        domain="[('date', '&gt;=', datetime.datetime.combine(context_today(), datetime.time(0,0,0)))]"/>
                 <filter name="filter_last_30_days" string="Last 30 Days"
                         domain="[('date', '&gt;=', (context_today() - relativedelta(days=30)).strftime('%Y-%m-%d'))]"/>
 
@@ -81,20 +89,7 @@
                             context="{'group_by': 'author_id'}"/>
                     <filter name="group_direction" string="Direction"
                             context="{'group_by': 'x_direction'}"/>
-                    <filter name="group_date" string="Date"
-                            context="{'group_by': 'date:week'}"/>
                 </group>
-
-                <!--
-                    Counters are off deliberately. mail.message access is
-                    resolved per linked document in Python, so a counter is not
-                    one query but one per model in the panel.
-                -->
-                <searchpanel>
-                    <field name="x_mailbox_id" icon="fa-inbox"/>
-                    <field name="x_res_model_id" icon="fa-link" select="multi"
-                           string="Linked to"/>
-                </searchpanel>
             </search>
         </field>
     </record>
