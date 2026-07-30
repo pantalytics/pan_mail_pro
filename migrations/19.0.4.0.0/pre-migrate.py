@@ -27,12 +27,27 @@ Three things make that cheap instead:
 The same treatment is applied to the two pre-existing provider-id columns,
 which shipped as full btrees over mostly-NULL columns.
 
-CREATE INDEX CONCURRENTLY cannot run inside a transaction block. Odoo gives
-migration scripts an open cursor, so each statement commits first. That is safe
-here: every statement is IF NOT EXISTS and the script is idempotent, so an
-interrupted upgrade can simply be retried.
+About CONCURRENTLY and transactions
+-----------------------------------
+CREATE INDEX CONCURRENTLY cannot run inside a transaction block, and `cr.commit()`
+is not enough to escape one: psycopg2 opens a fresh transaction on the very next
+statement. The only way to issue the statement at all is to put the underlying
+connection in autocommit mode for the duration, which is what `_autocommit()`
+below does.
+
+If that toggle is not possible, the indexes are built the ordinary locking way
+instead. That is a real cost on a large table, so it is logged as a warning
+rather than passed over: the partial shape still applies, only the online build
+is lost.
+
+Every step is idempotent, so an interrupted upgrade can simply be retried. An
+interrupted concurrent build leaves an INVALID index behind — never used by the
+planner but still maintained on every write, and its name would make a retry's
+IF NOT EXISTS a silent no-op — so invalid leftovers are dropped before each
+attempt.
 """
 import logging
+from contextlib import contextmanager
 
 _logger = logging.getLogger(__name__)
 
@@ -53,6 +68,74 @@ PARTIAL_INDEXES = [
 ]
 
 
+@contextmanager
+def _autocommit(cr):
+    """Run the block with the cursor's connection in autocommit mode.
+
+    Yields True when the switch succeeded, False when it did not — the caller
+    decides what to do without the guarantee. Odoo's cursor wraps psycopg2's
+    connection but exposes it, and the attribute name has moved around between
+    versions, hence the lookup.
+    """
+    cnx = getattr(cr, '_cnx', None) or getattr(cr, 'connection', None)
+    if cnx is None:
+        yield False
+        return
+    try:
+        cr.commit()  # autocommit cannot be toggled mid-transaction
+        cnx.autocommit = True
+    except Exception:
+        _logger.warning('[Migration] Could not switch the connection to autocommit',
+                        exc_info=True)
+        yield False
+        return
+    try:
+        yield True
+    finally:
+        try:
+            cnx.autocommit = False
+        except Exception:
+            _logger.warning('[Migration] Could not restore autocommit=False',
+                            exc_info=True)
+
+
+def _drop_if_invalid(cr, index_name):
+    """Remove an index left INVALID by an interrupted concurrent build."""
+    cr.execute(
+        """SELECT 1 FROM pg_class c
+             JOIN pg_index i ON i.indexrelid = c.oid
+            WHERE c.relname = %s AND NOT i.indisvalid""",
+        (index_name,),
+    )
+    if cr.fetchone():
+        _logger.warning('[Migration] %s exists but is INVALID; dropping it before '
+                        'rebuilding', index_name)
+        cr.execute(f'DROP INDEX IF EXISTS {index_name}')
+
+
+def _create_partial_index(cr, index_name, column, concurrently):
+    keyword = 'CONCURRENTLY ' if concurrently else ''
+    try:
+        _drop_if_invalid(cr, index_name)
+        cr.execute(
+            f'CREATE INDEX {keyword}IF NOT EXISTS {index_name} '
+            f'ON mail_message ({column}) WHERE {column} IS NOT NULL'
+        )
+    except Exception:
+        # Never abort the upgrade for an index: the ORM will build a plain one
+        # itself, which is slower to create but correct.
+        cr.rollback()
+        _logger.warning('[Migration] Could not build %s; leaving it to the ORM',
+                        index_name, exc_info=True)
+        try:
+            _drop_if_invalid(cr, index_name)
+        except Exception:
+            cr.rollback()
+        return
+    if not concurrently:
+        cr.commit()
+
+
 def migrate(cr, version):
     for column, column_type in COLUMNS:
         cr.execute(
@@ -68,19 +151,15 @@ def migrate(cr, version):
 
     cr.commit()
 
-    for index_name, column in PARTIAL_INDEXES:
-        try:
-            cr.execute(
-                f'CREATE INDEX CONCURRENTLY IF NOT EXISTS {index_name} '
-                f'ON mail_message ({column}) WHERE {column} IS NOT NULL'
-            )
-            cr.commit()
-        except Exception:
-            # A concurrent build can fail and leave an INVALID index behind.
-            # Never abort the upgrade for it: the ORM will build a plain index
-            # itself, which is slower to create but correct.
-            cr.rollback()
+    with _autocommit(cr) as concurrently:
+        if not concurrently:
             _logger.warning(
-                '[Migration] Concurrent build of %s failed; '
-                'leaving it to the ORM', index_name, exc_info=True,
+                '[Migration] Building the partial indexes with an ACCESS EXCLUSIVE '
+                'lock: CONCURRENTLY is unavailable without autocommit. On a large '
+                'mail_message this blocks writes for the duration of the build.'
             )
+        for index_name, column in PARTIAL_INDEXES:
+            _create_partial_index(cr, index_name, column, concurrently)
+
+    _logger.info('[Migration] mail_message partial indexes built (%s)',
+                 'concurrently' if concurrently else 'with a lock')
