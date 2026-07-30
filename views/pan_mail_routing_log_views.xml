@@ -96,16 +96,19 @@
                 <separator/>
                 <filter name="today" string="Today"
                         domain="[('date', '&gt;=', datetime.datetime.combine(context_today(), datetime.time(0, 0, 0)))]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_mailbox" string="Mailbox"
-                            context="{'group_by': 'mailbox_id'}"/>
-                    <filter name="group_outcome" string="Outcome"
-                            context="{'group_by': 'outcome'}"/>
-                    <filter name="group_rule" string="Rule"
-                            context="{'group_by': 'rule'}"/>
-                    <filter name="group_date" string="Date"
-                            context="{'group_by': 'date'}"/>
-                </group>
+                <separator/>
+                <!-- Group-by filters sit at top level rather than in a <group>:
+                     Odoo 19's search schema rejects `expand` on group and wants
+                     field children there, while a filter carrying a `group_by`
+                     context lands in the Group By menu on its own. -->
+                <filter name="group_mailbox" string="Mailbox"
+                        context="{'group_by': 'mailbox_id'}"/>
+                <filter name="group_outcome" string="Outcome"
+                        context="{'group_by': 'outcome'}"/>
+                <filter name="group_rule" string="Rule"
+                        context="{'group_by': 'rule'}"/>
+                <filter name="group_date" string="Date"
+                        context="{'group_by': 'date'}"/>
             </search>
         </field>
     </record>
