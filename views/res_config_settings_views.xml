@@ -12,14 +12,66 @@
                     <field name="x_microsoft_config_status" invisible="1"/>
                     <field name="x_microsoft_config_status_message" invisible="1"/>
                     <field name="x_current_user_oauth_connected" invisible="1"/>
+                    <field name="x_current_user_google_connected" invisible="1"/>
                     <field name="x_microsoft_mailbox_count" invisible="1"/>
                     <field name="x_microsoft_notification_configured" invisible="1"/>
+                    <field name="x_provider_credentials_set" invisible="1"/>
+                    <field name="x_provider_connected" invisible="1"/>
 
                     <!-- ============================================ -->
-                    <!-- CONFIGURATION -->
+                    <!-- STEP 1 - WHERE IS YOUR MAIL? -->
+                    <!-- Everything below follows from this answer, because -->
+                    <!-- the setup steps genuinely differ per provider. -->
                     <!-- ============================================ -->
-                    <h2>Configuration</h2>
+                    <h2>1. Email Provider</h2>
                     <div class="row mt-4 mb-4 o_settings_container">
+                        <!-- LEFT: the picker -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Where is your email hosted?</span>
+                                <div class="text-muted mb-3">
+                                    Choose a provider to see its setup steps. Each provider keeps its own
+                                    credentials, so you can switch back at any time.
+                                </div>
+                                <div class="content-group">
+                                    <div class="row mt-2">
+                                        <field name="x_mail_provider" class="col-lg-8"
+                                               placeholder="Search providers..."/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- RIGHT: how far along this provider is -->
+                        <div class="col-12 col-lg-6 o_setting_box" invisible="not x_mail_provider">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Progress</span>
+                                <div class="mt-2">
+                                    <span class="text-muted" invisible="x_provider_credentials_set">
+                                        <i class="fa fa-circle-o me-1" title="To do"/>Credentials not filled in yet
+                                    </span>
+                                    <span class="text-success" invisible="not x_provider_credentials_set">
+                                        <i class="fa fa-check-circle me-1" title="Done"/>Credentials filled in
+                                    </span>
+                                </div>
+                                <div class="mt-1">
+                                    <span class="text-muted" invisible="x_provider_connected">
+                                        <i class="fa fa-circle-o me-1" title="To do"/>Account not connected
+                                    </span>
+                                    <span class="text-success" invisible="not x_provider_connected">
+                                        <i class="fa fa-check-circle me-1" title="Done"/>Account connected
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- STEP 2A - MICROSOFT 365 CREDENTIALS -->
+                    <!-- ============================================ -->
+                    <h2 invisible="x_mail_provider != 'outlook'">2. Microsoft 365 Credentials</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'outlook'">
                         <!-- LEFT: Credentials -->
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
@@ -75,10 +127,10 @@
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- GOOGLE WORKSPACE -->
+                    <!-- STEP 2B - GOOGLE WORKSPACE CREDENTIALS -->
                     <!-- ============================================ -->
-                    <h2>Google Workspace</h2>
-                    <div class="row mt-4 mb-4 o_settings_container">
+                    <h2 invisible="x_mail_provider != 'gmail'">2. Google Workspace Credentials</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'gmail'">
                         <!-- LEFT: Credentials -->
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
@@ -97,24 +149,21 @@
                                 </div>
                             </div>
                         </div>
-                        <!-- RIGHT: Redirect URI + Connect -->
+                        <!-- RIGHT: Setup guide + Redirect URI -->
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Setup</span>
+                                <span class="o_form_label">Setup Guide</span>
                                 <div class="content-group">
                                     <div class="mb-3">
+                                        <a href="https://console.cloud.google.com/apis/credentials" target="_blank">
+                                            <i class="fa fa-external-link me-1" title="Setup guide"/>Google Cloud → Credentials
+                                        </a>
+                                    </div>
+                                    <div class="mt-4">
                                         <span class="o_form_label">Redirect URI</span>
                                         <div class="text-muted mb-2">Copy to Google Cloud → Credentials → Authorized redirect URIs</div>
                                         <field name="x_google_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
-                                    </div>
-                                    <div class="mt-2">
-                                        <button name="action_connect_google_admin" type="object"
-                                                string="Connect Google" class="btn-primary" icon="fa-google"
-                                                invisible="x_current_user_google_connected"/>
-                                        <span class="text-success" invisible="not x_current_user_google_connected">
-                                            <i class="fa fa-check-circle me-1" title="Connected"/>Connected
-                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -122,18 +171,21 @@
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- IMAP / SMTP -->
+                    <!-- STEP 2C - IMAP / SMTP CREDENTIALS -->
+                    <!-- No global credential to fill in: an IMAP login belongs -->
+                    <!-- to one address, so the step is "add the accounts". -->
                     <!-- ============================================ -->
-                    <h2>IMAP / SMTP</h2>
-                    <div class="row mt-4 mb-4 o_settings_container">
+                    <h2 invisible="x_mail_provider != 'imap'">2. Mail Accounts</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'imap'">
+                        <!-- LEFT: where the credentials go -->
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Mail Accounts</span>
+                                <span class="o_form_label">Credentials</span>
                                 <div class="text-muted mb-3">
-                                    For mailboxes at a plain hoster (Soverin, Fastmail, your own
-                                    server). There is no consent screen: enter the server, login
-                                    and password once per address, then create a mailbox for it.
+                                    There is no consent screen here. Enter the server, login and
+                                    password once per address; Test Connection checks reading and
+                                    sending separately.
                                 </div>
                                 <div class="mt-1">
                                     <button type="action" name="%(action_pan_mail_account)d"
@@ -141,30 +193,63 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- RIGHT: what to have ready -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">What You Need</span>
+                                <div class="content-group text-muted">
+                                    <div>IMAP server and port (usually 993, SSL/TLS)</div>
+                                    <div>SMTP server and port (usually 465, SSL/TLS)</div>
+                                    <div>The mailbox password, or an app password where the
+                                         hoster requires one</div>
+                                </div>
+                                <div class="text-muted mt-3">
+                                    Soverin addresses fill their own servers in.
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- STATUS (compact) -->
+                    <!-- STEP 3 - CONNECT YOUR ACCOUNT -->
+                    <!-- One step, one button per provider: the branding -->
+                    <!-- differs, the step does not. -->
                     <!-- ============================================ -->
-                    <div class="row mt-4 o_settings_container" invisible="x_microsoft_config_status == 'not_configured'">
-                        <!-- Account -->
+                    <h2 invisible="not x_provider_credentials_set">3. Connect Your Account</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
                                 <span class="o_form_label">Account</span>
-                                <div class="text-muted small">Your Microsoft 365 login</div>
+                                <div class="text-muted small">Sign in so Odoo can send and read mail on your behalf</div>
                                 <div class="mt-2">
                                     <button name="action_connect_microsoft_admin" type="object"
                                             string="Connect Microsoft" class="btn-primary" icon="fa-windows"
-                                            invisible="x_current_user_oauth_connected"/>
-                                    <span class="text-success" invisible="not x_current_user_oauth_connected">
+                                            invisible="x_mail_provider != 'outlook' or x_provider_connected"/>
+                                    <button name="action_connect_google_admin" type="object"
+                                            string="Connect Google" class="btn-primary" icon="fa-google"
+                                            invisible="x_mail_provider != 'gmail' or x_provider_connected"/>
+                                    <!-- IMAP has no sign-in: an account is connected the moment
+                                         its credentials are complete, so this step only reports. -->
+                                    <button type="action" name="%(action_pan_mail_account)d"
+                                            string="Review Accounts" icon="oi-arrow-right" class="oe_link"
+                                            invisible="x_mail_provider != 'imap'"/>
+                                    <span class="text-success" invisible="not x_provider_connected">
                                         <i class="fa fa-check-circle me-1" title="Connected"/>Connected
                                     </span>
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- STEP 4 - MAILBOXES AND DOMAINS -->
+                    <!-- ============================================ -->
+                    <h2 invisible="not x_provider_credentials_set">4. Mailboxes</h2>
+                    <div class="row mt-4 o_settings_container" invisible="not x_provider_credentials_set">
                         <!-- Mailboxes -->
-                        <div class="col-12 o_setting_box">
+                        <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
                                 <span class="o_form_label">Mailboxes</span>
@@ -184,7 +269,7 @@
                             </div>
                         </div>
                         <!-- Domains -->
-                        <div class="col-12 o_setting_box">
+                        <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
                                 <span class="o_form_label">Internal Domains</span>
@@ -251,7 +336,7 @@
                 <div class="alert alert-info mb-3" role="alert">
                     <i class="fa fa-info-circle me-2" title="Info"/>
                     <strong>Mail Pro is installed.</strong>
-                    Email is managed by Mail Pro (Microsoft 365, Gmail or IMAP/SMTP).
+                    Outgoing and incoming email is handled by Mail Pro.
                     <a href="#" class="alert-link ms-1">Configure in Settings → Mail Pro</a>
                 </div>
             </xpath>

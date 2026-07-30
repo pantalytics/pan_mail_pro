@@ -57,13 +57,19 @@ git push
 
 After installing the module, go to **Settings** → scroll to **Mail Pro**.
 
-The settings page contains step-by-step instructions for:
-1. Creating an Azure App Registration
-2. Configuring API permissions and granting admin consent
-3. Connecting your Microsoft account
-4. Setting up mailboxes
+The page walks through setup in four steps, and the first one decides the rest:
 
-Follow the instructions in Odoo - they include links to the correct Azure Portal pages and explain each step.
+1. **Email provider** - pick where your mail is hosted (Microsoft 365 or Google
+   Workspace) from the searchable dropdown. Only that provider's steps are shown
+   from here on.
+2. **Credentials** - copy them from your Azure app registration or your Google
+   Cloud OAuth client. The redirect URI to paste back into the provider's
+   console is shown here.
+3. **Connect your account** - sign in and grant consent.
+4. **Mailboxes** - configure sending and incoming sync.
+
+Each provider keeps its own credentials, so switching the dropdown loses
+nothing and one database can serve mailboxes on both providers.
 
 ### IMAP/SMTP mailboxes (Soverin and friends)
 

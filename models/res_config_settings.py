@@ -1,16 +1,49 @@
 # -*- coding: utf-8 -*-
 import logging
 import requests
-from odoo import fields, models, _
+from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 from . import encryption_utils
-from .mail_provider_client import get_provider_client
+from .mail_provider_client import PROVIDER_SELECTION, get_provider_client
 
 _logger = logging.getLogger(__name__)
 
 
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
+
+    # -------------------------------------------------------------------------
+    # Provider selection — step one of setup
+    #
+    # Which provider an admin is setting up decides every step shown below it:
+    # Azure asks for a tenant, Google does not, and showing both credential
+    # forms at once is how you get a page that looks broken in either direction.
+    # The choices come from the registry, so a newly registered provider shows
+    # up here without touching this file.
+    #
+    # Selecting a provider is a view choice, not an exclusive commitment. Each
+    # provider stores its own credentials under its own config parameters, so
+    # switching back and forth loses nothing and one database can serve
+    # mailboxes on both providers at the same time.
+    # -------------------------------------------------------------------------
+    x_mail_provider = fields.Selection(
+        PROVIDER_SELECTION,
+        string='Email Provider',
+        config_parameter='x_pan_outlook_pro.setup_provider',
+        help='Where your email is hosted. Determines which setup steps are shown.',
+    )
+
+    # Provider-neutral state of the selected provider, so the steps below the
+    # picker do not each have to know which provider they are looking at.
+    x_provider_credentials_set = fields.Boolean(
+        compute='_compute_provider_state',
+        string='Provider Credentials Set',
+    )
+
+    x_provider_connected = fields.Boolean(
+        compute='_compute_provider_state',
+        string='Provider Account Connected',
+    )
 
     # Module version
     x_microsoft_module_version = fields.Char(
@@ -130,6 +163,65 @@ class ResConfigSettings(models.TransientModel):
         default='https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token',
         config_parameter='x_pan_outlook_pro.token_url'
     )
+
+    @api.depends(
+        'x_mail_provider',
+        'x_microsoft_client_id', 'x_microsoft_client_secret', 'x_microsoft_tenant_id',
+        'x_google_client_id', 'x_google_client_secret',
+    )
+    def _compute_provider_state(self):
+        """Answer "is the selected provider set up, and am I connected to it".
+
+        Reads the record's own fields rather than the config parameters so the
+        steps below the picker react while the admin is still typing, before
+        anything is saved.
+        """
+        for record in self:
+            if record.x_mail_provider == 'outlook':
+                record.x_provider_credentials_set = bool(
+                    record.x_microsoft_client_id
+                    and record.x_microsoft_tenant_id
+                    and record.x_microsoft_client_secret
+                )
+                record.x_provider_connected = record.x_current_user_oauth_connected
+            elif record.x_mail_provider == 'gmail':
+                record.x_provider_credentials_set = bool(
+                    record.x_google_client_id and record.x_google_client_secret
+                )
+                record.x_provider_connected = record.x_current_user_google_connected
+            elif record.x_mail_provider == 'imap':
+                # IMAP has no global credential and no consent screen: a login
+                # belongs to one address. So "credentials set" means at least
+                # one account exists, and "connected" means at least one of them
+                # is complete. Both are read from the accounts rather than from
+                # fields on this form, which is why they cannot react while the
+                # admin types - there is nothing here to type.
+                accounts = self.env['pan.mail.account'].sudo().with_context(
+                    active_test=False).search([('provider', '=', 'imap')])
+                record.x_provider_credentials_set = bool(accounts)
+                record.x_provider_connected = any(accounts.mapped('connected'))
+            else:
+                record.x_provider_credentials_set = False
+                record.x_provider_connected = False
+
+    def get_values(self):
+        """Pre-select whichever provider already has credentials.
+
+        A database configured before this picker existed has no stored choice.
+        Landing it on an empty dropdown would read as "nothing is set up here"
+        on an Azure tenant that has been sending mail for months.
+        """
+        res = super().get_values()
+        IrConfigParameter = self.env['ir.config_parameter'].sudo()
+        # get_values() runs *after* default_get() has read the config
+        # parameters, so anything set here overrides a stored choice. Only fill
+        # the gap when there is genuinely nothing stored.
+        if not IrConfigParameter.get_param('x_pan_outlook_pro.setup_provider'):
+            if IrConfigParameter.get_param('x_pan_outlook_pro.client_id'):
+                res['x_mail_provider'] = 'outlook'
+            elif IrConfigParameter.get_param('x_pan_outlook_pro.google_client_id'):
+                res['x_mail_provider'] = 'gmail'
+        return res
 
     def _compute_module_version(self):
         """Read installed module version from ir.module.module"""

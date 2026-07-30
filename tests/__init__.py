@@ -3,6 +3,7 @@ from . import test_mail_account
 from . import test_account_migration
 from . import test_google_provider
 from . import test_imap_provider
+from . import test_microsoft_provider
 from . import test_incoming_mail
 from . import test_incoming_sync
 from . import test_outgoing_mail
@@ -15,3 +16,4 @@ from . import test_attachments
 from . import test_system_notifications
 from . import test_no_mailbox_fallback
 from . import test_provider_contract
+from . import test_setup_flow
