@@ -80,16 +80,20 @@
                 <filter name="filter_last_30_days" string="Last 30 Days"
                         domain="[('date', '&gt;=', (context_today() - relativedelta(days=30)).strftime('%Y-%m-%d'))]"/>
 
-                <group expand="0" string="Group By">
-                    <filter name="group_document" string="Linked document"
-                            context="{'group_by': 'x_res_model_id'}"/>
-                    <filter name="group_mailbox" string="Mailbox"
-                            context="{'group_by': 'x_mailbox_id'}"/>
-                    <filter name="group_contact" string="Contact"
-                            context="{'group_by': 'author_id'}"/>
-                    <filter name="group_direction" string="Direction"
-                            context="{'group_by': 'x_direction'}"/>
-                </group>
+                <separator/>
+                <!-- Group-by filters sit directly under <search>. In Odoo 19
+                     the <group> element of a search view accepts <field>
+                     children only and has no `expand` attribute; wrapping
+                     them, the pre-19 idiom, fails RelaxNG validation and
+                     takes the whole view — and the install — down with it. -->
+                <filter name="group_document" string="Linked document"
+                        context="{'group_by': 'x_res_model_id'}"/>
+                <filter name="group_mailbox" string="Mailbox"
+                        context="{'group_by': 'x_mailbox_id'}"/>
+                <filter name="group_contact" string="Contact"
+                        context="{'group_by': 'author_id'}"/>
+                <filter name="group_direction" string="Direction"
+                        context="{'group_by': 'x_direction'}"/>
             </search>
         </field>
     </record>

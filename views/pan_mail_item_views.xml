@@ -101,14 +101,18 @@
                         domain="[('reason', '=', 'unknown_contact')]"/>
                 <filter name="filter_held" string="Held for review"
                         domain="[('reason', '=', 'queued_for_review')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_reason" string="Reason"
-                            context="{'group_by': 'reason'}"/>
-                    <filter name="group_mailbox" string="Mailbox"
-                            context="{'group_by': 'mailbox_id'}"/>
-                    <filter name="group_state" string="Status"
-                            context="{'group_by': 'state'}"/>
-                </group>
+                <separator/>
+                <!-- Group-by filters sit directly under <search>. In Odoo 19
+                     the <group> element of a search view accepts <field>
+                     children only and has no `expand` attribute; wrapping
+                     them, the pre-19 idiom, fails RelaxNG validation and
+                     takes the whole view — and the install — down with it. -->
+                <filter name="group_reason" string="Reason"
+                        context="{'group_by': 'reason'}"/>
+                <filter name="group_mailbox" string="Mailbox"
+                        context="{'group_by': 'mailbox_id'}"/>
+                <filter name="group_state" string="Status"
+                        context="{'group_by': 'state'}"/>
             </search>
         </field>
     </record>
