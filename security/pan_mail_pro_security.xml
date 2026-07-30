@@ -10,10 +10,16 @@
             system administration. Implied by base.group_system, so existing
             administrators keep every right they had before this module version.
         -->
+        <!--
+            What it grants: configuring mailboxes and email accounts, and
+            working the incoming mail triage queue.
+
+            Only `name` is set. Odoo 19 reworked res.groups and `category_id`
+            no longer exists on it — setting it does not warn, it fails the
+            module install outright.
+        -->
         <record id="group_mail_mailbox_manager" model="res.groups">
             <field name="name">Mailbox Manager</field>
-            <field name="category_id" ref="base.module_category_hidden"/>
-            <field name="comment">Configure mailboxes and email accounts, and work the incoming mail triage queue.</field>
         </record>
 
         <record id="base.group_system" model="res.groups">

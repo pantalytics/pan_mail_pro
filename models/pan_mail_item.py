@@ -113,10 +113,14 @@ class PanMailItem(models.Model):
     ai_rationale = fields.Char(string='Why', readonly=True)
     ai_attempts = fields.Integer(string='AI Attempts', default=0, readonly=True)
 
-    _sql_constraints = [
-        ('uniq_message_per_mailbox', 'UNIQUE(mailbox_id, message_id)',
-         'This message is already in the triage queue for this mailbox.'),
-    ]
+    # models.Constraint, not _sql_constraints: Odoo 19 dropped support for the
+    # list form and only *warns* about it, so the constraint would have been
+    # silently absent. pan.mail.account already uses this form — the copy came
+    # from older code, not from this codebase.
+    _uniq_message_per_mailbox = models.Constraint(
+        'UNIQUE(mailbox_id, message_id)',
+        'This message is already in the triage queue for this mailbox.',
+    )
 
     # -- lifecycle --------------------------------------------------------- #
 
