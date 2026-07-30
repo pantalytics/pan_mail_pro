@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_pan_mail_item_list" model="ir.ui.view">
+        <field name="name">pan.mail.item.list</field>
+        <field name="model">pan.mail.item</field>
+        <field name="arch" type="xml">
+            <list string="Triage" create="false"
+                  decoration-muted="state != 'pending'"
+                  decoration-danger="reason == 'error'">
+                <field name="date"/>
+                <field name="email_from" string="From"/>
+                <field name="subject"/>
+                <field name="reason"/>
+                <field name="ai_suggested_name" string="AI suggests" optional="show"/>
+                <field name="ai_confidence" widget="percentage" optional="hide"/>
+                <field name="mailbox_id"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'imported'"
+                       decoration-warning="state == 'pending'"/>
+                <field name="expiry_date" optional="hide"/>
+                <button name="action_import" type="object" string="Import"
+                        icon="fa-download" invisible="state != 'pending'"/>
+                <button name="action_ignore" type="object" string="Ignore"
+                        icon="fa-ban" invisible="state != 'pending'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pan_mail_item_form" model="ir.ui.view">
+        <field name="name">pan.mail.item.form</field>
+        <field name="model">pan.mail.item</field>
+        <field name="arch" type="xml">
+            <form string="Triage Item" create="false" edit="false">
+                <header>
+                    <button name="action_import" type="object" string="Import"
+                            class="btn-primary" invisible="state != 'pending'"/>
+                    <button name="action_ignore" type="object" string="Ignore"
+                            invisible="state != 'pending'"/>
+                    <button name="action_open_message" type="object" string="Open document"
+                            invisible="not mail_message_id"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="pending,imported"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="subject" placeholder="(no subject)"/></h1>
+                    </div>
+                    <group>
+                        <group string="Message">
+                            <field name="email_from"/>
+                            <field name="email_to"/>
+                            <field name="date"/>
+                            <field name="direction"/>
+                        </group>
+                        <group string="Why it is here">
+                            <field name="reason"/>
+                            <field name="reason_detail"/>
+                            <field name="mailbox_id"/>
+                            <field name="partner_id"/>
+                            <field name="expiry_date"/>
+                        </group>
+                    </group>
+                    <div class="alert alert-warning" role="status"
+                         invisible="ai_state != 'done' or not ai_suggested_name">
+                        <strong>Suggestion:</strong>
+                        <field name="ai_suggested_name" readonly="1" nolabel="1" class="d-inline"/>
+                        (<field name="ai_confidence" widget="percentage" readonly="1" nolabel="1" class="d-inline"/>)
+                        — <field name="ai_rationale" readonly="1" nolabel="1" class="d-inline"/>
+                        <button name="action_open_suggestion" type="object" string="Open"
+                                class="btn btn-link btn-sm"/>
+                        <div class="text-muted small mt-1">
+                            A suggestion, not a decision. Nothing is filed until you import it.
+                        </div>
+                    </div>
+                    <field name="ai_state" invisible="1"/>
+                    <div class="alert alert-info" role="status">
+                        Only the envelope is stored here. The message body stays
+                        with the mail provider and is fetched when you import it,
+                        so nothing in Odoo holds a second copy of this email.
+                    </div>
+                    <field name="mail_message_id" invisible="1"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_pan_mail_item_search" model="ir.ui.view">
+        <field name="name">pan.mail.item.search</field>
+        <field name="model">pan.mail.item</field>
+        <field name="arch" type="xml">
+            <search string="Triage">
+                <field name="subject"/>
+                <field name="email_from"/>
+                <filter name="filter_pending" string="Pending"
+                        domain="[('state', '=', 'pending')]"/>
+                <filter name="filter_errors" string="Processing failed"
+                        domain="[('reason', '=', 'error')]"/>
+                <separator/>
+                <filter name="filter_unknown" string="Unknown sender"
+                        domain="[('reason', '=', 'unknown_contact')]"/>
+                <filter name="filter_held" string="Held for review"
+                        domain="[('reason', '=', 'queued_for_review')]"/>
+                <separator/>
+                <!-- Group-by filters sit directly under <search>. In Odoo 19
+                     the <group> element of a search view accepts <field>
+                     children only and has no `expand` attribute; wrapping
+                     them, the pre-19 idiom, fails RelaxNG validation and
+                     takes the whole view — and the install — down with it. -->
+                <filter name="group_reason" string="Reason"
+                        context="{'group_by': 'reason'}"/>
+                <filter name="group_mailbox" string="Mailbox"
+                        context="{'group_by': 'mailbox_id'}"/>
+                <filter name="group_state" string="Status"
+                        context="{'group_by': 'state'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_pan_mail_item" model="ir.actions.act_window">
+        <field name="name">Triage</field>
+        <field name="res_model">pan.mail.item</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_pan_mail_item_search"/>
+        <field name="context">{'search_default_filter_pending': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Nothing waiting
+            </p>
+            <p>
+                Mail that reached a mailbox but could not be filed against a
+                document waits here instead of disappearing into the log.
+            </p>
+            <p>
+                Mail excluded on purpose never appears here: blocked contacts,
+                internal senders and excluded domains are not recorded at all.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_communication_triage"
+              name="Triage"
+              parent="menu_communication_root"
+              action="action_pan_mail_item"
+              sequence="15"
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+
+    <!-- Retention. Items expire whether or not anyone worked them: this is
+         metadata about somebody's correspondence, and an unworked queue is not
+         a reason to keep it. -->
+    <!-- AI enrichment. A separate cron from the fetcher, structurally: it runs
+         over records that already exist, so a slow or failing model call cannot
+         delay mail ingestion or roll a message back. Inactive until a backend
+         is configured. -->
+    <record id="ir_cron_pan_mail_item_ai" model="ir.cron">
+        <field name="name">Mail Pro: suggest a target for triage items</field>
+        <field name="model_id" ref="model_pan_mail_item"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_ai_classify()</field>
+        <field name="interval_number">15</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="False"/>
+    </record>
+
+    <record id="ir_cron_pan_mail_item_gc" model="ir.cron">
+        <field name="name">Mail Pro: purge expired triage items</field>
+        <field name="model_id" ref="model_pan_mail_item"/>
+        <field name="state">code</field>
+        <field name="code">model._gc_items()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+    </record>
+
+</odoo>

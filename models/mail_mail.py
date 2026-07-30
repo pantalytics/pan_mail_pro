@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 from odoo import fields, models, api, _
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -49,7 +49,43 @@ class MailMail(models.Model):
             for vals in vals_list:
                 if not vals.get('x_microsoft_mailbox_id'):
                     vals['x_microsoft_mailbox_id'] = mailbox_id
+        for vals in vals_list:
+            self._check_mailbox_permission(vals.get('x_microsoft_mailbox_id'))
         return super().create(vals_list)
+
+    def write(self, vals):
+        """Guard the sender mailbox on write as well as on create."""
+        if 'x_microsoft_mailbox_id' in vals:
+            self._check_mailbox_permission(vals['x_microsoft_mailbox_id'])
+        return super().write(vals)
+
+    @api.model
+    def _check_mailbox_permission(self, mailbox_id):
+        """Refuse a sender mailbox the requesting user is not entitled to.
+
+        Creation is the right place for this check: here `env.user` is still the
+        real user. At send time the queue runs in cron, where `env.user` is the
+        cron runner and the question can no longer be answered.
+
+        Superuser is exempt — system mail, templates and the notification
+        routing in `_get_mailbox_and_account()` legitimately pick a mailbox on
+        nobody's behalf.
+        """
+        if not mailbox_id or self.env.su:
+            return
+        mailbox = self.env['x_microsoft.mailbox'].sudo().browse(mailbox_id)
+        if not mailbox.exists() or mailbox._is_sendable_by(self.env.user):
+            return
+        _logger.warning(
+            "[Graph API] User %s (id=%s) tried to send from mailbox %s (type=%s, owner=%s)",
+            self.env.user.login, self.env.user.id, mailbox.email,
+            mailbox.x_mailbox_type, mailbox.x_owner_user_id.login or '-',
+        )
+        raise AccessError(_(
+            "You are not allowed to send email from %(mailbox)s. "
+            "Personal mailboxes can only be used by their owner.",
+            mailbox=mailbox.email,
+        ))
 
     def _is_mail_pro_configured(self):
         """
@@ -198,7 +234,10 @@ class MailMail(models.Model):
         """
         self.ensure_one()
 
-        _logger.info(f"[Graph API] Processing email {self.id}: subject='{self.subject}', to={self.email_to}")
+        _logger.info("[Graph API] Processing email %s", self.id)
+        _logger.debug(
+            "[Graph API] Email %s: subject=%r to=%r", self.id, self.subject, self.email_to
+        )
 
         # Determine mailbox and account based on email type
         mailbox, account = self._get_mailbox_and_account()
@@ -250,10 +289,17 @@ class MailMail(models.Model):
             # Also update mail_message for threading to work
             # When a reply comes in with an In-Reply-To header containing this
             # ID, we can find this message via x_microsoft_message_id
-            if self.mail_message_id and provider_message_id:
+            if self.mail_message_id:
+                # The lens fields ride along on a write that already happens,
+                # so stamping direction and mailbox costs no extra query. They
+                # are set here rather than at create() because only a mail that
+                # actually went out is outgoing communication.
                 self.mail_message_id.write({
                     'x_microsoft_message_id': provider_message_id,
                     'x_microsoft_conversation_id': provider_thread_id,
+                    'x_direction': 'outgoing',
+                    'x_mailbox_id': mailbox.id,
+                    'x_account_id': account.id,
                 })
                 _logger.info(f"[Graph API] Updated mail.message {self.mail_message_id.id} with provider IDs for threading")
 
@@ -450,7 +496,19 @@ class MailMail(models.Model):
         #    (e.g. sale order quotations) instead of the actual sender.
         if self.x_microsoft_mailbox_id:
             mailbox = self.x_microsoft_mailbox_id
-            sender = self._resolve_account_for_mailbox(mailbox)
+            # Defence in depth: creation already refused a mailbox the user was
+            # not entitled to, but a row can predate that check or be written by
+            # a migration. Fall through rather than raise — this runs in the
+            # mail queue, where an exception would stall every other mail.
+            author_user = self.author_id.user_ids[:1]
+            if author_user and not mailbox._is_sendable_by(author_user):
+                _logger.warning(
+                    "[Graph API] Mail %s selects mailbox %s which its author %s may not use; "
+                    "falling back to author routing",
+                    self.id, mailbox.email, author_user.login,
+                )
+                mailbox = self.env['x_microsoft.mailbox']
+            sender = self._resolve_account_for_mailbox(mailbox) if mailbox else None
             if sender and sender.connected:
                 _logger.info(
                     f"[Graph API] Using explicitly selected mailbox: {mailbox.email} (sender: {sender.email})"

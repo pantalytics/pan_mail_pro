@@ -443,7 +443,7 @@ class TestGoogleProvider(TransactionCase):
     def test_exchange_code_returns_tokens(self):
         with patch(GMAIL_POST, return_value=self._ok_response(
                 {'access_token': 'AT', 'refresh_token': 'RT', 'expires_in': 3600})):
-            tokens = self.client.exchange_code_for_tokens('code', 'https://odoo.test/cb')
+            tokens = self.client._exchange_code_for_tokens('code', 'https://odoo.test/cb')
 
         self.assertEqual(tokens['access_token'], 'AT')
         self.assertEqual(tokens['refresh_token'], 'RT')

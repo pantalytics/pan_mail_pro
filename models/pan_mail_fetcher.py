@@ -12,7 +12,7 @@ ever appear below this line.
 import logging
 from markupsafe import Markup
 
-from odoo import models, api, fields
+from odoo import models, api, fields, _
 from odoo.exceptions import UserError
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
@@ -172,12 +172,18 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 with self.env.cr.savepoint():
                     if self._process_message(mailbox, message, folder):
                         processed += 1
-            except Exception:
+            except Exception as error:
                 # Without the savepoint, one DB error would leave the whole
                 # transaction in `aborted` state and every later message in
                 # this batch would fail with "cursor already closed".
                 _logger.exception(
                     f"[Incoming Mail] Error processing message {message.get('provider_message_id')}"
+                )
+                # Recorded *after* the savepoint has exited and rolled back.
+                # Inside it, the write would be undone by the very failure it
+                # is meant to report.
+                self.env['pan.mail.item']._record_skip(
+                    mailbox, message, folder, 'error', detail=str(error)[:200],
                 )
 
         return processed, latest_datetime
@@ -204,7 +210,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.debug(f"[Incoming Mail] Skipping duplicate: {internet_message_id}")
             return False
 
-        _logger.info(f"[Incoming Mail] Processing: {message.get('subject') or '(no subject)'}")
+        # Sender, recipient and subject are personal data. They are logged at
+        # DEBUG only, and nowhere else in this method: logs routinely leave the
+        # database (hosting, aggregators) and are out of reach of an erasure
+        # request. INFO identifies a message by its provider id, which is not.
+        _logger.info("[Incoming Mail] Processing message %s", internet_message_id)
+        _logger.debug(
+            "[Incoming Mail] %s subject=%r", internet_message_id,
+            message.get('subject') or '(no subject)',
+        )
 
         # Get full message with headers for threading
         client = mailbox._get_client()
@@ -222,6 +236,13 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.info(f"[Incoming Mail] Skipping Odoo-originated email: {internet_message_id}")
             return False
 
+        # An operator re-importing a held item lifts the *filters* — sync mode
+        # and internal-domain exclusion. It deliberately does not lift the
+        # duplicate guard, the Odoo loop guard, or the contact block list: the
+        # block list is in practice an objection to processing, and no button in
+        # this module should be able to override it.
+        force_import = bool(self.env.context.get('pan_mail_force_import'))
+
         # Determine if this is incoming or outgoing (for 2-way sync)
         is_outgoing = folder == FOLDER_SENT
 
@@ -234,18 +255,18 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 return False
             contact_email = to_recipients[0].get('email', '')
             contact_name = to_recipients[0].get('name', '')
-            _logger.info(f"[Incoming Mail] Sent to: name='{contact_name}', email='{contact_email}'")
+            _logger.debug(f"[Incoming Mail] Sent to: name='{contact_name}', email='{contact_email}'")
         else:
             # Inbox: use the sender
             sender = full_message.get('from') or {}
             contact_email = sender.get('email', '')
             contact_name = sender.get('name', '')
-            _logger.info(f"[Incoming Mail] From: name='{contact_name}', email='{contact_email}'")
+            _logger.debug(f"[Incoming Mail] From: name='{contact_name}', email='{contact_email}'")
 
         # Skip emails from/to internal domains (only for incoming, not sent items)
         # This is a per-mailbox setting - team mailboxes may want internal emails logged
-        if not is_outgoing and self._is_internal_domain(contact_email, mailbox):
-            _logger.info(f"[Incoming Mail] Skipping internal domain: {contact_email}")
+        if not is_outgoing and not force_import and self._is_internal_domain(contact_email, mailbox):
+            _logger.info("[Incoming Mail] Skipping %s: internal domain", internet_message_id)
             return False
 
         # Find existing partner (if any)
@@ -253,12 +274,12 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         # Check if partner is blocked
         if partner and partner.x_email_sync_blocked:
-            _logger.info(f"[Incoming Mail] Skipping blocked contact: {partner.name} ({contact_email})")
+            _logger.info("[Incoming Mail] Skipping %s: blocked contact", internet_message_id)
             return False
 
         # Skip internal users (Odoo employees)
         if partner and partner.user_ids:
-            _logger.info(f"[Incoming Mail] Skipping internal user: {partner.name} ({contact_email})")
+            _logger.info("[Incoming Mail] Skipping %s: sender is an internal user", internet_message_id)
             return False
 
         # Determine if this is a known or unknown contact
@@ -267,18 +288,33 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # Apply routing rules based on sync mode and contact type
         if mailbox.x_sync_mode == 'known_partners':
             # Only process known contacts
-            if not is_known_contact:
-                _logger.info(f"[Incoming Mail] Skipping unknown contact (sync mode=known_partners): {contact_email}")
+            if not is_known_contact and not force_import:
+                _logger.info(
+                    "[Incoming Mail] Skipping %s: unknown contact (sync mode=known_partners)",
+                    internet_message_id,
+                )
+                self.env['pan.mail.item']._record_skip(
+                    mailbox, full_message, folder, 'unknown_contact',
+                    detail=_('Sync mode only accepts mail from existing contacts.'),
+                    direction='outgoing' if is_outgoing else 'incoming',
+                )
                 return False
-            _logger.info(f"[Incoming Mail] Known partner filter passed: {partner.name}")
+            _logger.debug(f"[Incoming Mail] Known partner filter passed: {partner.name}")
 
         elif mailbox.x_sync_mode == 'all':
             # 'all' mode: process both known and unknown contacts
             if not is_known_contact:
                 # Unknown contact - check routing setting
-                if mailbox.x_queue_unknown_contacts:
-                    # TODO: Queue for approval - for now, skip
-                    _logger.info(f"[Incoming Mail] Unknown contact queued for approval (not implemented yet): {contact_email}")
+                if mailbox.x_queue_unknown_contacts and not force_import:
+                    _logger.info(
+                        "[Incoming Mail] Holding %s for review: unknown contact",
+                        internet_message_id,
+                    )
+                    self.env['pan.mail.item']._record_skip(
+                        mailbox, full_message, folder, 'queued_for_review',
+                        detail=_('This mailbox holds mail from unknown senders for review.'),
+                        direction='outgoing' if is_outgoing else 'incoming',
+                    )
                     return False
                 # 'auto' mode: will create partner below
             _logger.info(f"[Incoming Mail] All contacts mode: processing {'known' if is_known_contact else 'unknown'} contact")
@@ -299,7 +335,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         partner = None
         if contact_email:
             partner = self._find_or_create_partner(contact_email, contact_name)
-            _logger.info(f"[Incoming Mail] Partner resolved: {partner.name} (id={partner.id}, email={partner.email})")
+            _logger.debug(f"[Incoming Mail] Partner resolved: {partner.name} (id={partner.id}, email={partner.email})")
 
         if not partner:
             _logger.warning(f"[Incoming Mail] Could not resolve partner for {contact_email}, skipping")
@@ -447,6 +483,16 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 provider_message_id=provider_message_id,
             )
 
+            # Lens fields. Written here rather than inside the branches above so
+            # every routing outcome is stamped the same way — mainline's matcher
+            # decides *where* the mail lands, this records *how it arrived*.
+            if message:
+                message.write({
+                    'x_direction': 'outgoing' if is_outgoing else 'incoming',
+                    'x_mailbox_id': mailbox.id,
+                    'x_account_id': account.id,
+                })
+
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
             return True
 
@@ -589,7 +635,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             'email': email,
             'is_company': False,
         })
-        _logger.info(f"[Incoming Mail] Created new partner: {partner.name} ({email})")
+        _logger.info("[Incoming Mail] Created new partner id=%s", partner.id)
+        _logger.debug(f"[Incoming Mail] Created new partner: {partner.name} ({email})")
 
         return partner
 
@@ -672,5 +719,5 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             incoming_email_cc=msg_dict.get('cc', ''),
         )
 
-        _logger.info(f"[Incoming Mail] Created {model} via message_new: {record.display_name} (id={record.id})")
+        _logger.info("[Incoming Mail] Created %s id=%s via message_new", model, record.id)
         return record, message

@@ -258,7 +258,7 @@ class MailProviderClient(models.AbstractModel):
         raise NotImplementedError
 
     @api.model
-    def exchange_code_for_tokens(self, authorization_code, redirect_uri):
+    def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
         """Trade an OAuth authorization code for tokens.
 
         Returns:

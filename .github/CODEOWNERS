@@ -1,0 +1,11 @@
+# Paths where a mistake is expensive and hard to see in review by volume.
+# Each of these has cost this project real time before: a provider boundary
+# that leaked, an ACL that granted more than it read, a migration folder that
+# silently never ran, and a key that turned out to live next to its ciphertext.
+
+/models/providers/   @pantalytics/maintainers
+/models/ai/          @pantalytics/maintainers
+/security/           @pantalytics/maintainers
+/migrations/         @pantalytics/maintainers
+/models/encryption_utils.py  @pantalytics/maintainers
+/.github/workflows/  @pantalytics/maintainers

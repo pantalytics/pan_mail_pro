@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from odoo import fields, models, api
+from odoo import fields, models, api, _
+from odoo.exceptions import ValidationError
 
 
 class MailComposeMessage(models.TransientModel):
@@ -18,6 +19,25 @@ class MailComposeMessage(models.TransientModel):
         compute='_compute_microsoft_setup_warning',
         store=False
     )
+
+    @api.constrains('x_microsoft_send_from_id')
+    def _check_send_from_permission(self):
+        """Enforce the composer's view domain server-side.
+
+        The domain on this field lives in the view (mail_compose_message_views.xml),
+        which filters what the dropdown *offers*. It does not constrain what the
+        field can be set to over RPC, and a personal mailbox sends with its
+        owner's token — so without this check any internal user can send mail as
+        a colleague.
+        """
+        for record in self:
+            mailbox = record.x_microsoft_send_from_id
+            if mailbox and not mailbox._is_sendable_by(self.env.user):
+                raise ValidationError(_(
+                    "You cannot send from %(mailbox)s. Personal mailboxes can "
+                    "only be used by their owner.",
+                    mailbox=mailbox.email,
+                ))
 
     @api.depends_context('uid')
     def _compute_microsoft_setup_warning(self):
@@ -42,9 +62,14 @@ class MailComposeMessage(models.TransientModel):
 
         if 'x_microsoft_send_from_id' in fields_list:
             user = self.env.user
-            # Use user's default mailbox if set and still active
-            if user.x_microsoft_default_mailbox_id and user.x_microsoft_default_mailbox_id.active:
-                result['x_microsoft_send_from_id'] = user.x_microsoft_default_mailbox_id.id
+            default_mailbox = user.x_microsoft_default_mailbox_id
+            # Use the user's default mailbox if set, still active, and still one
+            # they may send from. Silently dropping a stale default is better
+            # than opening the composer straight into a ValidationError — the
+            # default may have been set before the mailbox changed type or owner.
+            if (default_mailbox and default_mailbox.active
+                    and default_mailbox.sudo()._is_sendable_by(user)):
+                result['x_microsoft_send_from_id'] = default_mailbox.id
 
         return result
 

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_pan_mail_coverage_form" model="ir.ui.view">
+        <field name="name">pan.mail.coverage.form</field>
+        <field name="model">pan.mail.coverage</field>
+        <field name="arch" type="xml">
+            <form string="Link Coverage" create="false" edit="false">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>Link coverage</h1>
+                        <div class="text-muted">
+                            How much of the email Mail Pro carries actually lands
+                            on an Odoo document.
+                        </div>
+                    </div>
+                    <group>
+                        <field name="period_days" widget="radio" options="{'horizontal': true}"/>
+                    </group>
+                    <group>
+                        <group string="Filed">
+                            <field name="linked_count"/>
+                            <field name="contact_only_count"/>
+                        </group>
+                        <group string="Not filed">
+                            <field name="unlinked_count"/>
+                            <field name="unlinked_ratio" widget="percentage"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="total_count"/>
+                    </group>
+                    <footer>
+                        <button name="action_view_unlinked" type="object"
+                                string="Show unfiled mail" class="btn-primary"
+                                invisible="unlinked_count == 0"/>
+                        <button name="action_view_contact_only" type="object"
+                                string="Show contact-only mail" class="btn-secondary"
+                                invisible="contact_only_count == 0"/>
+                        <button name="action_view_all" type="object"
+                                string="Show all" class="btn-secondary"/>
+                    </footer>
+                    <div class="alert alert-info mt-3" role="status">
+                        Counts are database-wide. The list you open from here is
+                        filtered by your own access rights, so it can show fewer
+                        messages than the number above.
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pan_mail_coverage" model="ir.actions.act_window">
+        <field name="name">Link Coverage</field>
+        <field name="res_model">pan.mail.coverage</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="view_pan_mail_coverage_form"/>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_communication_coverage"
+              name="Link Coverage"
+              parent="menu_communication_root"
+              action="action_pan_mail_coverage"
+              sequence="20"/>
+
+</odoo>

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+        <!--
+            Mailbox manager.
+
+            Splits "may configure mailboxes and accounts" off from
+            base.group_system, so granting it no longer means granting full
+            system administration. Implied by base.group_system, so existing
+            administrators keep every right they had before this module version.
+        -->
+        <!--
+            What it grants: configuring mailboxes and email accounts, and
+            working the incoming mail triage queue.
+
+            Only `name` is set. Odoo 19 reworked res.groups and `category_id`
+            no longer exists on it — setting it does not warn, it fails the
+            module install outright.
+        -->
+        <record id="group_mail_mailbox_manager" model="res.groups">
+            <field name="name">Mailbox Manager</field>
+        </record>
+
+        <record id="base.group_system" model="res.groups">
+            <field name="implied_ids" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
+        </record>
+
+        <!--
+            A personal mailbox is a person's own address, and it carries the
+            owner's identity: mail sent from it is signed by the owner's
+            delegated token. Listing every colleague's personal mailbox to every
+            internal user is both an information leak and the discovery half of
+            the send-as problem that _is_sendable_by() closes.
+
+            Shared and notification mailboxes stay visible to everyone: they are
+            company addresses and the composer needs to offer them.
+        -->
+        <record id="rule_mailbox_personal_own" model="ir.rule">
+            <field name="name">Mailbox: personal mailboxes are visible to their owner only</field>
+            <field name="model_id" ref="model_x_microsoft_mailbox"/>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+            <field name="domain_force">
+                ['|', ('x_mailbox_type', '!=', 'personal'), ('x_owner_user_id', '=', user.id)]
+            </field>
+        </record>
+
+        <record id="rule_mailbox_manager_all" model="ir.rule">
+            <field name="name">Mailbox: managers see all mailboxes</field>
+            <field name="model_id" ref="model_x_microsoft_mailbox"/>
+            <field name="groups" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+        </record>
+
+        <!--
+            An account is a set of credentials. Even with the token fields
+            themselves restricted to base.group_system, the row discloses who
+            authorized what and when. A user needs to see their own; a service
+            account (user_id unset) belongs to the company and is what makes a
+            Gmail shared mailbox work, so it stays readable.
+        -->
+        <record id="rule_mail_account_own" model="ir.rule">
+            <field name="name">Mail account: users see their own accounts</field>
+            <field name="model_id" ref="model_pan_mail_account"/>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+            <field name="domain_force">[('user_id', 'in', [user.id, False])]</field>
+        </record>
+
+        <record id="rule_mail_account_manager_all" model="ir.rule">
+            <field name="name">Mail account: managers see all accounts</field>
+            <field name="model_id" ref="model_pan_mail_account"/>
+            <field name="groups" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+        </record>
+
+        <!--
+            A triage item is somebody's correspondence with no document behind
+            it, so it inherits no document ACL — the mechanism that protects
+            every other message in Odoo does not apply here.
+
+            Mailbox managers only, therefore. There is deliberately no
+            base.group_user access row: an ordinary user gets no reach into this
+            table at all, which is the one arrangement that cannot leak. If
+            per-mailbox delegation is wanted later, it needs its own rule and
+            its own decision, not a widened group.
+        -->
+        <record id="rule_mail_item_own_mailbox" model="ir.rule">
+            <field name="name">Triage item: own mailbox only</field>
+            <field name="model_id" ref="model_pan_mail_item"/>
+            <field name="groups" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+        </record>
+
+    </data>
+</odoo>

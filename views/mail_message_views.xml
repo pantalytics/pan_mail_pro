@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        The communication lens.
+
+        Read-only on purpose. mail.message has no per-user read state outside
+        mail.notification (which tracks followers, not readers), so anything
+        resembling unread/archive/reply here would be a promise the data model
+        cannot keep. This screen answers one question — where did this mail end
+        up? — and hands off to the document for everything else.
+    -->
+
+    <record id="view_mail_message_lens_list" model="ir.ui.view">
+        <field name="name">mail.message.lens.list</field>
+        <field name="model">mail.message</field>
+        <field name="arch" type="xml">
+            <list string="Communication" create="false" edit="false" default_order="date desc">
+                <field name="date" string="Date"/>
+                <field name="x_direction" widget="badge"
+                       decoration-info="x_direction == 'incoming'"
+                       decoration-success="x_direction == 'outgoing'"/>
+                <field name="author_id" string="Contact"/>
+                <field name="subject" string="Subject"/>
+                <field name="x_document_name" string="Linked to"/>
+                <field name="x_mailbox_id" string="Mailbox" optional="show"/>
+                <field name="x_delivery_state" string="Delivery" optional="hide"/>
+                <field name="email_from" optional="hide"/>
+                <field name="model" optional="hide"/>
+                <field name="x_res_model_id" column_invisible="1"/>
+                <button name="action_open_document" type="object"
+                        string="Open" icon="fa-external-link"
+                        invisible="not x_document_name"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mail_message_lens_search" model="ir.ui.view">
+        <field name="name">mail.message.lens.search</field>
+        <field name="model">mail.message</field>
+        <field name="arch" type="xml">
+            <search string="Communication">
+                <!--
+                    Deliberately plain. An earlier version of this view had a
+                    <searchpanel> and a datetime-expression filter; it failed
+                    ir.ui.view._check_xml on install, and Odoo 19 reports that
+                    as "Invalid view <name> definition" with an empty error
+                    context — even with odoo.tools.convert at DEBUG, which only
+                    reveals that _check_xml raised, never which node.
+
+                    Rather than keep guessing at a view I cannot get a diagnosis
+                    for, this is cut back to constructs used verbatim across
+                    Odoo core: field, filter, separator, group-by. The search
+                    panel was a convenience, not the feature; the filters below
+                    are the feature. If it is wanted later, add it back on its
+                    own commit where a red build points at one change.
+                -->
+                <field name="subject"/>
+                <field name="author_id"/>
+                <field name="email_from"/>
+                <field name="x_mailbox_id"/>
+
+                <filter name="filter_incoming" string="Incoming"
+                        domain="[('x_direction', '=', 'incoming')]"/>
+                <filter name="filter_outgoing" string="Outgoing"
+                        domain="[('x_direction', '=', 'outgoing')]"/>
+                <separator/>
+                <!--
+                    The one filter the whole feature exists for: mail that
+                    Mail Pro carried but could not file against a document.
+                -->
+                <filter name="filter_unlinked" string="Not linked"
+                        domain="['|', ('model', '=', False), ('res_id', '=', False)]"/>
+                <filter name="filter_on_contact" string="Filed on a contact only"
+                        domain="[('model', '=', 'res.partner')]"/>
+                <separator/>
+                <filter name="filter_delivery_failed" string="Delivery failed"
+                        domain="[('x_delivery_state', '=', 'failed')]"/>
+                <separator/>
+                <filter name="filter_last_30_days" string="Last 30 Days"
+                        domain="[('date', '&gt;=', (context_today() - relativedelta(days=30)).strftime('%Y-%m-%d'))]"/>
+
+                <separator/>
+                <!-- Group-by filters sit directly under <search>. In Odoo 19
+                     the <group> element of a search view accepts <field>
+                     children only and has no `expand` attribute; wrapping
+                     them, the pre-19 idiom, fails RelaxNG validation and
+                     takes the whole view — and the install — down with it. -->
+                <filter name="group_document" string="Linked document"
+                        context="{'group_by': 'x_res_model_id'}"/>
+                <filter name="group_mailbox" string="Mailbox"
+                        context="{'group_by': 'x_mailbox_id'}"/>
+                <filter name="group_contact" string="Contact"
+                        context="{'group_by': 'author_id'}"/>
+                <filter name="group_direction" string="Direction"
+                        context="{'group_by': 'x_direction'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mail_message_lens" model="ir.actions.act_window">
+        <field name="name">All Communication</field>
+        <field name="res_model">mail.message</field>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="view_mail_message_lens_list"/>
+        <field name="search_view_id" ref="view_mail_message_lens_search"/>
+        <!--
+            The domain is in the action, not in a removable filter. Every query
+            this screen makes therefore stays inside the partial index on
+            x_direction, and notes, system logs and Discuss chatter — which are
+            the majority of mail_message — never enter the picture.
+        -->
+        <field name="domain">[('x_direction', '!=', False)]</field>
+        <field name="context">{'search_default_filter_last_30_days': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No communication recorded yet
+            </p>
+            <p>
+                Every email Mail Pro sends or receives from now on appears here,
+                together with the document it was filed against.
+            </p>
+            <p>
+                This is a read-only overview. Mail sent before this version was
+                installed is not shown: its direction and mailbox cannot be
+                established after the fact, and a wrong answer would be worse
+                than an absent one.
+            </p>
+        </field>
+    </record>
+
+    <!-- Root menu. The module declares application: True but shipped no menu
+         of its own; everything lived under Settings → Technical, which is the
+         wrong altitude for data people look at daily. -->
+    <menuitem id="menu_communication_root"
+              name="Communication"
+              web_icon="pan_mail_pro,static/description/icon.png"
+              sequence="45"/>
+
+    <menuitem id="menu_communication_all"
+              name="All Communication"
+              parent="menu_communication_root"
+              action="action_mail_message_lens"
+              sequence="10"/>
+
+    <menuitem id="menu_communication_config"
+              name="Configuration"
+              parent="menu_communication_root"
+              sequence="90"
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+
+    <menuitem id="menu_communication_mailboxes"
+              name="Mailboxes"
+              parent="menu_communication_config"
+              action="action_microsoft_mailbox"
+              sequence="10"
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+
+</odoo>

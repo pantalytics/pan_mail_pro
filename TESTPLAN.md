@@ -44,6 +44,19 @@ lokaal → dogfood → klanten.
 - [ ] Mailbox zonder werkende credentials → mail cancelled, niet via SMTP gelekt
 
 ### A4. Gmail functioneel
+
+> **Wat hiervan al geautomatiseerd is** (`tests/test_incoming_sync_gmail.py`,
+> draait in CI zonder Google-credentials): inkomende sync end-to-end door
+> `_process_mailbox` op Gmail-data, INBOX/SENT-labelmapping, threading van een
+> reply op dezelfde thread, de X-Odoo-loopguard en dedup over twee sync-runs.
+> `tests/test_google_provider.py` dekt daarnaast al de client zelf, inclusief
+> `access_type=offline` + `prompt=consent` in de autorisatie-URL en het
+> behouden van het refresh token bij verversing.
+>
+> **Wat hieronder overblijft is precies wat een echte tenant vereist:** het
+> consent-scherm, een echt refresh token dat na een uur nog werkt, en of
+> Google de mail daadwerkelijk aflevert. De rest is regressie die CI bewaakt.
+
 - [ ] **WACHT OP RUTGER:** productie heeft géén `x_pan_outlook_pro.google_*`
       parameters — er is in Odoo nooit een Google-client geconfigureerd.
       Bestaat er al een OAuth-client in Google Cloud Console (uit de

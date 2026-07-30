@@ -35,6 +35,36 @@ class MicrosoftMailbox(models.Model):
         self.ensure_one()
         return get_provider_client(self.env, self.x_provider)
 
+    def _is_sendable_by(self, user):
+        """Whether `user` may choose this mailbox as the sender of a mail.
+
+        A personal mailbox sends with its *owner's* delegated token (see
+        `_resolve_sending_user` in the Microsoft client), so letting anyone pick
+        one lets any internal user send mail as a colleague, signed by that
+        colleague's own token. Microsoft does not stop it: it is not a SendAs,
+        it is the owner's credentials being used directly.
+
+        The composer's view domain expresses the same rule, but a view domain is
+        a convenience for the UI, never a boundary — the field is writable over
+        RPC. This method is the boundary.
+
+        Only personal mailboxes are restricted. A notification mailbox also
+        sends with its owner's token, but that is documented behaviour the whole
+        module rests on — every internal notification goes out through it, from
+        any author. Restricting it here broke
+        test_05_dropdown_notification_uses_notification_owner, and rightly so:
+        the hole was somebody sending as a named colleague, not the company's
+        system-mail address doing what it exists to do.
+
+        Shared mailboxes are shared on purpose.
+        """
+        self.ensure_one()
+        if not self.active:
+            return False
+        if self.x_mailbox_type == 'personal':
+            return bool(self.x_owner_user_id) and self.x_owner_user_id == user
+        return True
+
     def _has_working_credentials(self):
         """Whether this mailbox can actually reach its provider right now.
 
@@ -601,15 +631,6 @@ class MicrosoftMailbox(models.Model):
             if record.x_routing_smart:
                 raise ValidationError(_(
                     'Smart AI Routing is not yet implemented. This feature will be available in a future release.'
-                ))
-
-    @api.constrains('x_queue_unknown_contacts')
-    def _check_queue_unknown_contacts_not_implemented(self):
-        """Prevent enabling queue for review until the feature is implemented."""
-        for record in self:
-            if record.x_queue_unknown_contacts:
-                raise ValidationError(_(
-                    'Queue for Review is not yet implemented. This feature will be available in a future release.'
                 ))
 
     def get_graph_user_id(self):

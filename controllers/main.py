@@ -91,7 +91,7 @@ class MicrosoftOAuthController(http.Controller):
             redirect_uri = f"{base_url}/microsoft_oauth/callback"
 
             graph_client = get_provider_client(request.env)
-            token_data = graph_client.exchange_code_for_tokens(authorization_code, redirect_uri)
+            token_data = graph_client._exchange_code_for_tokens(authorization_code, redirect_uri)
 
             # Save tokens to current user
             # Use sudo() because token fields have groups='base.group_system'
@@ -190,7 +190,7 @@ class GoogleOAuthController(http.Controller):
             redirect_uri = f"{base_url}/google_oauth/callback"
 
             gmail_client = request.env['google.gmail.client']
-            token_data = gmail_client.exchange_code_for_tokens(authorization_code, redirect_uri)
+            token_data = gmail_client._exchange_code_for_tokens(authorization_code, redirect_uri)
             google_email = gmail_client.get_user_email(token_data['access_token'])
 
             request.env['pan.mail.account'].sudo()._store_tokens(

@@ -7,6 +7,7 @@ from . import encryption_utils
 from . import mail_mail
 from . import pan_mail_internal_domains as internal_domains
 from .mail_provider_client import PROVIDER_SELECTION, get_provider_client  # noqa: F401
+from .ai.pan_mail_ai import AI_SELECTION
 
 _logger = logging.getLogger(__name__)
 
@@ -194,6 +195,29 @@ class ResConfigSettings(models.TransientModel):
     )
 
     # OAuth URLs (auto-computed but can be overridden)
+    # -------------------------------------------------------------------------
+    # AI triage
+    #
+    # Bring your own key: the call goes from this database straight to the AI
+    # provider. Pantalytics never proxies it, which is what lets the manifest
+    # keep saying no data reaches the module author, and what keeps Pantalytics
+    # out of every customer's processor chain.
+    # -------------------------------------------------------------------------
+    x_pan_ai_backend = fields.Selection(
+        AI_SELECTION,
+        string='AI Triage',
+        default='none',
+        config_parameter='pan_mail_pro.ai_backend',
+        help='Suggests where unrouted mail probably belongs. Off by default. '
+             'Only an email envelope is sent - never a body or an attachment.',
+    )
+    x_pan_ai_api_key = fields.Char(
+        string='AI API Key',
+        config_parameter='pan_mail_pro.ai_api_key',
+        help='Your own API key with the AI provider. Billing and data '
+             'processing are between you and them.',
+    )
+
     x_microsoft_auth_url = fields.Char(
         string='Authorization URL',
         default='https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize',

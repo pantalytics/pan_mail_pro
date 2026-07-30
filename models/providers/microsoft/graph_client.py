@@ -172,7 +172,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         return f"{auth_url}?{query_string}"
 
     @api.model
-    def exchange_code_for_tokens(self, authorization_code, redirect_uri):
+    def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
         """Exchange authorization code for access and refresh tokens"""
         config = self._get_config_params()
         token_url = config['token_url'].format(tenant=config['tenant_id'])
@@ -696,7 +696,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             send_response = requests.post(send_url, headers=headers, timeout=30)
             send_response.raise_for_status()
 
-            _logger.info(f"[Graph API] Successfully sent email: {mail_record.subject}")
+            _logger.info("[Graph API] Successfully sent email %s", microsoft_message_id)
 
             return {
                 'success': True,

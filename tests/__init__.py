@@ -22,3 +22,9 @@ from . import test_mail_matcher
 from . import test_outgoing_threading
 from . import test_routing_log
 from . import test_setup_flow
+from . import test_mailbox_permission
+from . import test_incoming_sync_gmail
+from . import test_mail_lens
+from . import test_mail_coverage
+from . import test_mail_item
+from . import test_ai_contract
