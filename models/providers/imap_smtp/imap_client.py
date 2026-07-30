@@ -340,11 +340,16 @@ class ImapSmtpClient(models.AbstractModel):
     # Sending
     # -------------------------------------------------------------------------
     @api.model
-    def send_message(self, mail_record, mailbox, account):
+    def send_message(self, mail_record, mailbox, account, reply_context=None):
         """Send one mail.mail over SMTP and file a copy in Sent.
 
         The Message-ID is ours (we build the MIME), so it is returned as-is —
         the same handle dedup and reply-threading use for the other providers.
+
+        `reply_context` carries the In-Reply-To / References pair, which is the
+        *only* threading signal this provider has: there is no conversation id
+        to fall back on, so the thread key returned below is derived from the
+        chain these headers establish.
         """
         to_addrs = mime_utils.collect_recipients(mail_record.email_to, mail_record.recipient_ids)
         cc_addrs = mime_utils.collect_recipients(mail_record.email_cc)
@@ -359,7 +364,8 @@ class ImapSmtpClient(models.AbstractModel):
 
         message_id = mime_utils.new_message_id(mailbox.email)
         msg = mime_utils.build_message(
-            mail_record, mailbox.email, to_addrs, cc_addrs, message_id)
+            mail_record, mailbox.email, to_addrs, cc_addrs, message_id,
+            reply_context=reply_context)
         envelope = mime_utils.bare_addresses(to_addrs + cc_addrs)
 
         try:

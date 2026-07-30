@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- List View -->
+    <record id="view_pan_mail_routing_log_list" model="ir.ui.view">
+        <field name="name">pan.mail.routing.log.list</field>
+        <field name="model">pan.mail.routing.log</field>
+        <field name="arch" type="xml">
+            <list string="Mail Routing" create="false"
+                  decoration-warning="needs_review and not reviewed"
+                  decoration-muted="reviewed">
+                <field name="date" widget="timeago"/>
+                <field name="mailbox_id"/>
+                <field name="email_from" string="From"/>
+                <field name="subject"/>
+                <field name="outcome" widget="badge"
+                       decoration-success="outcome == 'threaded'"
+                       decoration-info="outcome == 'created'"
+                       decoration-warning="outcome == 'fallback'"/>
+                <field name="target_name" string="Landed on"/>
+                <field name="rule" optional="show"/>
+                <field name="confidence" optional="hide"/>
+                <field name="candidate_count" string="Candidates" optional="hide"/>
+                <field name="reviewed" optional="hide"/>
+                <field name="needs_review" column_invisible="True"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_pan_mail_routing_log_form" model="ir.ui.view">
+        <field name="name">pan.mail.routing.log.form</field>
+        <field name="model">pan.mail.routing.log</field>
+        <field name="arch" type="xml">
+            <form string="Mail Routing" create="false">
+                <header>
+                    <button name="action_open_target" type="object"
+                            string="Open Destination" class="btn-primary"
+                            invisible="not model"/>
+                    <button name="action_mark_reviewed" type="object"
+                            string="Mark Reviewed"
+                            invisible="reviewed or not needs_review"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="subject" readonly="1" placeholder="(no subject)"/></h1>
+                    </div>
+                    <group>
+                        <group string="Email">
+                            <field name="email_from" readonly="1"/>
+                            <field name="mailbox_id" readonly="1"/>
+                            <field name="date" readonly="1"/>
+                            <field name="internet_message_id" readonly="1"/>
+                        </group>
+                        <group string="Decision">
+                            <field name="outcome" readonly="1"/>
+                            <field name="target_name" readonly="1"/>
+                            <field name="rule" readonly="1"/>
+                            <field name="confidence" readonly="1"/>
+                            <field name="reviewed"/>
+                            <field name="needs_review" invisible="1"/>
+                            <field name="model" invisible="1"/>
+                        </group>
+                    </group>
+                    <group string="Why">
+                        <field name="reason" readonly="1" nolabel="1"/>
+                    </group>
+                    <group string="Candidates Considered"
+                           invisible="candidate_count == 0">
+                        <field name="candidate_count" invisible="1"/>
+                        <field name="candidates" readonly="1" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_pan_mail_routing_log_search" model="ir.ui.view">
+        <field name="name">pan.mail.routing.log.search</field>
+        <field name="model">pan.mail.routing.log</field>
+        <field name="arch" type="xml">
+            <search string="Mail Routing">
+                <field name="subject"/>
+                <field name="email_from"/>
+                <field name="target_name"/>
+                <field name="mailbox_id"/>
+                <filter name="needs_review" string="Needs Review"
+                        domain="[('needs_review', '=', True), ('reviewed', '=', False)]"/>
+                <separator/>
+                <filter name="outcome_threaded" string="Threaded"
+                        domain="[('outcome', '=', 'threaded')]"/>
+                <filter name="outcome_created" string="New Record"
+                        domain="[('outcome', '=', 'created')]"/>
+                <filter name="outcome_fallback" string="No Match"
+                        domain="[('outcome', '=', 'fallback')]"/>
+                <separator/>
+                <filter name="today" string="Today"
+                        domain="[('date', '&gt;=', datetime.datetime.combine(context_today(), datetime.time(0, 0, 0)))]"/>
+                <separator/>
+                <!-- Group-by filters sit at top level rather than in a <group>:
+                     Odoo 19's search schema rejects `expand` on group and wants
+                     field children there, while a filter carrying a `group_by`
+                     context lands in the Group By menu on its own. -->
+                <filter name="group_mailbox" string="Mailbox"
+                        context="{'group_by': 'mailbox_id'}"/>
+                <filter name="group_outcome" string="Outcome"
+                        context="{'group_by': 'outcome'}"/>
+                <filter name="group_rule" string="Rule"
+                        context="{'group_by': 'rule'}"/>
+                <filter name="group_date" string="Date"
+                        context="{'group_by': 'date'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_pan_mail_routing_log" model="ir.actions.act_window">
+        <field name="name">Mail Routing</field>
+        <field name="res_model">pan.mail.routing.log</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No mail routed yet
+            </p>
+            <p>
+                Every incoming email that Mail Pro delivers is recorded here:
+                where it landed, which rule decided that, and what the other
+                candidates were. Use the "Needs Review" filter to see only the
+                mail that had nowhere obvious to go.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu: Settings → Technical → Email → Mail Routing -->
+    <menuitem id="menu_pan_mail_routing_log"
+              name="Mail Routing"
+              parent="base.menu_email"
+              action="action_pan_mail_routing_log"
+              sequence="6"
+              groups="base.group_system"/>
+
+</odoo>

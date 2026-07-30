@@ -295,7 +295,7 @@ class MailProviderClient(models.AbstractModel):
     # -------------------------------------------------------------------------
 
     @api.model
-    def send_message(self, mail_record, mailbox, account):
+    def send_message(self, mail_record, mailbox, account, reply_context=None):
         """Send one `mail.mail` and return a normalized send result.
 
         Implementations own everything about how the message is encoded:
@@ -303,6 +303,25 @@ class MailProviderClient(models.AbstractModel):
         stores as /web/image/ URLs and every provider wants differently —
         Graph takes JSON fileAttachments with contentId, Gmail wants multipart
         MIME with Content-ID parts).
+
+        `reply_context` (see `mail.mail._build_reply_context`) says how to send
+        this mail *inside* an existing thread. It is optional and every field
+        may be None: a provider uses what it can honour and ignores the rest,
+        and one that honours nothing still sends — just unthreaded.
+
+            {
+                'in_reply_to':         str or None,  # parent's Message-ID
+                'references':          [str, ...],   # chain, root first
+                'thread_id':           str or None,  # provider thread handle
+                'provider_message_id': str or None,  # parent's resource id
+            }
+
+        The split is not arbitrary. Providers that accept standard headers
+        (Gmail, IMAP) thread with `in_reply_to` / `references`; Microsoft Graph
+        refuses to set them — `internetMessageHeaders` takes custom `x-` headers
+        only — so it threads by replying *to a message*, which is what
+        `provider_message_id` is for. `thread_id` is a third, weaker form some
+        APIs want alongside the headers.
 
         Callers only see the normalized send result documented at module level.
         """

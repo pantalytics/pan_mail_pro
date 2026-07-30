@@ -53,12 +53,21 @@ def new_message_id(from_email):
     return make_msgid(domain=domain)
 
 
-def build_message(mail_record, from_email, to_addrs, cc_addrs, message_id):
+def build_message(mail_record, from_email, to_addrs, cc_addrs, message_id,
+                  reply_context=None):
     """Build the outgoing `EmailMessage` for one `mail.mail`.
 
     Includes the X-Odoo-* loop guard the incoming sync keys on, so our own sent
     mail is never re-imported, and the In-Reply-To / References pair, which is
     the only threading signal a plain IMAP mailbox has.
+
+    `reply_context` (see `mail.mail._build_reply_context`) wins over
+    `mail.mail.references` when present, and the difference matters: Odoo's own
+    field holds the Message-IDs *Odoo* generated, while the id that actually
+    went on the wire is the one from `new_message_id()` here, or the one the
+    provider minted for us. A chain built from Odoo's ids names messages the
+    recipient never saw, so their reply comes back pointing at something we
+    cannot resolve. The reply context is built from what was really sent.
     """
     msg = EmailMessage()
     msg['Subject'] = mail_record.subject or '(No Subject)'
@@ -69,10 +78,13 @@ def build_message(mail_record, from_email, to_addrs, cc_addrs, message_id):
         msg['Cc'] = ', '.join(cc_addrs)
     msg['Message-ID'] = message_id
 
-    references = _references(mail_record)
+    reply_context = reply_context or {}
+    references = list(reply_context.get('references') or []) or _references(mail_record)
+    in_reply_to = reply_context.get('in_reply_to') or (references[-1] if references else None)
     if references:
         msg['References'] = ' '.join(references)
-        msg['In-Reply-To'] = references[-1]
+    if in_reply_to:
+        msg['In-Reply-To'] = in_reply_to
 
     # The X-Odoo-* loop guard: the incoming sync skips anything carrying these,
     # so our own sent mail is never re-imported from the mailbox.

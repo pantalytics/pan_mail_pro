@@ -18,4 +18,7 @@ from . import test_attachments
 from . import test_system_notifications
 from . import test_no_mailbox_fallback
 from . import test_provider_contract
+from . import test_mail_matcher
+from . import test_outgoing_threading
+from . import test_routing_log
 from . import test_setup_flow

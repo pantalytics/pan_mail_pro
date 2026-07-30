@@ -259,7 +259,7 @@ class GoogleGmailClient(models.AbstractModel):
     # Sending
     # -------------------------------------------------------------------------
     @api.model
-    def send_message(self, mail_record, mailbox, account):
+    def send_message(self, mail_record, mailbox, account, reply_context=None):
         """Send one mail.mail via the Gmail REST API.
 
         Gmail takes a base64url-encoded RFC822 message, not a JSON body like
@@ -273,6 +273,7 @@ class GoogleGmailClient(models.AbstractModel):
         """
         token = self.get_valid_token(account)
         mailbox_email = mailbox.email
+        reply_context = reply_context or {}
 
         to_addrs = mime_utils.collect_recipients(mail_record.email_to, mail_record.recipient_ids)
         cc_addrs = mime_utils.collect_recipients(mail_record.email_cc)
@@ -287,15 +288,22 @@ class GoogleGmailClient(models.AbstractModel):
 
         message_id = mime_utils.new_message_id(mailbox_email)
         msg = mime_utils.build_message(
-            mail_record, mailbox_email, to_addrs, cc_addrs, message_id)
+            mail_record, mailbox_email, to_addrs, cc_addrs, message_id,
+            reply_context=reply_context)
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        payload = {'raw': raw}
+        # Only claim the thread when the headers back it up — a threadId without
+        # a matching In-Reply-To is rejected by Gmail, not silently accepted.
+        if reply_context.get('thread_id') and reply_context.get('in_reply_to'):
+            payload['threadId'] = reply_context['thread_id']
+
         url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send'
         try:
             response = requests.post(
                 url,
                 headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
-                json={'raw': raw},
+                json=payload,
                 timeout=30,
             )
             response.raise_for_status()

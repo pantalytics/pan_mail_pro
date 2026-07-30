@@ -223,19 +223,34 @@ class TestGraphNormalization(TransactionCase):
         self.assertIsNone(msg['date'])
 
     def test_send_result_is_normalized(self):
-        """send_message translates Graph's key names to the contract's."""
+        """send_message translates Graph's key names to the contract's.
+
+        Also pins that `reply_context` reaches the implementation: it is an
+        optional argument, so a client that silently dropped it would still
+        send — just unthreaded, which is the failure mode it exists to fix.
+        """
         Client = type(self.client)
         original = Client.send_email_via_graph
-        Client.send_email_via_graph = lambda self_, mail_record, mailbox, account: {
-            'success': True,
-            'microsoft_message_id': '<sent@contoso.com>',
-            'microsoft_conversation_id': 'conv-999',
-        }
+        seen = {}
+
+        def fake_send(self_, mail_record, mailbox, account, reply_context=None):
+            seen['reply_context'] = reply_context
+            return {
+                'success': True,
+                'microsoft_message_id': '<sent@contoso.com>',
+                'microsoft_conversation_id': 'conv-999',
+            }
+
+        Client.send_email_via_graph = fake_send
         self.addCleanup(setattr, Client, 'send_email_via_graph', original)
 
-        result = self.client.send_message(mail_record=None, mailbox=None, account=None)
+        result = self.client.send_message(
+            mail_record=None, mailbox=None, account=None,
+            reply_context={'provider_message_id': 'GRAPH-MSG-1'},
+        )
 
         self.assertTrue(result['success'])
         self.assertEqual(result['message_id'], '<sent@contoso.com>')
         self.assertEqual(result['thread_id'], 'conv-999')
         self.assertIsNone(result['error'])
+        self.assertEqual(seen['reply_context'], {'provider_message_id': 'GRAPH-MSG-1'})

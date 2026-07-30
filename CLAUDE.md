@@ -42,11 +42,15 @@ name still says Outlook; the rename to `pan_email_pro` is a separate phase.
 | `models/providers/imap_smtp/imap_client.py` | IMAP/SMTP implementation of the contract |
 | `models/providers/mime_utils.py` | Outgoing MIME, shared by the two MIME senders |
 | `models/pan_mail_fetcher.py` | Incoming email sync (uses `message_new()`) |
+| `models/pan_mail_matcher.py` | Thread matching: which Odoo record does this mail belong to |
+| `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |
+| `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
 | `models/pan_mail_internal_domains.py` | Internal domain list + the fail-closed gate on incoming sync |
 | `models/res_partner.py` | Contact block list field |
 | `controllers/main.py` | OAuth callback handlers (Microsoft + Google) |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
+| `tests/test_mail_matcher.py` | Unit tests for the matching ladder |
 | `tests/test_imap_provider.py` | IMAP/SMTP client (fake imaplib/smtplib, no sockets) |
 
 ## Provider Architecture
@@ -115,6 +119,99 @@ is the client's job:
 | Message id | Graph id | Gmail id | `folder:uidvalidity:uid` |
 | Send flow | draft → send | RFC822 MIME | SMTP + IMAP APPEND to Sent |
 | Message-ID | returned by the API | set by us on the MIME | set by us on the MIME |
+
+## Thread Matching
+
+"Where does this reply belong?" is a separate model from the fetcher —
+`pan.mail.matcher` — because it is the decision that goes wrong most visibly and
+the one worth testing without a provider, an HTTP mock or a mailbox.
+
+Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
+(0.8) wins and the ladder stops:
+
+| # | Rule | Conf. | Basis |
+|---|------|-------|-------|
+| 1 | `odoo_headers` | 1.0 | `X-Odoo-Model` / `X-Odoo-Record-Id` |
+| 2 | `references` | 1.0 | `In-Reply-To` + the full `References` chain |
+| 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread id) |
+|   | `thread_link_legacy` | 0.85 | unscoped `x_microsoft_conversation_id` |
+| 4 | `subject_participants` | 0.5 | normalised subject + same partner — proposal only |
+
+Rules 1 and 2 are RFC 5322, so they behave identically on Microsoft 365, Gmail
+and IMAP. Rule 3 is the only provider concept, and it is treated as *a hint
+valid only inside one mailbox* — which is what a `conversationId` or `threadId`
+actually is. Below the threshold `match()` returns candidates but leaves `model`
+empty, so a caller can branch on `model` alone and never route on a guess.
+
+Three things this changed, each a silent misroute before:
+
+- **The chain, not one hop.** Only `In-Reply-To` was read; a client that sets
+  just `References` fell through to the conversation-id lookup.
+- **Newest, not oldest.** The conversation lookup ordered `id asc`, so replies
+  threaded onto whatever record *first* touched the conversation — usually an
+  old contact chatter post rather than the open ticket.
+- **Scoped, not global.** A thread id was matched across every mailbox at once.
+
+### Outgoing threading
+
+Threading is half a *send* problem. `mail.mail._build_reply_context()` builds a
+provider-neutral hint from Odoo data — `in_reply_to`, `references` (root first),
+`thread_id`, `provider_message_id` — and each client uses what it can honour:
+
+| | Microsoft 365 | Gmail | IMAP/SMTP |
+|---|---|---|---|
+| Standard headers | refused (`internetMessageHeaders` takes `x-` only) | set on the MIME | set on the MIME |
+| How it threads | `createReply` on `provider_message_id`, then PATCH | `In-Reply-To` + `References` + `threadId` | `In-Reply-To` + `References` |
+| When it can't | plain draft, unthreaded | plain send, unthreaded | plain send, unthreaded |
+
+The two MIME senders share `providers/mime_utils.build_message()`, so the
+headers are written once. It prefers `reply_context` over `mail.mail.references`
+on purpose: Odoo's field holds the ids *Odoo* generated, while the id that went
+on the wire is the one `new_message_id()` minted. A chain built from Odoo's ids
+names messages the recipient never saw.
+
+The Message-ID we emit is the one the *recipient saw* — Graph mints its own
+`internetMessageId` on send, so `pan.mail.message.ref` is consulted first.
+Emitting Odoo's own id would produce a chain that does not match the one coming
+back. Gmail refuses a `threadId` whose message is not a valid RFC reply, so the
+handle is only claimed when `In-Reply-To` is there to justify it.
+
+**Providers with no thread concept.** IMAP/SMTP supply no thread handle, so both
+sides synthesise one from the root of the `References` chain — the matcher on
+receive, `mime_utils.thread_key()` on send. Every participant in a thread
+carries the same root, so rule 3 keeps working without the provider offering
+anything.
+
+### Routing log
+
+Better matching does not tell anyone where mail landed — it only makes the
+answer right more often. `pan.mail.routing.log` writes one row per delivered
+mail (Settings → Technical → Email → Mail Routing) with the rule, the
+confidence, and every candidate the ladder rejected.
+
+`outcome` separates three things that look identical from inside Odoo:
+`threaded` onto something that existed, `created` something new, `fallback` to
+contact chatter. `needs_review` flags exactly two of them:
+
+- **fallback** — delivered, but to a place nobody is looking.
+- **created *with* candidates** — the expensive, silent one: we may have opened
+  a duplicate ticket for a conversation that was already running.
+
+A `threaded` mail and our own `sent_item` never flag. A queue that cries wolf on
+every routed mail gets ignored, and then it may as well not exist.
+
+Deliberately a record of what happened, **not** a queue that holds mail back.
+Delivery is unchanged. A log that is wrong costs a confusing row; a queue that
+is wrong costs a customer an answer. A daily cron drops rows past
+`pan_mail_pro.routing_log_retention_days` (default 90) unless still flagged.
+
+**Adding AI.** Deliberately absent from rules 1-3: a `References` chain is exact,
+free and reproducible, and a language model would make a solved problem
+probabilistic. The ambiguous residue — a customer who starts a fresh mail
+instead of replying, a known contact with three open tickets — is where it earns
+its place, and it plugs in as one more rule by overriding `_match_rules()`.
+Running last means it is only ever asked about mail the deterministic rules
+could not place, which is what keeps it affordable on a one-minute cron.
 
 ## Mailbox Types
 
@@ -345,7 +442,7 @@ Check status later with `gh pr checks` or `gh run watch`.
 ## Conventions
 
 - All custom fields use `x_` prefix (Odoo.sh requirement)
-- Log tags: `[Graph API]`, `[Incoming Mail]`, `[OAuth]`
+- Log tags: `[Graph API]`, `[Incoming Mail]`, `[OAuth]`, `[Mail Matcher]`
 - Use `invisible` instead of `attrs` in views (Odoo 19)
 - Stored computed fields need `@api.depends` decorator
 
