@@ -93,8 +93,12 @@ Azure/Google nodig), bereikbaar vanuit cloud-sessies, en de omgeving lijkt
 op wat klanten draaien.
 
 Wat hier **niet** kan: de unit tests (`--test-enable` blijft lokaal en CI) en
-alles wat Helpdesk raakt — `helpdesk.team` is enterprise-only en deze server is
-community, dus de Helpdesk-routing in `pan_mail_fetcher.py` is er onbereikbaar.
+alles wat Helpdesk raakt. Odoo's `helpdesk` zit alleen in Enterprise, dus op deze
+community-server is de alias-routing onbereikbaar: `x_route_to_team`, de
+`x_alias_id`-koppeling naar `helpdesk.team` en het aanmaken van een ticket via
+`message_new()`. Die testgevallen blijven lokaal tegen Enterprise-source; een
+derdepartij-`helpdesk_community` helpt niet, want de code noemt `helpdesk.team`
+en `helpdesk.ticket` letterlijk.
 
 ## Fase B — Dogfood (Pantalytics-database)
 

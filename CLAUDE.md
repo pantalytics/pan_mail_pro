@@ -224,10 +224,13 @@ short.
 **What it is not for:**
 - **The test suite.** `--test-enable` is a local-Docker / CI thing; there is no way
   to run it against this instance. Nothing here replaces `docker-compose run`.
-- **Helpdesk.** `helpdesk.team` is enterprise-only, so the Helpdesk routing in
-  `pan_mail_fetcher.py` and `microsoft_mailbox.py` is unreachable on this instance —
-  its tests skip themselves exactly as they do in CI. Test that path locally against
-  the Enterprise source.
+- **Helpdesk.** Odoo's `helpdesk` ships only in Enterprise, so on a community server
+  the alias routing is unreachable: `x_route_to_team` on the mailbox, the
+  `x_alias_id` link to `helpdesk.team`, and ticket creation through `message_new()`.
+  `tests/test_incoming_mail.py` skips that class on a missing `helpdesk.team`, here
+  as in CI. Test it locally against the Enterprise source — the third-party
+  `helpdesk_community` addons are no substitute, because this code names
+  `helpdesk.team` and `helpdesk.ticket` directly and those use their own models.
 
 **Auto-upgrade only migrates when the manifest version moves.** Cloudpepper pulls
 the code and runs `-u pan_mail_pro` on every push, but Odoo only executes migration
