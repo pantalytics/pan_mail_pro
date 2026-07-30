@@ -134,8 +134,8 @@ class TestSetupChecklist(TransactionCase):
         })
         cls.env['pan.mail.internal.domains'].set_domains(['checklist.test'])
 
-    def _settings(self, **vals):
-        return self.env['res.config.settings'].create(vals)
+    def _settings(self, vals=None):
+        return self.env['res.config.settings'].create(vals or {})
 
     def test_notification_mailbox_is_one_click(self):
         settings = self._settings({
