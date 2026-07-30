@@ -28,7 +28,12 @@ jobs:
     outputs:
       odoo-series: ${{ steps.manifest.outputs.series }}
     steps:
+      # Full history: the diff-shape check below needs a merge base with the
+      # mainline, and a shallow clone has none — which fails outright the
+      # moment the branch carries a merge commit.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
@@ -151,9 +156,16 @@ jobs:
       - name: Models changed implies tests changed
         if: github.event_name == 'pull_request'
         run: |
-          BASE="origin/${{ github.base_ref }}"
-          git fetch --quiet origin "${{ github.base_ref }}"
-          CHANGED=$(git diff --name-only "$BASE"...HEAD)
+          git fetch --no-tags --quiet --depth=200 origin "${{ github.base_ref }}"
+          # Resolve the merge base explicitly. `A...B` silently needs one and
+          # dies with "no merge base" when it is missing; failing loudly here
+          # is the difference between a check that is off and a check that
+          # looks green because it never ran.
+          if ! MERGE_BASE=$(git merge-base "origin/${{ github.base_ref }}" HEAD); then
+            echo "::error::No merge base with ${{ github.base_ref }}; cannot check the diff shape."
+            exit 1
+          fi
+          CHANGED=$(git diff --name-only "$MERGE_BASE" HEAD)
           if echo "$CHANGED" | grep -q '^models/' && ! echo "$CHANGED" | grep -q '^tests/'; then
             echo "::error::This PR changes models/ but no test. Add or update one."
             exit 1
