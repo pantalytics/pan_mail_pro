@@ -4,3 +4,4 @@
 # about provider-specific payload shapes.
 from . import microsoft
 from . import google
+from . import imap_smtp

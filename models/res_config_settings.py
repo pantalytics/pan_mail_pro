@@ -189,6 +189,17 @@ class ResConfigSettings(models.TransientModel):
                     record.x_google_client_id and record.x_google_client_secret
                 )
                 record.x_provider_connected = record.x_current_user_google_connected
+            elif record.x_mail_provider == 'imap':
+                # IMAP has no global credential and no consent screen: a login
+                # belongs to one address. So "credentials set" means at least
+                # one account exists, and "connected" means at least one of them
+                # is complete. Both are read from the accounts rather than from
+                # fields on this form, which is why they cannot react while the
+                # admin types - there is nothing here to type.
+                accounts = self.env['pan.mail.account'].sudo().with_context(
+                    active_test=False).search([('provider', '=', 'imap')])
+                record.x_provider_credentials_set = bool(accounts)
+                record.x_provider_connected = any(accounts.mapped('connected'))
             else:
                 record.x_provider_credentials_set = False
                 record.x_provider_connected = False

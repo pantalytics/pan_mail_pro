@@ -122,6 +122,17 @@ class ResUsers(models.Model):
         help='Whether this user has a connected Google account.'
     )
 
+    # The provider-neutral version of the two flags above, and the one the
+    # mailbox owner dropdowns filter on. A per-provider flag in a view domain is
+    # how the module ended up listing Gmail owners it could not actually use;
+    # "has usable credentials somewhere" is the question those domains mean.
+    x_pan_mail_connected = fields.Boolean(
+        string='Email Account Connected',
+        compute='_compute_pan_mail_connected',
+        store=True,
+        help='Whether this user has a connected email account on any provider.'
+    )
+
     # Computed fields for backwards compatibility (decrypt on read)
     x_microsoft_access_token = fields.Char(
         string='Microsoft Outlook Access Token',
@@ -258,6 +269,12 @@ class ResUsers(models.Model):
         for user in self:
             account = accounts.get(user.id)
             user.x_google_oauth_connected = bool(account and account.refresh_token_encrypted)
+
+    @api.depends('x_pan_mail_account_ids.connected')
+    def _compute_pan_mail_connected(self):
+        for user in self:
+            user.x_pan_mail_connected = any(
+                account.connected for account in user.x_pan_mail_account_ids)
 
     def _compute_microsoft_health_status(self):
         """Compute Microsoft health status for admin overview."""

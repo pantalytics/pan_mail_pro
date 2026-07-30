@@ -62,6 +62,24 @@ class TestSetupFlow(TransactionCase):
         })
         self.assertTrue(settings.x_provider_credentials_set)
 
+    def test_imap_setup_is_measured_by_its_accounts(self):
+        """IMAP has no global credential and no consent screen, so the two flags
+        the steps hide behind have to read the accounts instead of this form."""
+        self.assertFalse(self.Settings.new({'x_mail_provider': 'imap'}).x_provider_credentials_set)
+
+        account = self.env['pan.mail.account'].create({
+            'email': 'setup@company.test', 'provider': 'imap',
+            'imap_host': 'imap.soverin.net', 'smtp_host': 'smtp.soverin.net',
+        })
+        settings = self.Settings.new({'x_mail_provider': 'imap'})
+        self.assertTrue(settings.x_provider_credentials_set)
+        # An account without a password is configured but not usable, and the
+        # page must not claim otherwise.
+        self.assertFalse(settings.x_provider_connected)
+
+        account.password = 'hunter2'
+        self.assertTrue(self.Settings.new({'x_mail_provider': 'imap'}).x_provider_connected)
+
     def test_microsoft_credentials_do_not_count_for_gmail(self):
         """Switching the picker switches which credentials are being judged."""
         settings = self.Settings.new({

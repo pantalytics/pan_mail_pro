@@ -9,3 +9,4 @@ access_mail_provider_client_user,mail.provider.client.user,model_mail_provider_c
 access_google_gmail_client_user,google.gmail.client.user,model_google_gmail_client,base.group_user,1,1,1,0
 access_pan_mail_account_user,pan.mail.account.user,model_pan_mail_account,base.group_user,1,0,0,0
 access_pan_mail_account_system,pan.mail.account.system,model_pan_mail_account,base.group_system,1,1,1,1
+access_imap_smtp_client_user,imap.smtp.client.user,model_imap_smtp_client,base.group_user,1,1,1,0

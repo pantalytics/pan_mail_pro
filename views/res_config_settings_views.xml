@@ -171,6 +171,47 @@
                     </div>
 
                     <!-- ============================================ -->
+                    <!-- STEP 2C - IMAP / SMTP CREDENTIALS -->
+                    <!-- No global credential to fill in: an IMAP login belongs -->
+                    <!-- to one address, so the step is "add the accounts". -->
+                    <!-- ============================================ -->
+                    <h2 invisible="x_mail_provider != 'imap'">2. Mail Accounts</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'imap'">
+                        <!-- LEFT: where the credentials go -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Credentials</span>
+                                <div class="text-muted mb-3">
+                                    There is no consent screen here. Enter the server, login and
+                                    password once per address; Test Connection checks reading and
+                                    sending separately.
+                                </div>
+                                <div class="mt-1">
+                                    <button type="action" name="%(action_pan_mail_account)d"
+                                            string="Email Accounts" icon="oi-arrow-right" class="oe_link"/>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- RIGHT: what to have ready -->
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">What You Need</span>
+                                <div class="content-group text-muted">
+                                    <div>IMAP server and port (usually 993, SSL/TLS)</div>
+                                    <div>SMTP server and port (usually 465, SSL/TLS)</div>
+                                    <div>The mailbox password, or an app password where the
+                                         hoster requires one</div>
+                                </div>
+                                <div class="text-muted mt-3">
+                                    Soverin addresses fill their own servers in.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
                     <!-- STEP 3 - CONNECT YOUR ACCOUNT -->
                     <!-- One step, one button per provider: the branding -->
                     <!-- differs, the step does not. -->
@@ -189,6 +230,11 @@
                                     <button name="action_connect_google_admin" type="object"
                                             string="Connect Google" class="btn-primary" icon="fa-google"
                                             invisible="x_mail_provider != 'gmail' or x_provider_connected"/>
+                                    <!-- IMAP has no sign-in: an account is connected the moment
+                                         its credentials are complete, so this step only reports. -->
+                                    <button type="action" name="%(action_pan_mail_account)d"
+                                            string="Review Accounts" icon="oi-arrow-right" class="oe_link"
+                                            invisible="x_mail_provider != 'imap'"/>
                                     <span class="text-success" invisible="not x_provider_connected">
                                         <i class="fa fa-check-circle me-1" title="Connected"/>Connected
                                     </span>

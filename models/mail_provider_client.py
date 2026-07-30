@@ -12,7 +12,7 @@ happens to offer:
     mail.provider.client        <-- this contract
         |
         v
-    microsoft.graph.client / google.gmail.client
+    microsoft.graph.client / google.gmail.client / imap.smtp.client
 
 A provider implementation subclasses this model with `_inherit` and implements
 the abstract methods below. The rule that keeps the seam clean: nothing outside
@@ -25,7 +25,8 @@ credentials for one address on one provider — and it is the provider that
 decides which account applies, because that is where providers genuinely
 diverge: a Microsoft shared mailbox is sent with the author's own token
 (SendAs), while a Gmail shared address is its own Workspace account with no
-Odoo user behind it at all.
+Odoo user behind it at all, and an IMAP/SMTP address is a login with no OAuth
+anywhere in sight.
 
 Normalized message (returned by fetch_messages / get_message)
 -------------------------------------------------------------
@@ -108,11 +109,13 @@ ERROR_NO_RECIPIENTS = 'no_recipients'
 PROVIDER_CLIENTS = {
     'outlook': 'microsoft.graph.client',
     'gmail': 'google.gmail.client',
+    'imap': 'imap.smtp.client',
 }
 
 PROVIDER_SELECTION = [
     ('outlook', 'Microsoft 365'),
     ('gmail', 'Gmail'),
+    ('imap', 'IMAP / SMTP'),
 ]
 
 # Provider assumed by flows that are not yet mailbox-scoped (the OAuth connect
@@ -225,8 +228,28 @@ class MailProviderClient(models.AbstractModel):
         """
         raise NotImplementedError
 
+    @api.model
+    def account_is_connected(self, account):
+        """Whether `account` holds credentials this provider can actually use.
+
+        The default is the OAuth answer: a refresh token is what keeps an
+        account working past the next hour. A provider that does not use OAuth
+        overrides this — an IMAP/SMTP account is "connected" when it has hosts,
+        a username and a password, and it has no token to refresh at all.
+
+        This is what `pan.mail.account.connected` computes, so every caller that
+        asks "does this mailbox have usable credentials" gets a provider-correct
+        answer without knowing which provider it is talking to.
+        """
+        return bool(account.refresh_token_encrypted)
+
     # -------------------------------------------------------------------------
     # Authentication
+    #
+    # These are OAuth-shaped because two of the three providers are. A password
+    # provider implements them by refusing clearly: there is no consent screen
+    # to send an admin to and no token to refresh, and saying so beats an
+    # AttributeError somewhere further down.
     # -------------------------------------------------------------------------
 
     @api.model
