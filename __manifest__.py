@@ -94,6 +94,7 @@
         'data/ir_cron_data.xml',
         'data/mail_server_data.xml',
         'views/microsoft_mailbox_views.xml',
+        'views/mail_message_views.xml',
         'wizard/microsoft_oauth_wizard_views.xml',
         'views/templates/oauth_templates.xml',
         'views/res_config_settings_views.xml',

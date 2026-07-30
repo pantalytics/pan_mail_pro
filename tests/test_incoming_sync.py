@@ -125,6 +125,16 @@ class TestIncomingSync(OutlookProTestCase):
         self.assertEqual(messages.subject, 'Question about my order')
         self.assertIn('Where is it?', messages.body)
 
+    def test_inbound_email_is_stamped_for_the_lens(self):
+        """Direction and mailbox must be recorded, or the overview cannot show
+        where this mail came in. Stamped on a write that already happens, which
+        makes it cheap and also easy to lose in a refactor."""
+        self._sync()
+
+        message = self._messages_on(self.external_partner)
+        self.assertEqual(message.x_direction, 'incoming')
+        self.assertEqual(message.x_mailbox_id, self.mailbox)
+
     def test_inbound_email_stores_ids_for_threading(self):
         """Reply threading depends on these, and the two fields are asymmetric.
 

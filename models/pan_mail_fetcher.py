@@ -360,11 +360,18 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 # Find existing team record for this conversation
                 team_record_msg = False
                 if conversation_id:
+                    # Scoped to this mailbox on purpose. A provider thread key is
+                    # only unique within the mailbox that issued it, so an
+                    # unscoped search can thread a reply arriving in one mailbox
+                    # onto a record created from another — handing it to a
+                    # different team's followers. Messages predating x_mailbox_id
+                    # have it unset and are matched as before.
                     team_record_msg = self.env['mail.message'].search([
                         ('x_microsoft_conversation_id', '=', conversation_id),
                         ('model', '!=', False),
                         ('model', '!=', 'res.partner'),
                         ('res_id', '!=', False),
+                        ('x_mailbox_id', 'in', [mailbox.id, False]),
                     ], order='id asc', limit=1)
 
                 if team_record_msg:
@@ -396,7 +403,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             # NO ROUTE TO TEAM: original behavior (partner chatter + threading)
             else:
                 # Find parent message for threading
-                parent_message = self._find_parent_message(headers, conversation_id)
+                parent_message = self._find_parent_message(headers, conversation_id, mailbox)
 
                 if parent_message and parent_message.model and parent_message.res_id:
                     # Reply to existing thread
@@ -438,9 +445,16 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                         contact_email=contact_email,
                     )
 
-            # Store Microsoft conversationId for threading future replies
-            if conversation_id and message:
-                message.write({'x_microsoft_conversation_id': conversation_id})
+            # Store the provider thread key for threading future replies, and
+            # stamp the lens fields on the same write — the message is already
+            # being touched here, so this costs no extra query.
+            if message:
+                message.write({
+                    'x_microsoft_conversation_id': conversation_id,
+                    'x_direction': 'outgoing' if is_outgoing else 'incoming',
+                    'x_mailbox_id': mailbox.id,
+                    'x_account_id': account.id,
+                })
 
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
             return True
@@ -449,8 +463,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             _logger.exception(f"[Incoming Mail] Failed to process message: {internet_message_id}")
             raise
 
-    def _find_parent_message(self, headers, conversation_id):
-        """Find parent message for threading via In-Reply-To or conversationId."""
+    def _find_parent_message(self, headers, conversation_id, mailbox=None):
+        """Find parent message for threading via In-Reply-To or conversationId.
+
+        `mailbox` scopes the conversationId branch. A provider thread key is only
+        unique within the mailbox that issued it, so an unscoped match can thread
+        a reply onto a record that belongs to another mailbox and expose it to a
+        different follower set. In-Reply-To needs no scoping: a Message-ID is
+        globally unique by RFC.
+        """
         parent_message = False
         in_reply_to = headers.get('in-reply-to')
 
@@ -464,11 +485,16 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 ], limit=1)
 
         if not parent_message and conversation_id:
-            parent_message = self.env['mail.message'].search([
+            domain = [
                 ('x_microsoft_conversation_id', '=', conversation_id),
                 ('model', '!=', False),
                 ('res_id', '!=', False),
-            ], order='id asc', limit=1)
+            ]
+            if mailbox:
+                # Messages predating x_mailbox_id have it unset; still matched.
+                domain.append(('x_mailbox_id', 'in', [mailbox.id, False]))
+            parent_message = self.env['mail.message'].search(
+                domain, order='id asc', limit=1)
 
         return parent_message
 

@@ -190,7 +190,10 @@ class MailMail(models.Model):
         """
         self.ensure_one()
 
-        _logger.info(f"[Graph API] Processing email {self.id}: subject='{self.subject}', to={self.email_to}")
+        _logger.info("[Graph API] Processing email %s", self.id)
+        _logger.debug(
+            "[Graph API] Email %s: subject=%r to=%r", self.id, self.subject, self.email_to
+        )
 
         # Determine mailbox and account based on email type
         mailbox, account = self._get_mailbox_and_account()
@@ -237,10 +240,17 @@ class MailMail(models.Model):
             # Also update mail_message for threading to work
             # When a reply comes in with an In-Reply-To header containing this
             # ID, we can find this message via x_microsoft_message_id
-            if self.mail_message_id and provider_message_id:
+            if self.mail_message_id:
+                # The lens fields ride along on a write that already happens,
+                # so stamping direction and mailbox costs no extra query. They
+                # are set here rather than at create() because only a mail that
+                # actually went out is outgoing communication.
                 self.mail_message_id.write({
                     'x_microsoft_message_id': provider_message_id,
                     'x_microsoft_conversation_id': provider_thread_id,
+                    'x_direction': 'outgoing',
+                    'x_mailbox_id': mailbox.id,
+                    'x_account_id': account.id,
                 })
                 _logger.info(f"[Graph API] Updated mail.message {self.mail_message_id.id} with provider IDs for threading")
 
