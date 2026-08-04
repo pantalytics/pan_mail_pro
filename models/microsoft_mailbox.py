@@ -117,12 +117,6 @@ class MicrosoftMailbox(models.Model):
     # -------------------------------------------------------------------------
     # Incoming Mail Configuration
     # -------------------------------------------------------------------------
-    x_incoming_user_id = fields.Many2one(
-        'res.users',
-        string='Sync As User',
-        domain="[('x_pan_mail_connected', '=', True)]",
-        help='User whose account is used to fetch emails.'
-    )
     x_incoming_enabled = fields.Boolean(
         string='Enable Incoming Sync',
         compute='_compute_incoming_enabled',
@@ -632,15 +626,3 @@ class MicrosoftMailbox(models.Model):
                 raise ValidationError(_(
                     'Smart AI Routing is not yet implemented. This feature will be available in a future release.'
                 ))
-
-    def get_graph_user_id(self):
-        """
-        Get the identifier to use for Microsoft Graph API calls.
-
-        Returns the email address for use in /users/{id}/sendMail calls.
-
-        Returns:
-            str: Email address for use in /users/{id}/... calls
-        """
-        self.ensure_one()
-        return self.email

@@ -116,7 +116,6 @@
         'views/mail_message_views.xml',
         'views/pan_mail_coverage_views.xml',
         'views/pan_mail_item_views.xml',
-        'wizard/microsoft_oauth_wizard_views.xml',
         'views/templates/oauth_templates.xml',
         'views/res_config_settings_views.xml',
         'views/res_users_views.xml',

@@ -537,7 +537,8 @@ class MicrosoftGraphClient(models.AbstractModel):
             token = self.get_valid_token(account)
 
             # Get the correct identifier for Graph API (UPN or email)
-            graph_user_id = mailbox.get_graph_user_id()
+            # Graph addresses a mailbox by its email in /users/{id}/...
+            graph_user_id = mailbox.email
             mailbox_email = mailbox.email
 
             _logger.info(f"[Graph API] Using delegated token for {account.email} to send from mailbox: {mailbox_email}")

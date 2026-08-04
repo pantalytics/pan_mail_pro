@@ -161,7 +161,6 @@
                     <field name="state" invisible="1"/>
                     <field name="x_sync_mode" invisible="1"/>
                     <field name="x_incoming_enabled" invisible="1"/>
-                    <field name="x_incoming_user_id" invisible="1"/>
                     <field name="x_sync_inbox" invisible="1"/>
                     <field name="x_sync_sent" invisible="1"/>
                     <field name="active" invisible="1"/>
