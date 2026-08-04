@@ -14,7 +14,6 @@ the same seam the Graph client already gives us.
 import base64
 import logging
 import requests
-import secrets
 from datetime import datetime, timedelta, timezone
 from email.utils import getaddresses, parseaddr
 
@@ -138,11 +137,6 @@ class GoogleGmailClient(models.AbstractModel):
             'client_id': ICP.get_param('x_pan_outlook_pro.google_client_id'),
             'client_secret': client_secret,
         }
-
-    @api.model
-    def generate_oauth_state(self):
-        """Cryptographically secure state token for CSRF protection."""
-        return secrets.token_urlsafe(32)
 
     @api.model
     def get_authorization_url(self, redirect_uri, state=None):

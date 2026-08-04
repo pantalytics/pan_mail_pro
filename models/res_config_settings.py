@@ -6,7 +6,12 @@ from odoo.exceptions import UserError
 from . import encryption_utils
 from . import mail_mail
 from . import pan_mail_internal_domains as internal_domains
-from .mail_provider_client import PROVIDER_SELECTION, get_provider_client  # noqa: F401
+from .mail_provider_client import (  # noqa: F401
+    PARAM_SETUP_PROVIDER,
+    PROVIDER_SELECTION,
+    get_provider_client,
+    oauth_redirect_uri,
+)
 from .ai.pan_mail_ai import AI_SELECTION
 
 _logger = logging.getLogger(__name__)
@@ -32,7 +37,7 @@ class ResConfigSettings(models.TransientModel):
     x_mail_provider = fields.Selection(
         PROVIDER_SELECTION,
         string='Email Provider',
-        config_parameter='x_pan_outlook_pro.setup_provider',
+        config_parameter=PARAM_SETUP_PROVIDER,
         help='Where your email is hosted. Determines which setup steps are shown.',
     )
 
@@ -76,17 +81,6 @@ class ResConfigSettings(models.TransientModel):
     x_microsoft_notification_configured = fields.Boolean(
         compute='_compute_notification_configured',
         string='Notification Configured'
-    )
-
-    # Current user OAuth status (for admin setup flow)
-    x_current_user_oauth_connected = fields.Boolean(
-        compute='_compute_current_user_oauth_connected',
-        string='Current User OAuth Connected'
-    )
-
-    x_current_user_google_connected = fields.Boolean(
-        compute='_compute_current_user_google_connected',
-        string='Current User Google Connected'
     )
 
     # Internal domain detection uses Odoo's standard mail.alias.domain
@@ -241,6 +235,7 @@ class ResConfigSettings(models.TransientModel):
         steps below the picker react while the admin is still typing, before
         anything is saved.
         """
+        Account = self.env['pan.mail.account']
         for record in self:
             if record.x_mail_provider == 'outlook':
                 record.x_provider_credentials_set = bool(
@@ -248,12 +243,14 @@ class ResConfigSettings(models.TransientModel):
                     and record.x_microsoft_tenant_id
                     and record.x_microsoft_client_secret
                 )
-                record.x_provider_connected = record.x_current_user_oauth_connected
+                record.x_provider_connected = Account._for_user(
+                    self.env.user, 'outlook').connected
             elif record.x_mail_provider == 'gmail':
                 record.x_provider_credentials_set = bool(
                     record.x_google_client_id and record.x_google_client_secret
                 )
-                record.x_provider_connected = record.x_current_user_google_connected
+                record.x_provider_connected = Account._for_user(
+                    self.env.user, 'gmail').connected
             elif record.x_mail_provider == 'imap':
                 # IMAP has no global credential and no consent screen: a login
                 # belongs to one address. So "credentials set" means at least
@@ -281,7 +278,7 @@ class ResConfigSettings(models.TransientModel):
         # get_values() runs *after* default_get() has read the config
         # parameters, so anything set here overrides a stored choice. Only fill
         # the gap when there is genuinely nothing stored.
-        if not IrConfigParameter.get_param('x_pan_outlook_pro.setup_provider'):
+        if not IrConfigParameter.get_param(PARAM_SETUP_PROVIDER):
             if IrConfigParameter.get_param('x_pan_outlook_pro.client_id'):
                 res['x_mail_provider'] = 'outlook'
             elif IrConfigParameter.get_param('x_pan_outlook_pro.google_client_id'):
@@ -338,10 +335,10 @@ class ResConfigSettings(models.TransientModel):
             record.x_microsoft_module_version = version
 
     def _compute_redirect_uri(self):
-        """Compute the OAuth redirect URI based on web.base.url"""
-        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+        """The URL to paste into the Azure app registration."""
+        uri = oauth_redirect_uri(self.env, 'outlook')
         for record in self:
-            record.x_microsoft_redirect_uri = f"{base_url}/microsoft_oauth/callback"
+            record.x_microsoft_redirect_uri = uri
 
     def _compute_alias_domains(self):
         """Get internal domains from Odoo's standard mail.alias.domain."""
@@ -379,10 +376,10 @@ class ResConfigSettings(models.TransientModel):
             )
 
     def _compute_google_redirect_uri(self):
-        """Compute the Google OAuth redirect URI based on web.base.url"""
-        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+        """The URL to paste into the Google OAuth client."""
+        uri = oauth_redirect_uri(self.env, 'gmail')
         for record in self:
-            record.x_google_redirect_uri = f"{base_url}/google_oauth/callback"
+            record.x_google_redirect_uri = uri
 
     def _compute_decrypted_google_secret(self):
         """Show a masked value when an encrypted Google secret exists."""
@@ -632,41 +629,15 @@ class ResConfigSettings(models.TransientModel):
             },
         }
 
-    def _compute_current_user_oauth_connected(self):
-        """Check if the current user has Microsoft OAuth connected"""
-        for record in self:
-            record.x_current_user_oauth_connected = self.env.user.x_microsoft_oauth_connected
+    def action_connect_provider(self):
+        """Step 3 of setup: connect the admin's own account.
 
-    def _compute_current_user_google_connected(self):
-        """Check if the current user has a Google account connected"""
-        for record in self:
-            record.x_current_user_google_connected = self.env.user.x_google_oauth_connected
-
-    def action_connect_google_admin(self):
-        """Start the Google OAuth flow from the settings page."""
+        The provider is whichever one the picker above is showing, so this is
+        the same button whatever is selected - and a provider added to the
+        registry tomorrow gets it for free.
+        """
         self.ensure_one()
-        return self.env.user.action_connect_google()
-
-    def action_connect_microsoft_admin(self):
-        """Start OAuth flow by redirecting directly to Microsoft login"""
-        self.ensure_one()
-
-        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
-        redirect_uri = f"{base_url}/microsoft_oauth/callback"
-
-        graph_client = get_provider_client(self.env)
-
-        # Generate and store CSRF state token for current user
-        state = graph_client.generate_oauth_state()
-        self.env.user.sudo().write({'x_microsoft_oauth_state': state})
-
-        auth_url = graph_client.get_authorization_url(redirect_uri, state=state)
-
-        return {
-            'type': 'ir.actions.act_url',
-            'url': auth_url,
-            'target': 'new',
-        }
+        return self.env.user.action_connect_mailbox(self.x_mail_provider)
 
     def action_test_azure_configuration(self):
         """

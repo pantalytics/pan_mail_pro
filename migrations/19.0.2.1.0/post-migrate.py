@@ -26,9 +26,9 @@ def migrate(cr, version):
     Idempotent: re-running skips users that already have a Microsoft account, so
     a half-finished upgrade can be retried.
 
-    x_microsoft_oauth_state is not copied on purpose. It is a CSRF nonce for an
-    OAuth round trip that cannot survive a service restart anyway, and nothing
-    reads the account's copy until step 5.
+    The user's OAuth state column is not copied on purpose. It is a CSRF nonce
+    for one authorization round trip, which cannot survive a service restart
+    anyway.
     """
     cr.execute("""
         INSERT INTO pan_mail_account (
@@ -69,26 +69,25 @@ def migrate(cr, version):
     """)
     users_connected, accounts_connected = cr.fetchone()
 
-    # x_microsoft_oauth_connected is stored, and this upgrade repoints its
-    # @api.depends at the account. Odoo does not recompute a stored field just
-    # because its depends changed, so the old True/False values survive - right
-    # for every user whose tokens were copied above, wrong for any user the copy
-    # missed. Realign it in SQL so the field and the accounts cannot disagree;
-    # a user without an account must read as disconnected, because that is what
-    # the compute would now say.
+    # x_pan_mail_connected is a stored compute over the accounts, and the rows
+    # above were inserted in SQL - so Odoo has no idea they appeared and will
+    # not recompute. Left alone the flag reads False for every user this
+    # migration just connected, which empties the mailbox owner dropdowns and
+    # sends their mail from the notification mailbox instead. Realign it here so
+    # the flag and the accounts cannot disagree.
+    #
+    # It used to realign x_microsoft_oauth_connected, the per-provider flag that
+    # 19.0.5.0.0 replaced with this one. Its column survives on databases that
+    # ever had it and is no longer read by anything.
     cr.execute("""
         UPDATE res_users u
-           SET x_microsoft_oauth_connected = EXISTS (
+           SET x_pan_mail_connected = EXISTS (
                    SELECT 1 FROM pan_mail_account a
-                    WHERE a.user_id = u.id
-                      AND a.provider = 'outlook'
-                      AND a.refresh_token_encrypted IS NOT NULL
+                    WHERE a.user_id = u.id AND a.connected
                )
-         WHERE u.x_microsoft_oauth_connected IS DISTINCT FROM EXISTS (
+         WHERE u.x_pan_mail_connected IS DISTINCT FROM EXISTS (
                    SELECT 1 FROM pan_mail_account a
-                    WHERE a.user_id = u.id
-                      AND a.provider = 'outlook'
-                      AND a.refresh_token_encrypted IS NOT NULL
+                    WHERE a.user_id = u.id AND a.connected
                )
     """)
     realigned = cr.rowcount

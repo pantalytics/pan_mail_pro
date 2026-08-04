@@ -96,7 +96,7 @@ class TestAccountMigration(TransactionCase):
                SET x_microsoft_access_token_encrypted = %s,
                    x_microsoft_refresh_token_encrypted = %s,
                    x_microsoft_token_expiry = %s,
-                   x_microsoft_oauth_connected = %s
+                   x_pan_mail_connected = %s
              WHERE id = %s
         """, (access, refresh, '2026-01-01 12:00:00' if tokens else None, connected, user.id))
         self.env.invalidate_all()
@@ -188,14 +188,16 @@ class TestAccountMigration(TransactionCase):
     def test_connection_flag_is_realigned_with_the_accounts(self):
         """The stored-compute trap, both directions.
 
-        x_microsoft_oauth_connected keeps its old stored value across an upgrade
-        even though its depends now points at the account. The migration has to
-        realign it, or the mailbox owner dropdown lies.
+        x_pan_mail_connected is a stored compute over the accounts, and this
+        migration creates accounts in raw SQL - so Odoo never recomputes it. The
+        migration has to realign it, or the mailbox owner dropdown lies in both
+        directions: a user it just connected reads as disconnected, and a user
+        it could not connect keeps a True nothing backs.
         """
         stale_false = self._legacy_user('stale_false@test.local', connected=False)
         stale_true = self._legacy_user('stale_true@test.local', tokens=False, connected=True)
 
         self._run_migration()
 
-        self.assertTrue(stale_false.x_microsoft_oauth_connected)
-        self.assertFalse(stale_true.x_microsoft_oauth_connected)
+        self.assertTrue(stale_false.x_pan_mail_connected)
+        self.assertFalse(stale_true.x_pan_mail_connected)

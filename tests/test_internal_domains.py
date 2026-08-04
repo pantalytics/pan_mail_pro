@@ -64,9 +64,9 @@ class TestInternalDomainGate(TransactionCase):
             'name': 'Gate Owner', 'login': 'gate@test.local', 'email': 'gate@test.local',
             'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
         })
-        cls.user.sudo().write({
-            'x_microsoft_refresh_token': 'fake-refresh',
-            'x_microsoft_access_token': 'fake-access',
+        cls.env['pan.mail.account'].sudo().create({
+            'email': 'gate@test.local', 'provider': 'outlook', 'user_id': cls.user.id,
+            'refresh_token': 'fake-refresh', 'access_token': 'fake-access',
         })
         # A notification mailbox has to exist before any mailbox may sync; that
         # is a separate, already-tested rule and would otherwise mask this one.

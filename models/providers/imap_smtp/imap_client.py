@@ -85,6 +85,9 @@ class ImapSmtpClient(models.AbstractModel):
     supports_shared_mailbox = False
     supports_delegation = False
     supported_mailbox_types = ('personal', 'shared', 'notification')
+    # There is no consent screen: credentials are a server, a login and a
+    # password, typed in once on the account.
+    uses_oauth = False
 
     @api.model
     def provider_code(self):

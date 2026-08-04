@@ -11,8 +11,6 @@
                     <!-- Hidden fields -->
                     <field name="x_microsoft_config_status" invisible="1"/>
                     <field name="x_microsoft_config_status_message" invisible="1"/>
-                    <field name="x_current_user_oauth_connected" invisible="1"/>
-                    <field name="x_current_user_google_connected" invisible="1"/>
                     <field name="x_microsoft_mailbox_count" invisible="1"/>
                     <field name="x_microsoft_notification_configured" invisible="1"/>
                     <field name="x_provider_credentials_set" invisible="1"/>
@@ -247,12 +245,9 @@
                                 <span class="o_form_label">Account</span>
                                 <div class="text-muted small">Sign in so Odoo can send and read mail on your behalf</div>
                                 <div class="mt-2">
-                                    <button name="action_connect_microsoft_admin" type="object"
-                                            string="Connect Microsoft" class="btn-primary" icon="fa-windows"
-                                            invisible="x_mail_provider != 'outlook' or x_provider_connected"/>
-                                    <button name="action_connect_google_admin" type="object"
-                                            string="Connect Google" class="btn-primary" icon="fa-google"
-                                            invisible="x_mail_provider != 'gmail' or x_provider_connected"/>
+                                    <button name="action_connect_provider" type="object"
+                                            string="Connect Mailbox" class="btn-primary" icon="fa-sign-in"
+                                            invisible="x_mail_provider == 'imap' or x_provider_connected"/>
                                     <!-- IMAP has no sign-in: an account is connected the moment
                                          its credentials are complete, so this step only reports. -->
                                     <button type="action" name="%(action_pan_mail_account)d"

@@ -121,12 +121,12 @@ class TestGoogleProvider(TransactionCase):
     # OAuth flow — connect, store, connected flag, disconnect
     # ------------------------------------------------------------------ #
     def test_connect_stores_state_and_returns_consent_url(self):
-        action = self.user.action_connect_google()
+        action = self.user.action_connect_mailbox('gmail')
         self.assertEqual(action['type'], 'ir.actions.act_url')
         self.assertIn('accounts.google.com', action['url'])
         # The state in the URL must match what was stored, or the callback rejects it.
-        self.assertTrue(self.user.sudo().x_google_oauth_state)
-        self.assertIn(f"state={self.user.sudo().x_google_oauth_state}", action['url'])
+        self.assertTrue(self.user.sudo().x_pan_mail_oauth_state)
+        self.assertIn(f"state={self.user.sudo().x_pan_mail_oauth_state}", action['url'])
 
     def test_store_tokens_creates_then_updates_one_account(self):
         Account = self.Account
@@ -148,24 +148,21 @@ class TestGoogleProvider(TransactionCase):
         self.assertEqual(
             Account.search_count([('user_id', '=', self.user.id), ('provider', '=', 'gmail')]), 1)
 
-    def test_google_connected_flag_is_independent_of_microsoft(self):
-        self.assertFalse(self.user.x_google_oauth_connected)
-        # A Microsoft account must not flip the Google flag.
-        self.Account.create({
-            'email': 'gmail_user@test.local', 'provider': 'outlook',
-            'user_id': self.user.id, 'refresh_token': 'ms'})
-        self.assertFalse(self.user.x_google_oauth_connected)
+    def test_google_credentials_make_the_user_connected(self):
+        self.assertFalse(self.user.x_pan_mail_connected)
 
         self._google_account(refresh_token='goog')
-        self.assertTrue(self.user.x_google_oauth_connected)
+
+        self.assertTrue(self.user.x_pan_mail_connected)
+        self.assertTrue(self.Account._for_user(self.user, 'gmail').connected)
 
     def test_disconnect_google_clears_the_account(self):
         self._google_account(access_token='a', refresh_token='r')
-        self.user.action_disconnect_google()
+        self.user.action_disconnect_mailbox('gmail')
 
         account = self.Account.search([('user_id', '=', self.user.id), ('provider', '=', 'gmail')])
         self.assertFalse(account.refresh_token_encrypted)
-        self.assertFalse(self.user.x_google_oauth_connected)
+        self.assertFalse(self.user.x_pan_mail_connected)
 
     # ------------------------------------------------------------------ #
     # Sending
@@ -507,7 +504,7 @@ class TestGoogleProvider(TransactionCase):
 class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
     """Phase 3: a Gmail mailbox must actually work, not merely be selectable.
 
-    The orchestration layer used to ask `x_microsoft_oauth_connected` everywhere,
+    The orchestration layer used to ask "is this user connected to Microsoft",
     so a Gmail mailbox with a perfectly good Google account reported `error`,
     never enabled incoming sync, and fell back to the notification mailbox on
     send. The owner dropdown listed Google-connected users, which made the gap
@@ -553,7 +550,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
     # ------------------------------------------------------------------ #
     def test_gmail_mailbox_with_connected_owner_is_healthy(self):
         mailbox = self._gmail_mailbox()
-        self.assertFalse(self.user.x_microsoft_oauth_connected,
+        self.assertFalse(self.Account._for_user(self.user, 'outlook'),
                          "fixture must be Google-only for this to mean anything")
         self.assertEqual(mailbox.x_health_status, 'healthy')
 

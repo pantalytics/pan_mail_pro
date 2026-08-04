@@ -205,7 +205,7 @@ class TestImapProvider(TransactionCase):
         self.assertFalse(self.user.x_pan_mail_connected)
         self._imap_account(email='imap_user@test.local', user_id=self.user.id)
         self.assertTrue(self.user.x_pan_mail_connected)
-        self.assertFalse(self.user.x_microsoft_oauth_connected)
+        self.assertFalse(self.env['pan.mail.account']._for_user(self.user, 'outlook'))
 
     def test_entering_credentials_reactivates_the_mailbox(self):
         """A service account is found by address, so no field path leads to it.

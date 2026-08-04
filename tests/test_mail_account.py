@@ -76,71 +76,54 @@ class TestMailAccount(TransactionCase):
         ])
         self.assertEqual(len(service_accounts), 2)
 
-    def test_writing_a_token_on_a_user_creates_the_account(self):
-        """The OAuth callback writes to res.users and must land on an account.
-
-        This is what lets controllers/main.py and the token refresh stay
-        untouched while the credentials move.
-        """
+    def test_the_oauth_callback_lands_on_an_account(self):
+        """_store_tokens is the one write path a consent screen comes back to."""
         user = self.env['res.users'].create({
             'name': 'Fresh Connection', 'login': 'fresh@test.local', 'email': 'fresh@test.local',
         })
 
-        user.sudo().write({
-            'x_microsoft_access_token': 'new-access',
-            'x_microsoft_refresh_token': 'new-refresh',
-        })
+        self.Account._store_tokens(
+            'outlook', user, 'fresh@test.local', 'new-access', 'new-refresh', False)
 
         account = self.Account.search([('user_id', '=', user.id), ('provider', '=', 'outlook')])
         self.assertEqual(len(account), 1)
         self.assertEqual(account.email, 'fresh@test.local')
         self.assertEqual(account.refresh_token, 'new-refresh')
 
-    def test_clearing_tokens_does_not_create_an_empty_account(self):
-        """Disconnecting a user who never connected must leave no trace.
+    def test_a_reauthorization_keeps_a_refresh_token_it_was_not_given(self):
+        """Google issues a refresh token once and never again.
 
-        A blank account would show up as a connection that was never made.
+        Overwriting the stored one with the empty value of a later consent is
+        how an account silently stops working an hour after re-authorizing.
         """
-        user = self.env['res.users'].create({
-            'name': 'Never Connected', 'login': 'never@test.local', 'email': 'never@test.local',
-        })
-
-        user.sudo().write({
-            'x_microsoft_access_token_encrypted': False,
-            'x_microsoft_refresh_token_encrypted': False,
-            'x_microsoft_token_expiry': False,
-        })
-
-        self.assertFalse(self.Account.search([('user_id', '=', user.id)]))
-
-    def test_user_reads_tokens_back_through_the_account(self):
         account = self.Account.create({
-            'email': 'roundtrip@test.local', 'provider': 'outlook', 'user_id': self.user.id,
-            'access_token': 'account-access', 'refresh_token': 'account-refresh',
+            'email': 'again@test.local', 'provider': 'gmail', 'user_id': self.user.id,
+            'refresh_token': 'the-only-one', 'access_token': 'old-access',
         })
-        self.user.invalidate_recordset()
 
-        self.assertEqual(self.user.x_microsoft_access_token, 'account-access')
-        self.assertEqual(self.user.x_microsoft_refresh_token, 'account-refresh')
-        self.assertEqual(
-            self.user.x_microsoft_refresh_token_encrypted, account.refresh_token_encrypted)
+        self.Account._store_tokens(
+            'gmail', self.user, 'again@test.local', 'fresh-access', None, False)
+        account.invalidate_recordset()
+
+        self.assertEqual(account.refresh_token, 'the-only-one')
+        self.assertEqual(account.access_token, 'fresh-access')
 
     def test_stored_connection_flag_follows_the_account(self):
-        """x_microsoft_oauth_connected is stored and drives view domains.
+        """x_pan_mail_connected is stored and drives the mailbox owner domains.
 
         If the depends chain to the account breaks, this field stops updating
-        and the mailbox owner dropdown quietly empties out.
+        and the dropdown quietly empties out.
         """
-        self.assertFalse(self.user.x_microsoft_oauth_connected)
+        self.assertFalse(self.user.x_pan_mail_connected)
 
         account = self.Account.create({
             'email': 'toggle@test.local', 'provider': 'outlook', 'user_id': self.user.id,
             'refresh_token': 'some-refresh',
         })
-        self.assertTrue(self.user.x_microsoft_oauth_connected)
+        self.assertTrue(self.user.x_pan_mail_connected)
 
         account.refresh_token = False
-        self.assertFalse(self.user.x_microsoft_oauth_connected)
+        self.assertFalse(self.user.x_pan_mail_connected)
 
     def test_disconnect_clears_the_account(self):
         self.Account.create({
@@ -148,15 +131,31 @@ class TestMailAccount(TransactionCase):
             'access_token': 'a', 'refresh_token': 'r',
         })
 
-        self.user.action_disconnect_microsoft()
+        self.user.action_disconnect_mailbox('outlook')
 
         account = self.Account.search([('user_id', '=', self.user.id)])
         self.assertFalse(account.refresh_token_encrypted)
         self.assertFalse(account.access_token_encrypted)
-        self.assertFalse(self.user.x_microsoft_oauth_connected)
+        self.assertFalse(self.user.x_pan_mail_connected)
+
+    def test_disconnecting_one_provider_keeps_the_other(self):
+        """Two providers, one user: revoking one is not revoking both."""
+        self.Account.create({
+            'email': 'both@test.local', 'provider': 'outlook', 'user_id': self.user.id,
+            'refresh_token': 'ms',
+        })
+        self.Account.create({
+            'email': 'both@gmail.test', 'provider': 'gmail', 'user_id': self.user.id,
+            'refresh_token': 'goog',
+        })
+
+        self.user.action_disconnect_mailbox('outlook')
+
+        self.assertTrue(self.user.x_pan_mail_connected)
+        self.assertTrue(self.Account._for_user(self.user, 'gmail').connected)
 
     def test_archived_user_keeps_readable_credentials(self):
-        """Archived accounts stay visible through the proxy.
+        """Archived accounts stay reachable from the user.
 
         The One2many carries active_test=False for exactly this: otherwise a
         stored recompute would report an archived user as disconnected and the
@@ -169,7 +168,8 @@ class TestMailAccount(TransactionCase):
         account.active = False
         self.user.invalidate_recordset()
 
-        self.assertEqual(self.user.x_microsoft_refresh_token, 'still-valid')
+        self.assertIn(account, self.user.x_pan_mail_account_ids)
+        self.assertTrue(self.user.x_pan_mail_connected)
 
     @mute_logger('odoo.sql_db')
     def test_user_cannot_have_two_accounts_on_one_provider(self):

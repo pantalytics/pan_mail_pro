@@ -128,9 +128,10 @@ class TestSetupChecklist(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.admin = cls.env.user
-        cls.admin.sudo().write({
-            'x_microsoft_refresh_token': 'fake-refresh',
-            'x_microsoft_access_token': 'fake-access',
+        cls.env['pan.mail.account'].sudo().create({
+            'email': cls.admin.email or cls.admin.login, 'provider': 'outlook',
+            'user_id': cls.admin.id,
+            'refresh_token': 'fake-refresh', 'access_token': 'fake-access',
         })
         cls.env['pan.mail.internal.domains'].set_domains(['checklist.test'])
 

@@ -4,7 +4,6 @@ import logging
 import mimetypes
 import re
 import requests
-import secrets
 import time
 from datetime import datetime, timedelta
 from odoo import models, api, _
@@ -118,11 +117,6 @@ class MicrosoftGraphClient(models.AbstractModel):
             'token_url': ICP.get_param('x_pan_outlook_pro.token_url',
                                        'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token'),
         }
-
-    @api.model
-    def generate_oauth_state(self):
-        """Generate a cryptographically secure state token for CSRF protection."""
-        return secrets.token_urlsafe(32)
 
     @api.model
     def get_authorization_url(self, redirect_uri, state=None):
