@@ -69,34 +69,16 @@ def migrate(cr, version):
     """)
     users_connected, accounts_connected = cr.fetchone()
 
-    # x_microsoft_oauth_connected is stored, and this upgrade repoints its
-    # @api.depends at the account. Odoo does not recompute a stored field just
-    # because its depends changed, so the old True/False values survive - right
-    # for every user whose tokens were copied above, wrong for any user the copy
-    # missed. Realign it in SQL so the field and the accounts cannot disagree;
-    # a user without an account must read as disconnected, because that is what
-    # the compute would now say.
-    cr.execute("""
-        UPDATE res_users u
-           SET x_microsoft_oauth_connected = EXISTS (
-                   SELECT 1 FROM pan_mail_account a
-                    WHERE a.user_id = u.id
-                      AND a.provider = 'outlook'
-                      AND a.refresh_token_encrypted IS NOT NULL
-               )
-         WHERE u.x_microsoft_oauth_connected IS DISTINCT FROM EXISTS (
-                   SELECT 1 FROM pan_mail_account a
-                    WHERE a.user_id = u.id
-                      AND a.provider = 'outlook'
-                      AND a.refresh_token_encrypted IS NOT NULL
-               )
-    """)
-    realigned = cr.rowcount
+    # The stored "is this user connected" flag is realigned by the 19.0.5.0.0
+    # script, which is also the one that drops the per-provider flags this
+    # version still had. Odoo never recomputes a stored field just because rows
+    # appeared underneath it in SQL, so somebody has to - it is simply not this
+    # script's job any more.
 
     _logger.info(
         '[Mail Pro] Migrated %s user token set(s) to pan.mail.account '
-        '(%s connected users, %s connected accounts, %s connection flag(s) realigned)',
-        migrated, users_connected, accounts_connected, realigned,
+        '(%s connected users, %s connected accounts)',
+        migrated, users_connected, accounts_connected,
     )
     if users_connected != accounts_connected:
         _logger.error(

@@ -18,7 +18,28 @@ import base64
 import contextlib
 from unittest.mock import patch, MagicMock
 
+from odoo.exceptions import UserError
 from odoo.tests import TransactionCase
+
+
+def send_and_capture(mails):
+    """Send `mails` and hand back the UserError instead of unwinding the test.
+
+    Deliberately not `assertRaises`: Odoo wraps that in a savepoint and rolls it
+    back when the exception fires, which discards exactly the `failure_reason`
+    and `state` writes a test wants to look at afterwards. A plain try/except
+    opens no savepoint, so the writes survive and both halves of the contract
+    can be asserted in one test.
+
+    (Production sees the same split. Interactively the request rollback does
+    discard the writes and the mail stays queued for the cron; in the queue,
+    `auto_commit` has already committed them. See `mail.mail.send`.)
+    """
+    try:
+        mails.send()
+    except UserError as error:
+        return error
+    return None
 
 
 class OutlookProTestCase(TransactionCase):
@@ -54,8 +75,6 @@ class OutlookProTestCase(TransactionCase):
         )
         Partner = cls.env['res.partner']
 
-        # Users — token is faked by writing the encrypted field directly so the
-        # `x_microsoft_oauth_connected` stored compute flips to True.
         internal_group = cls.env.ref('base.group_user').id
         cls.notif_owner = User.create({
             'name': 'Notification Owner',
@@ -86,13 +105,8 @@ class OutlookProTestCase(TransactionCase):
             'group_ids': [(6, 0, [internal_group])],
         })
 
-        # Write through the unencrypted virtual field so tokens are properly
-        # Fernet-encrypted; otherwise downstream reads (`x_microsoft_access_token`)
-        # raise a decryption error during _compute_decrypted_tokens.
-        (cls.notif_owner | cls.salesperson | cls.other_user).sudo().write({
-            'x_microsoft_refresh_token': 'fake-refresh',
-            'x_microsoft_access_token': 'fake-access',
-        })
+        for user in (cls.notif_owner | cls.salesperson | cls.other_user):
+            cls.connect(user)
 
         # Incoming sync is gated on internal domains being declared. A domain
         # nothing in this fixture uses, so the gate opens without turning any
@@ -133,6 +147,32 @@ class OutlookProTestCase(TransactionCase):
         assert not cls.company_partner.user_ids, (
             "Test setup error: company partner must not be linked to a user"
         )
+
+    # ------------------------------------------------------------------ #
+    # Credentials
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def connect(cls, user, provider='outlook'):
+        """Give `user` working credentials on `provider`.
+
+        Written through the plain-text fields so the stored ciphertext is real
+        Fernet - a hand-written encrypted value raises on the next read.
+        """
+        return cls.env['pan.mail.account'].sudo().create({
+            'email': user.email or user.login,
+            'provider': provider,
+            'user_id': user.id,
+            'refresh_token': 'fake-refresh',
+            'access_token': 'fake-access',
+        })
+
+    @classmethod
+    def disconnect(cls, user, provider='outlook'):
+        """Take `user`'s credentials away, as revoking access would."""
+        cls.env['pan.mail.account'].sudo().with_context(active_test=False).search([
+            ('user_id', '=', user.id), ('provider', '=', provider),
+        ]).write({'refresh_token_encrypted': False, 'access_token_encrypted': False})
 
     # ------------------------------------------------------------------ #
     # Mock helpers

@@ -205,20 +205,24 @@ class TestImapProvider(TransactionCase):
         self.assertFalse(self.user.x_pan_mail_connected)
         self._imap_account(email='imap_user@test.local', user_id=self.user.id)
         self.assertTrue(self.user.x_pan_mail_connected)
-        self.assertFalse(self.user.x_microsoft_oauth_connected)
+        self.assertFalse(self.env['pan.mail.account']._for_user(self.user, 'outlook'))
 
-    def test_entering_credentials_reactivates_the_mailbox(self):
+    def test_entering_credentials_makes_the_mailbox_syncable(self):
         """A service account is found by address, so no field path leads to it.
-        Without the write-side hook the mailbox would stay switched off."""
+
+        This was a stored compute that needed invalidating by hand from the
+        account's write; the cron asks _has_working_credentials() when it needs
+        the answer instead, so there is nothing left to keep in sync.
+        """
         self.env['x_microsoft.mailbox'].create({
             'email': 'notifications@company.test', 'x_mailbox_type': 'notification',
             'x_owner_user_id': self.user.id,
         })
         mailbox = self._mailbox(x_sync_mode='all')
-        self.assertFalse(mailbox.x_incoming_enabled)
+        self.assertFalse(mailbox._has_working_credentials())
 
         self._imap_account()
-        self.assertTrue(mailbox.x_incoming_enabled)
+        self.assertTrue(mailbox._has_working_credentials())
 
     # ------------------------------------------------------------------ #
     # No OAuth

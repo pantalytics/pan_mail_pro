@@ -84,6 +84,7 @@ Normalized send result (returned by send_message)
     }
 """
 import logging
+import secrets
 
 from odoo import models, api, _
 from odoo.exceptions import UserError
@@ -118,6 +119,20 @@ PROVIDER_SELECTION = [
     ('imap', 'IMAP / SMTP'),
 ]
 
+# Where each provider's consent screen sends the browser back to. These paths
+# are registered in the Azure and Google consoles by every customer, so they are
+# effectively public API: change one and every existing installation breaks.
+# Listed here so nothing else in the module has to build a callback URL by hand.
+OAUTH_CALLBACK_PATHS = {
+    'outlook': '/microsoft_oauth/callback',
+    'gmail': '/google_oauth/callback',
+}
+
+# The provider the admin is setting up. One config parameter, read by the
+# settings page, the connect link in the invitation email, and the mailboxes
+# created during setup.
+PARAM_SETUP_PROVIDER = 'x_pan_outlook_pro.setup_provider'
+
 # Provider assumed by flows that are not yet mailbox-scoped (the OAuth connect
 # flow on res.users, the settings page). When a second provider lands these
 # take an explicit provider argument instead.
@@ -130,6 +145,20 @@ def get_provider_client(env, provider_code=DEFAULT_PROVIDER):
     if not model_name:
         raise UserError(_('No email client available for provider "%s".') % provider_code)
     return env[model_name]
+
+
+def get_setup_provider(env):
+    """The provider this database is being set up for, if one was chosen."""
+    return env['ir.config_parameter'].sudo().get_param(PARAM_SETUP_PROVIDER)
+
+
+def oauth_redirect_uri(env, provider_code):
+    """The absolute callback URL for `provider_code` on this database."""
+    path = OAUTH_CALLBACK_PATHS.get(provider_code)
+    if not path:
+        raise UserError(_('Provider "%s" does not use an authorization flow.') % provider_code)
+    base_url = env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+    return f'{base_url}{path}'
 
 
 class MailProviderClient(models.AbstractModel):
@@ -154,6 +183,9 @@ class MailProviderClient(models.AbstractModel):
     supports_delegation = False
     # Which x_mailbox_type values this provider can actually service.
     supported_mailbox_types = ('personal',)
+    # Is there a consent screen to send somebody to? False means the credentials
+    # are typed in (IMAP/SMTP), which changes what "connect" means in the UI.
+    uses_oauth = True
 
     @api.model
     def provider_code(self):
@@ -251,6 +283,11 @@ class MailProviderClient(models.AbstractModel):
     # to send an admin to and no token to refresh, and saying so beats an
     # AttributeError somewhere further down.
     # -------------------------------------------------------------------------
+
+    @api.model
+    def generate_oauth_state(self):
+        """A CSRF nonce for one authorization round trip."""
+        return secrets.token_urlsafe(32)
 
     @api.model
     def get_authorization_url(self, redirect_uri, state=None):

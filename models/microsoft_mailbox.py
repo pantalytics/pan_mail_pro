@@ -12,6 +12,12 @@ from .mail_provider_client import (
 
 _logger = logging.getLogger(__name__)
 
+# The sync modes that actually import mail. An allow-list, so that a domain
+# filtering on it can never accidentally include a mailbox whose mode is unset —
+# `!= 'none'` matches NULL in Odoo's ORM, and the answer to "nobody said" has to
+# be "do not import".
+SYNCING_MODES = ('known_partners', 'all')
+
 
 class MicrosoftMailbox(models.Model):
     """Model to store available Microsoft mailboxes for sending and receiving emails"""
@@ -65,6 +71,27 @@ class MicrosoftMailbox(models.Model):
             return bool(self.x_owner_user_id) and self.x_owner_user_id == user
         return True
 
+    def _syncs_incoming(self):
+        """Whether this mailbox imports incoming mail at all.
+
+        Written as an allow-list rather than `!= 'none'` so that an unset value
+        — a row predating the field, a NULL the NOT NULL constraint could not be
+        applied to — resolves to "does not sync". The unanswered question must
+        never resolve to the answer that copies mail into Odoo.
+        """
+        self.ensure_one()
+        return self.x_sync_mode in SYNCING_MODES
+
+    def _needs_credentials(self):
+        """Whether this mailbox needs credentials of its own to do its job.
+
+        A Microsoft shared mailbox that only sends borrows the author's token,
+        so it needs none — until it starts reading, which nobody can do on
+        somebody else's behalf without being told whose token to use.
+        """
+        self.ensure_one()
+        return self.x_mailbox_type in ('personal', 'notification') or self._syncs_incoming()
+
     def _has_working_credentials(self):
         """Whether this mailbox can actually reach its provider right now.
 
@@ -117,71 +144,22 @@ class MicrosoftMailbox(models.Model):
     # -------------------------------------------------------------------------
     # Incoming Mail Configuration
     # -------------------------------------------------------------------------
-    x_incoming_user_id = fields.Many2one(
-        'res.users',
-        string='Sync As User',
-        domain="[('x_pan_mail_connected', '=', True)]",
-        help='User whose account is used to fetch emails.'
-    )
-    x_incoming_enabled = fields.Boolean(
-        string='Enable Incoming Sync',
-        compute='_compute_incoming_enabled',
-        store=True,
-        help='Automatically enabled when a sync user is selected'
-    )
-    # x_sync_mode is the source of truth, kept for backwards compatibility
+    # One control, three answers. This used to be a mode plus five booleans
+    # computed from it (enabled, enable, include-unknown, inbox, sent), which is
+    # six ways to describe one choice and five things that can disagree with it.
     x_sync_mode = fields.Selection([
-        ('none', 'Send messages only'),
-        ('known_partners', 'Send and receive messages from existing contacts'),
-        ('all', 'Send and receive all messages'),
-    ], string='Sync Mode', default='none')
+        ('none', 'Send only'),
+        ('known_partners', 'Send and receive, from existing contacts'),
+        ('all', 'Send and receive, from anyone'),
+    ], string='Incoming Mail', default='none', required=True,
+        help='Whether email arriving in this mailbox is imported into Odoo, '
+             'and whether senders who are not contacts yet are imported too.')
 
-    # -------------------------------------------------------------------------
-    # Simplified UI fields (Apple-style progressive disclosure)
-    # These compute from / write to x_sync_mode
-    # -------------------------------------------------------------------------
-    x_incoming_sync = fields.Boolean(
-        string='Enable',
-        compute='_compute_incoming_sync',
-        inverse='_inverse_incoming_sync',
-        store=True,
-        help='Sync incoming emails from this mailbox to Odoo'
-    )
-    x_sync_unknown_contacts = fields.Boolean(
-        string='Include',
-        compute='_compute_sync_unknown_contacts',
-        inverse='_inverse_sync_unknown_contacts',
-        store=True,
-        help='Also sync emails from senders not yet in Odoo'
-    )
-
-    @api.depends('x_sync_mode')
-    def _compute_incoming_sync(self):
-        for record in self:
-            record.x_incoming_sync = record.x_sync_mode != 'none'
-
-    def _inverse_incoming_sync(self):
-        for record in self:
-            if not record.x_incoming_sync:
-                record.x_sync_mode = 'none'
-            elif record.x_sync_unknown_contacts:
-                record.x_sync_mode = 'all'
-            else:
-                record.x_sync_mode = 'known_partners'
-
-    @api.depends('x_sync_mode')
-    def _compute_sync_unknown_contacts(self):
-        for record in self:
-            record.x_sync_unknown_contacts = record.x_sync_mode == 'all'
-
-    def _inverse_sync_unknown_contacts(self):
-        for record in self:
-            if record.x_incoming_sync:
-                record.x_sync_mode = 'all' if record.x_sync_unknown_contacts else 'known_partners'
-
-    # -------------------------------------------------------------------------
-    # Routing Configuration (for new incoming emails, not replies)
-    # -------------------------------------------------------------------------
+    # The interlock that keeps AI auto-routing off. It has no behaviour beyond
+    # the constraint below refusing to let it be switched on, which normally
+    # makes a field a comment with a database column - but 19.0.4.0.0 made it
+    # the explicit gate the AI seam is not allowed to open until real
+    # suggestions have earned it. See models/ai/pan_mail_ai.py.
     x_routing_smart = fields.Boolean(
         string='AI Routing',
         default=False,
@@ -206,48 +184,6 @@ class MicrosoftMailbox(models.Model):
         help='Skip emails from your company domain. Disable for team mailboxes where internal forwarding should be logged.'
     )
     # Keep for backwards compatibility / internal use
-    x_sync_inbox = fields.Boolean(
-        string='Sync Inbox',
-        default=True,
-        compute='_compute_sync_folders',
-        store=True
-    )
-    x_sync_sent = fields.Boolean(
-        string='Sync Sent Items',
-        default=True,
-        compute='_compute_sync_folders',
-        store=True
-    )
-
-    @api.depends('x_sync_mode', 'x_provider', 'x_owner_user_id',
-                 'x_owner_user_id.x_pan_mail_account_ids.connected')
-    def _compute_incoming_enabled(self):
-        """Incoming sync is enabled when sync_mode is set and the mailbox has
-        credentials its provider can actually use.
-
-        The account is in `depends` on purpose: the old version depended only on
-        the mode and the owner, so connecting OAuth *after* configuring the
-        mailbox never flipped this field back on.
-
-        Known limit: a Gmail shared mailbox runs on a service account found by
-        address, not reachable by any field path from here, so authorizing one
-        after the fact does not retrigger this compute. It is correct at create
-        time and whenever the mailbox is edited; a stored field cannot depend on
-        a searched relation.
-        """
-        for record in self:
-            record.x_incoming_enabled = (
-                record.x_sync_mode in ('known_partners', 'all')
-                and record._has_working_credentials()
-            )
-
-    @api.depends('x_sync_mode')
-    def _compute_sync_folders(self):
-        """Sync modes enable both Inbox + Sent Items."""
-        for record in self:
-            sync_enabled = record.x_sync_mode in ('known_partners', 'all')
-            record.x_sync_inbox = sync_enabled
-            record.x_sync_sent = sync_enabled
     x_sync_start_date = fields.Datetime(
         string='Import From',
         default=fields.Datetime.now,
@@ -287,54 +223,59 @@ class MicrosoftMailbox(models.Model):
     @api.depends('state', 'x_sync_mode', 'x_mailbox_type', 'x_provider', 'x_owner_user_id',
                  'x_owner_user_id.x_pan_mail_account_ids.connected')
     def _compute_health_status(self):
-        """Compute health status based on state and configuration."""
         for record in self:
-            # Check 1: Sync errors
             if record.state == 'error':
                 record.x_health_status = 'error'
-                continue
-
-            # Check 2: Owner OAuth status (for personal/notification mailboxes)
-            if record.x_mailbox_type in ('personal', 'notification'):
-                if not record.x_owner_user_id:
-                    record.x_health_status = 'error'
-                    continue
-                if not record._has_working_credentials():
-                    record.x_health_status = 'error'
-                    continue
-
-            # Check 3: Shared mailbox with sync enabled needs connected owner
-            if record.x_mailbox_type == 'shared' and record.x_sync_mode != 'none':
-                if not record._has_working_credentials():
-                    record.x_health_status = 'error'
-                    continue
-
-            # Check 4: Sync enabled but never synced yet
-            if record.x_sync_mode != 'none' and record.state == 'draft':
+            elif record._needs_credentials() and not record._has_working_credentials():
+                record.x_health_status = 'error'
+            elif record._syncs_incoming() and record.state == 'draft':
                 record.x_health_status = 'warning'
-                continue
+            else:
+                record.x_health_status = 'healthy'
 
-            # All checks passed
-            record.x_health_status = 'healthy'
+    def _no_credentials_error(self, sender=None):
+        """Why this mailbox has no usable credentials, in the provider's terms.
 
-    def _no_credentials_error(self):
-        """Why this mailbox has no usable credentials, in the provider's terms."""
+        The single explanation for every "cannot send / cannot read" in the
+        module. `sender` is the user whose token was expected, where the caller
+        knows — on a Microsoft shared mailbox that is the author rather than the
+        owner, and naming the wrong person sends an admin looking in the wrong
+        place.
+        """
         self.ensure_one()
-        provider = self._get_client().provider_label()
-        if self.x_mailbox_type == 'shared' and not self._get_client().supports_shared_mailbox:
-            # Gmail and IMAP: a shared address is its own account, so there is
-            # nothing an owner could connect on its behalf.
+        client = self._get_client()
+        provider = client.provider_label()
+
+        if self.x_mailbox_type == 'shared':
+            if not client.supports_shared_mailbox:
+                # Gmail and IMAP: a shared address is its own account, so there
+                # is nothing an owner could connect on its behalf.
+                return _(
+                    'Shared mailbox "%(email)s" has no credentials of its own. On '
+                    '%(provider)s a shared address is its own account, not a '
+                    'delegation of someone else\'s.',
+                    email=self.email, provider=provider,
+                )
+            who = sender or self.x_owner_user_id
+            if not who:
+                return _(
+                    'Nobody is connected who could send from shared mailbox "%s".'
+                ) % self.email
             return _(
-                'Shared mailbox "%(email)s" has no connected %(provider)s account. '
-                'Give %(email)s its own credentials — on %(provider)s a shared '
-                'address is its own account, not a delegation of someone else\'s.',
-                email=self.email, provider=provider,
+                '"%(who)s" has no connected %(provider)s account, so nothing can '
+                'send from shared mailbox "%(email)s". Connect it under My Profile '
+                '→ Mail Pro, with SendAs rights on that address.',
+                who=who.name, provider=provider, email=self.email,
             )
+
         if not self.x_owner_user_id:
-            return _('Please select an Owner for mailbox "%s" first.') % self.email
+            return _(
+                'Mailbox "%s" has no Owner. Select the user whose account it '
+                'sends and receives with.'
+            ) % self.email
         return _(
             'Owner "%(owner)s" has no connected %(provider)s account. '
-            'The user must connect it first.',
+            'They must connect it first.',
             owner=self.x_owner_user_id.name, provider=provider,
         )
 
@@ -421,7 +362,7 @@ class MicrosoftMailbox(models.Model):
         """Manually trigger email sync for this mailbox."""
         self.ensure_one()
 
-        if self.x_sync_mode == 'none':
+        if not self._syncs_incoming():
             raise UserError(_('Sync mode is set to "No sync". Change it to enable syncing.'))
 
         if not self._has_working_credentials():
@@ -508,7 +449,7 @@ class MicrosoftMailbox(models.Model):
     @api.onchange('x_sync_mode')
     def _onchange_sync_mode(self):
         """Reset state when switching to no sync."""
-        if self.x_sync_mode == 'none':
+        if not self._syncs_incoming():
             self.state = 'draft'
             self.x_error_message = False
 
@@ -548,7 +489,7 @@ class MicrosoftMailbox(models.Model):
             # is its own Workspace account, so there is nobody to borrow from and
             # demanding an owner would make the mailbox unconfigurable.
             if (record.x_mailbox_type == 'shared' and
-                    record.x_sync_mode != 'none' and
+                    record._syncs_incoming() and
                     not record.x_owner_user_id and
                     record._get_client().supports_shared_mailbox):
                 raise ValidationError(_(
@@ -597,14 +538,14 @@ class MicrosoftMailbox(models.Model):
         if not gate:
             return
         for record in self:
-            if record.x_sync_mode != 'none':
+            if record._syncs_incoming():
                 raise ValidationError(gate)
 
     @api.constrains('x_sync_mode')
     def _check_notification_mailbox_for_sync(self):
         """Ensure notification mailbox exists when enabling incoming sync."""
         for record in self:
-            if record.x_sync_mode != 'none' and record.x_mailbox_type != 'notification':
+            if record._syncs_incoming() and record.x_mailbox_type != 'notification':
                 notification_mailbox = self.search([
                     ('x_mailbox_type', '=', 'notification'),
                     ('active', '=', True),
@@ -632,15 +573,3 @@ class MicrosoftMailbox(models.Model):
                 raise ValidationError(_(
                     'Smart AI Routing is not yet implemented. This feature will be available in a future release.'
                 ))
-
-    def get_graph_user_id(self):
-        """
-        Get the identifier to use for Microsoft Graph API calls.
-
-        Returns the email address for use in /users/{id}/sendMail calls.
-
-        Returns:
-            str: Email address for use in /users/{id}/... calls
-        """
-        self.ensure_one()
-        return self.email

@@ -10,8 +10,10 @@ Odoo - send and receive with full control.
 **Outgoing Email:**
 - Send From dropdown in email composer
 - Personal, shared, and notification mailbox support
-- Auto-create personal mailbox on Microsoft connect
+- Auto-create personal mailbox when you connect your account
 - Default mailbox per user
+- One sender per mail, chosen once: a mail that cannot be sent from the mailbox
+  you picked fails and says why, rather than leaving from a different address
 
 **Providers:**
 - Microsoft 365 (Graph API, OAuth 2.0)
@@ -28,6 +30,8 @@ Odoo - send and receive with full control.
 - "All" sync mode with per-contact routing rules
 - Per-contact block list to exclude specific senders
 - New emails create CRM Leads with activity for mailbox owner
+- Triage queue for mail that could not be filed anywhere, with an optional
+  AI suggestion (off by default, your own API key, envelope only)
 
 **Security:**
 - OAuth 2.0 with delegated permissions only (least privilege)
@@ -103,20 +107,19 @@ filed there, so it shows up in your own mail client too.
 
 ## User Setup
 
-### Connect Microsoft Account
+### Connect your mailbox
 
-1. Go to **My Profile** → **Preferences** → **Email** tab
-2. Click **Connect Microsoft Account**
+1. Go to **My Profile** → **Preferences** → **Mail Pro**
+2. Click **Connect Mailbox**
 3. Sign in and grant permissions
-4. A personal mailbox is automatically created
+4. A personal mailbox is created for the address you signed in with, and set as
+   your **Send from**
 
-### Set Default Mailbox
+An admin can also send everybody the invitation from **Settings → Mail Pro →
+Your Team**; the link in it drops each user straight on the consent screen.
 
-1. In **My Profile** → **Preferences** → **Email** tab
-2. Select your default **Send From** mailbox
-3. Save
-
-**Note:** If your Microsoft account is not connected or no default mailbox is set, you'll see a warning banner when opening the email composer.
+**Note:** until your account is connected and a Send from mailbox is set, the
+email composer shows a warning banner saying so.
 
 ---
 
@@ -137,15 +140,14 @@ Go to **Settings** → **Mail Pro** → **Manage Mailbox List**
 **Prerequisite:** Create a **Notification mailbox** first (required for handling emails from external authors).
 
 1. Open a mailbox
-2. Select **Sync Mode**:
-   - **Send messages only** - Outgoing only (no sync)
-   - **Send and receive messages from existing contacts** - 2-way sync, only from known partners
-   - **All** - 2-way sync with configurable routing rules per contact type
-3. Configure **Routing**:
-   - Select a **Team** (alias) to route emails to (e.g., Helpdesk, Sales)
-   - Emails create tickets/leads in the selected team
-4. Set the **Owner** (must have Microsoft connected)
-5. Optionally set **Sync Start Date** for historical email import
+2. Choose **Incoming Mail**:
+   - **Send only** - nothing is imported
+   - **Send and receive, from existing contacts** - 2-way sync, known contacts only
+   - **Send and receive, from anyone** - 2-way sync, new senders become contacts
+3. Optionally route to a **Team** (alias) so emails create tickets or leads
+   instead of landing on the sender's contact
+4. Set the **Owner** (a user with a connected account)
+5. Optionally set **Import From** for historical email import
 6. Save
 
 **Sync behavior:**
@@ -177,16 +179,22 @@ Check logs for "Threading reply to" entries. If replies go to the wrong record, 
 
 ### Emails not syncing
 
-1. Check **Settings** → **Technical** → **Scheduled Actions** → "Microsoft Graph: Fetch Incoming Mail"
-2. Verify mailbox has sync mode enabled
-3. Verify Sync User has Microsoft connected
+1. Check **Settings** → **Technical** → **Scheduled Actions** → "Mail Pro: Fetch Incoming Mail"
+2. Verify the mailbox's **Incoming Mail** is not "Send only"
+3. Verify the mailbox has usable credentials — its **Status** column says so
 4. Check logs for `[Incoming Mail]` entries
 
 ### "0 mailbox(es)" in logs
 
-Mailbox configuration incomplete:
-- Sync Mode must be set
-- Sync User must be set and have Microsoft OAuth connected
+No mailbox both syncs and has usable credentials: either Incoming Mail is still
+"Send only", or the account behind it is not connected.
+
+### An email failed instead of being sent from another address
+
+That is deliberate. If the chosen mailbox cannot send, you get an error naming
+what to fix, and the mail waits in **Settings → Technical → Email → Emails** with
+the same reason on it — rather than going out from `notifications@` and looking
+like it worked. Other emails sent at the same time are unaffected.
 
 ### Permission denied when sending
 
@@ -209,25 +217,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
 
 ---
 
-## Roadmap
-
-### v2.0 - AI-Assisted Triage
-- Sync emails from unknown senders
-- AI suggests contact qualification (ICP match)
-- Human approves, future emails auto-routed
-- Customer summaries per company
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed roadmap.
-
----
-
 ## Development
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for:
-- Module structure
-- Email flow diagrams
-- Design decisions
-- API documentation
+See [ARCHITECTURE.md](ARCHITECTURE.md) for module structure, email flow
+diagrams and design decisions, and [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) for the
+UI conventions the settings and mailbox screens follow.
 
 ### Running Tests
 

@@ -17,7 +17,7 @@
                 <field name="x_mailbox_type" string="Type" optional="hide"/>
                 <field name="x_provider" string="Provider" optional="hide"/>
                 <field name="x_owner_user_id" string="Owner" optional="hide"/>
-                <field name="x_incoming_sync" string="Sync" optional="hide"/>
+                <field name="x_sync_mode" string="Incoming" optional="hide"/>
                 <field name="x_last_sync_date" string="Last Synced" widget="timeago" optional="hide"/>
                 <field name="x_error_message" string="Error" optional="hide"/>
             </list>
@@ -43,7 +43,7 @@
                                    readonly="1"/>
                             <field name="x_mailbox_type" widget="radio" string="Type"/>
                             <field name="x_owner_user_id"
-                                   required="x_mailbox_type in ('personal', 'notification') or x_incoming_sync"/>
+                                   required="x_mailbox_type in ('personal', 'notification')"/>
                         </group>
                         <group>
                             <!-- Type explanations -->
@@ -75,20 +75,24 @@
                     <!-- SECTION 2: INCOMING EMAIL (not for notification) -->
                     <group string="Incoming Email" invisible="x_mailbox_type == 'notification'">
                         <group>
-                            <field name="x_incoming_sync" string="Enable Sync" widget="boolean_toggle"/>
+                            <field name="x_sync_mode" widget="radio"/>
                             <field name="x_exclude_internal" widget="boolean_toggle"
-                                   invisible="not x_incoming_sync"/>
+                                   invisible="x_sync_mode == 'none'"/>
                             <field name="x_sync_start_date"
-                                   invisible="not x_incoming_sync"/>
+                                   invisible="x_sync_mode == 'none'"/>
                             <field name="x_last_sync_date" readonly="1" widget="timeago"
-                                   invisible="not x_incoming_sync or not x_last_sync_date"/>
+                                   invisible="x_sync_mode == 'none' or not x_last_sync_date"/>
                         </group>
                         <group>
-                            <div class="text-muted" invisible="not x_incoming_sync">
+                            <div class="text-muted" invisible="x_sync_mode == 'none'">
                                 Emails are imported from oldest to newest, up to 200 per minute. You can change "Import From" to re-sync from an earlier date — duplicates are skipped automatically.
                             </div>
+                            <div class="text-muted" invisible="x_sync_mode != 'all'">
+                                Senders who are not contacts yet are created automatically,
+                                unless you hold them for review below.
+                            </div>
                             <div class="alert alert-warning mt-2" role="alert"
-                                 invisible="not x_incoming_sync or x_exclude_internal">
+                                 invisible="x_sync_mode == 'none' or x_exclude_internal">
                                 <i class="fa fa-exclamation-triangle me-2" title="Warning"/>
                                 Email between colleagues is synced into Odoo for this mailbox,
                                 including confidential threads. Everyone with access to the record
@@ -98,7 +102,7 @@
                     </group>
 
                     <!-- SECTION 3: ROUTING (only when sync enabled) -->
-                    <group string="Routing" invisible="x_mailbox_type == 'notification' or not x_incoming_sync">
+                    <group string="Routing" invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
                         <group>
                             <field name="x_route_to_team" widget="boolean_toggle"/>
                             <field name="x_alias_id" string="Team"
@@ -113,24 +117,11 @@
                             </div>
                         </group>
                     </group>
-                    <!-- Hidden: AI routing not yet implemented -->
+                    <!-- The interlock that keeps AI auto-routing off. See models/ai/. -->
                     <field name="x_routing_smart" invisible="1"/>
 
-                    <!-- SECTION 4: UNKNOWN SENDERS (only when sync enabled) -->
-                    <group string="Unknown Senders" invisible="x_mailbox_type == 'notification' or not x_incoming_sync">
-                        <group>
-                            <field name="x_sync_unknown_contacts" string="Include" widget="boolean_toggle"/>
-                        </group>
-                        <group>
-                            <div class="text-muted" invisible="x_sync_unknown_contacts">
-                                Only sync emails from existing contacts.
-                            </div>
-                            <div class="text-muted" invisible="not x_sync_unknown_contacts">
-                                Auto-create new contacts for unknown senders.
-                            </div>
-                        </group>
-                    </group>
-                    <group string="Review Queue" invisible="x_mailbox_type == 'notification' or not x_incoming_sync or not x_sync_unknown_contacts">
+                    <!-- SECTION 4: REVIEW QUEUE (only when unknown senders are synced) -->
+                    <group string="Review Queue" invisible="x_mailbox_type == 'notification' or x_sync_mode != 'all'">
                         <group>
                             <field name="x_queue_unknown_contacts" string="Hold for review"
                                    widget="boolean_toggle"/>
@@ -144,7 +135,7 @@
                     </group>
 
                     <!-- SYNC BUTTON -->
-                    <group invisible="x_mailbox_type == 'notification' or not x_incoming_sync">
+                    <group invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
                         <group>
                             <button name="action_sync_now" string="Sync Now"
                                     type="object" class="btn-primary" icon="fa-refresh"/>
@@ -160,10 +151,6 @@
                     <!-- Hidden fields -->
                     <field name="state" invisible="1"/>
                     <field name="x_sync_mode" invisible="1"/>
-                    <field name="x_incoming_enabled" invisible="1"/>
-                    <field name="x_incoming_user_id" invisible="1"/>
-                    <field name="x_sync_inbox" invisible="1"/>
-                    <field name="x_sync_sent" invisible="1"/>
                     <field name="active" invisible="1"/>
                 </sheet>
             </form>

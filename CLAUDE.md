@@ -31,7 +31,7 @@ name still says Outlook; the rename to `pan_email_pro` is a separate phase.
 | File | Purpose |
 |------|---------|
 | `models/mail_provider_client.py` | Provider-agnostic client contract + registry |
-| `models/mail_mail.py` | Outgoing email override (routes via provider client) |
+| `models/mail_mail.py` | Outgoing override. `_resolve_route()` decides the sender once, and raises `RoutingError` rather than picking a different one |
 | `models/mail_message.py` | Microsoft message ID storage for threading |
 | `models/mail_compose_message.py` | Composer "Send From" dropdown + setup warning |
 | `models/mail_alias.py` | Cleaner alias display (name only, no domain) |
@@ -47,7 +47,8 @@ name still says Outlook; the rename to `pan_email_pro` is a separate phase.
 | `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
 | `models/pan_mail_internal_domains.py` | Internal domain list + the fail-closed gate on incoming sync |
 | `models/res_partner.py` | Contact block list field |
-| `controllers/main.py` | OAuth callback handlers (Microsoft + Google) |
+| `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect |
+| `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/mail_message.py` | Communication lens fields + click-through |
 | `models/pan_mail_item.py` | Triage queue for mail that lands nowhere |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
@@ -98,7 +99,7 @@ genuinely diverge.
 1. Add the code to `PROVIDER_CLIENTS` and `PROVIDER_SELECTION` in `mail_provider_client.py`
 2. Create `models/providers/<vendor>/<name>_client.py` with
    `_inherit = 'mail.provider.client'` implementing the contract
-3. Declare its capabilities (`supports_shared_mailbox`, `supported_mailbox_types`)
+3. Declare its capabilities (`supports_shared_mailbox`, `supported_mailbox_types`, `uses_oauth`)
 4. Add an ACL row in `security/ir.model.access.csv`
 5. If it does not use OAuth, override `account_is_connected()` — the default
    answer is "has a refresh token", which no password provider ever will
@@ -240,6 +241,35 @@ This replaces reading `mail.alias.domain`, where an empty list meant "nothing is
 internal" — a fresh install therefore synced every internal email into Odoo,
 including confidential ones, and nothing said so. Alias domains now only feed
 `suggest_domains()`.
+
+## No fallbacks between senders
+
+`mail.mail._resolve_route()` gives exactly one answer, in this order: an internal
+notification goes to the notification mailbox; a composer choice wins next; then
+the author's default mailbox; and mail with no author at all (an auto-reply, an
+activity notification triggered by incoming mail) goes to the notification
+mailbox because there is nobody to send as.
+
+If the chosen mailbox has no usable credentials, the mail fails with the sentence
+that says what to fix. It is **not** rerouted. Rerouting looks kinder and is
+worse: the customer gets mail from the wrong address and nobody ever learns the
+sender's mailbox is broken.
+
+The failure is written onto the mail, and every mail in the batch is attempted
+before anything is raised — so one misconfigured sender no longer stops the mails
+queued behind it. Before 19.0.5.0.0 `send()` raised from inside the loop and did.
+
+It does still raise, deviating from Odoo's `raise_exception` flag, which the
+interactive paths (chatter, composer) never set: a send that silently does
+nothing is the exact failure this module exists to prevent.
+
+Being *told* and being *recorded* cannot both happen in one transaction — the
+raise unwinds the request and takes the `failure_reason` write with it. The split
+is deliberate and worth knowing, because it looks like a bug from either side:
+interactively you get the error and the mail stays `outgoing`; the next
+mail-queue run hits the same failure and records it for good, because the cron
+passes `auto_commit` and each mail is committed as it goes. The mail is queued or
+it is marked, never neither.
 
 ## Graceful degradation
 
@@ -455,14 +485,18 @@ Check status later with `gh pr checks` or `gh run watch`.
 ## Common Tasks
 
 ### Adding a new Graph API method
-1. Add method to `microsoft_graph_client.py`
-2. Use `get_valid_token(user)` for authentication
+1. Add it to `models/providers/microsoft/graph_client.py` — nowhere else may
+   build a Graph URL or read a Graph payload
+2. Use `get_valid_token(account)` for authentication
 3. Handle errors with `_extract_graph_error()`
+4. Return the normalized shape from `mail_provider_client.py`, not Graph's
 
 ### Debugging email issues
 1. Check Odoo logs for `[Graph API]` and `[Incoming Mail]` tags
-2. Verify OAuth: user should have `x_microsoft_oauth_connected = True`
+2. Verify credentials: `user.x_pan_mail_connected`, or ask the mailbox itself
+   with `mailbox._has_working_credentials()`
 3. Check mailbox state: should be 'active'
+4. A mail that did not go out carries its own reason in `failure_reason`
 
 ## Key Design Decisions
 
@@ -616,7 +650,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 ### Provider neutrality
 - **A provider-aware *dropdown* is not a provider-aware *feature*.** Phase 3 made the mailbox owner domain accept Google-connected users, which made Gmail look supported. Every behavioural check underneath still asked `x_microsoft_oauth_connected`, so a Gmail mailbox listed a valid owner and then reported `error`, never synced, and fell back to the notification mailbox on send. Grep the *checks*, not just the fields.
 - **"Is this user connected" is the wrong question. "Does this mailbox have usable credentials" is the right one.** The first hardcodes a provider; the second is `mailbox._has_working_credentials()`, which asks the client. It is also the only phrasing that works for a Gmail shared mailbox, which has credentials but no owner at all.
-- **A stored compute cannot depend on a searched relation.** `x_incoming_enabled` tracks `x_owner_user_id.x_pan_mail_account_ids.connected`, but a service account is found by address, so authorizing one later does not retrigger it. The read side documents the limit; the write side closes it — `pan.mail.account.create/write` recomputes the mailboxes holding that address.
+- **A stored compute cannot depend on a searched relation.** `x_incoming_enabled` tracked `x_owner_user_id.x_pan_mail_account_ids.connected`, but a service account is found by address, so authorizing one later never retriggered it. It was patched from the write side (`pan.mail.account.create/write` recomputing the mailboxes holding that address) and then deleted in 19.0.5.0.0: the cron asks `_has_working_credentials()` at the moment it needs the answer, which is always right and needs no machinery at all. **A cache whose invalidation you have to hand-write is usually not worth having.**
 - **A cron filtered on `x_owner_user_id != False` silently excluded every shared mailbox that has no owner** — which on Gmail and IMAP is all of them. Filter on usable credentials (`_has_working_credentials()`), which is the question the filter meant to ask.
 
 ### CI
@@ -661,7 +695,20 @@ provider. Pantalytics never proxies it, which is what keeps the manifest's
 data-disclosure statement true and keeps Pantalytics out of every customer's
 processor chain. Only an envelope is sent — never a body or an attachment.
 
+### Simplification (19.0.5.0.0)
+- **Five fields computed from one field are five things that can disagree with it.** The mailbox had `x_sync_mode` plus `x_incoming_sync`, `x_sync_unknown_contacts`, `x_sync_inbox`, `x_sync_sent` and `x_incoming_enabled` — one three-way choice wearing six hats, each with its own compute, inverse and depends. The mode alone says everything; the rest was UI convenience that outlived the UI it was built for.
+- **Check what mainline did with a field before deleting it as dead.** `x_routing_smart` and `x_queue_unknown_contacts` both looked like the same thing: a boolean whose only behaviour was a `ValidationError` refusing to let it be switched on. Both were deleted on the first pass. In between, 19.0.4.0.0 gave `x_queue_unknown_contacts` a triage queue to feed and named `x_routing_smart` as the explicit interlock the AI seam may not open yet. A field with no behaviour today is not automatically a field with no decision behind it — read the code that documents it, not just the code that uses it.
+- **A compatibility shim outlives its callers silently.** The five `res.users.x_microsoft_*` token proxies existed so pre-account callers kept working. Every one of those callers had since been rewritten; nothing but tests read them. Nothing fails when a shim goes stale, so nothing tells you — grep the callers before assuming a shim is still load-bearing.
+- **Two controllers doing the same thing drift in ways one cannot.** The Microsoft and Google OAuth callbacks were 90 near-identical lines each. Only Microsoft logged the connected identity; only Google preserved a missing refresh token. Neither difference was a decision.
+- **Reconstructing "why did this fail" after the fact is a second implementation of the decision.** `_get_missing_mailbox_error()` re-walked the whole routing tree to explain a failure the router had already diagnosed, and the two could disagree. Resolve once, raise with the reason.
+- **Raising and recording are mutually exclusive in one transaction.** `mail.mail.send()` wanted to both tell the sender and leave the reason on the mail; the raise rolls the write back. Odoo's `assertRaises` makes this visible in tests (it opens a savepoint), production makes it visible as a mail that is still `outgoing` after an error dialog. Pick which one the caller gets, and say where the other one comes from — here, the cron's `auto_commit` pass a minute later.
+- **A knob nobody should turn is a way to break the product from the settings page.** The Microsoft auth/token URLs were config parameters. They are the same for every tenant, and a wrong value is unrecoverable from the UI. Constants.
+
 ## Documentation
 
 - [README.md](README.md) - Setup instructions for users
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Technical details for developers
+- [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) - UI conventions (one primary action,
+  progressive disclosure, smart defaults). Read it before adding a field to a
+  settings or mailbox screen.
+- [TESTPLAN.md](TESTPLAN.md) - Manual test plan for what CI cannot reach

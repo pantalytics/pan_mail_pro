@@ -57,7 +57,7 @@ Show only what's relevant now. Hide complexity until the user asks for it.
 
 | Avoid | Use |
 |-------|-----|
-| `x_microsoft_oauth_connected` | "Connected to Microsoft" |
+| `x_pan_mail_connected` | "Mailbox connected" |
 | `sync_interval_minutes` | "Sync every..." |
 | `is_active` | "Active" |
 | `Error: Invalid token` | "Session expired. Please sign in again." |

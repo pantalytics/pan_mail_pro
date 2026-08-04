@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!--
+        The record ids below deliberately still say "microsoft". Renaming a view
+        record does not rename it in the database: the old record survives the
+        upgrade with its old arch, and Odoo validates the whole res.users
+        inheritance tree at once - so a rename ships an arch referencing fields
+        this release deletes, and the upgrade fails in a way nothing about the
+        rename hints at. The ids are internal; the labels are what users read.
+    -->
+
     <!-- Extend User List View for admin overview -->
     <record id="view_users_list_inherit_microsoft" model="ir.ui.view">
         <field name="name">res.users.list.inherit.microsoft</field>
@@ -14,13 +23,7 @@
                 </header>
             </xpath>
             <xpath expr="//field[@name='login']" position="after">
-                <field name="x_microsoft_oauth_connected" string="MS Connected" optional="hide"/>
-                <field name="x_microsoft_health_status" string="MS Health" widget="badge"
-                       decoration-success="x_microsoft_health_status == 'healthy'"
-                       decoration-warning="x_microsoft_health_status == 'warning'"
-                       decoration-danger="x_microsoft_health_status == 'error'"
-                       decoration-muted="x_microsoft_health_status == 'not_configured'"
-                       optional="hide"/>
+                <field name="x_pan_mail_connected" string="Mailbox Connected" optional="hide"/>
             </xpath>
         </field>
     </record>
@@ -34,26 +37,30 @@
         <field name="arch" type="xml">
             <xpath expr="//page[@name='preferences']" position="after">
                 <page string="Mail Pro" name="outlook_pro">
-                    <field name="x_microsoft_oauth_connected" invisible="1"/>
+                    <field name="x_pan_mail_connected" invisible="1"/>
 
-                    <!-- Not Connected -->
-                    <group invisible="x_microsoft_oauth_connected">
+                    <group invisible="x_pan_mail_connected">
                         <div colspan="2">
-                            <div class="text-muted mb-3">Send emails via your Microsoft 365 account</div>
+                            <div class="text-muted mb-3">Sign in so Odoo can send and read mail on your behalf</div>
                             <button type="object"
-                                    name="action_connect_microsoft"
-                                    string="Connect Microsoft 365"
-                                    class="btn-primary" icon="fa-windows"/>
+                                    name="action_connect_mailbox"
+                                    string="Connect Mailbox"
+                                    class="btn-primary" icon="fa-sign-in"/>
                         </div>
                     </group>
 
-                    <!-- Connected -->
-                    <group invisible="not x_microsoft_oauth_connected">
-                        <field name="x_microsoft_oauth_connected" widget="boolean_toggle" string="Connected"/>
+                    <group invisible="not x_pan_mail_connected">
                         <field name="x_microsoft_default_mailbox_id"
                                string="Send from"
                                domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
+                        <div colspan="2">
+                            <button type="object"
+                                    name="action_disconnect_mailbox"
+                                    string="Disconnect"
+                                    class="oe_link text-danger"
+                                    confirm="Odoo will stop sending and receiving mail for this account until you connect it again."/>
+                        </div>
                     </group>
                 </page>
             </xpath>
@@ -69,26 +76,30 @@
         <field name="arch" type="xml">
             <xpath expr="//page[@name='page_security']" position="after">
                 <page string="Mail Pro" name="outlook_pro">
-                    <field name="x_microsoft_oauth_connected" invisible="1"/>
+                    <field name="x_pan_mail_connected" invisible="1"/>
 
-                    <!-- Not Connected -->
-                    <group invisible="x_microsoft_oauth_connected">
+                    <group invisible="x_pan_mail_connected">
                         <div colspan="2">
-                            <div class="text-muted mb-3">Send emails via your Microsoft 365 account</div>
+                            <div class="text-muted mb-3">Sign in so Odoo can send and read mail on your behalf</div>
                             <button type="object"
-                                    name="action_connect_microsoft"
-                                    string="Connect Microsoft 365"
-                                    class="btn-primary" icon="fa-windows"/>
+                                    name="action_connect_mailbox"
+                                    string="Connect Mailbox"
+                                    class="btn-primary" icon="fa-sign-in"/>
                         </div>
                     </group>
 
-                    <!-- Connected -->
-                    <group invisible="not x_microsoft_oauth_connected">
-                        <field name="x_microsoft_oauth_connected" widget="boolean_toggle" string="Connected"/>
+                    <group invisible="not x_pan_mail_connected">
                         <field name="x_microsoft_default_mailbox_id"
                                string="Send from"
                                domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
+                        <div colspan="2">
+                            <button type="object"
+                                    name="action_disconnect_mailbox"
+                                    string="Disconnect"
+                                    class="oe_link text-danger"
+                                    confirm="Odoo will stop sending and receiving mail for this account until you connect it again."/>
+                        </div>
                     </group>
                 </page>
             </xpath>
