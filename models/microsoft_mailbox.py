@@ -311,24 +311,49 @@ class MicrosoftMailbox(models.Model):
             # All checks passed
             record.x_health_status = 'healthy'
 
-    def _no_credentials_error(self):
-        """Why this mailbox has no usable credentials, in the provider's terms."""
+    def _no_credentials_error(self, sender=None):
+        """Why this mailbox has no usable credentials, in the provider's terms.
+
+        The single explanation for every "cannot send / cannot read" in the
+        module. `sender` is the user whose token was expected, where the caller
+        knows — on a Microsoft shared mailbox that is the author rather than the
+        owner, and naming the wrong person sends an admin looking in the wrong
+        place.
+        """
         self.ensure_one()
-        provider = self._get_client().provider_label()
-        if self.x_mailbox_type == 'shared' and not self._get_client().supports_shared_mailbox:
-            # Gmail and IMAP: a shared address is its own account, so there is
-            # nothing an owner could connect on its behalf.
+        client = self._get_client()
+        provider = client.provider_label()
+
+        if self.x_mailbox_type == 'shared':
+            if not client.supports_shared_mailbox:
+                # Gmail and IMAP: a shared address is its own account, so there
+                # is nothing an owner could connect on its behalf.
+                return _(
+                    'Shared mailbox "%(email)s" has no credentials of its own. On '
+                    '%(provider)s a shared address is its own account, not a '
+                    'delegation of someone else\'s.',
+                    email=self.email, provider=provider,
+                )
+            who = sender or self.x_owner_user_id
+            if not who:
+                return _(
+                    'Nobody is connected who could send from shared mailbox "%s".'
+                ) % self.email
             return _(
-                'Shared mailbox "%(email)s" has no connected %(provider)s account. '
-                'Give %(email)s its own credentials — on %(provider)s a shared '
-                'address is its own account, not a delegation of someone else\'s.',
-                email=self.email, provider=provider,
+                '"%(who)s" has no connected %(provider)s account, so nothing can '
+                'send from shared mailbox "%(email)s". Connect it under My Profile '
+                '→ Mail Pro, with SendAs rights on that address.',
+                who=who.name, provider=provider, email=self.email,
             )
+
         if not self.x_owner_user_id:
-            return _('Please select an Owner for mailbox "%s" first.') % self.email
+            return _(
+                'Mailbox "%s" has no Owner. Select the user whose account it '
+                'sends and receives with.'
+            ) % self.email
         return _(
             'Owner "%(owner)s" has no connected %(provider)s account. '
-            'The user must connect it first.',
+            'They must connect it first.',
             owner=self.x_owner_user_id.name, provider=provider,
         )
 
