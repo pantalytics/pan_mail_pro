@@ -13,6 +13,14 @@ from ...mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
 _logger = logging.getLogger(__name__)
 
+# Microsoft's OAuth endpoints. The same two URLs for every tenant on the public
+# cloud, which is why they are constants and not settings: they were config
+# parameters on the settings page, where the only thing an admin could do with
+# them was mistype one - and a mistyped endpoint cannot be fixed from a UI that
+# needs the endpoint to log you in.
+AUTH_URL = 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize'
+TOKEN_URL = 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token'
+
 # Rate limiting configuration
 MAX_RETRIES = 3
 INITIAL_BACKOFF_SECONDS = 2
@@ -114,8 +122,6 @@ class MicrosoftGraphClient(models.AbstractModel):
             'client_id': ICP.get_param('x_pan_outlook_pro.client_id'),
             'client_secret': client_secret,
             'tenant_id': ICP.get_param('x_pan_outlook_pro.tenant_id'),
-            'token_url': ICP.get_param('x_pan_outlook_pro.token_url',
-                                       'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token'),
         }
 
     @api.model
@@ -136,7 +142,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         if not tenant_id or not client_id:
             raise UserError(_('Please configure Microsoft Client ID and Tenant ID in Settings.'))
 
-        auth_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
+        auth_url = AUTH_URL.format(tenant=tenant_id)
 
         # Required scopes for sending and reading mail from shared mailboxes
         # Mail.ReadWrite is needed for Draft→Send flow (creating drafts requires write access)
@@ -169,7 +175,7 @@ class MicrosoftGraphClient(models.AbstractModel):
     def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
         """Exchange authorization code for access and refresh tokens"""
         config = self._get_config_params()
-        token_url = config['token_url'].format(tenant=config['tenant_id'])
+        token_url = TOKEN_URL.format(tenant=config['tenant_id'])
 
         data = {
             'client_id': config['client_id'],
@@ -214,7 +220,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise UserError(_('No refresh token available. Please reconnect your Microsoft account.'))
 
         config = self._get_config_params()
-        token_url = config['token_url'].format(tenant=config['tenant_id'])
+        token_url = TOKEN_URL.format(tenant=config['tenant_id'])
 
         data = {
             'client_id': config['client_id'],

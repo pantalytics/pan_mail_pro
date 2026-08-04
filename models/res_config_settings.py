@@ -1,38 +1,56 @@
 # -*- coding: utf-8 -*-
+"""The setup page.
+
+Six steps in a fixed order, each of which reports whether the *next* one can
+succeed — not whether somebody filled in a field. A notification mailbox whose
+owner's token expired is not a done step.
+
+The provider is asked first, because the steps genuinely differ per provider:
+Azure wants a tenant, Google does not, and IMAP has no global credential at all.
+Everything from step 4 on is provider-independent and never asks again.
+"""
 import logging
-import requests
+
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
+
 from . import encryption_utils
 from . import mail_mail
 from . import pan_mail_internal_domains as internal_domains
-from .mail_provider_client import (  # noqa: F401
+from .microsoft_mailbox import SYNCING_MODES
+from .ai.pan_mail_ai import AI_SELECTION
+from .mail_provider_client import (
     PARAM_SETUP_PROVIDER,
     PROVIDER_SELECTION,
     get_provider_client,
     oauth_redirect_uri,
 )
-from .ai.pan_mail_ai import AI_SELECTION
 
 _logger = logging.getLogger(__name__)
+
+# Where each provider's application credentials live. The client id is a plain
+# config parameter; the secret is Fernet-encrypted under its own key.
+PROVIDER_CREDENTIALS = {
+    'outlook': {
+        'client_id': 'x_pan_outlook_pro.client_id',
+        'secret': 'x_pan_outlook_pro.client_secret_encrypted',
+    },
+    'gmail': {
+        'client_id': 'x_pan_outlook_pro.google_client_id',
+        'secret': 'x_pan_outlook_pro.google_client_secret_encrypted',
+    },
+}
+
+# Shown instead of a secret that is already stored. Writing it back is a no-op,
+# which is what lets the form round-trip without the admin retyping it.
+SECRET_PLACEHOLDER = '********'
 
 
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
     # -------------------------------------------------------------------------
-    # Provider selection — step one of setup
-    #
-    # Which provider an admin is setting up decides every step shown below it:
-    # Azure asks for a tenant, Google does not, and showing both credential
-    # forms at once is how you get a page that looks broken in either direction.
-    # The choices come from the registry, so a newly registered provider shows
-    # up here without touching this file.
-    #
-    # Selecting a provider is a view choice, not an exclusive commitment. Each
-    # provider stores its own credentials under its own config parameters, so
-    # switching back and forth loses nothing and one database can serve
-    # mailboxes on both providers at the same time.
+    # Step 1 — which provider
     # -------------------------------------------------------------------------
     x_mail_provider = fields.Selection(
         PROVIDER_SELECTION,
@@ -41,57 +59,52 @@ class ResConfigSettings(models.TransientModel):
         help='Where your email is hosted. Determines which setup steps are shown.',
     )
 
-    # Provider-neutral state of the selected provider, so the steps below the
-    # picker do not each have to know which provider they are looking at.
-    x_provider_credentials_set = fields.Boolean(
-        compute='_compute_provider_state',
-        string='Provider Credentials Set',
+    # Provider-neutral state of that choice, so no step below has to know which
+    # provider it is looking at.
+    x_provider_credentials_set = fields.Boolean(compute='_compute_provider_state')
+    x_provider_connected = fields.Boolean(compute='_compute_provider_state')
+    x_provider_uses_oauth = fields.Boolean(compute='_compute_provider_state')
+
+    # -------------------------------------------------------------------------
+    # Step 2 — application credentials, one form per provider
+    # -------------------------------------------------------------------------
+    x_microsoft_client_id = fields.Char(
+        string='Microsoft Client ID',
+        help='Application (client) ID from your Azure app registration',
+        config_parameter='x_pan_outlook_pro.client_id',
+    )
+    x_microsoft_client_secret = fields.Char(
+        string='Microsoft Client Secret',
+        compute='_compute_client_secrets',
+        inverse='_inverse_microsoft_secret',
+    )
+    x_microsoft_tenant_id = fields.Char(
+        string='Tenant ID',
+        help='Directory (tenant) ID from your Azure app registration',
+        config_parameter='x_pan_outlook_pro.tenant_id',
+    )
+    x_microsoft_redirect_uri = fields.Char(
+        string='Redirect URI', compute='_compute_redirect_uris',
+        help='Paste this into Azure → Authentication → Redirect URIs',
     )
 
-    x_provider_connected = fields.Boolean(
-        compute='_compute_provider_state',
-        string='Provider Account Connected',
+    x_google_client_id = fields.Char(
+        string='Google Client ID',
+        help='OAuth client ID from the Google Cloud Console',
+        config_parameter='x_pan_outlook_pro.google_client_id',
     )
-
-    # Module version
-    x_microsoft_module_version = fields.Char(
-        compute='_compute_module_version',
-        string='Module Version'
+    x_google_client_secret = fields.Char(
+        string='Google Client Secret',
+        compute='_compute_client_secrets',
+        inverse='_inverse_google_secret',
     )
-
-    # Configuration status
-    x_microsoft_config_status = fields.Selection([
-        ('not_configured', 'Not Configured'),
-        ('configured', 'Configured'),
-        ('verified', 'Verified'),
-        ('error', 'Error'),
-    ], compute='_compute_config_status', string='Configuration Status')
-
-    x_microsoft_config_status_message = fields.Char(
-        compute='_compute_config_status',
-        string='Status Message'
-    )
-
-    # Step status fields for UI
-    x_microsoft_mailbox_count = fields.Integer(
-        compute='_compute_mailbox_count',
-        string='Mailbox Count'
-    )
-
-    x_microsoft_notification_configured = fields.Boolean(
-        compute='_compute_notification_configured',
-        string='Notification Configured'
-    )
-
-    # Internal domain detection uses Odoo's standard mail.alias.domain
-    x_microsoft_alias_domains = fields.Char(
-        string='Alias Domains',
-        compute='_compute_alias_domains',
-        help='Internal domains from Odoo mail.alias.domain configuration',
+    x_google_redirect_uri = fields.Char(
+        string='Google Redirect URI', compute='_compute_redirect_uris',
+        help='Paste this into Google Cloud → Credentials → Authorized redirect URIs',
     )
 
     # -------------------------------------------------------------------------
-    # Internal domains
+    # Step 4 — internal domains
     #
     # The one setting whose absence leaks data, so it is a gate rather than a
     # preference: incoming sync cannot be switched on until it is answered, one
@@ -103,7 +116,6 @@ class ResConfigSettings(models.TransientModel):
         help='Your own email domains, comma separated (e.g. company.com, company.be). '
              'Email from these domains is not synced into Odoo.',
     )
-
     x_sync_internal_email = fields.Boolean(
         string='Sync Internal Email',
         config_parameter=internal_domains.PARAM_SYNC_INTERNAL,
@@ -111,84 +123,19 @@ class ResConfigSettings(models.TransientModel):
              'colleagues into Odoo as well. Everyone with access to a record '
              'can then read that correspondence.',
     )
-
-    x_internal_domains_configured = fields.Boolean(
-        compute='_compute_internal_domains_status',
-        string='Internal Domains Configured',
-    )
-    x_internal_domains_suggested = fields.Char(
-        compute='_compute_internal_domains_status',
-        string='Suggested Domains',
-    )
-    x_internal_domains_uncovered = fields.Char(
-        compute='_compute_internal_domains_status',
-        string='Mailbox Domains Not Covered',
-    )
-    x_internal_sync_mailbox_count = fields.Integer(
-        compute='_compute_internal_domains_status',
-        string='Mailboxes Syncing Internal Email',
-    )
-
-    # Microsoft OAuth Configuration
-    x_microsoft_client_id = fields.Char(
-        string='Microsoft Client ID',
-        help='Application (client) ID from Azure App Registration',
-        config_parameter='x_pan_outlook_pro.client_id'
-    )
-
-    # Encrypted client secret (hidden, for internal storage only)
-    x_microsoft_client_secret_encrypted = fields.Char(
-        string='Client Secret (Encrypted)',
-        help='Encrypted client secret - stored securely'
-    )
-
-    # Computed field for backwards compatibility
-    x_microsoft_client_secret = fields.Char(
-        string='Client Secret',
-        help='Client secret from Azure App Registration',
-        compute='_compute_decrypted_client_secret',
-        inverse='_inverse_client_secret'
-    )
-
-    x_microsoft_tenant_id = fields.Char(
-        string='Tenant ID',
-        help='Directory (tenant) ID from Azure App Registration',
-        config_parameter='x_pan_outlook_pro.tenant_id'
-    )
-
-    # Computed redirect URI for display in setup instructions
-    x_microsoft_redirect_uri = fields.Char(
-        string='Redirect URI',
-        compute='_compute_redirect_uri',
-        help='The redirect URI to configure in Azure App Registration'
-    )
+    x_internal_domains_suggested = fields.Char(compute='_compute_internal_domains_status')
+    x_internal_domains_uncovered = fields.Char(compute='_compute_internal_domains_status')
+    x_internal_sync_mailbox_count = fields.Integer(compute='_compute_internal_domains_status')
 
     # -------------------------------------------------------------------------
-    # Google OAuth Configuration
-    #
-    # One credential set per provider, same home as Microsoft's (config params
-    # under x_pan_outlook_pro.*). The secret is Fernet-encrypted like Microsoft's.
+    # Step 5 — the notification mailbox
     # -------------------------------------------------------------------------
-    x_google_client_id = fields.Char(
-        string='Google Client ID',
-        help='OAuth client ID from the Google Cloud Console (Desktop or Web app)',
-        config_parameter='x_pan_outlook_pro.google_client_id'
+    x_notification_mailbox_email = fields.Char(
+        string='Notification Address',
+        default=lambda self: self._default_notification_mailbox_email(),
+        help='Address system emails are sent from, e.g. notifications@company.com',
     )
 
-    x_google_client_secret = fields.Char(
-        string='Google Client Secret',
-        help='OAuth client secret from the Google Cloud Console',
-        compute='_compute_decrypted_google_secret',
-        inverse='_inverse_google_secret'
-    )
-
-    x_google_redirect_uri = fields.Char(
-        string='Google Redirect URI',
-        compute='_compute_google_redirect_uri',
-        help='The redirect URI to configure on the Google OAuth client'
-    )
-
-    # OAuth URLs (auto-computed but can be overridden)
     # -------------------------------------------------------------------------
     # AI triage
     #
@@ -212,94 +159,8 @@ class ResConfigSettings(models.TransientModel):
              'processing are between you and them.',
     )
 
-    x_microsoft_auth_url = fields.Char(
-        string='Authorization URL',
-        default='https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize',
-        config_parameter='x_pan_outlook_pro.auth_url'
-    )
-    x_microsoft_token_url = fields.Char(
-        string='Token URL',
-        default='https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token',
-        config_parameter='x_pan_outlook_pro.token_url'
-    )
-
-    @api.depends(
-        'x_mail_provider',
-        'x_microsoft_client_id', 'x_microsoft_client_secret', 'x_microsoft_tenant_id',
-        'x_google_client_id', 'x_google_client_secret',
-    )
-    def _compute_provider_state(self):
-        """Answer "is the selected provider set up, and am I connected to it".
-
-        Reads the record's own fields rather than the config parameters so the
-        steps below the picker react while the admin is still typing, before
-        anything is saved.
-        """
-        Account = self.env['pan.mail.account']
-        for record in self:
-            if record.x_mail_provider == 'outlook':
-                record.x_provider_credentials_set = bool(
-                    record.x_microsoft_client_id
-                    and record.x_microsoft_tenant_id
-                    and record.x_microsoft_client_secret
-                )
-                record.x_provider_connected = Account._for_user(
-                    self.env.user, 'outlook').connected
-            elif record.x_mail_provider == 'gmail':
-                record.x_provider_credentials_set = bool(
-                    record.x_google_client_id and record.x_google_client_secret
-                )
-                record.x_provider_connected = Account._for_user(
-                    self.env.user, 'gmail').connected
-            elif record.x_mail_provider == 'imap':
-                # IMAP has no global credential and no consent screen: a login
-                # belongs to one address. So "credentials set" means at least
-                # one account exists, and "connected" means at least one of them
-                # is complete. Both are read from the accounts rather than from
-                # fields on this form, which is why they cannot react while the
-                # admin types - there is nothing here to type.
-                accounts = self.env['pan.mail.account'].sudo().with_context(
-                    active_test=False).search([('provider', '=', 'imap')])
-                record.x_provider_credentials_set = bool(accounts)
-                record.x_provider_connected = any(accounts.mapped('connected'))
-            else:
-                record.x_provider_credentials_set = False
-                record.x_provider_connected = False
-
-    def get_values(self):
-        """Pre-select whichever provider already has credentials.
-
-        A database configured before this picker existed has no stored choice.
-        Landing it on an empty dropdown would read as "nothing is set up here"
-        on an Azure tenant that has been sending mail for months.
-        """
-        res = super().get_values()
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-        # get_values() runs *after* default_get() has read the config
-        # parameters, so anything set here overrides a stored choice. Only fill
-        # the gap when there is genuinely nothing stored.
-        if not IrConfigParameter.get_param(PARAM_SETUP_PROVIDER):
-            if IrConfigParameter.get_param('x_pan_outlook_pro.client_id'):
-                res['x_mail_provider'] = 'outlook'
-            elif IrConfigParameter.get_param('x_pan_outlook_pro.google_client_id'):
-                res['x_mail_provider'] = 'gmail'
-        return res
-
     # -------------------------------------------------------------------------
-    # Onboarding
-    #
-    # Setup has a fixed order, and every step used to be discoverable only by
-    # knowing it existed. These fields drive a checklist that states what is
-    # done, what is next, and what is blocking — the ordering matters most
-    # around step 3: connecting your own account before creating notifications@
-    # is what turns that mailbox into a single button instead of a form.
-    #
-    # Which provider is being set up is NOT asked again here. `x_mail_provider`
-    # above already answers it, reads its choices from the provider registry
-    # (so a new provider appears without touching this file), and exposes
-    # `x_provider_credentials_set` / `x_provider_connected` — the two flags
-    # steps 2 and 3 need. A second provider picker would have been a duplicate
-    # that silently lagged the registry by one provider.
+    # Checklist state
     # -------------------------------------------------------------------------
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
@@ -312,144 +173,155 @@ class ResConfigSettings(models.TransientModel):
         string='Emails Waiting for Setup',
     )
 
-    x_notification_mailbox_email = fields.Char(
-        string='Notification Address',
-        default=lambda self: self._default_notification_mailbox_email(),
-        help='Address system emails are sent from, e.g. notifications@company.com',
-    )
+    # -------------------------------------------------------------------------
+    # Provider state
+    # -------------------------------------------------------------------------
 
-    def _default_notification_mailbox_email(self):
-        """Pre-fill notifications@<your domain> so step 5 is one click."""
-        Domains = self.env['pan.mail.internal.domains']
-        domains = Domains.get_domains() or Domains.suggest_domains()
-        return f'notifications@{domains[0]}' if domains else False
+    @api.depends('x_mail_provider',
+                 'x_microsoft_client_id', 'x_microsoft_client_secret', 'x_microsoft_tenant_id',
+                 'x_google_client_id', 'x_google_client_secret')
+    def _compute_provider_state(self):
+        """Is the selected provider set up, and am I connected to it?
 
-
-    def _compute_module_version(self):
-        """Read installed module version from ir.module.module"""
-        module = self.env['ir.module.module'].sudo().search([
-            ('name', '=', 'pan_mail_pro')
-        ], limit=1)
-        version = module.installed_version or ''
+        Reads the record's own fields rather than the config parameters, so the
+        steps below the picker react while the admin is still typing.
+        """
         for record in self:
-            record.x_microsoft_module_version = version
+            provider = record.x_mail_provider
+            record.x_provider_uses_oauth = bool(
+                provider and get_provider_client(self.env, provider).uses_oauth)
 
-    def _compute_redirect_uri(self):
-        """The URL to paste into the Azure app registration."""
-        uri = oauth_redirect_uri(self.env, 'outlook')
+            if provider == 'outlook':
+                record.x_provider_credentials_set = bool(
+                    record.x_microsoft_client_id
+                    and record.x_microsoft_tenant_id
+                    and record.x_microsoft_client_secret
+                )
+            elif provider == 'gmail':
+                record.x_provider_credentials_set = bool(
+                    record.x_google_client_id and record.x_google_client_secret
+                )
+            elif provider == 'imap':
+                # No global credential and no consent screen: an IMAP login
+                # belongs to one address, so "set up" means the accounts exist.
+                record.x_provider_credentials_set = bool(record._provider_accounts())
+            else:
+                record.x_provider_credentials_set = False
+
+            record.x_provider_connected = record._provider_is_connected()
+
+    def _provider_accounts(self):
+        """Every account on the selected provider."""
+        self.ensure_one()
+        return self.env['pan.mail.account'].sudo().with_context(
+            active_test=False).search([('provider', '=', self.x_mail_provider)])
+
+    def _provider_is_connected(self):
+        """Can anybody actually reach the selected provider yet?
+
+        For OAuth providers that means the admin doing the setup; for IMAP it
+        means at least one account has complete credentials, because there is
+        nobody to send to a consent screen.
+        """
+        self.ensure_one()
+        if not self.x_mail_provider:
+            return False
+        if self.x_provider_uses_oauth:
+            return bool(self.env['pan.mail.account']._for_user(
+                self.env.user, self.x_mail_provider).connected)
+        return any(self._provider_accounts().mapped('connected'))
+
+    def get_values(self):
+        """Pre-select whichever provider already has credentials.
+
+        A database configured before this picker existed has no stored choice.
+        Landing it on an empty dropdown would read as "nothing is set up here"
+        on an Azure tenant that has been sending mail for months.
+
+        get_values() runs *after* default_get() has read the config parameters,
+        so anything set here overrides a stored choice — only fill the gap when
+        there is genuinely nothing stored.
+        """
+        res = super().get_values()
+        ICP = self.env['ir.config_parameter'].sudo()
+        if not ICP.get_param(PARAM_SETUP_PROVIDER):
+            for provider, params in PROVIDER_CREDENTIALS.items():
+                if ICP.get_param(params['client_id']):
+                    res['x_mail_provider'] = provider
+                    break
+        return res
+
+    # -------------------------------------------------------------------------
+    # Application credentials
+    # -------------------------------------------------------------------------
+
+    def _compute_redirect_uris(self):
         for record in self:
-            record.x_microsoft_redirect_uri = uri
+            record.x_microsoft_redirect_uri = oauth_redirect_uri(self.env, 'outlook')
+            record.x_google_redirect_uri = oauth_redirect_uri(self.env, 'gmail')
 
-    def _compute_alias_domains(self):
-        """Get internal domains from Odoo's standard mail.alias.domain."""
-        alias_domains = self.env['mail.alias.domain'].sudo().search([])
-        domain_names = ', '.join(alias_domains.mapped('name')) if alias_domains else ''
+    def _compute_client_secrets(self):
+        """Show a placeholder for a stored secret, never the secret itself."""
+        ICP = self.env['ir.config_parameter'].sudo()
         for record in self:
-            record.x_microsoft_alias_domains = domain_names
+            for provider, field in (('outlook', 'x_microsoft_client_secret'),
+                                    ('gmail', 'x_google_client_secret')):
+                stored = ICP.get_param(PROVIDER_CREDENTIALS[provider]['secret'])
+                record[field] = SECRET_PLACEHOLDER if stored else False
 
-    def _compute_decrypted_client_secret(self):
-        """Show masked value when encrypted secret exists"""
+    def _inverse_microsoft_secret(self):
         for record in self:
-            IrConfigParameter = self.env['ir.config_parameter'].sudo()
-            encrypted_secret = IrConfigParameter.get_param(
-                'x_pan_outlook_pro.client_secret_encrypted'
-            )
-            # Show masked value if encrypted secret exists, otherwise empty
-            record.x_microsoft_client_secret = '********' if encrypted_secret else False
-
-    def _inverse_client_secret(self):
-        """Encrypt client secret when writing"""
-        for record in self:
-            # Skip if the value is the masked placeholder (user didn't change it)
-            if record.x_microsoft_client_secret == '********':
-                continue
-
-            IrConfigParameter = self.env['ir.config_parameter'].sudo()
-            encrypted_secret = encryption_utils.encrypt_value(
-                self.env,
-                record.x_microsoft_client_secret
-            ) if record.x_microsoft_client_secret else False
-
-            IrConfigParameter.set_param(
-                'x_pan_outlook_pro.client_secret_encrypted',
-                encrypted_secret or ''
-            )
-
-    def _compute_google_redirect_uri(self):
-        """The URL to paste into the Google OAuth client."""
-        uri = oauth_redirect_uri(self.env, 'gmail')
-        for record in self:
-            record.x_google_redirect_uri = uri
-
-    def _compute_decrypted_google_secret(self):
-        """Show a masked value when an encrypted Google secret exists."""
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-        for record in self:
-            encrypted_secret = IrConfigParameter.get_param(
-                'x_pan_outlook_pro.google_client_secret_encrypted'
-            )
-            record.x_google_client_secret = '********' if encrypted_secret else False
+            record._store_secret('outlook', record.x_microsoft_client_secret)
 
     def _inverse_google_secret(self):
-        """Encrypt the Google client secret when writing."""
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
         for record in self:
-            # Masked placeholder means the user didn't touch it.
-            if record.x_google_client_secret == '********':
-                continue
-            encrypted_secret = encryption_utils.encrypt_value(
-                self.env, record.x_google_client_secret
-            ) if record.x_google_client_secret else False
-            IrConfigParameter.set_param(
-                'x_pan_outlook_pro.google_client_secret_encrypted',
-                encrypted_secret or ''
-            )
+            record._store_secret('gmail', record.x_google_client_secret)
 
-    def _compute_config_status(self):
-        """Compute the Azure configuration status"""
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-        last_test_result = IrConfigParameter.get_param('x_pan_outlook_pro.config_test_result', '')
-        last_test_message = IrConfigParameter.get_param('x_pan_outlook_pro.config_test_message', '')
+    def _store_secret(self, provider, value):
+        """Encrypt and store one provider's client secret."""
+        if value == SECRET_PLACEHOLDER:
+            return  # untouched by the admin
+        self.env['ir.config_parameter'].sudo().set_param(
+            PROVIDER_CREDENTIALS[provider]['secret'],
+            encryption_utils.encrypt_value(self.env, value) if value else '',
+        )
 
+    # -------------------------------------------------------------------------
+    # Internal domains
+    # -------------------------------------------------------------------------
+
+    @api.depends('x_internal_domains')
+    def _compute_internal_domains_status(self):
+        Domains = self.env['pan.mail.internal.domains']
+        suggested = ', '.join(Domains.suggest_domains())
+        uncovered = ', '.join(Domains.uncovered_mailbox_domains())
+        internal_sync_count = self.env['x_microsoft.mailbox'].sudo().search_count([
+            ('x_exclude_internal', '=', False),
+            ('x_sync_mode', 'in', SYNCING_MODES),
+        ])
         for record in self:
-            client_id = record.x_microsoft_client_id
-            tenant_id = record.x_microsoft_tenant_id
-            encrypted_secret = IrConfigParameter.get_param('x_pan_outlook_pro.client_secret_encrypted')
+            # Read the form's value, not the saved parameter: the admin may be
+            # typing domains right now and the warnings should follow along.
+            configured = bool(Domains._parse(record.x_internal_domains))
+            record.x_internal_domains_suggested = suggested
+            record.x_internal_domains_uncovered = uncovered if configured else ''
+            record.x_internal_sync_mailbox_count = internal_sync_count
 
-            if not client_id or not tenant_id or not encrypted_secret:
-                record.x_microsoft_config_status = 'not_configured'
-                record.x_microsoft_config_status_message = _('Please fill in all Azure credentials')
-            elif last_test_result == 'verified':
-                record.x_microsoft_config_status = 'verified'
-                record.x_microsoft_config_status_message = last_test_message or _('Configuration verified')
-            elif last_test_result == 'error':
-                record.x_microsoft_config_status = 'error'
-                record.x_microsoft_config_status_message = last_test_message or _('Configuration error')
-            else:
-                record.x_microsoft_config_status = 'configured'
-                record.x_microsoft_config_status_message = _('Click "Test Configuration" to verify')
+    def action_apply_suggested_internal_domains(self):
+        """Fill the domain list with everything we can derive from the database.
 
-    def _compute_mailbox_count(self):
-        """Compute the number of configured mailboxes"""
-        mailbox_count = self.env['x_microsoft.mailbox'].sudo().search_count([])
-        for record in self:
-            record.x_microsoft_mailbox_count = mailbox_count
-
-    def _compute_notification_configured(self):
-        """Check if a notification mailbox is configured *and usable*.
-
-        Having the record is not the same as being able to send from it: an
-        owner whose OAuth expired leaves a mailbox that looks configured and
-        silently queues every notification.
+        The admin still has to save, so this is a suggestion they confirm rather
+        than a setting that appears behind their back. Returns nothing on
+        purpose: the client re-reads this same transient record, so the filled-in
+        field survives — re-opening the settings action would build a fresh one
+        from the saved parameters and throw this away.
         """
-        notification_mailbox = self.env['x_microsoft.mailbox'].sudo().search([
-            ('x_mailbox_type', '=', 'notification'),
-            ('active', '=', True),
-        ], limit=1)
-        usable = bool(notification_mailbox) and notification_mailbox._has_working_credentials()
+        self.ensure_one()
+        self.x_internal_domains = self.x_internal_domains_suggested
 
-        for record in self:
-            record.x_microsoft_notification_configured = usable
+    # -------------------------------------------------------------------------
+    # Checklist
+    # -------------------------------------------------------------------------
 
     def _mail_pro_users(self):
         """Internal users who are expected to connect a mailbox.
@@ -463,53 +335,24 @@ class ResConfigSettings(models.TransientModel):
             domain.append(('id', '!=', odoobot.id))
         return self.env['res.users'].sudo().search(domain)
 
-    @api.depends('x_internal_domains')
-    def _compute_internal_domains_status(self):
-        Domains = self.env['pan.mail.internal.domains']
-        suggested = ', '.join(Domains.suggest_domains())
-        uncovered = ', '.join(Domains.uncovered_mailbox_domains())
-        internal_sync_count = self.env['x_microsoft.mailbox'].sudo().search_count([
-            ('x_exclude_internal', '=', False),
-            ('x_sync_mode', '!=', 'none'),
-        ])
-        for record in self:
-            # Read the form's value, not the saved parameter: the admin may be
-            # typing domains right now and the warnings should follow along.
-            configured = bool(Domains._parse(record.x_internal_domains))
-            record.x_internal_domains_configured = configured
-            record.x_internal_domains_suggested = suggested
-            record.x_internal_domains_uncovered = uncovered if configured else ''
-            record.x_internal_sync_mailbox_count = internal_sync_count
+    def _notification_mailbox_usable(self):
+        """Not just "does the record exist" — can it actually send?"""
+        mailbox = self.env['mail.mail']._notification_mailbox()
+        return bool(mailbox) and mailbox._has_working_credentials()
 
     @api.depends('x_mail_provider', 'x_provider_credentials_set', 'x_provider_connected',
                  'x_internal_domains', 'x_sync_internal_email')
     def _compute_setup_status(self):
-        """The checklist steps that are not about the provider.
-
-        Steps 1-3 (pick a provider, its credentials, connect your account) are
-        `x_mail_provider` plus `_compute_provider_state`. Everything from step 4
-        on is provider-independent — internal domains, the notification mailbox,
-        the users — so it lives here and never asks which provider it is.
-
-        Each step answers "can the next one succeed", not "did somebody fill in
-        a field": a notification mailbox whose owner's token expired is not a
-        done step.
-        """
-        Mailbox = self.env['x_microsoft.mailbox'].sudo()
-        Domains = self.env['pan.mail.internal.domains']
-
         users = self._mail_pro_users()
         users_connected = len(users.filtered('x_pan_mail_connected'))
+        notification_ok = self._notification_mailbox_usable()
 
         pending = self.env['mail.mail'].sudo().search_count([
             ('state', '=', 'outgoing'),
             ('failure_reason', '=', mail_mail.NOTIFICATION_PENDING_REASON),
         ])
 
-        notification_ok = bool(Mailbox.search([
-            ('x_mailbox_type', '=', 'notification'), ('active', '=', True),
-        ], limit=1).filtered(lambda m: m._has_working_credentials()))
-
+        Domains = self.env['pan.mail.internal.domains']
         for record in self:
             record.x_setup_domains_done = (
                 bool(Domains._parse(record.x_internal_domains)) or record.x_sync_internal_email
@@ -527,18 +370,20 @@ class ResConfigSettings(models.TransientModel):
                 and notification_ok
             )
 
-    def action_apply_suggested_internal_domains(self):
-        """Fill the domain list with everything we can derive from the database.
+    # -------------------------------------------------------------------------
+    # Actions
+    # -------------------------------------------------------------------------
 
-        The admin still has to save, so this is a suggestion they confirm rather
-        than a setting that appears behind their back.
-        """
+    def action_connect_provider(self):
+        """Connect the admin's own account to the selected provider."""
         self.ensure_one()
-        self.x_internal_domains = self.x_internal_domains_suggested
-        # Returning nothing on purpose: the client re-reads this same transient
-        # record, so the filled-in field survives. Re-opening the settings action
-        # would build a fresh record from the saved parameters and throw it away.
-        return None
+        return self.env.user.action_connect_mailbox(self.x_mail_provider)
+
+    def _default_notification_mailbox_email(self):
+        """Pre-fill notifications@<your domain> so step 5 is one click."""
+        Domains = self.env['pan.mail.internal.domains']
+        domains = Domains.get_domains() or Domains.suggest_domains()
+        return f'notifications@{domains[0]}' if domains else False
 
     def action_create_notification_mailbox(self):
         """Create notifications@ in one click, owned by whoever is setting up.
@@ -552,6 +397,13 @@ class ResConfigSettings(models.TransientModel):
         email = (self.x_notification_mailbox_email or '').strip()
         if not email:
             raise UserError(_('Please enter the address system emails should be sent from.'))
+        if not self.x_mail_provider:
+            raise UserError(_('Choose your email provider first.'))
+        if not self.env.user.x_pan_mail_connected:
+            raise UserError(_(
+                'Connect your own email account first — the notification mailbox '
+                'sends with its owner\'s credentials.'
+            ))
 
         Mailbox = self.env['x_microsoft.mailbox']
         existing = Mailbox.with_context(active_test=False).search([
@@ -562,18 +414,6 @@ class ResConfigSettings(models.TransientModel):
                 'A Notification mailbox already exists (%s). Edit that one instead.'
             ) % existing.email)
 
-        if not self.x_mail_provider:
-            raise UserError(_('Choose your email provider first.'))
-
-        # The mailbox is served by the provider being set up, whatever that is —
-        # reading the picker rather than mapping known provider codes means a
-        # newly registered provider works here without an edit.
-        if not self.env.user.x_pan_mail_connected:
-            raise UserError(_(
-                'Connect your own email account first — the notification mailbox '
-                'sends with its owner\'s credentials.'
-            ))
-
         mailbox = Mailbox.create({
             'email': email,
             'x_mailbox_type': 'notification',
@@ -582,121 +422,41 @@ class ResConfigSettings(models.TransientModel):
         })
         _logger.info(f"[Mail Pro] Created notification mailbox {mailbox.email} from setup checklist")
 
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Notification Mailbox Created'),
-                'message': _('System emails are now sent from %s.') % mailbox.email,
-                'type': 'success',
-                'sticky': False,
-                # Stay on the settings page — navigating to the mailbox form
-                # would discard whatever else the admin has typed.
-                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
-            },
-        }
+        return self._notify(
+            _('Notification Mailbox Created'),
+            _('System emails are now sent from %s.') % mailbox.email,
+            # Stay on the settings page — navigating to the mailbox form would
+            # discard whatever else the admin has typed.
+            reload=True,
+        )
+
+    def _unconnected_users(self):
+        return self._mail_pro_users().filtered(lambda u: not u.x_pan_mail_connected)
 
     def action_open_unconnected_users(self):
         """Show exactly who still has to connect their mailbox."""
         self.ensure_one()
-        pending = self._mail_pro_users().filtered(
-            lambda u: not u.x_pan_mail_connected
-        )
         return {
             'type': 'ir.actions.act_window',
             'name': _('Users Without a Connected Mailbox'),
             'res_model': 'res.users',
             'view_mode': 'list,form',
-            'domain': [('id', 'in', pending.ids)],
+            'domain': [('id', 'in', self._unconnected_users().ids)],
             'target': 'current',
         }
 
     def action_send_connect_invites(self):
         """Ask every user who has not connected yet to do so."""
         self.ensure_one()
-        pending = self._mail_pro_users().filtered(
-            lambda u: not u.x_pan_mail_connected
+        sent = self._unconnected_users()._send_connect_invites()
+        return self._notify(
+            _('Invitations Sent'),
+            _('Asked %d user(s) to connect their mailbox.') % sent,
         )
-        sent = pending._send_connect_invites()
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Invitations Sent'),
-                'message': _('Asked %d user(s) to connect their mailbox.') % sent,
-                'type': 'success',
-                'sticky': False,
-            },
-        }
 
-    def action_connect_provider(self):
-        """Step 3 of setup: connect the admin's own account.
-
-        The provider is whichever one the picker above is showing, so this is
-        the same button whatever is selected - and a provider added to the
-        registry tomorrow gets it for free.
-        """
-        self.ensure_one()
-        return self.env.user.action_connect_mailbox(self.x_mail_provider)
-
-    def action_test_azure_configuration(self):
-        """
-        Test the Azure App configuration by validating the tenant ID.
-
-        Note: Client ID and Client Secret are validated when a user connects
-        their Microsoft account (OAuth flow). This follows the principle of
-        least privilege - we don't use application permissions.
-        """
-        self.ensure_one()
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-
-        # Get configuration values
-        client_id = self.x_microsoft_client_id
-        tenant_id = self.x_microsoft_tenant_id
-        encrypted_secret = IrConfigParameter.get_param('x_pan_outlook_pro.client_secret_encrypted')
-
-        # Validate all fields are filled
-        if not client_id or not tenant_id or not encrypted_secret:
-            raise UserError(_('Please fill in Client ID, Client Secret, and Tenant ID before testing.'))
-
-        # Decrypt client secret to verify it's valid
-        client_secret = encryption_utils.decrypt_value(self.env, encrypted_secret)
-        if not client_secret:
-            raise UserError(_('Client secret could not be decrypted. Please re-enter it.'))
-
-        # Verify tenant exists by checking OpenID configuration
-        try:
-            openid_url = f'https://login.microsoftonline.com/{tenant_id}/.well-known/openid-configuration'
-            response = requests.get(openid_url, timeout=10)
-            if response.status_code != 200:
-                self._save_test_result('error', _('Invalid Tenant ID - tenant not found'))
-                raise UserError(_('Invalid Tenant ID. The tenant "%s" was not found.') % tenant_id)
-
-            # Verify we got valid OpenID configuration
-            openid_config = response.json()
-            if 'authorization_endpoint' not in openid_config:
-                self._save_test_result('error', _('Invalid OpenID configuration'))
-                raise UserError(_('Invalid response from Microsoft. Please check the Tenant ID.'))
-
-            # Success - tenant is valid, credentials will be validated during OAuth
-            self._save_test_result(
-                'verified',
-                _('Tenant ID verified. Client credentials will be validated when a user connects their Microsoft account.')
-            )
-
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'reload',
-            }
-
-        except requests.exceptions.RequestException as e:
-            self._save_test_result('error', _('Network error: %s') % str(e))
-            raise UserError(_('Could not connect to Microsoft: %s') % str(e))
-
-    def _save_test_result(self, status, message):
-        """Save the test result to ir.config_parameter for display"""
-        IrConfigParameter = self.env['ir.config_parameter'].sudo()
-        IrConfigParameter.set_param('x_pan_outlook_pro.config_test_result', status)
-        IrConfigParameter.set_param('x_pan_outlook_pro.config_test_message', message)
-        _logger.info(f"[Graph API] Config test result: {status} - {message}")
-
+    @staticmethod
+    def _notify(title, message, reload=False):
+        params = {'title': title, 'message': message, 'type': 'success', 'sticky': False}
+        if reload:
+            params['next'] = {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+        return {'type': 'ir.actions.client', 'tag': 'display_notification', 'params': params}
