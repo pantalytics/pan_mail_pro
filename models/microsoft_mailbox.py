@@ -155,6 +155,17 @@ class MicrosoftMailbox(models.Model):
         help='Whether email arriving in this mailbox is imported into Odoo, '
              'and whether senders who are not contacts yet are imported too.')
 
+    # The interlock that keeps AI auto-routing off. It has no behaviour beyond
+    # the constraint below refusing to let it be switched on, which normally
+    # makes a field a comment with a database column - but 19.0.4.0.0 made it
+    # the explicit gate the AI seam is not allowed to open until real
+    # suggestions have earned it. See models/ai/pan_mail_ai.py.
+    x_routing_smart = fields.Boolean(
+        string='AI Routing',
+        default=False,
+        help='Let AI decide where to route (CRM, Helpdesk, etc.)'
+    )
+
     x_route_to_team = fields.Boolean(
         string='To Team',
         default=False,

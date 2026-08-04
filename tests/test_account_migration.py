@@ -6,24 +6,22 @@ is the highest-risk code in the whole refactor - it runs once, against real
 encrypted tokens, and a column typo would not surface until the next send. So
 the script is loaded and executed here against real rows rather than trusted.
 
-The fixture writes tokens into the res_users columns with raw SQL, because that
-is the only way to reproduce a pre-migration database now that the ORM fields
-are proxies onto the account. Creating a user through the ORM would create the
-account too, and the migration would correctly do nothing - a green test that
-proves nothing.
+The fixture writes tokens into the res_users columns with raw SQL, because the
+ORM has no idea those columns exist any more - the fields were removed in
+19.0.5.0.0, and before that they were unstored proxies onto the account. Either
+way, creating a user through the ORM would create the account too and the
+migration would correctly do nothing: a green test that proves nothing.
 
-The columns themselves have to be recreated first. They only survive on a
-database that was upgraded from <= 19.0.1.1.1; on a fresh install Odoo never
-creates them, because the fields are store=False. A developer database has them
-and CI does not, which is exactly the kind of split that hides a broken
-migration until release day - so the fixture creates them when absent instead of
-assuming either shape.
+The columns themselves have to be recreated first. A developer database that
+was upgraded from <= 19.0.1.1.1 still has them and CI does not, which is exactly
+the kind of split that hides a broken migration until release day - so the
+fixture creates them when absent instead of assuming either shape.
 
 What this cannot test is a *production* token population: expired tokens, users
 whose partner email drifted from their login, tokens encrypted before a key
-rotation. REFACTOR_PHASE2.md's rehearsal against a restored backup stays
-mandatory.
+rotation. A rehearsal against a restored backup stays mandatory.
 """
+import ast
 import importlib.util
 import os
 
@@ -31,19 +29,40 @@ from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models import encryption_utils
 
-# Pinned to the version directory on purpose. When a later phase adds another
-# migration, this raises FileNotFoundError instead of silently testing nothing.
-_SCRIPT = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    '..', 'migrations', '19.0.2.1.0', 'post-migrate.py',
-)
+_MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+_MIGRATIONS = os.path.join(_MODULE, 'migrations')
 
 
-def _load_migration():
-    spec = importlib.util.spec_from_file_location('pan_account_post_migrate', _SCRIPT)
+def _load(version, name):
+    """Load a migration script by its version folder.
+
+    Deliberately fails with FileNotFoundError rather than skipping: a migration
+    test that quietly stops finding its script is a test that proves nothing.
+    """
+    path = os.path.join(_MIGRATIONS, version, 'post-migrate.py')
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _load_migration():
+    """The token migration. Pinned: it belongs to 19.0.2.1.0 forever."""
+    return _load('19.0.2.1.0', 'pan_account_post_migrate')
+
+
+def _load_cleanup_migration():
+    """The current release's cleanup script.
+
+    Derived from the manifest rather than written out, because the two must
+    agree by construction. A hardcoded version here survives a release bump as
+    a path to a directory that no longer exists — which is exactly what
+    happened when 19.0.4.0.0 was renamed to 19.0.5.0.0 after mainline shipped
+    a 19.0.4.0.0 of its own.
+    """
+    manifest = ast.literal_eval(
+        open(os.path.join(_MODULE, '__manifest__.py')).read())
+    return _load(manifest['version'], 'pan_cleanup_post_migrate')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -78,7 +97,7 @@ class TestAccountMigration(TransactionCase):
         self.migration.migrate(self.env.cr, '19.0.1.1.1')
         self.env.invalidate_all()
 
-    def _legacy_user(self, login, email=None, tokens=True, connected=None):
+    def _legacy_user(self, login, email=None, tokens=True):
         """A user as the pre-19.0.2.1.0 code would have left it: tokens in the
         res_users columns, no pan.mail.account anywhere."""
         user = self.env['res.users'].create({'name': login, 'login': login, 'email': email})
@@ -88,17 +107,14 @@ class TestAccountMigration(TransactionCase):
         if tokens:
             access = encryption_utils.encrypt_value(self.env, 'access-for-%s' % login)
             refresh = encryption_utils.encrypt_value(self.env, 'refresh-for-%s' % login)
-        if connected is None:
-            connected = tokens
 
         self.env.cr.execute("""
             UPDATE res_users
                SET x_microsoft_access_token_encrypted = %s,
                    x_microsoft_refresh_token_encrypted = %s,
-                   x_microsoft_token_expiry = %s,
-                   x_pan_mail_connected = %s
+                   x_microsoft_token_expiry = %s
              WHERE id = %s
-        """, (access, refresh, '2026-01-01 12:00:00' if tokens else None, connected, user.id))
+        """, (access, refresh, '2026-01-01 12:00:00' if tokens else None, user.id))
         self.env.invalidate_all()
         return user
 
@@ -141,8 +157,13 @@ class TestAccountMigration(TransactionCase):
         self.assertEqual(account.refresh_token, 'refresh-for-cipher@test.local')
         self.assertEqual(account.access_token, 'access-for-cipher@test.local')
 
-    def test_user_columns_survive_as_the_rollback(self):
-        """Copy, do not move. The columns are how this release is undone."""
+    def test_user_columns_are_copied_not_moved(self):
+        """This script must leave the source rows intact.
+
+        They were the rollback for 19.0.2.1.0 and stayed readable for two
+        releases; 19.0.5.0.0 is what finally drops them, deliberately and
+        separately, once nothing had read them for a long time.
+        """
         user = self._legacy_user('rollback@test.local', email='rollback@test.local')
 
         self._run_migration()
@@ -186,18 +207,21 @@ class TestAccountMigration(TransactionCase):
         self.assertFalse(account.active)
 
     def test_connection_flag_is_realigned_with_the_accounts(self):
-        """The stored-compute trap, both directions.
+        """The stored-compute trap.
 
-        x_pan_mail_connected is a stored compute over the accounts, and this
-        migration creates accounts in raw SQL - so Odoo never recomputes it. The
-        migration has to realign it, or the mailbox owner dropdown lies in both
-        directions: a user it just connected reads as disconnected, and a user
-        it could not connect keeps a True nothing backs.
+        The migration creates accounts in raw SQL, so Odoo never recomputes
+        `x_pan_mail_connected` underneath them. The 19.0.5.0.0 script realigns
+        it; without that the mailbox owner dropdown comes up empty on every
+        upgraded database and nothing says why.
         """
-        stale_false = self._legacy_user('stale_false@test.local', connected=False)
-        stale_true = self._legacy_user('stale_true@test.local', tokens=False, connected=True)
+        migrated = self._legacy_user('stale_false@test.local',
+                                     email='stale_false@test.local')
+        never = self._legacy_user('stale_true@test.local',
+                                  email='stale_true@test.local', tokens=False)
 
         self._run_migration()
+        _load_cleanup_migration().migrate(self.env.cr, '19.0.3.3.0')
+        self.env.invalidate_all()
 
-        self.assertTrue(stale_false.x_pan_mail_connected)
-        self.assertFalse(stale_true.x_pan_mail_connected)
+        self.assertTrue(migrated.x_pan_mail_connected)
+        self.assertFalse(never.x_pan_mail_connected)

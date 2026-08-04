@@ -18,6 +18,7 @@ import requests
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
+from odoo.addons.pan_mail_pro.models.mail_mail import RoutingError
 from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     FOLDER_INBOX,
     get_provider_client,
@@ -559,19 +560,25 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         mailbox = self._gmail_mailbox()
         self.assertEqual(mailbox.x_health_status, 'error')
 
-    def test_gmail_mailbox_enables_incoming_sync(self):
+    def test_gmail_mailbox_is_picked_up_by_the_sync_cron(self):
         mailbox = self._gmail_mailbox(x_sync_mode='all')
-        self.assertTrue(mailbox.x_incoming_enabled)
+        self.assertTrue(mailbox._syncs_incoming())
+        self.assertTrue(mailbox._has_working_credentials())
 
-    def test_connecting_later_flips_incoming_enabled_on(self):
-        """The old depends listed only the mode and the owner, so authorizing
-        after configuring the mailbox left sync silently off."""
+    def test_connecting_later_makes_the_mailbox_syncable(self):
+        """A service account is found by address, so no field path leads to it.
+
+        This used to be a stored compute (x_incoming_enabled) that had to be
+        invalidated by hand from the account's write; the cron asks
+        _has_working_credentials() at the moment it needs the answer instead,
+        which is always right and needs no invalidation at all.
+        """
         self.account.write({'refresh_token_encrypted': False})
         mailbox = self._gmail_mailbox(x_sync_mode='all')
-        self.assertFalse(mailbox.x_incoming_enabled)
+        self.assertFalse(mailbox._has_working_credentials())
 
         self.account.write({'refresh_token': 'reconnected'})
-        self.assertTrue(mailbox.x_incoming_enabled)
+        self.assertTrue(mailbox._has_working_credentials())
 
     def test_shared_gmail_mailbox_is_healthy_on_its_service_account(self):
         """No owner at all: on Gmail a shared address is its own account."""
@@ -585,7 +592,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         })
         self.assertFalse(mailbox.x_owner_user_id)
         self.assertTrue(mailbox._has_working_credentials())
-        self.assertTrue(mailbox.x_incoming_enabled)
+        self.assertTrue(mailbox._syncs_incoming())
 
     def test_shared_gmail_mailbox_is_configurable_before_it_is_authorized(self):
         """Creation must not be blocked on credentials that do not exist yet.
@@ -626,7 +633,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
             'author_id': self.user.partner_id.id,
         })
 
-        resolved_mailbox, account = mail._get_mailbox_and_account()
+        resolved_mailbox, account = mail._resolve_route()
 
         self.assertEqual(resolved_mailbox, mailbox)
         self.assertEqual(account, self.account)
@@ -649,7 +656,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
             'author_id': self.user.partner_id.id,
         })
 
-        resolved_mailbox, account = mail._get_mailbox_and_account()
+        resolved_mailbox, account = mail._resolve_route()
 
         self.assertEqual(resolved_mailbox, mailbox)
         self.assertEqual(account, service)
@@ -657,7 +664,12 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         self.assertNotEqual(account, self.account)
 
     def test_missing_credentials_error_names_the_right_provider(self):
-        """A Gmail user must not be told to connect Microsoft."""
+        """A Gmail user must not be told to connect Microsoft.
+
+        The reason comes from the router that made the decision, rather than
+        being reconstructed afterwards by walking the same tree a second time -
+        two implementations of one decision can disagree, and did.
+        """
         self.account.write({'refresh_token_encrypted': False})
         mailbox = self._gmail_mailbox()
         self.user.x_microsoft_default_mailbox_id = mailbox
@@ -667,6 +679,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
             'author_id': self.user.partner_id.id,
         })
 
-        message = mail._get_missing_mailbox_error()
-        self.assertIn('Gmail', message)
-        self.assertNotIn('Microsoft', message)
+        with self.assertRaises(RoutingError) as ctx:
+            mail._resolve_route()
+        self.assertIn('Gmail', str(ctx.exception))
+        self.assertNotIn('Microsoft', str(ctx.exception))

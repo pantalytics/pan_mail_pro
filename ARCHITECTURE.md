@@ -273,27 +273,33 @@ process_email()
 
 Each mailbox has routing settings that control how new emails (non-replies) are processed.
 
-#### UI Fields (Progressive Disclosure)
+#### UI Fields
+
+One control, not six. `x_sync_mode` is a single three-way choice, and every
+question the mailbox form used to ask separately is an answer to it:
+
+| `x_sync_mode` | Meaning |
+|---------------|---------|
+| `none` | Send only. Nothing is imported. |
+| `known_partners` | Import mail from addresses that are already contacts. |
+| `all` | Import mail from anyone. |
+
+`x_incoming_sync`, `x_sync_unknown_contacts`, `x_sync_inbox`, `x_sync_sent` and
+`x_incoming_enabled` were computes over exactly this choice — five things that
+could disagree with the one field that decided. Code asks
+`mailbox._syncs_incoming()`, which reads the mode through the `SYNCING_MODES`
+allow-list, so an unset value means "do not import" rather than "import
+everything".
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `x_incoming_sync` | Boolean toggle | Enable/disable incoming email sync |
-| `x_routing_smart` | Boolean toggle | Let AI decide routing (future) |
-| `x_sync_unknown_contacts` | Boolean | Also sync from senders not in Odoo |
-| `x_queue_unknown_contacts` | Boolean | Queue unknown senders for review (future) |
+| `x_routing_smart` | Boolean | Interlock keeping AI auto-routing off. See `models/ai/` |
+| `x_queue_unknown_contacts` | Boolean | Hold unknown senders in the triage queue |
 
 #### Routing Priority
 
-1. **Smart Routing (AI)** - if enabled, AI classifies email intent (coming soon)
-2. **Odoo Alias** - if `mail.alias` exists for mailbox email, use its config (model + defaults)
-3. **Fallback** - post to partner's chatter with warning log
-
-#### Unknown Contact Options (when `x_sync_unknown_contacts` = True)
-
-| Option | Behavior |
-|--------|----------|
-| **Create automatically** | Create partner + record |
-| **Queue for review** | Hold for manual approval (future) |
+1. **Odoo Alias** - if `mail.alias` exists for mailbox email, use its config (model + defaults)
+2. **Fallback** - post to partner's chatter with warning log
 
 #### Block List
 
@@ -316,10 +322,9 @@ Reply check (In-Reply-To / conversationId)
         │
         ├── Partner blocked? → Skip
         │
-        ├── Unknown contact + x_sync_unknown_contacts = False → Skip
+        ├── Unknown contact + x_sync_mode != 'all' → Skip
         │
         └── Route to model:
-            ├── Smart Routing enabled → AI decides (future)
             ├── Odoo alias exists → Use alias config (model + team_id)
             └── No routing → Post to partner chatter + warning
 ```
@@ -413,10 +418,14 @@ User clicks "Send"
       │
       ▼
 ┌─────────────────────────────────────────────┐
-│ mail.mail._send()                            │
-│ - Determines mailbox + user for OAuth token  │
-│ - Personal/Shared: current user's token      │
-│ - Notification: owner's token                │
+│ mail.mail._resolve_route()                   │
+│ - One answer, in this order:                 │
+│   1. internal notification → notifications@  │
+│   2. the composer's choice                   │
+│   3. the author's default mailbox            │
+│   4. no author at all → notifications@       │
+│ - Anything unanswerable raises RoutingError  │
+│   and the mail fails; it is NOT rerouted.    │
 └─────────────────────────────────────────────┘
       │
       ▼
@@ -695,9 +704,14 @@ All permissions are **Delegated** (user context, not application).
 ## 7. Field Naming Convention
 
 All custom fields use `x_` prefix per Odoo.sh guidelines:
-- `x_microsoft_access_token`
+- `x_pan_mail_connected`
 - `x_microsoft_mailbox_id`
 - `x_pan_outlook_pro.client_id`
+
+Credentials are not among them: they live on `pan.mail.account`, whose fields
+are plain (`refresh_token`, `imap_host`) because the model is the module's own.
+`res.users` carried `x_microsoft_access_token` and four siblings as proxies onto
+that account until 19.0.5.0.0 removed them.
 
 ---
 
@@ -757,7 +771,7 @@ Microsoft Graph API does not provide an endpoint to query which shared mailboxes
 | Target model selection (Lead/Ticket) | Done |
 | Contact block list | Done |
 | Unknown contact handling (all sync mode) | Done |
-| Smart routing toggle (AI decides) | Placeholder |
+| Smart routing toggle (AI decides) | Interlock, deliberately off |
 | AI triage queue (approval mode) | Future |
 
 ### Security

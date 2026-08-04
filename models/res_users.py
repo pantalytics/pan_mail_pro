@@ -120,7 +120,6 @@ class ResUsers(models.Model):
             'access_token_encrypted': False,
             'refresh_token_encrypted': False,
             'token_expiry': False,
-            'oauth_state': False,
         })
 
         vals = {'x_pan_mail_oauth_state': False}

@@ -19,11 +19,14 @@ stop it, because it is not a SendAs.
   `mail.mail` directly, and for them the create/write guard is the boundary.
   Those tests use the admin user for exactly that reason.
 - Mail created under `sudo()` — every notification Odoo sends — skips the
-  create guard by design. The send-time fallback catches that case, by
-  checking the mail's *author* rather than whoever is executing.
+  create guard by design. The send-time check catches that case, by asking
+  about the mail's *author* rather than whoever is executing.
 """
 from odoo.exceptions import AccessError, ValidationError
 from odoo.tests import tagged
+from odoo.tools import mute_logger
+
+from odoo.addons.pan_mail_pro.models.mail_mail import RoutingError
 
 from .common import OutlookProTestCase
 
@@ -127,23 +130,24 @@ class TestMailboxPermission(OutlookProTestCase):
 
     # -- defence in depth at send time ------------------------------------- #
 
-    def test_send_falls_back_when_author_may_not_use_mailbox(self):
+    @mute_logger('odoo.addons.pan_mail_pro.models.mail_mail')
+    def test_send_refuses_when_author_may_not_use_mailbox(self):
         """Covers the sudo path, where the create guard deliberately stands
         aside. Checking the author rather than the executor is what makes this
         work for mail Odoo created on somebody's behalf.
 
-        It falls back rather than raising: this runs in the mail queue, where
-        an exception would stall every other mail behind it.
+        This used to reroute to another mailbox instead of refusing, because
+        raising from inside the send loop stalled every mail queued behind it.
+        A failure is recorded per mail now, so the security boundary gets to be
+        a boundary: the mail fails and names the mailbox it would not use.
         """
         mail = self.env['mail.mail'].sudo().create({
             **self._mail_vals(self.personal_mailbox),
             'author_id': self.other_user.partner_id.id,
         })
-        mailbox, _account = mail._get_mailbox_and_account()
-        self.assertNotEqual(
-            mailbox, self.personal_mailbox,
-            "mail authored by a non-owner must not resolve to a personal mailbox",
-        )
+        with self.assertRaises(RoutingError) as ctx:
+            mail._resolve_route()
+        self.assertIn(self.personal_mailbox.email, str(ctx.exception))
 
     # -- discovery half of the problem ------------------------------------- #
 

@@ -88,13 +88,6 @@ class PanMailAccount(models.Model):
         groups='base.group_system',
         copy=False,
     )
-    oauth_state = fields.Char(
-        string='OAuth State',
-        groups='base.group_system',
-        copy=False,
-        help='Temporary CSRF state token for the OAuth flow'
-    )
-
     connected = fields.Boolean(
         string='Connected',
         compute='_compute_connected',

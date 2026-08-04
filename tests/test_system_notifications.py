@@ -121,7 +121,7 @@ class TestSystemNotifications(OutlookProTestCase):
         })
 
         Mail = type(self.env['mail.mail'])
-        with patch.object(Mail, '_send_via_microsoft_graph') as graph_path, \
+        with patch.object(Mail, '_send_one') as graph_path, \
              patch('odoo.addons.mail.models.mail_mail.MailMail.send',
                    autospec=True, return_value=True):
             mail.send()

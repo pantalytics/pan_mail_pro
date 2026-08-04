@@ -18,7 +18,28 @@ import base64
 import contextlib
 from unittest.mock import patch, MagicMock
 
+from odoo.exceptions import UserError
 from odoo.tests import TransactionCase
+
+
+def send_and_capture(mails):
+    """Send `mails` and hand back the UserError instead of unwinding the test.
+
+    Deliberately not `assertRaises`: Odoo wraps that in a savepoint and rolls it
+    back when the exception fires, which discards exactly the `failure_reason`
+    and `state` writes a test wants to look at afterwards. A plain try/except
+    opens no savepoint, so the writes survive and both halves of the contract
+    can be asserted in one test.
+
+    (Production sees the same split. Interactively the request rollback does
+    discard the writes and the mail stays queued for the cron; in the queue,
+    `auto_commit` has already committed them. See `mail.mail.send`.)
+    """
+    try:
+        mails.send()
+    except UserError as error:
+        return error
+    return None
 
 
 class OutlookProTestCase(TransactionCase):

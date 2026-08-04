@@ -1,4 +1,4 @@
-# Testplan pan_mail_pro v19.0.3.2.0 — rename + provider-refactor + IMAP/SMTP
+# Testplan pan_mail_pro v19.0.5.0.0 — rename + provider-refactor + IMAP/SMTP + simplification
 
 Doel: aantonen dat na de rename (`pan_outlook_pro` → `pan_mail_pro`) en de
 provider-refactor zowel Outlook als Gmail end-to-end werken, in drie ringen:
@@ -136,9 +136,35 @@ en `helpdesk.ticket` letterlijk.
 - [ ] Outlook + Gmail accounts van het team opnieuw verbinden waar nodig
 - [ ] 24–48u laten draaien: tokenverversing (vooral Google), cron-gedrag,
       geen mail-verlies
-- [ ] Bekende zwakke plek checken: Gmail-serviceaccount dat ná mailbox-aanmaak
-      wordt geautoriseerd hertriggert `x_incoming_enabled` niet — handmatig
-      controleren
+- [ ] Deze zwakke plek is vervallen in 19.0.5.0.0: `x_incoming_enabled` bestaat
+      niet meer, de cron vraagt `_has_working_credentials()` op het moment zelf.
+      Wél verifiëren dat een Gmail-serviceaccount dat ná mailbox-aanmaak wordt
+      geautoriseerd binnen een minuut begint te synchroniseren.
+
+## Fase A″ — Wat 19.0.5.0.0 verandert (regressiecheck)
+
+De vereenvoudiging raakt drie dingen die een gebruiker merkt. Alle drie zijn
+opzettelijk; ze moeten alleen doen wat er staat.
+
+- [ ] **Geen stille omleiding meer.** Zet bij een testgebruiker de standaard
+      mailbox op een mailbox zonder werkende credentials en verstuur een mail
+      naar een externe klant. Verwacht: een foutmelding die zegt wat er mis is,
+      én de mail in Instellingen → Technisch → E-mail → E-mails met status
+      *Uitzondering* en dezelfde reden. Verwacht **niet** dat hij alsnog vanaf
+      `notifications@` vertrekt.
+- [ ] **Eén foute mail blokkeert de rest niet.** Verstuur in dezelfde actie een
+      onrouteerbare en een goede mail. De goede moet verstuurd zijn — de
+      foutmelding komt pas nadat de hele batch geprobeerd is.
+- [ ] **De mailwachtrij loopt door.** Laat een onrouteerbare mail in de wachtrij
+      staan en controleer dat de cron de mails erachter alsnog verstuurt (die
+      draait met `auto_commit`, dus wat verstuurd is blijft verstuurd).
+- [ ] **Eén sync-instelling per mailbox.** Het mailboxformulier toont nu
+      "Inkomende mail" met drie keuzes in plaats van vier schakelaars.
+      Controleer op een bestaande database dat de bestaande keuze bewaard is
+      (`x_sync_mode` is niet gemigreerd, alleen de afgeleide velden zijn weg).
+- [ ] **Verbinden en loskoppelen** vanuit Mijn Profiel → Mail Pro, voor elke
+      provider die de klant gebruikt. De knoppen heten nu "Connect Mailbox" /
+      "Disconnect" en zijn niet meer per provider.
 
 ## Fase C — Klanten
 
