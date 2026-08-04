@@ -16,6 +16,7 @@ from odoo import models, api, fields, _
 from odoo.exceptions import UserError
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from .microsoft_mailbox import SYNCING_MODES
 
 _logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # skipped exactly those mailboxes. What matters is usable credentials,
         # which is what the mailbox asks its client.
         mailboxes = self.env['x_microsoft.mailbox'].search([
-            ('x_incoming_enabled', '=', True),
+            ('x_sync_mode', 'in', SYNCING_MODES),
             ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
         ]).filtered(lambda m: m._has_working_credentials())
 
@@ -108,19 +109,13 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 mailbox.write({'x_last_sync_date': fields.Datetime.now()})
                 return  # Skip this run, start fetching from next cron run
 
+        # Both folders, always: syncing a mailbox means both sides of its
+        # correspondence. Two booleans used to say so and were computed from the
+        # sync mode, so they could never disagree with it.
         processed_count = 0
         folder_cursors = []
-
-        # Fetch from Inbox
-        if mailbox.x_sync_inbox:
-            count, latest_dt = self._fetch_folder(mailbox, FOLDER_INBOX)
-            processed_count += count
-            if latest_dt:
-                folder_cursors.append(latest_dt)
-
-        # Fetch from Sent Items (2-way sync)
-        if mailbox.x_sync_sent:
-            count, latest_dt = self._fetch_folder(mailbox, FOLDER_SENT)
+        for folder in (FOLDER_INBOX, FOLDER_SENT):
+            count, latest_dt = self._fetch_folder(mailbox, folder)
             processed_count += count
             if latest_dt:
                 folder_cursors.append(latest_dt)

@@ -173,42 +173,6 @@ class PanMailAccount(models.Model):
         'A user can only have one account per provider.',
     )
 
-    # Fields whose change can flip a mailbox between "usable" and "not".
-    _CREDENTIAL_FIELDS = frozenset({
-        'provider', 'email', 'active', 'refresh_token_encrypted',
-        'refresh_token', 'password_encrypted', 'password', 'username',
-        'imap_host', 'smtp_host',
-    })
-
-    @api.model_create_multi
-    def create(self, vals_list):
-        accounts = super().create(vals_list)
-        accounts._touch_dependent_mailboxes()
-        return accounts
-
-    def write(self, vals):
-        res = super().write(vals)
-        if self._CREDENTIAL_FIELDS & set(vals):
-            self._touch_dependent_mailboxes()
-        return res
-
-    def _touch_dependent_mailboxes(self):
-        """Refresh mailbox readiness for the mailboxes these accounts serve.
-
-        `x_incoming_enabled` is a stored compute, and a stored compute can only
-        depend on field paths. A service account is found by *address* - no path
-        leads there from the mailbox - so without this, entering the credentials
-        for a shared mailbox after configuring it would never flip the mailbox
-        back on and the cron would go on skipping it. This is the write-side
-        half of the limitation documented on `_compute_incoming_enabled`.
-        """
-        emails = [account.email for account in self if account.email]
-        if not emails:
-            return
-        mailboxes = self.env['x_microsoft.mailbox'].sudo().with_context(
-            active_test=False).search([('email', 'in', emails)])
-        if mailboxes:
-            mailboxes._compute_incoming_enabled()
 
     def action_test_connection(self):
         """Verify these credentials against the provider, from the account form."""
