@@ -136,6 +136,25 @@ jobs:
           fi
           echo "OK: provider boundary intact."
 
+      - name: Every model is named in ARCHITECTURE.md
+        run: |
+          # ARCHITECTURE.md is the single source of truth for design, which only
+          # holds if adding a model forces a line there. Eight models once
+          # shipped without ever reaching it; nothing failed, so nobody noticed.
+          MISSING=0
+          for model in $(grep -rhoP "^\s+_name = '\K[^']+" models/ | sort -u); do
+            if ! grep -qF "\`$model\`" ARCHITECTURE.md; then
+              echo "::error file=ARCHITECTURE.md::Model '$model' is not documented in ARCHITECTURE.md"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -ne 0 ]; then
+            echo "Add it to the model map in §1, and describe it in the section it belongs to."
+            echo "Write the name in backticks so this check can find it."
+            exit 1
+          fi
+          echo "OK: every model is documented."
+
       - name: Migration folder is not below the manifest version
         run: |
           VERSION=$(python -c "import ast,pathlib;print(ast.literal_eval(pathlib.Path('__manifest__.py').read_text())['version'])")

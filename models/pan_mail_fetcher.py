@@ -371,6 +371,18 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         if full_message.get('body_is_html') and body_content:
             body_content = Markup(body_content)
 
+        # When the mail was written, not when we happened to import it. Odoo
+        # defaults `date` to now(), which collapses a historical import into a
+        # single day and destroys the timeline the chatter exists to show. The
+        # contract normalizes this to naive UTC for every provider, so this is
+        # the same value on Graph, Gmail and IMAP.
+        #
+        # Falling back to now() rather than passing None: `date` reaches
+        # `mail.message` through message_post's **kwargs, where an explicit None
+        # writes NULL instead of letting the field default apply. A message with
+        # no date at all sorts unpredictably in the chatter.
+        msg_date = full_message.get('date') or fields.Datetime.now()
+
         # Build msg_dict in Odoo's expected format for message_new()
         email_from = f'"{contact_name}" <{contact_email}>' if contact_name else contact_email
         cc_addresses = ', '.join(
@@ -387,6 +399,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             'message_id': internet_message_id,
             'author_id': partner.id,
             'email_from': email_from,
+            # `message_new` reads this off msg_dict the way Odoo's own gateway
+            # does, so a created lead or ticket is dated by the mail too.
+            'date': msg_date,
         }
 
         # Determine correct author for sent items (mailbox owner, not the contact)
@@ -419,6 +434,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     message_id=internet_message_id,
                     parent_id=match['parent_message_id'],
                     attachments=email_attachments,
+                    date=msg_date,
                     incoming_email_to=msg_dict.get('to', ''),
                     incoming_email_cc=msg_dict.get('cc', ''),
                 )
@@ -441,6 +457,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     email_from=post_email_from,
                     message_id=internet_message_id,
                     attachments=email_attachments,
+                    date=msg_date,
                 )
                 _logger.info(f"[Incoming Mail] Posted sent item to partner {partner.name}")
             else:
@@ -672,6 +689,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 email_from=msg_dict.get('email_from'),
                 message_id=msg_dict.get('message_id'),
                 attachments=msg_dict.get('attachments', []),
+                date=msg_dict.get('date'),
                 incoming_email_to=msg_dict.get('to', ''),
                 incoming_email_cc=msg_dict.get('cc', ''),
             )
@@ -710,6 +728,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             email_from=msg_dict.get('email_from'),
             message_id=msg_dict.get('message_id'),
             attachments=msg_dict.get('attachments', []),
+            date=msg_dict.get('date'),
             incoming_email_to=msg_dict.get('to', ''),
             incoming_email_cc=msg_dict.get('cc', ''),
         )

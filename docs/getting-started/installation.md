@@ -3,8 +3,14 @@
 ## Requirements
 
 - Odoo 19.0 Enterprise Edition
-- Microsoft 365 Business account
-- Azure AD admin access (for app registration)
+- The `cryptography` Python package (for encrypted credential storage)
+- A mailbox on one of the supported providers:
+
+| Provider | You also need |
+|----------|---------------|
+| Microsoft 365 | Azure AD admin access, to create an app registration |
+| Google Workspace | Google Cloud access, to create an OAuth client |
+| IMAP/SMTP | The server names, a login and a password |
 
 ## Install via Odoo.sh (Recommended)
 
@@ -41,4 +47,9 @@ git push
 
 ## Next Steps
 
-After installation, proceed to [Azure Setup](azure-setup.md) to configure Microsoft authentication.
+After installation, go to **Settings → Mail Pro** and pick your email provider.
+Only that provider's setup steps are shown from then on:
+
+- [Microsoft 365 Setup](azure-setup.md)
+- [Google Workspace Setup](google-setup.md)
+- [IMAP/SMTP Setup](imap-setup.md)
