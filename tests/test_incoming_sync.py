@@ -264,6 +264,50 @@ class TestIncomingSync(OutlookProTestCase):
             "cursor must advance to the last message's date, in naive UTC",
         )
 
+    def test_imported_mail_keeps_the_date_it_was_sent(self):
+        """A historical import must not collapse onto the day it ran.
+
+        `message_post` defaults `date` to now(), so omitting it dates every
+        imported mail to import time — a year of correspondence lands on one
+        afternoon and the chatter stops being a timeline. Covers the branch
+        that posts to contact chatter via _route_email_via_alias.
+        """
+        self._sync()
+
+        message = self._messages_on(self.external_partner)
+        self.assertEqual(
+            str(message.date), '2026-02-01 10:30:00',
+            "message must carry the provider's date, not the import time",
+        )
+
+    def test_threaded_reply_keeps_its_own_date(self):
+        """The threading branch posts separately, so it needs its own cover."""
+        self._sync()
+
+        reply_id = '<inbound-002@example.com>'
+        # `id` stays MSG_ID so the harness's /messages/{id} fake still answers;
+        # dedup keys on internetMessageId, which does change.
+        overrides = {
+            'internetMessageId': reply_id,
+            'subject': 'Re: Question about my order',
+            'receivedDateTime': '2026-02-03T09:15:00Z',
+        }
+        reply_full = self._full_message(
+            **overrides,
+            conversationId=CONV_ID,
+            internetMessageHeaders=[
+                {'name': 'Message-ID', 'value': reply_id},
+                {'name': 'In-Reply-To', 'value': INTERNET_ID},
+            ],
+        )
+        self._sync(inbox=self._preview(**overrides), full=reply_full)
+
+        reply = self._messages_on(self.external_partner).filtered(
+            lambda m: m.message_id == reply_id
+        )
+        self.assertTrue(reply, "reply should have been imported")
+        self.assertEqual(str(reply.date), '2026-02-03 09:15:00')
+
     def test_attachment_is_stored(self):
         attachments = [{
             '@odata.type': '#microsoft.graph.fileAttachment',

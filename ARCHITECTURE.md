@@ -2,14 +2,21 @@
 
 Technical documentation for developers working on the Mail Pro module.
 
+This file is the single source of truth for **design**: what the models are,
+why the seams sit where they sit, and which decisions are load-bearing.
+[CLAUDE.md](CLAUDE.md) covers the *workflow* — commands, environments, CI, and
+the gotchas of working in Odoo — and deliberately does not repeat any of this.
+
 ---
 
 ## 1. Overview
 
 ### Purpose
+
 Complete Microsoft 365, Google Workspace and IMAP/SMTP email integration for
-Odoo - send and receive emails via the Graph API, the Gmail API or the mail
-protocols themselves, with proper threading and partner management.
+Odoo — send and receive via the Graph API, the Gmail API or the mail protocols
+themselves, with proper threading, partner matching and visibility into where
+mail actually landed.
 
 ### Provider abstraction
 
@@ -35,75 +42,127 @@ diverge.
 
 Model names still read `microsoft.*` and fields `x_microsoft_*`. That is
 deliberate: the rename to provider-neutral names is a single mechanical phase
-(Phase 4) done last, so historical data — notably `x_microsoft_message_id` on
+done last, so historical data — notably `x_microsoft_message_id` on
 `mail.message`, which reply threading depends on — migrates once, cleanly.
 
-### Key Models
+### Capability differences
+
+Providers disagree about sending as somebody else, which is why
+`resolve_sending_account()` is the client's job and not the caller's:
+
+| | Microsoft 365 (`outlook`) | Gmail (`gmail`) | IMAP/SMTP (`imap`) |
+|---|---|---|---|
+| Auth | OAuth 2.0 | OAuth 2.0 | server + login + password |
+| Shared mailbox | Yes (SendAs + author's own token) | Its own Workspace account (`user_id` null) | Its own login (`user_id` null) |
+| Delegation | — | Delegated account / Google Group | — |
+| Folders | `Inbox` / `SentItems` | `INBOX` / `SENT` labels | `INBOX` / `\Sent` special-use |
+| Thread key | `conversationId` | `threadId` | root of the `References` chain |
+| Message id | Graph id | Gmail id | `folder:uidvalidity:uid` |
+| Send flow | draft → send | RFC822 MIME | SMTP + IMAP APPEND to Sent |
+| Message-ID | returned by the API | set by us on the MIME | set by us on the MIME |
+
+### Model map
+
+**The contract and its implementations**
 
 | Model | Purpose |
 |-------|---------|
-| `x_microsoft.mailbox` | Mailbox configuration (email, type, sync, routing, `x_provider`) |
 | `mail.provider.client` | The contract (abstract): resolve credentials, send, fetch, normalize |
 | `microsoft.graph.client` | Microsoft 365 implementation — all Graph API calls |
 | `google.gmail.client` | Google Workspace implementation — all Gmail API calls |
-| `imap.smtp.client` | IMAP/SMTP implementation — imaplib + smtplib, no OAuth |
-| `pan.mail.account` | Credentials for one email address on one provider (nullable `user_id`) |
-| `microsoft.incoming.mail.processor` | Incoming email sync (cron), provider-neutral |
-| `mail.mail` | Outgoing email override (routes through the mailbox's provider) |
-| `mail.message` | Stores Microsoft message IDs for reply threading |
-| `mail.compose.message` | Composer "Send From" dropdown + setup warning |
-| `res.users` | OAuth token fields — now proxies onto the user's `pan.mail.account` |
+| `imap.smtp.client` | IMAP/SMTP implementation — `imaplib` + `smtplib`, no OAuth |
+
+**Configuration and credentials**
+
+| Model | Purpose |
+|-------|---------|
+| `x_microsoft.mailbox` | Mailbox configuration (email, type, sync mode, routing, `x_provider`) |
+| `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
+| `pan.mail.internal.domains` | The one definition of "is this address ours?" (abstract) |
+| `res.config.settings` | Module settings (provider choice, client id, secret, tenant) |
+| `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
-| `res.config.settings` | Module settings (client_id, secret, tenant) |
+
+**Moving mail**
+
+| Model | Purpose |
+|-------|---------|
+| `microsoft.incoming.mail.processor` | Incoming sync (cron), provider-neutral orchestration |
+| `mail.mail` | Outgoing override — resolves a route, then hands to the provider |
+| `mail.compose.message` | Composer "Send From" dropdown + setup warning |
+| `mail.message` | Provider threading keys + the communication lens fields |
+| `mail.alias` | Small extension so an alias can name a mailbox |
+
+**Deciding where mail belongs**
+
+| Model | Purpose |
+|-------|---------|
+| `pan.mail.matcher` | The thread-matching rule ladder. No provider, no HTTP, no mailbox needed |
+| `pan.mail.message.ref` | Every Message-ID under which one `mail.message` may be referenced |
+| `pan.mail.thread.link` | Provider thread handle → Odoo record, **scoped to the mailbox** |
+
+**Seeing what happened**
+
+| Model | Purpose |
+|-------|---------|
+| `pan.mail.routing.log` | One row per delivered mail: rule, confidence, rejected candidates |
+| `pan.mail.item` | Triage queue for mail that reached Odoo but landed nowhere |
+| `pan.mail.coverage` | Transient report: how much mail actually lands on a document |
+
+**AI (opt-in, off by default)**
+
+| Model | Purpose |
+|-------|---------|
+| `pan.mail.ai` | The AI contract (abstract) + backend registry |
+| `pan.mail.ai.null` | The default. A real backend that returns nothing |
+| `pan.mail.ai.claude` | Claude backend — the only place an AI SDK may be imported |
 
 `pan.mail.account` holds the credentials that used to live on `res.users`. An
 account with a `user_id` is a person's own connection; an account with none is a
 service account — how a Gmail shared mailbox works, where the address is a real
-Workspace account with no Odoo user behind it. The `res.users.x_microsoft_*`
-fields are unstored compute/inverse proxies onto the user's Microsoft account, so
-every existing caller keeps working while the credentials live in one place.
+Workspace account with no Odoo user behind it.
 
-### Module Structure
+### Module structure
 
 ```
 pan_mail_pro/
 ├── models/
-│   ├── mail_provider_client.py    # mail.provider.client — the contract + provider registry
-│   ├── mail_mail.py               # Outgoing override → mailbox._get_client().send_message()
-│   ├── mail_message.py            # Microsoft message ID storage
-│   ├── mail_compose_message.py    # Composer integration + setup warning
-│   ├── microsoft_mailbox.py       # Mailbox configuration + routing + x_provider dispatch
-│   ├── pan_mail_account.py        # Per-address credentials (pan.mail.account)
-│   ├── pan_mail_fetcher.py        # Incoming email processor (provider-neutral)
+│   ├── mail_provider_client.py    # mail.provider.client — the contract + registry
 │   ├── providers/                 # The only place provider payloads are understood
-│   │   ├── microsoft/
-│   │   │   └── graph_client.py    # microsoft.graph.client — Graph API + normalization
-│   │   ├── google/
-│   │   │   └── gmail_client.py    # google.gmail.client — Gmail API + normalization
-│   │   ├── imap_smtp/
-│   │   │   └── imap_client.py     # imap.smtp.client — IMAP/SMTP + normalization
+│   │   ├── microsoft/graph_client.py
+│   │   ├── google/gmail_client.py
+│   │   ├── imap_smtp/imap_client.py
 │   │   └── mime_utils.py          # Outgoing MIME, shared by the two MIME senders
-│   ├── res_users.py               # OAuth token proxies onto pan.mail.account
-│   ├── res_partner.py             # Contact block list field
-│   ├── res_config_settings.py     # Module settings
+│   ├── ai/                        # The only place an AI SDK may be imported
+│   │   ├── pan_mail_ai.py         # Contract + registry + null backend
+│   │   └── claude/claude_backend.py
+│   ├── microsoft_mailbox.py       # Mailbox config + routing + x_provider dispatch
+│   ├── pan_mail_account.py        # Per-address credentials
+│   ├── pan_mail_internal_domains.py
+│   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral)
+│   ├── pan_mail_matcher.py        # Thread matching rule ladder
+│   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
+│   ├── pan_mail_routing_log.py
+│   ├── pan_mail_item.py           # Triage queue
+│   ├── pan_mail_coverage.py       # Coverage report (TransientModel)
+│   ├── mail_mail.py               # Outgoing override + route resolution
+│   ├── mail_message.py            # Threading keys + communication lens
+│   ├── mail_compose_message.py
+│   ├── res_users.py / res_partner.py / res_config_settings.py
 │   └── encryption_utils.py        # Fernet encryption
-├── controllers/
-│   └── main.py                    # OAuth callback handlers (Microsoft + Google)
-├── wizard/
-│   └── microsoft_oauth_wizard.py  # Connect Microsoft account
-├── migrations/
-│   └── 19.0.2.1.0/                # Copy user tokens → pan.mail.account
-├── views/
-├── data/
-│   └── ir_cron_data.xml           # Incoming mail cron (1 min)
-└── security/
+├── controllers/main.py            # OAuth callbacks (Microsoft + Google, one handler)
+├── migrations/                    # 19.0.1.0.5, 2.1.0, 3.3.0, 4.0.0, 5.0.0
+├── views/  data/  security/  static/
+├── tests/                         # 28 files; see §12
+└── tools/                         # CI helpers
 ```
+
+There is no `wizard/` directory. Connecting an account is a controller redirect,
+not a wizard.
 
 ---
 
-## 2. Mailbox Types
-
-### Overview
+## 2. Mailbox types
 
 | Type | Who sees it? | Whose credentials? | Use case |
 |------|--------------|--------------------|----------|
@@ -115,168 +174,28 @@ Which credentials a mailbox runs on is asked of the provider
 (`resolve_sending_account` / `resolve_receiving_account`), never assumed by the
 caller: only Microsoft 365 lets one person send as another with their own token.
 
-### Graph API Send Flow (Draft → Send)
+**Personal** — auto-created when a user connects (if the admin setting allows).
+`x_owner_user_id` links it to its owner, and only the owner sees it in the
+composer dropdown.
 
-We use a **Draft → Send** flow instead of the simpler `sendMail` endpoint:
+**Shared** — on Microsoft 365 each user sends with their **own** OAuth token, so
+they need `Mail.ReadWrite.Shared` in Azure and SendAs rights in Exchange. On
+Gmail and IMAP/SMTP the address is its own account with its own credentials and
+no owner; nothing is borrowed from the sender.
 
-1. **Create draft**: `POST /users/{email}/messages` → returns `internetMessageId` and `conversationId`
-2. **Send draft**: `POST /users/{email}/messages/{id}/send`
-
-**Why not use `sendMail`?**
-- `sendMail` doesn't return the Microsoft message IDs
-- We need `internetMessageId` to prevent duplicate imports from Sent Items sync
-- We need `conversationId` for email threading
-
-| Type | Draft Endpoint | Required Permissions |
-|------|----------------|----------------------|
-| **Personal** | `/users/{email}/messages` | `Mail.ReadWrite` |
-| **Shared** | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
-| **Notification** | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
-
-**Note:**
-- `{email}` = the mailbox email address (e.g., `team1@company.com`)
-- Sent emails are stored in the mailbox's Sent Items folder
-
-### Personal Mailbox
-
-- Auto-created when user connects Microsoft account (if admin setting allows)
-- `x_owner_user_id` field links mailbox to owner
-- Only visible to owner in composer dropdown
-- Owner sends with their own OAuth token
-
-### Shared Mailbox
-
-- Visible to all users in composer dropdown
-- **Microsoft 365:** each user sends with their **own** OAuth token. User needs:
-  - `Mail.ReadWrite.Shared` permission in Azure
-  - "Send As" rights on the mailbox in Microsoft 365
-- **Gmail and IMAP/SMTP:** the address is its own account, with its own
-  credentials and no owner. Nothing is borrowed from the sender, and the mailbox
-  is configured by giving that address credentials of its own
-  (Settings → Technical → Email → Email Accounts).
-
-### Notification Mailbox
-
-- For system notifications (activity reminders, mentions to internal users)
-- Uses the Owner's OAuth token (same field as personal mailboxes)
-- Only one active notification mailbox allowed
-- **Required for incoming sync:** When enabling incoming sync on any mailbox, a notification mailbox must exist (enforced via constraint). This handles emails triggered by external authors.
+**Notification** — for system mail (activity reminders, mentions). Uses the
+owner's token, and only one may be active. **Required before any mailbox can
+enable incoming sync**, because mail triggered by an external author has to go
+out from somewhere.
 
 ---
 
-## 3. Sync Modes
+## 3. Sync modes and filtering
 
-### Overview
+### One control, not six
 
-Each mailbox can be configured with a sync mode that determines how incoming emails are handled.
-
-| Mode | Inbox | Sent Items | Filter | Use Case |
-|------|-------|------------|--------|----------|
-| **Send only** | - | - | - | Send-only mailbox |
-| **Known partners** | ✓ | ✓ | Existing partners only | Safe default, no spam |
-| **All** | ✓ | ✓ | Configurable per contact type | Full control with routing rules |
-
-### Send Only (No Sync)
-
-- Mailbox is only used for sending emails from Odoo
-- No incoming emails are synchronized
-- Default for new mailboxes
-
-### Known Partners Only (Recommended)
-
-**Decision:** Only sync emails from/to contacts that already exist as partners in Odoo.
-
-**Filter logic differs between Inbox and Sent Items:**
-
-**Inbox (incoming emails):**
-```python
-# 1. Skip if sender is from internal domain
-if sender_domain in internal_domains_setting:
-    skip("Internal domain")
-
-# 2. Find partner by sender email
-partner = find_partner(from_email)
-
-# 3. Skip if sender not in Odoo
-if not partner:
-    skip("Unknown sender")
-
-# 4. Skip if sender is an internal user (employee with Odoo account)
-if partner.user_ids:
-    skip("Internal user")
-
-# 5. Process the email
-process_email()
-```
-
-**Sent Items (outgoing emails for 2-way sync):**
-```python
-# 1. NO internal domain check (we sent it, we know it's valid)
-
-# 2. Find partner by RECIPIENT email (first toRecipient)
-partner = find_partner(to_email)
-
-# 3. Skip if recipient not in Odoo
-if not partner:
-    skip("Unknown recipient")
-
-# 4. Skip if recipient is an internal user (colleague with Odoo account)
-if partner.user_ids:
-    skip("Internal user")
-
-# 5. Process the email (author = mailbox owner)
-process_email()
-```
-
-**Why Sent Items uses different logic:**
-- **No internal domain check:** The sender is always "us" (the mailbox). Checking the internal domain would skip ALL sent emails.
-- **Use recipient, not sender:** We want to sync emails TO external contacts, not from ourselves.
-- **Still skip internal users:** Emails to colleagues don't need to be synced (they have Odoo inbox).
-
-**What gets synced (Inbox):**
-
-| Scenario | Internal domain? | Partner exists? | Has user? | Result |
-|----------|------------------|-----------------|-----------|--------|
-| Reply from customer | - | ✓ | - | **Sync** |
-| New email from existing customer | - | ✓ | - | **Sync** |
-| Colleague (any @company.com) | ✓ | - | - | Skip |
-| Colleague with Odoo account | - | ✓ | ✓ | Skip |
-| Spam/marketing | - | - | - | Skip |
-| Unknown sender | - | - | - | Skip |
-
-**What gets synced (Sent Items):**
-
-| Scenario | Partner exists? | Has user? | Result |
-|----------|-----------------|-----------|--------|
-| Email to customer | ✓ | - | **Sync** |
-| Email to new lead | ✓ | - | **Sync** |
-| Email to colleague | ✓ | ✓ | Skip |
-| Email to unknown recipient | - | - | Skip |
-
-**Why this approach:**
-- Explicit "Internal Domains" setting in Mail Pro configuration, and a *gate*
-  rather than a preference: a mailbox cannot enable incoming sync while the list
-  is empty, and a sync run aborts if it is emptied later. The list used to be
-  read from `mail.alias.domain`, where "no domains configured" meant "nothing is
-  internal" — so a database that never set it up synced every internal email
-  into Odoo. Fail-closed, because the failure mode is a data leak.
-- Turning the filter off is possible but explicit: globally via "Sync internal
-  email", or per mailbox via "Exclude Internal"
-- Internal employees filtered via domain (Inbox) OR via `partner.user_ids` (both folders)
-- Replies always work (partner was created when we sent to them)
-- Spam/marketing naturally filtered (not in contacts)
-- Simple to understand and maintain
-
-### Email Routing Configuration
-
-**Status:** Implemented
-
-Each mailbox has routing settings that control how new emails (non-replies) are processed.
-
-#### UI Fields
-
-One control, not six. `x_sync_mode` is a single three-way choice, and every
-question the mailbox form used to ask separately is an answer to it:
+`x_sync_mode` is a single three-way choice, and every question the mailbox form
+used to ask separately is an answer to it:
 
 | `x_sync_mode` | Meaning |
 |---------------|---------|
@@ -291,375 +210,386 @@ could disagree with the one field that decided. Code asks
 allow-list, so an unset value means "do not import" rather than "import
 everything".
 
+Two booleans remain, and neither is a mode:
+
 | Field | Type | Description |
 |-------|------|-------------|
-| `x_routing_smart` | Boolean | Interlock keeping AI auto-routing off. See `models/ai/` |
+| `x_routing_smart` | Boolean | Interlock keeping AI auto-routing off. See §8 |
 | `x_queue_unknown_contacts` | Boolean | Hold unknown senders in the triage queue |
 
-#### Routing Priority
+### Internal domains are a gate, not a preference
 
-1. **Odoo Alias** - if `mail.alias` exists for mailbox email, use its config (model + defaults)
-2. **Fallback** - post to partner's chatter with warning log
+`pan.mail.internal.domains` is the only place that answers "is this address one
+of ours?". A mailbox **cannot enable incoming sync while the list is empty**,
+and a sync run aborts if it is emptied later.
 
-#### Block List
+This used to read `mail.alias.domain`, where "no domains configured" meant
+"nothing is internal" — so a database that never set it up synced every
+internal email into Odoo. Fail-closed, because the failure mode is a data leak.
+Alias domains still feed `suggest_domains()`; they no longer decide anything.
 
-Contacts can be individually blocked from email sync via `x_email_sync_blocked` on `res.partner`. Blocked contacts are skipped regardless of routing settings.
+Turning the filter off is possible but explicit: globally via "Sync internal
+email", or per mailbox via "Exclude Internal".
 
-#### Routing Logic
-
-```
-Email arrives
-    │
-    ▼
-Pre-filters (duplicates, Odoo-originated, internal domain)
-    │
-    ▼
-Reply check (In-Reply-To / conversationId)
-    │
-    ├── Reply found → Post to existing thread
-    │
-    └── New email:
-        │
-        ├── Partner blocked? → Skip
-        │
-        ├── Unknown contact + x_sync_mode != 'all' → Skip
-        │
-        └── Route to model:
-            ├── Odoo alias exists → Use alias config (model + team_id)
-            └── No routing → Post to partner chatter + warning
-```
-
-**Benefits for AI integration:**
-- Each conversation = 1 Lead/Ticket record
-- Records linked to `partner_id` → aggregate per company
-- Structured data for AI summaries per customer
-
-### Roadmap: Unknown Contact Triage (AI-Assisted)
-
-**Status:** Planned for v2.0
-
-**Goal:** Allow syncing emails from unknown senders with AI-powered qualification.
-
-**Approach:** Use existing Odoo models with ICP (Ideal Customer Profile) qualification.
-
-**New field on `res.partner`:**
-```python
-x_icp_qualified = fields.Selection([
-    ('pending', 'Pending Review'),      # New contact, not yet qualified
-    ('qualified', 'Qualified (ICP)'),   # Matches Ideal Customer Profile
-    ('not_qualified', 'Not Qualified'), # Does not match ICP, skip emails
-], default='pending', string='ICP Status')
-```
-
-**Triage flow:**
-```
-Unknown sender email arrives
-    │
-    ▼
-┌─────────────────────────────────────┐
-│ Auto-create contact (pending)       │
-│ x_icp_qualified = 'pending'         │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│ AI analyzes email + company info    │
-│ → Suggests: Qualified / Not         │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│ User reviews & approves             │
-│ Sets x_icp_qualified                │
-└─────────────────────────────────────┘
-    │
-    ▼
-Future emails from this contact:
-├── qualified → Sync normally
-└── not_qualified → Skip
-```
-
-**Why this approach:**
-- Uses existing `res.partner` model (no new tables)
-- Simple boolean-like qualification
-- AI suggests, human approves (human-in-the-loop)
-- Once qualified, no further triage needed
-- Scales: millions of contacts, only review new ones
-
-**AI Integration points:**
-1. **Qualification suggestion:** Analyze email content, company domain, LinkedIn data
-2. **Customer summary:** Aggregate all Leads per company for account overview
-3. **Smart routing:** Suggest Lead vs Ticket based on content
-
-### Pre-filters (Always Applied)
-
-Before the sync mode filter, these checks always run:
+### Pre-filters (always applied)
 
 | Check | Condition | Action |
 |-------|-----------|--------|
-| Odoo-originated (headers) | `X-Odoo-Model` or `X-Odoo-Mail-Id` header present | Skip |
-| Odoo-originated (sent) | `internetMessageId` matches `mail.mail.x_microsoft_message_id` | Skip |
-| Duplicate | `internetMessageId` already in `mail.message.message_id` | Skip |
+| Odoo-originated (headers) | `X-Odoo-Model` or `X-Odoo-Mail-Id` present | Skip |
+| Odoo-originated (sent) | Message-ID matches `mail.mail.x_microsoft_message_id` | Skip |
+| Duplicate | Message-ID already in `mail.message.message_id` | Skip |
+
+### Inbox vs Sent Items
+
+The filter differs by folder, and the difference is deliberate.
+
+**Inbox** — skip internal domains, then require the *sender* to be a known
+partner, then skip partners that have an Odoo user (colleagues have an inbox
+already).
+
+**Sent Items** — no internal-domain check at all (the sender is always us, so
+the check would skip everything), and the partner is looked up by *recipient*
+rather than sender. Internal users are still skipped.
+
+| Scenario (Inbox) | Internal domain? | Partner exists? | Has user? | Result |
+|----------|------------------|-----------------|-----------|--------|
+| Reply from customer | – | ✓ | – | **Sync** |
+| Colleague (any @company.com) | ✓ | – | – | Skip |
+| Colleague with Odoo account | – | ✓ | ✓ | Skip |
+| Spam / unknown sender | – | – | – | Skip |
+
+### Block list
+
+`res.partner.x_email_sync_blocked` excludes a contact from all mailbox sync,
+regardless of routing settings. It is treated as an objection to processing:
+blocked mail is skipped and **not** recorded in the triage queue.
 
 ---
 
-## 4. Email Flows
+## 4. Thread matching
 
-### Outgoing Email Flow
+"Where does this reply belong?" is a separate model from the fetcher —
+`pan.mail.matcher` — because it is the decision that goes wrong most visibly and
+the one worth testing without a provider, an HTTP mock or a mailbox.
+
+Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
+(0.8) wins and the ladder stops:
+
+| # | Rule | Conf. | Basis |
+|---|------|-------|-------|
+| 1 | `odoo_headers` | 1.0 | `X-Odoo-Model` / `X-Odoo-Record-Id` |
+| 2 | `references` | 1.0 | `In-Reply-To` + the full `References` chain |
+| 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread id) |
+|   | `thread_link_legacy` | 0.85 | unscoped `x_microsoft_conversation_id` |
+| 4 | `subject_participants` | 0.5 | normalised subject + same partner — proposal only |
+
+Rules 1 and 2 are RFC 5322, so they behave identically on Microsoft 365, Gmail
+and IMAP. Rule 3 is the only provider concept, and it is treated as *a hint
+valid only inside one mailbox* — which is what a `conversationId` or `threadId`
+actually is. Below the threshold `match()` returns candidates but leaves `model`
+empty, so a caller can branch on `model` alone and never route on a guess.
+
+Three things this changed, each a silent misroute before:
+
+- **The chain, not one hop.** Only `In-Reply-To` was read; a client that sets
+  just `References` fell through to the conversation-id lookup.
+- **Newest, not oldest.** The conversation lookup ordered `id asc`, so replies
+  threaded onto whatever record *first* touched the conversation — usually an
+  old contact chatter post rather than the open ticket.
+- **Scoped, not global.** A thread id was matched across every mailbox at once.
+
+### The two indexes
+
+Neither of these could be a Char field on `mail.message`.
+
+`pan.mail.message.ref` maps an RFC 5322 Message-ID onto the `mail.message` it
+belongs to. One Odoo message legitimately has *several* Message-IDs: the one
+Odoo generated, the one the provider assigned on the wire (Graph mints its own
+`internetMessageId` and gives no way to override it), and any id a forwarding
+client re-used. A single Char holds one of those; a `References` chain has to
+resolve all of them.
+
+`pan.mail.thread.link` maps a provider thread handle onto an Odoo record,
+*scoped to the mailbox that saw it*. Provider thread ids are not global:
+Microsoft's `conversationId` is mailbox-local and derived from the conversation
+topic, Gmail's `threadId` is account-local, and two mailboxes syncing the same
+exchange see two different ids for it.
+
+Neither model is provider-specific. IMAP has no thread handle at all; the
+matcher synthesises one from the root of the `References` chain and stores it
+here like any other.
+
+---
+
+## 5. Email flows
+
+### Outgoing
 
 ```
 User clicks "Send"
       │
       ▼
-┌─────────────────────────────────────────────┐
-│ mail.compose.message                         │
-│ - x_microsoft_send_from_id = selected mailbox│
-└─────────────────────────────────────────────┘
+mail.compose.message — x_microsoft_send_from_id = selected mailbox
       │
       ▼
-┌─────────────────────────────────────────────┐
-│ mail.mail._resolve_route()                   │
-│ - One answer, in this order:                 │
-│   1. internal notification → notifications@  │
-│   2. the composer's choice                   │
-│   3. the author's default mailbox            │
-│   4. no author at all → notifications@       │
-│ - Anything unanswerable raises RoutingError  │
-│   and the mail fails; it is NOT rerouted.    │
-└─────────────────────────────────────────────┘
+mail.mail._resolve_route()
+  One answer, in this order:
+    1. internal notification → notifications@
+    2. the composer's choice
+    3. the author's default mailbox
+    4. no author at all → notifications@
+  Anything unanswerable raises RoutingError and the mail FAILS.
+  It is never rerouted to a different sender.
       │
       ▼
-┌─────────────────────────────────────────────┐
-│ microsoft.graph.client.send_email_via_graph()│
-│ - POST /users/{email}/sendMail               │
-│ - Fetches Message-ID from Sent Items         │
-└─────────────────────────────────────────────┘
+mailbox._get_client().send_message(mail, mailbox, account, reply_context)
+      │
+      ├── microsoft.graph.client → draft → send (see below)
+      ├── google.gmail.client    → MIME via mime_utils → users.messages.send
+      └── imap.smtp.client       → MIME via mime_utils → SMTP, then APPEND to Sent
 ```
 
-### Incoming Email Flow (Polling)
+**Why Graph uses draft → send and not `sendMail`.** `sendMail` returns nothing.
+The two ids we need only exist on a created draft:
+
+1. `POST /users/{email}/messages` → returns `internetMessageId` and `conversationId`
+2. `POST /users/{email}/messages/{id}/send`
+
+`internetMessageId` prevents the Sent Items sync from re-importing our own mail,
+and `conversationId` is the thread handle. For a reply, step 1 becomes
+`createReply` on the parent's provider id, then a PATCH — see §6.
+
+| Mailbox type | Draft endpoint | Required permission |
+|------|----------------|----------------------|
+| Personal | `/users/{email}/messages` | `Mail.ReadWrite` |
+| Shared | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
+| Notification | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
+
+### Incoming (polling)
 
 ```
-Cron job (every 1 min)
+Cron (every 1 min) → _process_mailbox(mailbox)
       │
       ▼
-┌─────────────────────────────────────────────┐
-│ fetch_messages()                             │
-│ - GET /users/{email}/mailFolders/Inbox       │
-│ - Filter: receivedDateTime > last_sync       │
-│ - Sort: receivedDateTime asc (oldest first)  │
-│ - Batch: up to 200 per folder                │
-└─────────────────────────────────────────────┘
+client.fetch_messages(folder, since_datetime, limit)
+  ascending by date, up to 200 per folder
       │
       ▼
-┌─────────────────────────────────────────────┐
-│ Filter checks                                │
-│ - Skip if from internal domain               │
-│ - Skip if sender not in contacts             │
-│ - Skip if sender is internal user            │
-└─────────────────────────────────────────────┘
+Pre-filters: duplicate, Odoo-originated, internal domain, block list, sync mode
+  (skips that a customer might want to reverse → pan.mail.item; see §7)
       │
       ▼
-┌─────────────────────────────────────────────┐
-│ Check In-Reply-To header                     │
-│ - Find parent message by Message-ID          │
-└─────────────────────────────────────────────┘
+pan.mail.matcher.match(message, mailbox, partner)
       │
-      ├── Reply found ──────────────────────┐
-      │                                      ▼
-      │                    ┌─────────────────────────────────┐
-      │                    │ Post to parent's record         │
-      │                    │ (sale.order, lead, partner...)  │
-      │                    └─────────────────────────────────┘
-      │
-      └── No reply ─────────────────────────┐
-                                             ▼
-                           ┌─────────────────────────────────┐
-                           │ Route via alias config          │
-                           │ Model.message_new(msg_dict)     │
-                           │ → helpdesk.ticket, crm.lead, etc│
-                           └─────────────────────────────────┘
+      ├── model set  → message_post onto that record          → outcome 'threaded'
+      ├── sent item  → message_post onto the correspondent    → outcome 'sent_item'
+      └── otherwise  → _route_email_via_alias()
+                         ├── alias configured → message_new() → outcome 'created'
+                         └── no alias → contact chatter       → outcome 'fallback'
       │
       ▼
-┌─────────────────────────────────────────────┐
-│ mail.message created                         │
-└─────────────────────────────────────────────┘
-      │
-      ▼
-┌─────────────────────────────────────────────┐
-│ Advance cursor                               │
-│ - x_last_sync_date = min(folder cursors)     │
-│ - If no messages: x_last_sync_date = now()   │
-└─────────────────────────────────────────────┘
+pan.mail.routing.log row written; cursor advanced
 ```
 
-### Odoo Internal Mail Flow
+Every `message_post` carries the provider's own `date`, so a historical import
+keeps the timeline instead of collapsing onto the day the import ran.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  USER ACTION                                                                │
-│  - Post message in chatter ("Send message")                                 │
-│  - @mention someone                                                         │
-│  - Activity reminder                                                        │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  mail.thread.message_post()                                                 │
-│  - Creates mail.message                                                     │
-│  - Calls _notify_thread()                                                   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    ▼                               ▼
-┌───────────────────────────────────┐ ┌───────────────────────────────────────┐
-│ User notification_type = 'inbox'  │ │  User notification_type = 'email'     │
-│                                   │ │                                       │
-│ - Odoo inbox notification         │ │  - Creates mail.mail                  │
-│ - NO email sent                   │ │  - Routes to Graph API                │
-└───────────────────────────────────┘ └───────────────────────────────────────┘
-```
+### Cursor
+
+Ascending sort plus an incremental cursor, the pattern Odoo fetchmail and
+Stripe webhooks use:
+
+1. Fetch up to 200 messages per folder, oldest first, since `x_last_sync_date`
+2. Advance `x_last_sync_date` to the **minimum** of the two folders' latest
+   message, so nothing is skipped in the slower folder
+3. If nothing came back at all, the cursor jumps to `now()` — caught up
+
+`x_sync_start_date` is user-configurable (default: now). Moving it earlier
+resets the cursor, which is how a historical import is started. Duplicates are
+skipped on Message-ID, so a re-run is safe.
 
 ---
 
-## 5. Design Decisions
+## 6. Outgoing threading
 
-### 5.1 Token Encryption
+Threading is half a *send* problem. `mail.mail._build_reply_context()` builds a
+provider-neutral hint from Odoo data — `in_reply_to`, `references` (root first),
+`thread_id`, `provider_message_id` — and each client uses what it can honour:
 
-**Decision:** Fernet symmetric encryption with auto-generated key in database.
+| | Microsoft 365 | Gmail | IMAP/SMTP |
+|---|---|---|---|
+| Standard headers | refused (`internetMessageHeaders` takes `x-` only) | set on the MIME | set on the MIME |
+| How it threads | `createReply` on `provider_message_id`, then PATCH | `In-Reply-To` + `References` + `threadId` | `In-Reply-To` + `References` |
+| When it can't | plain draft, unthreaded | plain send, unthreaded | plain send, unthreaded |
 
-**Why:**
-- Odoo.sh doesn't support custom environment variables
-- Database is already encrypted at rest on Odoo.sh
-- Zero configuration required
-- Defense-in-depth against SQL injection, backup leaks
+The two MIME senders share `providers/mime_utils.build_message()`, so the
+headers are written once. It prefers `reply_context` over `mail.mail.references`
+on purpose: Odoo's field holds the ids *Odoo* generated, while the id that went
+on the wire is the one `new_message_id()` minted. A chain built from Odoo's ids
+names messages the recipient never saw.
 
-**Implementation:**
-- Key stored in `ir.config_parameter`: `x_pan_outlook_pro.encryption_key`
-- Auto-generated on first use
-- All encryption via `models/encryption_utils.py`
+The Message-ID we emit is the one the *recipient saw* — Graph mints its own
+`internetMessageId` on send, so `pan.mail.message.ref` is consulted first.
+Gmail refuses a `threadId` whose message is not a valid RFC reply, so the handle
+is only claimed when `In-Reply-To` is there to justify it.
 
-### 5.2 Polling over Webhooks
+**Providers with no thread concept.** IMAP/SMTP supply no thread handle, so both
+sides synthesise one from the root of the `References` chain — the matcher on
+receive, `mime_utils.thread_key()` on send. Every participant in a thread
+carries the same root, so rule 3 keeps working without the provider offering
+anything.
 
-**Decision:** Poll Microsoft Graph API every 1 minute instead of using webhooks.
+---
 
-**Why:**
-- Works out-of-the-box on Odoo.sh (no public endpoint needed)
-- Reuses existing OAuth token infrastructure
-- 1-minute delay acceptable for email sync
+## 7. Visibility
 
-### 5.3 Native message_new() for Incoming Emails
+Better matching does not tell anyone where mail landed — it only makes the
+answer right more often. Three models answer three different questions.
 
-**Decision:** Use Odoo's native `message_new()` for creating records from incoming emails.
+### `pan.mail.routing.log` — where did this mail go?
 
-**Why:**
-- This is exactly what Odoo's standard SMTP mail gateway uses
-- Handles record creation + initial message posting correctly
-- Triggers auto-replies (e.g., Helpdesk acknowledgment) properly
-- Does NOT send duplicate follower notifications to the sender
-- Proven Odoo code for threading, attachments, partner creation
+One row per delivered mail (Settings → Technical → Email → Mail Routing) with
+the rule, the confidence, and every candidate the ladder rejected.
 
-**Critical insight:** Manually creating records + calling `message_post()` triggers follower notifications, which causes senders to receive duplicate emails. The `message_new()` approach avoids this entirely.
+`outcome` separates three things that look identical from inside Odoo:
+`threaded` onto something that existed, `created` something new, `fallback` to
+contact chatter. `needs_review` flags exactly two of them:
+
+- **fallback** — delivered, but to a place nobody is looking.
+- **created *with* candidates** — the expensive, silent one: we may have opened
+  a duplicate ticket for a conversation that was already running.
+
+A `threaded` mail and our own `sent_item` never flag. A queue that cries wolf on
+every routed mail gets ignored, and then it may as well not exist.
+
+Deliberately a record of what happened, **not** a queue that holds mail back.
+Delivery is unchanged. A log that is wrong costs a confusing row; a queue that
+is wrong costs a customer an answer. A daily cron drops rows past
+`pan_mail_pro.routing_log_retention_days` (default 90) unless still flagged.
+
+### `pan.mail.item` — what reached Odoo but landed nowhere?
+
+`_process_message()` used to drop mail in five places with nothing but a log
+line. Three of those are correct and final; two are a decision the customer
+would want to see and possibly reverse. Two rules shape the model:
+
+**Nothing is queued that was filtered on purpose.** A blocked contact is an
+objection to processing, and storing that mail in a new table inverts what the
+flag means. Mail between internal users has no document context and no document
+ACL to inherit. Internal-domain mail was excluded by configuration. None of
+these become records here — not even their metadata.
+
+**No body, no attachments.** The provider stays the source of truth; the body is
+re-fetched when someone opens the item. That keeps the table small, keeps a
+second copy of every email out of the database, and keeps the erasure surface to
+metadata that expires on its own. Above `MAX_PENDING_PER_MAILBOX` (50 000)
+pending items recording stops — a queue nobody works is a disk-space bug.
+
+### `pan.mail.coverage` — is any of this working?
+
+The number that says whether the "two separate worlds" problem is being solved,
+and the gate on building more triage: if almost everything files itself
+correctly, a queue solves nothing and the effort belongs elsewhere.
+
+Measured inside Odoo and nowhere else. Sending usage telemetry out would
+contradict the module's own data-disclosure statement. A `TransientModel`
+rather than a stored report: this is a question you ask, not a history you keep,
+so nothing is written and the answer cannot go stale.
+
+It reads the **communication lens** fields on `mail.message` (`x_direction`,
+`x_mailbox_id`, and the document pointer made groupable). Odoo links a message
+to its document through `model` (a char) and `res_id` (an int) — a pointer with
+no foreign key, which cannot be grouped or clicked through — and `mail.message`
+is one table for notes, emails, system logs and chats. "Where did this email end
+up?" has no answer in standard Odoo. These fields give it one, with partial
+indexes so the index stays off the note and log rows that are the vast majority.
+
+---
+
+## 8. The AI seam
+
+AI is a second seam shaped exactly like the provider seam, for the same reason:
+one abstract contract (`pan.mail.ai`), a registry, and a rule that only an
+implementation knows what a vendor's API looks like. Three properties are
+enforced by tests and by CI greps, not by convention:
+
+- **Opt-in by data.** `none` is a real backend that returns nothing. An
+  unconfigured database behaves as though the feature were absent.
+- **AI cannot block mail.** It is never called from `mail.mail.send()` or
+  `_process_message()` — those run in a one-minute cron inside a savepoint,
+  where a twenty-second model call would stall a mailbox and a failure would
+  roll the message back. A separate cron enriches records that already exist.
+- **AI may rank, never invent.** The candidate shortlist is built by
+  deterministic matching; a suggestion naming anything else is discarded.
+
+Bring-your-own-key: the call goes from the customer's Odoo straight to the
+provider. Pantalytics never proxies it, which is what keeps the manifest's
+data-disclosure statement true and keeps Pantalytics out of every customer's
+processor chain. Only an envelope is sent — subject, sender, recipient, date and
+a shortlist of candidate record names — never a body or an attachment.
+
+**Why AI is absent from matcher rules 1–3.** A `References` chain is exact, free
+and reproducible, and a language model would make a solved problem
+probabilistic. The ambiguous residue — a customer who starts a fresh mail
+instead of replying, a known contact with three open tickets — is where it earns
+its place, and it plugs in as one more rule by overriding `_match_rules()`.
+Running last means it is only ever asked about mail the deterministic rules
+could not place, which is what keeps it affordable on a one-minute cron.
+
+Auto-routing stays shut behind the `x_routing_smart` constraint until there is
+evidence from real suggestions that it should open.
+
+---
+
+## 9. Design decisions
+
+### 9.1 Token encryption
+
+Fernet symmetric encryption with an auto-generated key in `ir.config_parameter`
+(`x_pan_outlook_pro.encryption_key`), because Odoo.sh does not support custom
+environment variables and the database is already encrypted at rest. Zero
+configuration, and defense-in-depth against SQL injection and backup leaks. All
+encryption goes through `models/encryption_utils.py`.
+
+### 9.2 Polling over webhooks
+
+Works out of the box on Odoo.sh with no public endpoint, reuses the existing
+OAuth infrastructure, and a one-minute delay is acceptable for email.
+
+### 9.3 Native `message_new()` for incoming mail
+
+This is exactly what Odoo's standard SMTP gateway uses. It handles record
+creation plus the initial post correctly, triggers auto-replies properly, and —
+critically — does **not** send duplicate follower notifications to the sender.
 
 ```python
-# CORRECT - uses Odoo's native flow
+# CORRECT — uses Odoo's native flow
 record = self.env['helpdesk.ticket'].message_new(msg_dict, custom_values={'team_id': team.id})
 
-# WRONG - triggers unwanted notifications
+# WRONG — triggers unwanted notifications
 record = self.env['helpdesk.ticket'].create(vals)
 record.message_post(body=body, ...)  # Sender gets notified!
 ```
 
-### 5.4 Reply Threading via Microsoft Message-ID
+### 9.4 Pre-create partners
 
-**Decision:** After sending, store Microsoft's `internetMessageId` on `mail.message` for reply threading.
+Find or create the partner *before* posting. Odoo's own auto-creation sometimes
+takes the partner name from the email subject; pre-creation gets it from the
+`From` header.
 
-**Why:**
-- Graph API `sendMail` doesn't return Message-ID
-- Microsoft generates its own Message-ID (different from any we set)
-- Need Microsoft's ID for correct reply threading
-- Incoming replies use `In-Reply-To` header to find parent message
+### 9.5 No fallback between senders
 
-**Implementation:**
-1. After sending via Graph API, the `internetMessageId` is returned from the draft
-2. Store it on `mail.message.x_microsoft_message_id`
-3. Incoming mail processor looks up parent via `In-Reply-To` header matching stored IDs
+A mail that cannot be sent from the mailbox it was addressed from **fails**,
+with a reason, and waits in the queue. It is not quietly re-sent from
+`notifications@`. Silent rerouting looks like success and puts the wrong address
+in front of a customer. Other mails in the same batch are unaffected.
 
-### 5.5 Incremental Cursor-Based Sync
+Corollary, learned the hard way: raising and recording are mutually exclusive in
+one transaction — the raise rolls the write back. `mail.mail.send()` picks which
+one the caller gets, and the cron's `auto_commit` pass a minute later supplies
+the other.
 
-**Decision:** Use ascending sort + incremental cursor for reliable email sync.
-
-**Pattern:**
-1. Fetch messages sorted by `receivedDateTime asc` (oldest first)
-2. Process batch of up to 200 messages per folder
-3. Advance `x_last_sync_date` to the `receivedDateTime` of the last fetched message
-4. Next cron run continues from where the previous run stopped
-
-**Why ascending + incremental cursor:**
-- **No data loss:** Each run picks up exactly where the previous one stopped
-- **Self-healing:** If a run fails, the next run retries from the same point
-- **Historical import:** Processes 200 messages per cron run until caught up
-- **No race conditions:** Messages arriving during processing have later timestamps
-
-**Multi-folder cursor (Inbox + SentItems):**
-- Both folders share one cursor (`x_last_sync_date`)
-- After processing both, cursor advances to the **minimum** of the two folders' latest message
-- This ensures no messages are skipped in the slower folder
-- Duplicates from the faster folder are automatically skipped via `internetMessageId` check
-
-**Configuration:**
-- `x_sync_start_date`: User-configurable start date (default: now, always editable)
-- `x_last_sync_date`: Auto-advancing cursor, updated after each successful batch
-- Changing `x_sync_start_date` to an earlier date auto-resets `x_last_sync_date`
-- Duplicates are automatically skipped via `internetMessageId` check
-
-**Example: Historical import of 1000 emails:**
-```
-Run 1: fetch 200 oldest since sync_start_date → cursor = msg #200 datetime
-Run 2: fetch 200 oldest since cursor          → cursor = msg #400 datetime
-...
-Run 5: fetch 200 oldest since cursor          → cursor = msg #1000 datetime
-Run 6: fetch 0 messages                       → cursor = now() (caught up)
-```
-
-This is a standard pattern (incremental cursor sync) used by Odoo fetchmail, Stripe webhooks, Salesforce replication, etc.
-
-### 5.6 Pre-create Partners
-
-**Decision:** Find/create partner BEFORE calling `message_process()`.
-
-**Why:**
-- Odoo's auto-creation sometimes uses email subject as partner name
-- Pre-creation ensures correct name from email "From" header
-
-### 5.7 Personal Mailbox Auto-creation
-
-**Decision:** Auto-create personal mailbox when user connects Microsoft account.
-
-**Why:**
-- Zero-friction onboarding for users
-- Admin can disable via setting if not wanted
-- Mailbox immediately available in composer dropdown
-
-### 5.8 Shared Mailbox: User's Own Token
-
-**Decision:** Each user sends from shared mailbox using their own OAuth token.
-
-**Why:**
-- Principle of least privilege
-- No centralized "super user" needed
-- Audit trail shows actual sender
-- User needs proper M365 permissions anyway
-
----
-
-### 5.9 IMAP/SMTP: what the protocols make the contract absorb
-
-**Decision:** support plain IMAP + SMTP as a third provider (`imap`), on
-stdlib `imaplib`/`smtplib`, with credentials on `pan.mail.account`.
-
-**Why:** not every mailbox is at Microsoft or Google. A hoster such as Soverin
-offers IMAP and SMTP and nothing else, and the module was already one contract
-away from being able to use it.
+### 9.6 IMAP/SMTP: what the protocols make the contract absorb
 
 Three protocol facts had to land somewhere, and all three land inside the client:
 
@@ -667,23 +597,46 @@ Three protocol facts had to land somewhere, and all three land inside the client
 |------|-------------|
 | No OAuth | `account_is_connected()` is a provider question. For IMAP it means host + login + password; the OAuth-shaped contract methods refuse with an explanation instead of pretending. |
 | UIDs are folder-scoped and invalidated by `UIDVALIDITY` | `provider_message_id` is `folder:uidvalidity:uid`. A renumbered folder is refused rather than misread — a bare UID would fetch a different message. |
-| No thread id | The root of the `References` chain is the thread key, so every message in a conversation shares one handle, the way `conversationId` and `threadId` do. |
+| No thread id | The root of the `References` chain is the thread key, so every message in a conversation shares one handle. |
 
 Two smaller ones: `SEARCH SINCE` is date-granular and server-local, so the
 cursor is asked wide and narrowed in Python; and SMTP files nothing in Sent, so
-the client APPENDs the sent copy itself (best-effort — the mail is already
-delivered, and failing to file a copy is not a send failure).
+the client APPENDs the sent copy itself — best-effort, because the mail is
+already delivered and failing to file a copy is not a send failure.
 
-Outgoing MIME is shared with the Gmail client (`providers/mime_utils.py`).
-That is a function, not a fourth layer: two providers send the same bytes built
-from the same record, and Microsoft does not use it at all because Graph takes
-JSON.
+### 9.7 Graceful degradation: opt-in by data
+
+As long as **no `x_microsoft.mailbox` records exist**, `mail.mail.send()` falls
+through to `super().send()` and Odoo's standard SMTP queue handles outbound
+mail. Demo, QA and dev databases keep working before any provider is wired up.
+Once an admin creates the first mailbox, provider routing activates and
+unroutable mail is failed rather than leaked via SMTP.
+
+Creating that first mailbox is also what disables SMTP
+(`_activate_smtp_takeover`). It used to happen in the install hook, which
+contradicted the paragraph above: a freshly installed database could not send at
+all — not through Mail Pro, not configured yet, and not through SMTP either. The
+one thing an admin needs to send at that moment is user invitations, and those
+were exactly what died.
+
+One window survives by design: the first mailbox exists (routing on, SMTP off)
+but `notifications@` is not connected yet. Internal notifications are **queued**
+in that window rather than cancelled, and go out by themselves once the
+notification mailbox works. See `_is_awaiting_notification_mailbox`.
+
+### 9.8 Configuration that is not configuration
+
+The Microsoft auth and token URLs were config parameters. They are the same for
+every tenant, and a wrong value is unrecoverable from the UI. They are
+constants. A knob nobody should turn is a way to break the product from the
+settings page.
 
 ---
 
-## 6. API Permissions
+## 10. Security and permissions
 
-All permissions are **Delegated** (user context, not application).
+All Microsoft permissions are **delegated** (user context, never application) —
+this module has no admin-level access to a tenant.
 
 | Permission | Purpose |
 |------------|---------|
@@ -691,143 +644,97 @@ All permissions are **Delegated** (user context, not application).
 | `offline_access` | Refresh tokens |
 | `User.Read` | Basic profile during OAuth |
 | `Mail.ReadWrite` | Create drafts, read Sent Items |
-| `Mail.Send` | Send emails from personal mailbox |
-| `Mail.ReadWrite.Shared` | Create drafts in shared mailbox |
-| `Mail.Send.Shared` | Send emails from shared mailbox |
+| `Mail.Send` | Send from personal mailbox |
+| `Mail.ReadWrite.Shared` | Create drafts in a shared mailbox |
+| `Mail.Send.Shared` | Send from a shared mailbox |
 
-**No Application Permissions needed** - this module has no admin-level access.
+For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 
-**Note:** For shared mailboxes, users also need **SendAs permission** in Microsoft 365 Exchange Admin Center.
+| Aspect | Implementation |
+|--------|----------------|
+| Authentication | OAuth 2.0 (Microsoft Entra ID, Google) — or login + password on IMAP |
+| Token storage | Encrypted at rest (Fernet) |
+| Token refresh | Automatic |
+| Data egress | Provider APIs only. Nothing goes to Pantalytics |
+| AI | Off by default; customer's own key; envelope only, never bodies |
 
 ---
 
-## 7. Field Naming Convention
+## 11. Conventions
 
-All custom fields use `x_` prefix per Odoo.sh guidelines:
-- `x_pan_mail_connected`
-- `x_microsoft_mailbox_id`
-- `x_pan_outlook_pro.client_id`
+### Field naming
 
-Credentials are not among them: they live on `pan.mail.account`, whose fields
-are plain (`refresh_token`, `imap_host`) because the model is the module's own.
+Fields added to *Odoo's own* models take the `x_` prefix per Odoo.sh guidelines
+(`x_pan_mail_connected`, `x_microsoft_mailbox_id`). Fields on the module's own
+models do not — `pan.mail.account.refresh_token` is plain, because the model is
+ours.
+
 `res.users` carried `x_microsoft_access_token` and four siblings as proxies onto
-that account until 19.0.5.0.0 removed them.
+`pan.mail.account` until **19.0.5.0.0 removed them**. Every caller had been
+rewritten; only tests still read them. A compatibility shim outlives its callers
+silently — nothing fails when one goes stale.
 
----
+### Custom email headers
 
-## 8. Custom Email Headers
-
-Added to outgoing emails for external workflow integration:
+Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 
 | Header | Example | Purpose |
 |--------|---------|---------|
 | `X-Odoo-Model` | `sale.order` | Source model |
-| `X-Odoo-Record-Id` | `123` | Source record ID |
-| `X-Odoo-Mail-Id` | `456` | mail.mail record ID |
-| `X-Odoo-Message-Id` | `789` | mail.message record ID |
+| `X-Odoo-Record-Id` | `123` | Source record id |
+| `X-Odoo-Mail-Id` | `456` | `mail.mail` record id |
+| `X-Odoo-Message-Id` | `789` | `mail.message` record id |
 
----
-
-## 9. Known Limitations
-
-### Cannot Query SendAs Permissions via Graph API
-
-Microsoft Graph API does not provide an endpoint to query which shared mailboxes a user has SendAs permission for. This is a [known limitation](https://learn.microsoft.com/en-us/answers/questions/1168052/).
-
-**Impact:**
-- Cannot automatically show only accessible mailboxes
-- Admin adds mailboxes manually in Odoo
-- Azure validates permission at send time (returns error if no access)
-
----
-
-## 10. Requirements Checklist
-
-### Outgoing Email
-
-| Requirement | Status |
-|-------------|--------|
-| From address selector in composer | Done |
-| Personal mailbox support | Done |
-| Shared mailbox support | Done |
-| Default mailbox per user | Done |
-| Auto-create personal mailbox on OAuth | Done |
-| Owner-based visibility filtering | Done |
-| Correct Message-ID for reply threading | Done |
-
-### Incoming Email
-
-| Requirement | Status |
-|-------------|--------|
-| Sync from Microsoft 365 mailboxes | Done |
-| Reply threading via In-Reply-To | Done |
-| 2-way sync (Inbox + Sent Items) | Done |
-| Skip Odoo-originated emails | Done |
-| Skip history on first sync | Done |
-| Activity creation for assignment | Done |
-| Known partners only mode | Done |
-| Skip internal users (employees) | Done |
-| Configurable routing per mailbox | Done |
-| Target model selection (Lead/Ticket) | Done |
-| Contact block list | Done |
-| Unknown contact handling (all sync mode) | Done |
-| Smart routing toggle (AI decides) | Interlock, deliberately off |
-| AI triage queue (approval mode) | Future |
-
-### Security
-
-| Requirement | Status |
-|-------------|--------|
-| OAuth 2.0 with Microsoft Entra ID | Done |
-| Delegated permissions only | Done |
-| Token encryption at rest | Done |
-| Automatic token refresh | Done |
-
----
-
-## 11. Unit Tests
-
-Tests are in `tests/test_incoming_mail.py`. Run with:
-
-```bash
-docker-compose stop odoo
-docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
-  -d test_db -u pan_mail_pro --test-enable --test-tags=pan_mail_pro --stop-after-init
-docker-compose start odoo
-```
-
-### Test Coverage
-
-| Test Class | Purpose |
-|------------|---------|
-| `TestInternalDomain` | Internal domain filtering logic |
-| `TestDuplicateDetection` | Duplicate message detection |
-| `TestPartnerMatching` | Partner finding and creation |
-| `TestAliasRouting` | Email routing via aliases |
-
-### Adding New Tests
-
-1. Add test methods to `tests/test_incoming_mail.py`
-2. Use `@tagged('pan_mail_pro', 'post_install', '-at_install')` decorator
-3. Extend `TransactionCase` for database tests
-4. Tests run in transactions (auto-rollback)
-
----
-
-## 12. Log Tags
-
-Use these tags when debugging:
+### Log tags
 
 | Tag | Purpose |
 |-----|---------|
-| `[Graph API]` | Microsoft Graph API operations |
-| `[Incoming Mail]` | Incoming email sync |
-| `[OAuth]` | Authentication operations |
+| `[Graph API]` | Microsoft Graph operations |
+| `[Incoming Mail]` | Incoming sync |
+| `[OAuth]` | Authentication |
+
+---
+
+## 12. Tests
+
+28 files under `tests/`, roughly 6 600 lines. They fall into four groups:
+
+| Group | Files | What they hold |
+|-------|-------|----------------|
+| Contracts | `test_provider_contract.py`, `test_ai_contract.py` | Every provider/backend answers the contract identically |
+| Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py` | Wire-level behaviour per vendor |
+| Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_mail_matcher.py`, `test_routing_log.py`, `test_mail_item.py` | Fetch → filter → match → post |
+| Sending & UI | `test_outgoing_*.py`, `test_compose_*.py`, `test_mailbox_*.py`, `test_setup_flow.py`, `test_onboarding.py` | Routing, threading, composer, permissions, onboarding |
+
+`tests/common.py` provides the shared fixture — a notification mailbox, a shared
+mailbox, a personal mailbox, connected users, an external partner, and a
+`mock_graph` context manager that patches every outbound HTTP call.
+
+The widest useful seam for pipeline tests is `_process_mailbox(mailbox)` with
+only HTTP mocked: its signature survived the provider refactor, so the same
+tests prove the refactor preserved behaviour rather than merely not crashing.
+
+New tests use `@tagged('pan_mail_pro', 'post_install', '-at_install')` and
+extend `TransactionCase`. See [CLAUDE.md](CLAUDE.md) for how to run them and
+what CI enforces.
+
+---
+
+## 13. Known limitations
+
+**SendAs permissions cannot be queried.** Microsoft Graph offers no endpoint to
+ask which shared mailboxes a user may send as
+([known limitation](https://learn.microsoft.com/en-us/answers/questions/1168052/)).
+So the module cannot show only accessible mailboxes: an admin adds them
+manually, and Azure validates at send time.
+
+**IMAP `SEARCH SINCE` is date-granular**, so the cursor is asked wide and
+narrowed in Python — see §9.6.
 
 ---
 
 ## References
 
-- [Microsoft Graph API: Send mail from another user](https://learn.microsoft.com/en-us/graph/outlook-send-mail-from-other-user)
-- [Odoo.sh Environment Variables FAQ](https://www.odoo.sh/faq#what-are-the-default-environment-variables)
-- [Fernet Encryption](https://cryptography.io/en/latest/fernet/)
+- [Microsoft Graph: send mail from another user](https://learn.microsoft.com/en-us/graph/outlook-send-mail-from-other-user)
+- [Odoo.sh environment variables FAQ](https://www.odoo.sh/faq#what-are-the-default-environment-variables)
+- [Fernet encryption](https://cryptography.io/en/latest/fernet/)

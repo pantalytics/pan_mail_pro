@@ -217,11 +217,34 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
 
 ---
 
+## Where mail lands
+
+Once mail is flowing, four screens tell you whether it is going where you
+expect:
+
+| Screen | Question it answers |
+|--------|--------------------|
+| **Communication → All Communication** | Every mail, with the document it landed on |
+| **Communication → Link Coverage** | How much of it lands on a document at all |
+| **Communication → Triage** | What reached Odoo but was filed nowhere |
+| **Settings → Technical → Email → Mail Routing** | Which rule placed each mail, and what it rejected |
+
+The Mail Routing log flags two cases for review: mail that fell back to a
+contact's chatter (delivered, but nobody is looking there), and mail that
+created a new record *while* other candidates existed (possibly a duplicate
+ticket for a conversation already running). Threaded mail never flags — a review
+queue that cries wolf gets ignored.
+
+---
+
 ## Development
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for module structure, email flow
-diagrams and design decisions, and [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) for the
-UI conventions the settings and mailbox screens follow.
+| Document | Contents |
+|----------|----------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | The design: models, seams, flows, and why. Single source of truth |
+| [CLAUDE.md](CLAUDE.md) | Workflow: environments, commands, CI, Odoo traps |
+| [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) | UI conventions for the settings and mailbox screens |
+| [TESTPLAN.md](TESTPLAN.md) | Manual test plan for what CI cannot reach |
 
 ### Running Tests
 
@@ -233,4 +256,6 @@ docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
 docker-compose start odoo
 ```
 
-Tests cover: internal domain filtering, duplicate detection, partner matching, alias routing.
+28 test files cover four areas: the provider and AI contracts, each provider's
+wire behaviour, the incoming pipeline (fetch → filter → match → post), and
+sending, threading, the composer and onboarding. See ARCHITECTURE.md §12.

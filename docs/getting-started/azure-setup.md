@@ -1,6 +1,11 @@
-# Azure Setup
+# Microsoft 365 Setup
 
-This guide walks you through creating a Microsoft Entra ID (Azure AD) app registration for Mail Pro.
+This guide walks you through creating a Microsoft Entra ID (Azure AD) app
+registration for Mail Pro.
+
+You only need this if your mail is hosted at Microsoft 365. For Google
+Workspace see [Google Workspace Setup](google-setup.md); for any other host see
+[IMAP/SMTP Setup](imap-setup.md).
 
 ## Step 1: Create App Registration
 
@@ -51,11 +56,12 @@ After registration, copy these values (you'll need them in Odoo):
 ## Step 5: Configure in Odoo
 
 1. Go to **Settings → Mail Pro**
-2. Enter:
+2. Set **Email provider** to *Microsoft 365*
+3. Enter:
    - **Client ID:** Your Application (client) ID
    - **Tenant ID:** Your Directory (tenant) ID
    - **Client Secret:** The secret value you copied
-3. Save
+4. Save
 
 ## Next Steps
 

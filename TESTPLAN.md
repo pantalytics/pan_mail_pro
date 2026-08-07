@@ -1,191 +1,232 @@
-# Testplan pan_mail_pro v19.0.5.0.0 — rename + provider-refactor + IMAP/SMTP + simplification
+# Testplan pan_mail_pro
 
-Doel: aantonen dat na de rename (`pan_outlook_pro` → `pan_mail_pro`) en de
-provider-refactor zowel Outlook als Gmail end-to-end werken, in drie ringen:
-lokaal → dogfood → klanten.
+Handmatig testplan voor wat CI niet kan bereiken: een echt consent-scherm, een
+refresh token dat na een uur nog werkt, en of een provider de mail werkelijk
+aflevert. Alles wat wél te automatiseren is, hoort in `tests/` — zie
+ARCHITECTURE.md §12 voor wat daar al staat.
+
+**Huidige versie:** 19.0.5.0.1
+**Ringen:** lokaal → testinstance → dogfood → klanten
+
+> **Wat CI inmiddels afdekt** (en hier dus niet meer handmatig hoeft):
+> 440 tests, de provider- en AI-contracten, de volledige inkomende pijplijn op
+> Graph- én Gmail-data, en sinds #18 het **upgradepad vanaf de vorige release**
+> — een echte install van de vorige tag, dan `-u` met de migratiescripts en de
+> suite eroverheen. Wat hieronder staat is bewust alleen het restant dat een
+> echte tenant vereist.
+
+---
+
+## Openstaand — wacht op Rutger
+
+Dit zijn de enige harde blokkades. Ze kunnen niet vanuit een sessie, lokaal noch
+in de cloud: Azure Portal en Google Cloud Console zijn handwerk.
+
+- [ ] **Azure redirect-URI** toevoegen aan appregistratie
+      `32a681d3-aeb0-4dc8-bf32-b40874ce062a`
+      (portal.azure.com → App registrations → Authentication → platform Web):
+      `https://mailpro-dev.cloudpepper.site/microsoft_oauth/callback`
+      Kan niet via API: de Lokka-koppeling heeft alleen SharePoint-scopes (403).
+- [ ] **Google OAuth-client.** Productie heeft géén `x_pan_outlook_pro.google_*`
+      parameters — er is in Odoo nooit een Google-client geconfigureerd. Bestaat
+      er al een client in Cloud Console uit de Gmail-ontwikkelfase? Voeg daar
+      `https://mailpro-dev.cloudpepper.site/google_oauth/callback` toe en vul
+      client ID + secret in op de settings-pagina. Zo niet: nieuwe client.
+- [ ] **IMAP/SMTP-credentials** voor een Soverin-testadres (of ander adres met
+      IMAP+SMTP) in Bitwarden zetten.
+
+Beide callback-paden zijn geverifieerd tegen `controllers/main.py`, dus de URI's
+hierboven kunnen letterlijk worden overgenomen.
+
+---
 
 ## Fase A — Lokaal (Docker)
 
-> **Besluit 30-07:** de functionele tests (A3/A4) draaien we **niet** lokaal
-> maar op een CloudPepper-testinstance — zie Fase A′ hieronder. A1/A2 zijn
-> wel lokaal uitgevoerd en blijven geldig als regressiebewijs. De lokale
-> Docker-omgeving is gestopt; de Microsoft-config die al in de lokale
-> `test_db` was gezet is daarmee irrelevant geworden (kan blijven staan).
+> **Besluit 30-07:** de functionele tests draaien we **niet** lokaal maar op de
+> CloudPepper-testinstance (Fase A′). A1/A2 zijn wel lokaal uitgevoerd en
+> blijven geldig als regressiebewijs. De lokale Docker-omgeving is gestopt.
 
 ### A1. Omgeving en module-upgrade
 - [x] `docker-compose up -d` in `.local/`, Odoo bereikbaar op :8069 (30-07)
-- [x] Modulestatus: `test_db` had al `pan_mail_pro` 19.0.3.0.0 geïnstalleerd —
-      het rename-pad was lokaal al doorlopen (30-07)
-- [x] Logs schoon: alleen een onschuldige opstart-race (db booting) en een
+- [x] `test_db` had al `pan_mail_pro` 19.0.3.0.0 — rename-pad lokaal doorlopen (30-07)
+- [x] Logs schoon: alleen een opstart-race (db booting) en een
       Postgres-collation-warning (30-07)
 
 ### A2. Unit tests lokaal
-- [x] `--test-enable --test-tags=pan_mail_pro`: 0 failed, 0 errors van
-      148 tests tegen de ge-upgradede database (30-07)
+- [x] `--test-enable --test-tags=pan_mail_pro`: 0 failed, 0 errors van 148 tests
+      tegen de ge-upgradede database (30-07)
+- [ ] Opnieuw draaien op 19.0.5.0.1 — het zijn er inmiddels 440, en Helpdesk
+      (Enterprise) is alleen hier bereikbaar. Zie A″ voor wat dat specifiek dekt.
 
-### A3. Outlook functioneel (eerst — was al productie, dus regressiecheck)
-- [x] Microsoft-OAuth-config in lokale `test_db` gezet (30-07): client ID,
-      tenant ID, auth/token-URL's en het versleutelde client secret gekopieerd
-      uit de Pantalytics-productiedatabase. Kon lossless: de Fernet-sleutel
-      (`x_pan_outlook_pro.encryption_key`) staat zelf ook in
-      `ir_config_parameter`, dus sleutel + ciphertext samen kopiëren werkt
-      cross-database. NB: productie-secret staat nu in de lokale dev-db.
-- [ ] **WACHT OP RUTGER:** redirect-URI
-      `http://localhost:8069/microsoft_oauth/callback` toevoegen aan de
-      Azure-appregistratie `32a681d3-aeb0-4dc8-bf32-b40874ce062a`
-      (portal.azure.com → App registrations → Authentication → platform Web).
-      Kan niet via API: Lokka-koppeling heeft alleen SharePoint-scopes (403).
-- [ ] OAuth-flow Microsoft doorlopen, `pan.mail.account` connected
+### A3. Alias-routing naar Helpdesk (alleen lokaal mogelijk)
+
+Dit kan **nergens anders**. Odoo's `helpdesk` zit alleen in Enterprise, en de
+code noemt `helpdesk.team` en `helpdesk.ticket` letterlijk — een
+derdepartij-`helpdesk_community` helpt dus niet.
+
+- [ ] Mailbox met `x_route_to_team` en een `x_alias_id` naar een `helpdesk.team`
+- [ ] Mail van een onbekende afzender maakt een ticket via `message_new()`
+- [ ] De afzender krijgt de Helpdesk-ontvangstbevestiging, en **geen** kopie van
+      zijn eigen mail terug (dat is het hele punt van `message_new()`)
+- [ ] Reply op dat ticket landt op hetzelfde ticket, niet op een nieuw record
+
+---
+
+## Fase A′ — Functioneel op de CloudPepper-testinstance
+
+Instance: **https://mailpro-dev.cloudpepper.site** — nieuw aangemaakt, niet
+bean-forge, zodat demo-data niet in de weg zit. Server `Pantalytics Demo`
+(Odoo 19.0 community). Login `admin`, wachtwoord in Bitwarden Secrets Manager
+als `MAILPRO_ODOO_ADMIN_PASSWORD` (project `dev`).
+
+- [x] Testinstance aangemaakt (30-07) — `mailpro-dev`, 1 worker
+- [x] `pan_mail_pro` gedeployed via git addons attach op branch `19.0` (30-07) —
+      webhook + auto-upgrade aan, dus een merge naar `19.0` is binnen ~1 minuut
+      live. Log schoon bij eerste start.
+- [ ] Bijwerken naar 19.0.5.0.1
+
+Voordelen t.o.v. lokaal: echte https-URL (geen localhost-uitzonderingen in
+Azure/Google), bereikbaar vanuit cloud-sessies, en de omgeving lijkt op wat
+klanten draaien. Wat hier niet kan: unit tests en alles wat Helpdesk raakt (A3).
+
+### A′1. Microsoft 365 — regressie, was al productie
+- [ ] Config invullen (client ID, tenant ID, secret van de bestaande Azure-app)
+- [ ] OAuth-flow doorlopen, `pan.mail.account` connected
 - [ ] Versturen vanaf personal mailbox; mail komt aan, Message-ID opgeslagen
 - [ ] Versturen vanaf shared mailbox (SendAs met eigen token)
-- [ ] Inkomende mail gesynct door fetcher; `message_new()`-pad, geen
-      dubbele notificaties
-- [ ] Reply van buitenaf landt in dezelfde chatter-thread (conversationId)
-- [ ] Mailbox zonder werkende credentials → mail cancelled, niet via SMTP gelekt
+- [ ] Inkomende mail gesynct; geen dubbele notificaties
+- [ ] Reply van buitenaf landt in dezelfde thread (References, dan conversationId)
+- [ ] Mailbox zonder werkende credentials → mail faalt, niet via SMTP gelekt
 
-### A4. Gmail functioneel
-
-> **Wat hiervan al geautomatiseerd is** (`tests/test_incoming_sync_gmail.py`,
-> draait in CI zonder Google-credentials): inkomende sync end-to-end door
-> `_process_mailbox` op Gmail-data, INBOX/SENT-labelmapping, threading van een
-> reply op dezelfde thread, de X-Odoo-loopguard en dedup over twee sync-runs.
-> `tests/test_google_provider.py` dekt daarnaast al de client zelf, inclusief
-> `access_type=offline` + `prompt=consent` in de autorisatie-URL en het
-> behouden van het refresh token bij verversing.
->
-> **Wat hieronder overblijft is precies wat een echte tenant vereist:** het
-> consent-scherm, een echt refresh token dat na een uur nog werkt, en of
-> Google de mail daadwerkelijk aflevert. De rest is regressie die CI bewaakt.
-
-- [ ] **WACHT OP RUTGER:** productie heeft géén `x_pan_outlook_pro.google_*`
-      parameters — er is in Odoo nooit een Google-client geconfigureerd.
-      Bestaat er al een OAuth-client in Google Cloud Console (uit de
-      Gmail-ontwikkelfase)? Voeg daar
-      `http://localhost:8069/google_oauth/callback` als redirect-URI aan toe
-      en vul client ID + secret in op de settings-pagina. Zo niet: nieuwe
-      client aanmaken.
-- [ ] OAuth-flow Google doorlopen (met `access_type=offline` + `prompt=consent`;
-      refresh token daadwerkelijk opgeslagen)
+### A′2. Google Workspace
+- [ ] OAuth-flow doorlopen (`access_type=offline` + `prompt=consent`; refresh
+      token daadwerkelijk opgeslagen)
 - [ ] Versturen vanaf Gmail-account (RFC822 MIME, Message-ID door ons gezet)
 - [ ] Inkomende mail gesynct (INBOX-label)
 - [ ] Reply landt in dezelfde thread (threadId)
-- [ ] Shared/Workspace-mailbox zonder owner: credentials-check via
-      `_has_working_credentials()` werkt
+- [ ] Shared/Workspace-adres zónder owner: credentials-check werkt
+- [ ] **Na een uur nog een mail versturen** — dit is de enige test die bewijst
+      dat het refresh token echt werkt; CI kan dit per definitie niet
 
-### A5. IMAP/SMTP functioneel (Soverin)
-- [ ] Email-account aanmaken (Instellingen → Technisch → E-mail → E-mailaccounts),
-      provider *IMAP / SMTP*, adres op `soverin.net` → servers worden voorgevuld
-- [ ] **Test Connection**: IMAP én SMTP allebei groen; verkeerd wachtwoord geeft
-      een foutmelding die zegt wélke helft faalt
-- [ ] Mailbox met provider *IMAP / SMTP* aanmaken op hetzelfde adres;
-      shared mailbox vraagt géén owner
-- [ ] Versturen vanaf de IMAP-mailbox; mail komt aan én staat in de Sent-map van
-      de mailbox zelf (APPEND) — controleer in Roundcube/eigen mailclient
+### A′3. IMAP/SMTP (Soverin)
+- [ ] Account aanmaken (Instellingen → Technisch → E-mail → E-mailaccounts),
+      provider *IMAP / SMTP*, adres op `soverin.net` → servers voorgevuld
+- [ ] **Test Connection**: IMAP én SMTP groen; verkeerd wachtwoord zegt wélke
+      helft faalt
+- [ ] Mailbox met provider *IMAP / SMTP* op hetzelfde adres; shared vraagt geen owner
+- [ ] Versturen; mail komt aan én staat in de Sent-map van de mailbox zelf
+      (APPEND) — controleer in Roundcube of eigen mailclient
 - [ ] Inkomende mail gesynct (INBOX), oudste eerst, cursor loopt door
-- [ ] Reply van buitenaf landt in dezelfde chatter-thread (References-root)
-- [ ] Eigen verzonden mail wordt niet opnieuw geïmporteerd (X-Odoo-loop guard)
-- [ ] Credentials leeghalen → mailbox `error`, mail cancelled, niet via SMTP gelekt
-- [ ] Server met afwijkende Sent-map (bijv. `INBOX.Verzonden`): override op het
-      account werkt
+- [ ] Reply landt in dezelfde thread (References-root)
+- [ ] Eigen verzonden mail niet opnieuw geïmporteerd (X-Odoo-loop guard)
+- [ ] Credentials leeghalen → mailbox `error`, mail faalt, niet via SMTP gelekt
+- [ ] Server met afwijkende Sent-map (bijv. `INBOX.Verzonden`): override werkt
 
-## Fase A′ — Functioneel testen op CloudPepper-testinstance
+---
 
-Vervangt A3/A4 hierboven; de checklists daar blijven de inhoudelijke
-testgevallen, alleen de omgeving verandert.
+## Fase A″ — Regressie op wat 19.0.4.0.0 en 19.0.5.0.0 veranderden
 
-De instance is **https://mailpro-dev.cloudpepper.site** — nieuw aangemaakt, niet
-bean-forge, zodat de demo's niet in de weg zitten en er verder niets in de
-database staat. Server `Pantalytics Demo` (Odoo 19.0 community). Login `admin`,
-wachtwoord in Bitwarden Secrets Manager als `MAILPRO_ODOO_ADMIN_PASSWORD`
-(project `dev`).
+Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
 
-- [x] Testinstance kiezen of aanmaken via CloudPepper (30-07) — nieuwe instance
-      `mailpro-dev`, 1 worker (die server heeft 4 GB en draait al vier andere
-      instances)
-- [x] `pan_mail_pro` 19.0.3.0.0 op de instance deployen (git addons attach,
-      branch `19.0`) (30-07) — webhook + auto-upgrade aan, dus een merge naar
-      `19.0` is binnen ~1 minuut live. Log schoon bij eerste start.
-- [ ] Microsoft-config invullen op de settings-pagina (client ID, tenant ID,
-      client secret van de bestaande Azure-app `32a681d3-...`)
-- [ ] Redirect-URI `https://mailpro-dev.cloudpepper.site/microsoft_oauth/callback`
-      toevoegen aan de Azure-appregistratie (handmatig, portal.azure.com)
-- [ ] A3-checklist (Outlook) doorlopen op de instance
-- [ ] Google OAuth-client regelen (Cloud Console) met redirect-URI
-      `https://mailpro-dev.cloudpepper.site/google_oauth/callback`
-- [ ] A4-checklist (Gmail) doorlopen op de instance
+### Geen stille omleiding meer (19.0.5.0.0)
+- [ ] Zet bij een testgebruiker de standaardmailbox op een mailbox zonder
+      werkende credentials en verstuur naar een externe klant. Verwacht: een
+      foutmelding die zegt wat er mis is, én de mail in Instellingen → Technisch
+      → E-mail → E-mails met status *Uitzondering* en dezelfde reden. Verwacht
+      **niet** dat hij alsnog vanaf `notifications@` vertrekt.
+- [ ] Eén foute mail blokkeert de rest niet: verstuur in dezelfde actie een
+      onrouteerbare en een goede mail. De goede moet verstuurd zijn.
+- [ ] De mailwachtrij loopt door: laat een onrouteerbare mail staan en
+      controleer dat de cron de mails erachter alsnog verstuurt.
 
-Beide callback-paden zijn geverifieerd tegen `controllers/main.py` (regel 19 en
-130), dus de URI's hierboven kunnen letterlijk in Azure en Google.
+### Eén sync-instelling per mailbox (19.0.5.0.0)
+- [ ] Het mailboxformulier toont "Inkomende mail" met drie keuzes in plaats van
+      vier schakelaars. Controleer op een **bestaande** database dat de keuze
+      bewaard is (`x_sync_mode` is niet gemigreerd, alleen de afgeleide velden
+      zijn weg).
+- [ ] Verbinden/loskoppelen via Mijn Profiel → Mail Pro, per provider die de
+      klant gebruikt. De knoppen heten "Connect Mailbox" / "Disconnect" en zijn
+      niet meer per provider.
 
-Voordelen t.o.v. lokaal: echte https-URL (geen localhost-uitzonderingen in
-Azure/Google nodig), bereikbaar vanuit cloud-sessies, en de omgeving lijkt
-op wat klanten draaien.
+### Interne domeinen zijn een slot (19.0.3.4.0)
+- [ ] Op een database zonder interne domeinen: een mailbox op sync zetten moet
+      **weigeren** met uitleg
+- [ ] Domeinen invullen (Odoo stelt ze voor), daarna kan het wel
+- [ ] Lijst achteraf leeghalen → een lopende sync stopt en zet de mailbox op error
+- [ ] Mail van een intern domein wordt niet gesynct; met "Sync internal email"
+      aan wél
 
-Wat hier **niet** kan: de unit tests (`--test-enable` blijft lokaal en CI) en
-alles wat Helpdesk raakt. Odoo's `helpdesk` zit alleen in Enterprise, dus op deze
-community-server is de alias-routing onbereikbaar: `x_route_to_team`, de
-`x_alias_id`-koppeling naar `helpdesk.team` en het aanmaken van een ticket via
-`message_new()`. Die testgevallen blijven lokaal tegen Enterprise-source; een
-derdepartij-`helpdesk_community` helpt niet, want de code noemt `helpdesk.team`
-en `helpdesk.ticket` letterlijk.
+### Zichtbaarheid (19.0.4.0.0) — nooit functioneel getest
+- [ ] **Mail Routing** krijgt een rij per afgeleverde mail, met regel en
+      confidence. Controleer de vier uitkomsten: `threaded`, `created`,
+      `fallback`, `sent_item`
+- [ ] `needs_review` staat aan bij `fallback` en bij `created` mét kandidaten —
+      en **niet** bij een gewoon gethreade mail of een sent item
+- [ ] **Triage**: een mail van een onbekende afzender op een mailbox met
+      "hou onbekende afzenders vast" belandt in de wachtrij, mét onderwerp maar
+      **zonder** body in de database; de body wordt pas bij openen opgehaald
+- [ ] Een geblokkeerd contact (`x_email_sync_blocked`) komt **niet** in de
+      triage-wachtrij terecht — ook de metadata niet
+- [ ] **Link Coverage** geeft plausibele aantallen over 30/90/365 dagen
+
+### AI staat uit (19.0.4.0.0)
+- [ ] Zonder API-key: geen enkele AI-aanroep, geen fouten, module gedraagt zich
+      alsof de functie er niet is
+- [ ] Met key: een suggestie verschijnt op een triage-item, maar routeert niets
+      automatisch (`x_routing_smart` blijft dicht)
+- [ ] Uitgaande mail en de inkomende cron worden nooit vertraagd door AI
+
+### Originele maildatum (19.0.5.0.1, issue #1)
+- [ ] Zet **Import From** op een datum ver terug en laat historische mail
+      binnenkomen. In de chatter moet elke mail de datum dragen waarop hij
+      **verstuurd** is, niet de dag van de import. Dit was de bug: alles kwam op
+      één middag te staan.
+- [ ] Al eerder geïmporteerde mail blijft de oude (foute) datum houden — de fix
+      werkt alleen vooruit. Bepaal per klant of een herimport de moeite is.
+
+---
 
 ## Fase B — Dogfood (Pantalytics-database)
 
 - [ ] Deploy via CloudPepper naar de Pantalytics-instance
-- [ ] Rename-migratie op een bestaande database verifiëren (backup vooraf!)
+- [ ] Backup vooraf, dan module-upgrade
 - [ ] Outlook + Gmail accounts van het team opnieuw verbinden waar nodig
 - [ ] 24–48u laten draaien: tokenverversing (vooral Google), cron-gedrag,
-      geen mail-verlies
-- [ ] Deze zwakke plek is vervallen in 19.0.5.0.0: `x_incoming_enabled` bestaat
-      niet meer, de cron vraagt `_has_working_credentials()` op het moment zelf.
-      Wél verifiëren dat een Gmail-serviceaccount dat ná mailbox-aanmaak wordt
-      geautoriseerd binnen een minuut begint te synchroniseren.
+      geen mailverlies
+- [ ] Een Gmail-serviceaccount dat **ná** mailbox-aanmaak wordt geautoriseerd
+      moet binnen een minuut gaan syncen (`_has_working_credentials()` wordt op
+      het moment zelf gevraagd; `x_incoming_enabled` bestaat niet meer)
+- [ ] Mail Routing na een dag bekijken: hoeveel staat er op `needs_review`, en
+      klopt dat? Dit is meteen de eerste echte meting van de matcher
 
-## Fase A″ — Wat 19.0.5.0.0 verandert (regressiecheck)
-
-De vereenvoudiging raakt drie dingen die een gebruiker merkt. Alle drie zijn
-opzettelijk; ze moeten alleen doen wat er staat.
-
-- [ ] **Geen stille omleiding meer.** Zet bij een testgebruiker de standaard
-      mailbox op een mailbox zonder werkende credentials en verstuur een mail
-      naar een externe klant. Verwacht: een foutmelding die zegt wat er mis is,
-      én de mail in Instellingen → Technisch → E-mail → E-mails met status
-      *Uitzondering* en dezelfde reden. Verwacht **niet** dat hij alsnog vanaf
-      `notifications@` vertrekt.
-- [ ] **Eén foute mail blokkeert de rest niet.** Verstuur in dezelfde actie een
-      onrouteerbare en een goede mail. De goede moet verstuurd zijn — de
-      foutmelding komt pas nadat de hele batch geprobeerd is.
-- [ ] **De mailwachtrij loopt door.** Laat een onrouteerbare mail in de wachtrij
-      staan en controleer dat de cron de mails erachter alsnog verstuurt (die
-      draait met `auto_commit`, dus wat verstuurd is blijft verstuurd).
-- [ ] **Eén sync-instelling per mailbox.** Het mailboxformulier toont nu
-      "Inkomende mail" met drie keuzes in plaats van vier schakelaars.
-      Controleer op een bestaande database dat de bestaande keuze bewaard is
-      (`x_sync_mode` is niet gemigreerd, alleen de afgeleide velden zijn weg).
-- [ ] **Verbinden en loskoppelen** vanuit Mijn Profiel → Mail Pro, voor elke
-      provider die de klant gebruikt. De knoppen heten nu "Connect Mailbox" /
-      "Disconnect" en zijn niet meer per provider.
+---
 
 ## Fase C — Klanten
 
-- [ ] Juffermans: backup, rename-migratie, module-upgrade, smoke test
+- [ ] Juffermans: backup, module-upgrade, smoke test
 - [ ] Overige klantendatabases idem
 - [ ] Nazorg: logs eerste dagen monitoren op `[Graph API]` / `[Incoming Mail]`
+- [ ] Per klant beslissen of interne domeinen goed staan — bij een upgrade van
+      vóór 19.0.3.4.0 staat de lijst leeg en stopt de sync tot het is ingevuld
+
+---
 
 ## Context voor vervolg-sessies
 
 - A1/A2 draaiden tegen de **lokale** Docker op Rutgers laptop (inmiddels
-  gestopt). Alle vervolgstappen (A′, B, C) kunnen vanuit een cloud-sessie:
-  de testinstance, Pantalytics-Odoo en de klantendatabases zijn bereikbaar
-  via de CloudPepper- en Odoo MCP Pro-koppelingen.
-- Wat een sessie (lokaal én cloud) niet kan: Azure Portal en Google Cloud
-  Console aanpassen — redirect-URI's en secrets zijn handwerk voor Rutger.
-- Config-parameters heten bewust nog `x_pan_outlook_pro.*` (geen
-  datamigratie nodig bij de rename).
+  gestopt). A′, B en C kunnen vanuit een cloud-sessie: de testinstance,
+  Pantalytics-Odoo en de klantendatabases zijn bereikbaar via de CloudPepper-
+  en Odoo MCP Pro-koppelingen.
+- Wat een sessie niet kan: Azure Portal en Google Cloud Console aanpassen.
+- Alleen A3 (Helpdesk) vereist Enterprise-source en dus de lokale Docker.
+- Config-parameters heten bewust nog `x_pan_outlook_pro.*` — geen datamigratie
+  nodig geweest bij de rename. Modelnamen (`microsoft.*`) en velden
+  (`x_microsoft_*`) idem; zie ARCHITECTURE.md §1.
 
 ## Besluitregels
 
-- Outlook (A3) moet groen zijn vóór we Gmail (A4) beoordelen — bij een
-  Gmail-probleem willen we weten of het aan de client ligt of aan de
-  gedeelde laag.
+- Microsoft (A′1) moet groen zijn vóór we Gmail (A′2) beoordelen — bij een
+  Gmail-probleem willen we weten of het aan de client ligt of aan de gedeelde laag.
 - Elke fase pas in als de vorige groen is; bij twijfel terug naar Docker.
+- Een testgeval dat hier twee keer handmatig is gelopen en stabiel bleek, hoort
+  in `tests/` — niet in dit bestand.

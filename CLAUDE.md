@@ -1,6 +1,10 @@
 # Claude Code Context
 
-Project context for Claude Code AI assistant.
+How to *work* on this module: environments, commands, CI, and the Odoo-specific
+traps. The **design** — models, seams, and why each decision is what it is —
+lives in [ARCHITECTURE.md](ARCHITECTURE.md). Read that first when the question
+is "how does this work"; read this one when the question is "how do I change
+it".
 
 ## Module Overview
 
@@ -8,8 +12,12 @@ Project context for Claude Code AI assistant.
 integration for Odoo 19.0 Enterprise Edition.
 
 Send and receive emails via the Microsoft Graph API, the Gmail API (both OAuth
-2.0 delegated) or plain IMAP/SMTP with a server, login and password. The module
-name still says Outlook; the rename to `pan_email_pro` is a separate phase.
+2.0 delegated) or plain IMAP/SMTP with a server, login and password.
+
+Model names still read `microsoft.*` and fields `x_microsoft_*`. That is
+deliberate — the rename to provider-neutral names is a single mechanical phase
+done last, so `x_microsoft_message_id` (which reply threading depends on)
+migrates once. The *module* rename from `pan_outlook_pro` landed in 19.0.4.0.0.
 
 ## Development Principles
 
@@ -32,7 +40,7 @@ name still says Outlook; the rename to `pan_email_pro` is a separate phase.
 |------|---------|
 | `models/mail_provider_client.py` | Provider-agnostic client contract + registry |
 | `models/mail_mail.py` | Outgoing override. `_resolve_route()` decides the sender once, and raises `RoutingError` rather than picking a different one |
-| `models/mail_message.py` | Microsoft message ID storage for threading |
+| `models/mail_message.py` | Provider threading keys + the communication lens fields |
 | `models/mail_compose_message.py` | Composer "Send From" dropdown + setup warning |
 | `models/mail_alias.py` | Cleaner alias display (name only, no domain) |
 | `models/microsoft_mailbox.py` | Mailbox configuration + routing rules |
@@ -49,7 +57,6 @@ name still says Outlook; the rename to `pan_email_pro` is a separate phase.
 | `models/res_partner.py` | Contact block list field |
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
-| `models/mail_message.py` | Communication lens fields + click-through |
 | `models/pan_mail_item.py` | Triage queue for mail that lands nowhere |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
 | `models/ai/pan_mail_ai.py` | AI contract + registry (null backend is the default) |
@@ -62,8 +69,12 @@ name still says Outlook; the rename to `pan_email_pro` is a separate phase.
 
 ## Provider Architecture
 
-The module supports multiple email providers through one interface, shaped by
-what Odoo needs rather than by any single provider's API:
+The design — the contract, the model map, thread matching, outgoing threading,
+the routing log, the triage queue and the AI seam — lives in
+**[ARCHITECTURE.md](ARCHITECTURE.md)**. It is not repeated here; two copies of a
+design drift, and the one in the file you did not open is the one you believe.
+
+What matters while writing code:
 
 ```
 Odoo (mail.mail, mail.thread, res.users)
@@ -78,21 +89,15 @@ pan.mail.account                          ← credentials, one per address+provi
 **The rule:** nothing outside a provider implementation may build provider URLs,
 import provider SDKs, or reason about provider-specific payload shapes.
 Everything crossing the boundary uses the normalized message / attachment /
-send-result shapes documented in `models/mail_provider_client.py`.
+send-result shapes documented in `models/mail_provider_client.py`. The same rule
+applies to `models/ai/`: only a backend there may import an AI SDK. Both
+boundaries are enforced by greps in CI, so breaking one fails the build rather
+than review.
 
 Provider implementations live under `models/providers/<vendor>/`, so the
 boundary is a directory you can grep rather than a convention you have to
 remember. There is exactly **one** layer: the client *is* the contract
-implementation. An earlier branch had a separate `pan.mail.provider.*` adapter
-in front of each client; it did nothing the client could not do itself and was
-dropped in the merge.
-
-Credentials do not cross the boundary either. A provider is handed a
-`pan.mail.account` and is the one that decides *which* account applies —
-`resolve_sending_account()` / `resolve_receiving_account()` — and *whether they
-are usable* — `account_is_connected()`, which is a refresh token for OAuth
-providers and a host + login + password for IMAP. That is where providers
-genuinely diverge.
+implementation.
 
 ### Adding a provider
 
@@ -103,6 +108,7 @@ genuinely diverge.
 4. Add an ACL row in `security/ir.model.access.csv`
 5. If it does not use OAuth, override `account_is_connected()` — the default
    answer is "has a refresh token", which no password provider ever will
+6. Document it in the capability table in ARCHITECTURE.md §1
 
 The same code is used by `x_microsoft.mailbox.x_provider` **and**
 `pan.mail.account.provider` — both read `PROVIDER_SELECTION`, so an account and
@@ -111,173 +117,12 @@ the mailbox it serves can never disagree about the provider's name.
 No call site outside the client changes. `tests/test_provider_contract.py` covers
 the seam; a new provider must satisfy the same assertions.
 
-### Capability differences
+### Adding an AI backend
 
-Providers disagree about sending as somebody else, so `resolve_sending_account()`
-is the client's job:
-
-| | Microsoft 365 (`outlook`) | Gmail (`gmail`) | IMAP/SMTP (`imap`) |
-|---|---|---|---|
-| Auth | OAuth 2.0 | OAuth 2.0 | server + login + password |
-| Shared mailbox | Yes (SendAs + author's own token) | Its own Workspace account (`user_id` null) | Its own login (`user_id` null) |
-| Delegation | — | Delegated account / Google Group | — |
-| Folders | `Inbox` / `SentItems` | `INBOX` / `SENT` labels | `INBOX` / `\Sent` special-use |
-| Thread key | `conversationId` | `threadId` | root of the `References` chain |
-| Message id | Graph id | Gmail id | `folder:uidvalidity:uid` |
-| Send flow | draft → send | RFC822 MIME | SMTP + IMAP APPEND to Sent |
-| Message-ID | returned by the API | set by us on the MIME | set by us on the MIME |
-
-## Thread Matching
-
-"Where does this reply belong?" is a separate model from the fetcher —
-`pan.mail.matcher` — because it is the decision that goes wrong most visibly and
-the one worth testing without a provider, an HTTP mock or a mailbox.
-
-Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
-(0.8) wins and the ladder stops:
-
-| # | Rule | Conf. | Basis |
-|---|------|-------|-------|
-| 1 | `odoo_headers` | 1.0 | `X-Odoo-Model` / `X-Odoo-Record-Id` |
-| 2 | `references` | 1.0 | `In-Reply-To` + the full `References` chain |
-| 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread id) |
-|   | `thread_link_legacy` | 0.85 | unscoped `x_microsoft_conversation_id` |
-| 4 | `subject_participants` | 0.5 | normalised subject + same partner — proposal only |
-
-Rules 1 and 2 are RFC 5322, so they behave identically on Microsoft 365, Gmail
-and IMAP. Rule 3 is the only provider concept, and it is treated as *a hint
-valid only inside one mailbox* — which is what a `conversationId` or `threadId`
-actually is. Below the threshold `match()` returns candidates but leaves `model`
-empty, so a caller can branch on `model` alone and never route on a guess.
-
-Three things this changed, each a silent misroute before:
-
-- **The chain, not one hop.** Only `In-Reply-To` was read; a client that sets
-  just `References` fell through to the conversation-id lookup.
-- **Newest, not oldest.** The conversation lookup ordered `id asc`, so replies
-  threaded onto whatever record *first* touched the conversation — usually an
-  old contact chatter post rather than the open ticket.
-- **Scoped, not global.** A thread id was matched across every mailbox at once.
-
-### Outgoing threading
-
-Threading is half a *send* problem. `mail.mail._build_reply_context()` builds a
-provider-neutral hint from Odoo data — `in_reply_to`, `references` (root first),
-`thread_id`, `provider_message_id` — and each client uses what it can honour:
-
-| | Microsoft 365 | Gmail | IMAP/SMTP |
-|---|---|---|---|
-| Standard headers | refused (`internetMessageHeaders` takes `x-` only) | set on the MIME | set on the MIME |
-| How it threads | `createReply` on `provider_message_id`, then PATCH | `In-Reply-To` + `References` + `threadId` | `In-Reply-To` + `References` |
-| When it can't | plain draft, unthreaded | plain send, unthreaded | plain send, unthreaded |
-
-The two MIME senders share `providers/mime_utils.build_message()`, so the
-headers are written once. It prefers `reply_context` over `mail.mail.references`
-on purpose: Odoo's field holds the ids *Odoo* generated, while the id that went
-on the wire is the one `new_message_id()` minted. A chain built from Odoo's ids
-names messages the recipient never saw.
-
-The Message-ID we emit is the one the *recipient saw* — Graph mints its own
-`internetMessageId` on send, so `pan.mail.message.ref` is consulted first.
-Emitting Odoo's own id would produce a chain that does not match the one coming
-back. Gmail refuses a `threadId` whose message is not a valid RFC reply, so the
-handle is only claimed when `In-Reply-To` is there to justify it.
-
-**Providers with no thread concept.** IMAP/SMTP supply no thread handle, so both
-sides synthesise one from the root of the `References` chain — the matcher on
-receive, `mime_utils.thread_key()` on send. Every participant in a thread
-carries the same root, so rule 3 keeps working without the provider offering
-anything.
-
-### Routing log
-
-Better matching does not tell anyone where mail landed — it only makes the
-answer right more often. `pan.mail.routing.log` writes one row per delivered
-mail (Settings → Technical → Email → Mail Routing) with the rule, the
-confidence, and every candidate the ladder rejected.
-
-`outcome` separates three things that look identical from inside Odoo:
-`threaded` onto something that existed, `created` something new, `fallback` to
-contact chatter. `needs_review` flags exactly two of them:
-
-- **fallback** — delivered, but to a place nobody is looking.
-- **created *with* candidates** — the expensive, silent one: we may have opened
-  a duplicate ticket for a conversation that was already running.
-
-A `threaded` mail and our own `sent_item` never flag. A queue that cries wolf on
-every routed mail gets ignored, and then it may as well not exist.
-
-Deliberately a record of what happened, **not** a queue that holds mail back.
-Delivery is unchanged. A log that is wrong costs a confusing row; a queue that
-is wrong costs a customer an answer. A daily cron drops rows past
-`pan_mail_pro.routing_log_retention_days` (default 90) unless still flagged.
-
-**Adding AI.** Deliberately absent from rules 1-3: a `References` chain is exact,
-free and reproducible, and a language model would make a solved problem
-probabilistic. The ambiguous residue — a customer who starts a fresh mail
-instead of replying, a known contact with three open tickets — is where it earns
-its place, and it plugs in as one more rule by overriding `_match_rules()`.
-Running last means it is only ever asked about mail the deterministic rules
-could not place, which is what keeps it affordable on a one-minute cron.
-
-## Mailbox Types
-
-| Type | Who sees it? | OAuth token used |
-|------|--------------|------------------|
-| Personal | Only owner | Owner's token |
-| Shared | Everyone | Sender's own token |
-| Notification | Everyone | Owner's token |
-
-## Internal domains (fail-closed)
-
-Incoming sync will not start until `pan.mail.internal.domains` has a list of the
-company's own domains, or an admin has explicitly switched on "Sync internal
-email". The gate exists in two places on purpose: a constraint on
-`x_microsoft.mailbox` (you cannot save a syncing mailbox without it) and a check
-in `_process_mailbox` (a list emptied later stops the sync and shows up as an
-error on the mailbox).
-
-This replaces reading `mail.alias.domain`, where an empty list meant "nothing is
-internal" — a fresh install therefore synced every internal email into Odoo,
-including confidential ones, and nothing said so. Alias domains now only feed
-`suggest_domains()`.
-
-## No fallbacks between senders
-
-`mail.mail._resolve_route()` gives exactly one answer, in this order: an internal
-notification goes to the notification mailbox; a composer choice wins next; then
-the author's default mailbox; and mail with no author at all (an auto-reply, an
-activity notification triggered by incoming mail) goes to the notification
-mailbox because there is nobody to send as.
-
-If the chosen mailbox has no usable credentials, the mail fails with the sentence
-that says what to fix. It is **not** rerouted. Rerouting looks kinder and is
-worse: the customer gets mail from the wrong address and nobody ever learns the
-sender's mailbox is broken.
-
-The failure is written onto the mail, and every mail in the batch is attempted
-before anything is raised — so one misconfigured sender no longer stops the mails
-queued behind it. Before 19.0.5.0.0 `send()` raised from inside the loop and did.
-
-It does still raise, deviating from Odoo's `raise_exception` flag, which the
-interactive paths (chatter, composer) never set: a send that silently does
-nothing is the exact failure this module exists to prevent.
-
-Being *told* and being *recorded* cannot both happen in one transaction — the
-raise unwinds the request and takes the `failure_reason` write with it. The split
-is deliberate and worth knowing, because it looks like a bug from either side:
-interactively you get the error and the mail stays `outgoing`; the next
-mail-queue run hits the same failure and records it for good, because the cron
-passes `auto_commit` and each mail is committed as it goes. The mail is queued or
-it is marked, never neither.
-
-## Graceful degradation
-
-The module is opt-in by data: as long as **no `x_microsoft.mailbox` records exist** in the database, `mail.mail.send()` falls through to `super().send()` so Odoo's standard SMTP / mail queue handles outbound mail. This keeps demo, QA, and dev environments working before Azure is wired up. Once an admin creates the first mailbox, Graph routing activates; mails that can't be routed are then cancelled rather than leaking via SMTP.
-
-Creating that first mailbox is also what disables SMTP (`_activate_smtp_takeover`). It used to happen in the install hook, which contradicted the paragraph above: a freshly installed database could not send at all — not through Mail Pro, which is not configured yet, and not through SMTP either. The one thing an admin needs to send at that moment is user invitations, and those are exactly what died.
-
-One window survives by design: the first mailbox exists (routing on, SMTP off) but `notifications@` is not connected yet. Internal notifications are **queued**, not cancelled, in that window and go out by themselves once the notification mailbox works. See `_is_awaiting_notification_mailbox`.
+Same shape: register it in `AI_BACKENDS` in `models/ai/pan_mail_ai.py`, put the
+implementation in `models/ai/<vendor>/`, satisfy `tests/test_ai_contract.py`.
+The three properties that must hold — opt-in by data, cannot block mail, may
+rank but never invent — are in ARCHITECTURE.md §8 and are asserted by tests.
 
 ## Development
 
@@ -498,30 +343,27 @@ Check status later with `gh pr checks` or `gh run watch`.
 3. Check mailbox state: should be 'active'
 4. A mail that did not go out carries its own reason in `failure_reason`
 
-## Key Design Decisions
+## Traps that cost a release
 
-### Use `message_new()` for incoming emails
-**Critical:** For new incoming emails, use Odoo's native `message_new()` instead of manual record creation + `message_post()`.
+Design rationale is in [ARCHITECTURE.md](ARCHITECTURE.md). These are the two
+things people get wrong *while typing*, so they are repeated here on purpose.
+
+**Use `message_new()` for incoming mail, never `create()` + `message_post()`.**
+The manual version sends follower notifications, so the sender receives a copy
+of their own email back. See ARCHITECTURE.md §9.3.
 
 ```python
-# CORRECT - uses Odoo's native flow
+# CORRECT — uses Odoo's native flow
 record = Model.message_new(msg_dict, custom_values=custom_values)
 
-# WRONG - triggers unwanted notifications
+# WRONG — triggers unwanted notifications
 record = Model.create(vals)
 record.message_post(body=body, ...)  # Sends follower notifications!
 ```
 
-**Why:** `message_new()` is what Odoo's standard mail gateway uses. It:
-- Creates the record correctly
-- Posts the initial message
-- Triggers auto-replies (Helpdesk acknowledgment)
-- Does NOT send duplicate notifications to sender
-
-### Notification mailbox required for incoming sync
-When enabling incoming sync on any mailbox, a Notification mailbox must exist. This handles:
-- Emails from external authors (no Odoo user)
-- System notifications triggered by incoming mail
+**Pass `date=` on every `message_post()` in the incoming path.** Odoo defaults it
+to `now()`, which dates a historical import to the day it ran and destroys the
+timeline. The normalized message carries the provider's own date.
 
 ## Odoo Settings Page Layout (res.config.settings)
 
@@ -676,24 +518,15 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **Unify selection *values* across models that name the same thing.** The mailbox shipped `x_provider='outlook'` while the branch used `provider='microsoft'`. Both now read `PROVIDER_SELECTION` from the registry, so an account and its mailbox cannot disagree - and no data migration was needed, because the shipped value won.
 
 ### AI
-
-AI is a second seam shaped exactly like the provider seam, for the same reason:
-one abstract contract (`pan.mail.ai`), a registry, and a rule that only an
-implementation knows what a vendor's API looks like. Three properties are
-enforced by tests and by CI greps, not by convention:
-
-- **Opt-in by data.** `none` is a real backend that returns nothing. An
-  unconfigured database behaves as though the feature were absent.
-- **AI cannot block mail.** It is never called from `mail.mail.send()` or
-  `_process_message()` — those run in a one-minute cron inside a savepoint. A
-  separate cron enriches records that already exist.
-- **AI may rank, never invent.** The candidate shortlist is built by
-  deterministic matching; a suggestion naming anything else is discarded.
-
-Bring-your-own-key: the call goes from the customer's Odoo straight to the
-provider. Pantalytics never proxies it, which is what keeps the manifest's
-data-disclosure statement true and keeps Pantalytics out of every customer's
-processor chain. Only an envelope is sent — never a body or an attachment.
+- **A seam is cheaper than a feature flag.** AI got the same shape as the
+  provider seam — one contract, a registry, a null backend that is a real
+  implementation. The payoff is that "no AI" and "some AI" are the same code
+  path, so the off case cannot rot. The three load-bearing properties (opt-in by
+  data, cannot block mail, may rank but never invent) are in ARCHITECTURE.md §8
+  and each is asserted by a test.
+- **Put the boundary where a grep can see it.** `anthropic` may only be imported
+  under `models/ai/`, and CI greps for it. A convention nobody can check is a
+  convention that is already broken somewhere.
 
 ### Simplification (19.0.5.0.0)
 - **Five fields computed from one field are five things that can disagree with it.** The mailbox had `x_sync_mode` plus `x_incoming_sync`, `x_sync_unknown_contacts`, `x_sync_inbox`, `x_sync_sent` and `x_incoming_enabled` — one three-way choice wearing six hats, each with its own compute, inverse and depends. The mode alone says everything; the rest was UI convenience that outlived the UI it was built for.
@@ -706,9 +539,15 @@ processor chain. Only an envelope is sent — never a body or an attachment.
 
 ## Documentation
 
-- [README.md](README.md) - Setup instructions for users
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Technical details for developers
-- [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) - UI conventions (one primary action,
-  progressive disclosure, smart defaults). Read it before adding a field to a
-  settings or mailbox screen.
-- [TESTPLAN.md](TESTPLAN.md) - Manual test plan for what CI cannot reach
+| File | What it is for |
+|------|----------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | **The design.** Models, seams, flows, and why. Single source of truth |
+| [README.md](README.md) | Setup and usage for the person installing the module |
+| [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) | UI conventions. Read before adding a field to a settings or mailbox screen |
+| [TESTPLAN.md](TESTPLAN.md) | Manual test plan for what CI cannot reach |
+| `docs/` | The published GitBook — end-user documentation, per provider |
+| CLAUDE.md (this file) | Workflow: environments, commands, CI, Odoo traps |
+
+The split is enforced, not just intended: CI fails if a model in `models/` is
+not named in ARCHITECTURE.md. When you add a model, document it there — not
+here, and not in both.

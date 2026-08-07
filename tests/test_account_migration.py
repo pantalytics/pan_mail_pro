@@ -51,18 +51,37 @@ def _load_migration():
     return _load('19.0.2.1.0', 'pan_account_post_migrate')
 
 
-def _load_cleanup_migration():
-    """The current release's cleanup script.
+def _version_key(version):
+    """Sortable key for a `19.0.X.Y.Z` folder name."""
+    return tuple(int(part) for part in version.split('.'))
 
-    Derived from the manifest rather than written out, because the two must
-    agree by construction. A hardcoded version here survives a release bump as
-    a path to a directory that no longer exists — which is exactly what
-    happened when 19.0.4.0.0 was renamed to 19.0.5.0.0 after mainline shipped
-    a 19.0.4.0.0 of its own.
+
+def _load_cleanup_migration():
+    """The newest cleanup script at or below the manifest version.
+
+    Not hardcoded: a written-out version survives a release bump as a path to a
+    directory that no longer exists — which is what happened when 19.0.4.0.0 was
+    renamed to 19.0.5.0.0 after mainline shipped a 19.0.4.0.0 of its own.
+
+    Not the manifest version either, which is what replaced it. That assumed
+    every release ships a migration, so the first patch release that did not
+    (19.0.5.0.1, a fix with no schema change) pointed this at a directory that
+    was never going to exist. The manifest is an upper bound now — never load a
+    script from a version this build does not claim to be — and the newest
+    folder at or below it is the one that ran.
     """
     manifest = ast.literal_eval(
         open(os.path.join(_MODULE, '__manifest__.py')).read())
-    return _load(manifest['version'], 'pan_cleanup_post_migrate')
+    ceiling = _version_key(manifest['version'])
+    candidates = [
+        entry for entry in os.listdir(_MIGRATIONS)
+        if os.path.exists(os.path.join(_MIGRATIONS, entry, 'post-migrate.py'))
+        and _version_key(entry) <= ceiling
+    ]
+    if not candidates:
+        raise FileNotFoundError(
+            f'No post-migrate script at or below {manifest["version"]} in {_MIGRATIONS}')
+    return _load(max(candidates, key=_version_key), 'pan_cleanup_post_migrate')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
