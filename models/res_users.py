@@ -2,7 +2,7 @@
 import logging
 
 from odoo import fields, models, api, _
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from .mail_provider_client import (
     get_provider_client,
     get_setup_provider,
@@ -83,9 +83,38 @@ class ResUsers(models.Model):
     # connecting and where they come back to.
     # -------------------------------------------------------------------------
 
+    def _check_connection_is_mine(self):
+        """Refuse to rewrite somebody else's stored credentials.
+
+        These are public methods on `res.users`, so they are reachable over RPC
+        for any id the caller can browse — and an internal user can browse every
+        other user. Without this check, one employee could call
+        `action_disconnect_mailbox()` on a colleague and wipe their tokens: that
+        person cannot send until they walk through consent again, and aimed at
+        whoever owns notifications@ it stops every system mail in the database.
+        `action_connect_mailbox` is the same hole from the other side — it
+        overwrites the CSRF nonce, which cancels a consent round somebody else
+        is in the middle of.
+
+        Administrators are exempt because reconnecting a mailbox on a user's
+        behalf is a real support task, and so is `sudo()` for the setup flow.
+        """
+        self.ensure_one()
+        if self.id == self.env.uid or self.env.su:
+            return
+        if self.env.user.has_group('base.group_system'):
+            return
+        _logger.warning(
+            "[OAuth] User %s (id=%s) tried to change the mailbox connection of %s",
+            self.env.user.login, self.env.user.id, self.login,
+        )
+        raise AccessError(_(
+            'Only %(user)s can change that mailbox connection.', user=self.name))
+
     def action_connect_mailbox(self, provider=None):
         """Send this user to their provider's consent screen."""
         self.ensure_one()
+        self._check_connection_is_mine()
         provider = provider or get_setup_provider(self.env)
         if not provider:
             raise UserError(_(
@@ -110,17 +139,32 @@ class ResUsers(models.Model):
         }
 
     def action_disconnect_mailbox(self, provider=None):
-        """Forget this user's stored credentials for one provider."""
-        self.ensure_one()
-        provider = provider or get_setup_provider(self.env)
+        """Forget this user's stored credentials.
 
-        self.env['pan.mail.account'].sudo().with_context(active_test=False).search([
-            ('user_id', '=', self.id), ('provider', '=', provider),
-        ]).write({
-            'access_token_encrypted': False,
-            'refresh_token_encrypted': False,
-            'token_expiry': False,
-        })
+        Named provider, or all of them. It used to fall back to the database's
+        setup provider, which reads as harmless until nobody has picked one:
+        the domain then became `('provider', '=', False)`, matched no account,
+        wiped nothing — and still returned "Your email account has been
+        disconnected." A user who had just revoked access in Azure was told
+        Odoo had let go of the tokens while it still held them.
+
+        Disconnecting everything is also what the button claims: it says the
+        account is disconnected, and `x_pan_mail_connected` — the flag it
+        clears below — counts every provider, not the configured one.
+        """
+        self.ensure_one()
+        self._check_connection_is_mine()
+
+        domain = [('user_id', '=', self.id)]
+        if provider:
+            domain.append(('provider', '=', provider))
+
+        self.env['pan.mail.account'].sudo().with_context(
+            active_test=False).search(domain).write({
+                'access_token_encrypted': False,
+                'refresh_token_encrypted': False,
+                'token_expiry': False,
+            })
 
         vals = {'x_pan_mail_oauth_state': False}
         # Only let go of the Send from mailbox once nothing is left to send
@@ -147,7 +191,16 @@ class ResUsers(models.Model):
     # -------------------------------------------------------------------------
 
     def action_send_connect_invite(self):
-        """Button wrapper around `_send_connect_invites` for the user list."""
+        """Button wrapper around `_send_connect_invites` for the user list.
+
+        Asking colleagues to connect is an administrator's job, and this one
+        sends mail to whoever it is pointed at — so it asks for the group
+        rather than trusting the button it is normally reached from.
+        """
+        if not self.env.su and not self.env.user.has_group(
+                'pan_mail_pro.group_mail_mailbox_manager'):
+            raise AccessError(_(
+                'Only a mailbox manager can ask users to connect their mailbox.'))
         sent = self._send_connect_invites()
         return {
             'type': 'ir.actions.client',

@@ -160,3 +160,83 @@ class TestMailboxPermission(OutlookProTestCase):
     def test_owner_still_sees_own_personal_mailbox(self):
         visible = self.env['x_microsoft.mailbox'].with_user(self.salesperson).search([])
         self.assertIn(self.personal_mailbox, visible)
+
+    # -- what the record of a mail discloses -------------------------------- #
+
+    def test_routing_log_is_not_readable_by_an_ordinary_user(self):
+        """The row carries a subject, a sender and where the mail landed.
+
+        None of that inherits the ACL of the document it points at, so a read
+        row here hands every internal user the subject lines and
+        correspondents of records they cannot open. The menu was restricted,
+        which is not the same thing: a menu is not an ACL, and one search_read
+        over RPC returned the table.
+        """
+        self.env['pan.mail.routing.log'].sudo().create({
+            'mailbox_id': self.shared_mailbox.id,
+            'subject': 'Redundancy consultation',
+            'email_from': 'lawyer@example.com',
+            'outcome': 'fallback',
+        })
+        Log = self.env['pan.mail.routing.log'].with_user(self.other_user)
+        with self.assertRaises(AccessError):
+            Log.search([])
+
+    def test_thread_indexes_are_not_readable_by_an_ordinary_user(self):
+        """Same argument, one step removed: who corresponds about what."""
+        for model in ('pan.mail.thread.link', 'pan.mail.message.ref'):
+            with self.subTest(model=model):
+                with self.assertRaises(AccessError):
+                    self.env[model].with_user(self.other_user).search([])
+
+    def test_the_module_itself_still_reaches_those_tables(self):
+        """Removing the row must not break the code that writes it."""
+        log = self.env['pan.mail.routing.log'].log_decision(
+            self.shared_mailbox, {'rule': 'references', 'confidence': 1.0},
+            outcome='threaded', subject='Re: Quote',
+        )
+        self.assertTrue(log, 'log_decision goes through sudo() and must still write')
+
+    # -- somebody else's mailbox connection --------------------------------- #
+
+    def test_a_colleague_cannot_disconnect_your_mailbox(self):
+        """It is a public method, so RPC reaches it for any browsable id.
+
+        Wiping a colleague's tokens stops them sending until they walk through
+        consent again; aimed at whoever owns notifications@ it stops every
+        system mail in the database.
+        """
+        with self.assertRaises(AccessError):
+            self.salesperson.with_user(self.other_user).action_disconnect_mailbox()
+
+    def test_a_colleague_cannot_start_your_oauth_round(self):
+        """Overwriting the nonce cancels a consent round already in progress."""
+        with self.assertRaises(AccessError):
+            self.salesperson.with_user(self.other_user).action_connect_mailbox()
+
+    def test_you_can_still_disconnect_your_own(self):
+        self.salesperson.with_user(self.salesperson).action_disconnect_mailbox()
+        self.assertFalse(self.salesperson.x_pan_mail_connected)
+
+    def test_disconnect_without_a_named_provider_clears_every_account(self):
+        """It used to narrow on the database's setup provider, and that is
+        empty until an admin picks one — so the domain became
+        `provider = False`, matched nothing, wiped nothing, and still reported
+        success to somebody who had just revoked access at the provider."""
+        self.connect(self.salesperson, provider='gmail')
+        self.salesperson.with_user(self.salesperson).action_disconnect_mailbox()
+        self.assertFalse(self.salesperson.x_pan_mail_connected)
+        self.assertFalse(
+            self.env['pan.mail.account'].sudo().search([
+                ('user_id', '=', self.salesperson.id), ('connected', '=', True),
+            ]),
+            'Both providers have to let go, not just the configured one')
+
+    def test_an_administrator_may_do_it_on_a_users_behalf(self):
+        """Reconnecting somebody's mailbox is a real support task."""
+        self.salesperson.with_user(self.admin).action_disconnect_mailbox()
+        self.assertFalse(self.salesperson.x_pan_mail_connected)
+
+    def test_only_a_mailbox_manager_may_send_connect_invites(self):
+        with self.assertRaises(AccessError):
+            self.other_user.with_user(self.other_user).action_send_connect_invite()

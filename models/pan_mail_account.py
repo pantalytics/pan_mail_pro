@@ -103,8 +103,18 @@ class PanMailAccount(models.Model):
     # credentials for this address on this provider" must get one record back,
     # whatever authentication that provider happens to use.
     # -------------------------------------------------------------------------
+    # Host, port, transport and login share the password's trust boundary, and
+    # that is not a tidiness argument. `_smtp()` decrypts the password through
+    # sudo and logs in to whatever `smtp_host` says; anyone who can move the
+    # host can point it at a server they control and read the password off the
+    # wire on the next send. Leaving these open to a mailbox manager turned
+    # "may configure mailboxes" into "knows the mailbox password", a group the
+    # module explicitly defines as less than system administration. Nothing is
+    # lost by matching them up: the password itself was already system-only, so
+    # a mailbox manager could never finish an IMAP account anyway.
     username = fields.Char(
         string='Username',
+        groups='base.group_system',
         help='Login for the IMAP/SMTP server. Leave empty to use the email address.',
     )
     password_encrypted = fields.Char(
@@ -122,26 +132,33 @@ class PanMailAccount(models.Model):
         copy=False,
     )
 
-    imap_host = fields.Char(string='IMAP Server', help='e.g. imap.soverin.net')
-    imap_port = fields.Integer(string='IMAP Port', default=993)
+    imap_host = fields.Char(
+        string='IMAP Server', groups='base.group_system',
+        help='e.g. imap.soverin.net')
+    imap_port = fields.Integer(
+        string='IMAP Port', groups='base.group_system', default=993)
     imap_security = fields.Selection([
         ('ssl', 'SSL/TLS'),
         ('starttls', 'STARTTLS'),
         ('none', 'None'),
-    ], string='IMAP Security', default='ssl')
+    ], string='IMAP Security', groups='base.group_system', default='ssl')
     imap_sent_folder = fields.Char(
         string='Sent Folder',
+        groups='base.group_system',
         help='IMAP folder holding sent mail. Leave empty to detect it from the '
              'server\'s \\Sent flag, falling back to "Sent".',
     )
 
-    smtp_host = fields.Char(string='SMTP Server', help='e.g. smtp.soverin.net')
-    smtp_port = fields.Integer(string='SMTP Port', default=465)
+    smtp_host = fields.Char(
+        string='SMTP Server', groups='base.group_system',
+        help='e.g. smtp.soverin.net')
+    smtp_port = fields.Integer(
+        string='SMTP Port', groups='base.group_system', default=465)
     smtp_security = fields.Selection([
         ('ssl', 'SSL/TLS'),
         ('starttls', 'STARTTLS'),
         ('none', 'None'),
-    ], string='SMTP Security', default='ssl')
+    ], string='SMTP Security', groups='base.group_system', default='ssl')
 
     # Plain-text views onto the encrypted columns. Never stored.
     access_token = fields.Char(
@@ -305,7 +322,13 @@ class PanMailAccount(models.Model):
 
         Never overwrites what an admin typed: an unknown domain, or a form that
         already has a host in it, is left exactly as it is.
+
+        Server fields are system-only, so anybody else editing this form cannot
+        read them, let alone be helped by a prefill. Returning early keeps the
+        onchange from touching a field the editing user has no rights to.
         """
+        if not self.env.su and not self.env.user.has_group('base.group_system'):
+            return
         for account in self:
             if account.provider != 'imap' or account.imap_host or account.smtp_host:
                 continue

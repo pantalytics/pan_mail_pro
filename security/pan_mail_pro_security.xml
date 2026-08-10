@@ -91,6 +91,19 @@
             table at all, which is the one arrangement that cannot leak. If
             per-mailbox delegation is wanted later, it needs its own rule and
             its own decision, not a widened group.
+
+            The same argument applies, one for one, to the three tables that
+            record what happened to mail — and they had the group_user row this
+            one was careful not to have. `pan.mail.routing.log` keeps the
+            subject, the sender and the destination of every incoming mail;
+            `pan.mail.thread.link` and `pan.mail.message.ref` map correspondence
+            onto records. None of them inherit the ACL of the document they
+            point at, so read access there hands any internal user the subject
+            lines and correspondents of HR, legal and sales records they cannot
+            open. The menu was restricted to base.group_system, which is not an
+            ACL: one search_read over RPC returned the table. Every caller
+            inside the module already goes through sudo(), so the rows are gone
+            rather than narrowed.
         -->
         <record id="rule_mail_item_own_mailbox" model="ir.rule">
             <field name="name">Triage item: own mailbox only</field>
