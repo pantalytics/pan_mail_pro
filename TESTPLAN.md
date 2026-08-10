@@ -5,15 +5,20 @@ refresh token dat na een uur nog werkt, en of een provider de mail werkelijk
 aflevert. Alles wat wél te automatiseren is, hoort in `tests/` — zie
 ARCHITECTURE.md §12 voor wat daar al staat.
 
-**Huidige versie:** 19.0.5.0.1
+**Huidige versie:** 19.0.5.2.0
 **Ringen:** lokaal → testinstance → dogfood → klanten
 
 > **Wat CI inmiddels afdekt** (en hier dus niet meer handmatig hoeft):
-> 440 tests, de provider- en AI-contracten, de volledige inkomende pijplijn op
+> 467 tests, de provider- en AI-contracten, de volledige inkomende pijplijn op
 > Graph- én Gmail-data, en sinds #18 het **upgradepad vanaf de vorige release**
 > — een echte install van de vorige tag, dan `-u` met de migratiescripts en de
 > suite eroverheen. Wat hieronder staat is bewust alleen het restant dat een
 > echte tenant vereist.
+>
+> **Let op wat dat upgradepad níét is:** CI gaat altijd van de *vorige* tag naar
+> HEAD, dus één sprong. Een klant die drie releases heeft overgeslagen draait
+> drie migratiescripts achter elkaar over data die CI nooit heeft gezien. Zie
+> U1 hieronder — dat is precies de situatie waar mailpro-dev nu in zit.
 
 ---
 
@@ -183,6 +188,118 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
       één middag te staan.
 - [ ] Al eerder geïmporteerde mail blijft de oude (foute) datum houden — de fix
       werkt alleen vooruit. Bepaal per klant of een herimport de moeite is.
+
+---
+
+## Fase A‴ — Wat 19.0.5.2.0 veranderde
+
+Negen stille defecten: er ging niets kapot, er werd niets gelogd, en de mailbox
+zag er de hele tijd gezond uit. Dat maakt ze lastig te testen — je moet de
+situatie zelf opbouwen, want hij meldt zich niet.
+
+De blokken staan op volgorde van risico. **U en S raken bestaande klanten; B, D
+en T raken alleen wie de nieuwe code draait.** Loop ze in deze volgorde.
+
+### Blok U — Het upgradepad (raakt elke bestaande database)
+
+Deze release verwijdert drie ACL-rijen en zet `groups=` op zes bestaande velden.
+Beide zijn datawijzigingen die pas bij `-u` landen, en beide zijn onzichtbaar
+tot iemand de verkeerde rechten heeft.
+
+- [ ] **U1. mailpro-dev van 19.0.3.0.0 naar 19.0.5.2.0 in één sprong.**
+      De instance staat vier releases achter — de auto-upgrade heeft niet
+      gelopen. Dat is vervelend, maar het levert de enige plek op waar de keten
+      `19.0.3.3.0 → 19.0.4.0.0 → 19.0.5.0.0` achter elkaar over een database met
+      data draait; CI test alleen de laatste sprong. **Backup vóóraf**, dan
+      upgraden, dan het log lezen: elk migratiescript moet zichtbaar gedraaid
+      hebben. Loopt het vast, dan is dat de belangrijkste vondst van deze ronde
+      en niet alleen een dev-probleem.
+- [ ] **U2. Zoek uit waarom die auto-upgrade stil is blijven staan.**
+      Cloudpepper pullt per push en draait `-u`; er staat 3.0.0 in
+      `ir_module_module`. Of de deploy liep niet, of hij liep en faalde zonder
+      dat iemand het zag. Het tweede is het scenario dat ook bij een klant kan
+      gebeuren.
+- [ ] **U3. De drie ACL-rijen zijn echt weg na de upgrade.** Log in als een
+      gewone interne gebruiker (géén mailbox manager) en probeer
+      `pan.mail.routing.log`, `pan.mail.thread.link` en `pan.mail.message.ref`
+      te lezen. Verwacht: AccessError. Odoo ruimt verdwenen CSV-rijen op bij een
+      update — controleer dat dat ook echt gebeurd is en niet alleen in de code
+      staat.
+- [ ] **U4. De module zelf komt er nog wél bij.** Laat een mail binnenkomen na
+      de upgrade en controleer dat er een rij in Mail Routing verschijnt. Alle
+      schrijfpaden gaan via `sudo()`; als er ergens één vergeten is, blijkt dat
+      hier en nergens anders.
+- [ ] **U5. Een mailbox manager die géén systeembeheerder is ziet de
+      IMAP-serververvelden niet meer.** Open een `pan.mail.account` als zo
+      iemand: host, poort, transport en login horen weg te zijn, net als het
+      wachtwoord dat al system-only was. Controleer ook dat het formulier niet
+      klapt — de onchange die servers voorinvult raakt die velden.
+
+### Blok S — De Mail.Send-scope (raakt klanten die al gekoppeld zijn)
+
+De OAuth-aanvraag vroeg `Mail.Send` nooit aan. Versturen werkte alleen waar een
+beheerder die permissie toevallig tenant-breed had toegekend.
+
+- [ ] **S1. Doet een bestaand token het nog? Dit is de test die de rest
+      bepaalt.** Verstuur met een account dat vóór 5.2.0 is gekoppeld en
+      sindsdien niet opnieuw geautoriseerd. Werkt het, dan gaf Azure de scope al
+      mee en hoeft niemand iets te doen. Werkt het niet, dan is er een
+      herverbind-ronde nodig en moeten we klanten actief waarschuwen. **Niet
+      aannemen — meten.**
+- [ ] **S2. Een nieuwe autorisatie toont de vier permissies.** Koppel een vers
+      account en lees het consent-scherm: `Mail.ReadWrite`, `Mail.Send` en de
+      twee `.Shared`-varianten horen er te staan.
+- [ ] **S3. Versturen vanaf een gedeelde mailbox.** Dat is de tak die
+      `Mail.Send.Shared` nodig heeft en die het langst op geleende consent liep.
+      Vergeet SendAs in het Exchange Admin Center niet.
+
+### Blok B — De mailverlies-fixes (echte provider nodig)
+
+Elk van deze drie verloor mail zonder een spoor achter te laten. Ze zijn alleen
+te reproduceren door een achterstand te maken.
+
+- [ ] **B1. Gmail-achterstand.** Zet **Import From** ver terug op een mailbox met
+      ruim meer dan 200 berichten in het venster. Verwacht: de sync begint bij de
+      **oudste** mail, de cursor schuift per run op, en na genoeg runs is alles
+      binnen. Vóór deze release pakte hij de nieuwste 200 en sloeg de rest
+      permanent over — dus de test is niet "komt er mail binnen" maar "komt de
+      *oudste* mail binnen".
+- [ ] **B2. IMAP op een drukke dag.** Een mailbox met meer dan 200 berichten op
+      één dag, cursor midden in die dag. Verwacht: een gevulde batch. Vóór deze
+      release kwam er niets terug en sprong de cursor naar nu.
+- [ ] **B3. INTERNALDATE op de 1e tot en met de 9e.** Laat IMAP-mail van zo'n dag
+      binnenkomen en controleer de datum in de chatter. RFC 3501 vult de dag met
+      een spatie; die werd niet herkend, dus een derde van de kalender had geen
+      leesbare serverdatum.
+- [ ] **B4. Eerste sync doet één call, geen honderd.** Maak een nieuwe
+      Gmail-mailbox aan en kijk in het log naar de connectietest. Die vraagt één
+      bericht; hij mag niet de hele mailbox pagineren.
+
+### Blok D — Dubbele aflevering en het nieuwe faalsignaal
+
+- [ ] **D1. Gemengde batch levert niets dubbel af.** Verstuur in één actie een
+      mail die kan én een mail die niet kan (afzender zonder standaardmailbox).
+      Verwacht: de goede komt **één keer** aan bij de ontvanger, de foute niet.
+      Controleer daarna de mailwachtrij: de goede staat op *Verzonden* en wordt
+      door de cron niet opnieuw opgepakt. Dit was de bug — de foutmelding rolde
+      de verzending terug en de wachtrij stuurde hem nog eens.
+- [ ] **D2. De afzender ziet dat er iets misging.** Bij diezelfde gemengde batch
+      hoort in de chatter van het record de rode *bericht niet verzonden*-markering
+      te staan, met de retry-knop van Odoo zelf. Er komt bewust géén dialoogvenster
+      meer — dat was de rollback.
+- [ ] **D3. Alles mislukt → wél een dialoog.** Verstuur alleen onrouteerbare mail.
+      Dan valt er niets terug te draaien en hoort de foutmelding gewoon in beeld
+      te komen, met de reden.
+
+### Blok T — De triage-wachtrij
+
+- [ ] **T1. Import op een geblokkeerd contact weigert zichtbaar.** Blokkeer een
+      contact, klik **Import** op een wachtrij-item van dat adres. Verwacht: het
+      item blijft op *Pending* en er verschijnt een waarschuwing. Vóór deze
+      release sprong hij op *Imported* met niets erachter.
+- [ ] **T2. Import op mail die intussen al binnen is koppelt hem.** Als dezelfde
+      mail via een andere route al in Odoo staat, hoort **Import** het item aan
+      dat bericht te koppelen en op *Imported* te zetten — niet te weigeren.
 
 ---
 
