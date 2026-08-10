@@ -25,6 +25,10 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
 
 IMAP_MODULE = 'odoo.addons.pan_mail_pro.models.providers.imap_smtp.imap_client'
 
+# Reads the UID out of a FETCH metadata line so the fake can serve exactly the
+# messages that were asked for.
+_UID_IN_META = re.compile(rb'\bUID (\d+)')
+
 
 class FakeImap:
     """Just enough IMAP4 to answer the calls the client makes."""
@@ -71,16 +75,31 @@ class FakeImap:
             self.searched = args
             return ('OK', [b' '.join(self.uids)])
         if command == 'FETCH':
+            requested = args[0]
+            if isinstance(requested, str):
+                requested = requested.encode()
+            asked = set(requested.split(b','))
             if 'BODY' not in args[-1]:
                 # The date probe. A metadata-only FETCH has no literal, so the
                 # server answers with bare lines rather than (meta, body) pairs.
                 self.probed = args
                 return ('OK', [
                     b'1 (UID %s INTERNALDATE "%s")' % (uid, self.internaldates[uid])
-                    for uid in args[0].split(b',') if uid in self.internaldates
+                    for uid in requested.split(b',') if uid in self.internaldates
                 ])
             self.fetched = args
-            return ('OK', self.fetch_data)
+            # Honour the UID set that was asked for. A fake that answers with
+            # everything regardless lets a test about *which* messages come
+            # back pass on code that picked the wrong ones.
+            served = []
+            for entry in self.fetch_data:
+                if not isinstance(entry, tuple):
+                    served.append(entry)
+                    continue
+                found = _UID_IN_META.search(entry[0])
+                if found and found.group(1) in asked:
+                    served.append(entry)
+            return ('OK', served)
         raise AssertionError(f'unexpected IMAP command {command}')
 
     def append(self, folder, flags, date_time, message):
@@ -441,6 +460,45 @@ class TestImapProvider(TransactionCase):
         self.assertEqual(len(messages), 1, 'The slack day must not eat the batch')
         self.assertTrue(messages[0]['provider_message_id'].endswith(':9'))
         # And only the survivor is pulled in full — the point of probing first.
+        self.assertEqual(imap.fetched[0], b'9')
+
+    def test_the_first_nine_days_of_a_month_still_have_a_date(self):
+        """RFC 3501 space-pads the day, so the 1st arrives as `" 1-May-..."`.
+
+        Requiring a digit there made INTERNALDATE unreadable for roughly a
+        third of the calendar — silently, because the caller just fell back to
+        the header Date, and the cursor narrowing then had nothing to narrow
+        with.
+        """
+        account, mailbox = self._imap_account(), self._mailbox()
+        imap = FakeImap(
+            uids=[b'7'],
+            fetch=imap_fetch_item(self._raw_email(), uid=b'7',
+                                  internaldate=' 1-May-2026 10:00:00 +0000'),
+        )
+        with self._patch_imap(imap):
+            messages = self.client.fetch_messages(account, mailbox, folder=FOLDER_INBOX)
+
+        self.assertEqual(messages[0]['date'], datetime(2026, 5, 1, 10, 0, 0))
+
+    def test_a_padded_day_narrows_the_cursor_like_any_other(self):
+        """The consequence of the above, at the place that depends on it."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        imap = FakeImap(
+            uids=[b'1', b'9'],
+            internaldates={
+                b'1': b' 3-May-2026 08:00:00 +0000',   # before the cursor
+                b'9': b' 5-May-2026 09:00:00 +0000',   # after it
+            },
+            fetch=imap_fetch_item(self._raw_email(), uid=b'9',
+                                  internaldate=' 5-May-2026 09:00:00 +0000'),
+        )
+        with self._patch_imap(imap):
+            messages = self.client.fetch_messages(
+                account, mailbox, folder=FOLDER_INBOX,
+                since_datetime=datetime(2026, 5, 4, 0, 0, 0), limit=1)
+
+        self.assertEqual(len(messages), 1)
         self.assertEqual(imap.fetched[0], b'9')
 
     def test_no_cursor_means_no_date_probe(self):

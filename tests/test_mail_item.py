@@ -170,3 +170,86 @@ class TestMailItemLifecycle(OutlookProTestCase):
             self.personal_mailbox, {'provider_message_id': None}, 'inbox', 'not_a_reason',
         )
         self.assertFalse(result)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestMailItemImport(TestIncomingSync):
+    """`action_import` — the one button that changes a visible row's status.
+
+    It had no coverage at all, and it used to write 'imported' whatever came
+    back from the pipeline. The force flag lifts the *filters*; it deliberately
+    does not lift the duplicate guard, the Odoo loop guard, the block list or
+    the internal-sender check, and every one of those answers False.
+    """
+
+    def _queued_item(self):
+        self.mailbox.x_sync_mode = 'known_partners'
+        self.external_partner.unlink()
+        self._sync()
+        return self.env['pan.mail.item'].sudo().search(
+            [('mailbox_id', '=', self.mailbox.id)])
+
+    def _import(self, item):
+        """Run the button against the same fake Graph the fetcher uses.
+
+        `action_import` re-fetches the message from the provider, so it needs
+        the token patch and the requests.get patch that `_sync` sets up — the
+        composer-level `mock_graph` fixture does not cover the incoming calls.
+        """
+        with patch.object(
+            type(self.env['microsoft.graph.client']), 'get_valid_token',
+            autospec=True, return_value='fake-bearer-token',
+        ), self._mock_graph_get():
+            return item.action_import()
+
+    def test_importing_a_queued_item_posts_it_and_links_the_message(self):
+        item = self._queued_item()
+        self.assertEqual(item.state, 'pending')
+
+        self._import(item)
+
+        self.assertEqual(item.state, 'imported')
+        self.assertTrue(item.mail_message_id,
+                        'An imported item has to point at the message it became')
+
+    def test_a_blocked_contact_leaves_the_item_pending(self):
+        """Importing cannot override an objection to processing."""
+        item = self._queued_item()
+        partner = self.env['res.partner'].create({
+            'name': 'Customer', 'email': 'customer@example.com',
+            'x_email_sync_blocked': True,
+        })
+        self.assertTrue(partner.x_email_sync_blocked)
+
+        result = self._import(item)
+
+        self.assertEqual(item.state, 'pending',
+                         'Nothing was imported, so nothing may say it was')
+        self.assertFalse(item.mail_message_id)
+        self.assertIsInstance(result, dict, 'The operator has to be told')
+        self.assertEqual(result['params']['type'], 'warning')
+
+    def test_an_item_whose_mail_arrived_by_another_route_is_linked_not_stranded(self):
+        """The duplicate guard fires exactly when the work is already done.
+
+        Refusing on that basis and leaving the row pending would strand the
+        most common refusal there forever, re-fetching it from the provider on
+        every attempt, while the message it wants is sitting in Odoo.
+        """
+        item = self._queued_item()
+        self.env['res.partner'].create(
+            {'name': 'Customer', 'email': 'customer@example.com'})
+
+        self._import(item)
+        self.assertEqual(item.state, 'imported')
+        message = item.mail_message_id
+
+        # Put the row back in the queue, as a mail that reached Odoo by another
+        # route would leave it. The pipeline now refuses it as a duplicate, but
+        # the message it wants is demonstrably there.
+        item.write({'state': 'pending', 'mail_message_id': False})
+        self._import(item)
+
+        self.assertEqual(item.state, 'imported')
+        self.assertEqual(item.mail_message_id, message,
+                         'A duplicate is the work already being done, not a failure')

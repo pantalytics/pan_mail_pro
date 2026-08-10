@@ -64,8 +64,14 @@ UID_DATE_PROBE_CHUNK = 500
 
 # INTERNALDATE looks like "12-May-2026 10:00:00 +0200". Parsed by hand rather
 # than with %b, which is locale-dependent and would break on a non-English host.
+#
+# The day is `date-day-fixed` in RFC 3501: two characters, space-padded, so the
+# first nine days of every month arrive as `" 1-May-2026 ..."`. Requiring a
+# digit there made `_internaldate()` answer None for roughly a third of the
+# calendar — silently, because the caller just fell back to the header Date.
+# imaplib's own pattern uses `[ 0123][0-9]` for exactly this reason.
 _INTERNALDATE_RE = re.compile(
-    r'INTERNALDATE "(\d{1,2})-(\w{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) ([+-]\d{4})"')
+    r'INTERNALDATE "([ \d]?\d)-(\w{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) ([+-]\d{4})"')
 _MONTHS = {m: i for i, m in enumerate(
     ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], start=1)}

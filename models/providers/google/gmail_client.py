@@ -361,15 +361,25 @@ class GoogleGmailClient(models.AbstractModel):
         would sync 200 and lose 800, silently. So the pages are walked to the
         end and only the last `limit` ids are kept; ids are cheap, and only the
         ids that survive get a metadata fetch.
+
+        Only when there is a cursor to be behind, though. Without `after_epoch`
+        the window is the entire mailbox, and the one caller in that position is
+        the first-sync connection test, which asks for a single id and throws
+        the answer away. Paging a whole mailbox to answer it would turn one
+        request into a hundred, so an uncursored call takes the first page and
+        stops.
         """
         params = {
             'labelIds': label,
-            'maxResults': GMAIL_LIST_PAGE_SIZE,
+            'maxResults': GMAIL_LIST_PAGE_SIZE if after_epoch else limit,
             # Chats are not mail; excluding them keeps the sync to real email.
             'q': '-in:chats',
         }
-        if after_epoch:
-            params['q'] += f' after:{int(after_epoch)}'
+        if not after_epoch:
+            return self._api_get(
+                account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages',
+                params).get('messages') or []
+        params['q'] += f' after:{int(after_epoch)}'
 
         # Pages arrive newest first, so the last `limit` ids appended are the
         # oldest. A deque keeps memory flat no matter how deep the backlog is.

@@ -592,6 +592,20 @@ one transaction — the raise rolls the write back. `mail.mail.send()` picks whi
 one the caller gets, and the cron's `auto_commit` pass a minute later supplies
 the other.
 
+Second corollary, learned harder: **that rollback is not selective.** It also
+unwinds `state='sent'` on every mail in the batch the provider had already
+delivered, so Odoo forgets it sent them and the queue sends them again. Telling
+the sender is worth a lost `failure_reason`; it is not worth mailing a customer
+twice. So `send()` raises only when a rollback costs nothing — the queue is
+driving, or nothing in the batch went out — or when the caller passed
+`raise_exception` and owns the trade-off.
+
+That does not make a mixed batch silent. `_fail()` marks the `mail.notification`
+rows through Odoo's own `_postprocess_sent_message`, which is what draws the red
+"message not sent" marker and its retry button in the chatter. The author finds
+out on the record it failed on, which is a better place than a dialog anyway —
+and it is Odoo's mechanism, not a second one of ours.
+
 ### 9.6 IMAP/SMTP: what the protocols make the contract absorb
 
 Three protocol facts had to land somewhere, and all three land inside the client:
@@ -651,13 +665,20 @@ this module has no admin-level access to a tenant.
 | `Mail.ReadWrite.Shared` | Create drafts in a shared mailbox |
 | `Mail.Send.Shared` | Send from a shared mailbox |
 
-This is one list, requested in `graph_client.get_authorization_url()` and
-repeated in the setup guide, the manifest and `docs/security.md` — and it has to
-stay one list. A token carries the scopes that were *requested*, so a permission
-granted in the Azure portal and left out of the request simply is not there. The
-`Mail.Send` pair was missing from the request until 19.0.5.1.0: sending worked
-wherever an admin had granted it tenant-wide and 403'd where consent was
-incremental.
+The four Graph permissions are one list, requested in
+`graph_client.get_authorization_url()` and repeated in the setup guide, the
+manifest and `docs/security.md` — and they have to stay one list, which
+`tests/test_microsoft_provider.py` now pins. A token carries the scopes that
+were *requested*, so a permission granted in the Azure portal and left out of
+the request simply is not there. The `Mail.Send` pair was missing from the
+request until 19.0.5.1.0: sending worked wherever an admin had granted it
+tenant-wide and 403'd where consent was incremental. **Accounts connected
+before that version keep the old token and do not gain the scope**; they pick
+it up the next time the user authorizes.
+
+`openid`, `profile` and `email` are OIDC scopes rather than Graph permissions,
+so they belong in the request and not in the Azure API-permissions list — which
+is why the guides show four entries where this table shows seven.
 
 For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 

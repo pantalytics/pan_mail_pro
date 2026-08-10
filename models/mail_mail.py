@@ -178,6 +178,7 @@ class MailMail(models.Model):
         """
         # `mailing_id` only exists when the mass_mailing module is installed.
         mass_mails = self.filtered(lambda m: hasattr(m, 'mailing_id') and m.mailing_id)
+        delivered = 0
         if mass_mails:
             _logger.info(f"[Graph API] Routing {len(mass_mails)} mass mailing email(s) via standard SMTP")
             super(MailMail, mass_mails).send(
@@ -185,6 +186,10 @@ class MailMail(models.Model):
                 raise_exception=raise_exception,
                 post_send_callback=post_send_callback,
             )
+            # These went out over SMTP and are just as unrecoverable as a
+            # provider send, so they count towards "there is something a
+            # rollback would cost" below.
+            delivered += len(mass_mails.filtered(lambda m: m.state == 'sent'))
 
         mails = self - mass_mails
         if not mails:
@@ -212,7 +217,6 @@ class MailMail(models.Model):
             mails -= awaiting
 
         failures = []
-        delivered = 0
         for mail in mails:
             reason = mail._send_one(raise_exception=raise_exception,
                                     post_send_callback=post_send_callback)
@@ -225,9 +229,12 @@ class MailMail(models.Model):
                 # below must not roll back the mails that already went out.
                 self.env.cr.commit()
 
-        # Telling the sender costs a rollback, so it is only affordable while
-        # there is nothing to roll back. See `_batch_failure_message`.
-        if failures and (auto_commit or not delivered):
+        # Telling the sender this way costs a rollback, so it is only
+        # affordable while there is nothing to roll back — or when the caller
+        # asked for the exception explicitly and owns that trade-off, which is
+        # what `raise_exception` means in Odoo's own signature. Either way the
+        # chatter already carries the failure; see `_fail`.
+        if failures and (auto_commit or raise_exception or not delivered):
             raise UserError(self._batch_failure_message(failures))
 
         return True
@@ -295,9 +302,23 @@ class MailMail(models.Model):
         return self._fail(result.get('error') or _('Failed to send email.'))
 
     def _fail(self, reason):
-        """Record why this mail did not go out, and hand the reason back."""
+        """Record why this mail did not go out, and hand the reason back.
+
+        The `mail.notification` rows are marked failed too, through Odoo's own
+        `_postprocess_sent_message`. That is what puts the red "message not
+        sent" marker and its retry button in the chatter, and it is the reason
+        `send()` can afford not to raise on a mixed batch: the author still sees
+        that something failed, on the record it failed on, without a rollback
+        that would resend the mails which did go out.
+        """
         self.ensure_one()
         self.write({'state': 'exception', 'failure_reason': reason})
+        self._postprocess_sent_message(
+            success_pids=self.env['res.partner'],
+            success_emails=[],
+            failure_reason=reason,
+            failure_type='unknown',
+        )
         _logger.error(f"[Graph API] Mail {self.id} not sent: {reason}")
         return reason
 

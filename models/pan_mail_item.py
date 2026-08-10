@@ -212,10 +212,16 @@ class PanMailItem(models.Model):
         a blocked contact, a sender who is an internal user — all return False,
         and writing `imported` anyway produced the worst row in the queue: gone
         from the pending filter, no message behind it, and a status claiming it
-        had worked. An item that was refused stays pending, and the operator is
-        told how many.
+        had worked.
+
+        A refusal is not automatically a failure, though. The duplicate guard
+        fires precisely when the mail *is* already in Odoo, having arrived by
+        another route since it was queued — the item's job is done and linking
+        it to that message is the honest outcome. So the message is looked up
+        either way, and only an item with nothing behind it stays pending.
         """
         processor = self.env['microsoft.incoming.mail.processor']
+        Message = self.env['mail.message']
         imported = refused = 0
         for item in self:
             if item.state != 'pending':
@@ -227,37 +233,40 @@ class PanMailItem(models.Model):
                 account=account, mailbox=mailbox,
                 provider_message_id=item.provider_message_id,
             )
-            if not processor.with_context(pan_mail_force_import=True)._process_message(
-                    mailbox, preview, item.folder or 'inbox'):
+            processed = processor.with_context(
+                pan_mail_force_import=True)._process_message(
+                    mailbox, preview, item.folder or 'inbox')
+
+            message = Message.search([('message_id', '=', item.message_id)], limit=1)
+            if not processed and not message:
                 _logger.info(
                     '[Mail Item] Import refused for %s; a guard the force flag '
                     'does not lift still applies', item.provider_message_id)
                 refused += 1
                 continue
-            message = self.env['mail.message'].search(
-                [('message_id', '=', item.message_id)], limit=1)
             item.write({'state': 'imported', 'mail_message_id': message.id or False})
             imported += 1
 
         if refused:
-            return self._notify(
+            return self._notify_import_result(
                 _('Not everything could be imported'),
-                _('%(done)d imported, %(left)d left in the queue. Those are '
-                  'duplicates, mail Odoo sent itself, or senders that are '
-                  'blocked or internal — importing cannot override that.',
+                _('%(done)d imported, %(left)d left in the queue. Importing '
+                  'cannot override a blocked contact, an internal sender, or '
+                  "Odoo's own outgoing mail.",
                   done=imported, left=refused),
-                kind='warning',
             )
         return True
 
     @staticmethod
-    def _notify(title, message, kind='success'):
+    def _notify_import_result(title, message):
+        """Sticky warning: the operator has rows left to deal with."""
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': title, 'message': message,
-                'type': kind, 'sticky': kind != 'success',
+                'type': 'warning', 'sticky': True,
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
             },
         }
 

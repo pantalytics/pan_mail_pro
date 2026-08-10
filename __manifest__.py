@@ -73,9 +73,9 @@
         After installation, go to Settings → Mail Pro
         Follow the step-by-step Azure configuration guide.
 
-        API Permissions needed (delegated; identical to the list the setup
-        guide and the OAuth request use, because a permission granted in the
-        Azure portal but absent from the request is not in the token):
+        API Permissions needed in Azure (delegated; the same ones the setup
+        guide lists and the OAuth request asks for, because a permission
+        granted in the portal but absent from the request is not in the token):
         - User.Read, offline_access (authentication and refresh tokens)
         - Mail.ReadWrite, Mail.ReadWrite.Shared (create the draft, read mail)
         - Mail.Send, Mail.Send.Shared (send the draft)
@@ -100,7 +100,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.5.1.0',
+    'version': '19.0.5.2.0',
     'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {

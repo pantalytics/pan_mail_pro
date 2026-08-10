@@ -415,13 +415,35 @@ class TestGoogleProvider(TransactionCase):
         account = self._google_account(
             refresh_token='r', access_token='a',
             token_expiry=datetime.now() + timedelta(hours=1))
+        pages = [{'messages': [{'id': 'a'}], 'nextPageToken': 'p2'},
+                 {'messages': [{'id': 'b'}]}]
         Client = type(self.env['google.gmail.client'])
-        with patch.object(Client, '_api_get',
-                          return_value={'messages': [{'id': 'only'}]}) as api:
-            listed = self.client._gmail_list_ids(account, 'INBOX', limit=50)
+        with patch.object(Client, '_api_get', side_effect=pages) as api:
+            self.client._gmail_list_ids(account, 'INBOX', after_epoch=1, limit=50)
+
+        self.assertEqual(api.call_count, 2, 'No nextPageToken means no third call')
+
+    def test_a_first_sync_does_not_page_the_whole_mailbox(self):
+        """Without a cursor there is no backlog to be at the wrong end of.
+
+        The only caller in that position is the first-sync connection test,
+        which asks for one id and throws the answer away. Paging an entire
+        mailbox to serve it would turn one request into a hundred.
+        """
+        account = self._google_account(
+            refresh_token='r', access_token='a',
+            token_expiry=datetime.now() + timedelta(hours=1))
+        Client = type(self.env['google.gmail.client'])
+        with patch.object(
+                Client, '_api_get',
+                return_value={'messages': [{'id': 'only'}],
+                              'nextPageToken': 'more'}) as api:
+            listed = self.client._gmail_list_ids(account, 'INBOX', limit=1)
 
         self.assertEqual([m['id'] for m in listed], ['only'])
-        self.assertEqual(api.call_count, 1, 'No nextPageToken means no second call')
+        self.assertEqual(api.call_count, 1,
+                         'An uncursored list must not follow nextPageToken')
+        self.assertEqual(api.call_args.args[-1]['maxResults'], 1)
 
     def test_get_attachments_handles_inline_and_regular(self):
         mailbox = self.env['x_microsoft.mailbox'].create({
