@@ -16,6 +16,9 @@ nobody ever finds out.
 
 No HTTP, no composer - pure logic.
 """
+from unittest.mock import patch
+
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tools import mute_logger
 
@@ -163,14 +166,30 @@ class TestMailboxRouting(OutlookProTestCase):
     # ------------------------------------------------------------------ #
 
     @mute_logger('odoo.addons.pan_mail_pro.models.mail_mail')
-    def test_unroutable_mail_is_reported_but_only_after_the_batch_ran(self):
-        """Both halves matter, and they used to be in tension.
+    def test_unroutable_mail_does_not_stop_the_ones_behind_it(self):
+        """The batch runs to the end, and the failure lands on its own mail."""
+        self.salesperson.x_microsoft_default_mailbox_id = False
+        broken = self._make_mail()
+        fine = self._make_mail(x_microsoft_mailbox_id=self.shared_mailbox.id)
 
-        The sender has to find out — a send that silently does nothing is the
-        failure this module exists to prevent. But the reporting happens once
-        the whole batch has been attempted, so the mails queued behind a
-        misconfigured one still go out. The old version raised from inside the
-        loop and got only the first half.
+        with self.mock_graph():
+            send_and_capture(broken | fine)
+
+        self.assertEqual(broken.state, 'exception')
+        self.assertIn('default mailbox', broken.failure_reason)
+        self.assertEqual(fine.state, 'sent',
+                         'One unroutable mail must not stop the ones behind it')
+
+    @mute_logger('odoo.addons.pan_mail_pro.models.mail_mail')
+    def test_a_mixed_batch_does_not_raise_over_a_mail_that_already_went_out(self):
+        """The raise is a rollback, and a rollback here is a double delivery.
+
+        Interactively there is no commit until the request ends, so raising
+        unwinds `state='sent'` on mails the provider has *already* delivered.
+        Odoo then forgets it sent them, the mail queue picks them up a minute
+        later, and the customer reads the same email twice. So a batch that
+        delivered anything keeps its successes and reports the failures on the
+        mails themselves rather than in a dialog.
         """
         self.salesperson.x_microsoft_default_mailbox_id = False
         broken = self._make_mail()
@@ -179,15 +198,15 @@ class TestMailboxRouting(OutlookProTestCase):
         with self.mock_graph():
             error = send_and_capture(broken | fine)
 
-        self.assertIsNotNone(error, 'The sender must be told')
-        self.assertIn('default mailbox', str(error))
-        self.assertEqual(broken.state, 'exception')
-        self.assertIn('default mailbox', broken.failure_reason)
-        self.assertEqual(fine.state, 'sent',
-                         'One unroutable mail must not stop the ones behind it')
+        self.assertIsNone(
+            error, 'Raising would roll the delivered mail back to outgoing')
+        self.assertEqual(fine.state, 'sent')
+        self.assertIn('default mailbox', broken.failure_reason,
+                      'The reason still has to be findable on the mail')
 
     @mute_logger('odoo.addons.pan_mail_pro.models.mail_mail')
     def test_several_failures_report_one_reason_and_a_count(self):
+        """Nothing went out, so there is nothing a rollback can cost."""
         self.salesperson.x_microsoft_default_mailbox_id = False
         first = self._make_mail()
         second = self._make_mail()
@@ -199,6 +218,24 @@ class TestMailboxRouting(OutlookProTestCase):
         self.assertIn('1 more', str(error))
         self.assertEqual(first.state, 'exception')
         self.assertEqual(second.state, 'exception')
+
+    @mute_logger('odoo.addons.pan_mail_pro.models.mail_mail')
+    def test_the_queue_still_reports_a_mixed_batch(self):
+        """`auto_commit` is the mail queue, where every send is already safe.
+
+        There the successes are committed as they go, so the raise costs
+        nothing and the reason belongs in the cron log. The commit is patched
+        out — Odoo forbids a real one inside a test transaction — so this
+        asserts the decision to report, not the commit itself.
+        """
+        self.salesperson.x_microsoft_default_mailbox_id = False
+        broken = self._make_mail()
+        fine = self._make_mail(x_microsoft_mailbox_id=self.shared_mailbox.id)
+
+        with self.mock_graph(), \
+                patch.object(self.env.cr, 'commit', lambda: None), \
+                self.assertRaises(UserError):
+            (broken | fine).send(auto_commit=True)
 
     # ------------------------------------------------------------------ #
     # Mass mailing keeps its own delivery path

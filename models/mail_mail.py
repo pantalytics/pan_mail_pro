@@ -163,6 +163,18 @@ class MailMail(models.Model):
           up in the cron log.
 
         Nothing is lost either way: the mail is queued or it is marked.
+
+        **What the raise costs, and why a mixed batch does not pay it.** That
+        rollback is not selective. It also unwinds the `state='sent'` of every
+        mail in the batch that already left the building — the provider has
+        delivered them, but Odoo forgets it did, so the mail queue picks them up
+        a minute later and the recipient gets the same email twice. Telling the
+        sender is worth a lost failure_reason; it is not worth mailing a
+        customer twice. So the raise happens only when there is nothing to lose:
+        when the queue is driving (each mail already committed) or when nothing
+        in the batch went out. A mixed batch keeps its successes, and its
+        failures keep their reason on the mail — durable, because no raise
+        unwinds them — under Settings → Technical → Email.
         """
         # `mailing_id` only exists when the mass_mailing module is installed.
         mass_mails = self.filtered(lambda m: hasattr(m, 'mailing_id') and m.mailing_id)
@@ -200,17 +212,22 @@ class MailMail(models.Model):
             mails -= awaiting
 
         failures = []
+        delivered = 0
         for mail in mails:
             reason = mail._send_one(raise_exception=raise_exception,
                                     post_send_callback=post_send_callback)
             if reason:
                 failures.append(reason)
+            elif mail.state == 'sent':
+                delivered += 1
             if auto_commit:
                 # The mail queue asks for this, and now it matters: the failure
                 # below must not roll back the mails that already went out.
                 self.env.cr.commit()
 
-        if failures:
+        # Telling the sender costs a rollback, so it is only affordable while
+        # there is nothing to roll back. See `_batch_failure_message`.
+        if failures and (auto_commit or not delivered):
             raise UserError(self._batch_failure_message(failures))
 
         return True

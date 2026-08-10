@@ -29,9 +29,13 @@ IMAP_MODULE = 'odoo.addons.pan_mail_pro.models.providers.imap_smtp.imap_client'
 class FakeImap:
     """Just enough IMAP4 to answer the calls the client makes."""
 
-    def __init__(self, uids=(), fetch=None, folders=None, uidvalidity=b'42'):
+    def __init__(self, uids=(), fetch=None, folders=None, uidvalidity=b'42',
+                 internaldates=None):
         self.uids = list(uids)
         self.fetch_data = fetch or []
+        # {uid: INTERNALDATE} answered to the metadata-only probe the client
+        # uses to narrow a widened SEARCH SINCE window. See `_dates_for`.
+        self.internaldates = internaldates or {}
         self.folders = folders or [b'(\\HasNoChildren \\Sent) "." "Sent Items"']
         self.uidvalidity = uidvalidity
         self.selected = None
@@ -67,6 +71,14 @@ class FakeImap:
             self.searched = args
             return ('OK', [b' '.join(self.uids)])
         if command == 'FETCH':
+            if 'BODY' not in args[-1]:
+                # The date probe. A metadata-only FETCH has no literal, so the
+                # server answers with bare lines rather than (meta, body) pairs.
+                self.probed = args
+                return ('OK', [
+                    b'1 (UID %s INTERNALDATE "%s")' % (uid, self.internaldates[uid])
+                    for uid in args[0].split(b',') if uid in self.internaldates
+                ])
             self.fetched = args
             return ('OK', self.fetch_data)
         raise AssertionError(f'unexpected IMAP command {command}')
@@ -396,6 +408,49 @@ class TestImapProvider(TransactionCase):
         self.assertTrue(first['is_read'])
         # Selected read-only: syncing must never mark somebody's mail as read.
         self.assertTrue(imap.readonly)
+
+    def test_a_busy_day_of_slack_does_not_empty_the_batch(self):
+        """SEARCH SINCE is date-granular, so the window is asked a day wide.
+
+        Cutting that window to `limit` before applying the real cutoff hands
+        back a batch consisting only of the slack day — on a mailbox busier
+        than `limit` messages a day, every one of them then fails the exact
+        `>= since` test and the fetch comes back empty. An empty fetch reads as
+        "caught up", so `_process_mailbox` jumps the cursor to now() and the
+        mail in between is gone for good.
+        """
+        account, mailbox = self._imap_account(), self._mailbox()
+        since = datetime(2026, 5, 12, 0, 0, 0)
+        imap = FakeImap(
+            # Three from the slack day, one genuinely after the cursor.
+            uids=[b'1', b'2', b'3', b'9'],
+            internaldates={
+                b'1': b'11-May-2026 08:00:00 +0000',
+                b'2': b'11-May-2026 09:00:00 +0000',
+                b'3': b'11-May-2026 10:00:00 +0000',
+                b'9': b'12-May-2026 09:00:00 +0000',
+            },
+            fetch=imap_fetch_item(self._raw_email(), uid=b'9',
+                                  internaldate='12-May-2026 09:00:00 +0000'),
+        )
+        with self._patch_imap(imap):
+            messages = self.client.fetch_messages(
+                account, mailbox, folder=FOLDER_INBOX,
+                since_datetime=since, limit=3)
+
+        self.assertEqual(len(messages), 1, 'The slack day must not eat the batch')
+        self.assertTrue(messages[0]['provider_message_id'].endswith(':9'))
+        # And only the survivor is pulled in full — the point of probing first.
+        self.assertEqual(imap.fetched[0], b'9')
+
+    def test_no_cursor_means_no_date_probe(self):
+        """A first sync has nothing to narrow against, so it skips the probe."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        imap = FakeImap(uids=[b'7'], fetch=imap_fetch_item(self._raw_email(), uid=b'7'))
+        with self._patch_imap(imap):
+            self.client.fetch_messages(account, mailbox, folder=FOLDER_INBOX)
+
+        self.assertFalse(hasattr(imap, 'probed'))
 
     def test_fetch_reads_the_inbox_and_the_servers_own_sent_folder(self):
         account, mailbox = self._imap_account(), self._mailbox()

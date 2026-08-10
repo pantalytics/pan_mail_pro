@@ -144,8 +144,15 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         auth_url = AUTH_URL.format(tenant=tenant_id)
 
-        # Required scopes for sending and reading mail from shared mailboxes
-        # Mail.ReadWrite is needed for Draft→Send flow (creating drafts requires write access)
+        # The draft->send flow needs both halves, and they are different
+        # permissions: Mail.ReadWrite creates and patches the draft,
+        # Mail.Send performs POST /messages/{id}/send. Asking only for the
+        # first left sending on borrowed consent — it works wherever an admin
+        # happened to grant Mail.Send tenant-wide in Azure (which is what the
+        # setup guide tells them to do), and 403s on a tenant that relies on
+        # incremental consent. A permission granted in the portal but absent
+        # from this list is not in the token; the .Shared pair is the same
+        # story for a shared mailbox.
         scopes = [
             'openid',
             'profile',
@@ -154,6 +161,8 @@ class MicrosoftGraphClient(models.AbstractModel):
             'User.Read',
             'Mail.ReadWrite',
             'Mail.ReadWrite.Shared',
+            'Mail.Send',
+            'Mail.Send.Shared',
         ]
 
         params = {

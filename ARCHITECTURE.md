@@ -359,11 +359,14 @@ The two ids we need only exist on a created draft:
 and `conversationId` is the thread handle. For a reply, step 1 becomes
 `createReply` on the parent's provider id, then a PATCH — see §6.
 
-| Mailbox type | Draft endpoint | Required permission |
+Both steps are separately permissioned, which is why §10 lists two pairs:
+creating the draft is `Mail.ReadWrite`, sending it is `Mail.Send`.
+
+| Mailbox type | Draft endpoint | Required permissions |
 |------|----------------|----------------------|
-| Personal | `/users/{email}/messages` | `Mail.ReadWrite` |
-| Shared | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
-| Notification | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
+| Personal | `/users/{email}/messages` | `Mail.ReadWrite` + `Mail.Send` |
+| Shared | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + `Mail.Send.Shared` + SendAs in Exchange |
+| Notification | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + `Mail.Send.Shared` + SendAs in Exchange |
 
 ### Incoming (polling)
 
@@ -640,13 +643,21 @@ this module has no admin-level access to a tenant.
 
 | Permission | Purpose |
 |------------|---------|
-| `openid` | OAuth login |
+| `openid` / `profile` / `email` | OAuth login and the identity that just consented |
 | `offline_access` | Refresh tokens |
 | `User.Read` | Basic profile during OAuth |
 | `Mail.ReadWrite` | Create drafts, read Sent Items |
 | `Mail.Send` | Send from personal mailbox |
 | `Mail.ReadWrite.Shared` | Create drafts in a shared mailbox |
 | `Mail.Send.Shared` | Send from a shared mailbox |
+
+This is one list, requested in `graph_client.get_authorization_url()` and
+repeated in the setup guide, the manifest and `docs/security.md` — and it has to
+stay one list. A token carries the scopes that were *requested*, so a permission
+granted in the Azure portal and left out of the request simply is not there. The
+`Mail.Send` pair was missing from the request until 19.0.5.1.0: sending worked
+wherever an admin had granted it tenant-wide and 403'd where consent was
+incremental.
 
 For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 
