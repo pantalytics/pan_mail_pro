@@ -58,10 +58,20 @@ _logger = logging.getLogger(__name__)
 IMAP_TIMEOUT = 30
 SMTP_TIMEOUT = 30
 
+# How many UIDs are asked for INTERNALDATE at a time while narrowing a widened
+# SEARCH SINCE window down to the real cursor. See `_oldest_uids`.
+UID_DATE_PROBE_CHUNK = 500
+
 # INTERNALDATE looks like "12-May-2026 10:00:00 +0200". Parsed by hand rather
 # than with %b, which is locale-dependent and would break on a non-English host.
+#
+# The day is `date-day-fixed` in RFC 3501: two characters, space-padded, so the
+# first nine days of every month arrive as `" 1-May-2026 ..."`. Requiring a
+# digit there made `_internaldate()` answer None for roughly a third of the
+# calendar — silently, because the caller just fell back to the header Date.
+# imaplib's own pattern uses `[ 0123][0-9]` for exactly this reason.
 _INTERNALDATE_RE = re.compile(
-    r'INTERNALDATE "(\d{1,2})-(\w{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) ([+-]\d{4})"')
+    r'INTERNALDATE "([ \d]?\d)-(\w{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) ([+-]\d{4})"')
 _MONTHS = {m: i for i, m in enumerate(
     ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], start=1)}
@@ -432,7 +442,9 @@ class ImapSmtpClient(models.AbstractModel):
             uids = self._search(conn, since_datetime)
             if not uids:
                 return []
-            uids = uids[:limit]
+            uids = self._oldest_uids(conn, uids, since_datetime, limit)
+            if not uids:
+                return []
 
             typ, data = conn.uid(
                 'FETCH', b','.join(uids), '(UID FLAGS INTERNALDATE BODY.PEEK[HEADER])')
@@ -449,6 +461,62 @@ class ImapSmtpClient(models.AbstractModel):
                         if m['date'] is None or m['date'] >= since_datetime]
         messages.sort(key=lambda m: m['date'] or datetime.min)
         return messages
+
+    @api.model
+    def _oldest_uids(self, conn, uids, since_datetime, limit):
+        """The oldest `limit` UIDs that are genuinely at or after the cursor.
+
+        Cutting to `limit` before applying the exact cutoff is the bug this
+        exists to prevent. `_search` deliberately asks a day wide, because
+        SEARCH SINCE is date-granular and evaluated in the server's timezone.
+        On a mailbox that receives more than `limit` messages a day, the first
+        `limit` UIDs of that widened window are *all* from the slack day, every
+        one of them fails the exact `>= since_datetime` test in the caller, and
+        the fetch comes back empty. An empty fetch reads as "caught up", so the
+        cursor jumps to now() and the mail in between is gone.
+
+        INTERNALDATE is asked for first, in chunks, and only as far as needed to
+        collect `limit` survivors — a metadata-only FETCH is one cheap round
+        trip, and stopping early keeps a deep backlog from pulling the whole
+        folder's dates over the wire.
+        """
+        if not since_datetime:
+            return uids[:limit]
+
+        kept = []
+        for start in range(0, len(uids), UID_DATE_PROBE_CHUNK):
+            chunk = uids[start:start + UID_DATE_PROBE_CHUNK]
+            dates = self._dates_for(conn, chunk)
+            for uid in chunk:
+                date = dates.get(uid)
+                # No INTERNALDATE means we cannot judge it; keep it and let the
+                # header date decide, exactly as the caller's filter does.
+                if date is None or date >= since_datetime:
+                    kept.append(uid)
+            if len(kept) >= limit:
+                break
+        return kept[:limit]
+
+    @api.model
+    def _dates_for(self, conn, uids):
+        """{uid: INTERNALDATE as naive UTC} for a UID set, in one round trip.
+
+        A metadata-only FETCH comes back as bare byte lines rather than the
+        (metadata, literal) tuples `_parse_fetch` expects, so it is read here.
+        """
+        typ, data = conn.uid('FETCH', b','.join(uids), '(UID INTERNALDATE)')
+        if typ != 'OK':
+            raise UserError(_('Could not read message dates from the folder.'))
+        dates = {}
+        for entry in data or []:
+            line = entry[0] if isinstance(entry, tuple) else entry
+            if not line:
+                continue
+            meta = line.decode(errors='replace') if isinstance(line, bytes) else str(line)
+            match = _UID_RE.search(meta)
+            if match:
+                dates[match.group(1).encode()] = self._internaldate(meta)
+        return dates
 
     @api.model
     def _search(self, conn, since_datetime):

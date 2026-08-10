@@ -71,7 +71,7 @@ Threading uses two methods:
 3. Permissions not granted
 
 **Solution:**
-1. Verify redirect URI: `https://your-domain.com/microsoft/callback`
+1. Verify redirect URI: `https://your-domain.com/microsoft_oauth/callback`
 2. Check client secret expiration in Azure Portal
 3. Ensure admin consent is granted for API permissions
 

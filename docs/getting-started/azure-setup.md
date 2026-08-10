@@ -14,7 +14,7 @@ Workspace see [Google Workspace Setup](google-setup.md); for any other host see
 3. Configure:
    - **Name:** `Odoo Mail Pro` (or your preference)
    - **Supported account types:** Accounts in this organizational directory only
-   - **Redirect URI:** Web → copy the Callback URL from Odoo (Settings → Mail Pro → Setup Guide). The URL format is `https://your-odoo-domain.com/microsoft/callback`
+   - **Redirect URI:** Web → copy the Callback URL from Odoo (Settings → Mail Pro → Setup Guide). The URL format is `https://your-odoo-domain.com/microsoft_oauth/callback`
 4. Click **Register**
 
 ## Step 2: Note Application IDs

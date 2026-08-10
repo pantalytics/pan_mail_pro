@@ -386,6 +386,65 @@ class TestGoogleProvider(TransactionCase):
         self.assertEqual([m['message_id'] for m in messages], ['<old@x>', '<new@x>'])
         self.assertEqual(messages[-1]['date'], datetime(2023, 11, 14, 22, 23, 20))
 
+    def test_list_takes_the_oldest_of_a_backlog_and_not_the_newest(self):
+        """Gmail's list is newest-first and paged, which inverts the contract.
+
+        `fetch_messages` promises oldest-first, and the fetcher advances its
+        cursor to the last message of the batch it gets. Handing back the first
+        page therefore hands back the *newest* `limit` of a backlog, and every
+        older message is stepped over and never asked for again — a mailbox
+        1000 behind syncs 200 and loses 800, with nothing to show for it.
+        """
+        account = self._google_account(
+            refresh_token='r', access_token='a',
+            token_expiry=datetime.now() + timedelta(hours=1))
+        pages = [
+            {'messages': [{'id': 'newest'}, {'id': 'newer'}], 'nextPageToken': 'p2'},
+            {'messages': [{'id': 'older'}, {'id': 'oldest'}]},
+        ]
+        Client = type(self.env['google.gmail.client'])
+        with patch.object(Client, '_api_get', side_effect=pages) as api:
+            listed = self.client._gmail_list_ids(
+                account, 'INBOX', after_epoch=1700000000, limit=2)
+
+        self.assertEqual([m['id'] for m in listed], ['older', 'oldest'])
+        self.assertEqual(api.call_count, 2, 'The pages have to be walked to the end')
+        self.assertEqual(api.call_args_list[1].args[-1]['pageToken'], 'p2')
+
+    def test_list_stops_when_gmail_runs_out_of_pages(self):
+        account = self._google_account(
+            refresh_token='r', access_token='a',
+            token_expiry=datetime.now() + timedelta(hours=1))
+        pages = [{'messages': [{'id': 'a'}], 'nextPageToken': 'p2'},
+                 {'messages': [{'id': 'b'}]}]
+        Client = type(self.env['google.gmail.client'])
+        with patch.object(Client, '_api_get', side_effect=pages) as api:
+            self.client._gmail_list_ids(account, 'INBOX', after_epoch=1, limit=50)
+
+        self.assertEqual(api.call_count, 2, 'No nextPageToken means no third call')
+
+    def test_a_first_sync_does_not_page_the_whole_mailbox(self):
+        """Without a cursor there is no backlog to be at the wrong end of.
+
+        The only caller in that position is the first-sync connection test,
+        which asks for one id and throws the answer away. Paging an entire
+        mailbox to serve it would turn one request into a hundred.
+        """
+        account = self._google_account(
+            refresh_token='r', access_token='a',
+            token_expiry=datetime.now() + timedelta(hours=1))
+        Client = type(self.env['google.gmail.client'])
+        with patch.object(
+                Client, '_api_get',
+                return_value={'messages': [{'id': 'only'}],
+                              'nextPageToken': 'more'}) as api:
+            listed = self.client._gmail_list_ids(account, 'INBOX', limit=1)
+
+        self.assertEqual([m['id'] for m in listed], ['only'])
+        self.assertEqual(api.call_count, 1,
+                         'An uncursored list must not follow nextPageToken')
+        self.assertEqual(api.call_args.args[-1]['maxResults'], 1)
+
     def test_get_attachments_handles_inline_and_regular(self):
         mailbox = self.env['x_microsoft.mailbox'].create({
             'email': 'gmail_user@test.local', 'x_provider': 'gmail',

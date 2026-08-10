@@ -234,3 +234,49 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         with patch(GRAPH_POST, side_effect=exc):
             with self.assertRaises(UserError):
                 self.client.get_valid_token(account)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestGraphAuthorizationScopes(TransactionCase):
+    """The scope list is the permission list, and there is only one of each.
+
+    A token carries the scopes that were *requested*. A permission granted in
+    the Azure portal and left out of this URL simply is not in the token, which
+    is how the draft->send flow ran for so long on Mail.ReadWrite alone: it
+    worked wherever an admin had also granted Mail.Send tenant-wide, and 403'd
+    where consent was incremental. Gmail has had this test since it was
+    written; Graph is the provider actually in production and had none.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.client = get_provider_client(cls.env, 'outlook')
+        ICP = cls.env['ir.config_parameter'].sudo()
+        ICP.set_param('x_pan_outlook_pro.client_id', 'test-client-id')
+        ICP.set_param('x_pan_outlook_pro.tenant_id', 'test-tenant-id')
+
+    def test_both_halves_of_the_draft_then_send_flow_are_requested(self):
+        url = self.client.get_authorization_url(
+            'https://odoo.test/microsoft_oauth/callback', state='abc')
+        for scope in ('Mail.ReadWrite', 'Mail.ReadWrite.Shared',
+                      'Mail.Send', 'Mail.Send.Shared',
+                      'offline_access', 'User.Read'):
+            with self.subTest(scope=scope):
+                self.assertIn(scope, url)
+        self.assertIn('state=abc', url)
+
+    def test_the_documented_permissions_are_the_requested_ones(self):
+        """Four places used to disagree about this list. The manifest is the
+        one a buyer reads before configuring Azure, so it is the one pinned."""
+        import ast
+        import pathlib
+        manifest_path = pathlib.Path(__file__).resolve().parent.parent / '__manifest__.py'
+        described = ast.literal_eval(manifest_path.read_text())['description']
+        url = self.client.get_authorization_url(
+            'https://odoo.test/microsoft_oauth/callback')
+        for scope in ('Mail.ReadWrite', 'Mail.ReadWrite.Shared',
+                      'Mail.Send', 'Mail.Send.Shared'):
+            with self.subTest(scope=scope):
+                self.assertIn(scope, described)
+                self.assertIn(scope, url)

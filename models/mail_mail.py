@@ -163,9 +163,22 @@ class MailMail(models.Model):
           up in the cron log.
 
         Nothing is lost either way: the mail is queued or it is marked.
+
+        **What the raise costs, and why a mixed batch does not pay it.** That
+        rollback is not selective. It also unwinds the `state='sent'` of every
+        mail in the batch that already left the building — the provider has
+        delivered them, but Odoo forgets it did, so the mail queue picks them up
+        a minute later and the recipient gets the same email twice. Telling the
+        sender is worth a lost failure_reason; it is not worth mailing a
+        customer twice. So the raise happens only when there is nothing to lose:
+        when the queue is driving (each mail already committed) or when nothing
+        in the batch went out. A mixed batch keeps its successes, and its
+        failures keep their reason on the mail — durable, because no raise
+        unwinds them — under Settings → Technical → Email.
         """
         # `mailing_id` only exists when the mass_mailing module is installed.
         mass_mails = self.filtered(lambda m: hasattr(m, 'mailing_id') and m.mailing_id)
+        delivered = 0
         if mass_mails:
             _logger.info(f"[Graph API] Routing {len(mass_mails)} mass mailing email(s) via standard SMTP")
             super(MailMail, mass_mails).send(
@@ -173,6 +186,10 @@ class MailMail(models.Model):
                 raise_exception=raise_exception,
                 post_send_callback=post_send_callback,
             )
+            # These went out over SMTP and are just as unrecoverable as a
+            # provider send, so they count towards "there is something a
+            # rollback would cost" below.
+            delivered += len(mass_mails.filtered(lambda m: m.state == 'sent'))
 
         mails = self - mass_mails
         if not mails:
@@ -205,12 +222,19 @@ class MailMail(models.Model):
                                     post_send_callback=post_send_callback)
             if reason:
                 failures.append(reason)
+            elif mail.state == 'sent':
+                delivered += 1
             if auto_commit:
                 # The mail queue asks for this, and now it matters: the failure
                 # below must not roll back the mails that already went out.
                 self.env.cr.commit()
 
-        if failures:
+        # Telling the sender this way costs a rollback, so it is only
+        # affordable while there is nothing to roll back — or when the caller
+        # asked for the exception explicitly and owns that trade-off, which is
+        # what `raise_exception` means in Odoo's own signature. Either way the
+        # chatter already carries the failure; see `_fail`.
+        if failures and (auto_commit or raise_exception or not delivered):
             raise UserError(self._batch_failure_message(failures))
 
         return True
@@ -278,9 +302,23 @@ class MailMail(models.Model):
         return self._fail(result.get('error') or _('Failed to send email.'))
 
     def _fail(self, reason):
-        """Record why this mail did not go out, and hand the reason back."""
+        """Record why this mail did not go out, and hand the reason back.
+
+        The `mail.notification` rows are marked failed too, through Odoo's own
+        `_postprocess_sent_message`. That is what puts the red "message not
+        sent" marker and its retry button in the chatter, and it is the reason
+        `send()` can afford not to raise on a mixed batch: the author still sees
+        that something failed, on the record it failed on, without a rollback
+        that would resend the mails which did go out.
+        """
         self.ensure_one()
         self.write({'state': 'exception', 'failure_reason': reason})
+        self._postprocess_sent_message(
+            success_pids=self.env['res.partner'],
+            success_emails=[],
+            failure_reason=reason,
+            failure_type='unknown',
+        )
         _logger.error(f"[Graph API] Mail {self.id} not sent: {reason}")
         return reason
 

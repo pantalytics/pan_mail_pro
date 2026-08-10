@@ -359,11 +359,14 @@ The two ids we need only exist on a created draft:
 and `conversationId` is the thread handle. For a reply, step 1 becomes
 `createReply` on the parent's provider id, then a PATCH — see §6.
 
-| Mailbox type | Draft endpoint | Required permission |
+Both steps are separately permissioned, which is why §10 lists two pairs:
+creating the draft is `Mail.ReadWrite`, sending it is `Mail.Send`.
+
+| Mailbox type | Draft endpoint | Required permissions |
 |------|----------------|----------------------|
-| Personal | `/users/{email}/messages` | `Mail.ReadWrite` |
-| Shared | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
-| Notification | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + SendAs in Exchange |
+| Personal | `/users/{email}/messages` | `Mail.ReadWrite` + `Mail.Send` |
+| Shared | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + `Mail.Send.Shared` + SendAs in Exchange |
+| Notification | `/users/{email}/messages` | `Mail.ReadWrite.Shared` + `Mail.Send.Shared` + SendAs in Exchange |
 
 ### Incoming (polling)
 
@@ -589,6 +592,20 @@ one transaction — the raise rolls the write back. `mail.mail.send()` picks whi
 one the caller gets, and the cron's `auto_commit` pass a minute later supplies
 the other.
 
+Second corollary, learned harder: **that rollback is not selective.** It also
+unwinds `state='sent'` on every mail in the batch the provider had already
+delivered, so Odoo forgets it sent them and the queue sends them again. Telling
+the sender is worth a lost `failure_reason`; it is not worth mailing a customer
+twice. So `send()` raises only when a rollback costs nothing — the queue is
+driving, or nothing in the batch went out — or when the caller passed
+`raise_exception` and owns the trade-off.
+
+That does not make a mixed batch silent. `_fail()` marks the `mail.notification`
+rows through Odoo's own `_postprocess_sent_message`, which is what draws the red
+"message not sent" marker and its retry button in the chatter. The author finds
+out on the record it failed on, which is a better place than a dialog anyway —
+and it is Odoo's mechanism, not a second one of ours.
+
 ### 9.6 IMAP/SMTP: what the protocols make the contract absorb
 
 Three protocol facts had to land somewhere, and all three land inside the client:
@@ -640,13 +657,28 @@ this module has no admin-level access to a tenant.
 
 | Permission | Purpose |
 |------------|---------|
-| `openid` | OAuth login |
+| `openid` / `profile` / `email` | OAuth login and the identity that just consented |
 | `offline_access` | Refresh tokens |
 | `User.Read` | Basic profile during OAuth |
 | `Mail.ReadWrite` | Create drafts, read Sent Items |
 | `Mail.Send` | Send from personal mailbox |
 | `Mail.ReadWrite.Shared` | Create drafts in a shared mailbox |
 | `Mail.Send.Shared` | Send from a shared mailbox |
+
+The four Graph permissions are one list, requested in
+`graph_client.get_authorization_url()` and repeated in the setup guide, the
+manifest and `docs/security.md` — and they have to stay one list, which
+`tests/test_microsoft_provider.py` now pins. A token carries the scopes that
+were *requested*, so a permission granted in the Azure portal and left out of
+the request simply is not there. The `Mail.Send` pair was missing from the
+request until 19.0.5.1.0: sending worked wherever an admin had granted it
+tenant-wide and 403'd where consent was incremental. **Accounts connected
+before that version keep the old token and do not gain the scope**; they pick
+it up the next time the user authorizes.
+
+`openid`, `profile` and `email` are OIDC scopes rather than Graph permissions,
+so they belong in the request and not in the Azure API-permissions list — which
+is why the guides show four entries where this table shows seven.
 
 For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 

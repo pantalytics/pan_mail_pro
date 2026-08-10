@@ -12,6 +12,7 @@ draft/send hands back a real Message-ID and threadId for threading and dedup —
 the same seam the Graph client already gives us.
 """
 import base64
+import collections
 import logging
 import requests
 from datetime import datetime, timedelta, timezone
@@ -39,6 +40,12 @@ GOOGLE_SCOPES = [
     'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/gmail.send',
 ]
+
+# Paging for the message list. 500 is Gmail's own maximum for `maxResults`, and
+# the page cap exists only so a pathological backlog cannot hold the one-minute
+# cron open; hitting it is logged, never swallowed. See `_gmail_list_ids`.
+GMAIL_LIST_PAGE_SIZE = 500
+GMAIL_LIST_MAX_PAGES = 100
 
 
 class GoogleGmailClient(models.AbstractModel):
@@ -338,24 +345,66 @@ class GoogleGmailClient(models.AbstractModel):
 
     @api.model
     def _gmail_list_ids(self, account, label, after_epoch=None, limit=50):
-        """List message ids in a label, newest first.
+        """The OLDEST `limit` message ids in a label.
 
         Gmail's list returns only {id, threadId} - no date, no Message-ID - so
         the caller must fetch metadata per id to build a preview. `after_epoch`
         maps to the `after:` search operator; overlap is harmless because the
         processor dedups on message_id before doing anything expensive.
+
+        The oldest, not the newest, and that is the whole reason this paginates.
+        Gmail's list offers no ordering control: it answers newest first and
+        pages with `nextPageToken`. Taking its first page therefore takes the
+        newest `limit` of a backlog — and since the caller advances its cursor
+        to the newest message of the batch it received, every older message is
+        stepped over and never asked for again. A mailbox 1000 messages behind
+        would sync 200 and lose 800, silently. So the pages are walked to the
+        end and only the last `limit` ids are kept; ids are cheap, and only the
+        ids that survive get a metadata fetch.
+
+        Only when there is a cursor to be behind, though. Without `after_epoch`
+        the window is the entire mailbox, and the one caller in that position is
+        the first-sync connection test, which asks for a single id and throws
+        the answer away. Paging a whole mailbox to answer it would turn one
+        request into a hundred, so an uncursored call takes the first page and
+        stops.
         """
         params = {
             'labelIds': label,
-            'maxResults': limit,
+            'maxResults': GMAIL_LIST_PAGE_SIZE if after_epoch else limit,
             # Chats are not mail; excluding them keeps the sync to real email.
             'q': '-in:chats',
         }
-        if after_epoch:
-            params['q'] += f' after:{int(after_epoch)}'
-        data = self._api_get(
-            account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages', params)
-        return data.get('messages', []) or []
+        if not after_epoch:
+            return self._api_get(
+                account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages',
+                params).get('messages') or []
+        params['q'] += f' after:{int(after_epoch)}'
+
+        # Pages arrive newest first, so the last `limit` ids appended are the
+        # oldest. A deque keeps memory flat no matter how deep the backlog is.
+        oldest = collections.deque(maxlen=limit)
+        page_token = None
+        for _page in range(GMAIL_LIST_MAX_PAGES):
+            data = self._api_get(
+                account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages',
+                dict(params, pageToken=page_token) if page_token else params)
+            oldest.extend(data.get('messages') or [])
+            page_token = data.get('nextPageToken')
+            if not page_token:
+                return list(oldest)
+
+        # Never silently: the batch below is the oldest of what was listed, not
+        # the oldest that exists, so this run does skip mail. Saying so is the
+        # difference between a slow sync and a mystery.
+        _logger.warning(
+            '[Gmail API] Backlog in %s exceeds %d messages; syncing the oldest '
+            'of the first %d listed. Older mail may be skipped — move the '
+            "mailbox's sync start date forward or re-run until it catches up.",
+            label, GMAIL_LIST_PAGE_SIZE * GMAIL_LIST_MAX_PAGES,
+            GMAIL_LIST_PAGE_SIZE * GMAIL_LIST_MAX_PAGES,
+        )
+        return list(oldest)
 
     @api.model
     def _gmail_get_message(self, account, gmail_id, fmt='full', headers=None):

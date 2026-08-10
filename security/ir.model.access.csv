@@ -5,9 +5,6 @@ access_pan_mail_account_user,pan.mail.account.user,model_pan_mail_account,base.g
 access_pan_mail_account_manager,pan.mail.account.manager,model_pan_mail_account,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
 access_pan_mail_coverage_user,pan.mail.coverage.user,model_pan_mail_coverage,base.group_user,1,1,1,0
 access_pan_mail_item_manager,pan.mail.item.manager,model_pan_mail_item,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
-access_pan_mail_message_ref_user,pan.mail.message.ref.user,model_pan_mail_message_ref,base.group_user,1,0,0,0
 access_pan_mail_message_ref_manager,pan.mail.message.ref.manager,model_pan_mail_message_ref,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
-access_pan_mail_thread_link_user,pan.mail.thread.link.user,model_pan_mail_thread_link,base.group_user,1,0,0,0
 access_pan_mail_thread_link_manager,pan.mail.thread.link.manager,model_pan_mail_thread_link,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
-access_pan_mail_routing_log_user,pan.mail.routing.log.user,model_pan_mail_routing_log,base.group_user,1,0,0,0
 access_pan_mail_routing_log_manager,pan.mail.routing.log.manager,model_pan_mail_routing_log,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
