@@ -8,7 +8,7 @@
             <list string="Mail Routing" create="false"
                   decoration-warning="needs_review and not reviewed"
                   decoration-muted="reviewed">
-                <field name="date" widget="timeago"/>
+                <field name="date"/>
                 <field name="mailbox_id"/>
                 <field name="email_from" string="From"/>
                 <field name="subject"/>
