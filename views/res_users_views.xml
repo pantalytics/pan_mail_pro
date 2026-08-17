@@ -28,8 +28,9 @@
             <xpath expr="//page[@name='preferences']" position="after">
                 <page string="Mail Pro" name="outlook_pro">
                     <field name="x_microsoft_oauth_connected" invisible="1"/>
+                    <field name="x_google_oauth_connected" invisible="1"/>
 
-                    <!-- Not Connected -->
+                    <!-- Microsoft: Not Connected -->
                     <group invisible="x_microsoft_oauth_connected">
                         <div colspan="2">
                             <div class="text-muted mb-3">Send emails via your Microsoft 365 account</div>
@@ -40,13 +41,39 @@
                         </div>
                     </group>
 
-                    <!-- Connected -->
+                    <!-- Microsoft: Connected -->
                     <group invisible="not x_microsoft_oauth_connected">
                         <field name="x_microsoft_oauth_connected" widget="boolean_toggle" string="Connected"/>
                         <field name="x_microsoft_default_mailbox_id"
                                string="Send from"
                                domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
+                        <button type="object"
+                                name="action_disconnect_microsoft"
+                                string="Disconnect Microsoft 365"
+                                class="btn-secondary" icon="fa-windows"
+                                confirm="Disconnect this Microsoft account? Sending and syncing via Microsoft 365 will stop for this user."/>
+                    </group>
+
+                    <!-- Google: Not Connected -->
+                    <group invisible="x_google_oauth_connected">
+                        <div colspan="2">
+                            <div class="text-muted mb-3">Send emails via your Google account</div>
+                            <button type="object"
+                                    name="action_connect_google"
+                                    string="Connect Google"
+                                    class="btn-primary" icon="fa-google"/>
+                        </div>
+                    </group>
+
+                    <!-- Google: Connected -->
+                    <group invisible="not x_google_oauth_connected">
+                        <field name="x_google_oauth_connected" widget="boolean_toggle" string="Google Connected"/>
+                        <button type="object"
+                                name="action_disconnect_google"
+                                string="Disconnect Google"
+                                class="btn-secondary" icon="fa-google"
+                                confirm="Disconnect this Google account? Sending and syncing via Gmail will stop for this user."/>
                     </group>
                 </page>
             </xpath>
@@ -63,8 +90,9 @@
             <xpath expr="//page[@name='page_security']" position="after">
                 <page string="Mail Pro" name="outlook_pro">
                     <field name="x_microsoft_oauth_connected" invisible="1"/>
+                    <field name="x_google_oauth_connected" invisible="1"/>
 
-                    <!-- Not Connected -->
+                    <!-- Microsoft: Not Connected -->
                     <group invisible="x_microsoft_oauth_connected">
                         <div colspan="2">
                             <div class="text-muted mb-3">Send emails via your Microsoft 365 account</div>
@@ -75,13 +103,39 @@
                         </div>
                     </group>
 
-                    <!-- Connected -->
+                    <!-- Microsoft: Connected -->
                     <group invisible="not x_microsoft_oauth_connected">
                         <field name="x_microsoft_oauth_connected" widget="boolean_toggle" string="Connected"/>
                         <field name="x_microsoft_default_mailbox_id"
                                string="Send from"
                                domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
+                        <button type="object"
+                                name="action_disconnect_microsoft"
+                                string="Disconnect Microsoft 365"
+                                class="btn-secondary" icon="fa-windows"
+                                confirm="Disconnect this Microsoft account? Sending and syncing via Microsoft 365 will stop for this user."/>
+                    </group>
+
+                    <!-- Google: Not Connected -->
+                    <group invisible="x_google_oauth_connected">
+                        <div colspan="2">
+                            <div class="text-muted mb-3">Send emails via your Google account</div>
+                            <button type="object"
+                                    name="action_connect_google"
+                                    string="Connect Google"
+                                    class="btn-primary" icon="fa-google"/>
+                        </div>
+                    </group>
+
+                    <!-- Google: Connected -->
+                    <group invisible="not x_google_oauth_connected">
+                        <field name="x_google_oauth_connected" widget="boolean_toggle" string="Google Connected"/>
+                        <button type="object"
+                                name="action_disconnect_google"
+                                string="Disconnect Google"
+                                class="btn-secondary" icon="fa-google"
+                                confirm="Disconnect this Google account? Sending and syncing via Gmail will stop for this user."/>
                     </group>
                 </page>
             </xpath>

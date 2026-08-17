@@ -22,6 +22,21 @@ lokaal → dogfood → klanten.
 ### A2. Unit tests lokaal
 - [x] `--test-enable --test-tags=pan_mail_pro`: 0 failed, 0 errors van
       148 tests tegen de ge-upgradede database (30-07)
+- [x] Herhaald op 17-08 tegen `odoo:19.0` community (CI-reproductie, verse
+      `ci_test`-db): install + upgrade beide groen, 0 failed van 148
+
+### A2b. UI-smoke lokaal (17-08, community-image + Playwright)
+- [x] Settings → Mail Pro: beide provider-secties renderen; "Connect Google"
+      zonder credentials geeft nette UserError, geen traceback
+- [x] Mailbox-formulier: provider-switch naar Gmail werkt; save zonder owner
+      correct geblokkeerd door ValidationError
+- [x] Composer: setup-warning + "Send From"-dropdown renderen
+- [x] OAuth-callbacks met bogus params: redirects, geen 500's
+- [x] Gevonden + gefixt in v19.0.3.0.1: `widget="timeago"` bestaat niet in
+      Odoo 19 (viel stil terug op datetime); **gebruikers konden Google niet
+      koppelen** — `action_connect_google` zat in het model maar in geen
+      enkele view; disconnect-knoppen (MS + Google) ontbraken ook; plus
+      Microsoft-only teksten in settings/empty-state/menunaam
 
 ### A3. Outlook functioneel (eerst — was al productie, dus regressiecheck)
 - [x] Microsoft-OAuth-config in lokale `test_db` gezet (30-07): client ID,

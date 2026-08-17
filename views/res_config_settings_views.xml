@@ -18,7 +18,7 @@
                     <!-- ============================================ -->
                     <!-- CONFIGURATION -->
                     <!-- ============================================ -->
-                    <h2>Configuration</h2>
+                    <h2>Microsoft 365</h2>
                     <div class="row mt-4 mb-4 o_settings_container">
                         <!-- LEFT: Credentials -->
                         <div class="col-12 col-lg-6 o_setting_box">
@@ -229,7 +229,7 @@
                 <div class="alert alert-info mb-3" role="alert">
                     <i class="fa fa-info-circle me-2" title="Info"/>
                     <strong>Mail Pro is installed.</strong>
-                    Email is managed via Microsoft Graph API.
+                    Email is managed via the Microsoft Graph and Gmail APIs.
                     <a href="#" class="alert-link ms-1">Configure in Settings → Mail Pro</a>
                 </div>
             </xpath>

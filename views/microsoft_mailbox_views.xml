@@ -18,7 +18,7 @@
                 <field name="x_provider" string="Provider" optional="hide"/>
                 <field name="x_owner_user_id" string="Owner" optional="hide"/>
                 <field name="x_incoming_sync" string="Sync" optional="hide"/>
-                <field name="x_last_sync_date" string="Last Synced" widget="timeago" optional="hide"/>
+                <field name="x_last_sync_date" string="Last Synced" optional="hide"/>
                 <field name="x_error_message" string="Error" optional="hide"/>
             </list>
         </field>
@@ -67,7 +67,7 @@
                                    invisible="not x_incoming_sync"/>
                             <field name="x_sync_start_date"
                                    invisible="not x_incoming_sync"/>
-                            <field name="x_last_sync_date" readonly="1" widget="timeago"
+                            <field name="x_last_sync_date" readonly="1"
                                    invisible="not x_incoming_sync or not x_last_sync_date"/>
                         </group>
                         <group>
@@ -150,14 +150,14 @@
                 Add your first mailbox
             </p>
             <p>
-                Configure mailboxes for sending and receiving email via Microsoft 365.
+                Configure mailboxes for sending and receiving email via Microsoft 365 or Gmail.
             </p>
         </field>
     </record>
 
-    <!-- Menu: Settings → Technical → Email → Microsoft Mailboxes -->
+    <!-- Menu: Settings → Technical → Email → Mail Pro Mailboxes -->
     <menuitem id="menu_microsoft_mailbox"
-              name="Microsoft Mailboxes"
+              name="Mail Pro Mailboxes"
               parent="base.menu_email"
               action="action_microsoft_mailbox"
               sequence="5"
