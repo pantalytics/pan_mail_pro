@@ -100,7 +100,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.5.2.0',
+    'version': '19.0.5.2.1',
     'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {

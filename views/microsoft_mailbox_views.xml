@@ -18,7 +18,7 @@
                 <field name="x_provider" string="Provider" optional="hide"/>
                 <field name="x_owner_user_id" string="Owner" optional="hide"/>
                 <field name="x_sync_mode" string="Incoming" optional="hide"/>
-                <field name="x_last_sync_date" string="Last Synced" widget="timeago" optional="hide"/>
+                <field name="x_last_sync_date" string="Last Synced" optional="hide"/>
                 <field name="x_error_message" string="Error" optional="hide"/>
             </list>
         </field>
@@ -80,7 +80,7 @@
                                    invisible="x_sync_mode == 'none'"/>
                             <field name="x_sync_start_date"
                                    invisible="x_sync_mode == 'none'"/>
-                            <field name="x_last_sync_date" readonly="1" widget="timeago"
+                            <field name="x_last_sync_date" readonly="1"
                                    invisible="x_sync_mode == 'none' or not x_last_sync_date"/>
                         </group>
                         <group>
