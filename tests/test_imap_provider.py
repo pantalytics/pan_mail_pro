@@ -9,6 +9,7 @@ folder-scoped UID, and a thread key is the References root.
 
 imaplib and smtplib are faked at the class boundary — no sockets, no server.
 """
+import imaplib
 import re
 from datetime import datetime
 from email import message_from_bytes, policy
@@ -21,6 +22,10 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     FOLDER_INBOX,
     FOLDER_SENT,
     get_provider_client,
+)
+
+from odoo.addons.pan_mail_pro.models.providers.imap_smtp.imap_client import (
+    SMTP_TIMEOUT as IMAP_SMTP_TIMEOUT,
 )
 
 IMAP_MODULE = 'odoo.addons.pan_mail_pro.models.providers.imap_smtp.imap_client'
@@ -302,6 +307,87 @@ class TestImapProvider(TransactionCase):
         folder, flags, raw = imap.appended[0]
         self.assertEqual(folder, '"Sent Items"')  # from the server's \Sent flag
         self.assertIn(b'Hi there', raw)
+
+    def test_sent_copy_is_not_duplicated_when_the_host_already_filed_one(self):
+        """Some hosts file their own copy on SMTP submission. The probe on
+        Message-ID makes the APPEND conditional, so those hosts get one copy
+        and the rest (Soverin included) still get theirs."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>Hi</p>',
+            'email_to': 'customer@example.com',
+        })
+        # The fake answers every SEARCH with its uids: a non-empty answer to
+        # the Message-ID probe reads as "the host already filed this".
+        smtp, imap = FakeSmtp(), FakeImap(uids=(b'9',))
+        with self._patch_smtp(smtp), self._patch_imap(imap):
+            result = self.client.send_message(mail, mailbox, account)
+
+        self.assertTrue(result['success'])
+        self.assertTrue(smtp.sent)
+        self.assertEqual(imap.appended, [])
+        # The probe asked the right question in the right folder.
+        self.assertIn('Message-ID', imap.searched)
+        self.assertEqual(imap.selected, '"Sent Items"')
+        self.assertTrue(imap.readonly)
+
+    def test_a_failed_probe_still_files_the_copy(self):
+        """A duplicate in Sent beats no copy at all — the probe is an
+        optimisation, never a gate."""
+
+        class ProbelessImap(FakeImap):
+            def select(self, name, readonly=False):
+                raise imaplib.IMAP4.error('SELECT refused')
+
+        account, mailbox = self._imap_account(), self._mailbox()
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>Hi</p>',
+            'email_to': 'customer@example.com',
+        })
+        imap = ProbelessImap()
+        with self._patch_smtp(FakeSmtp()), self._patch_imap(imap):
+            result = self.client.send_message(mail, mailbox, account)
+
+        self.assertTrue(result['success'])
+        self.assertTrue(imap.appended)
+
+    def test_oversize_mail_is_refused_before_data(self):
+        """RFC 1870: the server names its limit in the EHLO reply, so a mail
+        that cannot fit is refused before the upload, with a reason the sender
+        can act on — not after it, with the server's."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>' + 'x' * 2048 + '</p>',
+            'email_to': 'customer@example.com',
+        })
+        smtp, imap = FakeSmtp(), FakeImap()
+        smtp.esmtp_features = {'size': '1024'}
+        with self._patch_smtp(smtp), self._patch_imap(imap):
+            result = self.client.send_message(mail, mailbox, account)
+
+        self.assertFalse(result['success'])
+        self.assertIn('MB', result['error'])
+        self.assertEqual(smtp.sent, [])
+        self.assertEqual(imap.appended, [])
+
+    def test_a_server_advertising_no_limit_is_left_alone(self):
+        account, mailbox = self._imap_account(), self._mailbox()
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>Hi</p>',
+            'email_to': 'customer@example.com',
+        })
+        smtp = FakeSmtp()  # no esmtp_features at all
+        with self._patch_smtp(smtp), self._patch_imap(FakeImap()):
+            result = self.client.send_message(mail, mailbox, account)
+        self.assertTrue(result['success'])
+
+    def test_smtp_timeout_scales_with_the_payload(self):
+        """A flat timeout silently demands a fast uplink for a large
+        attachment; the scaled one makes a slow send a working send."""
+        flat = self.client._smtp_timeout(0)
+        scaled = self.client._smtp_timeout(25 * 1024 * 1024)
+        self.assertEqual(flat, IMAP_SMTP_TIMEOUT)
+        self.assertGreaterEqual(scaled, flat + 500)
 
     def test_send_sets_the_odoo_loop_guard_headers(self):
         account, mailbox = self._imap_account(), self._mailbox()

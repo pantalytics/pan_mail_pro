@@ -7,10 +7,15 @@ from .mail_provider_client import ERROR_NO_RECIPIENTS
 
 _logger = logging.getLogger(__name__)
 
-# How far up the parent chain a References header is built. Odoo tends to flatten
-# `parent_id` onto the thread root, so real chains are two or three links; the
-# bound is only there to stop a pathological one from growing without limit.
+# How long an emitted References header may grow. Odoo tends to flatten
+# `parent_id` onto the thread root, so real chains are two or three links; a
+# longer one is trimmed to the root plus the nearest ancestors (see
+# `_build_reply_context`).
 REPLY_CHAIN_LIMIT = 10
+# How far up the parent chain is *walked* before trimming. Only there to stop
+# pathological data from looping the walk without limit; the `seen` set already
+# guards against cycles.
+REPLY_CHAIN_WALK_LIMIT = 100
 # Marker written on internal notifications that are waiting for the
 # notification mailbox to be configured. Recognisable so the setup checklist
 # can count them, and so an admin reading the queue knows it is a setup gap
@@ -392,7 +397,7 @@ class MailMail(models.Model):
         chain = []
         node = self._reply_parent_message()
         seen = set()
-        while node and len(chain) < REPLY_CHAIN_LIMIT and node.id not in seen:
+        while node and len(seen) < REPLY_CHAIN_WALK_LIMIT and node.id not in seen:
             seen.add(node.id)
             wire_id = self._wire_message_id(node)
             if wire_id:
@@ -402,6 +407,13 @@ class MailMail(models.Model):
         if chain:
             # Walked child → root; References is ordered root first.
             chain.reverse()
+            if len(chain) > REPLY_CHAIN_LIMIT:
+                # Trim the middle, never the root: the IMAP provider derives
+                # its thread key from references[0] (`mime_utils.thread_key`),
+                # so dropping the root would hand the same conversation a new
+                # thread id partway through. Root plus nearest ancestors is
+                # what RFC 5322 recommends for a truncated References too.
+                chain = chain[:1] + chain[-(REPLY_CHAIN_LIMIT - 1):]
             reply_context['references'] = chain
             reply_context['in_reply_to'] = chain[-1]
         return reply_context

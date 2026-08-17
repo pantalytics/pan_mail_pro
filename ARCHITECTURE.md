@@ -442,6 +442,12 @@ receive, `mime_utils.thread_key()` on send. Every participant in a thread
 carries the same root, so rule 3 keeps working without the provider offering
 anything.
 
+That root is also why a long chain is trimmed from the *middle*: past
+`REPLY_CHAIN_LIMIT`, `_build_reply_context()` keeps the root plus the nearest
+ancestors. Capping the walk instead would drop the root — and hand the same
+conversation a new thread id partway through, exactly the drift rule 3 exists
+to prevent. (RFC 5322 recommends the same shape for a truncated References.)
+
 ---
 
 ## 7. Visibility
@@ -619,7 +625,17 @@ Three protocol facts had to land somewhere, and all three land inside the client
 Two smaller ones: `SEARCH SINCE` is date-granular and server-local, so the
 cursor is asked wide and narrowed in Python; and SMTP files nothing in Sent, so
 the client APPENDs the sent copy itself — best-effort, because the mail is
-already delivered and failing to file a copy is not a send failure.
+already delivered and failing to file a copy is not a send failure. The APPEND
+is conditional: the folder is probed for the Message-ID first, so a host that
+files its own copy on submission gets one copy, not two (a failed probe counts
+as absent — a duplicate beats no copy).
+
+Outgoing size and time are the server's numbers, not ours: the SIZE extension
+(RFC 1870) from the EHLO reply refuses an oversized mail *before* the upload
+with a reason the sender can act on, and the SMTP timeout scales with the
+payload — a flat timeout silently demands a fast uplink for a large attachment.
+Both mirror the same decisions in `squirrel-mcp`'s SMTP client, which shares
+this provider shape.
 
 ### 9.7 Graceful degradation: opt-in by data
 
