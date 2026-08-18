@@ -57,6 +57,10 @@ _logger = logging.getLogger(__name__)
 # server cannot hold the 1-minute incoming cron open forever.
 IMAP_TIMEOUT = 30
 SMTP_TIMEOUT = 30
+# The uplink the payload-scaled SMTP timeout assumes. A flat timeout silently
+# demands a fast connection for a large attachment: 25 MB inside 30 s is
+# ~7 Mbit/s up, which plenty of office connections do not have.
+MIN_UPLOAD_BYTES_PER_SEC = 50 * 1024
 
 # How many UIDs are asked for INTERNALDATE at a time while narrowing a widened
 # SEARCH SINCE window down to the real cursor. See `_oldest_uids`.
@@ -248,16 +252,21 @@ class ImapSmtpClient(models.AbstractModel):
                 _logger.debug('[IMAP] Ignoring error while closing connection to %s', host)
 
     @contextmanager
-    def _smtp(self, account):
-        """An authenticated SMTP connection, closed whatever happens."""
+    def _smtp(self, account, payload_size=0):
+        """An authenticated SMTP connection, closed whatever happens.
+
+        The timeout scales with `payload_size`: a large attachment on a slow
+        uplink is a working send, not a hung one.
+        """
         self._require_credentials(account)
         host, port = account.smtp_host, account.smtp_port or 465
+        timeout = self._smtp_timeout(payload_size)
         try:
             if account.smtp_security == 'ssl':
-                conn = smtplib.SMTP_SSL(host, port, timeout=SMTP_TIMEOUT,
+                conn = smtplib.SMTP_SSL(host, port, timeout=timeout,
                                         context=ssl.create_default_context())
             else:
-                conn = smtplib.SMTP(host, port, timeout=SMTP_TIMEOUT)
+                conn = smtplib.SMTP(host, port, timeout=timeout)
                 if account.smtp_security == 'starttls':
                     conn.starttls(context=ssl.create_default_context())
             conn.login(account._imap_login(), account.password)
@@ -273,6 +282,29 @@ class ImapSmtpClient(models.AbstractModel):
                 conn.quit()
             except Exception:
                 _logger.debug('[SMTP] Ignoring error while closing connection to %s', host)
+
+    @api.model
+    def _smtp_timeout(self, payload_size):
+        return SMTP_TIMEOUT + payload_size // MIN_UPLOAD_BYTES_PER_SEC
+
+    @api.model
+    def _check_size(self, conn, size):
+        """Refuse before DATA what the server's SIZE extension (RFC 1870) says
+        it will refuse after — the same rejection, minus the wasted upload and
+        with a reason the sender can act on. A server advertising no limit is
+        left alone.
+        """
+        raw_limit = (getattr(conn, 'esmtp_features', None) or {}).get('size', '')
+        try:
+            limit = int(str(raw_limit).split()[0]) if raw_limit else 0
+        except (ValueError, IndexError):
+            return
+        if limit and size > limit:
+            raise UserError(_(
+                'This email is %(size).1f MB; the SMTP server accepts at most '
+                '%(limit).1f MB. Remove or shrink an attachment.',
+                size=size / (1024 * 1024), limit=limit / (1024 * 1024),
+            ))
 
     def _require_credentials(self, account):
         if not self.account_is_connected(account):
@@ -380,9 +412,11 @@ class ImapSmtpClient(models.AbstractModel):
             mail_record, mailbox.email, to_addrs, cc_addrs, message_id,
             reply_context=reply_context)
         envelope = mime_utils.bare_addresses(to_addrs + cc_addrs)
+        payload_size = len(msg.as_bytes())
 
         try:
-            with self._smtp(account) as conn:
+            with self._smtp(account, payload_size=payload_size) as conn:
+                self._check_size(conn, payload_size)
                 conn.send_message(msg, from_addr=parseaddr(mailbox.email)[1] or mailbox.email,
                                   to_addrs=envelope)
         except UserError as e:
@@ -410,15 +444,35 @@ class ImapSmtpClient(models.AbstractModel):
         client would show no record of anything Odoo sent. Best-effort: the mail
         is already delivered, and failing to file a copy must not report the
         send as failed.
+
+        A host that files its own copy gets one, not two: the folder is probed
+        for the Message-ID first and only an absent copy is APPENDed. A failed
+        probe counts as absent — a duplicate in Sent beats no copy at all.
         """
         try:
             with self._imap(account) as conn:
                 folder = (account.imap_sent_folder
                           or self._detect_sent_folder(conn) or 'Sent')
+                if self._sent_copy_exists(conn, folder, msg['Message-ID']):
+                    return
                 conn.append(self._quote(folder), '\\Seen', None, msg.as_bytes())
         except Exception as e:
             _logger.warning('[IMAP] Could not file sent copy for %s: %s',
                             account.email, self._error_text(e))
+
+    @api.model
+    def _sent_copy_exists(self, conn, folder, message_id):
+        if not message_id:
+            return False
+        try:
+            typ, _data = conn.select(self._quote(folder), readonly=True)
+            if typ != 'OK':
+                return False
+            typ, data = conn.uid('SEARCH', None, 'HEADER', 'Message-ID',
+                                 self._quote(message_id))
+            return typ == 'OK' and bool((data[0] or b'').strip())
+        except (imaplib.IMAP4.error, OSError):
+            return False
 
     # -------------------------------------------------------------------------
     # Receiving

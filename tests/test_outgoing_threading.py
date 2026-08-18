@@ -22,6 +22,8 @@ import requests
 
 from odoo.tests import TransactionCase, tagged
 
+from odoo.addons.pan_mail_pro.models.mail_mail import REPLY_CHAIN_LIMIT
+
 GMAIL_POST = 'odoo.addons.pan_mail_pro.models.providers.google.gmail_client.requests.post'
 GRAPH_POST = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.post'
 GRAPH_PATCH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.patch'
@@ -97,6 +99,31 @@ class TestReplyContext(OutgoingThreadingCase):
         self.assertEqual(context['references'],
                          ['<root@example.com>', '<parent@example.com>'])
         self.assertEqual(context['in_reply_to'], '<parent@example.com>')
+
+    def test_a_long_chain_keeps_the_root_and_the_nearest_ancestors(self):
+        """The trim may never drop the root: the IMAP provider derives its
+        thread key from references[0], so a chain trimmed from the front hands
+        the same conversation a new thread id partway through. Root plus the
+        nearest ancestors is also what RFC 5322 recommends for a truncated
+        References header."""
+        Message = self.env['mail.message']
+        node, wire_ids = False, []
+        for i in range(REPLY_CHAIN_LIMIT + 5):
+            wire_id = f'<m{i}@example.com>'
+            node = Message.create({
+                'model': 'res.partner', 'res_id': self.partner.id,
+                'message_type': 'email', 'message_id': wire_id,
+                'parent_id': node and node.id,
+            })
+            wire_ids.append(wire_id)
+
+        context = self._outgoing_mail()._build_reply_context(self.mailbox)
+
+        self.assertEqual(len(context['references']), REPLY_CHAIN_LIMIT)
+        self.assertEqual(context['references'][0], wire_ids[0])
+        self.assertEqual(context['references'][1:],
+                         wire_ids[-(REPLY_CHAIN_LIMIT - 1):])
+        self.assertEqual(context['in_reply_to'], wire_ids[-1])
 
     def test_the_wire_message_id_wins_over_odoo_s_own(self):
         """Graph mints its own Message-ID, and that is what the recipient sees.
