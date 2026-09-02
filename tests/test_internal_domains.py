@@ -206,10 +206,13 @@ class TestInternalDomainSuggestions(TransactionCase):
     def test_uncovered_mailbox_domain_is_reported(self):
         """A mailbox we send from is ours by definition — a list missing it is wrong."""
         self.Domains.set_domains(['elsewhere.test'])
-        self.assertEqual(self.Domains.uncovered_domains(), ['suggested.test'])
+        self.assertIn('suggested.test', self.Domains.uncovered_domains())
 
     def test_nothing_uncovered_when_list_matches(self):
-        self.Domains.set_domains(['suggested.test'])
+        """Everything the database can demonstrate is ours, not only the
+        mailbox: the internal users' own domains count too, which is the whole
+        point of the check."""
+        self.Domains.set_domains(self.Domains.suggest_domains())
         self.assertEqual(self.Domains.uncovered_domains(), [])
 
 

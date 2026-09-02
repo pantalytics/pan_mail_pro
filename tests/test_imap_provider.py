@@ -783,6 +783,10 @@ class TestImapOutgoingRouting(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Mail Pro refuses to create a mailbox while the internal domain
+        # list is empty. A domain nothing in this fixture uses, so the gate
+        # opens without turning any fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         cls.user = cls.env['res.users'].create({
             'name': 'IMAP Sender', 'login': 'imap_sender@test.local',
             'email': 'imap_sender@test.local',
