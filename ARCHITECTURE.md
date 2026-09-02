@@ -287,8 +287,16 @@ users' own addresses — and saving the settings with one of them missing is
 refused. The users are the source that matters: a company that acquired another
 has colleagues on its domain long before it has mailboxes on it, so a list
 built from mailboxes alone reads as complete and treats those colleagues as
-outsiders. Portal users are excluded, since a customer with a login is not the
-company.
+outsiders.
+
+Two exclusions, both load-bearing. Portal users, since a customer with a login
+is not the company. And public mail providers, since a colleague whose Odoo
+login is a personal address would otherwise put `gmail.com` on the internal
+list — and an internal domain stops mail being synced, so that one setting
+silently stops logging every customer who uses the same provider. The dropped
+case is a company that genuinely runs on a public domain: it gets no help from
+the suggestion and types its domain in by hand, which is rare, loud, and
+recoverable in one field. The reverse error is none of those.
 
 This used to read `mail.alias.domain`, where "no domains configured" meant
 "nothing is internal" — so a database that never set it up synced every

@@ -32,6 +32,25 @@ PARAM_SYNC_INTERNAL = 'pan_mail_pro.sync_internal_email'
 
 _SPLIT_RE = re.compile(r'[\s,;]+')
 
+# Domains that belong to a mail provider rather than to a company.
+#
+# A colleague whose Odoo login is a personal address would otherwise put one of
+# these on the internal list, and the consequence of that is not a warning: an
+# internal domain stops mail being synced, so marking gmail.com internal
+# silently stops logging every customer who happens to use Gmail. The false
+# positive is worse than the miss it prevents.
+#
+# The case being dropped: a company that genuinely runs on a public domain --
+# a two-person shop whose only address is a gmail.com one -- gets no help from
+# the suggestion and must type its domain in. Rare, loud when it happens, and
+# recoverable in one field. The reverse error is silent and affects customers.
+PUBLIC_MAIL_DOMAINS = frozenset({
+    'aol.com', 'gmail.com', 'googlemail.com', 'gmx.com', 'gmx.de', 'gmx.net',
+    'hotmail.co.uk', 'hotmail.com', 'icloud.com', 'live.com', 'live.nl',
+    'mac.com', 'me.com', 'msn.com', 'outlook.com', 'pm.me', 'proton.me',
+    'protonmail.com', 'yahoo.co.uk', 'yahoo.com', 'ymail.com', 'zoho.com',
+})
+
 
 class PanMailInternalDomains(models.AbstractModel):
     _name = 'pan.mail.internal.domains'
@@ -184,9 +203,13 @@ class PanMailInternalDomains(models.AbstractModel):
         users = self.env['res.users'].sudo().with_context(
             active_test=False
         ).search([('share', '=', False)])
-        return [
+        addresses = [
             address for address in mailboxes.mapped('email') + users.mapped('email')
             if address
+        ]
+        return [
+            address for address in addresses
+            if self._parse(address) and self._parse(address)[0] not in PUBLIC_MAIL_DOMAINS
         ]
 
     @api.model

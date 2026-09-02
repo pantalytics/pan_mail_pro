@@ -275,11 +275,32 @@ class TestInternalDomainCompleteness(TransactionCase):
         self.assertIn('second.test', missing)
         self.assertIsNotNone(self.Domains.completeness_error())
 
-    def test_a_complete_list_reports_nothing(self):
-        self.Domains.set_domains(['first.test', 'second.test', 'scaffolding.test'])
+    def test_applying_the_suggestion_always_makes_the_list_complete(self):
+        """The property the "Apply suggested" button promises.
+
+        Hardcoding the expected domains would test this fixture rather than the
+        rule: any database carries users the fixture did not create, and the
+        real question is whether one click can ever leave the admin with a list
+        the save still refuses.
+        """
+        self.Domains.set_domains(self.Domains.suggest_domains())
 
         self.assertEqual(self.Domains.uncovered_domains(), [])
         self.assertIsNone(self.Domains.completeness_error())
+
+    def test_a_personal_address_does_not_drag_its_provider_in(self):
+        """A colleague whose Odoo login is a personal address must not put a
+        mail provider's domain on the internal list. Marking it internal stops
+        syncing every customer on that provider, silently."""
+        self.env['res.users'].with_context(no_reset_password=True).create({
+            'name': 'Colleague With A Personal Login',
+            'login': 'someone@gmail.com',
+            'email': 'someone@gmail.com',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+
+        self.assertNotIn('gmail.com', self.Domains.suggest_domains())
+        self.assertNotIn('gmail.com', self.Domains.uncovered_domains())
 
     def test_an_empty_list_is_absent_rather_than_incomplete(self):
         """Two different failures with two different gates. This one is the
@@ -300,7 +321,7 @@ class TestInternalDomainCompleteness(TransactionCase):
 
     def test_saving_settings_accepts_a_complete_list(self):
         settings = self.env['res.config.settings'].create({
-            'x_internal_domains': 'first.test, second.test, scaffolding.test',
+            'x_internal_domains': ', '.join(self.Domains.suggest_domains()),
         })
 
         settings.set_values()
