@@ -174,10 +174,24 @@ def rename_tables(cr):
         cr.execute("SELECT to_regclass(%s)", [f'{old_table}_id_seq'])
         if cr.fetchone()[0]:
             cr.execute(f'ALTER SEQUENCE "{old_table}_id_seq" RENAME TO "{new_table}_id_seq"')
+        cr.execute("""
+            SELECT 1 FROM pg_constraint
+             WHERE conrelid = %s::regclass AND conname = %s
+        """, (new_table, f'{old_table}_pkey'))
+        if cr.fetchone():
+            cr.execute(f'ALTER TABLE "{new_table}" RENAME CONSTRAINT '
+                       f'"{old_table}_pkey" TO "{new_table}_pkey"')
         # Odoo looks indexes up by name; the ORM rebuilds these on a table of
         # a few dozen rows, and duplicates under the old names would only rot.
-        cr.execute("SELECT indexname FROM pg_indexes WHERE tablename = %s AND indexname LIKE %s",
-                   (new_table, f'{old_table}\\_%'))
+        # Indexes that back a constraint (the primary key) are left alone.
+        cr.execute("""
+            SELECT c.relname
+              FROM pg_index i
+              JOIN pg_class c ON c.oid = i.indexrelid
+              JOIN pg_class t ON t.oid = i.indrelid
+             WHERE t.relname = %s AND c.relname LIKE %s
+               AND NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conindid = i.indexrelid)
+        """, (new_table, f'{old_table}\\_%'))
         for (index,) in cr.fetchall():
             cr.execute(f'DROP INDEX IF EXISTS "{index}"')
         _logger.info('[Mail Pro] Renamed table %s to %s', old_table, new_table)
