@@ -236,7 +236,12 @@ class TestInternalDomainCompleteness(TransactionCase):
         cls.Mailbox.create({
             'email': 'info@first.test', 'mailbox_type': 'shared',
         })
-        cls.colleague = cls.env['res.users'].create({
+        # `no_reset_password` because creating a user with an email otherwise
+        # sends the signup mail, and by this point the mailbox above has already
+        # switched Odoo's outgoing mail onto the provider.
+        cls.colleague = cls.env['res.users'].with_context(
+            no_reset_password=True
+        ).create({
             'name': 'Colleague On Another Domain',
             'login': 'wvb@second.test',
             'email': 'wvb@second.test',
@@ -251,7 +256,9 @@ class TestInternalDomainCompleteness(TransactionCase):
     def test_a_customer_with_a_login_is_not_the_company(self):
         """Portal users have logins too, and folding their domain in would mark
         a customer's mail internal and quietly stop syncing it."""
-        portal = self.env['res.users'].create({
+        portal = self.env['res.users'].with_context(
+            no_reset_password=True
+        ).create({
             'name': 'Customer With Portal Access',
             'login': 'buyer@customer.test',
             'email': 'buyer@customer.test',
