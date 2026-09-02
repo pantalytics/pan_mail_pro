@@ -49,7 +49,12 @@ class TestIncomingGates(OutlookProTestCase):
         costing a provider round-trip; here it keeps the tests off the network.
         """
         full_message = {
+            # The normalized shape always carries this; `pan.mail.item` needs
+            # it and the column is NOT NULL, so a fixture without it tests a
+            # message no provider could produce.
+            'provider_message_id': 'X1',
             'message_id': INTERNET_ID,
+            'date': '2026-02-01 10:30:00',
             'subject': 'Question about my order',
             'from': {'email': CUSTOMER, 'name': 'External Customer'},
             'to': [{'email': 'sales@company.test', 'name': 'Sales'}],
