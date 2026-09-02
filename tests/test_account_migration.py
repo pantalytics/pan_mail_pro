@@ -21,7 +21,6 @@ What this cannot test is a *production* token population: expired tokens, users
 whose partner email drifted from their login, tokens encrypted before a key
 rotation. A rehearsal against a restored backup stays mandatory.
 """
-import ast
 import importlib.util
 import os
 
@@ -51,37 +50,16 @@ def _load_migration():
     return _load('19.0.2.1.0', 'pan_account_post_migrate')
 
 
-def _version_key(version):
-    """Sortable key for a `19.0.X.Y.Z` folder name."""
-    return tuple(int(part) for part in version.split('.'))
-
-
 def _load_cleanup_migration():
-    """The newest cleanup script at or below the manifest version.
+    """The 19.0.5.0.0 cleanup script, which realigns the connection flag.
 
-    Not hardcoded: a written-out version survives a release bump as a path to a
-    directory that no longer exists — which is what happened when 19.0.4.0.0 was
-    renamed to 19.0.5.0.0 after mainline shipped a 19.0.4.0.0 of its own.
-
-    Not the manifest version either, which is what replaced it. That assumed
-    every release ships a migration, so the first patch release that did not
-    (19.0.5.0.1, a fix with no schema change) pointed this at a directory that
-    was never going to exist. The manifest is an upper bound now — never load a
-    script from a version this build does not claim to be — and the newest
-    folder at or below it is the one that ran.
+    Pinned, like the token migration above. It used to be "the newest
+    post-migrate at or below the manifest version", written while the folder
+    was still being renamed before release; that heuristic picks whatever the
+    latest release shipped, and 19.0.6.0.0 ships a post-migrate that does
+    something else entirely. 19.0.5.0.0 has shipped, so its folder is fixed.
     """
-    manifest = ast.literal_eval(
-        open(os.path.join(_MODULE, '__manifest__.py')).read())
-    ceiling = _version_key(manifest['version'])
-    candidates = [
-        entry for entry in os.listdir(_MIGRATIONS)
-        if os.path.exists(os.path.join(_MIGRATIONS, entry, 'post-migrate.py'))
-        and _version_key(entry) <= ceiling
-    ]
-    if not candidates:
-        raise FileNotFoundError(
-            f'No post-migrate script at or below {manifest["version"]} in {_MIGRATIONS}')
-    return _load(max(candidates, key=_version_key), 'pan_cleanup_post_migrate')
+    return _load('19.0.5.0.0', 'pan_cleanup_post_migrate')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
