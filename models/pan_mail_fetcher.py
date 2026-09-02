@@ -15,7 +15,7 @@ from markupsafe import Markup
 from odoo import models, api, fields, _
 from odoo.exceptions import UserError
 
-from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT, database_is_neutralized
 from .microsoft_mailbox import SYNCING_MODES
 
 _logger = logging.getLogger(__name__)
@@ -37,6 +37,13 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         Cron method to fetch emails from all enabled mailboxes.
         Called by ir.cron every 1 minute.
         """
+        # Neutralization deactivates every cron, so this normally does not run
+        # in staging at all. It still gets here by hand, from "Sync Now" on a
+        # mailbox -- and a sync is not read-only: it marks mail read and posts
+        # into chatter, which fires notifications back out.
+        if database_is_neutralized(self.env):
+            _logger.info('[Incoming Mail] Database is neutralized - skipping sync')
+            return
         # Deliberately not filtered on an owner: whether a mailbox needs one is
         # the provider's business. A Gmail or IMAP shared mailbox is its own
         # account with nobody behind it, and requiring an owner here silently

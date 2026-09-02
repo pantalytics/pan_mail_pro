@@ -664,6 +664,33 @@ every tenant, and a wrong value is unrecoverable from the UI. They are
 constants. A knob nobody should turn is a way to break the product from the
 settings page.
 
+### 9.9 Neutralization: a staging copy must not mail customers
+
+Odoo protects a database copy by *neutralizing* it: every installed module's
+`data/neutralize.sql` runs, base deactivates every `ir_mail_server` and inserts
+an invalid one, all crons stop, and `database.is_neutralized` is set.
+
+That protection is SMTP-shaped, and Mail Pro is not. It calls the Graph API,
+the Gmail API or its own SMTP host with credentials the dump still carries, so
+a restored staging database would mail real customers from the real address —
+and pass every check Odoo has, because it never asked `ir_mail_server` for
+anything.
+
+So the module neutralizes itself, in two layers:
+
+- `data/neutralize.sql` deactivates every mailbox and *removes* the OAuth
+  tokens and mailbox passwords. Same reasoning as base wiping `smtp_pass`: a
+  neutralized database gets copied around, and a dump carrying a live refresh
+  token can send from anywhere it lands. It is found by path, so it is
+  deliberately not listed in `__manifest__.py`.
+- `database_is_neutralized()` in `mail_provider_client.py` is asked at every
+  point that would make a provider call — routing an outgoing mail, the sync
+  cron, "Sync Now". This is the layer that holds when someone puts a mailbox
+  back to test something.
+
+Outgoing mail is *refused*, not dropped: the reason lands on the mail and it
+stays queued, so nothing is lost if the database turns out to be the real one.
+
 ---
 
 ## 10. Security and permissions

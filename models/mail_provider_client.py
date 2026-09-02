@@ -139,6 +139,22 @@ PARAM_SETUP_PROVIDER = 'x_pan_outlook_pro.setup_provider'
 DEFAULT_PROVIDER = 'outlook'
 
 
+def database_is_neutralized(env):
+    """True when this database is a neutralized copy (staging, a test restore).
+
+    Odoo neutralizes a copy by deactivating every `ir_mail_server` and inserting
+    an invalid one. That stops SMTP and nothing else, and Mail Pro is nothing
+    else: it calls the Graph API, the Gmail API or its own SMTP host with
+    credentials the dump still carries. So the boundary is asked here, in the
+    file that defines what a provider call is, and honoured by everything that
+    would make one -- sending and incoming sync alike.
+
+    `data/neutralize.sql` already takes the credentials away. This is what holds
+    when someone puts a mailbox back to test something.
+    """
+    return bool(env['ir.config_parameter'].sudo().get_param('database.is_neutralized'))
+
+
 def get_provider_client(env, provider_code=DEFAULT_PROVIDER):
     """Resolve a provider code to its client model."""
     model_name = PROVIDER_CLIENTS.get(provider_code)
