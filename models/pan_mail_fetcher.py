@@ -28,14 +28,25 @@ _logger = logging.getLogger(__name__)
 # mail Odoo itself sent, so keying the boundary on it would conflate the two
 # directions of one mailbox and eventually silence something a person wrote.
 #
-# The two follower flags ride along because they are the same sentence: an
-# import notifies nobody and subscribes nobody. They cover different halves --
-# `mail_create_nosubscribe` keeps the author out of the follower list,
-# `mail_post_autofollow` keeps the recipients out -- and an import wants both,
-# since neither the colleague who sent the mail nor the customer who received
-# it asked to follow anything in Odoo.
+# The follower flags ride along because they are the same sentence: an import
+# notifies nobody and subscribes nobody. Neither the colleague who sent the mail
+# nor the customer who received it asked to follow anything in Odoo.
+#
+# Three flags because Odoo splits the question three ways, and only the middle
+# one is the flag people reach for:
+#
+# - `mail_post_autofollow_author_skip` keeps the *author* out. This is the one
+#   that matters here and the one that is easy to miss: Odoo subscribes the
+#   author of a post by default, on the reasoning that an author should see the
+#   answers. A sync has no author who wants answers, only a colleague whose
+#   sent mail we copied.
+# - `mail_create_nosubscribe` is about record *creation*, not about posting. It
+#   belongs on the `message_new()` path and does nothing for a `message_post()`.
+# - `mail_post_autofollow` keeps the recipients out. False is already Odoo's
+#   default; it is stated so the intent survives a default changing.
 IMPORT_CTX = {
     'pan_mail_imported': True,
+    'mail_post_autofollow_author_skip': True,
     'mail_create_nosubscribe': True,
     'mail_post_autofollow': False,
 }
