@@ -25,6 +25,10 @@ class TestNoMailboxFallback(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Mail Pro refuses to create a mailbox while the internal domain
+        # list is empty. A domain nothing in this fixture uses, so the gate
+        # opens without turning any fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         cls.env['pan.mail.mailbox'].sudo().with_context(
             active_test=False).search([]).unlink()
 
@@ -72,6 +76,10 @@ class TestMailboxesExistButUnusable(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Mail Pro refuses to create a mailbox while the internal domain
+        # list is empty. A domain nothing in this fixture uses, so the gate
+        # opens without turning any fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         cls.env['pan.mail.mailbox'].sudo().with_context(
             active_test=False).search([]).unlink()
         cls.inactive_mailbox = cls.env['pan.mail.mailbox'].sudo().create({

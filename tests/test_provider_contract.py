@@ -25,6 +25,13 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
 class TestProviderRegistry(TransactionCase):
     """The registry is the only place a provider code becomes a model."""
 
+    def setUp(self):
+        super().setUp()
+        # Mail Pro refuses to create a mailbox while the internal domain list is
+        # empty. A domain nothing in this fixture uses, so the gate opens
+        # without turning any fixture address internal.
+        self.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+
     def test_every_registered_provider_resolves_to_a_client(self):
         for code in PROVIDER_CLIENTS:
             client = get_provider_client(self.env, code)
@@ -73,6 +80,10 @@ class TestProviderCapabilities(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # Mail Pro refuses to create a mailbox while the internal domain list is
+        # empty. A domain nothing in this fixture uses, so the gate opens
+        # without turning any fixture address internal.
+        self.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         self.client = get_provider_client(self.env, 'outlook')
 
     def test_outlook_supports_shared_mailboxes(self):

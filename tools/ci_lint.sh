@@ -116,6 +116,28 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+step "Every test file is imported by tests/__init__.py"
+# Odoo collects tests through tests/__init__.py. A file on disk that nothing
+# imports does not exist as far as the runner is concerned: it lints clean, it
+# is committed, CI goes green, and it never runs. That happened to the file
+# asserting the sync sends no mail, so the green build proved the opposite of
+# what it appeared to. ci_assert_tests.sh cannot see it -- a suite that never
+# had the tests has no count to have lost.
+ON_DISK=$(cd tests && ls test_*.py 2>/dev/null | sed 's/\.py$//' | sort)
+IMPORTED=$(grep -oP '^from \. import \K(test_\w+)' tests/__init__.py | sort)
+if [ "$ON_DISK" != "$IMPORTED" ]; then
+    comm -23 <(echo "$ON_DISK") <(echo "$IMPORTED") | while read -r f; do
+        [ -n "$f" ] && echo "::error file=tests/__init__.py::tests/$f.py is never imported, so it never runs"
+    done
+    comm -13 <(echo "$ON_DISK") <(echo "$IMPORTED") | while read -r f; do
+        [ -n "$f" ] && echo "::error file=tests/__init__.py::imports $f, which does not exist"
+    done
+    fail "Add the missing line to tests/__init__.py (or remove the stale import)."
+else
+    echo "OK: every test file is on the list."
+fi
+
+# ---------------------------------------------------------------------------
 step "Migration folder is not above the manifest version"
 VERSION=$(python3 -c "import ast,pathlib;print(ast.literal_eval(pathlib.Path('__manifest__.py').read_text())['version'])")
 LATEST=$(ls migrations 2>/dev/null | sort -V | tail -1)

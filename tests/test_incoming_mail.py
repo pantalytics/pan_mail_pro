@@ -181,6 +181,10 @@ class TestAliasRouting(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Mail Pro refuses to create a mailbox while the internal domain
+        # list is empty. A domain nothing in this fixture uses, so the gate
+        # opens without turning any fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         cls.processor = cls.env['pan.mail.fetcher']
         cls.partner = cls.env['res.partner'].create({
             'name': 'Test Sender',
@@ -227,6 +231,10 @@ class TestHelpdeskRouting(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Mail Pro refuses to create a mailbox while the internal domain
+        # list is empty. A domain nothing in this fixture uses, so the gate
+        # opens without turning any fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         if 'helpdesk.team' not in cls.env:
             raise unittest.SkipTest("Helpdesk module not installed")
         cls.processor = cls.env['pan.mail.fetcher']
@@ -286,6 +294,10 @@ class TestSavepointIsolation(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Mail Pro refuses to create a mailbox while the internal domain
+        # list is empty. A domain nothing in this fixture uses, so the gate
+        # opens without turning any fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         cls.processor = cls.env['pan.mail.fetcher']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'inbox@company.test',

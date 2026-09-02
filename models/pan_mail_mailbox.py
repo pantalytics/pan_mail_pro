@@ -541,22 +541,27 @@ class PanMailMailbox(models.Model):
                         'Existing notification mailbox: %s'
                     ) % existing.email)
 
-    @api.constrains('sync_mode', 'exclude_internal')
+    @api.constrains('email', 'sync_mode', 'exclude_internal')
     def _check_internal_domains_configured(self):
-        """Incoming sync may not be enabled before internal domains exist.
+        """No mailbox at all before the internal domains exist.
 
         This is the gate, not the filter. The filter (`should_skip`) used to be
         the only line of defence and it failed open on an empty domain list, so
         a database that was never configured synced every internal email into
         Odoo. Blocking the *configuration* is what makes that unrepeatable; the
         runtime check in `_process_mailbox` only catches a list emptied later.
+
+        It guards every mailbox rather than only the syncing ones, because a
+        mailbox is the moment Mail Pro takes over the company's mail: the SMTP
+        takeover fires here, sending starts here, and a database that gets this
+        far without knowing its own domains is one switch away from copying
+        internal mail into Odoo. Gating only the switch left the setting reading
+        as an option belonging to sync, which is what it looked like at
+        Juffermans Machinebouw right up until it mattered.
         """
         gate = self.env['pan.mail.internal.domains'].configuration_error()
-        if not gate:
-            return
-        for record in self:
-            if record._syncs_incoming():
-                raise ValidationError(gate)
+        if gate:
+            raise ValidationError(gate)
 
     @api.constrains('sync_mode')
     def _check_notification_mailbox_for_sync(self):

@@ -32,6 +32,25 @@ PARAM_SYNC_INTERNAL = 'pan_mail_pro.sync_internal_email'
 
 _SPLIT_RE = re.compile(r'[\s,;]+')
 
+# Domains that belong to a mail provider rather than to a company.
+#
+# A colleague whose Odoo login is a personal address would otherwise put one of
+# these on the internal list, and the consequence of that is not a warning: an
+# internal domain stops mail being synced, so marking gmail.com internal
+# silently stops logging every customer who happens to use Gmail. The false
+# positive is worse than the miss it prevents.
+#
+# The case being dropped: a company that genuinely runs on a public domain --
+# a two-person shop whose only address is a gmail.com one -- gets no help from
+# the suggestion and must type its domain in. Rare, loud when it happens, and
+# recoverable in one field. The reverse error is silent and affects customers.
+PUBLIC_MAIL_DOMAINS = frozenset({
+    'aol.com', 'gmail.com', 'googlemail.com', 'gmx.com', 'gmx.de', 'gmx.net',
+    'hotmail.co.uk', 'hotmail.com', 'icloud.com', 'live.com', 'live.nl',
+    'mac.com', 'me.com', 'msn.com', 'outlook.com', 'pm.me', 'proton.me',
+    'protonmail.com', 'yahoo.co.uk', 'yahoo.com', 'ymail.com', 'zoho.com',
+})
+
 
 class PanMailInternalDomains(models.AbstractModel):
     _name = 'pan.mail.internal.domains'
@@ -85,21 +104,50 @@ class PanMailInternalDomains(models.AbstractModel):
     # -------------------------------------------------------------------------
     @api.model
     def configuration_error(self):
-        """Why incoming sync must not run, or None when it may.
+        """Why Mail Pro must not be used yet, or None when it may.
 
         Returned rather than raised so each caller can pick its own exception
         type (ValidationError when saving a mailbox, UserError during a sync).
+
+        This gates the first mailbox, not just incoming sync. Creating a mailbox
+        is the moment Mail Pro takes over the company's mail, and a database
+        that reaches that moment without knowing which domains are its own
+        cannot tell a colleague from a customer. Not at install, though: an
+        empty database has no domains to derive and nobody to protect, and the
+        SMTP takeover waits for the same moment for the same reason.
         """
         if self.is_configured() or self.sync_internal_enabled():
             return None
         return _(
-            'No internal email domains are configured. Incoming sync is blocked '
-            'because without them every internal email — including confidential '
-            'ones — would be copied into Odoo.\n\n'
+            'No internal email domains are configured. Mail Pro cannot be used '
+            'yet, because without them it cannot tell your colleagues from your '
+            'customers — and every internal email, confidential ones included, '
+            'would be copied into Odoo.\n\n'
             'Go to Settings → Mail Pro → Internal Domains and enter your company '
             'domains, or explicitly enable "Sync internal email" if that is what '
             'you want.'
         )
+
+    @api.model
+    def completeness_error(self):
+        """Which of our own domains the list is missing, or None when none.
+
+        Separate from `configuration_error()` because they fail differently:
+        one says the list is absent, this one says the list is wrong. The
+        second is the more dangerous of the two, because a database with a
+        half-filled list passes every check that asks whether it is configured.
+        """
+        missing = self.uncovered_domains()
+        if not missing:
+            return None
+        return _(
+            'These domains belong to your company but are not in the internal '
+            'domain list: %s\n\n'
+            'Mail sent to or from them would be treated as customer '
+            'correspondence and copied into Odoo. Add them, or use "Apply '
+            'suggested" to fill the list from the addresses already in this '
+            'database.'
+        ) % ', '.join(missing)
 
     # -------------------------------------------------------------------------
     # The question everything else asks
@@ -134,19 +182,44 @@ class PanMailInternalDomains(models.AbstractModel):
     # Helping the admin fill it in
     # -------------------------------------------------------------------------
     @api.model
-    def suggest_domains(self):
-        """Domains we can derive from what is already in the database.
+    def _own_addresses(self):
+        """Every address this database can demonstrate belongs to the company.
 
-        Three sources, most trustworthy first: the addresses of configured
-        mailboxes (those are demonstrably the company's own), the companies'
-        own email addresses, and Odoo's alias domains.
+        Two sources, and the second is the one that matters. A configured
+        mailbox is ours by definition. So is an internal user's own address --
+        and that is the source that catches a second domain, because a company
+        that acquired another one has colleagues on it long before it has
+        mailboxes on it. Juffermans Machinebouw runs every mailbox on one
+        domain and has a colleague on a second; a list built from mailboxes
+        alone reads as complete and treats that colleague as an outsider.
+
+        Portal and public users are excluded: a customer with a login is not
+        the company, and folding their domain in would mark a customer's mail
+        internal and stop syncing it.
         """
-        candidates = []
-
         mailboxes = self.env['pan.mail.mailbox'].sudo().with_context(
             active_test=False
         ).search([])
-        candidates += mailboxes.mapped('email')
+        users = self.env['res.users'].sudo().with_context(
+            active_test=False
+        ).search([('share', '=', False)])
+        addresses = [
+            address for address in mailboxes.mapped('email') + users.mapped('email')
+            if address
+        ]
+        return [
+            address for address in addresses
+            if self._parse(address) and self._parse(address)[0] not in PUBLIC_MAIL_DOMAINS
+        ]
+
+    @api.model
+    def suggest_domains(self):
+        """Domains we can derive from what is already in the database.
+
+        The company's own addresses first (see `_own_addresses`), then the
+        companies' own email addresses and Odoo's alias domains.
+        """
+        candidates = list(self._own_addresses())
 
         companies = self.env['res.company'].sudo().search([])
         candidates += [c.email for c in companies if c.email]
@@ -157,20 +230,17 @@ class PanMailInternalDomains(models.AbstractModel):
         return self._parse(', '.join(filter(None, candidates)))
 
     @api.model
-    def uncovered_mailbox_domains(self):
-        """Mailbox domains missing from the internal list.
+    def uncovered_domains(self):
+        """Our own domains that the configured list does not carry.
 
-        A mailbox we send from is by definition one of ours. If its domain is
-        not in the list, internal mail from that domain is being synced — the
-        exact shape of the original leak, so it is worth saying out loud even
-        when the list is technically "configured".
+        A configured list is not the same as a complete one, and only the
+        second is worth anything: a domain we demonstrably own that is missing
+        from the list has all of its internal mail treated as correspondence
+        and synced. That is the original leak exactly, on a database that
+        passes every "is it configured" check.
         """
         if not self.is_configured():
             return []
         configured = set(self.get_domains())
-        mailbox_domains = self._parse(', '.join(
-            self.env['pan.mail.mailbox'].sudo().with_context(
-                active_test=False
-            ).search([]).mapped('email')
-        ))
-        return [d for d in mailbox_domains if d not in configured]
+        own = self._parse(', '.join(self._own_addresses()))
+        return [d for d in own if d not in configured]

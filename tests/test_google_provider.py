@@ -35,6 +35,10 @@ class TestGoogleProvider(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Mail Pro refuses to create a mailbox while the internal domain
+        # list is empty. A domain nothing in this fixture uses, so the gate
+        # opens without turning any fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         cls.Account = cls.env['pan.mail.account']
         cls.client = get_provider_client(cls.env, 'gmail')
         cls.user = cls.env['res.users'].create({
@@ -590,6 +594,9 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         # to exist — see the constraint in pan_mail_mailbox.py. It handles mail
         # from authors with no Odoo user, so it is a real product rule, not test
         # scaffolding.
+        # The gate has to open before the fixture builds a mailbox, not after:
+        # the constraint runs on create, so ordering is the whole of it.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         cls.notification_mailbox = cls.Mailbox.create({
             'email': 'notifications@test.local', 'provider': 'gmail',
             'mailbox_type': 'notification', 'owner_user_id': cls.user.id,
@@ -597,7 +604,6 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         # Incoming sync is gated on internal domains being declared. A domain
         # nothing in this fixture uses, so the gate opens without turning any
         # fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
 
     def _gmail_mailbox(self, **vals):
         base = {'email': 'gmail_only@test.local', 'provider': 'gmail',

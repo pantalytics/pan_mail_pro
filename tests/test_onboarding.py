@@ -26,6 +26,10 @@ class TestSmtpTakeover(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Mail Pro refuses to create a mailbox while the internal domain
+        # list is empty. A domain nothing in this fixture uses, so the gate
+        # opens without turning any fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.MailServer = cls.env['ir.mail_server'].with_context(active_test=False)
         cls.placeholder = cls.env.ref('pan_mail_pro.mail_server_disabled')
@@ -67,6 +71,10 @@ class TestNotificationGapQueuesMail(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Mail Pro refuses to create a mailbox while the internal domain
+        # list is empty. A domain nothing in this fixture uses, so the gate
+        # opens without turning any fixture address internal.
+        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
         cls.colleague = cls.env['res.users'].create({
             'name': 'Colleague', 'login': 'colleague@gap.test',
             'email': 'colleague@gap.test', 'notification_type': 'email',

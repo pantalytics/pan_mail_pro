@@ -294,7 +294,7 @@ class ResConfigSettings(models.TransientModel):
     def _compute_internal_domains_status(self):
         Domains = self.env['pan.mail.internal.domains']
         suggested = ', '.join(Domains.suggest_domains())
-        uncovered = ', '.join(Domains.uncovered_mailbox_domains())
+        uncovered = ', '.join(Domains.uncovered_domains())
         internal_sync_count = self.env['pan.mail.mailbox'].sudo().search_count([
             ('exclude_internal', '=', False),
             ('sync_mode', 'in', SYNCING_MODES),
@@ -306,6 +306,24 @@ class ResConfigSettings(models.TransientModel):
             record.x_internal_domains_suggested = suggested
             record.x_internal_domains_uncovered = uncovered if configured else ''
             record.x_internal_sync_mailbox_count = internal_sync_count
+
+    def set_values(self):
+        """Refuse a domain list that leaves one of our own domains out.
+
+        Checked after `super()` rather than before, so the question is asked of
+        the value being saved rather than the one on the form; the raise rolls
+        the write back with it.
+
+        Only a *configured* list can be incomplete, so this never blocks the
+        first save on an empty database. Absent and incomplete are two different
+        failures with two different gates: the mailbox constraint catches the
+        first, this catches the second, and the second is the more dangerous
+        because it passes every check that asks whether the list is configured.
+        """
+        super().set_values()
+        error = self.env['pan.mail.internal.domains'].completeness_error()
+        if error:
+            raise UserError(error)
 
     def action_apply_suggested_internal_domains(self):
         """Fill the domain list with everything we can derive from the database.
