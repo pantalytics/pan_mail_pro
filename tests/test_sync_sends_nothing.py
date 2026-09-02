@@ -61,23 +61,34 @@ class QuietSyncMixin:
             "the sync must never put an envelope in the queue",
         )
         if partner is not None:
-            self.assertEqual(
-                self._followers_of(partner), before['followers'],
-                "a follower is a human act; the sync never creates one",
+            added = self._followers_of(partner) - before['followers']
+            self.assertFalse(
+                added,
+                "a follower is a human act; the sync never creates one. "
+                "Subscribed by this run: %s" % ', '.join(
+                    '%s (id=%s)' % (p.name, p.id) for p in added
+                ),
             )
 
     def snapshot(self, partner=None):
         return {
             'notifications': self.env['mail.notification'].search_count([]),
             'mails': self.env['mail.mail'].search_count([]),
-            'followers': self._followers_of(partner) if partner is not None else 0,
+            'followers': self._followers_of(partner) if partner is not None
+            else self.env['res.partner'],
         }
 
     def _followers_of(self, partner):
-        return self.env['mail.followers'].search_count([
+        """The partners following `partner`'s own record.
+
+        Returned as a recordset rather than a count so a failure can name who
+        was subscribed. A number tells you the sync did something it should not
+        have; the name tells you which call site did it.
+        """
+        return self.env['mail.followers'].search([
             ('res_model', '=', 'res.partner'),
             ('res_id', '=', partner.id),
-        ])
+        ]).partner_id
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -108,8 +119,16 @@ class TestNotifyBoundary(OutlookProTestCase, QuietSyncMixin):
 
     def test_the_same_post_without_the_flag_does_notify(self):
         """The control. Without it this file would also pass if the override
-        killed notification for everything rather than for imports only."""
-        message = self.partner.message_post(
+        killed notification for everything rather than for imports only.
+
+        `mail_notify_force_send=False` keeps the envelope in the queue instead
+        of delivering it inline, which is what a test wants either way: the
+        assertion is that a notification and a `mail.mail` were produced, not
+        that a fake Graph accepted them.
+        """
+        message = self.partner.with_context(
+            mail_notify_force_send=False,
+        ).message_post(
             body='<p>Written by a person.</p>',
             subject='Human message',
             message_type='comment',
@@ -127,7 +146,9 @@ class TestNotifyBoundary(OutlookProTestCase, QuietSyncMixin):
         and it is the failure this change could plausibly cause."""
         before = self.env['mail.mail'].search_count([])
 
-        self.partner.message_post(
+        self.partner.with_context(
+            mail_notify_force_send=False,
+        ).message_post(
             body='<p>Please find the quote attached.</p>',
             subject='Quote',
             message_type='comment',
@@ -367,7 +388,7 @@ class TestImapSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
         processor = self.env['microsoft.incoming.mail.processor']
         client = type(self.env['imap.smtp.client'])
         with patch.object(client, 'get_message', autospec=True, return_value=message), \
-                patch.object(client, 'get_attachments', autospec=True, return_value=[]):
+                patch.object(client, 'get_message_attachments', autospec=True, return_value=[]):
             processor._process_message(self.mailbox, message, folder)
 
     def test_imap_inbox_sends_nothing(self):

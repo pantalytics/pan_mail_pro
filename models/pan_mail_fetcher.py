@@ -28,11 +28,16 @@ _logger = logging.getLogger(__name__)
 # mail Odoo itself sent, so keying the boundary on it would conflate the two
 # directions of one mailbox and eventually silence something a person wrote.
 #
-# `mail_create_nosubscribe` rides along because both halves are one sentence:
-# an import notifies nobody and subscribes nobody.
+# The two follower flags ride along because they are the same sentence: an
+# import notifies nobody and subscribes nobody. They cover different halves --
+# `mail_create_nosubscribe` keeps the author out of the follower list,
+# `mail_post_autofollow` keeps the recipients out -- and an import wants both,
+# since neither the colleague who sent the mail nor the customer who received
+# it asked to follow anything in Odoo.
 IMPORT_CTX = {
     'pan_mail_imported': True,
     'mail_create_nosubscribe': True,
+    'mail_post_autofollow': False,
 }
 
 
