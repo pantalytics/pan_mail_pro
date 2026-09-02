@@ -418,6 +418,19 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             post_author_id = author.id
             post_email_from = f'"{author_name}" <{author_email}>' if author_name else author_email
 
+        # Lens fields, passed *into* every message_post rather than written
+        # afterwards. Two reasons, and only the second is load-bearing: every
+        # routing outcome is stamped the same way, and `mail.thread`'s notify
+        # override reads x_mailbox_id to recognise an imported message. A write
+        # after the post happens once the notification is already computed and
+        # the envelope already sent, so moving these back out silently disarms
+        # the boundary in ARCHITECTURE.md §9.10.
+        lens_vals = {
+            'x_direction': 'outgoing' if is_outgoing else 'incoming',
+            'x_mailbox_id': mailbox.id,
+            'x_account_id': account.id,
+        }
+
         try:
             if match['model']:
                 # The matcher placed it. Both routing modes take this path —
@@ -435,8 +448,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     parent_id=match['parent_message_id'],
                     attachments=email_attachments,
                     date=msg_date,
-                    incoming_email_to=msg_dict.get('to', ''),
-                    incoming_email_cc=msg_dict.get('cc', ''),
+                    **lens_vals,
                 )
                 _logger.info(
                     f"[Incoming Mail] Threaded onto {match['model']}/{match['res_id']} "
@@ -448,7 +460,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 # the only sensible home for it.
                 outcome = 'sent_item'
                 target_record = partner
-                message = target_record.message_post(
+                message = target_record.with_context(
+                    mail_create_nosubscribe=True,
+                ).message_post(
                     body=body_content,
                     subject=full_message.get('subject', ''),
                     message_type='email',
@@ -458,6 +472,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     message_id=internet_message_id,
                     attachments=email_attachments,
                     date=msg_date,
+                    **lens_vals,
                 )
                 _logger.info(f"[Incoming Mail] Posted sent item to partner {partner.name}")
             else:
@@ -468,6 +483,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     partner=partner,
                     msg_dict=msg_dict,
                     contact_email=contact_email,
+                    lens_vals=lens_vals,
                 )
                 # Landing on the sender's own chatter means no alias was
                 # configured or none applied — delivered, but nobody is looking
@@ -494,16 +510,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 conversation_id=conversation_id,
                 provider_message_id=provider_message_id,
             )
-
-            # Lens fields. Written here rather than inside the branches above so
-            # every routing outcome is stamped the same way — mainline's matcher
-            # decides *where* the mail lands, this records *how it arrived*.
-            if message:
-                message.write({
-                    'x_direction': 'outgoing' if is_outgoing else 'incoming',
-                    'x_mailbox_id': mailbox.id,
-                    'x_account_id': account.id,
-                })
 
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
             return True
@@ -652,7 +658,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         return partner
 
-    def _route_email_via_alias(self, mailbox, partner, msg_dict, contact_email):
+    def _route_email_via_alias(self, mailbox, partner, msg_dict, contact_email,
+                               lens_vals=None):
         """
         Route incoming email using Odoo's native message_new() method.
 
@@ -667,11 +674,17 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             partner: res.partner record for the sender
             msg_dict: Parsed email dict in Odoo format
             contact_email: Sender email address
+            lens_vals: x_direction / x_mailbox_id / x_account_id, passed into
+                the post rather than written after it. x_mailbox_id is what
+                `mail.thread._notify_thread` reads to recognise an imported
+                message, so it has to be present while the message is created.
 
         Returns:
             tuple: (record, message) - the created record and its first message
         """
         import ast
+
+        lens_vals = lens_vals or {}
 
         # Check if routing to team is enabled
         route_to_team = mailbox.x_route_to_team if mailbox else False
@@ -680,7 +693,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # Route to Contact: post to partner's chatter (default behavior)
         if not route_to_team or not alias or not alias.alias_model_id:
             _logger.info(f"[Incoming Mail] Routing to contact chatter for mailbox {mailbox.email}")
-            message = partner.message_post(
+            message = partner.with_context(
+                mail_create_nosubscribe=True,
+            ).message_post(
                 body=msg_dict.get('body', ''),
                 subject=msg_dict.get('subject', ''),
                 message_type='email',
@@ -690,8 +705,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 message_id=msg_dict.get('message_id'),
                 attachments=msg_dict.get('attachments', []),
                 date=msg_dict.get('date'),
-                incoming_email_to=msg_dict.get('to', ''),
-                incoming_email_cc=msg_dict.get('cc', ''),
+                **lens_vals,
             )
             return partner, message
 
@@ -717,8 +731,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         record = Model.message_new(msg_dict, custom_values=custom_values)
 
         # Post the email body to the chatter (message_new only creates the record).
-        # incoming_email_to/cc prevent Odoo from sending notifications back to
-        # recipients who were already on the original email (including the sender).
+        # Nothing suppresses recipients here any more: the lens vals mark the
+        # message as imported and `mail.thread._notify_thread` drops the whole
+        # notification pass. See ARCHITECTURE.md §9.10.
         message = record.message_post(
             body=msg_dict.get('body', ''),
             subject=msg_dict.get('subject', ''),
@@ -729,8 +744,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             message_id=msg_dict.get('message_id'),
             attachments=msg_dict.get('attachments', []),
             date=msg_dict.get('date'),
-            incoming_email_to=msg_dict.get('to', ''),
-            incoming_email_cc=msg_dict.get('cc', ''),
+            **lens_vals,
         )
 
         _logger.info("[Incoming Mail] Created %s id=%s via message_new", model, record.id)

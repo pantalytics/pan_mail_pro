@@ -200,7 +200,9 @@ out from somewhere.
 > [#37](https://github.com/pantalytics/pan_mail_pro/issues/37) and
 > [#38](https://github.com/pantalytics/pan_mail_pro/issues/38); this section
 > describes where the module is going, and the issues say how far it got.
-> §9.10 carries the same caveat.
+>
+> §9.10 is the exception: the boundary ships in 19.0.5.4.0, so the rest of this
+> section describes a filter whose failures are already contained.
 
 
 ### One control, not six
