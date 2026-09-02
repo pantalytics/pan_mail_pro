@@ -21,6 +21,37 @@ from .microsoft_mailbox import SYNCING_MODES
 
 _logger = logging.getLogger(__name__)
 
+# Every post the sync makes carries this context, and `pan_mail_imported` is
+# the whole of the boundary in ARCHITECTURE.md §9.10: it means "this post is an
+# import", which no field on the message does. `x_mailbox_id` was the obvious
+# candidate and is wrong — `mail.mail._record_sent()` stamps that same field on
+# mail Odoo itself sent, so keying the boundary on it would conflate the two
+# directions of one mailbox and eventually silence something a person wrote.
+#
+# The follower flags ride along because they are the same sentence: an import
+# notifies nobody and subscribes nobody. Neither the colleague who sent the mail
+# nor the customer who received it asked to follow anything in Odoo.
+#
+# Three flags because Odoo splits the question three ways, and only the middle
+# one is the flag people reach for:
+#
+# - `mail_post_autofollow_author_skip` keeps the *author* out. This is the one
+#   that matters here and the one that is easy to miss: Odoo subscribes the
+#   author of a post by default, on the reasoning that an author should see the
+#   answers. A sync has no author who wants answers, only a colleague whose
+#   sent mail we copied.
+# - `mail_create_nosubscribe` is about record *creation*, not about posting. It
+#   belongs on the `message_new()` path and does nothing for a `message_post()`.
+# - `mail_post_autofollow` keeps the recipients out. False is already Odoo's
+#   default; it is stated so the intent survives a default changing.
+IMPORT_CTX = {
+    'pan_mail_imported': True,
+    'mail_post_autofollow_author_skip': True,
+    'mail_create_nosubscribe': True,
+    'mail_post_autofollow': False,
+}
+
+
 
 class MicrosoftIncomingMailProcessor(models.AbstractModel):
     """
@@ -432,7 +463,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 # the only difference between them is which models the matcher
                 # was allowed to consider, which was decided above.
                 target_record = self.env[match['model']].browse(match['res_id'])
-                message = target_record.message_post(
+                message = target_record.with_context(**IMPORT_CTX).message_post(
                     body=body_content,
                     subject=full_message.get('subject', ''),
                     message_type='email',
@@ -443,8 +474,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     parent_id=match['parent_message_id'],
                     attachments=email_attachments,
                     date=msg_date,
-                    incoming_email_to=msg_dict.get('to', ''),
-                    incoming_email_cc=msg_dict.get('cc', ''),
                 )
                 _logger.info(
                     f"[Incoming Mail] Threaded onto {match['model']}/{match['res_id']} "
@@ -456,7 +485,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 # the only sensible home for it.
                 outcome = 'sent_item'
                 target_record = partner
-                message = target_record.message_post(
+                message = target_record.with_context(**IMPORT_CTX).message_post(
                     body=body_content,
                     subject=full_message.get('subject', ''),
                     message_type='email',
@@ -503,9 +532,15 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 provider_message_id=provider_message_id,
             )
 
-            # Lens fields. Written here rather than inside the branches above so
-            # every routing outcome is stamped the same way — mainline's matcher
-            # decides *where* the mail lands, this records *how it arrived*.
+            # Lens fields, written here because they cannot travel any other
+            # way: Odoo 19's `_raise_for_invalid_parameters` rejects field names
+            # it does not know as `message_post` arguments, so passing them into
+            # the post raises rather than stamping. That is fine — the matcher
+            # decides *where* the mail lands and this records *how it arrived*,
+            # neither of which the notification pass needs. The boundary is
+            # armed by IMPORT_CTX on the post itself, which is also why it must
+            # not depend on these: `mail.mail._record_sent()` writes the same
+            # three fields for outgoing mail.
             if message:
                 message.write({
                     'x_direction': 'outgoing' if is_outgoing else 'incoming',
@@ -688,7 +723,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # Route to Contact: post to partner's chatter (default behavior)
         if not route_to_team or not alias or not alias.alias_model_id:
             _logger.info(f"[Incoming Mail] Routing to contact chatter for mailbox {mailbox.email}")
-            message = partner.message_post(
+            message = partner.with_context(**IMPORT_CTX).message_post(
                 body=msg_dict.get('body', ''),
                 subject=msg_dict.get('subject', ''),
                 message_type='email',
@@ -698,8 +733,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 message_id=msg_dict.get('message_id'),
                 attachments=msg_dict.get('attachments', []),
                 date=msg_dict.get('date'),
-                incoming_email_to=msg_dict.get('to', ''),
-                incoming_email_cc=msg_dict.get('cc', ''),
             )
             return partner, message
 
@@ -725,9 +758,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         record = Model.message_new(msg_dict, custom_values=custom_values)
 
         # Post the email body to the chatter (message_new only creates the record).
-        # incoming_email_to/cc prevent Odoo from sending notifications back to
-        # recipients who were already on the original email (including the sender).
-        message = record.message_post(
+        # IMPORT_CTX marks the post as an import, so `mail.thread._notify_thread`
+        # drops the whole notification pass. See ARCHITECTURE.md §9.10.
+        message = record.with_context(**IMPORT_CTX).message_post(
             body=msg_dict.get('body', ''),
             subject=msg_dict.get('subject', ''),
             message_type='email',
@@ -737,8 +770,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             message_id=msg_dict.get('message_id'),
             attachments=msg_dict.get('attachments', []),
             date=msg_dict.get('date'),
-            incoming_email_to=msg_dict.get('to', ''),
-            incoming_email_cc=msg_dict.get('cc', ''),
         )
 
         _logger.info("[Incoming Mail] Created %s id=%s via message_new", model, record.id)
