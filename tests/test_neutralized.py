@@ -13,6 +13,7 @@ from unittest.mock import patch
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
+from ..models import encryption_utils
 from .common import OutlookProTestCase, send_and_capture
 
 
@@ -52,3 +53,33 @@ class TestNeutralizedDatabase(OutlookProTestCase):
         with self.assertRaises(UserError) as caught:
             self.shared_mailbox.action_sync_now()
         self.assertIn('neutralized', str(caught.exception))
+
+    def test_no_credential_can_be_decrypted(self):
+        """The gate under all three: no credential is readable at all.
+
+        Every credential the module owns -- OAuth access and refresh tokens,
+        IMAP/SMTP passwords, both providers' client secrets -- is read through
+        `decrypt_value`. A call site that forgets to ask whether the database is
+        neutralized still cannot reach a provider.
+        """
+        ciphertext = encryption_utils.encrypt_value(self.env, 'a-real-refresh-token')
+        self.assertTrue(ciphertext, 'fixture did not encrypt')
+
+        self.assertFalse(encryption_utils.decrypt_value(self.env, ciphertext))
+
+    def test_account_hands_out_no_tokens(self):
+        """An account holding live credentials reads as empty."""
+        account = self.env['pan.mail.account'].sudo().create({
+            'email': 'live@company.com',
+            'provider': 'outlook',
+            'refresh_token': 'a-real-refresh-token',
+            'access_token': 'a-real-access-token',
+        })
+        account.invalidate_recordset()
+
+        self.assertFalse(account.refresh_token)
+        self.assertFalse(account.access_token)
+        # The ciphertext is untouched: neutralization refuses to read a
+        # credential, it does not destroy one. Removing it is neutralize.sql's
+        # job, and it runs once.
+        self.assertTrue(account.refresh_token_encrypted)

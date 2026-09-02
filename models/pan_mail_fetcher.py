@@ -15,7 +15,8 @@ from markupsafe import Markup
 from odoo import models, api, fields, _
 from odoo.exceptions import UserError
 
-from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT, database_is_neutralized
+from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from .neutralization import database_is_neutralized
 from .microsoft_mailbox import SYNCING_MODES
 
 _logger = logging.getLogger(__name__)

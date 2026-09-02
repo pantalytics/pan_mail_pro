@@ -6,10 +6,10 @@ from odoo.exceptions import ValidationError, UserError
 from .mail_provider_client import (
     DEFAULT_PROVIDER,
     FOLDER_INBOX,
-    database_is_neutralized,
     PROVIDER_SELECTION,
     get_provider_client,
 )
+from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 

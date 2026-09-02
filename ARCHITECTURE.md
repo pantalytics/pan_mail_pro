@@ -676,17 +676,29 @@ a restored staging database would mail real customers from the real address —
 and pass every check Odoo has, because it never asked `ir_mail_server` for
 anything.
 
-So the module neutralizes itself, in two layers:
+So the module neutralizes itself. `database_is_neutralized()` lives in
+`models/neutralization.py`, below both encryption and the provider contract
+because both depend on it, and it is asked in three places:
 
-- `data/neutralize.sql` deactivates every mailbox and *removes* the OAuth
-  tokens and mailbox passwords. Same reasoning as base wiping `smtp_pass`: a
-  neutralized database gets copied around, and a dump carrying a live refresh
-  token can send from anywhere it lands. It is found by path, so it is
-  deliberately not listed in `__manifest__.py`.
-- `database_is_neutralized()` in `mail_provider_client.py` is asked at every
-  point that would make a provider call — routing an outgoing mail, the sync
-  cron, "Sync Now". This is the layer that holds when someone puts a mailbox
-  back to test something.
+**Once, at rest.** `data/neutralize.sql` deactivates every mailbox and *removes*
+the OAuth tokens and mailbox passwords. Same reasoning as base wiping
+`smtp_pass`: a neutralized database gets copied around, and a dump carrying a
+live refresh token can send from anywhere it lands. Odoo finds it by path, so it
+is deliberately not listed in `__manifest__.py`.
+
+**Always, at the credential funnel.** `encryption_utils.decrypt_value()` returns
+empty. Every credential the module owns is read through that one function —
+access tokens, refresh tokens, IMAP/SMTP passwords, both providers' client
+secrets — so a neutralized database cannot reach a provider *at all*, including
+through call sites nobody has written yet. This is the guarantee; the other two
+layers are convenience and message. It returns empty rather than raising because
+"no credentials" is a state every caller already handles, and it leaves the
+account form readable in staging.
+
+**Where a sentence is owed.** Routing an outgoing mail, the sync cron and
+"Sync Now" each ask directly, so the refusal says *neutralized* instead of
+"account not connected". Only a caller that knows what it was attempting can
+say why it stopped.
 
 Outgoing mail is *refused*, not dropped: the reason lands on the mail and it
 stays queued, so nothing is lost if the database turns out to be the real one.

@@ -3,7 +3,8 @@ import logging
 from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, UserError
 
-from .mail_provider_client import ERROR_NO_RECIPIENTS, database_is_neutralized
+from .mail_provider_client import ERROR_NO_RECIPIENTS
+from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 
