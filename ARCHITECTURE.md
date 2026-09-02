@@ -192,6 +192,17 @@ out from somewhere.
 
 ## 3. Sync modes and filtering
 
+> **Not all of §3 is built yet.** The counterpart rule, the BCC allow-list, the
+> "no follower from CC" limit and the inbound half of the takeover (§10) are
+> the agreed design, not the current code — today Sent Items skips the internal
+> check entirely and the internal test asks `partner.user_ids`. What is
+> designed and what is shipped is tracked in
+> [#37](https://github.com/pantalytics/pan_mail_pro/issues/37) and
+> [#38](https://github.com/pantalytics/pan_mail_pro/issues/38); this section
+> describes where the module is going, and the issues say how far it got.
+> §9.10 carries the same caveat.
+
+
 ### One control, not six
 
 `x_sync_mode` is a single three-way choice, and every question the mailbox form
@@ -239,24 +250,88 @@ email", or per mailbox via "Exclude Internal".
 | Odoo-originated (sent) | Message-ID matches `mail.mail.x_microsoft_message_id` | Skip |
 | Duplicate | Message-ID already in `mail.message.message_id` | Skip |
 
-### Inbox vs Sent Items
+### The counterpart rule
 
-The filter differs by folder, and the difference is deliberate.
+One question decides whether a mail is logged: **is the counterpart external?**
 
-**Inbox** — skip internal domains, then require the *sender* to be a known
-partner, then skip partners that have an Odoo user (colleagues have an inbox
-already).
+The counterpart is the other side of the correspondence, and which field holds
+it depends on the folder.
 
-**Sent Items** — no internal-domain check at all (the sender is always us, so
-the check would skip everything), and the partner is looked up by *recipient*
-rather than sender. Internal users are still skipped.
+| Folder | Counterpart | Logged when |
+|--------|-------------|-------------|
+| Inbox | the `From` | the sender is external |
+| Sent Items | the `To` | any To address is external |
 
-| Scenario (Inbox) | Internal domain? | Partner exists? | Has user? | Result |
-|----------|------------------|-----------------|-----------|--------|
-| Reply from customer | – | ✓ | – | **Sync** |
-| Colleague (any @company.com) | ✓ | – | – | Skip |
-| Colleague with Odoo account | – | ✓ | ✓ | Skip |
-| Spam / unknown sender | – | – | – | Skip |
+An earlier version checked the *sender* in both folders and, noticing that the
+sender of a sent item is always us, concluded that Sent Items needed no
+internal check at all. The observation was right and the conclusion was wrong:
+the answer is to check the counterpart, not to stop checking. That gap is how a
+company's own internal mail reached Odoo and was mailed back out. See §9.10.
+
+Three consequences, each dropping a case on purpose.
+
+**An internal user and an internal address are the same thing here.** A
+colleague with an Odoo account and a bare `planning@company.com` with no user
+are both simply not-external. The check asks the domain and never
+`partner.user_ids`, which is what makes a shared or functional address behave
+like the colleague it belongs to. Asking `user_ids` is precisely what let
+`planning@` through.
+
+**CC does not enter the decision.** A mail to `planning@` with a customer in Cc
+is not logged, so a real customer mail goes missing. That is a completeness
+loss; the reverse error, logging internal mail, is a confidentiality loss. A
+rule this blunt errs somewhere, and it errs toward silence.
+
+**A mail with no external counterpart leaves a trace, not a copy.** The skip is
+recorded in `pan.mail.item` with the mailbox, Message-ID, reason and date — no
+subject, no body, no attachments. Without it nobody can answer why a mail is
+missing from Odoo; with more than it, the audit trail becomes a second copy of
+the content it refused.
+
+### The four paths
+
+Mail crosses between the mailbox and Odoo in four ways. The counterpart rule is
+an *ingestion* control, so it governs two of them.
+
+| | Sending | Receiving |
+|---|---|---|
+| **Mailbox** | user writes in Outlook; sync reads Sent Items. **Filter on the To.** | mail lands in the inbox; sync reads it. **Filter on the From.** |
+| **Odoo** | chatter or notification; `mail.mail.send()` routes it out. **No filter.** | nothing. A Mail Pro database does not receive through `mail.alias`. |
+
+**Sending from Odoo is never filtered.** A person clicked send, or a colleague
+was legitimately notified about a task; suppressing internal mail here would
+break ordinary Odoo behaviour. What this path needs instead is dedup, because
+the provider files a copy in Sent Items and the next sync run reads it back.
+That is what the Odoo-originated pre-filters above are for, which makes them
+load-bearing rather than an optimisation.
+
+**Receiving into Odoo is supposed to be empty.** Mail Pro replaces the inbound
+gateway with mailboxes, so `mail.alias` is no longer an address that receives.
+Keeping that path empty is an act rather than a fact — see §10.
+
+`mail.alias` records are still in use, in a different job: `x_alias_id` on the
+mailbox is read for `alias_model_id` and `alias_defaults`, so the fetcher knows
+that mail for this mailbox becomes a `crm.lead`. The address is unused; the
+record is not. Deleting "unused" aliases breaks routing.
+
+### What CC and BCC do
+
+**CC is stored and acted on by nothing.** Everyone on the mail already saw it,
+so keeping it costs no confidentiality, and it is what a future reply-all would
+read. It never creates a `res.partner` and never creates a follower. The first
+would build a contact database out of other companies' colleagues; the second
+is the mechanism behind §9.10.
+
+**BCC must not cross the provider boundary.** A received message carries no BCC
+list, so an inbox sync is safe by construction. The sender's own copy in Sent
+Items does carry it, and Sent Items is exactly what this module reads. What
+leaks there is the recipient list rather than the content, which is the whole
+point of BCC.
+
+So the normalized message has no `bcc` key, and `headers` is an allow-list —
+`message-id`, `in-reply-to`, `references`, `thread-index`, `date`, `subject` —
+rather than a copy of the message's headers. An allow-list in the contract also
+covers providers nobody has written yet; a strip call in each client does not.
 
 ### Block list
 
@@ -297,6 +372,23 @@ Three things this changed, each a silent misroute before:
   threaded onto whatever record *first* touched the conversation — usually an
   old contact chatter post rather than the open ticket.
 - **Scoped, not global.** A thread id was matched across every mailbox at once.
+
+### One conversation, one thread
+
+A conversation in the mailbox maps to exactly one record in Odoo, whatever the
+recipient list. A mail addressed to two customers is logged once, on the record
+the ladder picks, with both people in that one chatter — not once per
+recipient.
+
+`UNIQUE(provider, mailbox_id, thread_id)` on `pan.mail.thread.link` already
+enforces this, so the rule costs nothing to keep. Logging per recipient instead
+would need the record added to that key, a matcher returning a set rather than
+one record, and dedup keyed per record instead of globally.
+
+What it gives up: the second customer has no copy in their own file, and a
+conversation that opens as a question on a lead and ends as an order stays on
+the lead while the order's chatter is empty. Both match what Odoo itself does
+with a mail thread, so neither is a surprise to a user.
 
 ### The two indexes
 
@@ -666,6 +758,34 @@ settings page.
 
 ---
 
+### 9.10 An imported message notifies nobody
+
+An imported mail has already reached its recipients through the provider. Odoo
+sending it again is wrong in every variant and for every mix of recipients,
+which is what makes this a boundary rather than a filter: there is no
+legitimate exception to argue about.
+
+The rule is one override. A message carrying `x_mailbox_id` came from the sync,
+so `_notify_thread()` returns no recipients and posts nothing. For that to work
+the lens fields have to be set *inside* the `message_post()` call rather than in
+a write afterwards, because by the time that write runs the notification has
+already been computed and the `mail.mail` already exists.
+
+Two earlier attempts at the same goal failed silently, and the override
+replaces both. `incoming_email_to` and `incoming_email_cc` were handed to
+`message_post()` as keyword arguments Odoo discards, so the suppression their
+comment described never ran at all. And `mail_create_nosubscribe` was set on the
+`message_new()` path but not on the three partner-chatter posts, so the sync
+subscribed the author of every mail it imported — which on the sender's own
+contact card means a contact following itself and receiving its own
+correspondence back by mail.
+
+The sync never creates a follower. A follower is a human act.
+
+Ingestion filters (§3) shrink what enters; this rule makes safe what did enter.
+Neither substitutes for the other, and a mail with an external counterpart —
+most mail — is only reached by this one.
+
 ## 10. Security and permissions
 
 All Microsoft permissions are **delegated** (user context, never application) —
@@ -707,6 +827,18 @@ For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 | AI | Off by default; customer's own key; envelope only, never bodies |
 
 ---
+
+### The takeover is one-sided
+
+`_activate_smtp_takeover()` disables every active `ir.mail_server` when the
+first mailbox is created, which is the moment Mail Pro can actually deliver
+rather than the moment it is installed. There is no counterpart for incoming:
+the string `fetchmail` does not appear anywhere in the module.
+
+An inbound server left enabled means Odoo fetches mail itself and routes it
+through `mail.alias`, past every control in §3. Closing the outbound door and
+leaving the inbound one open is not a smaller version of the same act; it is
+the half that lets mail in.
 
 ## 11. Conventions
 
