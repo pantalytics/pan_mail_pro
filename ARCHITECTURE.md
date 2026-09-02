@@ -234,17 +234,12 @@ out from somewhere.
 
 ## 3. Sync modes and filtering
 
-> **Not all of §3 is built yet.** The counterpart rule, the BCC allow-list, the
-> "no follower from CC" limit and the inbound half of the takeover (§10) are
-> the agreed design, not the current code — today Sent Items skips the internal
-> check entirely and the internal test asks `partner.user_ids`. What is
-> designed and what is shipped is tracked in
+> **Shipped, with two exceptions.** The counterpart rule and the gate ladder
+> below are the current code; so is the boundary in §9.10. Still design rather
+> than code: the BCC allow-list, the "no follower from CC" limit and the
+> inbound half of the takeover (§10), tracked in
 > [#37](https://github.com/pantalytics/pan_mail_pro/issues/37) and
-> [#38](https://github.com/pantalytics/pan_mail_pro/issues/38); this section
-> describes where the module is going, and the issues say how far it got.
->
-> §9.10 is the exception: the boundary ships in 19.0.5.4.0, so the rest of this
-> section describes a filter whose failures are already contained.
+> [#38](https://github.com/pantalytics/pan_mail_pro/issues/38).
 
 
 ### One control, not six
@@ -286,12 +281,46 @@ Alias domains still feed `suggest_domains()`; they no longer decide anything.
 Turning the filter off is possible but explicit: globally via "Sync internal
 email", or per mailbox via "Exclude Internal".
 
-### Pre-filters (always applied)
+### The gate ladder
 
-| Check | Condition | Action |
-|-------|-----------|--------|
-| Odoo-originated (headers) | `X-Odoo-Model` or `X-Odoo-Mail-Id` present | Skip |
-| Already in Odoo | Message-ID resolves through `pan.mail.matcher._resolve_message_id()`: the ref index (including the id the provider minted when *we* sent it) or `mail.message.message_id` | Skip |
+Whether a message may enter Odoo is decided by an ordered list of named gates,
+the same shape the matcher uses to decide where it goes (§4). Order is the
+contract: a gate may assume every gate before it passed, and may leave what it
+resolved in the context for the ones after it.
+
+| # | Gate | Refuses | Leaves a trace |
+|---|------|---------|----------------|
+| 1 | `_gate_duplicate` | Message-ID already in `mail.message` | no |
+| 2 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back | no |
+| 3 | `_gate_counterpart` | a sent item with no recipient | no |
+| 4 | `_gate_internal_domain` | every party to the mail is ours | no |
+| 5 | `_gate_blocked_contact` | `x_email_sync_blocked` | no, deliberately |
+| 6 | `_gate_internal_user` | the address has an Odoo user | no |
+| 7 | `_gate_sync_mode` | what the mailbox was told to accept | **yes** |
+
+Gate 3 is where direction lives: the inbox reads the `From`, Sent Items reads
+the `To`. It collects the candidates and gate 4 chooses among them, so the whole
+internal decision sits in one place rather than being split by direction — which
+is how gate 4 came to guard one folder and not the other.
+
+Whether a refusal reaches `pan.mail.item` is declared by the gate, because it
+is a property of the refusal. Gate 7 records: an unknown contact is a decision
+a person may want to reverse, and the queue is where they reverse it. The
+others refuse things nobody wants back — and gate 5 must leave no trace at all,
+since a block list is an objection to processing and a queue row naming the
+person would be processing.
+
+Adding a rule means adding a method and a line to `_gate_rules()`. Before this
+existed the seven decisions were bare `return False` statements strewn through
+a two-hundred-line method, which is how gate 4 came to guard one folder and not
+the other.
+
+Gate 1 is broader than its name: "already in Odoo" is answered by
+`pan.mail.matcher._resolve_message_id()`, which reads the ref index — including
+the id the provider minted when *we* sent the mail — as well as
+`mail.message.message_id`. So a mail Odoo sent, filed in Sent by the provider
+and read back on the next run, is refused there rather than needing a rule of
+its own.
 
 ### The counterpart rule
 
@@ -305,6 +334,10 @@ it depends on the folder.
 | Inbox | the `From` | the sender is external |
 | Sent Items | the `To` | any To address is external |
 
+With several recipients the first external one becomes the counterpart and the
+mail is logged on them. Only when every recipient is ours is it internal
+traffic, and then nothing enters.
+
 An earlier version checked the *sender* in both folders and, noticing that the
 sender of a sent item is always us, concluded that Sent Items needed no
 internal check at all. The observation was right and the conclusion was wrong:
@@ -315,21 +348,23 @@ Three consequences, each dropping a case on purpose.
 
 **An internal user and an internal address are the same thing here.** A
 colleague with an Odoo account and a bare `planning@company.com` with no user
-are both simply not-external. The check asks the domain and never
-`partner.user_ids`, which is what makes a shared or functional address behave
-like the colleague it belongs to. Asking `user_ids` is precisely what let
-`planning@` through.
+are both simply not-external. The domain gate is the one that settles it, which
+is what makes a shared or functional address behave like the colleague it
+belongs to; asking `partner.user_ids` is precisely what let `planning@` through
+for months. The `user_ids` gate stays as a narrower second net, for the
+colleague whose Odoo login is on a domain the list does not carry.
 
 **CC does not enter the decision.** A mail to `planning@` with a customer in Cc
 is not logged, so a real customer mail goes missing. That is a completeness
 loss; the reverse error, logging internal mail, is a confidentiality loss. A
 rule this blunt errs somewhere, and it errs toward silence.
 
-**A mail with no external counterpart leaves a trace, not a copy.** The skip is
-recorded in `pan.mail.item` with the mailbox, Message-ID, reason and date — no
-subject, no body, no attachments. Without it nobody can answer why a mail is
-missing from Odoo; with more than it, the audit trail becomes a second copy of
-the content it refused.
+**A mail with no external counterpart leaves a log line, not a queue row.**
+`pan.mail.item` is the queue of skips a person can reverse, and internal mail is
+the one refusal that must never be reversible: an Import button there would be a
+button for leaking. The refusal the ladder logs carries the mailbox, the
+Message-ID, the reason and the time — enough to answer why a mail is missing
+from Odoo, and as much as may be kept about a mail we declined to read.
 
 ### The four paths
 

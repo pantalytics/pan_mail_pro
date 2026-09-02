@@ -187,7 +187,11 @@ class PanMailMailbox(models.Model):
     exclude_internal = fields.Boolean(
         string='Exclude Internal',
         default=True,
-        help='Skip emails from your company domain. Disable for team mailboxes where internal forwarding should be logged.'
+        help='Keep the company\'s own mail out of Odoo, in both directions: '
+             'received from one of your domains, and sent to one. A mail with '
+             'any outside recipient is correspondence and is still logged. '
+             'Disable for team mailboxes where internal forwarding should be '
+             'logged.'
     )
     # Keep for backwards compatibility / internal use
     sync_start_date = fields.Datetime(
