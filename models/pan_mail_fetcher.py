@@ -433,18 +433,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             post_author_id = author.id
             post_email_from = f'"{author_name}" <{author_email}>' if author_name else author_email
 
-        # Lens fields, passed *into* every message_post rather than written
-        # afterwards, so every routing outcome is stamped the same way and one
-        # write disappears. The matcher decides *where* the mail lands; this
-        # records *how it arrived*. It does not arm the boundary — IMPORT_CTX
-        # does, precisely because these same fields are written for outgoing
-        # mail too and so cannot tell the two directions apart.
-        lens_vals = {
-            'x_direction': 'outgoing' if is_outgoing else 'incoming',
-            'x_mailbox_id': mailbox.id,
-            'x_account_id': account.id,
-        }
-
         try:
             if match['model']:
                 # The matcher placed it. Both routing modes take this path —
@@ -462,7 +450,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     parent_id=match['parent_message_id'],
                     attachments=email_attachments,
                     date=msg_date,
-                    **lens_vals,
                 )
                 _logger.info(
                     f"[Incoming Mail] Threaded onto {match['model']}/{match['res_id']} "
@@ -484,7 +471,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     message_id=internet_message_id,
                     attachments=email_attachments,
                     date=msg_date,
-                    **lens_vals,
                 )
                 _logger.info(f"[Incoming Mail] Posted sent item to partner {partner.name}")
             else:
@@ -495,7 +481,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     partner=partner,
                     msg_dict=msg_dict,
                     contact_email=contact_email,
-                    lens_vals=lens_vals,
                 )
                 # Landing on the sender's own chatter means no alias was
                 # configured or none applied — delivered, but nobody is looking
@@ -522,6 +507,22 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 conversation_id=conversation_id,
                 provider_message_id=provider_message_id,
             )
+
+            # Lens fields, written here because they cannot travel any other
+            # way: Odoo 19's `_raise_for_invalid_parameters` rejects field names
+            # it does not know as `message_post` arguments, so passing them into
+            # the post raises rather than stamping. That is fine — the matcher
+            # decides *where* the mail lands and this records *how it arrived*,
+            # neither of which the notification pass needs. The boundary is
+            # armed by IMPORT_CTX on the post itself, which is also why it must
+            # not depend on these: `mail.mail._record_sent()` writes the same
+            # three fields for outgoing mail.
+            if message:
+                message.write({
+                    'x_direction': 'outgoing' if is_outgoing else 'incoming',
+                    'x_mailbox_id': mailbox.id,
+                    'x_account_id': account.id,
+                })
 
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
             return True
@@ -670,8 +671,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         return partner
 
-    def _route_email_via_alias(self, mailbox, partner, msg_dict, contact_email,
-                               lens_vals=None):
+    def _route_email_via_alias(self, mailbox, partner, msg_dict, contact_email):
         """
         Route incoming email using Odoo's native message_new() method.
 
@@ -686,16 +686,11 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             partner: res.partner record for the sender
             msg_dict: Parsed email dict in Odoo format
             contact_email: Sender email address
-            lens_vals: x_direction / x_mailbox_id / x_account_id, passed into
-                the post rather than written after it. Descriptive only; the
-                notify boundary is armed by IMPORT_CTX, not by these.
 
         Returns:
             tuple: (record, message) - the created record and its first message
         """
         import ast
-
-        lens_vals = lens_vals or {}
 
         # Check if routing to team is enabled
         route_to_team = mailbox.x_route_to_team if mailbox else False
@@ -714,7 +709,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 message_id=msg_dict.get('message_id'),
                 attachments=msg_dict.get('attachments', []),
                 date=msg_dict.get('date'),
-                **lens_vals,
             )
             return partner, message
 
@@ -752,7 +746,6 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             message_id=msg_dict.get('message_id'),
             attachments=msg_dict.get('attachments', []),
             date=msg_dict.get('date'),
-            **lens_vals,
         )
 
         _logger.info("[Incoming Mail] Created %s id=%s via message_new", model, record.id)

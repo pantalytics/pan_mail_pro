@@ -780,6 +780,11 @@ flag says exactly what is being asked — is this post an import — and is set 
 one place. Its cost is being invisible afterwards and easy to drop in a
 refactor, which is what `tests/test_sync_sends_nothing.py` exists to catch.
 
+A field could not have carried it in any case: Odoo 19's
+`_raise_for_invalid_parameters()` rejects field names it does not recognise as
+`message_post()` arguments, so the lens fields are still written just after the
+post. They describe how the mail arrived; they do not gate anything.
+
 Two earlier attempts at the same goal failed silently, and the override
 replaces both. `incoming_email_to` and `incoming_email_cc` were handed to
 `message_post()` as keyword arguments Odoo discards, so the suppression their
