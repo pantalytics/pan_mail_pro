@@ -8,6 +8,7 @@ Provides:
 - A personal mailbox owned by a salesperson
 - A salesperson user with OAuth + a default mailbox
 - An external customer partner
+- A portal customer (share=True user) and their partner
 - A company partner whose email matches the shared mailbox
   (mimics the production scenario where a template's email_from
    resolves author_id to the company partner instead of the user)
@@ -104,6 +105,19 @@ class OutlookProTestCase(TransactionCase):
             'notification_type': 'inbox',
             'group_ids': [(6, 0, [internal_group])],
         })
+        # A customer who can log into the portal. Has a res.users row like any
+        # employee, but `share=True` — the distinction issue #39 turned on.
+        cls.portal_user = User.create({
+            'name': 'Portal Customer',
+            'login': 'portal@example.com',
+            'email': 'portal@example.com',
+            'notification_type': 'email',
+            'group_ids': [(6, 0, [cls.env.ref('base.group_portal').id])],
+        })
+        assert cls.portal_user.share, (
+            "Test setup error: the portal fixture must be a share user"
+        )
+        cls.portal_partner = cls.portal_user.partner_id
 
         for user in (cls.notif_owner | cls.salesperson | cls.other_user):
             cls.connect(user)
