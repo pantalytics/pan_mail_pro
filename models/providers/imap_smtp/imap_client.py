@@ -719,7 +719,7 @@ class ImapSmtpClient(models.AbstractModel):
             'body_is_html': body_is_html,
             'has_attachments': any(
                 part.get_filename() for part in msg.walk() if part.get_filename()),
-            'headers': headers,
+            'headers': self.normalize_headers(headers),
             'is_read': '\\Seen' in (item.get('flags') or []),
         }
 

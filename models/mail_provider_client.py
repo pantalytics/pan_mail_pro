@@ -46,6 +46,7 @@ Normalized message (returned by fetch_messages / get_message)
                                       # images, so callers also sniff body_html
                                       # for 'cid:'.
         'headers':             {lowercased header name: value},
+                                      # allowlisted; see HEADER_ALLOWLIST
         'is_read':             bool,
     }
 
@@ -53,8 +54,11 @@ Two details that are easy to get wrong and fail silently:
 
 - `date` is NAIVE UTC. It is compared against `last_sync_date` to advance the
   sync cursor, which is naive; a tz-aware value raises at runtime instead.
-- `headers` keys are lowercased by the provider. The X-Odoo-* loop guard reads
-  them, and no provider guarantees header case.
+- `headers` is an allowlist, not a copy of the message's headers. Clients build
+  the full dict, use what they need locally, and hand the result to
+  `normalize_headers()` on the way out. Keys are lowercased; the X-Odoo-* loop
+  guard reads them and no provider guarantees header case. BCC in particular
+  must never cross this boundary — see HEADER_ALLOWLIST.
 
 Attachments are deliberately NOT part of the message. `get_message_attachments`
 is a second call the caller makes only once it has decided the message is worth
@@ -101,6 +105,38 @@ FOLDER_SENT = 'sent'
 # Error codes callers may branch on. Anything else is treated as an opaque
 # failure and surfaced to the user verbatim.
 ERROR_NO_RECIPIENTS = 'no_recipients'
+
+# -----------------------------------------------------------------------------
+# Headers that may cross the provider boundary
+#
+# An allowlist, not a blocklist, and it lives here rather than in each client so
+# that a provider written tomorrow inherits the rule instead of having to
+# remember it.
+#
+# What it keeps out is BCC. A received message never carries one, so an inbox
+# sync is safe by construction — but the Sent folder is what this module also
+# reads, and Microsoft 365, Gmail and IMAP all preserve `Bcc` on the sender's
+# own copy. What leaks there is not content but the recipient list, which is
+# the entire point of a blind copy: blind-copy the company lawyer on a mail to
+# a customer, and the sync would put the lawyer's address on the customer's
+# record for everyone who can read it, portal users included.
+#
+# Stripping it downstream is not the same fix. A field that exists leaks
+# eventually — through an export, the API, a report or a template — so the
+# value never enters in the first place.
+#
+# Only add a name here once something actually reads it. Everything on this
+# list is read by `pan.mail.matcher` or by the fetcher's loop guard; the rest
+# of what a message needs (from, to, cc, subject, date, message-id) is already
+# a normalized field of its own and does not come from here.
+# -----------------------------------------------------------------------------
+HEADER_ALLOWLIST = frozenset({
+    'in-reply-to',
+    'references',
+    'x-odoo-mail-id',
+    'x-odoo-model',
+    'x-odoo-record-id',
+})
 
 # -----------------------------------------------------------------------------
 # Provider registry
@@ -228,6 +264,20 @@ class MailProviderClient(models.AbstractModel):
                 provider=self.provider_label(),
                 type=mailbox_type,
             ))
+
+    @api.model
+    def normalize_headers(self, headers):
+        """Reduce a message's headers to the ones allowed past this boundary.
+
+        Every client calls this on the way out of `_normalize_message`. Keys are
+        lowercased here too, so a provider that hands back mixed case still
+        satisfies the contract.
+        """
+        return {
+            name.lower(): value
+            for name, value in (headers or {}).items()
+            if name and name.lower() in HEADER_ALLOWLIST
+        }
 
     # -------------------------------------------------------------------------
     # Credential resolution

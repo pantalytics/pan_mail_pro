@@ -580,6 +580,25 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   under `models/ai/`, and CI greps for it. A convention nobody can check is a
   convention that is already broken somewhere.
 
+### Boundaries (19.0.6.3.0)
+- **A passthrough is a decision nobody made.** The contract documented `headers`
+  as a faithful copy of the message's headers, so all three clients handed over
+  `bcc` from the Sent folder. Nothing read it, so nothing broke — an open door
+  with nothing behind it yet. Graph was clean only because
+  `internetMessageHeaders` was missing from one `$select`, which a "more
+  complete sync" would have quietly reopened.
+- **Allow-list in the contract, not a strip call per client.** A strip call
+  protects the providers that exist; a list on the seam protects the ones
+  nobody has written. `normalize_headers()` is one method, three call sites and
+  one test that fails when a new provider forgets it.
+- **A field that exists leaks eventually**, through an export, the API, a report
+  or a template. So the value never enters, rather than entering and being
+  hidden behind a group.
+- **Pin what is correct by accident.** The send path has no BCC because
+  `mail.mail` has no field for one. That is absence, not a decision, so it now
+  has a test: a future "add BCC support" argues with a failing assertion
+  instead of landing quietly.
+
 ### Nomenclature (19.0.6.0.0)
 - **An orphaned xml id on a field drops the column.** `ir.model.data._process_end` unlinks every record whose xml id the module no longer declares, with the uninstall flag set — and `ir.model.fields.unlink` under that flag calls `_drop_column()`. Rename a field in Python alone and the upgrade creates a new field row, orphans the old xml id, and drops the *renamed* column if it still carries the old name. Rename `ir_model_fields.name` and the xml id in pre-migrate, so the ORM finds its field already in place.
 - **Renaming in pre-migrate means every older migration runs after the rename.** A database jumping from 19.0.3 to 19.0.6 runs *all* pre-migrates, then loads, then *all* post-migrates — so 19.0.4.0.0's post-migrate met a column 19.0.6.0.0's pre-migrate had already renamed. Older scripts have to tolerate both names; check the ones that touch a renamed table before shipping the rename.

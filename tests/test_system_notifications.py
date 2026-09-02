@@ -101,6 +101,51 @@ class TestSystemNotifications(MailProTestCase):
             notification.state, 'cancel',
             "A recipient-less internal notification must be cancelled, not raised")
 
+    def test_cancelling_a_mail_cancels_its_notifications(self):
+        """A cancelled mail must not leave notification rows claiming it is
+        still queued.
+
+        `mail.mail` is garbage-collected and `mail.notification` is not, so the
+        row that survives is the one anybody reading the database later sees.
+        At Juffermans Machinebouw seventeen of them read `ready` eleven days
+        after the mails were cancelled.
+        """
+        no_email_user = self._silent('res.users').create({
+            'name': 'Also No Email',
+            'login': 'also_no_email@test.local',
+            'notification_type': 'email',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        message = self.external_partner.sudo().message_post(
+            body='<p>Something happened</p>',
+            message_type='notification',
+            subtype_xmlid='mail.mt_note',
+        )
+        mail = self.env['mail.mail'].sudo().create({
+            'subject': 'Notification copy',
+            'body_html': '<p>hi</p>',
+            'author_id': self.salesperson.partner_id.id,
+            'mail_message_id': message.id,
+            'is_notification': True,
+            'recipient_ids': [(6, 0, [no_email_user.partner_id.id])],
+        })
+        notification = self.env['mail.notification'].sudo().create({
+            'mail_mail_id': mail.id,
+            'mail_message_id': message.id,
+            'res_partner_id': no_email_user.partner_id.id,
+            'notification_type': 'email',
+            'notification_status': 'ready',
+        })
+
+        with self.mock_graph():
+            mail.send()
+
+        self.assertEqual(mail.state, 'cancel')
+        self.assertEqual(
+            notification.notification_status, 'canceled',
+            "A cancelled mail's notification must not stay at 'ready', which "
+            "the chatter renders as still pending")
+
     def test_mass_mailing_bypasses_graph(self):
         """Mass mailing emails (with mailing_id) must NOT go through Graph API."""
         if 'mailing_id' not in self.env['mail.mail']._fields:
