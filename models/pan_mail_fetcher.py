@@ -336,43 +336,71 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         return None
 
     def _gate_counterpart(self, ctx):
-        """Resolve the other party, and refuse a sent item that has none.
+        """Collect the other party, and refuse a sent item that has none.
 
         Which field holds the counterpart is the whole of the direction
-        question: the inbox reads the From, Sent Items reads the To. Every gate
-        after this one asks about the address this gate chose, which is why it
-        is resolved once, here, rather than re-derived by each of them.
+        question: the inbox reads the From, Sent Items reads the To. Only the
+        To — CC is stored for threading and decides nothing, which is a real
+        trade with a chosen direction. A customer mail addressed to a shared
+        internal address with the customer in Cc is not logged, so a genuine
+        customer mail goes missing; the reverse error, logging internal mail,
+        is a confidentiality loss rather than a completeness one.
+
+        A sent item can carry several recipients, so this collects all of them
+        and leaves the choice between them to the gate that can make it. Every
+        gate after that asks about one address, which is why it is settled here
+        rather than re-derived by each of them.
         """
         full_message = self._full_message(ctx)
         if ctx['is_outgoing']:
-            recipients = full_message.get('to') or []
-            if not recipients:
+            parties = [p for p in (full_message.get('to') or []) if p.get('email')]
+            if not parties:
                 return Skip('no_recipient', _('This sent message has no recipient.'))
-            party = recipients[0]
         else:
-            party = full_message.get('from') or {}
+            parties = [full_message.get('from') or {}]
+        ctx['counterparts'] = parties
+        self._choose_counterpart(ctx, parties[0])
+        return None
+
+    @staticmethod
+    def _choose_counterpart(ctx, party):
         ctx['contact_email'] = party.get('email', '')
         ctx['contact_name'] = party.get('name', '')
         _logger.debug(
             "[Incoming Mail] Counterpart: name=%r email=%r",
             ctx['contact_name'], ctx['contact_email'],
         )
-        return None
 
     def _gate_internal_domain(self, ctx):
         """The company's own mail, which has no business being copied to Odoo.
 
-        Inbox only, today. That asymmetry is a known gap rather than a
-        decision: the sender of a sent item is always us, so checking the
-        sender there would skip everything — but the answer to that is to check
-        the counterpart, which is what `ctx['contact_email']` now holds. See
-        ARCHITECTURE.md §3 and #37.
+        Both directions, and this is the gate that used to guard only the
+        inbox. The old reasoning was half right: the sender of a sent item is
+        always us, so checking the *sender* there would skip everything. The
+        answer to that is to check the counterpart, not to stop checking — and
+        for months it was the second one. Every mail in the Juffermans incident
+        came through this gap.
+
+        With several recipients the rule is "any external party means this is
+        correspondence": the first external one becomes the counterpart and the
+        mail is logged on it. Only when every recipient is ours is it internal
+        traffic, and then nothing enters.
+
+        No trace, on purpose. `pan.mail.item` is the queue of skips a person can
+        reverse, and internal mail is the one refusal that must never be
+        reversible — an Import button here would be a button for leaking. The
+        refusal `_refuse()` logs carries the mailbox, the Message-ID, the reason
+        and the time, which is what answering "why is this mail not in Odoo"
+        needs and is as much as may be kept about a mail we declined to read.
         """
-        if ctx['is_outgoing'] or ctx['force_import']:
+        if ctx['force_import']:
             return None
-        if self._is_internal_domain(ctx['contact_email'], ctx['mailbox']):
-            return Skip('internal_domain', _('This address is one of ours.'))
-        return None
+        mailbox = ctx['mailbox']
+        for party in ctx['counterparts']:
+            if not self._is_internal_domain(party.get('email', ''), mailbox):
+                self._choose_counterpart(ctx, party)
+                return None
+        return Skip('internal_domain', _('Every party to this mail is one of ours.'))
 
     def _gate_blocked_contact(self, ctx):
         """A contact that objected to processing.

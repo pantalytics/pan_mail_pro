@@ -27,6 +27,9 @@ from ..models.pan_mail_fetcher import Skip
 from .common import OutlookProTestCase
 
 CUSTOMER = 'customer@example.com'
+# The fixture declares gate-fixture.test as the company's own domain.
+INTERNAL = 'planning@gate-fixture.test'
+OTHER_INTERNAL = 'administratie@gate-fixture.test'
 INTERNET_ID = '<gate-001@example.com>'
 
 
@@ -136,6 +139,86 @@ class TestIncomingGates(OutlookProTestCase):
 
         skip = self.processor._gate_counterpart(ctx)
         self.assertEqual(skip.reason, 'no_recipient')
+
+    # ------------------------------------------------------------------ #
+    # The counterpart rule — both directions, any external party
+    # ------------------------------------------------------------------ #
+    def test_a_sent_item_to_our_own_address_never_enters(self):
+        """The Juffermans case, in one test.
+
+        A colleague mails a shared internal address; the sync reads it from the
+        Sent folder. This gate guarded the inbox only, so the mail came in,
+        landed on that address's contact card, and went back out to everyone
+        following it.
+        """
+        ctx = self._ctx(FOLDER_SENT, to=[{'email': INTERNAL, 'name': 'Planning'}])
+
+        skip = self.processor._refuse(ctx)
+
+        self.assertEqual(skip.reason, 'internal_domain')
+
+    def test_an_inbox_mail_from_our_own_address_never_enters(self):
+        ctx = self._ctx(FOLDER_INBOX)
+        ctx['full_message']['from'] = {'email': INTERNAL, 'name': 'Planning'}
+
+        skip = self.processor._refuse(ctx)
+
+        self.assertEqual(skip.reason, 'internal_domain')
+
+    def test_one_external_recipient_makes_it_correspondence(self):
+        """Any external party means the content already left the building, so
+        the mail is logged — on the external party, not on the colleague."""
+        ctx = self._ctx(FOLDER_SENT, to=[
+            {'email': INTERNAL, 'name': 'Planning'},
+            {'email': CUSTOMER, 'name': 'External Customer'},
+        ])
+
+        self.assertIsNone(self.processor._refuse(ctx))
+        self.assertEqual(
+            ctx['contact_email'], CUSTOMER,
+            "the counterpart is the external party, whatever order they were in",
+        )
+
+    def test_the_first_external_recipient_wins(self):
+        ctx = self._ctx(FOLDER_SENT, to=[
+            {'email': CUSTOMER, 'name': 'External Customer'},
+            {'email': 'second@elsewhere.test', 'name': 'Someone Else'},
+        ])
+
+        self.assertIsNone(self.processor._refuse(ctx))
+        self.assertEqual(ctx['contact_email'], CUSTOMER)
+
+    def test_every_recipient_ours_means_nothing_enters(self):
+        ctx = self._ctx(FOLDER_SENT, to=[
+            {'email': INTERNAL, 'name': 'Planning'},
+            {'email': OTHER_INTERNAL, 'name': 'Administration'},
+        ])
+
+        skip = self.processor._refuse(ctx)
+
+        self.assertEqual(skip.reason, 'internal_domain')
+
+    def test_internal_mail_leaves_no_row_in_the_triage_queue(self):
+        """The one refusal that must never be reversible: an Import button
+        here would be a button for leaking. The log line carries the mailbox,
+        the Message-ID and the reason, which is all that may be kept about a
+        mail we declined to read."""
+        ctx = self._ctx(FOLDER_SENT, to=[{'email': INTERNAL, 'name': 'Planning'}])
+        before = self.env['pan.mail.item'].search_count([])
+
+        skip = self.processor._refuse(ctx)
+
+        self.assertFalse(skip.record)
+        self.assertEqual(self.env['pan.mail.item'].search_count([]), before)
+
+    def test_a_forced_import_still_lifts_the_internal_filter(self):
+        """An operator re-importing a held item lifts the filters. Unchanged
+        by this rule, and deliberately not extended to the guards that are not
+        filters: duplicates, Odoo's own mail, a blocked contact."""
+        ctx = self._ctx(FOLDER_SENT, to=[{'email': INTERNAL, 'name': 'Planning'}])
+        ctx['force_import'] = True
+
+        self.assertIsNone(self.processor._gate_internal_domain(ctx))
 
     # ------------------------------------------------------------------ #
     # Which refusals leave a trace
