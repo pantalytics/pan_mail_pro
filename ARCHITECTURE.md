@@ -431,10 +431,32 @@ Items does carry it, and Sent Items is exactly what this module reads. What
 leaks there is the recipient list rather than the content, which is the whole
 point of BCC.
 
-So the normalized message has no `bcc` key, and `headers` is an allow-list —
-`message-id`, `in-reply-to`, `references`, `thread-index`, `date`, `subject` —
-rather than a copy of the message's headers. An allow-list in the contract also
+So the normalized message has no `bcc` key, and `headers` is an allow-list
+rather than a copy of the message's headers. It lives in the contract as
+`HEADER_ALLOWLIST`, applied by `normalize_headers()`, which every client calls
+on its way out of `_normalize_message`. An allow-list in the contract also
 covers providers nobody has written yet; a strip call in each client does not.
+
+The list carries only what something actually reads:
+
+| Header | Read by |
+|---|---|
+| `in-reply-to`, `references` | `pan.mail.matcher`, to walk a reply back to its record |
+| `x-odoo-model`, `x-odoo-record-id` | `pan.mail.matcher`, for our own mail coming back to us |
+| `x-odoo-mail-id` | the fetcher's loop guard |
+
+Everything else a message needs — sender, To, CC, subject, date, Message-ID —
+is already a normalized field of its own and does not come from here. Adding a
+name to the list is a decision; leaving one off costs nothing until something
+tries to read it, and then fails loudly in a test rather than quietly in
+production.
+
+Outgoing has no BCC at all: `mail.mail` has no field for one, so nothing can
+put one on the wire. That is pinned by a test asserting the built MIME carries
+no `Bcc` header and that the SMTP envelope equals To + CC, so a future "add BCC
+support" argues with a failing test instead of landing quietly. The
+recommendation on that ticket, in advance: don't. Someone who needs to blind-
+copy sends from Outlook.
 
 ### Block list
 
@@ -956,6 +978,24 @@ The sync never creates a follower. A follower is a human act.
 Ingestion filters (§3) shrink what enters; this rule makes safe what did enter.
 Neither substitutes for the other, and a mail with an external counterpart —
 most mail — is only reached by this one.
+
+### 9.11 A terminal outcome is recorded in one story, not two
+
+When a mail cannot go out, two tables record it: `mail.mail.state` and the
+`mail.notification` rows pointing at the same message. They must agree, and the
+one that has to be right is the notification, because `mail.mail` is
+garbage-collected and `mail.notification` is not. The table still standing
+later is the one anybody reading the database, or the chatter, believes.
+
+The cancel path used to write `state = 'cancel'` and stop there, leaving the
+notifications at `ready` — "queued, not sent yet" — permanently. At Juffermans
+Machinebouw seventeen rows from one sync run still read `ready` eleven days
+after their mails were cancelled: the chatter showed mail as pending that no
+longer existed. `mail.mail._cancel_notifications()` closes that, taking the
+value from Odoo's own `_get_notification_status()` so the two cannot drift.
+
+Failures already worked this way, through `_postprocess_sent_message`. Cancels
+were the one terminal outcome that did not.
 
 ## 10. Security and permissions
 

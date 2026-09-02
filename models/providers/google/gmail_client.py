@@ -528,7 +528,7 @@ class GoogleGmailClient(models.AbstractModel):
             'body_is_html': body_is_html,
             # Gmail has no hasAttachments flag; a filename on any part is one.
             'has_attachments': any(part.get('filename') for part in self._walk(payload)),
-            'headers': headers,
+            'headers': self.normalize_headers(headers),
             'is_read': 'UNREAD' not in label_ids,
         }
 

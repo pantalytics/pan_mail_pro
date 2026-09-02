@@ -16,9 +16,11 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     DEFAULT_PROVIDER,
     FOLDER_INBOX,
     FOLDER_SENT,
+    HEADER_ALLOWLIST,
     PROVIDER_CLIENTS,
     get_provider_client,
 )
+from odoo.addons.pan_mail_pro.models.providers import mime_utils
 
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')
@@ -307,3 +309,117 @@ class TestNeutralizedProviderCalls(TransactionCase):
                     client._exchange_code_for_tokens('a-code', 'https://odoo.test/cb')
                 self.assertIn('neutralized', str(caught.exception))
 
+
+
+@tagged('post_install', '-at_install', 'pan_mail_pro')
+class TestHeaderAllowlist(TransactionCase):
+    """BCC must never cross the provider boundary.
+
+    A received message carries no Bcc, but the Sent folder does, and the sync
+    reads both. What would leak is the recipient list -- the one thing a blind
+    copy exists to hide. The rule is enforced in the contract rather than in
+    each client, so these assertions are what a new provider inherits.
+    """
+
+    #: A raw payload per provider, each carrying one allowed header and one
+    #: that must never survive. Shapes differ because the providers do; the
+    #: verdict may not.
+    def _raw_messages(self):
+        return {
+            'outlook': lambda client: client._normalize_message({
+                'id': 'graph-1',
+                'internetMessageHeaders': [
+                    {'name': 'In-Reply-To', 'value': '<parent@client.test>'},
+                    {'name': 'Bcc', 'value': 'lawyer@company.test'},
+                ],
+            }),
+            'gmail': lambda client: client._normalize_message({
+                'id': 'gmail-1',
+                'payload': {'headers': [
+                    {'name': 'In-Reply-To', 'value': '<parent@client.test>'},
+                    {'name': 'Bcc', 'value': 'lawyer@company.test'},
+                ]},
+            }),
+            'imap': lambda client: client._normalize_message(
+                {
+                    'uid': b'7',
+                    'raw': (
+                        b'Message-ID: <imap-1@client.test>\r\n'
+                        b'In-Reply-To: <parent@client.test>\r\n'
+                        b'Bcc: lawyer@company.test\r\n'
+                        b'Subject: Quote\r\n\r\nHello\r\n'
+                    ),
+                    'flags': [],
+                },
+                FOLDER_SENT, 1,
+            ),
+        }
+
+    def test_every_client_strips_bcc_from_a_sent_item(self):
+        """The leak, at the one place it can enter: a message off the wire."""
+        builders = self._raw_messages()
+        self.assertEqual(
+            set(builders), set(PROVIDER_CLIENTS),
+            'a provider was registered without a case here; add its raw shape',
+        )
+        for code, build in builders.items():
+            with self.subTest(provider=code):
+                headers = build(get_provider_client(self.env, code))['headers']
+                self.assertNotIn('bcc', headers)
+                self.assertEqual(headers.get('in-reply-to'), '<parent@client.test>')
+
+    def test_nothing_outside_the_allowlist_survives(self):
+        client = get_provider_client(self.env, DEFAULT_PROVIDER)
+        kept = client.normalize_headers({
+            'Bcc': 'lawyer@company.test',
+            'Resent-Bcc': 'lawyer@company.test',
+            'Delivered-To': 'sales@company.test',
+            'X-Envelope-To': 'sales@company.test',
+            'X-Odoo-Model': 'crm.lead',
+            'References': '<a@b.test>',
+        })
+        self.assertEqual(kept, {'x-odoo-model': 'crm.lead', 'references': '<a@b.test>'})
+
+    def test_the_allowlist_carries_what_the_module_reads(self):
+        """A header dropped here is a matcher rule or a loop guard that stops
+        working, silently and only on mail nobody is looking at yet."""
+        for name in ('in-reply-to', 'references',
+                     'x-odoo-model', 'x-odoo-record-id', 'x-odoo-mail-id'):
+            self.assertIn(name, HEADER_ALLOWLIST)
+
+
+@tagged('post_install', '-at_install', 'pan_mail_pro')
+class TestOutgoingCarriesNoBcc(TransactionCase):
+    """The send path has no BCC and must not grow one.
+
+    It is correct today by absence rather than by decision: `mail.mail` has no
+    BCC field, so nothing can put one on the wire. This pins that, so a future
+    "add BCC support" has to argue with a failing test rather than land quietly.
+    """
+
+    def _mail(self):
+        return self.env['mail.mail'].create({
+            'subject': 'Quarterly figures',
+            'body_html': '<p>Attached.</p>',
+            'email_to': 'customer@client.test',
+            'email_cc': 'colleague@company.test',
+        })
+
+    def test_the_built_mime_has_no_bcc_header(self):
+        msg = mime_utils.build_message(
+            self._mail(), 'sales@company.test',
+            ['customer@client.test'], ['colleague@company.test'],
+            '<out-1@company.test>',
+        )
+        self.assertIsNone(msg['Bcc'])
+        self.assertIsNone(msg['Resent-Bcc'])
+
+    def test_the_smtp_envelope_is_exactly_to_plus_cc(self):
+        """An address in the envelope but not in a header is a blind copy by
+        another name."""
+        to_addrs = mime_utils.collect_recipients('customer@client.test')
+        cc_addrs = mime_utils.collect_recipients('colleague@company.test')
+        self.assertEqual(
+            mime_utils.bare_addresses(to_addrs + cc_addrs),
+            ['customer@client.test', 'colleague@company.test'],
+        )

@@ -305,9 +305,34 @@ class MailMail(models.Model):
             # anybody can act on, so it must not surface as one.
             _logger.info(f"[Outgoing Mail] Mail {self.id} has no deliverable recipient — cancelling")
             self.write({'state': 'cancel'})
+            self._cancel_notifications()
             return None
 
         return self._fail(result.get('error') or _('Failed to send email.'))
+
+    def _cancel_notifications(self):
+        """Bring the `mail.notification` rows in line with a cancelled mail.
+
+        Cancelling only the `mail.mail` leaves those rows at `ready`, which
+        means "queued, not sent yet". The chatter renders that as pending, and
+        it is the row that outlives the mail: `mail.mail` is garbage-collected
+        and `mail.notification` is not, so the table still standing is the one
+        telling the wrong story. At Juffermans Machinebouw seventeen of them
+        still read `ready` eleven days after the mails were cancelled.
+
+        Odoo's own state-to-status mapping decides the value, so this cannot
+        drift from what the rest of the mail stack believes.
+        """
+        self.ensure_one()
+        notifications = self.env['mail.notification'].sudo().search([
+            ('notification_type', '=', 'email'),
+            ('mail_mail_id', 'in', self.ids),
+            ('notification_status', 'not in', ('sent', 'canceled')),
+        ])
+        if notifications:
+            notifications.write({
+                'notification_status': self._get_notification_status(),
+            })
 
     def _fail(self, reason):
         """Record why this mail did not go out, and hand the reason back.

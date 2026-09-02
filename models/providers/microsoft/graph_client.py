@@ -877,7 +877,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             'body_html': body_html,
             'body_is_html': (body.get('contentType') or '').lower() == 'html',
             'has_attachments': bool(raw.get('hasAttachments')),
-            'headers': headers,
+            'headers': self.normalize_headers(headers),
             'is_read': bool(raw.get('isRead')),
         }
 
