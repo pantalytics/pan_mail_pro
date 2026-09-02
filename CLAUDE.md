@@ -14,10 +14,11 @@ integration for Odoo 19.0 Enterprise Edition.
 Send and receive emails via the Microsoft Graph API, the Gmail API (both OAuth
 2.0 delegated) or plain IMAP/SMTP with a server, login and password.
 
-Model names still read `microsoft.*` and fields `x_microsoft_*`. That is
-deliberate — the rename to provider-neutral names is a single mechanical phase
-done last, so `x_microsoft_message_id` (which reply threading depends on)
-migrates once. The *module* rename from `pan_outlook_pro` landed in 19.0.4.0.0.
+The vocabulary — chatter vs. email, incoming vs. outgoing, mailbox, account,
+provider — is fixed in ARCHITECTURE.md §1 and every name in the code follows
+it. The module rename from `pan_outlook_pro` landed in 19.0.4.0.0; the
+provider-neutral rename of models, fields, xml ids and config parameters in
+19.0.6.0.0 (`migrations/19.0.6.0.0/` is the map).
 
 ## Development Principles
 
@@ -40,10 +41,10 @@ migrates once. The *module* rename from `pan_outlook_pro` landed in 19.0.4.0.0.
 |------|---------|
 | `models/mail_provider_client.py` | Provider-agnostic client contract + registry |
 | `models/mail_mail.py` | Outgoing override. `_resolve_route()` decides the sender once, and raises `RoutingError` rather than picking a different one |
-| `models/mail_message.py` | Provider threading keys + the communication lens fields |
+| `models/mail_message.py` | The communication lens fields |
 | `models/mail_compose_message.py` | Composer "Send From" dropdown + setup warning |
 | `models/mail_alias.py` | Cleaner alias display (name only, no domain) |
-| `models/microsoft_mailbox.py` | Mailbox configuration + routing rules |
+| `models/pan_mail_mailbox.py` | Mailbox configuration + routing rules |
 | `models/pan_mail_account.py` | Credentials for one address on one provider |
 | `models/providers/microsoft/graph_client.py` | Microsoft 365 implementation of the contract |
 | `models/providers/google/gmail_client.py` | Gmail implementation of the contract |
@@ -111,7 +112,7 @@ implementation.
    answer is "has a refresh token", which no password provider ever will
 6. Document it in the capability table in ARCHITECTURE.md §1
 
-The same code is used by `x_microsoft.mailbox.x_provider` **and**
+The same code is used by `pan.mail.mailbox.provider` **and**
 `pan.mail.account.provider` — both read `PROVIDER_SELECTION`, so an account and
 the mailbox it serves can never disagree about the provider's name.
 
@@ -251,7 +252,7 @@ short.
   to run it against this instance. Nothing here replaces `docker-compose run`.
 - **Helpdesk.** Odoo's `helpdesk` ships only in Enterprise, so on a community server
   the alias routing is unreachable: `x_route_to_team` on the mailbox, the
-  `x_alias_id` link to `helpdesk.team`, and ticket creation through `message_new()`.
+  `alias_id` link to `helpdesk.team`, and ticket creation through `message_new()`.
   `tests/test_incoming_mail.py` skips that class on a missing `helpdesk.team`, here
   as in CI. Test it locally against the Enterprise source — the third-party
   `helpdesk_community` addons are no substitute, because this code names
@@ -370,8 +371,11 @@ typo; `tools/ci.sh` gives the same verdict locally in the same container.
 
 ## Conventions
 
-- All custom fields use `x_` prefix (Odoo.sh requirement)
-- Log tags: `[Graph API]`, `[Incoming Mail]`, `[OAuth]`, `[Mail Matcher]`
+- `x_` prefix only on fields added to Odoo's own models (Odoo.sh requirement); a
+  `pan.mail.*` model has plain field names
+- Log tags name the flow or the vendor: `[Outgoing Mail]`, `[Incoming Mail]`,
+  `[Mail Matcher]`, `[OAuth]`, and `[Graph API]` / `[Gmail API]` / `[IMAP]` /
+  `[SMTP]` inside the matching client only
 - Use `invisible` instead of `attrs` in views (Odoo 19)
 - Stored computed fields need `@api.depends` decorator
 
@@ -385,7 +389,7 @@ typo; `tools/ci.sh` gives the same verdict locally in the same container.
 4. Return the normalized shape from `mail_provider_client.py`, not Graph's
 
 ### Debugging email issues
-1. Check Odoo logs for `[Graph API]` and `[Incoming Mail]` tags
+1. Check Odoo logs for `[Outgoing Mail]` and `[Incoming Mail]` tags
 2. Verify credentials: `user.x_pan_mail_connected`, or ask the mailbox itself
    with `mailbox._has_working_credentials()`
 3. Check mailbox state: should be 'active'
@@ -575,6 +579,13 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **Put the boundary where a grep can see it.** `anthropic` may only be imported
   under `models/ai/`, and CI greps for it. A convention nobody can check is a
   convention that is already broken somewhere.
+
+### Nomenclature (19.0.6.0.0)
+- **An orphaned xml id on a field drops the column.** `ir.model.data._process_end` unlinks every record whose xml id the module no longer declares, with the uninstall flag set — and `ir.model.fields.unlink` under that flag calls `_drop_column()`. Rename a field in Python alone and the upgrade creates a new field row, orphans the old xml id, and drops the *renamed* column if it still carries the old name. Rename `ir_model_fields.name` and the xml id in pre-migrate, so the ORM finds its field already in place.
+- **Renaming in pre-migrate means every older migration runs after the rename.** A database jumping from 19.0.3 to 19.0.6 runs *all* pre-migrates, then loads, then *all* post-migrates — so 19.0.4.0.0's post-migrate met a column 19.0.6.0.0's pre-migrate had already renamed. Older scripts have to tolerate both names; check the ones that touch a renamed table before shipping the rename.
+- **Rename the parameter that *is* the key with a fallback in code.** A deploy that runs the new code without the version bump (Cloudpepper auto-upgrade does exactly that) would generate a fresh encryption key and orphan every stored credential. `get_encryption_key` adopts the old parameter before minting a new one.
+- **Every rename is metadata-only in PostgreSQL.** `RENAME COLUMN` and `ALTER INDEX ... RENAME` rewrite nothing; keeping the ORM's index names is what stops it rebuilding a partial index on `mail_message` under a lock.
+- **Three copies of a wire id is two too many.** The provider's Message-ID lived on `mail.mail` (deleted after send), on `mail.message`, and in the ref index. Only the index is read first by every lookup; the others were backfilled into it and dropped.
 
 ### Simplification (19.0.5.0.0)
 - **Five fields computed from one field are five things that can disagree with it.** The mailbox had `x_sync_mode` plus `x_incoming_sync`, `x_sync_unknown_contacts`, `x_sync_inbox`, `x_sync_sent` and `x_incoming_enabled` — one three-way choice wearing six hats, each with its own compute, inverse and depends. The mode alone says everything; the rest was UI convenience that outlived the UI it was built for.

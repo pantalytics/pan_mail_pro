@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 GRAPH = 'https://graph.microsoft.com/v1.0'
 MSG_ID = 'AAMkAGI2_fake_graph_id'
@@ -25,14 +25,14 @@ CONV_ID = 'CONV_INBOUND_001'
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestIncomingSync(OutlookProTestCase):
+class TestIncomingSync(MailProTestCase):
 
     def setUp(self):
         super().setUp()
         self.mailbox = self.personal_mailbox
         self.mailbox.write({
-            'x_sync_mode': 'all',
-            'x_last_sync_date': '2026-01-01 00:00:00',
+            'sync_mode': 'all',
+            'last_sync_date': '2026-01-01 00:00:00',
         })
         self.fetched_urls = []
 
@@ -100,7 +100,7 @@ class TestIncomingSync(OutlookProTestCase):
         )
 
     def _sync(self, **mock_kwargs):
-        processor = self.env['microsoft.incoming.mail.processor']
+        processor = self.env['pan.mail.fetcher']
         with patch.object(
             type(self.env['microsoft.graph.client']), 'get_valid_token',
             autospec=True, return_value='fake-bearer-token',
@@ -136,23 +136,24 @@ class TestIncomingSync(OutlookProTestCase):
         self.assertEqual(message.x_mailbox_id, self.mailbox)
 
     def test_inbound_email_stores_ids_for_threading(self):
-        """Reply threading depends on these, and the two fields are asymmetric.
+        """Reply threading depends on these two ids landing in the right index.
 
-        Imported messages land their Message-ID in Odoo's native message_id (via
-        message_post), while x_microsoft_message_id is only ever written for mail
-        we sent ourselves. _find_parent_message searches both, in that order.
-        Asserting x_microsoft_message_id here would be asserting the wrong half
-        of the design.
+        The Message-ID goes into Odoo's native message_id (via message_post).
+        The provider's thread handle goes into pan.mail.thread.link, scoped to
+        the mailbox that saw it. The legacy column on mail.message is no longer
+        written: one index per fact.
         """
         self._sync()
 
         message = self._messages_on(self.external_partner)
         self.assertEqual(message.message_id, INTERNET_ID)
-        self.assertFalse(
-            message.x_microsoft_message_id,
-            "x_microsoft_message_id is for outgoing mail only",
-        )
-        self.assertEqual(message.x_microsoft_conversation_id, CONV_ID)
+        self.assertFalse(message.x_provider_thread_id,
+                         "the legacy thread column is read-only since 19.0.6.0.0")
+        link = self.env['pan.mail.thread.link'].search([
+            ('mailbox_id', '=', self.mailbox.id),
+            ('thread_id', '=', CONV_ID),
+        ])
+        self.assertEqual(link.last_message_id, message)
 
     def test_reply_threads_onto_the_message_it_answers(self):
         """The path that breaks silently: a reply must find its parent.
@@ -188,7 +189,7 @@ class TestIncomingSync(OutlookProTestCase):
                 return self._response(reply_full)
             return self._response({})
 
-        processor = self.env['microsoft.incoming.mail.processor']
+        processor = self.env['pan.mail.fetcher']
         with patch.object(
             type(self.env['microsoft.graph.client']), 'get_valid_token',
             autospec=True, return_value='fake-bearer-token',
@@ -260,7 +261,7 @@ class TestIncomingSync(OutlookProTestCase):
         self._sync()
 
         self.assertEqual(
-            str(self.mailbox.x_last_sync_date), '2026-02-01 10:30:00',
+            str(self.mailbox.last_sync_date), '2026-02-01 10:30:00',
             "cursor must advance to the last message's date, in naive UTC",
         )
 

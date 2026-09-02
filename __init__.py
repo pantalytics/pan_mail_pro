@@ -19,14 +19,14 @@ def _disable_smtp_servers(env):
 
     So the SMTP takeover now happens when the first mailbox is created, which is
     the same moment Graph routing activates. See
-    `x_microsoft.mailbox._activate_smtp_takeover()`. On a reinstall over an
+    `pan.mail.mailbox._activate_smtp_takeover()`. On a reinstall over an
     already-configured database the mailboxes are still there, so we do it right
     away.
 
     Note: Odoo 19+ passes env directly instead of (cr, registry).
     """
-    if env['x_microsoft.mailbox'].with_context(active_test=False).search_count([]):
-        env['x_microsoft.mailbox']._activate_smtp_takeover()
+    if env['pan.mail.mailbox'].with_context(active_test=False).search_count([]):
+        env['pan.mail.mailbox']._activate_smtp_takeover()
     else:
         _logger.info(
             '[Mail Pro] No mailboxes yet — leaving SMTP alone so user invitations '

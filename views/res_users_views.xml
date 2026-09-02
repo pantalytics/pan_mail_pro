@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!--
-        The record ids below deliberately still say "microsoft". Renaming a view
-        record does not rename it in the database: the old record survives the
-        upgrade with its old arch, and Odoo validates the whole res.users
-        inheritance tree at once - so a rename ships an arch referencing fields
-        this release deletes, and the upgrade fails in a way nothing about the
-        rename hints at. The ids are internal; the labels are what users read.
+        Renamed from *_inherit_microsoft* in 19.0.6.0.0. A view record renamed
+        in XML alone survives the upgrade under its old id with its old arch,
+        which then references fields this release renamed; the migration
+        therefore renames the xml ids in place before the registry loads.
     -->
 
     <!-- Extend User List View for admin overview -->
-    <record id="view_users_list_inherit_microsoft" model="ir.ui.view">
+    <record id="view_users_list_inherit_mail_pro" model="ir.ui.view">
         <field name="name">res.users.list.inherit.microsoft</field>
         <field name="model">res.users</field>
         <field name="inherit_id" ref="base.view_users_tree"/>
@@ -29,7 +27,7 @@
     </record>
 
     <!-- Extend Full User Form (Settings > Users > User) -->
-    <record id="view_users_form_inherit_microsoft_oauth" model="ir.ui.view">
+    <record id="view_users_form_inherit_mail_pro" model="ir.ui.view">
         <field name="name">res.users.form.inherit.microsoft.oauth</field>
         <field name="model">res.users</field>
         <field name="inherit_id" ref="base.view_users_form"/>
@@ -50,9 +48,9 @@
                     </group>
 
                     <group invisible="not x_pan_mail_connected">
-                        <field name="x_microsoft_default_mailbox_id"
+                        <field name="x_default_mailbox_id"
                                string="Send from"
-                               domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
+                               domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
                         <div colspan="2">
                             <button type="object"
@@ -68,7 +66,7 @@
     </record>
 
     <!-- Extend My Preferences popup (view_users_form_simple_modif) -->
-    <record id="view_users_preferences_inherit_microsoft_oauth" model="ir.ui.view">
+    <record id="view_users_preferences_inherit_mail_pro" model="ir.ui.view">
         <field name="name">res.users.preferences.inherit.microsoft.oauth</field>
         <field name="model">res.users</field>
         <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
@@ -89,9 +87,9 @@
                     </group>
 
                     <group invisible="not x_pan_mail_connected">
-                        <field name="x_microsoft_default_mailbox_id"
+                        <field name="x_default_mailbox_id"
                                string="Send from"
-                               domain="['|', ('x_mailbox_type', '=', 'shared'), '&amp;', ('x_mailbox_type', '=', 'personal'), ('x_owner_user_id', '=', id)]"
+                               domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
                         <div colspan="2">
                             <button type="object"

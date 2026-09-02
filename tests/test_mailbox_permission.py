@@ -28,11 +28,11 @@ from odoo.tools import mute_logger
 
 from odoo.addons.pan_mail_pro.models.mail_mail import RoutingError
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestMailboxPermission(OutlookProTestCase):
+class TestMailboxPermission(MailProTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -48,7 +48,7 @@ class TestMailboxPermission(OutlookProTestCase):
             'email_to': 'customer@example.com',
         }
         if mailbox is not None:
-            vals['x_microsoft_mailbox_id'] = mailbox.id
+            vals['x_send_from_mailbox_id'] = mailbox.id
         return vals
 
     # -- the rule itself --------------------------------------------------- #
@@ -85,7 +85,7 @@ class TestMailboxPermission(OutlookProTestCase):
         """mail.compose.message passes the mailbox through the context."""
         with self.assertRaises(AccessError):
             self.env['mail.mail'].with_user(self.admin).with_context(
-                microsoft_mailbox_id=self.personal_mailbox.id
+                send_from_mailbox_id=self.personal_mailbox.id
             ).create(self._mail_vals())
 
     def test_reassigning_on_write_is_guarded(self):
@@ -93,20 +93,20 @@ class TestMailboxPermission(OutlookProTestCase):
             self._mail_vals(self.shared_mailbox)
         )
         with self.assertRaises(AccessError):
-            mail.write({'x_microsoft_mailbox_id': self.personal_mailbox.id})
+            mail.write({'x_send_from_mailbox_id': self.personal_mailbox.id})
 
     def test_shared_mailbox_still_works(self):
         mail = self.env['mail.mail'].with_user(self.admin).create(
             self._mail_vals(self.shared_mailbox)
         )
-        self.assertEqual(mail.x_microsoft_mailbox_id, self.shared_mailbox)
+        self.assertEqual(mail.x_send_from_mailbox_id, self.shared_mailbox)
 
     def test_superuser_is_exempt(self):
         """System mail and templates pick a mailbox on nobody's behalf."""
         mail = self.env['mail.mail'].sudo().create(
             self._mail_vals(self.personal_mailbox)
         )
-        self.assertEqual(mail.x_microsoft_mailbox_id, self.personal_mailbox)
+        self.assertEqual(mail.x_send_from_mailbox_id, self.personal_mailbox)
 
     # -- enforcement in the composer (the path a normal user has) ---------- #
 
@@ -118,15 +118,15 @@ class TestMailboxPermission(OutlookProTestCase):
             'body': '<p>Test</p>',
         })
         with self.assertRaises(ValidationError):
-            composer.x_microsoft_send_from_id = self.personal_mailbox
+            composer.x_send_from_mailbox_id = self.personal_mailbox
 
     def test_composer_allows_the_owner(self):
         composer = self.env['mail.compose.message'].with_user(self.salesperson).create({
             'subject': 'Test',
             'body': '<p>Test</p>',
         })
-        composer.x_microsoft_send_from_id = self.personal_mailbox
-        self.assertEqual(composer.x_microsoft_send_from_id, self.personal_mailbox)
+        composer.x_send_from_mailbox_id = self.personal_mailbox
+        self.assertEqual(composer.x_send_from_mailbox_id, self.personal_mailbox)
 
     # -- defence in depth at send time ------------------------------------- #
 
@@ -153,12 +153,12 @@ class TestMailboxPermission(OutlookProTestCase):
 
     def test_personal_mailbox_not_readable_by_others(self):
         """You cannot pick what you cannot see; the record rule closes that."""
-        visible = self.env['x_microsoft.mailbox'].with_user(self.other_user).search([])
+        visible = self.env['pan.mail.mailbox'].with_user(self.other_user).search([])
         self.assertNotIn(self.personal_mailbox, visible)
         self.assertIn(self.shared_mailbox, visible)
 
     def test_owner_still_sees_own_personal_mailbox(self):
-        visible = self.env['x_microsoft.mailbox'].with_user(self.salesperson).search([])
+        visible = self.env['pan.mail.mailbox'].with_user(self.salesperson).search([])
         self.assertIn(self.personal_mailbox, visible)
 
     # -- what the record of a mail discloses -------------------------------- #

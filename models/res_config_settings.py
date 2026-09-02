@@ -17,7 +17,7 @@ from odoo.exceptions import UserError
 from . import encryption_utils
 from . import mail_mail
 from . import pan_mail_internal_domains as internal_domains
-from .microsoft_mailbox import SYNCING_MODES
+from .pan_mail_mailbox import SYNCING_MODES
 from .ai.pan_mail_ai import AI_SELECTION
 from .mail_provider_client import (
     PARAM_SETUP_PROVIDER,
@@ -32,12 +32,12 @@ _logger = logging.getLogger(__name__)
 # config parameter; the secret is Fernet-encrypted under its own key.
 PROVIDER_CREDENTIALS = {
     'outlook': {
-        'client_id': 'x_pan_outlook_pro.client_id',
-        'secret': 'x_pan_outlook_pro.client_secret_encrypted',
+        'client_id': 'pan_mail_pro.microsoft_client_id',
+        'secret': 'pan_mail_pro.microsoft_client_secret_encrypted',
     },
     'gmail': {
-        'client_id': 'x_pan_outlook_pro.google_client_id',
-        'secret': 'x_pan_outlook_pro.google_client_secret_encrypted',
+        'client_id': 'pan_mail_pro.google_client_id',
+        'secret': 'pan_mail_pro.google_client_secret_encrypted',
     },
 }
 
@@ -71,7 +71,7 @@ class ResConfigSettings(models.TransientModel):
     x_microsoft_client_id = fields.Char(
         string='Microsoft Client ID',
         help='Application (client) ID from your Azure app registration',
-        config_parameter='x_pan_outlook_pro.client_id',
+        config_parameter='pan_mail_pro.microsoft_client_id',
     )
     x_microsoft_client_secret = fields.Char(
         string='Microsoft Client Secret',
@@ -81,7 +81,7 @@ class ResConfigSettings(models.TransientModel):
     x_microsoft_tenant_id = fields.Char(
         string='Tenant ID',
         help='Directory (tenant) ID from your Azure app registration',
-        config_parameter='x_pan_outlook_pro.tenant_id',
+        config_parameter='pan_mail_pro.microsoft_tenant_id',
     )
     x_microsoft_redirect_uri = fields.Char(
         string='Redirect URI', compute='_compute_redirect_uris',
@@ -91,7 +91,7 @@ class ResConfigSettings(models.TransientModel):
     x_google_client_id = fields.Char(
         string='Google Client ID',
         help='OAuth client ID from the Google Cloud Console',
-        config_parameter='x_pan_outlook_pro.google_client_id',
+        config_parameter='pan_mail_pro.google_client_id',
     )
     x_google_client_secret = fields.Char(
         string='Google Client Secret',
@@ -295,9 +295,9 @@ class ResConfigSettings(models.TransientModel):
         Domains = self.env['pan.mail.internal.domains']
         suggested = ', '.join(Domains.suggest_domains())
         uncovered = ', '.join(Domains.uncovered_mailbox_domains())
-        internal_sync_count = self.env['x_microsoft.mailbox'].sudo().search_count([
-            ('x_exclude_internal', '=', False),
-            ('x_sync_mode', 'in', SYNCING_MODES),
+        internal_sync_count = self.env['pan.mail.mailbox'].sudo().search_count([
+            ('exclude_internal', '=', False),
+            ('sync_mode', 'in', SYNCING_MODES),
         ])
         for record in self:
             # Read the form's value, not the saved parameter: the admin may be
@@ -405,9 +405,9 @@ class ResConfigSettings(models.TransientModel):
                 'sends with its owner\'s credentials.'
             ))
 
-        Mailbox = self.env['x_microsoft.mailbox']
+        Mailbox = self.env['pan.mail.mailbox']
         existing = Mailbox.with_context(active_test=False).search([
-            ('x_mailbox_type', '=', 'notification'),
+            ('mailbox_type', '=', 'notification'),
         ], limit=1)
         if existing:
             raise UserError(_(
@@ -416,9 +416,9 @@ class ResConfigSettings(models.TransientModel):
 
         mailbox = Mailbox.create({
             'email': email,
-            'x_mailbox_type': 'notification',
-            'x_provider': self.x_mail_provider,
-            'x_owner_user_id': self.env.user.id,
+            'mailbox_type': 'notification',
+            'provider': self.x_mail_provider,
+            'owner_user_id': self.env.user.id,
         })
         _logger.info(f"[Mail Pro] Created notification mailbox {mailbox.email} from setup checklist")
 

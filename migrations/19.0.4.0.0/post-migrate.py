@@ -42,15 +42,26 @@ def migrate(cr, version):
         _logger.info('[Migration] No mail_mail rows to backfill the lens from')
         return
 
+    # A database jumping straight past 19.0.6.0.0 has already had the column
+    # renamed by that release's pre-migrate, which runs before this script.
+    cr.execute("""
+        SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'mail_mail'
+           AND column_name IN ('x_send_from_mailbox_id', 'x_microsoft_mailbox_id')
+    """)
+    columns = {row[0] for row in cr.fetchall()}
+    mailbox_column = ('x_send_from_mailbox_id' if 'x_send_from_mailbox_id' in columns
+                      else 'x_microsoft_mailbox_id')
+
     low, high = bounds
     updated = 0
     start = low
     while start <= high:
         end = start + BATCH_SIZE
-        cr.execute("""
+        cr.execute(f"""
             UPDATE mail_message m
                SET x_direction = 'outgoing',
-                   x_mailbox_id = mm.x_microsoft_mailbox_id
+                   x_mailbox_id = mm.{mailbox_column}
               FROM mail_mail mm
              WHERE mm.mail_message_id = m.id
                AND m.id >= %s AND m.id < %s

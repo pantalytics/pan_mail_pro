@@ -96,8 +96,8 @@ An IMAP mailbox has no consent screen, so its credentials are typed in once:
    mailbox that reads but cannot send is broken.
 4. Leave **Odoo User** empty for a shared address such as `info@`; set it for a
    person's own mailbox.
-5. Create the mailbox under **Settings → Technical → Email → Microsoft
-   Mailboxes** with the same address and provider *IMAP / SMTP*.
+5. Create the mailbox under **Settings → Technical → Email → Mailboxes**
+   with the same address and provider *IMAP / SMTP*.
 
 The Sent folder is detected from the server (`\Sent`), and can be overridden on
 the account when a server names it something unusual. Mail sent from Odoo is

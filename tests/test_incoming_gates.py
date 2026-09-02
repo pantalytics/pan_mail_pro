@@ -38,9 +38,9 @@ class TestIncomingGates(OutlookProTestCase):
 
     def setUp(self):
         super().setUp()
-        self.processor = self.env['microsoft.incoming.mail.processor']
+        self.processor = self.env['pan.mail.fetcher']
         self.mailbox = self.personal_mailbox
-        self.mailbox.write({'x_sync_mode': 'all'})
+        self.mailbox.write({'sync_mode': 'all'})
 
     def _ctx(self, folder=FOLDER_INBOX, **full):
         """A context with the full message pre-seeded, so no gate reaches out.
@@ -230,7 +230,7 @@ class TestIncomingGates(OutlookProTestCase):
     # ------------------------------------------------------------------ #
     def test_a_recording_refusal_reaches_the_triage_queue(self):
         """An unknown contact is a decision a person may want to reverse."""
-        self.mailbox.write({'x_sync_mode': 'known_partners'})
+        self.mailbox.write({'sync_mode': 'known_partners'})
         ctx = self._ctx()
         ctx['full_message']['from'] = {'email': 'stranger@nowhere.test', 'name': ''}
         before = self.env['pan.mail.item'].search_count([])

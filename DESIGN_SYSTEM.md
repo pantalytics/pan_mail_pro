@@ -199,7 +199,7 @@ def action_disconnect(self):
     return {
         'type': 'ir.actions.act_window',
         'name': 'Disconnect?',
-        'res_model': 'microsoft.disconnect.wizard',
+        'res_model': 'pan.mail.disconnect.wizard',
         'view_mode': 'form',
         'target': 'new',
     }

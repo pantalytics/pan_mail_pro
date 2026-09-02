@@ -38,20 +38,20 @@
         -->
         <record id="rule_mailbox_personal_own" model="ir.rule">
             <field name="name">Mailbox: personal mailboxes are visible to their owner only</field>
-            <field name="model_id" ref="model_x_microsoft_mailbox"/>
+            <field name="model_id" ref="model_pan_mail_mailbox"/>
             <field name="groups" eval="[(4, ref('base.group_user'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="True"/>
             <field name="domain_force">
-                ['|', ('x_mailbox_type', '!=', 'personal'), ('x_owner_user_id', '=', user.id)]
+                ['|', ('mailbox_type', '!=', 'personal'), ('owner_user_id', '=', user.id)]
             </field>
         </record>
 
         <record id="rule_mailbox_manager_all" model="ir.rule">
             <field name="name">Mailbox: managers see all mailboxes</field>
-            <field name="model_id" ref="model_x_microsoft_mailbox"/>
+            <field name="model_id" ref="model_pan_mail_mailbox"/>
             <field name="groups" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
             <field name="domain_force">[(1, '=', 1)]</field>
         </record>

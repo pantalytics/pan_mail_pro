@@ -110,9 +110,9 @@ class GoogleGmailClient(models.AbstractModel):
 
     @api.model
     def resolve_receiving_account(self, mailbox):
-        if mailbox.x_mailbox_type == 'shared':
+        if mailbox.mailbox_type == 'shared':
             return self._service_account(mailbox)
-        return self.account_for_user(mailbox.x_owner_user_id)
+        return self.account_for_user(mailbox.owner_user_id)
 
     @api.model
     def _service_account(self, mailbox):
@@ -131,17 +131,17 @@ class GoogleGmailClient(models.AbstractModel):
         """Read Google OAuth configuration from settings.
 
         Credentials are one set per provider (config params), mirroring how
-        Microsoft's live under x_pan_outlook_pro.* — the credential home decided
+        Microsoft's live under pan_mail_pro.microsoft_* — the credential home decided
         in Phase 2. The secret is Fernet-encrypted at rest like Microsoft's.
         """
         ICP = self.env['ir.config_parameter'].sudo()
-        encrypted_secret = ICP.get_param('x_pan_outlook_pro.google_client_secret_encrypted')
+        encrypted_secret = ICP.get_param('pan_mail_pro.google_client_secret_encrypted')
         client_secret = encryption_utils.decrypt_value(
             self.env, encrypted_secret
         ) if encrypted_secret else False
 
         return {
-            'client_id': ICP.get_param('x_pan_outlook_pro.google_client_id'),
+            'client_id': ICP.get_param('pan_mail_pro.google_client_id'),
             'client_secret': client_secret,
         }
 

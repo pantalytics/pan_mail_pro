@@ -14,11 +14,11 @@ from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from ..models import encryption_utils
-from .common import OutlookProTestCase, send_and_capture
+from .common import MailProTestCase, send_and_capture
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestNeutralizedDatabase(OutlookProTestCase):
+class TestNeutralizedDatabase(MailProTestCase):
 
     def setUp(self):
         super().setUp()
@@ -41,7 +41,7 @@ class TestNeutralizedDatabase(OutlookProTestCase):
 
     def test_incoming_sync_cron_does_nothing(self):
         """The cron returns before it touches a mailbox."""
-        processor = self.env['microsoft.incoming.mail.processor']
+        processor = self.env['pan.mail.fetcher']
         with patch.object(
             type(processor), '_process_mailbox', autospec=True
         ) as process:

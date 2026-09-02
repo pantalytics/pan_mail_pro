@@ -27,7 +27,7 @@ in de cloud: Azure Portal en Google Cloud Console zijn handwerk.
       (portal.azure.com → App registrations → Authentication → platform Web):
       `https://mailpro-dev.cloudpepper.site/microsoft_oauth/callback`
       Kan niet via API: de Lokka-koppeling heeft alleen SharePoint-scopes (403).
-- [ ] **Google OAuth-client.** Productie heeft géén `x_pan_outlook_pro.google_*`
+- [ ] **Google OAuth-client.** Productie heeft géén `pan_mail_pro.google_*`
       parameters — er is in Odoo nooit een Google-client geconfigureerd. Bestaat
       er al een client in Cloud Console uit de Gmail-ontwikkelfase? Voeg daar
       `https://mailpro-dev.cloudpepper.site/google_oauth/callback` toe en vul
@@ -64,7 +64,7 @@ Dit kan **nergens anders**. Odoo's `helpdesk` zit alleen in Enterprise, en de
 code noemt `helpdesk.team` en `helpdesk.ticket` letterlijk — een
 derdepartij-`helpdesk_community` helpt dus niet.
 
-- [ ] Mailbox met `x_route_to_team` en een `x_alias_id` naar een `helpdesk.team`
+- [ ] Mailbox met `route_to_team` en een `alias_id` naar een `helpdesk.team`
 - [ ] Mail van een onbekende afzender maakt een ticket via `message_new()`
 - [ ] De afzender krijgt de Helpdesk-ontvangstbevestiging, en **geen** kopie van
       zijn eigen mail terug (dat is het hele punt van `message_new()`)
@@ -142,7 +142,7 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
 ### Eén sync-instelling per mailbox (19.0.5.0.0)
 - [ ] Het mailboxformulier toont "Inkomende mail" met drie keuzes in plaats van
       vier schakelaars. Controleer op een **bestaande** database dat de keuze
-      bewaard is (`x_sync_mode` is niet gemigreerd, alleen de afgeleide velden
+      bewaard is (`sync_mode` is niet gemigreerd, alleen de afgeleide velden
       zijn weg).
 - [ ] Verbinden/loskoppelen via Mijn Profiel → Mail Pro, per provider die de
       klant gebruikt. De knoppen heten "Connect Mailbox" / "Disconnect" en zijn
@@ -173,7 +173,7 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
 - [ ] Zonder API-key: geen enkele AI-aanroep, geen fouten, module gedraagt zich
       alsof de functie er niet is
 - [ ] Met key: een suggestie verschijnt op een triage-item, maar routeert niets
-      automatisch (`x_routing_smart` blijft dicht)
+      automatisch (`routing_smart` blijft dicht)
 - [ ] Uitgaande mail en de inkomende cron worden nooit vertraagd door AI
 
 ### Originele maildatum (19.0.5.0.1, issue #1)
@@ -205,7 +205,7 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
 
 - [ ] Juffermans: backup, module-upgrade, smoke test
 - [ ] Overige klantendatabases idem
-- [ ] Nazorg: logs eerste dagen monitoren op `[Graph API]` / `[Incoming Mail]`
+- [ ] Nazorg: logs eerste dagen monitoren op `[Outgoing Mail]` / `[Incoming Mail]`
 - [ ] Per klant beslissen of interne domeinen goed staan — bij een upgrade van
       vóór 19.0.3.4.0 staat de lijst leeg en stopt de sync tot het is ingevuld
 
@@ -219,9 +219,11 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
   en Odoo MCP Pro-koppelingen.
 - Wat een sessie niet kan: Azure Portal en Google Cloud Console aanpassen.
 - Alleen A3 (Helpdesk) vereist Enterprise-source en dus de lokale Docker.
-- Config-parameters heten bewust nog `x_pan_outlook_pro.*` — geen datamigratie
-  nodig geweest bij de rename. Modelnamen (`microsoft.*`) en velden
-  (`x_microsoft_*`) idem; zie ARCHITECTURE.md §1.
+- Sinds 19.0.6.0.0 heten config-parameters `pan_mail_pro.*`, het mailboxmodel
+  `pan.mail.mailbox` en de velden provider-neutraal; `migrations/19.0.6.0.0/`
+  hernoemt bestaande databases. Een klant die van vóór 19.0.6.0.0 komt:
+  na de upgrade controleren dat Settings → Mail Pro de Azure-gegevens nog
+  toont (de sleutel-rename) en dat een reply op een oude thread nog threadt.
 
 ## Besluitregels
 

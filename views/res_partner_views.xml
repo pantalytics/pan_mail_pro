@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- Add Mail Pro tab to partner form -->
-    <record id="view_partner_form_inherit_outlook_pro" model="ir.ui.view">
+    <record id="view_partner_form_inherit_mail_pro" model="ir.ui.view">
         <field name="name">res.partner.form.inherit.outlook.pro</field>
         <field name="model">res.partner</field>
         <field name="inherit_id" ref="base.view_partner_form"/>

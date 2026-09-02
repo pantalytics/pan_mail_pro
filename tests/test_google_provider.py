@@ -41,7 +41,7 @@ class TestGoogleProvider(TransactionCase):
             'name': 'Gmail User', 'login': 'gmail_user@test.local', 'email': 'gmail_user@test.local',
         })
         cls.env['ir.config_parameter'].sudo().set_param(
-            'x_pan_outlook_pro.google_client_id', 'test-client-id.apps.googleusercontent.com')
+            'pan_mail_pro.google_client_id', 'test-client-id.apps.googleusercontent.com')
 
     def _google_account(self, **vals):
         base = {'email': 'gmail_user@test.local', 'provider': 'gmail', 'user_id': self.user.id}
@@ -52,9 +52,9 @@ class TestGoogleProvider(TransactionCase):
     # Dispatch
     # ------------------------------------------------------------------ #
     def test_gmail_mailbox_dispatches_to_the_gmail_client(self):
-        mailbox = self.env['x_microsoft.mailbox'].create({
+        mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'team@test.local',
-            'x_provider': 'gmail', 'x_mailbox_type': 'shared',
+            'provider': 'gmail', 'mailbox_type': 'shared',
         })
         self.assertEqual(mailbox._get_client()._name, 'google.gmail.client')
         self.assertEqual(mailbox._get_client().provider_code(), 'gmail')
@@ -89,9 +89,9 @@ class TestGoogleProvider(TransactionCase):
     def test_shared_mailbox_sends_with_a_service_account(self):
         """A Gmail shared mailbox is its own account: user_id null, keyed on the
         address. Not the author's token (that is the Microsoft SendAs model)."""
-        mailbox = self.env['x_microsoft.mailbox'].create({
+        mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'sales@test.local',
-            'x_provider': 'gmail', 'x_mailbox_type': 'shared',
+            'provider': 'gmail', 'mailbox_type': 'shared',
         })
         service = self.Account.create({
             'email': 'sales@test.local', 'provider': 'gmail', 'user_id': False,
@@ -108,10 +108,10 @@ class TestGoogleProvider(TransactionCase):
 
     def test_personal_mailbox_sends_with_the_owner_account(self):
         account = self._google_account(refresh_token='owner-refresh')
-        mailbox = self.env['x_microsoft.mailbox'].create({
+        mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'gmail_user@test.local',
-            'x_provider': 'gmail', 'x_mailbox_type': 'personal',
-            'x_owner_user_id': self.user.id,
+            'provider': 'gmail', 'mailbox_type': 'personal',
+            'owner_user_id': self.user.id,
         })
         self.assertEqual(
             mailbox._get_client().resolve_sending_account(mailbox), account)
@@ -170,8 +170,8 @@ class TestGoogleProvider(TransactionCase):
     # ------------------------------------------------------------------ #
     def _sendable(self):
         """A google shared mailbox + its live service account, ready to send."""
-        mailbox = self.env['x_microsoft.mailbox'].create({
-            'email': 'sales@test.local', 'x_provider': 'gmail', 'x_mailbox_type': 'shared',
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'sales@test.local', 'provider': 'gmail', 'mailbox_type': 'shared',
         })
         account = self.Account.create({
             'email': 'sales@test.local', 'provider': 'gmail', 'user_id': False,
@@ -358,9 +358,9 @@ class TestGoogleProvider(TransactionCase):
         self.assertTrue(msg['body_is_html'])
 
     def test_fetched_messages_are_folder_mapped_and_sorted_ascending(self):
-        mailbox = self.env['x_microsoft.mailbox'].create({
-            'email': 'gmail_user@test.local', 'x_provider': 'gmail',
-            'x_mailbox_type': 'personal', 'x_owner_user_id': self.user.id,
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'gmail_user@test.local', 'provider': 'gmail',
+            'mailbox_type': 'personal', 'owner_user_id': self.user.id,
         })
         account = self._google_account(refresh_token='r', access_token='a',
                                        token_expiry=datetime.now() + timedelta(hours=1))
@@ -446,9 +446,9 @@ class TestGoogleProvider(TransactionCase):
         self.assertEqual(api.call_args.args[-1]['maxResults'], 1)
 
     def test_get_attachments_handles_inline_and_regular(self):
-        mailbox = self.env['x_microsoft.mailbox'].create({
-            'email': 'gmail_user@test.local', 'x_provider': 'gmail',
-            'x_mailbox_type': 'personal', 'x_owner_user_id': self.user.id,
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'gmail_user@test.local', 'provider': 'gmail',
+            'mailbox_type': 'personal', 'owner_user_id': self.user.id,
         })
         account = self._google_account(refresh_token='r', access_token='a',
                                        token_expiry=datetime.now() + timedelta(hours=1))
@@ -575,7 +575,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Account = cls.env['pan.mail.account']
-        cls.Mailbox = cls.env['x_microsoft.mailbox']
+        cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.user = cls.env['res.users'].create({
             'name': 'Gmail Only', 'login': 'gmail_only@test.local',
             'email': 'gmail_only@test.local',
@@ -587,12 +587,12 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
             'user_id': cls.user.id, 'refresh_token': 'goog-refresh',
         })
         # Enabling incoming sync on any mailbox requires a Notification mailbox
-        # to exist — see the constraint in microsoft_mailbox.py. It handles mail
+        # to exist — see the constraint in pan_mail_mailbox.py. It handles mail
         # from authors with no Odoo user, so it is a real product rule, not test
         # scaffolding.
         cls.notification_mailbox = cls.Mailbox.create({
-            'email': 'notifications@test.local', 'x_provider': 'gmail',
-            'x_mailbox_type': 'notification', 'x_owner_user_id': cls.user.id,
+            'email': 'notifications@test.local', 'provider': 'gmail',
+            'mailbox_type': 'notification', 'owner_user_id': cls.user.id,
         })
         # Incoming sync is gated on internal domains being declared. A domain
         # nothing in this fixture uses, so the gate opens without turning any
@@ -600,8 +600,8 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
 
     def _gmail_mailbox(self, **vals):
-        base = {'email': 'gmail_only@test.local', 'x_provider': 'gmail',
-                'x_mailbox_type': 'personal', 'x_owner_user_id': self.user.id}
+        base = {'email': 'gmail_only@test.local', 'provider': 'gmail',
+                'mailbox_type': 'personal', 'owner_user_id': self.user.id}
         base.update(vals)
         return self.Mailbox.create(base)
 
@@ -612,15 +612,15 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         mailbox = self._gmail_mailbox()
         self.assertFalse(self.Account._for_user(self.user, 'outlook'),
                          "fixture must be Google-only for this to mean anything")
-        self.assertEqual(mailbox.x_health_status, 'healthy')
+        self.assertEqual(mailbox.health_status, 'healthy')
 
     def test_gmail_mailbox_without_credentials_is_an_error(self):
         self.account.write({'refresh_token_encrypted': False})
         mailbox = self._gmail_mailbox()
-        self.assertEqual(mailbox.x_health_status, 'error')
+        self.assertEqual(mailbox.health_status, 'error')
 
     def test_gmail_mailbox_is_picked_up_by_the_sync_cron(self):
-        mailbox = self._gmail_mailbox(x_sync_mode='all')
+        mailbox = self._gmail_mailbox(sync_mode='all')
         self.assertTrue(mailbox._syncs_incoming())
         self.assertTrue(mailbox._has_working_credentials())
 
@@ -633,7 +633,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         which is always right and needs no invalidation at all.
         """
         self.account.write({'refresh_token_encrypted': False})
-        mailbox = self._gmail_mailbox(x_sync_mode='all')
+        mailbox = self._gmail_mailbox(sync_mode='all')
         self.assertFalse(mailbox._has_working_credentials())
 
         self.account.write({'refresh_token': 'reconnected'})
@@ -646,10 +646,10 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
             'user_id': False, 'refresh_token': 'service-refresh',
         })
         mailbox = self.Mailbox.create({
-            'email': 'sales@test.local', 'x_provider': 'gmail',
-            'x_mailbox_type': 'shared', 'x_sync_mode': 'all',
+            'email': 'sales@test.local', 'provider': 'gmail',
+            'mailbox_type': 'shared', 'sync_mode': 'all',
         })
-        self.assertFalse(mailbox.x_owner_user_id)
+        self.assertFalse(mailbox.owner_user_id)
         self.assertTrue(mailbox._has_working_credentials())
         self.assertTrue(mailbox._syncs_incoming())
 
@@ -665,19 +665,19 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         mailbox does.
         """
         mailbox = self.Mailbox.create({
-            'email': 'unauthorized@test.local', 'x_provider': 'gmail',
-            'x_mailbox_type': 'shared', 'x_sync_mode': 'all',
+            'email': 'unauthorized@test.local', 'provider': 'gmail',
+            'mailbox_type': 'shared', 'sync_mode': 'all',
         })
-        self.assertFalse(mailbox.x_owner_user_id)
+        self.assertFalse(mailbox.owner_user_id)
         self.assertFalse(mailbox._has_working_credentials())
-        self.assertEqual(mailbox.x_health_status, 'error')
+        self.assertEqual(mailbox.health_status, 'error')
 
     def test_shared_microsoft_mailbox_still_requires_an_owner(self):
         """The Microsoft rule must survive being made provider-aware."""
         with self.assertRaises(UserError):
             self.Mailbox.create({
-                'email': 'shared_ms@test.local', 'x_provider': 'outlook',
-                'x_mailbox_type': 'shared', 'x_sync_mode': 'all',
+                'email': 'shared_ms@test.local', 'provider': 'outlook',
+                'mailbox_type': 'shared', 'sync_mode': 'all',
             })
 
     # ------------------------------------------------------------------ #
@@ -685,7 +685,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
     # ------------------------------------------------------------------ #
     def test_gmail_user_sends_from_their_default_mailbox(self):
         mailbox = self._gmail_mailbox()
-        self.user.x_microsoft_default_mailbox_id = mailbox
+        self.user.x_default_mailbox_id = mailbox
         mail = self.env['mail.mail'].with_user(self.user).sudo().create({
             'subject': 'Hi', 'body_html': '<p>x</p>',
             'email_to': 'customer@example.com',
@@ -705,10 +705,10 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
             'user_id': False, 'refresh_token': 'service-refresh',
         })
         mailbox = self.Mailbox.create({
-            'email': 'sales@test.local', 'x_provider': 'gmail',
-            'x_mailbox_type': 'shared',
+            'email': 'sales@test.local', 'provider': 'gmail',
+            'mailbox_type': 'shared',
         })
-        self.user.x_microsoft_default_mailbox_id = mailbox
+        self.user.x_default_mailbox_id = mailbox
         mail = self.env['mail.mail'].with_user(self.user).sudo().create({
             'subject': 'Hi', 'body_html': '<p>x</p>',
             'email_to': 'customer@example.com',
@@ -731,7 +731,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         """
         self.account.write({'refresh_token_encrypted': False})
         mailbox = self._gmail_mailbox()
-        self.user.x_microsoft_default_mailbox_id = mailbox
+        self.user.x_default_mailbox_id = mailbox
         mail = self.env['mail.mail'].with_user(self.user).sudo().create({
             'subject': 'Hi', 'body_html': '<p>x</p>',
             'email_to': 'customer@example.com',

@@ -34,14 +34,14 @@ class TestMailMatcher(TransactionCase):
         super().setUpClass()
         cls.matcher = cls.env['pan.mail.matcher']
 
-        Mailbox = cls.env['x_microsoft.mailbox']
+        Mailbox = cls.env['pan.mail.mailbox']
         cls.mailbox = Mailbox.create({
             'email': 'support@company.test',
-            'x_mailbox_type': 'shared',
+            'mailbox_type': 'shared',
         })
         cls.other_mailbox = Mailbox.create({
             'email': 'sales@company.test',
-            'x_mailbox_type': 'shared',
+            'mailbox_type': 'shared',
         })
 
         cls.customer = cls.env['res.partner'].create({
@@ -248,7 +248,7 @@ class TestMailMatcher(TransactionCase):
         """
         old = self._post_on(self.other_lead, '<old@example.com>')
         new = self._post_on(self.lead, '<new@example.com>')
-        (old | new).sudo().write({'x_microsoft_conversation_id': 'CONV-LEGACY'})
+        (old | new).sudo().write({'x_provider_thread_id': 'CONV-LEGACY'})
 
         decision = self.matcher.match(
             self._message(thread_id='CONV-LEGACY'), mailbox=self.mailbox)
@@ -260,7 +260,7 @@ class TestMailMatcher(TransactionCase):
     def test_excluded_models_are_never_a_target(self):
         """Team routing must not thread a reply back onto contact chatter."""
         message = self._post_on(self.customer, '<on-partner@example.com>')
-        message.sudo().write({'x_microsoft_conversation_id': 'CONV-PARTNER'})
+        message.sudo().write({'x_provider_thread_id': 'CONV-PARTNER'})
 
         decision = self.matcher.match(
             self._message(thread_id='CONV-PARTNER'),

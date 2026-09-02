@@ -42,7 +42,7 @@ class PanMailRoutingLog(models.Model):
     _rec_name = 'subject'
 
     mailbox_id = fields.Many2one(
-        'x_microsoft.mailbox',
+        'pan.mail.mailbox',
         string='Mailbox',
         required=True,
         ondelete='cascade',

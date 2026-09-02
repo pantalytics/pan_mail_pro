@@ -152,7 +152,7 @@
     <menuitem id="menu_communication_mailboxes"
               name="Mailboxes"
               parent="menu_communication_config"
-              action="action_microsoft_mailbox"
+              action="action_pan_mail_mailbox"
               sequence="10"
               groups="pan_mail_pro.group_mail_mailbox_manager"/>
 

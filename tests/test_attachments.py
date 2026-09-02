@@ -12,12 +12,12 @@ from unittest.mock import patch
 
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 from odoo.addons.pan_mail_pro.models.providers.microsoft import graph_client as graph_mod
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestAttachments(OutlookProTestCase):
+class TestAttachments(MailProTestCase):
 
     def _make_mail_with_attachments(self, attachment_ids=None, body_html='<p>Body</p>'):
         return self.env['mail.mail'].create({
@@ -25,7 +25,7 @@ class TestAttachments(OutlookProTestCase):
             'body_html': body_html,
             'email_to': 'customer@example.com',
             'author_id': self.salesperson.partner_id.id,
-            'x_microsoft_mailbox_id': self.shared_mailbox.id,
+            'x_send_from_mailbox_id': self.shared_mailbox.id,
             'attachment_ids': [(6, 0, attachment_ids or [])],
         })
 

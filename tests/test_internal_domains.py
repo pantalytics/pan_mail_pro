@@ -59,7 +59,7 @@ class TestInternalDomainGate(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Domains = cls.env['pan.mail.internal.domains']
-        cls.Mailbox = cls.env['x_microsoft.mailbox']
+        cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.user = cls.env['res.users'].create({
             'name': 'Gate Owner', 'login': 'gate@test.local', 'email': 'gate@test.local',
             'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
@@ -72,17 +72,17 @@ class TestInternalDomainGate(TransactionCase):
         # is a separate, already-tested rule and would otherwise mask this one.
         cls.notification_mailbox = cls.Mailbox.create({
             'email': 'notifications@gate.test',
-            'x_mailbox_type': 'notification',
-            'x_owner_user_id': cls.user.id,
+            'mailbox_type': 'notification',
+            'owner_user_id': cls.user.id,
         })
         cls.Domains.set_domains([])
 
     def _sync_mailbox(self, **vals):
         base = {
             'email': 'support@gate.test',
-            'x_mailbox_type': 'personal',
-            'x_owner_user_id': self.user.id,
-            'x_sync_mode': 'all',
+            'mailbox_type': 'personal',
+            'owner_user_id': self.user.id,
+            'sync_mode': 'all',
         }
         base.update(vals)
         return self.Mailbox.create(base)
@@ -94,20 +94,20 @@ class TestInternalDomainGate(TransactionCase):
     def test_enabling_sync_with_domains_is_allowed(self):
         self.Domains.set_domains(['gate.test'])
         mailbox = self._sync_mailbox()
-        self.assertEqual(mailbox.x_sync_mode, 'all')
+        self.assertEqual(mailbox.sync_mode, 'all')
 
     def test_explicit_opt_out_unblocks(self):
         """The escape hatch has to work — but only when someone asked for it."""
         self.env['ir.config_parameter'].sudo().set_param(
-            'x_pan_outlook_pro.sync_internal_email', 'True'
+            'pan_mail_pro.sync_internal_email', 'True'
         )
         mailbox = self._sync_mailbox()
-        self.assertEqual(mailbox.x_sync_mode, 'all')
+        self.assertEqual(mailbox.sync_mode, 'all')
 
     def test_send_only_mailbox_is_never_blocked(self):
         """The gate is about *incoming* mail. Sending has no leak to prevent."""
-        mailbox = self._sync_mailbox(x_sync_mode='none')
-        self.assertEqual(mailbox.x_sync_mode, 'none')
+        mailbox = self._sync_mailbox(sync_mode='none')
+        self.assertEqual(mailbox.sync_mode, 'none')
 
     def test_sync_run_refuses_when_domains_removed_later(self):
         """The constraint guards configuration; this guards the list being emptied."""
@@ -116,7 +116,7 @@ class TestInternalDomainGate(TransactionCase):
         self.Domains.set_domains([])
 
         with self.assertRaises(UserError):
-            self.env['microsoft.incoming.mail.processor']._process_mailbox(mailbox)
+            self.env['pan.mail.fetcher']._process_mailbox(mailbox)
 
     def test_cron_records_the_block_on_the_mailbox(self):
         """A blocked sync must be visible, not just logged."""
@@ -125,10 +125,10 @@ class TestInternalDomainGate(TransactionCase):
         mailbox.write({'state': 'active'})
         self.Domains.set_domains([])
 
-        self.env['microsoft.incoming.mail.processor']._cron_fetch_incoming_mail()
+        self.env['pan.mail.fetcher']._cron_fetch_incoming_mail()
 
         self.assertEqual(mailbox.state, 'error')
-        self.assertIn('internal email domains', mailbox.x_error_message)
+        self.assertIn('internal email domains', mailbox.error_message)
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -140,8 +140,8 @@ class TestInternalDomainFiltering(TransactionCase):
         super().setUpClass()
         cls.Domains = cls.env['pan.mail.internal.domains']
         cls.Domains.set_domains(['company.com'])
-        cls.mailbox = cls.env['x_microsoft.mailbox'].create({
-            'email': 'info@company.com', 'x_mailbox_type': 'shared',
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'info@company.com', 'mailbox_type': 'shared',
         })
 
     def test_internal_sender_is_skipped(self):
@@ -152,12 +152,12 @@ class TestInternalDomainFiltering(TransactionCase):
 
     def test_global_opt_out_keeps_everything(self):
         self.env['ir.config_parameter'].sudo().set_param(
-            'x_pan_outlook_pro.sync_internal_email', 'True'
+            'pan_mail_pro.sync_internal_email', 'True'
         )
         self.assertFalse(self.Domains.should_skip('colleague@company.com', self.mailbox))
 
     def test_per_mailbox_opt_out_keeps_everything_for_that_mailbox(self):
-        self.mailbox.x_exclude_internal = False
+        self.mailbox.exclude_internal = False
         self.assertFalse(self.Domains.should_skip('colleague@company.com', self.mailbox))
 
     def test_empty_list_no_longer_means_nothing_is_internal(self):
@@ -180,8 +180,8 @@ class TestInternalDomainSuggestions(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Domains = cls.env['pan.mail.internal.domains']
-        cls.env['x_microsoft.mailbox'].create({
-            'email': 'info@suggested.test', 'x_mailbox_type': 'shared',
+        cls.env['pan.mail.mailbox'].create({
+            'email': 'info@suggested.test', 'mailbox_type': 'shared',
         })
 
     def test_mailbox_domains_are_suggested(self):
