@@ -20,6 +20,21 @@ from .microsoft_mailbox import SYNCING_MODES
 
 _logger = logging.getLogger(__name__)
 
+# Every post the sync makes carries this context, and `pan_mail_imported` is
+# the whole of the boundary in ARCHITECTURE.md §9.10: it means "this post is an
+# import", which no field on the message does. `x_mailbox_id` was the obvious
+# candidate and is wrong — `mail.mail._record_sent()` stamps that same field on
+# mail Odoo itself sent, so keying the boundary on it would conflate the two
+# directions of one mailbox and eventually silence something a person wrote.
+#
+# `mail_create_nosubscribe` rides along because both halves are one sentence:
+# an import notifies nobody and subscribes nobody.
+IMPORT_CTX = {
+    'pan_mail_imported': True,
+    'mail_create_nosubscribe': True,
+}
+
+
 
 class MicrosoftIncomingMailProcessor(models.AbstractModel):
     """
@@ -419,12 +434,11 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             post_email_from = f'"{author_name}" <{author_email}>' if author_name else author_email
 
         # Lens fields, passed *into* every message_post rather than written
-        # afterwards. Two reasons, and only the second is load-bearing: every
-        # routing outcome is stamped the same way, and `mail.thread`'s notify
-        # override reads x_mailbox_id to recognise an imported message. A write
-        # after the post happens once the notification is already computed and
-        # the envelope already sent, so moving these back out silently disarms
-        # the boundary in ARCHITECTURE.md §9.10.
+        # afterwards, so every routing outcome is stamped the same way and one
+        # write disappears. The matcher decides *where* the mail lands; this
+        # records *how it arrived*. It does not arm the boundary — IMPORT_CTX
+        # does, precisely because these same fields are written for outgoing
+        # mail too and so cannot tell the two directions apart.
         lens_vals = {
             'x_direction': 'outgoing' if is_outgoing else 'incoming',
             'x_mailbox_id': mailbox.id,
@@ -437,7 +451,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 # the only difference between them is which models the matcher
                 # was allowed to consider, which was decided above.
                 target_record = self.env[match['model']].browse(match['res_id'])
-                message = target_record.message_post(
+                message = target_record.with_context(**IMPORT_CTX).message_post(
                     body=body_content,
                     subject=full_message.get('subject', ''),
                     message_type='email',
@@ -460,9 +474,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 # the only sensible home for it.
                 outcome = 'sent_item'
                 target_record = partner
-                message = target_record.with_context(
-                    mail_create_nosubscribe=True,
-                ).message_post(
+                message = target_record.with_context(**IMPORT_CTX).message_post(
                     body=body_content,
                     subject=full_message.get('subject', ''),
                     message_type='email',
@@ -675,9 +687,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             msg_dict: Parsed email dict in Odoo format
             contact_email: Sender email address
             lens_vals: x_direction / x_mailbox_id / x_account_id, passed into
-                the post rather than written after it. x_mailbox_id is what
-                `mail.thread._notify_thread` reads to recognise an imported
-                message, so it has to be present while the message is created.
+                the post rather than written after it. Descriptive only; the
+                notify boundary is armed by IMPORT_CTX, not by these.
 
         Returns:
             tuple: (record, message) - the created record and its first message
@@ -693,9 +704,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # Route to Contact: post to partner's chatter (default behavior)
         if not route_to_team or not alias or not alias.alias_model_id:
             _logger.info(f"[Incoming Mail] Routing to contact chatter for mailbox {mailbox.email}")
-            message = partner.with_context(
-                mail_create_nosubscribe=True,
-            ).message_post(
+            message = partner.with_context(**IMPORT_CTX).message_post(
                 body=msg_dict.get('body', ''),
                 subject=msg_dict.get('subject', ''),
                 message_type='email',
@@ -731,10 +740,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         record = Model.message_new(msg_dict, custom_values=custom_values)
 
         # Post the email body to the chatter (message_new only creates the record).
-        # Nothing suppresses recipients here any more: the lens vals mark the
-        # message as imported and `mail.thread._notify_thread` drops the whole
-        # notification pass. See ARCHITECTURE.md §9.10.
-        message = record.message_post(
+        # IMPORT_CTX marks the post as an import, so `mail.thread._notify_thread`
+        # drops the whole notification pass. See ARCHITECTURE.md §9.10.
+        message = record.with_context(**IMPORT_CTX).message_post(
             body=msg_dict.get('body', ''),
             subject=msg_dict.get('subject', ''),
             message_type='email',

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""The boundary: a message the sync created notifies nobody.
+"""The boundary: a message the sync imported notifies nobody.
 
 An imported mail has already reached its recipients through the provider.
 Odoo sending it again is wrong in every variant and for every mix of
@@ -20,6 +20,10 @@ Two earlier attempts at the same goal failed silently, and this replaces both:
 Both were guards on one route into the hazard. This one sits where every route
 passes, which is why it is the only one that can be tested once.
 
+It is also provider-neutral by construction: the rule lives on `mail.thread`
+and is armed in `pan_mail_fetcher`, which Graph, Gmail and IMAP all funnel
+through. There is no place for the three to disagree.
+
 See ARCHITECTURE.md §9.10.
 """
 import logging
@@ -27,6 +31,9 @@ import logging
 from odoo import models
 
 _logger = logging.getLogger(__name__)
+
+#: Set by `pan_mail_fetcher.IMPORT_CTX` on every post the sync makes.
+IMPORT_FLAG = 'pan_mail_imported'
 
 
 class MailThread(models.AbstractModel):
@@ -39,30 +46,22 @@ class MailThread(models.AbstractModel):
         message nobody follows, so nothing downstream has to know this happened:
         no `mail.notification` rows, no `mail.mail`, no web push.
 
-        The discriminator is `x_mailbox_id`, which only the fetcher sets. It has
-        to be part of the `message_post()` call rather than a write afterwards,
-        because by the time a later write runs the notification has already been
-        computed and the envelope already exists. `pan_mail_fetcher` passes it
-        with the other lens fields for exactly this reason -- moving it back out
-        would disarm this override without breaking a single other test.
+        The discriminator is the context flag, not a field on the message. A
+        field cannot answer this question: `x_mailbox_id` and `x_direction` are
+        written for outgoing mail too, by `mail.mail._record_sent()`, so a
+        boundary keyed on either would eventually silence a message a person
+        wrote from the chatter. The flag says what is actually being asked --
+        "is this post an import" -- and it is set in exactly one place.
+
+        The cost of a context flag is that it is invisible afterwards and easy
+        to drop in a refactor. `tests/test_sync_sends_nothing.py` is the answer
+        to that: it asserts the invariant end to end, per provider and per
+        direction, so losing the flag fails the build rather than a customer.
         """
-        if self._pan_mail_is_imported(message, msg_vals):
+        if self.env.context.get(IMPORT_FLAG):
             _logger.debug(
                 '[Incoming Mail] Suppressed notification for imported message %s',
                 message.id if message else '?',
             )
             return []
         return super()._notify_thread(message, msg_vals=msg_vals, **kwargs)
-
-    @staticmethod
-    def _pan_mail_is_imported(message, msg_vals=False):
-        """True when this message came in through a mailbox sync.
-
-        Both sources are checked because Odoo hands the values around twice: as
-        the pending `msg_vals` dict while the message is being created, and on
-        the record once it exists. Reading only one of them works right up until
-        the version that stops populating it.
-        """
-        if msg_vals and msg_vals.get('x_mailbox_id'):
-            return True
-        return bool(message) and bool(message.x_mailbox_id)

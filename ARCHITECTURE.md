@@ -767,11 +767,18 @@ sending it again is wrong in every variant and for every mix of recipients,
 which is what makes this a boundary rather than a filter: there is no
 legitimate exception to argue about.
 
-The rule is one override. A message carrying `x_mailbox_id` came from the sync,
-so `_notify_thread()` returns no recipients and posts nothing. For that to work
-the lens fields have to be set *inside* the `message_post()` call rather than in
-a write afterwards, because by the time that write runs the notification has
-already been computed and the `mail.mail` already exists.
+The rule is one override. Every post the sync makes carries
+`pan_mail_fetcher.IMPORT_CTX`, and `mail.thread._notify_thread()` returns no
+recipients for anything holding its `pan_mail_imported` flag.
+
+The discriminator is a context flag rather than a field, and that is a
+deliberate correction. `x_mailbox_id` looks like the natural answer and is
+wrong: `mail.mail._record_sent()` stamps the same field on mail Odoo itself
+sent, so a boundary keyed on it would conflate the two directions of one
+mailbox and eventually silence a message a person wrote from the chatter. The
+flag says exactly what is being asked — is this post an import — and is set in
+one place. Its cost is being invisible afterwards and easy to drop in a
+refactor, which is what `tests/test_sync_sends_nothing.py` exists to catch.
 
 Two earlier attempts at the same goal failed silently, and the override
 replaces both. `incoming_email_to` and `incoming_email_cc` were handed to
