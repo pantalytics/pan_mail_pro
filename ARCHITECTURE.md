@@ -689,11 +689,19 @@ is deliberately not listed in `__manifest__.py`.
 **Always, at the credential funnel.** `encryption_utils.decrypt_value()` returns
 empty. Every credential the module owns is read through that one function —
 access tokens, refresh tokens, IMAP/SMTP passwords, both providers' client
-secrets — so a neutralized database cannot reach a provider *at all*, including
-through call sites nobody has written yet. This is the guarantee; the other two
-layers are convenience and message. It returns empty rather than raising because
-"no credentials" is a state every caller already handles, and it leaves the
-account form readable in staging.
+secrets — so nothing can authenticate anywhere, including through call sites
+nobody has written yet. It returns empty rather than raising because "no
+credentials" is a state every caller already handles, and it leaves the account
+form readable in staging.
+
+**Always, before the network.** An empty credential fails at the *far* end: the
+connection still opens and the provider still rejects it, once per attempt. So
+each client also calls `_refuse_when_neutralized()` at the one point its
+transport cannot avoid — `get_valid_token` and `_exchange_code_for_tokens` for
+an OAuth provider, `_require_credentials` for a password one. Nothing leaves the
+database at all, and re-authorizing in staging cannot write live credentials
+back in. `tests/test_provider_contract.py` holds a new provider to the same
+rule.
 
 **Where a sentence is owed.** Routing an outgoing mail, the sync cron and
 "Sync Now" each ask directly, so the refusal says *neutralized* instead of

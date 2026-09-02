@@ -307,6 +307,7 @@ class ImapSmtpClient(models.AbstractModel):
             ))
 
     def _require_credentials(self, account):
+        self._refuse_when_neutralized()
         if not self.account_is_connected(account):
             raise UserError(_(
                 'Email account "%s" is missing its server, login or password.'

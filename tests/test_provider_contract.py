@@ -254,3 +254,45 @@ class TestGraphNormalization(TransactionCase):
         self.assertEqual(result['thread_id'], 'conv-999')
         self.assertIsNone(result['error'])
         self.assertEqual(seen['reply_context'], {'provider_message_id': 'GRAPH-MSG-1'})
+
+
+@tagged('post_install', '-at_install', 'pan_mail_pro')
+class TestNeutralizedProviderCalls(TransactionCase):
+    """No client may reach the network from a database copy.
+
+    An empty credential already makes a send fail, but it fails at the far end:
+    staging would still open the connection and collect a rejection from the
+    provider on every attempt. Each client guards the one point its transport
+    cannot avoid, and a new provider has to do the same.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.env['ir.config_parameter'].sudo().set_param('database.is_neutralized', 'True')
+
+    def test_no_registered_client_will_contact_its_provider(self):
+        for code in PROVIDER_CLIENTS:
+            client = get_provider_client(self.env, code)
+            account = self.env['pan.mail.account'].sudo().create({
+                'email': f'{code}@example.com',
+                'provider': code,
+            })
+            with self.subTest(provider=code):
+                with self.assertRaises(UserError) as caught:
+                    if client.uses_oauth:
+                        client.get_valid_token(account)
+                    else:
+                        client._require_credentials(account)
+                self.assertIn('neutralized', str(caught.exception))
+
+    def test_no_oauth_client_will_exchange_an_authorization_code(self):
+        """Re-authorizing in staging would write live credentials back in."""
+        for code in PROVIDER_CLIENTS:
+            client = get_provider_client(self.env, code)
+            if not client.uses_oauth:
+                continue
+            with self.subTest(provider=code):
+                with self.assertRaises(UserError) as caught:
+                    client._exchange_code_for_tokens('a-code', 'https://odoo.test/cb')
+                self.assertIn('neutralized', str(caught.exception))
+

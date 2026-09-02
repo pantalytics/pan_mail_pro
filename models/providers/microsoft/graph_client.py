@@ -183,6 +183,7 @@ class MicrosoftGraphClient(models.AbstractModel):
     @api.model
     def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
         """Exchange authorization code for access and refresh tokens"""
+        self._refuse_when_neutralized()
         config = self._get_config_params()
         token_url = TOKEN_URL.format(tenant=config['tenant_id'])
 
@@ -291,6 +292,7 @@ class MicrosoftGraphClient(models.AbstractModel):
     @api.model
     def get_valid_token(self, account):
         """Get a valid access token for `account`, refreshing if necessary."""
+        self._refuse_when_neutralized()
         # Check if token is expired or about to expire (5 min buffer)
         if account.token_expiry:
             buffer_time = datetime.now() + timedelta(minutes=5)
