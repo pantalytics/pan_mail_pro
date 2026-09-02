@@ -124,7 +124,10 @@ class MailMail(models.Model):
         instead and go out on the next mail-queue run.
         """
         self.ensure_one()
-        if not self._is_internal_user_notification():
+        # Mirrors the order in `_resolve_route`: a mail somebody chose a sender
+        # for does not take the notification route, so it is not waiting on the
+        # notification mailbox either. It fails, or goes out, on its own merits.
+        if self.x_send_from_mailbox_id or not self._is_internal_user_notification():
             return False
         try:
             self._notification_route()
@@ -335,9 +338,30 @@ class MailMail(models.Model):
 
         self.write({'state': 'sent'})
 
+        if mailbox != self.x_send_from_mailbox_id:
+            # The mail left from a mailbox nobody wrote on the record — the
+            # notification route, almost always. Say so, or the record keeps
+            # claiming a sender that never sent it, which is how issue #39 went
+            # unnoticed for a month.
+            #
+            # `email_from` is delegated to `mail.message`, and a chatter post
+            # notified in several batches shares one message with the human who
+            # wrote it. Rewriting *that* From to notifications@ would be a worse
+            # lie than the one being fixed, so it is only touched when the mail
+            # owns its message. `is_notification` is Odoo's own flag for the
+            # difference.
+            sender_vals = {'x_send_from_mailbox_id': mailbox.id}
+            if not self.is_notification and mailbox.email:
+                sender_vals['email_from'] = mailbox.email
+            # sudo: `_check_mailbox_permission` guards what a *user* may pick.
+            # This is the router recording what it did, after the fact.
+            self.sudo().write(sender_vals)
+
         if self.mail_message_id:
-            # Lens fields. Set here rather than at create() because only a mail
-            # that actually went out is outgoing communication.
+            # The lens fields ride along on a write that already happens, so
+            # stamping direction and mailbox costs no extra query. They are set
+            # here rather than at create() because only a mail that actually
+            # went out is outgoing communication.
             self.mail_message_id.write({
                 'x_direction': 'outgoing',
                 'x_mailbox_id': mailbox.id,
@@ -483,26 +507,25 @@ class MailMail(models.Model):
             )
 
     def _is_internal_user_notification(self):
-        """
-        Check if this mail is a notification to an internal Odoo user.
+        """Is this mail addressed to one of our own employees?
 
-        Logic: If a mail.mail exists for a partner that is linked to a res.users,
-        it means _notify_thread_by_email() was called for that user. This only
-        happens when the user has notification_type='email' in their preferences.
+        Only asked for mail nobody chose a sender for — see `_resolve_route`.
+        There it decides between the notification mailbox and the author's own,
+        so the question is about *the recipients*: mail to colleagues is system
+        mail and comes from notifications@.
 
-        Users with notification_type='inbox' never get a mail.mail created for them
-        (they get inbox notifications instead).
+        **A user is not the same thing as an employee.** Portal users are
+        customers: they have a `res.users` row so they can log in, with
+        `share=True`. Counting them here classified quotations and invoices as
+        internal notifications, and they went out from notifications@ instead of
+        from the salesperson (issue #39). So only `share=False` users count.
 
-        Therefore: any mail.mail going to a user-linked partner = internal notification
-        → should use notifications@ mailbox.
-
-        Returns:
-            bool: True if any recipient is an internal Odoo user
+        Recipients with `notification_type='inbox'` never reach this method —
+        Odoo creates no `mail.mail` for them at all.
         """
         self.ensure_one()
-        # Check recipient_ids - if any partner is linked to a user, it's internal
         for partner in self.recipient_ids:
-            if partner.user_ids:
+            if partner.user_ids.filtered(lambda u: not u.share):
                 _logger.info(f"[Outgoing Mail] Email {self.id} IS internal user notification to {partner.name}")
                 return True
         return False
@@ -532,29 +555,49 @@ class MailMail(models.Model):
                 'Pro will not send. The email stays queued.'
             ))
 
-        # System mail to our own users is what the notification mailbox is for.
+        author_user = self._author_user()
+
+        # An explicit "Send From" choice comes first, because it is the only
+        # signal here that came from a person, and a person's choice is never
+        # overruled silently. It also survives templates whose email_from
+        # resolves author_id to the company partner rather than to whoever
+        # pressed Send.
+        #
+        # It used to sit *below* the internal-notification branch, which meant
+        # one internal recipient on a quotation was enough to send it from
+        # notifications@ while the record still named the salesperson — the
+        # sender never found out (issue #39).
+        if self.x_send_from_mailbox_id:
+            return self._mailbox_route(self.x_send_from_mailbox_id, author_user)
+
+        # Nobody chose, so the recipients decide: system mail to our own
+        # employees is what the notification mailbox is for.
         if self._is_internal_user_notification():
             return self._notification_route()
 
-        author_user = self._author_user()
+        # Mail generated on behalf of somebody outside Odoo — an auto-reply, an
+        # activity notification triggered by an incoming email — has no user to
+        # send as. The notification mailbox is the answer by definition here,
+        # not a fallback from a failed lookup.
+        if not author_user:
+            return self._notification_route()
 
-        # An explicit "Send From" choice in the composer outranks the author's
-        # default: it is the only signal that came from a person. It also
-        # survives templates whose email_from resolves author_id to the company
-        # partner rather than to whoever pressed Send.
-        mailbox = self.x_send_from_mailbox_id or author_user.x_default_mailbox_id
-
-        if not mailbox:
-            # Mail generated on behalf of somebody outside Odoo — an auto-reply,
-            # an activity notification triggered by an incoming email — has no
-            # user to send as. The notification mailbox is the answer by
-            # definition here, not a fallback from a failed lookup.
-            if not author_user:
-                return self._notification_route()
+        if not author_user.x_default_mailbox_id:
             raise RoutingError(_(
                 'User "%s" has no default mailbox. Open My Profile → Mail Pro '
                 'and pick the address to send from.'
             ) % author_user.name)
+
+        return self._mailbox_route(
+            author_user.x_default_mailbox_id, author_user)
+
+    def _mailbox_route(self, mailbox, author_user):
+        """A named mailbox and the credentials it sends with, or RoutingError.
+
+        Shared by the composer's explicit choice and by the author's default, so
+        neither can grow its own idea of what a permitted sender is.
+        """
+        self.ensure_one()
 
         # Defence in depth behind `_check_mailbox_permission`, which already
         # refused this at create time. A row can predate that check or arrive

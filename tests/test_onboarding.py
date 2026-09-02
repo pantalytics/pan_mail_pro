@@ -102,6 +102,24 @@ class TestNotificationGapQueuesMail(TransactionCase):
 
         self.assertEqual(settings.x_setup_pending_notifications, 1)
 
+    def test_a_chosen_sender_is_not_held_for_the_notification_mailbox(self):
+        """The hold is for mail that would take the notification route.
+
+        A mail somebody picked a sender for does not, so it goes out — or
+        fails naming that mailbox — rather than waiting on notifications@.
+        """
+        mailbox = self.env['pan.mail.mailbox'].search(
+            [('email', '=', 'info@gap.test')], limit=1)
+        mail = self._notification_to_colleague()
+        mail.x_send_from_mailbox_id = mailbox
+
+        self.assertFalse(mail._is_awaiting_notification_mailbox())
+
+        with self.assertRaises(UserError):
+            mail.send()
+
+        self.assertNotEqual(mail.failure_reason, NOTIFICATION_PENDING_REASON)
+
     def test_external_mail_still_fails_loudly(self):
         """Only internal notifications get the benefit of the doubt.
 
