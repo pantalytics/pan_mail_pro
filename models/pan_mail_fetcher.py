@@ -10,6 +10,7 @@ in `mail_provider_client.py`. No Graph, Gmail or other wire-specific key should
 ever appear below this line.
 """
 import logging
+from typing import NamedTuple
 from markupsafe import Markup
 
 from odoo import models, api, fields, _
@@ -44,6 +45,24 @@ _logger = logging.getLogger(__name__)
 #   belongs on the `message_new()` path and does nothing for a `message_post()`.
 # - `mail_post_autofollow` keeps the recipients out. False is already Odoo's
 #   default; it is stated so the intent survives a default changing.
+class Skip(NamedTuple):
+    """Why a message may not enter Odoo.
+
+    `record` is the part worth having in the type: whether a refusal leaves a
+    row in `pan.mail.item` is a property of the gate that refused, declared
+    next to it, rather than a pattern to reconstruct from every call site. It
+    used to be three ad-hoc `_record_skip()` calls among seven bare returns.
+
+    `quiet` drops the refusal to DEBUG. Only the duplicate gate sets it: an
+    overlapping fetch window is normal and deliberate on IMAP, so a refusal
+    there is the system working, and at INFO it would drown the log.
+    """
+    reason: str
+    detail: str = ''
+    record: bool = False
+    quiet: bool = False
+
+
 IMPORT_CTX = {
     'pan_mail_imported': True,
     'mail_post_autofollow_author_skip': True,
@@ -222,6 +241,188 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         return processed, latest_datetime
 
+    # ------------------------------------------------------------------ #
+    # Gates — may this message enter Odoo at all?
+    # ------------------------------------------------------------------ #
+
+    def _gate_rules(self):
+        """Ordered gate method names, strongest first.
+
+        Order is the contract: a gate may assume every gate before it passed,
+        and may leave what it resolved in `ctx` for the ones after it. Add a
+        gate here and nowhere else.
+
+        The same shape as `pan.mail.matcher._match_rules()` on purpose. That
+        ladder decides *where* a mail goes; this one decides *whether* it may
+        come in. Two halves of one question deserve one pattern, and these
+        seven decisions used to be seven bare `return False` statements strewn
+        through a two-hundred-line method — which is how the internal check
+        ended up guarding one folder and not the other.
+        """
+        return [
+            '_gate_duplicate',
+            '_gate_odoo_originated',
+            '_gate_counterpart',
+            '_gate_internal_domain',
+            '_gate_blocked_contact',
+            '_gate_internal_user',
+            '_gate_sync_mode',
+        ]
+
+    def _refuse(self, ctx):
+        """Run the ladder. Returns the `Skip` that refused, or None to proceed.
+
+        Recording is done here rather than inside the gates, so a gate declares
+        whether its refusal deserves a row in `pan.mail.item` and never has to
+        know how one is written.
+        """
+        for name in self._gate_rules():
+            skip = getattr(self, name)(ctx)
+            if not skip:
+                continue
+            _logger.log(
+                logging.DEBUG if skip.quiet else logging.INFO,
+                "[Incoming Mail] Refused %s at %s: %s",
+                ctx['internet_message_id'], name, skip.reason,
+            )
+            if skip.record:
+                self.env['pan.mail.item']._record_skip(
+                    ctx['mailbox'], self._full_message(ctx), ctx['folder'],
+                    skip.reason, detail=skip.detail,
+                    direction='outgoing' if ctx['is_outgoing'] else 'incoming',
+                )
+            return skip
+        return None
+
+    def _full_message(self, ctx):
+        """The full message, fetched once and cached on `ctx`.
+
+        Lazy rather than fetched up front because the first gate is the
+        duplicate check, and on a mailbox the sync has already seen that is
+        most of every run. Paying a provider round-trip to discover we already
+        have the mail would be the most expensive way to do nothing.
+        """
+        if 'full_message' not in ctx:
+            mailbox = ctx['mailbox']
+            client = mailbox._get_client()
+            account = client.resolve_receiving_account(mailbox)
+            ctx['client'] = client
+            ctx['account'] = account
+            ctx['full_message'] = client.get_message(
+                account=account,
+                mailbox=mailbox,
+                provider_message_id=ctx['message']['provider_message_id'],
+            )
+        return ctx['full_message']
+
+    def _gate_duplicate(self, ctx):
+        """Already imported. Cheapest question, so it is asked first and
+        before anything reaches out to the provider."""
+        if self._is_duplicate(ctx['internet_message_id']):
+            return Skip(
+                'duplicate', _('This message is already in Odoo.'), quiet=True,
+            )
+        return None
+
+    def _gate_odoo_originated(self, ctx):
+        """Mail Odoo itself sent, coming back through the mailbox it left from.
+
+        The loop guard. Our own `X-Odoo-*` headers survive the round trip, and
+        a re-import would post Odoo's own message onto the record it came from.
+        """
+        headers = self._full_message(ctx).get('headers', {})
+        if headers.get('x-odoo-model') or headers.get('x-odoo-mail-id'):
+            return Skip('odoo_originated', _('Odoo sent this message itself.'))
+        return None
+
+    def _gate_counterpart(self, ctx):
+        """Resolve the other party, and refuse a sent item that has none.
+
+        Which field holds the counterpart is the whole of the direction
+        question: the inbox reads the From, Sent Items reads the To. Every gate
+        after this one asks about the address this gate chose, which is why it
+        is resolved once, here, rather than re-derived by each of them.
+        """
+        full_message = self._full_message(ctx)
+        if ctx['is_outgoing']:
+            recipients = full_message.get('to') or []
+            if not recipients:
+                return Skip('no_recipient', _('This sent message has no recipient.'))
+            party = recipients[0]
+        else:
+            party = full_message.get('from') or {}
+        ctx['contact_email'] = party.get('email', '')
+        ctx['contact_name'] = party.get('name', '')
+        _logger.debug(
+            "[Incoming Mail] Counterpart: name=%r email=%r",
+            ctx['contact_name'], ctx['contact_email'],
+        )
+        return None
+
+    def _gate_internal_domain(self, ctx):
+        """The company's own mail, which has no business being copied to Odoo.
+
+        Inbox only, today. That asymmetry is a known gap rather than a
+        decision: the sender of a sent item is always us, so checking the
+        sender there would skip everything — but the answer to that is to check
+        the counterpart, which is what `ctx['contact_email']` now holds. See
+        ARCHITECTURE.md §3 and #37.
+        """
+        if ctx['is_outgoing'] or ctx['force_import']:
+            return None
+        if self._is_internal_domain(ctx['contact_email'], ctx['mailbox']):
+            return Skip('internal_domain', _('This address is one of ours.'))
+        return None
+
+    def _gate_blocked_contact(self, ctx):
+        """A contact that objected to processing.
+
+        Resolves the partner for the gates after it. Deliberately leaves no
+        trace: a block list is an objection to processing, and a queue entry
+        naming the person would be processing.
+        """
+        ctx['partner'] = self._find_partner(ctx['contact_email'])
+        if ctx['partner'] and ctx['partner'].x_email_sync_blocked:
+            return Skip('blocked_contact', _('This contact is blocked from sync.'))
+        return None
+
+    def _gate_internal_user(self, ctx):
+        """A colleague, who has the mail in their own inbox already.
+
+        Recognises only addresses with an Odoo user behind them, so a shared or
+        functional address like planning@ passes as an outside correspondent.
+        That gap is the other half of #37 phase 2, and the reason this reads
+        `partner.user_ids` rather than asking the domain.
+        """
+        partner = ctx['partner']
+        if partner and partner.user_ids:
+            return Skip('internal_user', _('This address belongs to an Odoo user.'))
+        return None
+
+    def _gate_sync_mode(self, ctx):
+        """What the mailbox was told to accept.
+
+        The only gate whose refusals are worth recording: an unknown contact is
+        a decision a person may want to reverse, and the triage queue is where
+        they reverse it. The gates above refuse things nobody would want back.
+        """
+        mailbox = ctx['mailbox']
+        if ctx['partner'] or ctx['force_import']:
+            return None
+        if mailbox.x_sync_mode == 'known_partners':
+            return Skip(
+                'unknown_contact',
+                _('Sync mode only accepts mail from existing contacts.'),
+                record=True,
+            )
+        if mailbox.x_sync_mode == 'all' and mailbox.x_queue_unknown_contacts:
+            return Skip(
+                'queued_for_review',
+                _('This mailbox holds mail from unknown senders for review.'),
+                record=True,
+            )
+        return None
+
     def _process_message(self, mailbox, message, folder):
         """
         Process a single message using Odoo's native routing.
@@ -239,9 +440,21 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # This is the provider's own resource handle, not the RFC Message-ID.
         provider_message_id = message.get('provider_message_id')
 
-        # Check for duplicate
-        if self._is_duplicate(internet_message_id):
-            _logger.debug(f"[Incoming Mail] Skipping duplicate: {internet_message_id}")
+        ctx = {
+            'mailbox': mailbox,
+            'folder': folder,
+            'message': message,
+            'internet_message_id': internet_message_id,
+            'is_outgoing': folder == FOLDER_SENT,
+            # An operator re-importing a held item lifts the *filters* — sync
+            # mode and internal-domain exclusion. It deliberately does not lift
+            # the duplicate guard, the Odoo loop guard, or the contact block
+            # list: the block list is in practice an objection to processing,
+            # and no button in this module should be able to override it.
+            'force_import': bool(self.env.context.get('pan_mail_force_import')),
+        }
+
+        if self._refuse(ctx):
             return False
 
         # Sender, recipient and subject are personal data. They are logged at
@@ -254,104 +467,12 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             message.get('subject') or '(no subject)',
         )
 
-        # Get full message with headers for threading
-        client = mailbox._get_client()
-        account = client.resolve_receiving_account(mailbox)
-        full_message = client.get_message(
-            account=account,
-            mailbox=mailbox,
-            provider_message_id=message['provider_message_id'],
-        )
-
-        # Check for Odoo-originated emails (skip to prevent import loops)
-        # We add X-Odoo-* headers to all outgoing emails
-        headers = full_message.get('headers', {})
-        if headers.get('x-odoo-model') or headers.get('x-odoo-mail-id'):
-            _logger.info(f"[Incoming Mail] Skipping Odoo-originated email: {internet_message_id}")
-            return False
-
-        # An operator re-importing a held item lifts the *filters* — sync mode
-        # and internal-domain exclusion. It deliberately does not lift the
-        # duplicate guard, the Odoo loop guard, or the contact block list: the
-        # block list is in practice an objection to processing, and no button in
-        # this module should be able to override it.
-        force_import = bool(self.env.context.get('pan_mail_force_import'))
-
-        # Determine if this is incoming or outgoing (for 2-way sync)
-        is_outgoing = folder == FOLDER_SENT
-
-        # For incoming: use sender (from). For outgoing: use first recipient (to)
-        if is_outgoing:
-            # Sent Items: get the recipient
-            to_recipients = full_message.get('to') or []
-            if not to_recipients:
-                _logger.info(f"[Incoming Mail] Skipping sent email without recipients: {internet_message_id}")
-                return False
-            contact_email = to_recipients[0].get('email', '')
-            contact_name = to_recipients[0].get('name', '')
-            _logger.debug(f"[Incoming Mail] Sent to: name='{contact_name}', email='{contact_email}'")
-        else:
-            # Inbox: use the sender
-            sender = full_message.get('from') or {}
-            contact_email = sender.get('email', '')
-            contact_name = sender.get('name', '')
-            _logger.debug(f"[Incoming Mail] From: name='{contact_name}', email='{contact_email}'")
-
-        # Skip emails from/to internal domains (only for incoming, not sent items)
-        # This is a per-mailbox setting - team mailboxes may want internal emails logged
-        if not is_outgoing and not force_import and self._is_internal_domain(contact_email, mailbox):
-            _logger.info("[Incoming Mail] Skipping %s: internal domain", internet_message_id)
-            return False
-
-        # Find existing partner (if any)
-        partner = self._find_partner(contact_email)
-
-        # Check if partner is blocked
-        if partner and partner.x_email_sync_blocked:
-            _logger.info("[Incoming Mail] Skipping %s: blocked contact", internet_message_id)
-            return False
-
-        # Skip internal users (Odoo employees)
-        if partner and partner.user_ids:
-            _logger.info("[Incoming Mail] Skipping %s: sender is an internal user", internet_message_id)
-            return False
-
-        # Determine if this is a known or unknown contact
-        is_known_contact = bool(partner)
-
-        # Apply routing rules based on sync mode and contact type
-        if mailbox.x_sync_mode == 'known_partners':
-            # Only process known contacts
-            if not is_known_contact and not force_import:
-                _logger.info(
-                    "[Incoming Mail] Skipping %s: unknown contact (sync mode=known_partners)",
-                    internet_message_id,
-                )
-                self.env['pan.mail.item']._record_skip(
-                    mailbox, full_message, folder, 'unknown_contact',
-                    detail=_('Sync mode only accepts mail from existing contacts.'),
-                    direction='outgoing' if is_outgoing else 'incoming',
-                )
-                return False
-            _logger.debug(f"[Incoming Mail] Known partner filter passed: {partner.name}")
-
-        elif mailbox.x_sync_mode == 'all':
-            # 'all' mode: process both known and unknown contacts
-            if not is_known_contact:
-                # Unknown contact - check routing setting
-                if mailbox.x_queue_unknown_contacts and not force_import:
-                    _logger.info(
-                        "[Incoming Mail] Holding %s for review: unknown contact",
-                        internet_message_id,
-                    )
-                    self.env['pan.mail.item']._record_skip(
-                        mailbox, full_message, folder, 'queued_for_review',
-                        detail=_('This mailbox holds mail from unknown senders for review.'),
-                        direction='outgoing' if is_outgoing else 'incoming',
-                    )
-                    return False
-                # 'auto' mode: will create partner below
-            _logger.info(f"[Incoming Mail] All contacts mode: processing {'known' if is_known_contact else 'unknown'} contact")
+        full_message = self._full_message(ctx)
+        client = ctx['client']
+        account = ctx['account']
+        contact_email = ctx['contact_email']
+        contact_name = ctx['contact_name']
+        is_outgoing = ctx['is_outgoing']
 
         # Get attachments if present
         # Note: has_attachments is false for inline-only images, so also check for cid: in body

@@ -244,13 +244,43 @@ Alias domains still feed `suggest_domains()`; they no longer decide anything.
 Turning the filter off is possible but explicit: globally via "Sync internal
 email", or per mailbox via "Exclude Internal".
 
-### Pre-filters (always applied)
+### The gate ladder
 
-| Check | Condition | Action |
-|-------|-----------|--------|
-| Odoo-originated (headers) | `X-Odoo-Model` or `X-Odoo-Mail-Id` present | Skip |
-| Odoo-originated (sent) | Message-ID matches `mail.mail.x_microsoft_message_id` | Skip |
-| Duplicate | Message-ID already in `mail.message.message_id` | Skip |
+Whether a message may enter Odoo is decided by an ordered list of named gates,
+the same shape the matcher uses to decide where it goes (§4). Order is the
+contract: a gate may assume every gate before it passed, and may leave what it
+resolved in the context for the ones after it.
+
+| # | Gate | Refuses | Leaves a trace |
+|---|------|---------|----------------|
+| 1 | `_gate_duplicate` | Message-ID already in `mail.message` | no |
+| 2 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back | no |
+| 3 | `_gate_counterpart` | a sent item with no recipient | no |
+| 4 | `_gate_internal_domain` | the company's own address (inbox only) | no |
+| 5 | `_gate_blocked_contact` | `x_email_sync_blocked` | no, deliberately |
+| 6 | `_gate_internal_user` | the address has an Odoo user | no |
+| 7 | `_gate_sync_mode` | what the mailbox was told to accept | **yes** |
+
+Gate 3 is where direction lives: the inbox reads the `From`, Sent Items reads
+the `To`. Resolving the counterpart once is what lets the gates after it ask
+about an address rather than re-derive it, and it is the seam the counterpart
+rule above plugs into.
+
+Whether a refusal reaches `pan.mail.item` is declared by the gate, because it
+is a property of the refusal. Gate 7 records: an unknown contact is a decision
+a person may want to reverse, and the queue is where they reverse it. The
+others refuse things nobody wants back — and gate 5 must leave no trace at all,
+since a block list is an objection to processing and a queue row naming the
+person would be processing.
+
+Adding a rule means adding a method and a line to `_gate_rules()`. Before this
+existed the seven decisions were bare `return False` statements strewn through
+a two-hundred-line method, which is how gate 4 came to guard one folder and not
+the other.
+
+One more skip lives outside the ladder, because it has no message to refuse:
+a Message-ID matching `mail.mail.x_microsoft_message_id` means Odoo sent it,
+caught by `_is_duplicate`.
 
 ### The counterpart rule
 

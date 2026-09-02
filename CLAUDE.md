@@ -118,6 +118,23 @@ the mailbox it serves can never disagree about the provider's name.
 No call site outside the client changes. `tests/test_provider_contract.py` covers
 the seam; a new provider must satisfy the same assertions.
 
+### Adding a gate (a reason to refuse incoming mail)
+
+1. Write `_gate_<name>(self, ctx)` on `pan_mail_fetcher`, returning `None` to
+   pass or `Skip(reason, detail, record=...)` to refuse
+2. Add its name to `_gate_rules()`, in the position its assumptions require
+3. Say in the docstring what it refuses **and why it sits where it sits** —
+   order is the contract, and a gate that moves silently changes what the
+   gates after it may assume
+4. Decide `record`: does a person want this one back? Only the sync-mode gate
+   does today. A gate that refuses on the contact's own objection must leave
+   no trace at all
+5. Document it in the ladder table in ARCHITECTURE.md §3
+
+Nowhere else. A `return False` inside `_process_message` is the thing this
+ladder exists to stop; the last one hid a filter that guarded one folder and
+not the other for months.
+
 ### Adding an AI backend
 
 Same shape: register it in `AI_BACKENDS` in `models/ai/pan_mail_ai.py`, put the
