@@ -178,6 +178,7 @@ class GoogleGmailClient(models.AbstractModel):
     @api.model
     def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
         """Trade an authorization code for access + refresh tokens."""
+        self._refuse_when_neutralized()
         config = self._get_config_params()
         data = {
             'client_id': config['client_id'],
@@ -247,6 +248,7 @@ class GoogleGmailClient(models.AbstractModel):
     @api.model
     def get_valid_token(self, account):
         """Return a live access token for `account`, refreshing if near expiry."""
+        self._refuse_when_neutralized()
         if account.token_expiry:
             if account.token_expiry <= datetime.now() + timedelta(minutes=5):
                 _logger.info('[Gmail API] Token expired for %s, refreshing...', account.email)

@@ -4,6 +4,7 @@ from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, UserError
 
 from .mail_provider_client import ERROR_NO_RECIPIENTS
+from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 
@@ -527,6 +528,17 @@ class MailMail(models.Model):
     def _resolve_route(self):
         """Return (mailbox, account) for this mail, or raise RoutingError."""
         self.ensure_one()
+
+        # A staging copy must not mail real customers. Odoo's own neutralization
+        # only reaches SMTP, which Mail Pro does not use, so the refusal lives
+        # here instead. Raising rather than dropping the mail keeps the reason
+        # on the record and leaves it queued, so nothing is lost if the database
+        # turns out to be the real one after all.
+        if database_is_neutralized(self.env):
+            raise RoutingError(_(
+                'This database is neutralized (a staging or test copy), so Mail '
+                'Pro will not send. The email stays queued.'
+            ))
 
         # System mail to our own users is what the notification mailbox is for.
         if self._is_internal_user_notification():

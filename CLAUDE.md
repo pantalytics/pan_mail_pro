@@ -54,6 +54,7 @@ migrates once. The *module* rename from `pan_outlook_pro` landed in 19.0.4.0.0.
 | `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |
 | `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
 | `models/pan_mail_internal_domains.py` | Internal domain list + the fail-closed gate on incoming sync |
+| `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |

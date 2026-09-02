@@ -89,6 +89,8 @@ import secrets
 from odoo import models, api, _
 from odoo.exceptions import UserError
 
+from .neutralization import database_is_neutralized
+
 _logger = logging.getLogger(__name__)
 
 # Folder identifiers Odoo cares about. Providers map these onto their own
@@ -198,6 +200,26 @@ class MailProviderClient(models.AbstractModel):
         return self.provider_code()
 
     @api.model
+    def _refuse_when_neutralized(self):
+        """Stop before the network, not after the provider says no.
+
+        An empty credential (see `encryption_utils.decrypt_value`) already makes
+        a send impossible, but only by failing at the far end: staging would
+        still open the connection and collect a rejection from Microsoft or
+        Google on every attempt. Nothing should leave a database copy at all.
+
+        Every implementation calls this from the one point its transport cannot
+        avoid -- `get_valid_token` and `_exchange_code_for_tokens` for an OAuth
+        provider, `_require_credentials` for a password one. Those are the
+        chokepoints, so guarding them covers every request the client makes.
+        `tests/test_provider_contract.py` holds a new provider to the same rule.
+        """
+        if database_is_neutralized(self.env):
+            raise UserError(_(
+                'This database is neutralized (a staging or test copy), so Mail '
+                'Pro will not contact %s.'
+            ) % self.provider_label())
+
     def check_mailbox_supported(self, mailbox_type):
         """Raise if this provider cannot service the given mailbox type."""
         if mailbox_type not in self.supported_mailbox_types:
