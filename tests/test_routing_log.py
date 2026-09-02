@@ -19,8 +19,8 @@ class TestRoutingLog(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Log = cls.env['pan.mail.routing.log']
-        cls.mailbox = cls.env['x_microsoft.mailbox'].create({
-            'email': 'support@company.test', 'x_mailbox_type': 'shared',
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'support@company.test', 'mailbox_type': 'shared',
         })
         cls.partner = cls.env['res.partner'].create({
             'name': 'Customer', 'email': 'customer@example.com',

@@ -163,9 +163,9 @@ class TestImapProvider(TransactionCase):
         return self.Account.create(base)
 
     def _mailbox(self, email='info@company.test', **vals):
-        base = {'email': email, 'x_provider': 'imap', 'x_mailbox_type': 'shared'}
+        base = {'email': email, 'provider': 'imap', 'mailbox_type': 'shared'}
         base.update(vals)
-        return self.env['x_microsoft.mailbox'].create(base)
+        return self.env['pan.mail.mailbox'].create(base)
 
     # ------------------------------------------------------------------ #
     # Dispatch and capabilities
@@ -186,12 +186,12 @@ class TestImapProvider(TransactionCase):
     def test_shared_imap_mailbox_needs_no_owner(self):
         """The constraint that demands an owner is Microsoft's SendAs model.
         Requiring one here would make the mailbox unconfigurable."""
-        self.env['x_microsoft.mailbox'].create({
-            'email': 'notifications@company.test', 'x_mailbox_type': 'notification',
-            'x_owner_user_id': self.user.id,
+        self.env['pan.mail.mailbox'].create({
+            'email': 'notifications@company.test', 'mailbox_type': 'notification',
+            'owner_user_id': self.user.id,
         })
-        mailbox = self._mailbox(x_sync_mode='known_partners')
-        self.assertFalse(mailbox.x_owner_user_id)
+        mailbox = self._mailbox(sync_mode='known_partners')
+        self.assertFalse(mailbox.owner_user_id)
 
     # ------------------------------------------------------------------ #
     # Credentials
@@ -231,8 +231,8 @@ class TestImapProvider(TransactionCase):
     def test_personal_mailbox_falls_back_to_the_owners_account(self):
         account = self._imap_account(email='imap_user@test.local', user_id=self.user.id)
         mailbox = self._mailbox(
-            email='alias@company.test', x_mailbox_type='personal',
-            x_owner_user_id=self.user.id)
+            email='alias@company.test', mailbox_type='personal',
+            owner_user_id=self.user.id)
         self.assertEqual(mailbox._get_client().resolve_receiving_account(mailbox), account)
 
     def test_a_connected_imap_account_makes_a_selectable_owner(self):
@@ -250,11 +250,11 @@ class TestImapProvider(TransactionCase):
         account's write; the cron asks _has_working_credentials() when it needs
         the answer instead, so there is nothing left to keep in sync.
         """
-        self.env['x_microsoft.mailbox'].create({
-            'email': 'notifications@company.test', 'x_mailbox_type': 'notification',
-            'x_owner_user_id': self.user.id,
+        self.env['pan.mail.mailbox'].create({
+            'email': 'notifications@company.test', 'mailbox_type': 'notification',
+            'owner_user_id': self.user.id,
         })
-        mailbox = self._mailbox(x_sync_mode='all')
+        mailbox = self._mailbox(sync_mode='all')
         self.assertFalse(mailbox._has_working_credentials())
 
         self._imap_account()
@@ -792,11 +792,11 @@ class TestImapOutgoingRouting(TransactionCase):
             'imap_host': 'imap.soverin.net', 'smtp_host': 'smtp.soverin.net',
             'password': 'hunter2',
         })
-        cls.mailbox = cls.env['x_microsoft.mailbox'].create({
-            'email': 'sales@company.test', 'x_provider': 'imap',
-            'x_mailbox_type': 'personal', 'x_owner_user_id': cls.user.id,
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'sales@company.test', 'provider': 'imap',
+            'mailbox_type': 'personal', 'owner_user_id': cls.user.id,
         })
-        cls.user.x_microsoft_default_mailbox_id = cls.mailbox
+        cls.user.x_default_mailbox_id = cls.mailbox
 
     def test_mail_is_sent_through_the_imap_client(self):
         mail = self.env['mail.mail'].create({
@@ -811,7 +811,7 @@ class TestImapOutgoingRouting(TransactionCase):
 
         self.assertEqual(mail.state, 'sent')
         self.assertEqual(smtp.sent[0]['from'], 'sales@company.test')
-        self.assertTrue(mail.x_microsoft_message_id)
+        self.assertTrue(self._wire_message_id(mail))
 
     def test_sent_message_id_is_stored_for_dedup(self):
         """The incoming sync skips anything whose Message-ID it already has;
@@ -828,4 +828,12 @@ class TestImapOutgoingRouting(TransactionCase):
 
         raw = smtp.sent[0]['msg'].as_bytes()
         sent = message_from_bytes(raw, policy=policy.default)
-        self.assertEqual(mail.x_microsoft_message_id, sent['Message-ID'])
+        self.assertEqual(self._wire_message_id(mail), sent['Message-ID'])
+
+    def _wire_message_id(self, mail):
+        """The Message-ID the send recorded for dedup, from the ref index."""
+        ref = self.env['pan.mail.message.ref'].search([
+            ('mail_message_id', '=', mail.mail_message_id.id),
+            ('source', '=', 'provider'),
+        ], limit=1)
+        return ref.message_id

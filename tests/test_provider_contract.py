@@ -59,11 +59,11 @@ class TestProviderRegistry(TransactionCase):
             get_provider_client(self.env, 'carrier-pigeon')
 
     def test_mailbox_resolves_to_its_client(self):
-        mailbox = self.env['x_microsoft.mailbox'].create({
+        mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'contract@company.test',
-            'x_mailbox_type': 'shared',
+            'mailbox_type': 'shared',
         })
-        self.assertEqual(mailbox.x_provider, DEFAULT_PROVIDER)
+        self.assertEqual(mailbox.provider, DEFAULT_PROVIDER)
         self.assertEqual(mailbox._get_client().provider_code(), DEFAULT_PROVIDER)
 
 
@@ -88,7 +88,7 @@ class TestProviderCapabilities(TransactionCase):
     def test_mailbox_type_is_validated_against_provider_on_create(self):
         """A mailbox its provider cannot service must fail at config time,
         not at send time."""
-        Mailbox = self.env['x_microsoft.mailbox']
+        Mailbox = self.env['pan.mail.mailbox']
         original = type(self.client).supported_mailbox_types
         type(self.client).supported_mailbox_types = ('personal',)
         self.addCleanup(
@@ -100,7 +100,7 @@ class TestProviderCapabilities(TransactionCase):
         with self.assertRaises(UserError):
             Mailbox.create({
                 'email': 'unsupported@company.test',
-                'x_mailbox_type': 'shared',
+                'mailbox_type': 'shared',
             })
 
     def _connected_user(self, login):
@@ -120,10 +120,10 @@ class TestProviderCapabilities(TransactionCase):
         """Notification mail must not depend on who triggered it."""
         owner = self._connected_user('notify-owner@company.test')
         other = self._connected_user('someone-else@company.test')
-        mailbox = self.env['x_microsoft.mailbox'].new({
+        mailbox = self.env['pan.mail.mailbox'].new({
             'email': 'notifications@company.test',
-            'x_mailbox_type': 'notification',
-            'x_owner_user_id': owner.id,
+            'mailbox_type': 'notification',
+            'owner_user_id': owner.id,
         })
         resolved = self.client.resolve_sending_account(mailbox, author_user=other)
         self.assertEqual(resolved.user_id, owner)
@@ -132,19 +132,19 @@ class TestProviderCapabilities(TransactionCase):
         """Shared mailboxes rely on the author's own SendAs rights, which
         matters in cron context where env.user is the cron runner."""
         author = self._connected_user('author@company.test')
-        mailbox = self.env['x_microsoft.mailbox'].new({
+        mailbox = self.env['pan.mail.mailbox'].new({
             'email': 'team@company.test',
-            'x_mailbox_type': 'shared',
+            'mailbox_type': 'shared',
         })
         resolved = self.client.resolve_sending_account(mailbox, author_user=author)
         self.assertEqual(resolved.user_id, author)
 
     def test_reading_a_mailbox_uses_the_owners_token(self):
         owner = self._connected_user('reader@company.test')
-        mailbox = self.env['x_microsoft.mailbox'].new({
+        mailbox = self.env['pan.mail.mailbox'].new({
             'email': 'inbox@company.test',
-            'x_mailbox_type': 'personal',
-            'x_owner_user_id': owner.id,
+            'mailbox_type': 'personal',
+            'owner_user_id': owner.id,
         })
         self.assertEqual(
             self.client.resolve_receiving_account(mailbox).user_id, owner)

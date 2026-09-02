@@ -22,12 +22,12 @@ class TestSetupFlow(TransactionCase):
 
     def _clear_credentials(self):
         for param in (
-            'x_pan_outlook_pro.client_id',
-            'x_pan_outlook_pro.tenant_id',
-            'x_pan_outlook_pro.client_secret_encrypted',
-            'x_pan_outlook_pro.google_client_id',
-            'x_pan_outlook_pro.google_client_secret_encrypted',
-            'x_pan_outlook_pro.setup_provider',
+            'pan_mail_pro.microsoft_client_id',
+            'pan_mail_pro.microsoft_tenant_id',
+            'pan_mail_pro.microsoft_client_secret_encrypted',
+            'pan_mail_pro.google_client_id',
+            'pan_mail_pro.google_client_secret_encrypted',
+            'pan_mail_pro.setup_provider',
         ):
             self.IrConfigParameter.set_param(param, '')
 
@@ -93,20 +93,20 @@ class TestSetupFlow(TransactionCase):
     def test_existing_database_lands_on_its_configured_provider(self):
         """No stored choice + a working Azure tenant must not read as "empty"."""
         self._clear_credentials()
-        self.IrConfigParameter.set_param('x_pan_outlook_pro.client_id', 'client-id')
+        self.IrConfigParameter.set_param('pan_mail_pro.microsoft_client_id', 'client-id')
         defaults = self.Settings.default_get(['x_mail_provider'])
         self.assertEqual(defaults.get('x_mail_provider'), 'outlook')
 
     def test_google_only_database_lands_on_gmail(self):
         self._clear_credentials()
-        self.IrConfigParameter.set_param('x_pan_outlook_pro.google_client_id', 'google-id')
+        self.IrConfigParameter.set_param('pan_mail_pro.google_client_id', 'google-id')
         defaults = self.Settings.default_get(['x_mail_provider'])
         self.assertEqual(defaults.get('x_mail_provider'), 'gmail')
 
     def test_stored_choice_wins_over_the_fallback(self):
         self._clear_credentials()
-        self.IrConfigParameter.set_param('x_pan_outlook_pro.client_id', 'client-id')
-        self.IrConfigParameter.set_param('x_pan_outlook_pro.setup_provider', 'gmail')
+        self.IrConfigParameter.set_param('pan_mail_pro.microsoft_client_id', 'client-id')
+        self.IrConfigParameter.set_param('pan_mail_pro.setup_provider', 'gmail')
         defaults = self.Settings.default_get(['x_mail_provider'])
         self.assertEqual(defaults.get('x_mail_provider'), 'gmail')
 

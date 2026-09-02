@@ -12,11 +12,11 @@ tests verify that:
 """
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestComposeCrmLead(OutlookProTestCase):
+class TestComposeCrmLead(MailProTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -61,9 +61,9 @@ class TestComposeCrmLead(OutlookProTestCase):
                 'partner_ids': [(6, 0, [self.external_partner.id])],
             })
             if dropdown_mailbox is not None:
-                composer.x_microsoft_send_from_id = dropdown_mailbox.id
+                composer.x_send_from_mailbox_id = dropdown_mailbox.id
             else:
-                composer.x_microsoft_send_from_id = False
+                composer.x_send_from_mailbox_id = False
             composer.action_send_mail()
         return calls
 

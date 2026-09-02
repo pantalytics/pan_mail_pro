@@ -59,7 +59,7 @@ Threading uses two methods:
 
 **Cause:** Email synced before deduplication data was stored.
 
-**Solution:** The system uses Message-ID headers to prevent duplicates. If duplicates occur, check that the original email has `x_microsoft_message_id` stored.
+**Solution:** The system uses Message-ID headers to prevent duplicates. If duplicates occur, check that the original message is indexed under the Message-ID the provider sent it with (developer mode → model `pan.mail.message.ref`, one row per Message-ID a message is known under).
 
 ## Authentication Issues
 
@@ -85,6 +85,6 @@ Threading uses two methods:
 
 If issues persist:
 
-1. Check Odoo logs for `[Graph API]` and `[Incoming Mail]` entries
+1. Check Odoo logs for `[Outgoing Mail]` and `[Incoming Mail]` entries
 2. Verify Azure app permissions and admin consent
 3. Contact support at support@pantalytics.com

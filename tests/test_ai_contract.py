@@ -21,11 +21,11 @@ from odoo.tests import tagged
 
 from odoo.addons.pan_mail_pro.models.ai import pan_mail_ai
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestAIContract(OutlookProTestCase):
+class TestAIContract(MailProTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -158,7 +158,7 @@ class TestAIContract(OutlookProTestCase):
             'body_html': '<p>Hi</p>',
             'email_to': 'customer@example.com',
             'author_id': self.salesperson.partner_id.id,
-            'x_microsoft_mailbox_id': self.shared_mailbox.id,
+            'x_send_from_mailbox_id': self.shared_mailbox.id,
         })
         with patch.object(type(self.env['pan.mail.ai.null']), 'classify', boom), \
                 self.mock_graph():

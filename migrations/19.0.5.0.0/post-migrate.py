@@ -75,6 +75,14 @@ def migrate(cr, version):
     _realign_connection_flag(cr)
 
     for table, columns in DROPPED_COLUMNS.items():
+        # 19.0.6.0.0 renames the mailbox table in its pre-migrate, which on a
+        # database jumping several releases has already run by now.
+        if table == 'x_microsoft_mailbox':
+            cr.execute("SELECT to_regclass('x_microsoft_mailbox'), to_regclass('pan_mail_mailbox')")
+            old, new = cr.fetchone()
+            table = 'x_microsoft_mailbox' if old else 'pan_mail_mailbox' if new else None
+            if not table:
+                continue
         cr.execute("SELECT to_regclass(%s)", [table])
         if not cr.fetchone()[0]:
             continue

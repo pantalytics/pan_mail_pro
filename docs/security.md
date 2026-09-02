@@ -43,8 +43,9 @@ All OAuth tokens are encrypted before storage:
 
 - **Algorithm:** Fernet (AES-128-CBC with HMAC)
 - **Key:** A random 32-byte key generated on first use and stored in
-  `ir.config_parameter` under `x_pan_outlook_pro.encryption_key` (the name predates
-  the module rename and cannot change without orphaning existing tokens)
+  `ir.config_parameter` under `pan_mail_pro.encryption_key` (renamed from
+  `x_pan_outlook_pro.encryption_key` by the 19.0.6.0.0 migration; the code
+  still adopts a key found under the old name rather than minting a new one)
 - **Storage:** Encrypted in PostgreSQL
 
 > **Key and ciphertext live in the same database.** A database dump therefore
@@ -96,9 +97,9 @@ User → Odoo → Microsoft Graph API → Microsoft 365
 
 All email operations are logged:
 
-- Sent emails tracked with Microsoft message ID
-- Sync operations logged with `[Incoming Mail]` tag
-- API errors logged with `[Graph API]` tag
+- Sent emails indexed by the Message-ID the provider put on the wire
+- Sending logged with the `[Outgoing Mail]` tag, sync with `[Incoming Mail]`
+- Provider API errors logged with `[Graph API]`, `[Gmail API]`, `[IMAP]` or `[SMTP]`
 
 ## Compliance
 

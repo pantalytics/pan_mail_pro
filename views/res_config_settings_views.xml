@@ -313,7 +313,7 @@
                                             mailbox(es) have "Exclude Internal" switched off.
                                         </span>
                                         <div class="mt-1">
-                                            <button type="action" name="%(action_microsoft_mailbox)d"
+                                            <button type="action" name="%(action_pan_mail_mailbox)d"
                                                     string="Review" icon="oi-arrow-right" class="oe_link"/>
                                         </div>
                                     </div>
@@ -357,7 +357,7 @@
                                 <span class="o_form_label">All mailboxes</span>
                                 <div class="text-muted small">Configure sending and sync</div>
                                 <div class="mt-1">
-                                    <button type="action" name="%(action_microsoft_mailbox)d"
+                                    <button type="action" name="%(action_pan_mail_mailbox)d"
                                             string="Manage" icon="oi-arrow-right" class="oe_link"/>
                                 </div>
                             </div>

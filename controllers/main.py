@@ -112,13 +112,13 @@ class MailProOAuthController(http.Controller):
 
     def _retry_error_mailboxes(self, user, provider):
         """A mailbox that failed for want of a token deserves another go."""
-        mailboxes = request.env['x_microsoft.mailbox'].sudo().search([
-            ('x_owner_user_id', '=', user.id),
-            ('x_provider', '=', provider),
+        mailboxes = request.env['pan.mail.mailbox'].sudo().search([
+            ('owner_user_id', '=', user.id),
+            ('provider', '=', provider),
             ('state', '=', 'error'),
         ])
         if mailboxes:
-            mailboxes.write({'state': 'draft', 'x_error_message': False})
+            mailboxes.write({'state': 'draft', 'error_message': False})
             _logger.info('[OAuth] Reset %s mailbox(es) from error to draft', len(mailboxes))
 
     def _claim_personal_mailbox(self, user, provider, email):
@@ -133,17 +133,17 @@ class MailProOAuthController(http.Controller):
         if not email:
             return
 
-        Mailbox = request.env['x_microsoft.mailbox'].sudo()
+        Mailbox = request.env['pan.mail.mailbox'].sudo()
         existing = Mailbox.search([('email', '=ilike', email)], limit=1)
         if not existing:
             mailbox = Mailbox.create({
                 'email': email,
-                'x_provider': provider,
-                'x_mailbox_type': 'personal',
-                'x_owner_user_id': user.id,
+                'provider': provider,
+                'mailbox_type': 'personal',
+                'owner_user_id': user.id,
             })
-            user.sudo().write({'x_microsoft_default_mailbox_id': mailbox.id})
+            user.sudo().write({'x_default_mailbox_id': mailbox.id})
             _logger.info('[OAuth] Created personal mailbox %s for %s', email, user.login)
-        elif existing.x_mailbox_type == 'personal' and not existing.x_owner_user_id:
-            existing.write({'x_owner_user_id': user.id})
+        elif existing.mailbox_type == 'personal' and not existing.owner_user_id:
+            existing.write({'owner_user_id': user.id})
             _logger.info('[OAuth] Assigned existing mailbox %s to %s', email, user.login)

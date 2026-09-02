@@ -154,7 +154,7 @@ class ImapSmtpClient(models.AbstractModel):
                 ], limit=1)
             if account:
                 return account
-        return self.account_for_user(mailbox.x_owner_user_id)
+        return self.account_for_user(mailbox.owner_user_id)
 
     # -------------------------------------------------------------------------
     # Authentication

@@ -70,8 +70,8 @@ class TestReplyContext(OutgoingThreadingCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.mailbox = cls.env['x_microsoft.mailbox'].create({
-            'email': 'support@company.test', 'x_mailbox_type': 'shared',
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'support@company.test', 'mailbox_type': 'shared',
         })
 
     def test_a_fresh_mail_has_nothing_to_thread_onto(self):
@@ -152,8 +152,8 @@ class TestReplyContext(OutgoingThreadingCase):
         self.assertEqual(context['provider_message_id'], 'GRAPH-MSG-9')
 
     def test_another_mailbox_s_thread_is_not_borrowed(self):
-        other = self.env['x_microsoft.mailbox'].create({
-            'email': 'sales@company.test', 'x_mailbox_type': 'shared',
+        other = self.env['pan.mail.mailbox'].create({
+            'email': 'sales@company.test', 'mailbox_type': 'shared',
         })
         self.env['pan.mail.thread.link'].record(
             mailbox=other, thread_id='CONV-9',
@@ -170,8 +170,8 @@ class TestGmailOutgoingThreading(OutgoingThreadingCase):
     """Gmail threads on headers, and validates them before honouring threadId."""
 
     def _sendable(self):
-        mailbox = self.env['x_microsoft.mailbox'].create({
-            'email': 'sales@test.local', 'x_provider': 'gmail', 'x_mailbox_type': 'shared',
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'sales@test.local', 'provider': 'gmail', 'mailbox_type': 'shared',
         })
         account = self.env['pan.mail.account'].create({
             'email': 'sales@test.local', 'provider': 'gmail', 'user_id': False,
@@ -260,8 +260,8 @@ class TestGraphOutgoingThreading(OutgoingThreadingCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.mailbox = cls.env['x_microsoft.mailbox'].create({
-            'email': 'support@test.local', 'x_mailbox_type': 'shared',
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'support@test.local', 'mailbox_type': 'shared',
         })
         cls.account = cls.env['pan.mail.account'].create({
             'email': 'support@test.local', 'provider': 'outlook', 'user_id': False,

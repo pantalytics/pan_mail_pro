@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Encryption utilities for Microsoft OAuth tokens and secrets.
+Encryption utilities for OAuth tokens, mailbox passwords and client secrets.
 
 Uses Fernet symmetric encryption with auto-generated key stored in database.
 This provides defense-in-depth security on top of Odoo.sh database encryption.
@@ -14,10 +14,13 @@ from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 
-# System parameter for auto-generated encryption key.
-# The name still says outlook: renaming it would orphan every stored token,
-# because the parameter *is* the key. It is deliberately left alone.
-AUTO_KEY_PARAM = 'x_pan_outlook_pro.encryption_key'
+# System parameter for the auto-generated encryption key.
+AUTO_KEY_PARAM = 'pan_mail_pro.encryption_key'
+# Where the key lived before 19.0.6.0.0. The migration renames the parameter;
+# this fallback is insurance against code that runs ahead of it (a deploy that
+# forgot the version bump), because generating a fresh key there would orphan
+# every stored credential at once.
+LEGACY_KEY_PARAM = 'x_pan_outlook_pro.encryption_key'
 
 # Optional deployment-level override, read before the database.
 ENV_KEY_VAR = 'PAN_MAIL_ENCRYPTION_KEY'
@@ -51,12 +54,19 @@ def get_encryption_key(env):
     key = IrConfigParameter.get_param(AUTO_KEY_PARAM)
 
     if not key:
+        key = IrConfigParameter.get_param(LEGACY_KEY_PARAM)
+        if key:
+            IrConfigParameter.set_param(AUTO_KEY_PARAM, key)
+            IrConfigParameter.set_param(LEGACY_KEY_PARAM, False)
+            _logger.info("[Encryption] Adopted the encryption key from its pre-19.0.6.0.0 name")
+
+    if not key:
         # Generate new key on first use
         key = Fernet.generate_key().decode('utf-8')
         IrConfigParameter.set_param(AUTO_KEY_PARAM, key)
         _logger.info(
-            "[Encryption] Generated new encryption key for Microsoft OAuth tokens. "
-            "Tokens will be stored encrypted in database."
+            "[Encryption] Generated a new encryption key. Credentials are stored "
+            "encrypted in the database."
         )
 
     return key.encode('utf-8')
@@ -130,5 +140,5 @@ def decrypt_value(env, encrypted_text):
         _logger.error(f"[Encryption] Failed to decrypt value: {e}")
         raise UserError(
             "Failed to decrypt sensitive data. The encryption key may have changed or data is corrupted. "
-            "Please reconnect your Microsoft account."
+            "Please reconnect the email account."
         )

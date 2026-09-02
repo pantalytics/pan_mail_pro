@@ -27,8 +27,8 @@ from odoo import _, api, models
 _logger = logging.getLogger(__name__)
 
 # Config parameters live under the module's existing namespace.
-PARAM_DOMAINS = 'x_pan_outlook_pro.internal_domains'
-PARAM_SYNC_INTERNAL = 'x_pan_outlook_pro.sync_internal_email'
+PARAM_DOMAINS = 'pan_mail_pro.internal_domains'
+PARAM_SYNC_INTERNAL = 'pan_mail_pro.sync_internal_email'
 
 _SPLIT_RE = re.compile(r'[\s,;]+')
 
@@ -126,7 +126,7 @@ class PanMailInternalDomains(models.AbstractModel):
         """
         if self.sync_internal_enabled():
             return False
-        if mailbox is not None and mailbox and not mailbox.x_exclude_internal:
+        if mailbox is not None and mailbox and not mailbox.exclude_internal:
             return False
         return self.is_internal(email)
 
@@ -143,7 +143,7 @@ class PanMailInternalDomains(models.AbstractModel):
         """
         candidates = []
 
-        mailboxes = self.env['x_microsoft.mailbox'].sudo().with_context(
+        mailboxes = self.env['pan.mail.mailbox'].sudo().with_context(
             active_test=False
         ).search([])
         candidates += mailboxes.mapped('email')
@@ -169,7 +169,7 @@ class PanMailInternalDomains(models.AbstractModel):
             return []
         configured = set(self.get_domains())
         mailbox_domains = self._parse(', '.join(
-            self.env['x_microsoft.mailbox'].sudo().with_context(
+            self.env['pan.mail.mailbox'].sudo().with_context(
                 active_test=False
             ).search([]).mapped('email')
         ))

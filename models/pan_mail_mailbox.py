@@ -20,16 +20,21 @@ _logger = logging.getLogger(__name__)
 SYNCING_MODES = ('known_partners', 'all')
 
 
-class MicrosoftMailbox(models.Model):
-    """Model to store available Microsoft mailboxes for sending and receiving emails"""
-    _name = 'x_microsoft.mailbox'
-    _description = 'Microsoft Mailbox'
+class PanMailMailbox(models.Model):
+    """An address Mail Pro sends from and, when its sync mode says so, reads.
+
+    Provider-neutral: `provider` names the client that services it, and every
+    question a caller has about credentials or capabilities goes through
+    `_get_client()` rather than being answered here.
+    """
+    _name = 'pan.mail.mailbox'
+    _description = 'Mailbox'
     _order = 'sequence, email'
     _rec_name = 'email'
 
     # Every mailbox is serviced by exactly one provider client, resolved
     # through the registry in mail_provider_client.py.
-    x_provider = fields.Selection(
+    provider = fields.Selection(
         PROVIDER_SELECTION,
         string='Provider',
         default=DEFAULT_PROVIDER,
@@ -40,7 +45,7 @@ class MicrosoftMailbox(models.Model):
     def _get_client(self):
         """Return the provider client for this mailbox."""
         self.ensure_one()
-        return get_provider_client(self.env, self.x_provider)
+        return get_provider_client(self.env, self.provider)
 
     def _is_sendable_by(self, user):
         """Whether `user` may choose this mailbox as the sender of a mail.
@@ -68,8 +73,8 @@ class MicrosoftMailbox(models.Model):
         self.ensure_one()
         if not self.active:
             return False
-        if self.x_mailbox_type == 'personal':
-            return bool(self.x_owner_user_id) and self.x_owner_user_id == user
+        if self.mailbox_type == 'personal':
+            return bool(self.owner_user_id) and self.owner_user_id == user
         return True
 
     def _syncs_incoming(self):
@@ -81,7 +86,7 @@ class MicrosoftMailbox(models.Model):
         never resolve to the answer that copies mail into Odoo.
         """
         self.ensure_one()
-        return self.x_sync_mode in SYNCING_MODES
+        return self.sync_mode in SYNCING_MODES
 
     def _needs_credentials(self):
         """Whether this mailbox needs credentials of its own to do its job.
@@ -91,7 +96,7 @@ class MicrosoftMailbox(models.Model):
         somebody else's behalf without being told whose token to use.
         """
         self.ensure_one()
-        return self.x_mailbox_type in ('personal', 'notification') or self._syncs_incoming()
+        return self.mailbox_type in ('personal', 'notification') or self._syncs_incoming()
 
     def _has_working_credentials(self):
         """Whether this mailbox can actually reach its provider right now.
@@ -123,7 +128,7 @@ class MicrosoftMailbox(models.Model):
     # -------------------------------------------------------------------------
     # Mailbox Type Configuration
     # -------------------------------------------------------------------------
-    x_mailbox_type = fields.Selection([
+    mailbox_type = fields.Selection([
         ('personal', 'Personal'),
         ('shared', 'Shared'),
         ('notification', 'Notification'),
@@ -133,7 +138,7 @@ class MicrosoftMailbox(models.Model):
              'depends on the provider\n'
              'Notification: Used for system emails, owner\'s account is used to send')
 
-    x_owner_user_id = fields.Many2one(
+    owner_user_id = fields.Many2one(
         'res.users',
         string='Owner',
         domain="[('x_pan_mail_connected', '=', True)]",
@@ -148,7 +153,7 @@ class MicrosoftMailbox(models.Model):
     # One control, three answers. This used to be a mode plus five booleans
     # computed from it (enabled, enable, include-unknown, inbox, sent), which is
     # six ways to describe one choice and five things that can disagree with it.
-    x_sync_mode = fields.Selection([
+    sync_mode = fields.Selection([
         ('none', 'Send only'),
         ('known_partners', 'Send and receive, from existing contacts'),
         ('all', 'Send and receive, from anyone'),
@@ -161,41 +166,41 @@ class MicrosoftMailbox(models.Model):
     # makes a field a comment with a database column - but 19.0.4.0.0 made it
     # the explicit gate the AI seam is not allowed to open until real
     # suggestions have earned it. See models/ai/pan_mail_ai.py.
-    x_routing_smart = fields.Boolean(
+    routing_smart = fields.Boolean(
         string='AI Routing',
         default=False,
         help='Let AI decide where to route (CRM, Helpdesk, etc.)'
     )
 
-    x_route_to_team = fields.Boolean(
+    route_to_team = fields.Boolean(
         string='To Team',
         default=False,
         help='Route to a team instead of contact chatter'
     )
 
-    x_queue_unknown_contacts = fields.Boolean(
+    queue_unknown_contacts = fields.Boolean(
         string='Queue for Review',
         default=False,
         help='Hold for manual review instead of auto-creating contacts'
     )
 
-    x_exclude_internal = fields.Boolean(
+    exclude_internal = fields.Boolean(
         string='Exclude Internal',
         default=True,
         help='Skip emails from your company domain. Disable for team mailboxes where internal forwarding should be logged.'
     )
     # Keep for backwards compatibility / internal use
-    x_sync_start_date = fields.Datetime(
+    sync_start_date = fields.Datetime(
         string='Import From',
         default=fields.Datetime.now,
         help='Import emails starting from this date. Default is today.'
     )
-    x_last_sync_date = fields.Datetime(
+    last_sync_date = fields.Datetime(
         string='Last Synced',
         readonly=True,
         help='Timestamp of last successful sync'
     )
-    x_alias_id = fields.Many2one(
+    alias_id = fields.Many2one(
         'mail.alias',
         string='Route to Team',
         domain="[('alias_name', '!=', False)]",
@@ -206,7 +211,7 @@ class MicrosoftMailbox(models.Model):
         ('active', 'Active'),
         ('error', 'Error'),
     ], string='Sync Status', default='draft', readonly=True)
-    x_error_message = fields.Text(
+    error_message = fields.Text(
         string='Last Error',
         readonly=True,
         help='Error message from last failed sync attempt'
@@ -215,24 +220,24 @@ class MicrosoftMailbox(models.Model):
     # -------------------------------------------------------------------------
     # Health Status (computed for list view)
     # -------------------------------------------------------------------------
-    x_health_status = fields.Selection([
+    health_status = fields.Selection([
         ('healthy', 'OK'),
         ('warning', 'Warning'),
         ('error', 'Error'),
     ], string='Status', compute='_compute_health_status', store=False)
 
-    @api.depends('state', 'x_sync_mode', 'x_mailbox_type', 'x_provider', 'x_owner_user_id',
-                 'x_owner_user_id.x_pan_mail_account_ids.connected')
+    @api.depends('state', 'sync_mode', 'mailbox_type', 'provider', 'owner_user_id',
+                 'owner_user_id.x_pan_mail_account_ids.connected')
     def _compute_health_status(self):
         for record in self:
             if record.state == 'error':
-                record.x_health_status = 'error'
+                record.health_status = 'error'
             elif record._needs_credentials() and not record._has_working_credentials():
-                record.x_health_status = 'error'
+                record.health_status = 'error'
             elif record._syncs_incoming() and record.state == 'draft':
-                record.x_health_status = 'warning'
+                record.health_status = 'warning'
             else:
-                record.x_health_status = 'healthy'
+                record.health_status = 'healthy'
 
     def _no_credentials_error(self, sender=None):
         """Why this mailbox has no usable credentials, in the provider's terms.
@@ -247,7 +252,7 @@ class MicrosoftMailbox(models.Model):
         client = self._get_client()
         provider = client.provider_label()
 
-        if self.x_mailbox_type == 'shared':
+        if self.mailbox_type == 'shared':
             if not client.supports_shared_mailbox:
                 # Gmail and IMAP: a shared address is its own account, so there
                 # is nothing an owner could connect on its behalf.
@@ -257,7 +262,7 @@ class MicrosoftMailbox(models.Model):
                     'delegation of someone else\'s.',
                     email=self.email, provider=provider,
                 )
-            who = sender or self.x_owner_user_id
+            who = sender or self.owner_user_id
             if not who:
                 return _(
                     'Nobody is connected who could send from shared mailbox "%s".'
@@ -269,7 +274,7 @@ class MicrosoftMailbox(models.Model):
                 who=who.name, provider=provider, email=self.email,
             )
 
-        if not self.x_owner_user_id:
+        if not self.owner_user_id:
             return _(
                 'Mailbox "%s" has no Owner. Select the user whose account it '
                 'sends and receives with.'
@@ -277,7 +282,7 @@ class MicrosoftMailbox(models.Model):
         return _(
             'Owner "%(owner)s" has no connected %(provider)s account. '
             'They must connect it first.',
-            owner=self.x_owner_user_id.name, provider=provider,
+            owner=self.owner_user_id.name, provider=provider,
         )
 
     def action_open_account(self):
@@ -302,8 +307,8 @@ class MicrosoftMailbox(models.Model):
         else:
             action['context'] = {
                 'default_email': self.email,
-                'default_provider': self.x_provider,
-                'default_user_id': self.x_owner_user_id.id,
+                'default_provider': self.provider,
+                'default_user_id': self.owner_user_id.id,
             }
         return action
 
@@ -327,7 +332,7 @@ class MicrosoftMailbox(models.Model):
 
             self.write({
                 'state': 'active',
-                'x_error_message': False,
+                'error_message': False,
             })
 
             return {
@@ -345,7 +350,7 @@ class MicrosoftMailbox(models.Model):
         except Exception as e:
             self.write({
                 'state': 'error',
-                'x_error_message': str(e),
+                'error_message': str(e),
             })
 
             return {
@@ -377,17 +382,17 @@ class MicrosoftMailbox(models.Model):
             raise UserError(self._no_credentials_error())
 
         # Trigger the processor for this mailbox
-        processor = self.env['microsoft.incoming.mail.processor']
+        processor = self.env['pan.mail.fetcher']
         processor._process_mailbox(self)
 
         # Mark as active on success (clear any previous error)
         if self.state != 'active':
-            self.write({'state': 'active', 'x_error_message': False})
+            self.write({'state': 'active', 'error_message': False})
 
         # Reload the form to show updated status
         return {
             'type': 'ir.actions.act_window',
-            'res_model': 'x_microsoft.mailbox',
+            'res_model': 'pan.mail.mailbox',
             'res_id': self.id,
             'view_mode': 'form',
             'views': [(False, 'form')],
@@ -418,12 +423,12 @@ class MicrosoftMailbox(models.Model):
         Idempotent, and safe to call from both the install hook and create().
         """
         IrConfigParameter = self.env['ir.config_parameter'].sudo()
-        if IrConfigParameter.get_param('x_pan_outlook_pro.smtp_takeover_done') == 'True':
+        if IrConfigParameter.get_param('pan_mail_pro.smtp_takeover_done') == 'True':
             return
 
         MailServer = self.env['ir.mail_server'].sudo().with_context(active_test=False)
         placeholder = self.env.ref(
-            'pan_mail_pro.mail_server_invalid_outlook_pro', raise_if_not_found=False
+            'pan_mail_pro.mail_server_disabled', raise_if_not_found=False
         )
 
         others = MailServer.search([('active', '=', True)])
@@ -442,24 +447,24 @@ class MicrosoftMailbox(models.Model):
             placeholder.write({'active': True})
 
         IrConfigParameter.set_param('base_setup.default_external_email_server', 'False')
-        IrConfigParameter.set_param('x_pan_outlook_pro.smtp_takeover_done', 'True')
+        IrConfigParameter.set_param('pan_mail_pro.smtp_takeover_done', 'True')
         _logger.info('[Mail Pro] SMTP takeover active — all email routes through the provider API')
 
     def write(self, vals):
-        """Reset x_last_sync_date when x_sync_start_date is moved to an earlier date."""
-        if 'x_sync_start_date' in vals and vals['x_sync_start_date']:
-            new_start = fields.Datetime.to_datetime(vals['x_sync_start_date'])
+        """Reset last_sync_date when sync_start_date is moved to an earlier date."""
+        if 'sync_start_date' in vals and vals['sync_start_date']:
+            new_start = fields.Datetime.to_datetime(vals['sync_start_date'])
             for record in self:
-                if record.x_last_sync_date and new_start < record.x_last_sync_date:
-                    vals['x_last_sync_date'] = new_start
+                if record.last_sync_date and new_start < record.last_sync_date:
+                    vals['last_sync_date'] = new_start
         return super().write(vals)
 
-    @api.onchange('x_sync_mode')
+    @api.onchange('sync_mode')
     def _onchange_sync_mode(self):
         """Reset state when switching to no sync."""
         if not self._syncs_incoming():
             self.state = 'draft'
-            self.x_error_message = False
+            self.error_message = False
 
     @api.constrains('email')
     def _check_email_format(self):
@@ -481,31 +486,31 @@ class MicrosoftMailbox(models.Model):
                 if existing:
                     raise ValidationError(_('This email address is already registered!'))
 
-    @api.constrains('x_mailbox_type', 'x_owner_user_id', 'x_sync_mode', 'x_provider')
+    @api.constrains('mailbox_type', 'owner_user_id', 'sync_mode', 'provider')
     def _check_owner_required(self):
         """Ensure an owner is set where the provider actually needs one."""
         for record in self:
             provider = record._get_client().provider_label()
-            if record.x_mailbox_type in ('personal', 'notification') and not record.x_owner_user_id:
+            if record.mailbox_type in ('personal', 'notification') and not record.owner_user_id:
                 raise ValidationError(_(
                     '%(type)s mailbox requires an Owner. '
                     'Please select a user with %(provider)s connected.',
-                    type=record.x_mailbox_type.capitalize(), provider=provider,
+                    type=record.mailbox_type.capitalize(), provider=provider,
                 ))
             # A shared mailbox needs an owner only where reading it means
             # borrowing a person's delegated token. On Gmail the shared address
             # is its own Workspace account, so there is nobody to borrow from and
             # demanding an owner would make the mailbox unconfigurable.
-            if (record.x_mailbox_type == 'shared' and
+            if (record.mailbox_type == 'shared' and
                     record._syncs_incoming() and
-                    not record.x_owner_user_id and
+                    not record.owner_user_id and
                     record._get_client().supports_shared_mailbox):
                 raise ValidationError(_(
                     'Shared mailbox with sync enabled requires an Owner. '
                     'The Owner\'s %s account will be used to read emails.'
                 ) % provider)
 
-    @api.constrains('x_provider', 'x_mailbox_type')
+    @api.constrains('provider', 'mailbox_type')
     def _check_provider_supports_mailbox_type(self):
         """Providers differ in what they can service.
 
@@ -514,15 +519,15 @@ class MicrosoftMailbox(models.Model):
         than failing at send time.
         """
         for record in self:
-            record._get_client().check_mailbox_supported(record.x_mailbox_type)
+            record._get_client().check_mailbox_supported(record.mailbox_type)
 
-    @api.constrains('x_mailbox_type')
+    @api.constrains('mailbox_type')
     def _check_single_notification_mailbox(self):
         """Ensure only one notification mailbox exists."""
         for record in self:
-            if record.x_mailbox_type == 'notification':
+            if record.mailbox_type == 'notification':
                 existing = self.search([
-                    ('x_mailbox_type', '=', 'notification'),
+                    ('mailbox_type', '=', 'notification'),
                     ('id', '!=', record.id),
                     ('active', '=', True),
                 ], limit=1)
@@ -532,7 +537,7 @@ class MicrosoftMailbox(models.Model):
                         'Existing notification mailbox: %s'
                     ) % existing.email)
 
-    @api.constrains('x_sync_mode', 'x_exclude_internal')
+    @api.constrains('sync_mode', 'exclude_internal')
     def _check_internal_domains_configured(self):
         """Incoming sync may not be enabled before internal domains exist.
 
@@ -549,13 +554,13 @@ class MicrosoftMailbox(models.Model):
             if record._syncs_incoming():
                 raise ValidationError(gate)
 
-    @api.constrains('x_sync_mode')
+    @api.constrains('sync_mode')
     def _check_notification_mailbox_for_sync(self):
         """Ensure notification mailbox exists when enabling incoming sync."""
         for record in self:
-            if record._syncs_incoming() and record.x_mailbox_type != 'notification':
+            if record._syncs_incoming() and record.mailbox_type != 'notification':
                 notification_mailbox = self.search([
-                    ('x_mailbox_type', '=', 'notification'),
+                    ('mailbox_type', '=', 'notification'),
                     ('active', '=', True),
                 ], limit=1)
                 if not notification_mailbox:
@@ -564,20 +569,20 @@ class MicrosoftMailbox(models.Model):
                         'Please create a mailbox with type "Notification" first.'
                     ))
 
-    @api.constrains('x_route_to_team', 'x_alias_id')
+    @api.constrains('route_to_team', 'alias_id')
     def _check_alias_required_for_team_routing(self):
         """Ensure alias is set when route_to_team is enabled."""
         for record in self:
-            if record.x_route_to_team and not record.x_alias_id:
+            if record.route_to_team and not record.alias_id:
                 raise ValidationError(_(
                     'A Team must be selected when "Route to Team" is enabled.'
                 ))
 
-    @api.constrains('x_routing_smart')
+    @api.constrains('routing_smart')
     def _check_smart_routing_not_implemented(self):
         """Prevent enabling smart routing until AI routing is implemented."""
         for record in self:
-            if record.x_routing_smart:
+            if record.routing_smart:
                 raise ValidationError(_(
                     'Smart AI Routing is not yet implemented. This feature will be available in a future release.'
                 ))

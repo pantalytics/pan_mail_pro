@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 GMAIL_ID = 'gmail_msg_0001'
 INTERNET_ID = '<inbound-gmail-001@example.com>'
@@ -29,12 +29,12 @@ GMAIL_GET = 'odoo.addons.pan_mail_pro.models.providers.google.gmail_client.reque
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestGmailIncomingSync(OutlookProTestCase):
+class TestGmailIncomingSync(MailProTestCase):
 
     def setUp(self):
         super().setUp()
         Account = self.env['pan.mail.account']
-        Mailbox = self.env['x_microsoft.mailbox']
+        Mailbox = self.env['pan.mail.mailbox']
 
         self.gmail_user = self.env['res.users'].with_context(
             **self.SILENT_CTX
@@ -55,11 +55,11 @@ class TestGmailIncomingSync(OutlookProTestCase):
 
         self.mailbox = Mailbox.create({
             'email': 'gmail_sync@test.local',
-            'x_provider': 'gmail',
-            'x_mailbox_type': 'personal',
-            'x_owner_user_id': self.gmail_user.id,
-            'x_sync_mode': 'all',
-            'x_last_sync_date': '2026-01-01 00:00:00',
+            'provider': 'gmail',
+            'mailbox_type': 'personal',
+            'owner_user_id': self.gmail_user.id,
+            'sync_mode': 'all',
+            'last_sync_date': '2026-01-01 00:00:00',
         })
         self.requested_urls = []
 
@@ -127,7 +127,7 @@ class TestGmailIncomingSync(OutlookProTestCase):
         return patch(GMAIL_GET, side_effect=fake_get)
 
     def _sync(self, **mock_kwargs):
-        processor = self.env['microsoft.incoming.mail.processor']
+        processor = self.env['pan.mail.fetcher']
         with patch.object(
             type(self.env['google.gmail.client']), 'get_valid_token',
             autospec=True, return_value='fake-google-token',

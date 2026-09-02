@@ -11,14 +11,13 @@
 -- module and install it fresh alongside the old records. The rename has to
 -- happen before Odoo loads its registry.
 --
--- Deliberately NOT renamed:
+-- Deliberately NOT renamed here:
 --   * ir_config_parameter keys `x_pan_outlook_pro.*` - they hold the Fernet
---     encryption key and the encrypted OAuth secrets. The code still reads
---     them under the old names; renaming them is a separate change with its
---     own risk.
---   * XML record ids (mail_server_invalid_outlook_pro and friends) and the
---     `invalid.outlook-pro.disabled` sentinel mail server host, which
---     __init__.py filters on by value.
+--     encryption key and the encrypted OAuth secrets. The 19.0.6.0.0 module
+--     migration renames them together with the code that reads the new names.
+--   * XML record ids: the 19.0.6.0.0 migration renames those too, in place.
+--   * The `invalid.outlook-pro.disabled` sentinel mail server host: a stored
+--     value on the placeholder server, harmless and never read by code.
 
 BEGIN;
 

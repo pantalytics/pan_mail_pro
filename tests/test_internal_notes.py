@@ -12,11 +12,11 @@ immediately in test mode.
 """
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestInternalNotes(OutlookProTestCase):
+class TestInternalNotes(MailProTestCase):
 
     def _post_note(self, record, partner_ids=None):
         return record.with_user(self.salesperson).sudo().message_post(

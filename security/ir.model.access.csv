@@ -1,6 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_microsoft_mailbox_user,x_microsoft.mailbox.user,model_x_microsoft_mailbox,base.group_user,1,0,0,0
-access_microsoft_mailbox_manager,x_microsoft.mailbox.manager,model_x_microsoft_mailbox,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
+access_pan_mail_mailbox_user,pan.mail.mailbox.user,model_pan_mail_mailbox,base.group_user,1,0,0,0
+access_pan_mail_mailbox_manager,pan.mail.mailbox.manager,model_pan_mail_mailbox,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
 access_pan_mail_account_user,pan.mail.account.user,model_pan_mail_account,base.group_user,1,0,0,0
 access_pan_mail_account_manager,pan.mail.account.manager,model_pan_mail_account,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
 access_pan_mail_coverage_user,pan.mail.coverage.user,model_pan_mail_coverage,base.group_user,1,1,1,0

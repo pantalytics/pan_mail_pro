@@ -53,14 +53,13 @@ mailbox: only that user sees it in the composer.
 
 ## Step 5: Create the mailbox
 
-1. Go to **Settings → Technical → Email → Microsoft Mailboxes**
+1. Go to **Settings → Technical → Email → Mailboxes**
 2. Create a mailbox with the same address
 3. Set **Provider** to *IMAP / SMTP*
 4. Configure sending and incoming sync as described in
    [Mailboxes](../configuration/mailboxes.md)
 
-The menu still says "Microsoft Mailboxes". That is a naming leftover, not a
-restriction — mailboxes on all three providers live there.
+Mailboxes on all three providers live in that one list.
 
 ## The Sent folder
 

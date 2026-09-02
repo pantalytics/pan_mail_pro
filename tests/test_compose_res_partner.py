@@ -4,7 +4,7 @@ Composer integration tests for res.partner chatter.
 
 Two flows:
 - Inline chatter "Send message" (no composer dialog) → goes via message_post
-  directly with author=env.user; no x_microsoft_mailbox_id set, so routing
+  directly with author=env.user; no x_send_from_mailbox_id set, so routing
   uses the user's default mailbox.
 - Composer dialog with explicit dropdown choice → dropdown wins.
 
@@ -13,11 +13,11 @@ so all post operations must run inside mock_graph().
 """
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestComposeResPartner(OutlookProTestCase):
+class TestComposeResPartner(MailProTestCase):
 
     def test_inline_chatter_uses_user_default_mailbox(self):
         """No composer, no dropdown → routing falls through to author's
@@ -52,7 +52,7 @@ class TestComposeResPartner(OutlookProTestCase):
                 'res_ids': str([self.external_partner.id]),
                 'composition_mode': 'comment',
                 'partner_ids': [(6, 0, [self.external_partner.id])],
-                'x_microsoft_send_from_id': self.personal_mailbox.id,
+                'x_send_from_mailbox_id': self.personal_mailbox.id,
             })
             composer.action_send_mail()
         self.assertEqual(
@@ -83,7 +83,7 @@ class TestComposeResPartner(OutlookProTestCase):
                 'composition_mode': 'comment',
                 'parent_id': parent.id,
                 'partner_ids': [(6, 0, [self.external_partner.id])],
-                'x_microsoft_send_from_id': self.shared_mailbox.id,
+                'x_send_from_mailbox_id': self.shared_mailbox.id,
             })
             composer.action_send_mail()
         self.assertEqual(

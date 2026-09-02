@@ -58,7 +58,7 @@ class PanMailItem(models.Model):
              'not stable across every provider.',
     )
     mailbox_id = fields.Many2one(
-        'x_microsoft.mailbox', string='Mailbox', required=True,
+        'pan.mail.mailbox', string='Mailbox', required=True,
         ondelete='cascade', index=True,
     )
     folder = fields.Char(string='Folder')
@@ -220,7 +220,7 @@ class PanMailItem(models.Model):
         it to that message is the honest outcome. So the message is looked up
         either way, and only an item with nothing behind it stays pending.
         """
-        processor = self.env['microsoft.incoming.mail.processor']
+        processor = self.env['pan.mail.fetcher']
         Message = self.env['mail.message']
         imported = refused = 0
         for item in self:

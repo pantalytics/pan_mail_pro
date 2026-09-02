@@ -7,11 +7,11 @@ the drill-down must land on exactly the rows the number claims.
 """
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestMailCoverage(OutlookProTestCase):
+class TestMailCoverage(MailProTestCase):
 
     def _message(self, model=None, res_id=None, direction='incoming'):
         return self.env['mail.message'].sudo().create({

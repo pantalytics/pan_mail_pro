@@ -10,7 +10,7 @@ from unittest.mock import patch
 from odoo import fields
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 from .test_incoming_sync import TestIncomingSync
 
 
@@ -22,7 +22,7 @@ class TestMailItemRecording(TestIncomingSync):
         return self.env['pan.mail.item'].sudo().search([('mailbox_id', '=', self.mailbox.id)])
 
     def test_unknown_sender_under_known_partners_is_queued(self):
-        self.mailbox.x_sync_mode = 'known_partners'
+        self.mailbox.sync_mode = 'known_partners'
         self.external_partner.unlink()
 
         self._sync()
@@ -35,7 +35,7 @@ class TestMailItemRecording(TestIncomingSync):
 
     def test_queue_stores_no_body(self):
         """The provider stays the source of truth for content."""
-        self.mailbox.x_sync_mode = 'known_partners'
+        self.mailbox.sync_mode = 'known_partners'
         self.external_partner.unlink()
         self._sync()
 
@@ -84,13 +84,13 @@ class TestMailItemRecording(TestIncomingSync):
         Written inside it, the record would be undone by the very failure it
         exists to report — which is how this kind of bookkeeping usually fails.
         """
-        original = type(self.env['microsoft.incoming.mail.processor'])._process_message
+        original = type(self.env['pan.mail.fetcher'])._process_message
 
         def boom(self_processor, mailbox, message, folder):
             raise ValueError('synthetic failure')
 
         with patch.object(
-            type(self.env['microsoft.incoming.mail.processor']),
+            type(self.env['pan.mail.fetcher']),
             '_process_message', boom,
         ):
             self._sync()
@@ -103,7 +103,7 @@ class TestMailItemRecording(TestIncomingSync):
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestMailItemLifecycle(OutlookProTestCase):
+class TestMailItemLifecycle(MailProTestCase):
 
     def _item(self, **overrides):
         vals = {
@@ -183,7 +183,7 @@ class TestMailItemImport(TestIncomingSync):
     """
 
     def _queued_item(self):
-        self.mailbox.x_sync_mode = 'known_partners'
+        self.mailbox.sync_mode = 'known_partners'
         self.external_partner.unlink()
         self._sync()
         return self.env['pan.mail.item'].sudo().search(

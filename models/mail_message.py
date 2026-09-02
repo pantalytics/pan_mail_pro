@@ -5,9 +5,11 @@ communication lens is built on.
 
 Two separate concerns share this file because they share a table:
 
-1. Threading. Microsoft Graph does not always return In-Reply-To headers,
-   especially for Sent Items in shared mailboxes, so conversationId is stored
-   as a fallback.
+1. Threading, historical. Every Message-ID and every provider thread handle
+   now lives in the two indexes in `pan_mail_thread_index.py`. One column from
+   before those indexes existed is kept, read-only, so conversations that
+   predate them keep threading until they age out (see the matcher's
+   `thread_link_legacy` rule).
 
 2. The lens. Odoo links a message to its document through `model` (a char) and
    `res_id` (an int) — a pointer with no foreign key, which cannot be grouped
@@ -29,17 +31,18 @@ class MailMessage(models.Model):
     _inherit = 'mail.message'
 
     # -------------------------------------------------------------------------
-    # Provider threading keys
+    # Legacy provider thread handle
+    #
+    # Written on every send and import until 19.0.6.0.0; since then the handle
+    # is recorded in `pan.mail.thread.link`, scoped to the mailbox that saw it.
+    # Nothing writes this column any more. The matcher still reads it for
+    # threads that only exist here, at a lower confidence than the scoped
+    # index, and the rows stop mattering once they pass the thread age limit.
     # -------------------------------------------------------------------------
-    x_microsoft_message_id = fields.Char(
-        string='Microsoft Message ID',
-        help='Microsoft Graph internetMessageId - used for In-Reply-To threading',
-        index='btree_not_null',
-    )
-
-    x_microsoft_conversation_id = fields.Char(
-        string='Microsoft Conversation ID',
-        help='Microsoft Graph conversationId for email threading',
+    x_provider_thread_id = fields.Char(
+        string='Provider Thread ID (legacy)',
+        help='Provider thread handle recorded before pan.mail.thread.link existed. '
+             'Read by the matcher only; no longer written.',
         index='btree_not_null',
     )
 
@@ -55,7 +58,7 @@ class MailMessage(models.Model):
     )
 
     x_mailbox_id = fields.Many2one(
-        'x_microsoft.mailbox',
+        'pan.mail.mailbox',
         string='Mailbox',
         ondelete='set null',
         index='btree_not_null',

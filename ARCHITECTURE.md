@@ -18,13 +18,60 @@ Odoo — send and receive via the Graph API, the Gmail API or the mail protocols
 themselves, with proper threading, partner matching and visibility into where
 mail actually landed.
 
+### Vocabulary
+
+Two worlds and one bridge. Every word below has exactly one meaning, and the
+code, the views and the documentation use the same one.
+
+| Term | Meaning | In code |
+|------|---------|---------|
+| **Chatter** | Odoo's side: a `mail.message` on a record | `mail.message`, `message_post()`, `message_new()` |
+| **Email** | The provider's side: a message in a mailbox folder | the normalized message in `mail.provider.client` |
+| **Mailbox** | An address Mail Pro sends from and, when its sync mode says so, reads | `pan.mail.mailbox` |
+| **Account** | Credentials for one address on one provider | `pan.mail.account` |
+| **Provider** | Where the mail lives: `outlook`, `gmail` or `imap` | `mail.provider.client`, `PROVIDER_SELECTION` |
+| **Outgoing** | Chatter → email. Odoo composes, the provider sends | `mail.mail` (`_resolve_route`, `send_message`) |
+| **Incoming** | Email → chatter. The provider is read, the matcher decides, Odoo posts | `pan.mail.fetcher`, `pan.mail.matcher` |
+| **Sync** | The user's word for the incoming flow and its settings | `sync_mode`, `last_sync_date`, "Sync Now" |
+| **Send From** | The mailbox a mail leaves through | `x_send_from_mailbox_id`, `x_default_mailbox_id` |
+| **Direction** | Which way an *email* went for its mailbox, whichever flow carried it | `mail.message.x_direction` |
+
+Direction and flow are different axes, and the Sent folder is where they part.
+Mail a user sent from Outlook itself reaches Odoo through the *incoming* flow
+(it is fetched), but its direction is `outgoing` (the mailbox sent it). The
+lens asks about direction; code paths are named after flow. Four quadrants:
+
+| | Email side (the mailbox) | Chatter side (the record) |
+|---|---|---|
+| **Outgoing** | Sent by the mailbox — from Odoo (send flow) or from a mail client (Sent folder, fetch flow) | A message composed in Odoo that goes out as email |
+| **Incoming** | Received by the mailbox (Inbox, fetch flow) | A message Mail Pro posts on a record from an email |
+
+Naming rules that follow:
+
+- A model of ours is `pan.mail.<thing>` with plain field names. `x_` is
+  reserved for fields added to Odoo's own models (`mail.message.x_direction`,
+  `res.users.x_default_mailbox_id`), which is what Odoo.sh asks for.
+- Nothing outside `models/providers/<vendor>/` carries a vendor's name.
+  `microsoft.graph.client` is Microsoft's; `pan.mail.mailbox` is nobody's.
+- Configuration parameters live under `pan_mail_pro.`; a vendor-specific one
+  carries the vendor in the key (`pan_mail_pro.microsoft_client_id`).
+- Log tags name the flow or the vendor, never both: `[Outgoing Mail]`,
+  `[Incoming Mail]`, `[Mail Matcher]`, `[OAuth]`, `[Graph API]`,
+  `[Gmail API]`, `[IMAP]`, `[SMTP]`, `[Mail AI]`, `[Encryption]`, and
+  `[Mail Pro]` for setup and housekeeping.
+
+The names read `microsoft.*` and `x_microsoft_*` until 19.0.6.0.0, from the
+time the module was an Outlook-only add-on. The rename was deliberately one
+mechanical release rather than a series of partial ones, so every stored id
+migrated once; `migrations/19.0.6.0.0/` is the record of what moved where.
+
 ### Provider abstraction
 
 Everything wire-specific — how a mail is sent, how remote messages are listed
 and read, which credentials to use — lives behind one contract,
 `mail.provider.client`. Everything else — mailbox routing, partner matching,
 threading, chatter posting — is provider-neutral and never touches a Graph or
-Gmail JSON key. A mailbox names its provider with `x_provider` and dispatches
+Gmail JSON key. A mailbox names its provider with `provider` and dispatches
 via `mailbox._get_client()`, which resolves the code through the registry in
 `models/mail_provider_client.py`.
 
@@ -39,11 +86,6 @@ lives in `models/providers/<vendor>/`. Credentials are a `pan.mail.account`, and
 the client is what decides which account applies — `resolve_sending_account()`
 and `resolve_receiving_account()` — because that is where providers genuinely
 diverge.
-
-Model names still read `microsoft.*` and fields `x_microsoft_*`. That is
-deliberate: the rename to provider-neutral names is a single mechanical phase
-done last, so historical data — notably `x_microsoft_message_id` on
-`mail.message`, which reply threading depends on — migrates once, cleanly.
 
 ### Capability differences
 
@@ -76,7 +118,7 @@ Providers disagree about sending as somebody else, which is why
 
 | Model | Purpose |
 |-------|---------|
-| `x_microsoft.mailbox` | Mailbox configuration (email, type, sync mode, routing, `x_provider`) |
+| `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
 | `pan.mail.internal.domains` | The one definition of "is this address ours?" (abstract) |
 | `res.config.settings` | Module settings (provider choice, client id, secret, tenant) |
@@ -87,10 +129,10 @@ Providers disagree about sending as somebody else, which is why
 
 | Model | Purpose |
 |-------|---------|
-| `microsoft.incoming.mail.processor` | Incoming sync (cron), provider-neutral orchestration |
+| `pan.mail.fetcher` | Incoming flow (cron): fetch, filter, match, post. Provider-neutral |
 | `mail.mail` | Outgoing override — resolves a route, then hands to the provider |
 | `mail.compose.message` | Composer "Send From" dropdown + setup warning |
-| `mail.message` | Provider threading keys + the communication lens fields |
+| `mail.message` | The communication lens fields, plus one legacy thread column |
 | `mail.alias` | Small extension so an alias can name a mailbox |
 
 **Deciding where mail belongs**
@@ -136,7 +178,7 @@ pan_mail_pro/
 │   ├── ai/                        # The only place an AI SDK may be imported
 │   │   ├── pan_mail_ai.py         # Contract + registry + null backend
 │   │   └── claude/claude_backend.py
-│   ├── microsoft_mailbox.py       # Mailbox config + routing + x_provider dispatch
+│   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
 │   ├── pan_mail_account.py        # Per-address credentials
 │   ├── pan_mail_internal_domains.py
 │   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral)
@@ -151,9 +193,9 @@ pan_mail_pro/
 │   ├── res_users.py / res_partner.py / res_config_settings.py
 │   └── encryption_utils.py        # Fernet encryption
 ├── controllers/main.py            # OAuth callbacks (Microsoft + Google, one handler)
-├── migrations/                    # 19.0.1.0.5, 2.1.0, 3.3.0, 4.0.0, 5.0.0
+├── migrations/                    # 19.0.1.0.5, 2.1.0, 3.3.0, 4.0.0, 5.0.0, 6.0.0
 ├── views/  data/  security/  static/
-├── tests/                         # 28 files; see §12
+├── tests/                         # 29 files; see §12
 └── tools/                         # CI helpers
 ```
 
@@ -175,7 +217,7 @@ Which credentials a mailbox runs on is asked of the provider
 caller: only Microsoft 365 lets one person send as another with their own token.
 
 **Personal** — auto-created when a user connects (if the admin setting allows).
-`x_owner_user_id` links it to its owner, and only the owner sees it in the
+`owner_user_id` links it to its owner, and only the owner sees it in the
 composer dropdown.
 
 **Shared** — on Microsoft 365 each user sends with their **own** OAuth token, so
@@ -194,10 +236,10 @@ out from somewhere.
 
 ### One control, not six
 
-`x_sync_mode` is a single three-way choice, and every question the mailbox form
+`sync_mode` is a single three-way choice, and every question the mailbox form
 used to ask separately is an answer to it:
 
-| `x_sync_mode` | Meaning |
+| `sync_mode` | Meaning |
 |---------------|---------|
 | `none` | Send only. Nothing is imported. |
 | `known_partners` | Import mail from addresses that are already contacts. |
@@ -214,8 +256,8 @@ Two booleans remain, and neither is a mode:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `x_routing_smart` | Boolean | Interlock keeping AI auto-routing off. See §8 |
-| `x_queue_unknown_contacts` | Boolean | Hold unknown senders in the triage queue |
+| `routing_smart` | Boolean | Interlock keeping AI auto-routing off. See §8 |
+| `queue_unknown_contacts` | Boolean | Hold unknown senders in the triage queue |
 
 ### Internal domains are a gate, not a preference
 
@@ -236,8 +278,7 @@ email", or per mailbox via "Exclude Internal".
 | Check | Condition | Action |
 |-------|-----------|--------|
 | Odoo-originated (headers) | `X-Odoo-Model` or `X-Odoo-Mail-Id` present | Skip |
-| Odoo-originated (sent) | Message-ID matches `mail.mail.x_microsoft_message_id` | Skip |
-| Duplicate | Message-ID already in `mail.message.message_id` | Skip |
+| Already in Odoo | Message-ID resolves through `pan.mail.matcher._resolve_message_id()`: the ref index (including the id the provider minted when *we* sent it) or `mail.message.message_id` | Skip |
 
 ### Inbox vs Sent Items
 
@@ -280,7 +321,7 @@ Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
 | 1 | `odoo_headers` | 1.0 | `X-Odoo-Model` / `X-Odoo-Record-Id` |
 | 2 | `references` | 1.0 | `In-Reply-To` + the full `References` chain |
 | 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread id) |
-|   | `thread_link_legacy` | 0.85 | unscoped `x_microsoft_conversation_id` |
+|   | `thread_link_legacy` | 0.85 | unscoped `mail.message.x_provider_thread_id`, read-only since 19.0.6.0.0 |
 | 4 | `subject_participants` | 0.5 | normalised subject + same partner — proposal only |
 
 Rules 1 and 2 are RFC 5322, so they behave identically on Microsoft 365, Gmail
@@ -319,6 +360,15 @@ Neither model is provider-specific. IMAP has no thread handle at all; the
 matcher synthesises one from the root of the `References` chain and stores it
 here like any other.
 
+These two are the *only* places a wire id is stored. `mail.mail` used to keep
+the provider's Message-ID and thread handle as well, and `mail.message` the
+Message-ID: three copies of one fact, one of them on a row Odoo deletes after
+sending. 19.0.6.0.0 moved the surviving values into the ref index and dropped
+the columns. One column stays, `mail.message.x_provider_thread_id`, because
+its rows carry no mailbox and cannot be moved into the scoped link; nothing
+writes it any more and the legacy rule reads it until those threads pass the
+age limit.
+
 ---
 
 ## 5. Email flows
@@ -329,7 +379,7 @@ here like any other.
 User clicks "Send"
       │
       ▼
-mail.compose.message — x_microsoft_send_from_id = selected mailbox
+mail.compose.message — x_send_from_mailbox_id = selected mailbox
       │
       ▼
 mail.mail._resolve_route()
@@ -402,12 +452,12 @@ keeps the timeline instead of collapsing onto the day the import ran.
 Ascending sort plus an incremental cursor, the pattern Odoo fetchmail and
 Stripe webhooks use:
 
-1. Fetch up to 200 messages per folder, oldest first, since `x_last_sync_date`
-2. Advance `x_last_sync_date` to the **minimum** of the two folders' latest
+1. Fetch up to 200 messages per folder, oldest first, since `last_sync_date`
+2. Advance `last_sync_date` to the **minimum** of the two folders' latest
    message, so nothing is skipped in the slower folder
 3. If nothing came back at all, the cursor jumps to `now()` — caught up
 
-`x_sync_start_date` is user-configurable (default: now). Moving it earlier
+`sync_start_date` is user-configurable (default: now). Moving it earlier
 resets the cursor, which is how a historical import is started. Duplicates are
 skipped on Message-ID, so a re-run is safe.
 
@@ -545,7 +595,7 @@ its place, and it plugs in as one more rule by overriding `_match_rules()`.
 Running last means it is only ever asked about mail the deterministic rules
 could not place, which is what keeps it affordable on a one-minute cron.
 
-Auto-routing stays shut behind the `x_routing_smart` constraint until there is
+Auto-routing stays shut behind the `routing_smart` constraint until there is
 evidence from real suggestions that it should open.
 
 ---
@@ -555,7 +605,7 @@ evidence from real suggestions that it should open.
 ### 9.1 Token encryption
 
 Fernet symmetric encryption with an auto-generated key in `ir.config_parameter`
-(`x_pan_outlook_pro.encryption_key`), because Odoo.sh does not support custom
+(`pan_mail_pro.encryption_key`), because Odoo.sh does not support custom
 environment variables and the database is already encrypted at rest. Zero
 configuration, and defense-in-depth against SQL injection and backup leaks. All
 encryption goes through `models/encryption_utils.py`.
@@ -639,7 +689,7 @@ this provider shape.
 
 ### 9.7 Graceful degradation: opt-in by data
 
-As long as **no `x_microsoft.mailbox` records exist**, `mail.mail.send()` falls
+As long as **no `pan.mail.mailbox` records exist**, `mail.mail.send()` falls
 through to `super().send()` and Odoo's standard SMTP queue handles outbound
 mail. Demo, QA and dev databases keep working before any provider is wired up.
 Once an admin creates the first mailbox, provider routing activates and
@@ -760,9 +810,10 @@ For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 ### Field naming
 
 Fields added to *Odoo's own* models take the `x_` prefix per Odoo.sh guidelines
-(`x_pan_mail_connected`, `x_microsoft_mailbox_id`). Fields on the module's own
-models do not — `pan.mail.account.refresh_token` is plain, because the model is
-ours.
+(`x_pan_mail_connected`, `x_send_from_mailbox_id`). Fields on the module's own
+models do not — `pan.mail.account.refresh_token` and `pan.mail.mailbox.provider`
+are plain, because the model is ours. See the vocabulary in §1 for the rest of
+the naming rules.
 
 `res.users` carried `x_microsoft_access_token` and four siblings as proxies onto
 `pan.mail.account` until **19.0.5.0.0 removed them**. Every caller had been
@@ -784,15 +835,20 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 
 | Tag | Purpose |
 |-----|---------|
-| `[Graph API]` | Microsoft Graph operations |
-| `[Incoming Mail]` | Incoming sync |
-| `[OAuth]` | Authentication |
+| `[Outgoing Mail]` | The send flow in `mail.mail`, any provider |
+| `[Incoming Mail]` | The fetch flow in `pan.mail.fetcher`, any provider |
+| `[Mail Matcher]` | Thread matching and the two indexes |
+| `[OAuth]` | Authentication callbacks |
+| `[Graph API]` / `[Gmail API]` / `[IMAP]` / `[SMTP]` | Inside one provider client only |
+| `[Mail AI]` | The AI seam |
+| `[Encryption]` | Credential encryption |
+| `[Mail Pro]` | Setup, migrations, housekeeping |
 
 ---
 
 ## 12. Tests
 
-28 files under `tests/`, roughly 6 600 lines. They fall into four groups:
+29 files under `tests/`, roughly 7 500 lines. They fall into four groups:
 
 | Group | Files | What they hold |
 |-------|-------|----------------|
@@ -800,6 +856,7 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 | Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py` | Wire-level behaviour per vendor |
 | Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_mail_matcher.py`, `test_routing_log.py`, `test_mail_item.py` | Fetch → filter → match → post |
 | Sending & UI | `test_outgoing_*.py`, `test_compose_*.py`, `test_mailbox_*.py`, `test_setup_flow.py`, `test_onboarding.py` | Routing, threading, composer, permissions, onboarding |
+| Migrations | `test_account_migration.py`, `test_rename_migration.py` | The scripts in `migrations/`, run against real rows |
 
 `tests/common.py` provides the shared fixture — a notification mailbox, a shared
 mailbox, a personal mailbox, connected users, an external partner, and a

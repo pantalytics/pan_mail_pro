@@ -10,11 +10,11 @@ fires immediately in test mode.
 """
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestSystemNotifications(OutlookProTestCase):
+class TestSystemNotifications(MailProTestCase):
 
     def test_follower_notification_routes_via_notification_mailbox(self):
         """When a record posts a tracked message and a follower with

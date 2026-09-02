@@ -17,20 +17,20 @@ from odoo.exceptions import UserError
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 from .neutralization import database_is_neutralized
-from .microsoft_mailbox import SYNCING_MODES
+from .pan_mail_mailbox import SYNCING_MODES
 
 _logger = logging.getLogger(__name__)
 
 
-class MicrosoftIncomingMailProcessor(models.AbstractModel):
-    """
-    Processor for incoming emails from Microsoft Graph API.
+class PanMailFetcher(models.AbstractModel):
+    """The incoming flow: email in a mailbox folder becomes chatter on a record.
 
-    Posts messages directly to partners using message_post(),
-    ensuring proper partner matching and message threading.
+    Fetches through the mailbox's provider client, filters, asks the matcher
+    where each mail belongs, and posts it there with message_post() or
+    message_new() so threading and partner matching are Odoo's own.
     """
-    _name = 'microsoft.incoming.mail.processor'
-    _description = 'Microsoft Incoming Mail Processor'
+    _name = 'pan.mail.fetcher'
+    _description = 'Incoming Mail Fetcher'
 
     @api.model
     def _cron_fetch_incoming_mail(self):
@@ -50,8 +50,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # account with nobody behind it, and requiring an owner here silently
         # skipped exactly those mailboxes. What matters is usable credentials,
         # which is what the mailbox asks its client.
-        mailboxes = self.env['x_microsoft.mailbox'].search([
-            ('x_sync_mode', 'in', SYNCING_MODES),
+        mailboxes = self.env['pan.mail.mailbox'].search([
+            ('sync_mode', 'in', SYNCING_MODES),
             ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
         ]).filtered(lambda m: m._has_working_credentials())
 
@@ -63,14 +63,14 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     self._process_mailbox(mailbox)
                     # Mark as active if successful
                     if mailbox.state != 'active':
-                        mailbox.write({'state': 'active', 'x_error_message': False})
+                        mailbox.write({'state': 'active', 'error_message': False})
             except Exception as e:
                 # Savepoint rolled back: the cursor is usable again, so the
                 # error write below won't hit "current transaction is aborted".
                 _logger.exception(f"[Incoming Mail] Error processing mailbox {mailbox.email}")
                 mailbox.write({
                     'state': 'error',
-                    'x_error_message': str(e),
+                    'error_message': str(e),
                 })
 
         _logger.info("[Incoming Mail] Sync completed")
@@ -80,7 +80,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         Fetch and process messages for a single mailbox.
 
         Args:
-            mailbox: x_microsoft.mailbox record
+            mailbox: pan.mail.mailbox record
 
         Raises:
             UserError: when internal domains are not configured. Deliberately
@@ -95,13 +95,13 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         if gate:
             raise UserError(gate)
 
-        # First sync: if x_sync_start_date is set, use it for historical sync
+        # First sync: if sync_start_date is set, use it for historical sync
         # Otherwise just test connection and start from now
-        if not mailbox.x_last_sync_date:
-            if mailbox.x_sync_start_date:
+        if not mailbox.last_sync_date:
+            if mailbox.sync_start_date:
                 # Historical sync: start from configured date
-                _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, starting from {mailbox.x_sync_start_date}")
-                mailbox.write({'x_last_sync_date': mailbox.x_sync_start_date})
+                _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, starting from {mailbox.sync_start_date}")
+                mailbox.write({'last_sync_date': mailbox.sync_start_date})
                 # Continue to fetch messages below
             else:
                 # No start date: just test connection and start from now
@@ -114,7 +114,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     limit=1,  # Just test, don't fetch all
                 )
                 _logger.info(f"[Incoming Mail] Connection test passed for {mailbox.email}, setting sync date to now")
-                mailbox.write({'x_last_sync_date': fields.Datetime.now()})
+                mailbox.write({'last_sync_date': fields.Datetime.now()})
                 return  # Skip this run, start fetching from next cron run
 
         # Both folders, always: syncing a mailbox means both sides of its
@@ -132,9 +132,9 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         # Use min of folder progress (safe: won't skip messages in slower folder)
         # If no messages found, advance to now() (fully caught up)
         if folder_cursors:
-            mailbox.write({'x_last_sync_date': min(folder_cursors)})
+            mailbox.write({'last_sync_date': min(folder_cursors)})
         else:
-            mailbox.write({'x_last_sync_date': fields.Datetime.now()})
+            mailbox.write({'last_sync_date': fields.Datetime.now()})
 
         _logger.info(f"[Incoming Mail] Processed {processed_count} message(s) from {mailbox.email}")
 
@@ -159,7 +159,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             account=client.resolve_receiving_account(mailbox),
             mailbox=mailbox,
             folder=folder,
-            since_datetime=mailbox.x_last_sync_date,
+            since_datetime=mailbox.last_sync_date,
             limit=200,
         )
 
@@ -289,7 +289,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         is_known_contact = bool(partner)
 
         # Apply routing rules based on sync mode and contact type
-        if mailbox.x_sync_mode == 'known_partners':
+        if mailbox.sync_mode == 'known_partners':
             # Only process known contacts
             if not is_known_contact and not force_import:
                 _logger.info(
@@ -304,11 +304,11 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                 return False
             _logger.debug(f"[Incoming Mail] Known partner filter passed: {partner.name}")
 
-        elif mailbox.x_sync_mode == 'all':
+        elif mailbox.sync_mode == 'all':
             # 'all' mode: process both known and unknown contacts
             if not is_known_contact:
                 # Unknown contact - check routing setting
-                if mailbox.x_queue_unknown_contacts and not force_import:
+                if mailbox.queue_unknown_contacts and not force_import:
                     _logger.info(
                         "[Incoming Mail] Holding %s for review: unknown contact",
                         internet_message_id,
@@ -353,7 +353,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             partner=partner,
             # In team mode a reply must land on the ticket or lead, never back
             # on the contact's own chatter.
-            exclude_models=('res.partner',) if mailbox.x_route_to_team else (),
+            exclude_models=('res.partner',) if mailbox.route_to_team else (),
         )
         # Effective thread id: what the provider said, or — for providers with
         # no thread concept — the root of the References chain.
@@ -419,10 +419,10 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             sender = full_message.get('from') or {}
             author_email = sender.get('email') or mailbox.email
             author_name = sender.get('name', '')
-            if mailbox.x_mailbox_type == 'shared':
+            if mailbox.mailbox_type == 'shared':
                 author = self._find_or_create_partner(mailbox.email)
             else:
-                author = mailbox.x_owner_user_id.partner_id
+                author = mailbox.owner_user_id.partner_id
             post_author_id = author.id
             post_email_from = f'"{author_name}" <{author_email}>' if author_name else author_email
 
@@ -451,7 +451,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                     f"by rule '{match['rule']}'"
                 )
                 outcome = 'threaded'
-            elif is_outgoing and not mailbox.x_route_to_team:
+            elif is_outgoing and not mailbox.route_to_team:
                 # Sent item we could not thread: the correspondent's chatter is
                 # the only sensible home for it.
                 outcome = 'sent_item'
@@ -524,14 +524,12 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
                        conversation_id, provider_message_id=None):
         """Record what we just learned, so the next reply in this thread matches.
 
-        Three writes, each for a different rung of the matching ladder:
+        Two writes, one per index the matching ladder reads:
 
         - the Message-ID under which this mail can be referenced, but only when
           it differs from what `message_post` already stored on `mail.message`.
           On import those are normally identical, so this usually writes nothing.
         - the (mailbox, thread id) → record link, which is the scoped lookup.
-        - `x_microsoft_conversation_id`, kept as a denormalised copy for the
-          legacy lookup and for databases mid-upgrade.
         """
         if not message:
             return
@@ -540,51 +538,27 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
             self.env['pan.mail.message.ref'].record(
                 message, internet_message_id, source='provider')
 
-        if conversation_id:
-            message.write({'x_microsoft_conversation_id': conversation_id})
-            if target_record:
-                self.env['pan.mail.thread.link'].record(
-                    mailbox=mailbox,
-                    thread_id=conversation_id,
-                    model=target_record._name,
-                    res_id=target_record.id,
-                    message=message,
-                    provider_message_id=provider_message_id,
-                )
+        if conversation_id and target_record:
+            self.env['pan.mail.thread.link'].record(
+                mailbox=mailbox,
+                thread_id=conversation_id,
+                model=target_record._name,
+                res_id=target_record.id,
+                message=message,
+                provider_message_id=provider_message_id,
+            )
 
     def _is_duplicate(self, internet_message_id):
-        """
-        Check if a message with this ID already exists in Odoo.
+        """Is this Message-ID already in Odoo, imported or sent from here?
 
-        Checks both:
-        1. mail.message.message_id - for messages already imported
-        2. mail.mail.x_microsoft_message_id - for emails sent via our module
-
-        This prevents re-importing Sent Items that were sent from Odoo.
-
-        Args:
-            internet_message_id: The Microsoft internetMessageId
-
-        Returns:
-            bool: True if duplicate exists
+        The same lookup the matcher uses to resolve a `References` chain: the
+        ref index (every id a message was ever seen under, including the one
+        the provider minted on send) and Odoo's own `message_id`. That is what
+        keeps a Sent Items sync from re-importing mail that left from Odoo.
         """
         if not internet_message_id:
             return False
-
-        # Check mail.message (already imported messages)
-        if self.env['mail.message'].search([
-            ('message_id', '=', internet_message_id)
-        ], limit=1):
-            return True
-
-        # Check mail.mail (emails sent via our module)
-        if self.env['mail.mail'].search([
-            ('x_microsoft_message_id', '=', internet_message_id)
-        ], limit=1):
-            _logger.info(f"[Incoming Mail] Skipping Odoo-sent email (found in mail.mail): {internet_message_id}")
-            return True
-
-        return False
+        return bool(self.env['pan.mail.matcher']._resolve_message_id(internet_message_id))
 
     def _is_internal_domain(self, email, mailbox=None):
         """
@@ -596,7 +570,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
 
         Args:
             email: Email address to check
-            mailbox: x_microsoft.mailbox record (optional, for per-mailbox setting)
+            mailbox: pan.mail.mailbox record (optional, for per-mailbox setting)
 
         Returns:
             bool: True if email should be skipped as internal
@@ -671,7 +645,7 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         - Does NOT send duplicate notifications to the sender
 
         Args:
-            mailbox: x_microsoft.mailbox record with routing configuration
+            mailbox: pan.mail.mailbox record with routing configuration
             partner: res.partner record for the sender
             msg_dict: Parsed email dict in Odoo format
             contact_email: Sender email address
@@ -682,8 +656,8 @@ class MicrosoftIncomingMailProcessor(models.AbstractModel):
         import ast
 
         # Check if routing to team is enabled
-        route_to_team = mailbox.x_route_to_team if mailbox else False
-        alias = mailbox.x_alias_id if mailbox and route_to_team else False
+        route_to_team = mailbox.route_to_team if mailbox else False
+        alias = mailbox.alias_id if mailbox and route_to_team else False
 
         # Route to Contact: post to partner's chatter (default behavior)
         if not route_to_team or not alias or not alias.alias_model_id:

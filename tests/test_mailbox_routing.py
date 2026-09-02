@@ -24,11 +24,11 @@ from odoo.tools import mute_logger
 
 from odoo.addons.pan_mail_pro.models.mail_mail import RoutingError
 
-from .common import OutlookProTestCase, send_and_capture
+from .common import MailProTestCase, send_and_capture
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestMailboxRouting(OutlookProTestCase):
+class TestMailboxRouting(MailProTestCase):
 
     def _make_mail(self, **overrides):
         """Create mail.mail as the salesperson but with admin rights.
@@ -64,7 +64,7 @@ class TestMailboxRouting(OutlookProTestCase):
         mail = self._make_mail(
             recipient_ids=[(6, 0, [self.other_user.partner_id.id])],
             email_to=False,
-            x_microsoft_mailbox_id=self.shared_mailbox.id,
+            x_send_from_mailbox_id=self.shared_mailbox.id,
         )
         mailbox, _account = mail._resolve_route()
         self.assertEqual(mailbox, self.notification_mailbox)
@@ -74,7 +74,7 @@ class TestMailboxRouting(OutlookProTestCase):
     # ------------------------------------------------------------------ #
 
     def test_dropdown_shared_sends_with_the_author_token(self):
-        mail = self._make_mail(x_microsoft_mailbox_id=self.shared_mailbox.id)
+        mail = self._make_mail(x_send_from_mailbox_id=self.shared_mailbox.id)
         mailbox, account = mail._resolve_route()
         self.assertEqual(mailbox, self.shared_mailbox)
         self.assertEqual(account.user_id, self.salesperson)
@@ -85,20 +85,20 @@ class TestMailboxRouting(OutlookProTestCase):
         and must still win, sending with whoever pressed Send."""
         mail = self._make_mail(
             author_id=self.company_partner.id,
-            x_microsoft_mailbox_id=self.shared_mailbox.id,
+            x_send_from_mailbox_id=self.shared_mailbox.id,
         )
         mailbox, account = mail._resolve_route()
         self.assertEqual(mailbox, self.shared_mailbox)
         self.assertEqual(account.user_id, self.salesperson)
 
     def test_dropdown_personal_sends_with_the_owner_token(self):
-        mail = self._make_mail(x_microsoft_mailbox_id=self.personal_mailbox.id)
+        mail = self._make_mail(x_send_from_mailbox_id=self.personal_mailbox.id)
         mailbox, account = mail._resolve_route()
         self.assertEqual(mailbox, self.personal_mailbox)
         self.assertEqual(account.user_id, self.salesperson)
 
     def test_dropdown_notification_sends_with_its_owner(self):
-        mail = self._make_mail(x_microsoft_mailbox_id=self.notification_mailbox.id)
+        mail = self._make_mail(x_send_from_mailbox_id=self.notification_mailbox.id)
         mailbox, account = mail._resolve_route()
         self.assertEqual(mailbox, self.notification_mailbox)
         self.assertEqual(account.user_id, self.notif_owner)
@@ -107,7 +107,7 @@ class TestMailboxRouting(OutlookProTestCase):
         """No silent reroute: the mail names the mailbox it could not use."""
         self.disconnect(self.salesperson)
         mail = self._make_mail(
-            x_microsoft_mailbox_id=self.personal_mailbox.id,
+            x_send_from_mailbox_id=self.personal_mailbox.id,
             author_id=self.company_partner.id,
         )
         with self.assertRaises(RoutingError) as ctx:
@@ -121,11 +121,11 @@ class TestMailboxRouting(OutlookProTestCase):
     def test_author_default_mailbox_is_used(self):
         mail = self._make_mail()
         mailbox, account = mail._resolve_route()
-        self.assertEqual(mailbox, self.salesperson.x_microsoft_default_mailbox_id)
+        self.assertEqual(mailbox, self.salesperson.x_default_mailbox_id)
         self.assertEqual(account.user_id, self.salesperson)
 
     def test_author_without_a_default_mailbox_refuses(self):
-        self.salesperson.x_microsoft_default_mailbox_id = False
+        self.salesperson.x_default_mailbox_id = False
         mail = self._make_mail()
         with self.assertRaises(RoutingError) as ctx:
             mail._resolve_route()
@@ -168,9 +168,9 @@ class TestMailboxRouting(OutlookProTestCase):
     @mute_logger('odoo.addons.pan_mail_pro.models.mail_mail')
     def test_unroutable_mail_does_not_stop_the_ones_behind_it(self):
         """The batch runs to the end, and the failure lands on its own mail."""
-        self.salesperson.x_microsoft_default_mailbox_id = False
+        self.salesperson.x_default_mailbox_id = False
         broken = self._make_mail()
-        fine = self._make_mail(x_microsoft_mailbox_id=self.shared_mailbox.id)
+        fine = self._make_mail(x_send_from_mailbox_id=self.shared_mailbox.id)
 
         with self.mock_graph():
             send_and_capture(broken | fine)
@@ -191,9 +191,9 @@ class TestMailboxRouting(OutlookProTestCase):
         delivered anything keeps its successes and reports the failures on the
         mails themselves rather than in a dialog.
         """
-        self.salesperson.x_microsoft_default_mailbox_id = False
+        self.salesperson.x_default_mailbox_id = False
         broken = self._make_mail()
-        fine = self._make_mail(x_microsoft_mailbox_id=self.shared_mailbox.id)
+        fine = self._make_mail(x_send_from_mailbox_id=self.shared_mailbox.id)
 
         with self.mock_graph():
             error = send_and_capture(broken | fine)
@@ -207,7 +207,7 @@ class TestMailboxRouting(OutlookProTestCase):
     @mute_logger('odoo.addons.pan_mail_pro.models.mail_mail')
     def test_several_failures_report_one_reason_and_a_count(self):
         """Nothing went out, so there is nothing a rollback can cost."""
-        self.salesperson.x_microsoft_default_mailbox_id = False
+        self.salesperson.x_default_mailbox_id = False
         first = self._make_mail()
         second = self._make_mail()
 
@@ -228,9 +228,9 @@ class TestMailboxRouting(OutlookProTestCase):
         out — Odoo forbids a real one inside a test transaction — so this
         asserts the decision to report, not the commit itself.
         """
-        self.salesperson.x_microsoft_default_mailbox_id = False
+        self.salesperson.x_default_mailbox_id = False
         broken = self._make_mail()
-        fine = self._make_mail(x_microsoft_mailbox_id=self.shared_mailbox.id)
+        fine = self._make_mail(x_send_from_mailbox_id=self.shared_mailbox.id)
 
         with self.mock_graph(), \
                 patch.object(self.env.cr, 'commit', lambda: None), \

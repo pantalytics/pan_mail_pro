@@ -42,7 +42,7 @@ def send_and_capture(mails):
     return None
 
 
-class OutlookProTestCase(TransactionCase):
+class MailProTestCase(TransactionCase):
     """Common setUp for routing + composer tests."""
 
     # Context that prevents auto-subscribe / tracking emails during fixture
@@ -64,7 +64,7 @@ class OutlookProTestCase(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
 
-        Mailbox = cls.env['x_microsoft.mailbox']
+        Mailbox = cls.env['pan.mail.mailbox']
         # Suppress auth_signup's password-reset email and tracking noise.
         User = cls.env['res.users'].with_context(
             no_reset_password=True,
@@ -116,20 +116,20 @@ class OutlookProTestCase(TransactionCase):
         # Mailboxes
         cls.notification_mailbox = Mailbox.create({
             'email': 'notifications@company.test',
-            'x_mailbox_type': 'notification',
-            'x_owner_user_id': cls.notif_owner.id,
+            'mailbox_type': 'notification',
+            'owner_user_id': cls.notif_owner.id,
         })
         cls.shared_mailbox = Mailbox.create({
             'email': 'info@company.test',
-            'x_mailbox_type': 'shared',
+            'mailbox_type': 'shared',
         })
         cls.personal_mailbox = Mailbox.create({
             'email': 'sales@company.test',
-            'x_mailbox_type': 'personal',
-            'x_owner_user_id': cls.salesperson.id,
+            'mailbox_type': 'personal',
+            'owner_user_id': cls.salesperson.id,
         })
 
-        cls.salesperson.x_microsoft_default_mailbox_id = cls.shared_mailbox
+        cls.salesperson.x_default_mailbox_id = cls.shared_mailbox
 
         # Partners
         cls.external_partner = Partner.create({

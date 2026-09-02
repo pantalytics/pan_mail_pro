@@ -11,7 +11,7 @@
 -- path, so it is deliberately not listed in `__manifest__.py`.
 
 -- No mailbox may send or sync.
-UPDATE x_microsoft_mailbox
+UPDATE pan_mail_mailbox
    SET active = false,
        state = 'draft';
 

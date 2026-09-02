@@ -51,7 +51,7 @@ class PanMailAccount(models.Model):
         help='The address these credentials authenticate.'
     )
     provider = fields.Selection(
-        # Same registry the mailbox's x_provider uses — an account and the
+        # Same registry the mailbox's provider uses — an account and the
         # mailbox it serves must name the provider identically.
         PROVIDER_SELECTION,
         string='Provider',

@@ -2,7 +2,7 @@
 """What happens when Mail Pro is not configured.
 
 There is exactly one case where outbound mail leaves through Odoo's own SMTP
-path: no `x_microsoft.mailbox` records exist anywhere, which means nobody has
+path: no `pan.mail.mailbox` records exist anywhere, which means nobody has
 opted in yet. That is what keeps demo, QA and a fresh install working before
 anyone has been to Azure.
 
@@ -25,7 +25,7 @@ class TestNoMailboxFallback(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.env['x_microsoft.mailbox'].sudo().with_context(
+        cls.env['pan.mail.mailbox'].sudo().with_context(
             active_test=False).search([]).unlink()
 
     def _make_mail(self):
@@ -72,11 +72,11 @@ class TestMailboxesExistButUnusable(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.env['x_microsoft.mailbox'].sudo().with_context(
+        cls.env['pan.mail.mailbox'].sudo().with_context(
             active_test=False).search([]).unlink()
-        cls.inactive_mailbox = cls.env['x_microsoft.mailbox'].sudo().create({
+        cls.inactive_mailbox = cls.env['pan.mail.mailbox'].sudo().create({
             'email': 'inactive@company.test',
-            'x_mailbox_type': 'shared',
+            'mailbox_type': 'shared',
             'active': False,
         })
 
