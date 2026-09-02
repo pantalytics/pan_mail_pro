@@ -1,15 +1,20 @@
 # -*- coding: utf-8 -*-
 """Decision table for mail.mail._resolve_route.
 
-There are exactly four answers to "which mailbox sends this mail":
+There are exactly four answers to "which mailbox sends this mail", in this
+order:
 
-  1. It is a notification to one of our own users  -> the notification mailbox
-  2. The composer said which mailbox               -> that one
-  3. The author has a default mailbox              -> that one
-  4. There is no author at all (system mail)       -> the notification mailbox
+  1. The composer said which mailbox                -> that one
+  2. It is a notification to one of our employees   -> the notification mailbox
+  3. The author has a default mailbox               -> that one
+  4. There is no author at all (system mail)        -> the notification mailbox
+
+Row 1 comes first because it is the only one a person chose. Row 2 only ever
+sees mail nobody chose a sender for, and it counts employees, not portal users
+-- a customer with a login is still a customer (issue #39).
 
 Anything else raises RoutingError with the sentence that says what to fix.
-Rows 2 and 3 in particular do NOT fall back to the notification mailbox when
+Rows 1 and 3 in particular do NOT fall back to the notification mailbox when
 the credentials are missing: a mail leaving from notifications@ because your
 own mailbox was misconfigured is worse than one that did not leave, because
 nobody ever finds out.
@@ -59,15 +64,46 @@ class TestMailboxRouting(OutlookProTestCase):
         self.assertEqual(mailbox, self.notification_mailbox)
         self.assertEqual(account.user_id, self.notif_owner)
 
-    def test_internal_notification_outranks_the_dropdown(self):
-        """Even when the composer leaked a mailbox onto a notification mail."""
+    def test_dropdown_outranks_the_internal_notification(self):
+        """A person picked a sender, so that is who it comes from.
+
+        This assertion used to read the other way round. The notification
+        branch sat above the dropdown, so one colleague in copy was enough to
+        send a customer's quotation from notifications@ -- and the record still
+        named the salesperson, so nobody found out (issue #39).
+        """
         mail = self._make_mail(
             recipient_ids=[(6, 0, [self.other_user.partner_id.id])],
             email_to=False,
             x_microsoft_mailbox_id=self.shared_mailbox.id,
         )
         mailbox, _account = mail._resolve_route()
-        self.assertEqual(mailbox, self.notification_mailbox)
+        self.assertEqual(mailbox, self.shared_mailbox)
+
+    def test_portal_user_recipient_is_not_an_internal_notification(self):
+        """A customer who can log in is still a customer.
+
+        Portal users have a res.users row with share=True. Counting them as
+        internal sent quotations and invoices from notifications@.
+        """
+        mail = self._make_mail(
+            recipient_ids=[(6, 0, [self.portal_partner.id])],
+            email_to=self.portal_partner.email,
+        )
+        mailbox, account = mail._resolve_route()
+        self.assertEqual(mailbox, self.salesperson.x_microsoft_default_mailbox_id)
+        self.assertEqual(account.user_id, self.salesperson)
+
+    def test_dropdown_wins_for_a_portal_recipient(self):
+        """The reported case: Send From set, recipient is a portal customer."""
+        mail = self._make_mail(
+            recipient_ids=[(6, 0, [self.portal_partner.id])],
+            email_to=self.portal_partner.email,
+            x_microsoft_mailbox_id=self.personal_mailbox.id,
+        )
+        mailbox, account = mail._resolve_route()
+        self.assertEqual(mailbox, self.personal_mailbox)
+        self.assertEqual(account.user_id, self.salesperson)
 
     # ------------------------------------------------------------------ #
     # 2. The composer said which mailbox
@@ -160,6 +196,48 @@ class TestMailboxRouting(OutlookProTestCase):
         with self.assertRaises(RoutingError) as ctx:
             mail._resolve_route()
         self.assertIn('Notification mailbox', str(ctx.exception))
+
+    # ------------------------------------------------------------------ #
+    # The record names the mailbox that actually sent it
+    # ------------------------------------------------------------------ #
+
+    def test_the_notification_route_records_where_it_sent_from(self):
+        """Otherwise the record claims a sender that never sent it."""
+        mail = self._make_mail(author_id=self.company_partner.id)
+
+        with self.mock_graph():
+            mail.send()
+
+        self.assertEqual(mail.state, 'sent')
+        self.assertEqual(mail.x_microsoft_mailbox_id, self.notification_mailbox)
+        self.assertEqual(mail.email_from, self.notification_mailbox.email)
+
+    def test_a_colleagues_chatter_post_keeps_its_author(self):
+        """`email_from` is delegated to mail.message, which a chatter post
+        shares with the human who wrote it. Rewriting that From to
+        notifications@ would be a worse lie than the one being fixed, so a
+        notification only records the mailbox, not the address."""
+        message = self.env['mail.message'].sudo().create({
+            'model': 'res.partner',
+            'res_id': self.external_partner.id,
+            'message_type': 'comment',
+            'subtype_id': self.env.ref('mail.mt_comment').id,
+            'body': '<p>Body</p>',
+            'author_id': self.salesperson.partner_id.id,
+            'email_from': '"Sales Person" <sales@test.local>',
+        })
+        mail = self.env['mail.mail'].sudo().create({
+            'mail_message_id': message.id,
+            'body_html': '<p>Body</p>',
+            'recipient_ids': [(6, 0, [self.other_user.partner_id.id])],
+        })
+        self.assertTrue(mail.is_notification, 'fixture must be a notification')
+
+        with self.mock_graph():
+            mail.send()
+
+        self.assertEqual(mail.x_microsoft_mailbox_id, self.notification_mailbox)
+        self.assertEqual(message.email_from, '"Sales Person" <sales@test.local>')
 
     # ------------------------------------------------------------------ #
     # A failure lands on the mail, not on the batch
