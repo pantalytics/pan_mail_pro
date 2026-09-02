@@ -76,7 +76,7 @@ class MicrosoftGraphClient(models.AbstractModel):
     @api.model
     def resolve_receiving_account(self, mailbox):
         """Reading a Microsoft mailbox always uses the owner's delegated token."""
-        return self.account_for_user(mailbox.x_owner_user_id)
+        return self.account_for_user(mailbox.owner_user_id)
 
     @api.model
     def _resolve_sending_user(self, mailbox, author_user=None):
@@ -87,8 +87,8 @@ class MicrosoftGraphClient(models.AbstractModel):
         account and no user at all, which is why `resolve_sending_account` is
         the contract method and this one is not.
         """
-        if mailbox.x_mailbox_type in ('notification', 'personal'):
-            return mailbox.x_owner_user_id
+        if mailbox.mailbox_type in ('notification', 'personal'):
+            return mailbox.owner_user_id
         if author_user:
             return author_user
         # In cron context env.user is the cron runner, not the sender — which is
@@ -112,16 +112,16 @@ class MicrosoftGraphClient(models.AbstractModel):
         ICP = self.env['ir.config_parameter'].sudo()
 
         # Get encrypted client secret and decrypt it
-        encrypted_secret = ICP.get_param('x_pan_outlook_pro.client_secret_encrypted')
+        encrypted_secret = ICP.get_param('pan_mail_pro.microsoft_client_secret_encrypted')
         client_secret = encryption_utils.decrypt_value(
             self.env,
             encrypted_secret
         ) if encrypted_secret else False
 
         return {
-            'client_id': ICP.get_param('x_pan_outlook_pro.client_id'),
+            'client_id': ICP.get_param('pan_mail_pro.microsoft_client_id'),
             'client_secret': client_secret,
-            'tenant_id': ICP.get_param('x_pan_outlook_pro.tenant_id'),
+            'tenant_id': ICP.get_param('pan_mail_pro.microsoft_tenant_id'),
         }
 
     @api.model
@@ -528,7 +528,7 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         Args:
             mail_record: mail.mail record to send
-            mailbox: x_microsoft.mailbox record to send from
+            mailbox: pan.mail.mailbox record to send from
             account: pan.mail.account holding a valid Microsoft OAuth token
             reply_context: optional threading hints (see the contract). Only
                 `provider_message_id` is usable here — Graph will not accept

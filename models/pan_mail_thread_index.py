@@ -17,7 +17,7 @@ belongs to, *scoped to the mailbox that saw it*. Provider thread ids are not
 global: Microsoft's `conversationId` is mailbox-local and derived from the
 conversation topic, Gmail's `threadId` is account-local, and two mailboxes
 syncing the same exchange see two different ids for it. Storing the id without
-the mailbox — which is what `mail.message.x_microsoft_conversation_id` does —
+the mailbox — which is what `mail.message.x_provider_thread_id` does —
 means a lookup can match a thread from an entirely different mailbox.
 
 Neither model is provider-specific. IMAP has no thread handle at all; the
@@ -140,7 +140,7 @@ class PanMailThreadLink(models.Model):
         index=True,
     )
     mailbox_id = fields.Many2one(
-        'x_microsoft.mailbox',
+        'pan.mail.mailbox',
         string='Mailbox',
         required=True,
         ondelete='cascade',
@@ -200,7 +200,7 @@ class PanMailThreadLink(models.Model):
         if not mailbox or not model or not res_id:
             return self.browse()
         return self.sudo().search([
-            ('provider', '=', mailbox.x_provider),
+            ('provider', '=', mailbox.provider),
             ('mailbox_id', '=', mailbox.id),
             ('model', '=', model),
             ('res_id', '=', res_id),
@@ -240,7 +240,7 @@ class PanMailThreadLink(models.Model):
     def _record(self, mailbox, thread_id, model, res_id, vals):
         """Upsert body of `record()`, split out so it runs inside a savepoint."""
         link = self.sudo().search([
-            ('provider', '=', mailbox.x_provider),
+            ('provider', '=', mailbox.provider),
             ('mailbox_id', '=', mailbox.id),
             ('thread_id', '=', thread_id),
         ], limit=1)
@@ -258,7 +258,7 @@ class PanMailThreadLink(models.Model):
             return link
 
         vals.update({
-            'provider': mailbox.x_provider,
+            'provider': mailbox.provider,
             'mailbox_id': mailbox.id,
             'thread_id': thread_id,
             'model': model,

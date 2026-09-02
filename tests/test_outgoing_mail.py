@@ -18,9 +18,9 @@ class TestGraphSendPayload(TransactionCase):
         super().setUpClass()
         cls.client = cls.env['microsoft.graph.client']
 
-        cls.mailbox = cls.env['x_microsoft.mailbox'].create({
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'sender@company.com',
-            'x_mailbox_type': 'shared',
+            'mailbox_type': 'shared',
         })
         cls.user = cls.env.user
 

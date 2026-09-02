@@ -19,11 +19,11 @@ break:
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestMailLens(OutlookProTestCase):
+class TestMailLens(MailProTestCase):
 
     # ------------------------------------------------------------------ #
     # Stamping
@@ -34,7 +34,7 @@ class TestMailLens(OutlookProTestCase):
             'body_html': '<p>Attached</p>',
             'email_to': 'customer@example.com',
             'author_id': self.salesperson.partner_id.id,
-            'x_microsoft_mailbox_id': self.shared_mailbox.id,
+            'x_send_from_mailbox_id': self.shared_mailbox.id,
             'model': 'res.partner',
             'res_id': self.external_partner.id,
         })

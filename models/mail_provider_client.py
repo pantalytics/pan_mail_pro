@@ -51,7 +51,7 @@ Normalized message (returned by fetch_messages / get_message)
 
 Two details that are easy to get wrong and fail silently:
 
-- `date` is NAIVE UTC. It is compared against `x_last_sync_date` to advance the
+- `date` is NAIVE UTC. It is compared against `last_sync_date` to advance the
   sync cursor, which is naive; a tz-aware value raises at runtime instead.
 - `headers` keys are lowercased by the provider. The X-Odoo-* loop guard reads
   them, and no provider guarantees header case.
@@ -133,7 +133,7 @@ OAUTH_CALLBACK_PATHS = {
 # The provider the admin is setting up. One config parameter, read by the
 # settings page, the connect link in the invitation email, and the mailboxes
 # created during setup.
-PARAM_SETUP_PROVIDER = 'x_pan_outlook_pro.setup_provider'
+PARAM_SETUP_PROVIDER = 'pan_mail_pro.setup_provider'
 
 # Provider assumed by flows that are not yet mailbox-scoped (the OAuth connect
 # flow on res.users, the settings page). When a second provider lands these
@@ -183,7 +183,7 @@ class MailProviderClient(models.AbstractModel):
     supports_shared_mailbox = False
     # Can a user send through an account explicitly delegated to them?
     supports_delegation = False
-    # Which x_mailbox_type values this provider can actually service.
+    # Which mailbox_type values this provider can actually service.
     supported_mailbox_types = ('personal',)
     # Is there a consent screen to send somebody to? False means the credentials
     # are typed in (IMAP/SMTP), which changes what "connect" means in the UI.
@@ -191,7 +191,7 @@ class MailProviderClient(models.AbstractModel):
 
     @api.model
     def provider_code(self):
-        """Return the `x_provider` selection value this client implements."""
+        """Return the `provider` selection value this client implements."""
         raise NotImplementedError
 
     @api.model

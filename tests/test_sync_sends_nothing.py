@@ -38,7 +38,7 @@ from unittest.mock import MagicMock, patch
 from odoo.tests import tagged
 
 from ..models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 GRAPH_MSG_ID = 'AAMkAGI2_fake_graph_id'
 INTERNET_ID = '<quiet-sync-001@example.com>'
@@ -92,7 +92,7 @@ class QuietSyncMixin:
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestNotifyBoundary(OutlookProTestCase, QuietSyncMixin):
+class TestNotifyBoundary(MailProTestCase, QuietSyncMixin):
     """The rule, with no provider involved.
 
     Everything else in this file proves the fetcher arms the boundary. This
@@ -162,15 +162,15 @@ class TestNotifyBoundary(OutlookProTestCase, QuietSyncMixin):
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestGraphSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
+class TestGraphSyncSendsNothing(MailProTestCase, QuietSyncMixin):
     """Microsoft 365, both directions, driven through `_process_mailbox`."""
 
     def setUp(self):
         super().setUp()
         self.mailbox = self.personal_mailbox
         self.mailbox.write({
-            'x_sync_mode': 'all',
-            'x_last_sync_date': '2026-01-01 00:00:00',
+            'sync_mode': 'all',
+            'last_sync_date': '2026-01-01 00:00:00',
         })
 
     def _graph_message(self, outgoing=False):
@@ -215,7 +215,7 @@ class TestGraphSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
                 return self._response(message)
             return self._response({})
 
-        processor = self.env['microsoft.incoming.mail.processor']
+        processor = self.env['pan.mail.fetcher']
         with patch.object(
             type(self.env['microsoft.graph.client']), 'get_valid_token',
             autospec=True, return_value='fake-bearer-token',
@@ -249,7 +249,7 @@ class TestGraphSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestGmailSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
+class TestGmailSyncSendsNothing(MailProTestCase, QuietSyncMixin):
     """Gmail. Same invariant, different normalization on the way in."""
 
     GMAIL_ID = 'gmail_quiet_1'
@@ -271,13 +271,13 @@ class TestGmailSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
             'user_id': user.id,
             'refresh_token': 'goog-refresh',
         })
-        self.mailbox = self.env['x_microsoft.mailbox'].create({
+        self.mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'gmail_quiet@test.local',
-            'x_provider': 'gmail',
-            'x_mailbox_type': 'personal',
-            'x_owner_user_id': user.id,
-            'x_sync_mode': 'all',
-            'x_last_sync_date': '2026-01-01 00:00:00',
+            'provider': 'gmail',
+            'mailbox_type': 'personal',
+            'owner_user_id': user.id,
+            'sync_mode': 'all',
+            'last_sync_date': '2026-01-01 00:00:00',
         })
 
     def _message(self, label='INBOX'):
@@ -319,7 +319,7 @@ class TestGmailSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
                 return self._response({'messages': []})
             return self._response(message)
 
-        processor = self.env['microsoft.incoming.mail.processor']
+        processor = self.env['pan.mail.fetcher']
         with patch.object(
             type(self.env['google.gmail.client']), 'get_valid_token',
             autospec=True, return_value='fake-google-token',
@@ -338,7 +338,7 @@ class TestGmailSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestImapSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
+class TestImapSyncSendsNothing(MailProTestCase, QuietSyncMixin):
     """IMAP/SMTP. No OAuth, no owner, and a shared mailbox by default -- the
     shape that broke every check written against a Microsoft assumption.
 
@@ -358,12 +358,12 @@ class TestImapSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
             'smtp_host': 'smtp.example.test', 'smtp_port': 465, 'smtp_security': 'ssl',
             'password': 'hunter2',
         })
-        self.mailbox = self.env['x_microsoft.mailbox'].create({
+        self.mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'imap_quiet@company.test',
-            'x_provider': 'imap',
-            'x_mailbox_type': 'shared',
-            'x_sync_mode': 'all',
-            'x_last_sync_date': '2026-01-01 00:00:00',
+            'provider': 'imap',
+            'mailbox_type': 'shared',
+            'sync_mode': 'all',
+            'last_sync_date': '2026-01-01 00:00:00',
         })
 
     def _normalized(self, folder):
@@ -385,7 +385,7 @@ class TestImapSyncSendsNothing(OutlookProTestCase, QuietSyncMixin):
 
     def _process(self, folder):
         message = self._normalized(folder)
-        processor = self.env['microsoft.incoming.mail.processor']
+        processor = self.env['pan.mail.fetcher']
         client = type(self.env['imap.smtp.client'])
         with patch.object(client, 'get_message', autospec=True, return_value=message), \
                 patch.object(client, 'get_message_attachments', autospec=True, return_value=[]):

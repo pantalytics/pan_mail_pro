@@ -1,66 +1,66 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- List View -->
-    <record id="view_microsoft_mailbox_list" model="ir.ui.view">
-        <field name="name">x_microsoft.mailbox.list</field>
-        <field name="model">x_microsoft.mailbox</field>
+    <record id="view_pan_mail_mailbox_list" model="ir.ui.view">
+        <field name="name">pan.mail.mailbox.list</field>
+        <field name="model">pan.mail.mailbox</field>
         <field name="arch" type="xml">
-            <list string="Microsoft Mailboxes" js_class="mailbox_list"
-                  decoration-danger="x_health_status == 'error'"
-                  decoration-warning="x_health_status == 'warning'">
+            <list string="Mailboxes" js_class="mailbox_list"
+                  decoration-danger="health_status == 'error'"
+                  decoration-warning="health_status == 'warning'">
                 <field name="sequence" widget="handle"/>
                 <field name="email" string="Mailbox"/>
-                <field name="x_health_status" string="Status" widget="badge"
-                       decoration-success="x_health_status == 'healthy'"
-                       decoration-warning="x_health_status == 'warning'"
-                       decoration-danger="x_health_status == 'error'"/>
-                <field name="x_mailbox_type" string="Type" optional="hide"/>
-                <field name="x_provider" string="Provider" optional="hide"/>
-                <field name="x_owner_user_id" string="Owner" optional="hide"/>
-                <field name="x_sync_mode" string="Incoming" optional="hide"/>
-                <field name="x_last_sync_date" string="Last Synced" optional="hide"/>
-                <field name="x_error_message" string="Error" optional="hide"/>
+                <field name="health_status" string="Status" widget="badge"
+                       decoration-success="health_status == 'healthy'"
+                       decoration-warning="health_status == 'warning'"
+                       decoration-danger="health_status == 'error'"/>
+                <field name="mailbox_type" string="Type" optional="hide"/>
+                <field name="provider" string="Provider" optional="hide"/>
+                <field name="owner_user_id" string="Owner" optional="hide"/>
+                <field name="sync_mode" string="Incoming" optional="hide"/>
+                <field name="last_sync_date" string="Last Synced" optional="hide"/>
+                <field name="error_message" string="Error" optional="hide"/>
             </list>
         </field>
     </record>
 
     <!-- Form View -->
-    <record id="view_microsoft_mailbox_form" model="ir.ui.view">
-        <field name="name">x_microsoft.mailbox.form</field>
-        <field name="model">x_microsoft.mailbox</field>
+    <record id="view_pan_mail_mailbox_form" model="ir.ui.view">
+        <field name="name">pan.mail.mailbox.form</field>
+        <field name="model">pan.mail.mailbox</field>
         <field name="arch" type="xml">
-            <form string="Microsoft Mailbox">
+            <form string="Mailbox">
                 <sheet>
                     <!-- SECTION 1: MAILBOX -->
                     <group string="Mailbox">
                         <group>
                             <field name="email" placeholder="support@company.com"/>
-                            <field name="x_provider"/>
-                            <field name="x_health_status" string="Status" widget="badge"
-                                   decoration-success="x_health_status == 'healthy'"
-                                   decoration-warning="x_health_status == 'warning'"
-                                   decoration-danger="x_health_status == 'error'"
+                            <field name="provider"/>
+                            <field name="health_status" string="Status" widget="badge"
+                                   decoration-success="health_status == 'healthy'"
+                                   decoration-warning="health_status == 'warning'"
+                                   decoration-danger="health_status == 'error'"
                                    readonly="1"/>
-                            <field name="x_mailbox_type" widget="radio" string="Type"/>
-                            <field name="x_owner_user_id"
-                                   required="x_mailbox_type in ('personal', 'notification')"/>
+                            <field name="mailbox_type" widget="radio" string="Type"/>
+                            <field name="owner_user_id"
+                                   required="mailbox_type in ('personal', 'notification')"/>
                         </group>
                         <group>
                             <!-- Type explanations -->
-                            <div class="text-muted" invisible="x_mailbox_type != 'personal'">
+                            <div class="text-muted" invisible="mailbox_type != 'personal'">
                                 Only the owner can send from this mailbox.
                             </div>
-                            <div class="text-muted" invisible="x_mailbox_type != 'shared' or x_provider != 'outlook'">
+                            <div class="text-muted" invisible="mailbox_type != 'shared' or provider != 'outlook'">
                                 All users can send using their own Microsoft account.
                             </div>
-                            <div class="text-muted" invisible="x_mailbox_type != 'shared' or x_provider == 'outlook'">
+                            <div class="text-muted" invisible="mailbox_type != 'shared' or provider == 'outlook'">
                                 All users can send from this address. It has its own
                                 credentials, so it needs no owner.
                             </div>
-                            <div class="text-muted" invisible="x_mailbox_type != 'notification'">
+                            <div class="text-muted" invisible="mailbox_type != 'notification'">
                                 For system emails. The owner's account is used to send.
                             </div>
-                            <div class="mt-2" invisible="x_provider != 'imap'">
+                            <div class="mt-2" invisible="provider != 'imap'">
                                 <button name="action_open_account" type="object"
                                         string="Server Credentials" class="btn-link ps-0"
                                         icon="fa-key"/>
@@ -73,26 +73,26 @@
                     </group>
 
                     <!-- SECTION 2: INCOMING EMAIL (not for notification) -->
-                    <group string="Incoming Email" invisible="x_mailbox_type == 'notification'">
+                    <group string="Incoming Email" invisible="mailbox_type == 'notification'">
                         <group>
-                            <field name="x_sync_mode" widget="radio"/>
-                            <field name="x_exclude_internal" widget="boolean_toggle"
-                                   invisible="x_sync_mode == 'none'"/>
-                            <field name="x_sync_start_date"
-                                   invisible="x_sync_mode == 'none'"/>
-                            <field name="x_last_sync_date" readonly="1"
-                                   invisible="x_sync_mode == 'none' or not x_last_sync_date"/>
+                            <field name="sync_mode" widget="radio"/>
+                            <field name="exclude_internal" widget="boolean_toggle"
+                                   invisible="sync_mode == 'none'"/>
+                            <field name="sync_start_date"
+                                   invisible="sync_mode == 'none'"/>
+                            <field name="last_sync_date" readonly="1"
+                                   invisible="sync_mode == 'none' or not last_sync_date"/>
                         </group>
                         <group>
-                            <div class="text-muted" invisible="x_sync_mode == 'none'">
+                            <div class="text-muted" invisible="sync_mode == 'none'">
                                 Emails are imported from oldest to newest, up to 200 per minute. You can change "Import From" to re-sync from an earlier date — duplicates are skipped automatically.
                             </div>
-                            <div class="text-muted" invisible="x_sync_mode != 'all'">
+                            <div class="text-muted" invisible="sync_mode != 'all'">
                                 Senders who are not contacts yet are created automatically,
                                 unless you hold them for review below.
                             </div>
                             <div class="alert alert-warning mt-2" role="alert"
-                                 invisible="x_sync_mode == 'none' or x_exclude_internal">
+                                 invisible="sync_mode == 'none' or exclude_internal">
                                 <i class="fa fa-exclamation-triangle me-2" title="Warning"/>
                                 Email between colleagues is synced into Odoo for this mailbox,
                                 including confidential threads. Everyone with access to the record
@@ -102,32 +102,32 @@
                     </group>
 
                     <!-- SECTION 3: ROUTING (only when sync enabled) -->
-                    <group string="Routing" invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
+                    <group string="Routing" invisible="mailbox_type == 'notification' or sync_mode == 'none'">
                         <group>
-                            <field name="x_route_to_team" widget="boolean_toggle"/>
-                            <field name="x_alias_id" string="Team"
-                                   invisible="not x_route_to_team"
-                                   required="x_route_to_team"
+                            <field name="route_to_team" widget="boolean_toggle"/>
+                            <field name="alias_id" string="Team"
+                                   invisible="not route_to_team"
+                                   required="route_to_team"
                                    options="{'no_create': True, 'no_create_edit': True}"
                                    placeholder="Select team..."/>
                         </group>
                         <group>
-                            <div class="text-muted" invisible="x_route_to_team">
+                            <div class="text-muted" invisible="route_to_team">
                                 Emails will be posted to the sender's contact record.
                             </div>
                         </group>
                     </group>
                     <!-- The interlock that keeps AI auto-routing off. See models/ai/. -->
-                    <field name="x_routing_smart" invisible="1"/>
+                    <field name="routing_smart" invisible="1"/>
 
                     <!-- SECTION 4: REVIEW QUEUE (only when unknown senders are synced) -->
-                    <group string="Review Queue" invisible="x_mailbox_type == 'notification' or x_sync_mode != 'all'">
+                    <group string="Review Queue" invisible="mailbox_type == 'notification' or sync_mode != 'all'">
                         <group>
-                            <field name="x_queue_unknown_contacts" string="Hold for review"
+                            <field name="queue_unknown_contacts" string="Hold for review"
                                    widget="boolean_toggle"/>
                         </group>
                         <group>
-                            <div class="text-muted" invisible="not x_queue_unknown_contacts">
+                            <div class="text-muted" invisible="not queue_unknown_contacts">
                                 Mail from unknown senders waits in Communication →
                                 Triage instead of creating a contact automatically.
                             </div>
@@ -135,7 +135,7 @@
                     </group>
 
                     <!-- SYNC BUTTON -->
-                    <group invisible="x_mailbox_type == 'notification' or x_sync_mode == 'none'">
+                    <group invisible="mailbox_type == 'notification' or sync_mode == 'none'">
                         <group>
                             <button name="action_sync_now" string="Sync Now"
                                     type="object" class="btn-primary" icon="fa-refresh"/>
@@ -145,12 +145,12 @@
 
                     <!-- Error alert -->
                     <div class="alert alert-danger" role="alert" invisible="state != 'error'">
-                        <strong>Sync failed:</strong> <field name="x_error_message" nolabel="1" readonly="1"/>
+                        <strong>Sync failed:</strong> <field name="error_message" nolabel="1" readonly="1"/>
                     </div>
 
                     <!-- Hidden fields -->
                     <field name="state" invisible="1"/>
-                    <field name="x_sync_mode" invisible="1"/>
+                    <field name="sync_mode" invisible="1"/>
                     <field name="active" invisible="1"/>
                 </sheet>
             </form>
@@ -158,9 +158,9 @@
     </record>
 
     <!-- Action -->
-    <record id="action_microsoft_mailbox" model="ir.actions.act_window">
+    <record id="action_pan_mail_mailbox" model="ir.actions.act_window">
         <field name="name">Mailboxes</field>
-        <field name="res_model">x_microsoft.mailbox</field>
+        <field name="res_model">pan.mail.mailbox</field>
         <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
@@ -172,11 +172,11 @@
         </field>
     </record>
 
-    <!-- Menu: Settings → Technical → Email → Microsoft Mailboxes -->
-    <menuitem id="menu_microsoft_mailbox"
-              name="Microsoft Mailboxes"
+    <!-- Menu: Settings → Technical → Email → Mailboxes -->
+    <menuitem id="menu_pan_mail_mailbox"
+              name="Mailboxes"
               parent="base.menu_email"
-              action="action_microsoft_mailbox"
+              action="action_pan_mail_mailbox"
               sequence="5"
               groups="base.group_system"/>
 

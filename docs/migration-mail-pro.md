@@ -16,19 +16,20 @@ a module stuck in a broken state, and menu entries pointing at nothing.
 
 So the data has to be renamed **before** Odoo ever starts with the new code.
 
-## What is not renamed
+## What is not renamed by this script
 
-Two things keep their old names on purpose, and the code still reads them that
-way:
+Two things keep their old names here, and are renamed later by an ordinary
+Odoo migration instead:
 
 - **`ir.config_parameter` keys `x_pan_outlook_pro.*`.** These hold the Fernet
   encryption key and the encrypted Azure and Google secrets. If the code looked
   for a key that did not exist, `get_encryption_key()` would quietly generate a
   **new** one — and every stored OAuth token and client secret would become
-  permanently undecryptable, with nothing but an info-level log line to show
-  for it. Every mailbox would need re-authorising. Not worth it for a cosmetic
-  gain, so they stay.
-- **XML record ids** such as `mail_server_invalid_outlook_pro`, and the
+  permanently undecryptable. So this script leaves them alone; the 19.0.6.0.0
+  module migration renames them to `pan_mail_pro.*` in the same transaction
+  as the code that reads the new names, and `get_encryption_key()` adopts a
+  key still stored under the old name rather than minting a new one.
+- **XML record ids** such as `mail_server_disabled`, and the
   `invalid.outlook-pro.disabled` sentinel mail server host that `__init__.py`
   filters on by value.
 
@@ -73,7 +74,8 @@ Both can be renamed later as isolated changes with their own migrations.
 7. **Verify.**
    - `list_installed_modules` shows `pan_mail_pro` and no `pan_outlook_pro`.
    - Settings → Mail Pro opens and still shows the Azure configuration —
-     this is the check that the `x_pan_outlook_pro.*` parameters survived.
+     this is the check that the configuration parameters survived (they are
+     still `x_pan_outlook_pro.*` at this point; 19.0.6.0.0 renames them).
    - Send a test mail from a shared mailbox.
    - Complete an OAuth flow. This exercises the `pan_mail_pro.oauth_result`
      template, which is what the `ir_ui_view.key` update in the script fixes.

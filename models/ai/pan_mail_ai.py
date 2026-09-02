@@ -21,7 +21,7 @@ the message back. Enrichment is a separate cron over records that already exist.
 
 **AI suggests; a human decides.** The backend returns a suggestion and a
 confidence. Nothing in this module acts on one automatically. Auto-routing is
-still guarded by the `x_routing_smart` constraint, and that guard does not move
+still guarded by the `routing_smart` constraint, and that guard does not move
 until there is evidence from real suggestions that it should.
 """
 import logging

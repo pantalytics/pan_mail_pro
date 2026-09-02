@@ -38,43 +38,42 @@ class RoutingError(Exception):
 
 
 class MailMail(models.Model):
-    """Extend mail.mail to support Microsoft Graph API sending"""
+    """Outgoing mail: route it to a mailbox and hand it to that mailbox's provider.
+
+    One field of its own. The ids a send produces — the Message-ID that went on
+    the wire and the provider's thread handle — are not stored here: the
+    Message-ID goes into `pan.mail.message.ref` and the thread handle into
+    `pan.mail.thread.link`, both keyed on the `mail.message` that outlives this
+    row (Odoo deletes a `mail.mail` once it is sent).
+    """
     _inherit = 'mail.mail'
 
-    x_microsoft_mailbox_id = fields.Many2one(
-        'x_microsoft.mailbox',
-        string='Send From Mailbox',
-        help='Microsoft mailbox to send this email from'
-    )
-
-    x_microsoft_message_id = fields.Char(
-        string='Microsoft Message ID',
-        help='Microsoft internetMessageId - used to prevent duplicate imports from Sent Items',
-        index=True,
-    )
-
-    x_microsoft_conversation_id = fields.Char(
-        string='Microsoft Conversation ID',
-        help='Microsoft conversationId - used for email threading',
-        index=True,
+    # The sender the author *asked for*. The lens field `mail.message.x_mailbox_id`
+    # (reachable here through delegation) is the mailbox that actually carried
+    # the mail, stamped only once it went out; the two differ on a mail that
+    # could not be sent.
+    x_send_from_mailbox_id = fields.Many2one(
+        'pan.mail.mailbox',
+        string='Send From',
+        help='Mailbox this email is sent from. Empty means the author\'s default mailbox.',
     )
 
     @api.model_create_multi
     def create(self, vals_list):
         """Set mailbox from context if provided by mail.compose.message."""
-        mailbox_id = self.env.context.get('microsoft_mailbox_id')
+        mailbox_id = self.env.context.get('send_from_mailbox_id')
         if mailbox_id:
             for vals in vals_list:
-                if not vals.get('x_microsoft_mailbox_id'):
-                    vals['x_microsoft_mailbox_id'] = mailbox_id
+                if not vals.get('x_send_from_mailbox_id'):
+                    vals['x_send_from_mailbox_id'] = mailbox_id
         for vals in vals_list:
-            self._check_mailbox_permission(vals.get('x_microsoft_mailbox_id'))
+            self._check_mailbox_permission(vals.get('x_send_from_mailbox_id'))
         return super().create(vals_list)
 
     def write(self, vals):
         """Guard the sender mailbox on write as well as on create."""
-        if 'x_microsoft_mailbox_id' in vals:
-            self._check_mailbox_permission(vals['x_microsoft_mailbox_id'])
+        if 'x_send_from_mailbox_id' in vals:
+            self._check_mailbox_permission(vals['x_send_from_mailbox_id'])
         return super().write(vals)
 
     @api.model
@@ -91,13 +90,13 @@ class MailMail(models.Model):
         """
         if not mailbox_id or self.env.su:
             return
-        mailbox = self.env['x_microsoft.mailbox'].sudo().browse(mailbox_id)
+        mailbox = self.env['pan.mail.mailbox'].sudo().browse(mailbox_id)
         if not mailbox.exists() or mailbox._is_sendable_by(self.env.user):
             return
         _logger.warning(
-            "[Graph API] User %s (id=%s) tried to send from mailbox %s (type=%s, owner=%s)",
+            "[Outgoing Mail] User %s (id=%s) tried to send from mailbox %s (type=%s, owner=%s)",
             self.env.user.login, self.env.user.id, mailbox.email,
-            mailbox.x_mailbox_type, mailbox.x_owner_user_id.login or '-',
+            mailbox.mailbox_type, mailbox.owner_user_id.login or '-',
         )
         raise AccessError(_(
             "You are not allowed to send email from %(mailbox)s. "
@@ -112,7 +111,7 @@ class MailMail(models.Model):
         Returns True if at least one active mailbox exists.
         This allows the system to work before setup is complete.
         """
-        return bool(self.env['x_microsoft.mailbox'].sudo().search_count([('active', '=', True)]))
+        return bool(self.env['pan.mail.mailbox'].sudo().search_count([('active', '=', True)]))
 
     def _is_awaiting_notification_mailbox(self):
         """Is this an internal notification that Mail Pro cannot route *yet*?
@@ -128,7 +127,7 @@ class MailMail(models.Model):
         # Mirrors the order in `_resolve_route`: a mail somebody chose a sender
         # for does not take the notification route, so it is not waiting on the
         # notification mailbox either. It fails, or goes out, on its own merits.
-        if self.x_microsoft_mailbox_id or not self._is_internal_user_notification():
+        if self.x_send_from_mailbox_id or not self._is_internal_user_notification():
             return False
         try:
             self._notification_route()
@@ -189,7 +188,7 @@ class MailMail(models.Model):
         mass_mails = self.filtered(lambda m: hasattr(m, 'mailing_id') and m.mailing_id)
         delivered = 0
         if mass_mails:
-            _logger.info(f"[Graph API] Routing {len(mass_mails)} mass mailing email(s) via standard SMTP")
+            _logger.info(f"[Outgoing Mail] Routing {len(mass_mails)} mass mailing email(s) via standard SMTP")
             super(MailMail, mass_mails).send(
                 auto_commit=auto_commit,
                 raise_exception=raise_exception,
@@ -207,9 +206,9 @@ class MailMail(models.Model):
         # `active_test=False` is essential: once an admin has created a mailbox,
         # even an archived one, they have opted in and mail must not slip out
         # via SMTP behind their back.
-        if not self.env['x_microsoft.mailbox'].sudo().with_context(
+        if not self.env['pan.mail.mailbox'].sudo().with_context(
                 active_test=False).search_count([]):
-            _logger.info("[Graph API] No mailboxes configured — using Odoo's standard mail handling")
+            _logger.info("[Outgoing Mail] No mailboxes configured — using Odoo's standard mail handling")
             return super(MailMail, mails).send(
                 auto_commit=auto_commit,
                 raise_exception=raise_exception,
@@ -219,7 +218,7 @@ class MailMail(models.Model):
         awaiting = mails.filtered(lambda m: m._is_awaiting_notification_mailbox())
         if awaiting:
             _logger.warning(
-                f"[Graph API] Holding {len(awaiting)} internal notification(s) in the "
+                f"[Outgoing Mail] Holding {len(awaiting)} internal notification(s) in the "
                 f"queue — no usable notification mailbox configured yet"
             )
             awaiting.write({'failure_reason': NOTIFICATION_PENDING_REASON})
@@ -271,9 +270,9 @@ class MailMail(models.Model):
         back to `send()`, which decides what the batch as a whole does about it.
         """
         self.ensure_one()
-        _logger.info("[Graph API] Processing email %s", self.id)
+        _logger.info("[Outgoing Mail] Processing email %s", self.id)
         _logger.debug(
-            "[Graph API] Email %s: subject=%r to=%r", self.id, self.subject, self.email_to
+            "[Outgoing Mail] Email %s: subject=%r to=%r", self.id, self.subject, self.email_to
         )
 
         try:
@@ -287,7 +286,7 @@ class MailMail(models.Model):
         except RoutingError as e:
             return self._fail(str(e))
         except Exception as e:
-            _logger.exception(f"[Graph API] Exception sending mail {self.id}")
+            _logger.exception(f"[Outgoing Mail] Exception sending mail {self.id}")
             reason = self._fail(str(e))
             if raise_exception:
                 raise
@@ -304,7 +303,7 @@ class MailMail(models.Model):
             # email address (the Administrator account, typically). Standard
             # Odoo drops those silently and so must we — this is not a failure
             # anybody can act on, so it must not surface as one.
-            _logger.info(f"[Graph API] Mail {self.id} has no deliverable recipient — cancelling")
+            _logger.info(f"[Outgoing Mail] Mail {self.id} has no deliverable recipient — cancelling")
             self.write({'state': 'cancel'})
             return None
 
@@ -328,7 +327,7 @@ class MailMail(models.Model):
             failure_reason=reason,
             failure_type='unknown',
         )
-        _logger.error(f"[Graph API] Mail {self.id} not sent: {reason}")
+        _logger.error(f"[Outgoing Mail] Mail {self.id} not sent: {reason}")
         return reason
 
     def _record_sent(self, result, mailbox, account):
@@ -337,13 +336,9 @@ class MailMail(models.Model):
         message_id = result.get('message_id')
         thread_id = result.get('thread_id')
 
-        self.write({
-            'state': 'sent',
-            'x_microsoft_message_id': message_id,
-            'x_microsoft_conversation_id': thread_id,
-        })
+        self.write({'state': 'sent'})
 
-        if mailbox != self.x_microsoft_mailbox_id:
+        if mailbox != self.x_send_from_mailbox_id:
             # The mail left from a mailbox nobody wrote on the record — the
             # notification route, almost always. Say so, or the record keeps
             # claiming a sender that never sent it, which is how issue #39 went
@@ -355,7 +350,7 @@ class MailMail(models.Model):
             # lie than the one being fixed, so it is only touched when the mail
             # owns its message. `is_notification` is Odoo's own flag for the
             # difference.
-            sender_vals = {'x_microsoft_mailbox_id': mailbox.id}
+            sender_vals = {'x_send_from_mailbox_id': mailbox.id}
             if not self.is_notification and mailbox.email:
                 sender_vals['email_from'] = mailbox.email
             # sudo: `_check_mailbox_permission` guards what a *user* may pick.
@@ -368,15 +363,13 @@ class MailMail(models.Model):
             # here rather than at create() because only a mail that actually
             # went out is outgoing communication.
             self.mail_message_id.write({
-                'x_microsoft_message_id': message_id,
-                'x_microsoft_conversation_id': thread_id,
                 'x_direction': 'outgoing',
                 'x_mailbox_id': mailbox.id,
                 'x_account_id': account.id,
             })
 
         self._index_sent_message(mailbox, message_id, thread_id)
-        _logger.info(f"[Graph API] Mail {self.id} sent from {mailbox.email} "
+        _logger.info(f"[Outgoing Mail] Mail {self.id} sent from {mailbox.email} "
                      f"(message {message_id}, thread {thread_id})")
 
 
@@ -471,13 +464,14 @@ class MailMail(models.Model):
         Not always the one Odoo generated: Graph mints its own
         `internetMessageId` on send, and that is the id the recipient will put
         in `In-Reply-To`. Preferring the provider's own id keeps the chain we
-        emit identical to the chain that comes back.
+        emit identical to the chain that comes back. `_index_sent_message`
+        records it, so the ref index is the only place to look.
         """
         ref = self.env['pan.mail.message.ref'].sudo().search([
             ('mail_message_id', '=', message.id),
             ('source', '=', 'provider'),
         ], limit=1)
-        return ref.message_id or message.x_microsoft_message_id or message.message_id
+        return ref.message_id or message.message_id
 
     def _index_sent_message(self, mailbox, provider_message_id, provider_thread_id):
         """Make this outgoing mail findable when the recipient replies.
@@ -532,7 +526,7 @@ class MailMail(models.Model):
         self.ensure_one()
         for partner in self.recipient_ids:
             if partner.user_ids.filtered(lambda u: not u.share):
-                _logger.info(f"[Graph API] Email {self.id} IS internal user notification to {partner.name}")
+                _logger.info(f"[Outgoing Mail] Email {self.id} IS internal user notification to {partner.name}")
                 return True
         return False
 
@@ -573,8 +567,8 @@ class MailMail(models.Model):
         # one internal recipient on a quotation was enough to send it from
         # notifications@ while the record still named the salesperson — the
         # sender never found out (issue #39).
-        if self.x_microsoft_mailbox_id:
-            return self._mailbox_route(self.x_microsoft_mailbox_id, author_user)
+        if self.x_send_from_mailbox_id:
+            return self._mailbox_route(self.x_send_from_mailbox_id, author_user)
 
         # Nobody chose, so the recipients decide: system mail to our own
         # employees is what the notification mailbox is for.
@@ -588,14 +582,14 @@ class MailMail(models.Model):
         if not author_user:
             return self._notification_route()
 
-        if not author_user.x_microsoft_default_mailbox_id:
+        if not author_user.x_default_mailbox_id:
             raise RoutingError(_(
                 'User "%s" has no default mailbox. Open My Profile → Mail Pro '
                 'and pick the address to send from.'
             ) % author_user.name)
 
         return self._mailbox_route(
-            author_user.x_microsoft_default_mailbox_id, author_user)
+            author_user.x_default_mailbox_id, author_user)
 
     def _mailbox_route(self, mailbox, author_user):
         """A named mailbox and the credentials it sends with, or RoutingError.
@@ -614,7 +608,7 @@ class MailMail(models.Model):
         # security boundary gets to be a boundary.
         if author_user and not mailbox._is_sendable_by(author_user):
             _logger.warning(
-                "[Graph API] Mail %s selects mailbox %s which its author %s may not use",
+                "[Outgoing Mail] Mail %s selects mailbox %s which its author %s may not use",
                 self.id, mailbox.email, author_user.login,
             )
             raise RoutingError(_(
@@ -628,7 +622,7 @@ class MailMail(models.Model):
         if not account.connected:
             raise RoutingError(mailbox._no_credentials_error(sender=author_user))
 
-        _logger.info(f"[Graph API] Sending from {mailbox.email} (credentials: {account.email})")
+        _logger.info(f"[Outgoing Mail] Sending from {mailbox.email} (credentials: {account.email})")
         return (mailbox, account)
 
     def _notification_route(self):
@@ -647,8 +641,8 @@ class MailMail(models.Model):
 
     @api.model
     def _notification_mailbox(self):
-        return self.env['x_microsoft.mailbox'].sudo().search([
-            ('x_mailbox_type', '=', 'notification'),
+        return self.env['pan.mail.mailbox'].sudo().search([
+            ('mailbox_type', '=', 'notification'),
             ('active', '=', True),
         ], limit=1)
 

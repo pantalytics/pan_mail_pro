@@ -8,7 +8,7 @@ from . import pan_mail_internal_domains
 from . import res_config_settings
 from . import pan_mail_account
 from . import res_users
-from . import microsoft_mailbox
+from . import pan_mail_mailbox
 from . import pan_mail_thread_index
 from . import pan_mail_matcher
 from . import pan_mail_routing_log

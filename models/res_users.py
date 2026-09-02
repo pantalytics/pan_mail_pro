@@ -40,8 +40,8 @@ class ResUsers(models.Model):
         help='Whether this user has a connected email account on any provider.',
     )
 
-    x_microsoft_default_mailbox_id = fields.Many2one(
-        'x_microsoft.mailbox',
+    x_default_mailbox_id = fields.Many2one(
+        'pan.mail.mailbox',
         string='Default Send From',
         help='Mailbox this user sends from unless they pick another one in the composer.',
     )
@@ -59,14 +59,14 @@ class ResUsers(models.Model):
     @property
     def SELF_READABLE_FIELDS(self):
         return super().SELF_READABLE_FIELDS + [
-            'x_microsoft_default_mailbox_id',
+            'x_default_mailbox_id',
             'x_pan_mail_connected',
         ]
 
     @property
     def SELF_WRITEABLE_FIELDS(self):
         return super().SELF_WRITEABLE_FIELDS + [
-            'x_microsoft_default_mailbox_id',
+            'x_default_mailbox_id',
         ]
 
     @api.depends('x_pan_mail_account_ids.connected')
@@ -171,7 +171,7 @@ class ResUsers(models.Model):
         # with. Disconnecting one of two providers is not a reason to forget a
         # choice the other one can still honour.
         if not self.x_pan_mail_connected:
-            vals['x_microsoft_default_mailbox_id'] = False
+            vals['x_default_mailbox_id'] = False
         self.sudo().write(vals)
 
         return {

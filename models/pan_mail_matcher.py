@@ -283,14 +283,14 @@ class PanMailMatcher(models.AbstractModel):
 
         1. `pan.mail.thread.link`, keyed on (provider, mailbox, thread id).
            This is the correct one and the only one new mail writes.
-        2. The legacy `mail.message.x_microsoft_conversation_id` column, for
-           databases that threaded on it before this model existed. It carries
-           no mailbox, so it can in principle match another mailbox's thread —
-           it is kept because dropping it would break threading on existing
-           conversations, and it is bounded three ways the original lookup was
+        2. The legacy `mail.message.x_provider_thread_id` column, written until
+           19.0.6.0.0 and never since. It carries no mailbox, so it can in
+           principle match another mailbox's thread — it is kept because
+           dropping it would break threading on conversations that predate the
+           link index, and it is bounded three ways the original lookup was
            not: newest match instead of oldest, an age limit, and the caller's
-           excluded models. It scores below the scoped lookup and will simply
-           stop matching as conversations age out.
+           excluded models. It scores below the scoped lookup and stops
+           matching by itself as those conversations pass the age limit.
         """
         thread_id = ctx['thread_id']
         mailbox = ctx['mailbox']
@@ -303,7 +303,7 @@ class PanMailMatcher(models.AbstractModel):
         candidates = []
 
         link = self.env['pan.mail.thread.link'].sudo().search([
-            ('provider', '=', mailbox.x_provider),
+            ('provider', '=', mailbox.provider),
             ('mailbox_id', '=', mailbox.id),
             ('thread_id', '=', thread_id),
             ('last_seen', '>=', cutoff),
@@ -317,7 +317,7 @@ class PanMailMatcher(models.AbstractModel):
             return candidates
 
         legacy = self.env['mail.message'].sudo().search([
-            ('x_microsoft_conversation_id', '=', thread_id),
+            ('x_provider_thread_id', '=', thread_id),
             ('model', '!=', False),
             ('res_id', '!=', False),
             ('date', '>=', cutoff),
@@ -435,11 +435,10 @@ class PanMailMatcher(models.AbstractModel):
     def _resolve_message_id(self, message_id):
         """Find the `mail.message` a Message-ID refers to.
 
-        Three places to look, because an Odoo message can be reachable under
-        more than one id: the ref index (every id we ever saw for it), Odoo's
-        own `message_id` (set by message_post on import), and the legacy
-        `x_microsoft_message_id` column (the wire id of mail we sent before the
-        ref index existed).
+        Two places to look, because an Odoo message can be reachable under more
+        than one id: the ref index (every id we ever saw for it, including the
+        one the provider minted on send) and Odoo's own `message_id` (set by
+        message_post on import, or generated for mail composed here).
         """
         if not message_id:
             return self.env['mail.message'].browse()
@@ -449,12 +448,8 @@ class PanMailMatcher(models.AbstractModel):
         if parent:
             return parent
 
-        Message = self.env['mail.message'].sudo()
-        parent = Message.search([('message_id', '=', message_id)], order='id desc', limit=1)
-        if parent:
-            return parent
-        return Message.search(
-            [('x_microsoft_message_id', '=', message_id)], order='id desc', limit=1)
+        return self.env['mail.message'].sudo().search(
+            [('message_id', '=', message_id)], order='id desc', limit=1)
 
     @api.model
     def _normalize_subject(self, subject):
