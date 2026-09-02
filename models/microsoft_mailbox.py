@@ -9,6 +9,7 @@ from .mail_provider_client import (
     PROVIDER_SELECTION,
     get_provider_client,
 )
+from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 
@@ -361,6 +362,13 @@ class MicrosoftMailbox(models.Model):
     def action_sync_now(self):
         """Manually trigger email sync for this mailbox."""
         self.ensure_one()
+
+        if database_is_neutralized(self.env):
+            raise UserError(_(
+                'This database is neutralized (a staging or test copy). Syncing '
+                'would read live mail and post notifications back out, so it is '
+                'refused here.'
+            ))
 
         if not self._syncs_incoming():
             raise UserError(_('Sync mode is set to "No sync". Change it to enable syncing.'))

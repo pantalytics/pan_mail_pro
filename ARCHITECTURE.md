@@ -758,6 +758,53 @@ every tenant, and a wrong value is unrecoverable from the UI. They are
 constants. A knob nobody should turn is a way to break the product from the
 settings page.
 
+### 9.9 Neutralization: a staging copy must not mail customers
+
+Odoo protects a database copy by *neutralizing* it: every installed module's
+`data/neutralize.sql` runs, base deactivates every `ir_mail_server` and inserts
+an invalid one, all crons stop, and `database.is_neutralized` is set.
+
+That protection is SMTP-shaped, and Mail Pro is not. It calls the Graph API,
+the Gmail API or its own SMTP host with credentials the dump still carries, so
+a restored staging database would mail real customers from the real address —
+and pass every check Odoo has, because it never asked `ir_mail_server` for
+anything.
+
+So the module neutralizes itself. `database_is_neutralized()` lives in
+`models/neutralization.py`, below both encryption and the provider contract
+because both depend on it, and it is asked in three places:
+
+**Once, at rest.** `data/neutralize.sql` deactivates every mailbox and *removes*
+the OAuth tokens and mailbox passwords. Same reasoning as base wiping
+`smtp_pass`: a neutralized database gets copied around, and a dump carrying a
+live refresh token can send from anywhere it lands. Odoo finds it by path, so it
+is deliberately not listed in `__manifest__.py`.
+
+**Always, at the credential funnel.** `encryption_utils.decrypt_value()` returns
+empty. Every credential the module owns is read through that one function —
+access tokens, refresh tokens, IMAP/SMTP passwords, both providers' client
+secrets — so nothing can authenticate anywhere, including through call sites
+nobody has written yet. It returns empty rather than raising because "no
+credentials" is a state every caller already handles, and it leaves the account
+form readable in staging.
+
+**Always, before the network.** An empty credential fails at the *far* end: the
+connection still opens and the provider still rejects it, once per attempt. So
+each client also calls `_refuse_when_neutralized()` at the one point its
+transport cannot avoid — `get_valid_token` and `_exchange_code_for_tokens` for
+an OAuth provider, `_require_credentials` for a password one. Nothing leaves the
+database at all, and re-authorizing in staging cannot write live credentials
+back in. `tests/test_provider_contract.py` holds a new provider to the same
+rule.
+
+**Where a sentence is owed.** Routing an outgoing mail, the sync cron and
+"Sync Now" each ask directly, so the refusal says *neutralized* instead of
+"account not connected". Only a caller that knows what it was attempting can
+say why it stopped.
+
+Outgoing mail is *refused*, not dropped: the reason lands on the mail and it
+stays queued, so nothing is lost if the database turns out to be the real one.
+
 ---
 
 ### 9.10 An imported message notifies nobody

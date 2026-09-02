@@ -25,3 +25,8 @@ Thumbs.db
 
 # Local development (Docker)
 .local/
+
+# CI logs (tools/ci_odoo.sh writes these to the repo root)
+odoo-test.log
+odoo-baseline.log
+odoo-upgrade.log

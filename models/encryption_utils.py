@@ -10,6 +10,8 @@ import os
 from cryptography.fernet import Fernet
 from odoo.exceptions import UserError
 
+from .neutralization import database_is_neutralized
+
 _logger = logging.getLogger(__name__)
 
 # System parameter for auto-generated encryption key.
@@ -97,11 +99,26 @@ def decrypt_value(env, encrypted_text):
 
     Returns:
         str: Decrypted plaintext string, or False if encrypted_text is empty
+             or the database is neutralized
 
     Raises:
         UserError: If decryption fails (wrong key or corrupted data)
     """
     if not encrypted_text:
+        return False
+
+    # The module's off switch, and the reason it is here rather than at each
+    # call site: every credential Mail Pro owns is read through this one
+    # function -- OAuth access and refresh tokens, IMAP/SMTP passwords, both
+    # providers' client secrets. A neutralized database therefore cannot reach
+    # a provider at all, including through call sites nobody has written yet.
+    #
+    # Empty rather than an exception: "no credentials" is a state every caller
+    # already handles, and it leaves the account form readable in staging. The
+    # sentence that says *neutralized* is raised earlier, by the callers that
+    # know what they were trying to do. See models/neutralization.py.
+    if database_is_neutralized(env):
+        _logger.info("[Encryption] Database is neutralized - refusing to decrypt")
         return False
 
     try:
