@@ -70,6 +70,9 @@ class TestInternalDomainGate(TransactionCase):
         })
         # A notification mailbox has to exist before any mailbox may sync; that
         # is a separate, already-tested rule and would otherwise mask this one.
+        # The gate now guards every mailbox, so the fixture opens it to build
+        # its own scaffolding and closes it again below.
+        cls.Domains.set_domains(['gate.test'])
         cls.notification_mailbox = cls.Mailbox.create({
             'email': 'notifications@gate.test',
             'mailbox_type': 'notification',
@@ -104,8 +107,20 @@ class TestInternalDomainGate(TransactionCase):
         mailbox = self._sync_mailbox()
         self.assertEqual(mailbox.sync_mode, 'all')
 
-    def test_send_only_mailbox_is_never_blocked(self):
-        """The gate is about *incoming* mail. Sending has no leak to prevent."""
+    def test_a_send_only_mailbox_is_blocked_too(self):
+        """The gate moved from the sync switch to the mailbox.
+
+        It used to let a send-only mailbox through, on the reasoning that
+        sending has no leak to prevent. True of that mailbox on that day, and
+        the reason the setting read as an option belonging to sync — right up
+        until somebody flipped the switch. A mailbox is where Mail Pro takes
+        over the company's mail, so it is where the question gets asked.
+        """
+        with self.assertRaises(ValidationError):
+            self._sync_mailbox(sync_mode='none')
+
+    def test_domains_let_a_send_only_mailbox_through(self):
+        self.Domains.set_domains(['gate.test'])
         mailbox = self._sync_mailbox(sync_mode='none')
         self.assertEqual(mailbox.sync_mode, 'none')
 
@@ -180,6 +195,7 @@ class TestInternalDomainSuggestions(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains.set_domains(['scaffolding.test'])
         cls.env['pan.mail.mailbox'].create({
             'email': 'info@suggested.test', 'mailbox_type': 'shared',
         })
@@ -190,8 +206,93 @@ class TestInternalDomainSuggestions(TransactionCase):
     def test_uncovered_mailbox_domain_is_reported(self):
         """A mailbox we send from is ours by definition — a list missing it is wrong."""
         self.Domains.set_domains(['elsewhere.test'])
-        self.assertEqual(self.Domains.uncovered_mailbox_domains(), ['suggested.test'])
+        self.assertEqual(self.Domains.uncovered_domains(), ['suggested.test'])
 
     def test_nothing_uncovered_when_list_matches(self):
         self.Domains.set_domains(['suggested.test'])
-        self.assertEqual(self.Domains.uncovered_mailbox_domains(), [])
+        self.assertEqual(self.Domains.uncovered_domains(), [])
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestInternalDomainCompleteness(TransactionCase):
+    """Configured is not the same as complete, and only complete is worth much.
+
+    A list that names the obvious domain and misses a second one passes every
+    check that asks whether it is configured, and then treats a colleague on
+    that second domain as a customer. That is the original leak, on a database
+    nothing objects to. Juffermans Machinebouw is the shape: every mailbox on
+    one domain, a colleague on another.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains.set_domains(['scaffolding.test'])
+        cls.Mailbox = cls.env['pan.mail.mailbox']
+        cls.Mailbox.create({
+            'email': 'info@first.test', 'mailbox_type': 'shared',
+        })
+        cls.colleague = cls.env['res.users'].create({
+            'name': 'Colleague On Another Domain',
+            'login': 'wvb@second.test',
+            'email': 'wvb@second.test',
+            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+        })
+
+    def test_a_colleagues_domain_is_suggested(self):
+        """The source that catches a second domain. A company that acquired
+        another one has colleagues on it long before it has mailboxes on it."""
+        self.assertIn('second.test', self.Domains.suggest_domains())
+
+    def test_a_customer_with_a_login_is_not_the_company(self):
+        """Portal users have logins too, and folding their domain in would mark
+        a customer's mail internal and quietly stop syncing it."""
+        portal = self.env['res.users'].create({
+            'name': 'Customer With Portal Access',
+            'login': 'buyer@customer.test',
+            'email': 'buyer@customer.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+        })
+        self.assertTrue(portal.share, "fixture must be a share user to prove this")
+        self.assertNotIn('customer.test', self.Domains.suggest_domains())
+
+    def test_a_list_missing_our_own_domain_is_incomplete(self):
+        self.Domains.set_domains(['first.test'])
+
+        missing = self.Domains.uncovered_domains()
+
+        self.assertIn('second.test', missing)
+        self.assertIsNotNone(self.Domains.completeness_error())
+
+    def test_a_complete_list_reports_nothing(self):
+        self.Domains.set_domains(['first.test', 'second.test', 'scaffolding.test'])
+
+        self.assertEqual(self.Domains.uncovered_domains(), [])
+        self.assertIsNone(self.Domains.completeness_error())
+
+    def test_an_empty_list_is_absent_rather_than_incomplete(self):
+        """Two different failures with two different gates. This one is the
+        mailbox constraint's job, and saying both at once would be noise."""
+        self.Domains.set_domains([])
+
+        self.assertEqual(self.Domains.uncovered_domains(), [])
+        self.assertIsNone(self.Domains.completeness_error())
+        self.assertIsNotNone(self.Domains.configuration_error())
+
+    def test_saving_settings_refuses_an_incomplete_list(self):
+        settings = self.env['res.config.settings'].create({
+            'x_internal_domains': 'first.test',
+        })
+
+        with self.assertRaises(UserError):
+            settings.set_values()
+
+    def test_saving_settings_accepts_a_complete_list(self):
+        settings = self.env['res.config.settings'].create({
+            'x_internal_domains': 'first.test, second.test, scaffolding.test',
+        })
+
+        settings.set_values()
+
+        self.assertIn('second.test', self.Domains.get_domains())
