@@ -280,15 +280,33 @@ The series is **derived from `__manifest__.py`**, not hardcoded: `19.0.1.3.0`
 → `odoo:19.0`. An addon repo carries one Odoo version per branch, so a future
 `18.0` branch tests against Odoo 18 without editing the workflow.
 
-Reproduce a CI run locally (this is exactly what the job does):
+Run CI yourself — this is not an approximation, the workflow calls the same
+scripts:
+
 ```bash
-docker run --rm -v "$PWD:/mnt/extra-addons/pan_mail_pro:ro" \
-  --entrypoint odoo odoo:19.0 -d ci_test \
-  --db_host=<db> --db_user=odoo --db_password=odoo \
-  --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
-  -i pan_mail_pro --test-enable --test-tags=pan_mail_pro \
-  --stop-after-init --without-demo=all --max-cron-threads=0
+tools/ci.sh lint                  # ruff, XML, the Odoo 19 checklist, boundaries (seconds)
+tools/ci.sh test                  # fresh install + full suite in a real Odoo (~4 min)
+tools/ci.sh upgrade               # install last release, upgrade, run the suite
+tools/ci.sh                       # all three, in CI's order
+
+BASE_REF=origin/19.0 tools/ci_lint.sh   # + the diff-shape and version-bump checks
 ```
+
+Docker and Docker Hub access are the only requirements. `tools/ci_odoo.sh`
+starts its own Postgres container, so there is nothing to set up and nothing
+left running afterwards. No Enterprise source, no Azure credentials, no local
+Odoo — which is why it also works unchanged inside a Claude Code cloud session.
+
+Every check lives in `tools/`, never inline in the YAML. A check that only
+exists in a workflow file is a check nobody can run before pushing.
+
+| Script | What it is |
+|--------|------------|
+| `tools/ci.sh` | Entry point. `lint`, `test`, `upgrade` or all three |
+| `tools/ci_lint.sh` | Every static check the lint job runs |
+| `tools/ci_version_bump.sh` | The manifest version bump, against a base ref |
+| `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh` or `--mode=upgrade` |
+| `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 
 **Fresh install vs. upgraded database.** The `test` job installs fresh; the
 `upgrade` job installs the newest `v<series>.*` tag that is not HEAD and then
@@ -302,23 +320,35 @@ The `pan_outlook_pro` → `pan_mail_pro` rename is *not* covered by that job: it
 happens outside Odoo (`tools/rename_to_mail_pro.sql`), before the registry
 loads, so no module upgrade can drive it. It stays a manual runbook.
 
-## Working from the Claude Code mobile app
+## Working from Claude Code (mobile, web, cloud sessions)
 
 `19.0` is protected: no direct pushes, PR + green CI required. The full loop
-from a phone:
+without a desktop:
 
 ```bash
 git checkout -b feature/<name>
 # ... changes ...
+tools/ci.sh                     # the same checks CI will run, before pushing
 git commit -am "..."            # bump __manifest__.py version if code changed
 git push -u origin HEAD
-gh pr create --fill --base 19.0
-gh pr merge --auto --squash --delete-branch
 ```
 
-`--auto` is the part that makes this work without a desktop: GitHub merges the
-PR by itself the moment CI turns green, so there is nothing to come back to.
-Check status later with `gh pr checks` or `gh run watch`.
+Then open the PR and let GitHub merge it when CI turns green. Two ways,
+depending on where the session runs:
+
+- **Terminal with `gh`:** `gh pr create --fill --base 19.0` then
+  `gh pr merge --auto --squash --delete-branch`. Check back with
+  `gh pr checks` or `gh run watch`.
+- **Cloud session (claude.ai/code):** there is no `gh` CLI. Use the GitHub MCP
+  tools instead — `create_pull_request`, then `enable_pr_auto_merge`, and
+  `pull_request_read` or `actions_list` for status.
+
+`--auto` / auto-merge is the part that makes this work unattended: GitHub
+merges the moment CI is green, so there is nothing to come back to.
+
+**Running the suite before you push is the whole point in a cloud session.** A
+push-and-wait loop costs four minutes per round trip and burns a CI run per
+typo; `tools/ci.sh` gives the same verdict locally in the same container.
 
 ## Conventions
 

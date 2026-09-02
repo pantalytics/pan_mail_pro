@@ -17,20 +17,22 @@ concurrency:
 permissions:
   contents: read
 
+# Every job below is a thin wrapper around a script in tools/. The checks
+# themselves live there so the same commands run on a runner, on a laptop and
+# in a Claude cloud session — a check that only exists in this YAML is a check
+# you cannot run before pushing.
 jobs:
   # ---------------------------------------------------------------------------
   # Static checks: fast, no database. Fails the PR before we spend 4 minutes
-  # booting Odoo.
+  # booting Odoo. Local equivalent: tools/ci.sh lint
   # ---------------------------------------------------------------------------
   lint:
     name: Lint and Odoo 19 checklist
     runs-on: ubuntu-latest
-    outputs:
-      odoo-series: ${{ steps.manifest.outputs.series }}
     steps:
-      # Full history: the diff-shape check below needs a merge base with the
-      # mainline, and a shallow clone has none — which fails outright the
-      # moment the branch carries a merge commit.
+      # Full history: the diff-shape and version-bump checks need a merge base
+      # with the mainline, and a shallow clone has none — which fails outright
+      # the moment the branch carries a merge commit.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -39,178 +41,25 @@ jobs:
         with:
           python-version: '3.12'
 
-      # The Odoo series to test against is derived from the manifest version
-      # (19.0.1.3.0 -> 19.0). A future 18.0 branch therefore tests against
-      # Odoo 18 without touching this workflow.
-      - name: Read Odoo series from manifest
-        id: manifest
-        run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import ast
-          manifest = ast.literal_eval(open('__manifest__.py').read())
-          version = manifest['version']
-          parts = version.split('.')
-          assert len(parts) == 5, f"version must be <series>.<x>.<y>.<z> style, got {version!r}"
-          print(f"series={parts[0]}.{parts[1]}")
-          print(f"version={version}")
-          PY
-
-      - name: Show resolved series
-        run: echo "Testing against Odoo ${{ steps.manifest.outputs.series }} (manifest ${{ steps.manifest.outputs.version }})"
-
       - name: Install ruff
         run: pip install ruff==0.14.0
 
-      - name: Lint with ruff
-        run: ruff check . --output-format=github
-
-      - name: Check XML is well-formed
+      # BASE_REF switches on the two checks that need something to compare
+      # against. Empty on the mainline itself, where there is nothing.
+      - name: Static checks
+        env:
+          BASE_REF: >-
+            ${{ github.ref_name == github.event.repository.default_branch && ''
+                || format('origin/{0}', github.event.pull_request.base.ref || github.event.repository.default_branch) }}
         run: |
-          python - <<'PY'
-          import os, sys
-          from xml.etree import ElementTree
-          # os.walk, not rglob: the repo carries a `pan_mail_pro -> .`
-          # symlink for the local Docker addons_path, and rglob would follow it
-          # forever. os.walk does not follow directory symlinks by default.
-          failed = checked = 0
-          for root, dirs, files in os.walk('.'):
-              dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__'}]
-              for name in files:
-                  if not name.endswith('.xml'):
-                      continue
-                  path = os.path.join(root, name)
-                  checked += 1
-                  try:
-                      ElementTree.parse(path)
-                  except ElementTree.ParseError as exc:
-                      print(f"::error file={path}::{exc}")
-                      failed += 1
-          print(f"Parsed {checked} XML file(s), {failed} malformed.")
-          sys.exit(1 if failed else 0)
-          PY
-
-      # These mirror the "Odoo 19 Checklist" in CLAUDE.md so the rules are
-      # enforced by CI instead of by remembering them at commit time.
-      - name: Odoo 19 — no attrs= in views
-        run: |
-          if grep -rn 'attrs=' --include='*.xml' .; then
-            echo "::error::'attrs=' is removed in Odoo 17+. Use invisible/readonly/required directly."
-            exit 1
+          if [ -n "$BASE_REF" ]; then
+            git fetch --no-tags --depth=200 origin "${BASE_REF#origin/}"
           fi
-          echo "OK: no attrs= found."
-
-      - name: Odoo 19 — no numbercall on cron records
-        run: |
-          if grep -rn 'name="numbercall"' --include='*.xml' .; then
-            echo "::error::'numbercall' is deprecated on ir.cron in Odoo 17+."
-            exit 1
-          fi
-          echo "OK: no numbercall found."
-
-      - name: Boundary — anthropic imported only inside models/ai/
-        run: |
-          if grep -rn 'import anthropic\|from anthropic' --include='*.py' . \
-             | grep -v '^./models/ai/'; then
-            echo "::error::The AI vendor SDK may only be imported inside models/ai/."
-            echo "Everything else must go through the pan.mail.ai contract."
-            exit 1
-          fi
-          echo "OK: AI vendor boundary intact."
-
-      - name: Boundary — no AI call inside the mail path
-        run: |
-          if grep -n 'get_ai_backend\|pan\.mail\.ai' models/pan_mail_fetcher.py models/mail_mail.py; then
-            echo "::error::AI must never be called from the fetcher or the send path."
-            echo "Both run in a cron inside a savepoint; a slow or failing model"
-            echo "call there stalls a mailbox and rolls the message back."
-            exit 1
-          fi
-          echo "OK: AI cannot block mail."
-
-      - name: Boundary — provider SDKs stay inside models/providers/
-        run: |
-          if grep -rn 'graph\.microsoft\.com\|gmail\.googleapis\.com' \
-             --include='*.py' . | grep -v '^./models/providers/' | grep -v '^./tests/'; then
-            echo "::error::Provider URLs may only appear inside models/providers/."
-            exit 1
-          fi
-          echo "OK: provider boundary intact."
-
-      - name: Every model is named in ARCHITECTURE.md
-        run: |
-          # ARCHITECTURE.md is the single source of truth for design, which only
-          # holds if adding a model forces a line there. Eight models once
-          # shipped without ever reaching it; nothing failed, so nobody noticed.
-          MISSING=0
-          for model in $(grep -rhoP "^\s+_name = '\K[^']+" models/ | sort -u); do
-            if ! grep -qF "\`$model\`" ARCHITECTURE.md; then
-              echo "::error file=ARCHITECTURE.md::Model '$model' is not documented in ARCHITECTURE.md"
-              MISSING=1
-            fi
-          done
-          if [ "$MISSING" -ne 0 ]; then
-            echo "Add it to the model map in §1, and describe it in the section it belongs to."
-            echo "Write the name in backticks so this check can find it."
-            exit 1
-          fi
-          echo "OK: every model is documented."
-
-      - name: Migration folder is not below the manifest version
-        run: |
-          VERSION=$(python -c "import ast,pathlib;print(ast.literal_eval(pathlib.Path('__manifest__.py').read_text())['version'])")
-          LATEST=$(ls migrations 2>/dev/null | sort -V | tail -1)
-          if [ -n "$LATEST" ]; then
-            HIGHEST=$(printf '%s\n%s\n' "$VERSION" "$LATEST" | sort -V | tail -1)
-            if [ "$HIGHEST" != "$VERSION" ]; then
-              echo "::error::migrations/$LATEST is above manifest version $VERSION."
-              exit 1
-            fi
-            if [ "$LATEST" = "$VERSION" ]; then
-              echo "OK: migrations/$LATEST runs on upgrade to $VERSION."
-            else
-              echo "OK: latest migration $LATEST is below $VERSION (already applied)."
-            fi
-          fi
-
-      - name: Models changed implies tests changed
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch --no-tags --quiet --depth=200 origin "${{ github.base_ref }}"
-          # Resolve the merge base explicitly. `A...B` silently needs one and
-          # dies with "no merge base" when it is missing; failing loudly here
-          # is the difference between a check that is off and a check that
-          # looks green because it never ran.
-          if ! MERGE_BASE=$(git merge-base "origin/${{ github.base_ref }}" HEAD); then
-            echo "::error::No merge base with ${{ github.base_ref }}; cannot check the diff shape."
-            exit 1
-          fi
-          CHANGED=$(git diff --name-only "$MERGE_BASE" HEAD)
-          if echo "$CHANGED" | grep -q '^models/' && ! echo "$CHANGED" | grep -q '^tests/'; then
-            echo "::error::This PR changes models/ but no test. Add or update one."
-            exit 1
-          fi
-          echo "OK: model changes are accompanied by tests."
-
-      - name: Manifest data files exist
-        run: |
-          python - <<'PY'
-          import ast, pathlib, sys
-          manifest = ast.literal_eval(open('__manifest__.py').read())
-          missing = [f for f in manifest.get('data', []) if not pathlib.Path(f).is_file()]
-          missing += [f for f in manifest.get('assets', {}).get('web.assets_backend', [])
-                      if not pathlib.Path(f.split('/', 1)[1]).is_file()]
-          if missing:
-              print("Referenced in __manifest__.py but missing on disk:")
-              print("\n".join(f"  - {m}" for m in missing))
-              sys.exit(1)
-          print("All manifest data/asset files exist.")
-          PY
+          tools/ci_lint.sh
 
   # ---------------------------------------------------------------------------
-  # Odoo hosts decide whether to run an upgrade by comparing the manifest
-  # version to the installed one. A code change that ships without a bump is
-  # simply never applied on the target database — so it is checked here, but
-  # only when module code actually changed.
+  # Kept as its own job because it is a required status check by name.
+  # Local equivalent: tools/ci_version_bump.sh origin/19.0
   # ---------------------------------------------------------------------------
   version-bump:
     name: Manifest version bumped
@@ -222,48 +71,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Compares against the merge base with the mainline rather than against
-      # the PR's base SHA, so this also runs on a plain branch push — before a
-      # PR exists, which is when the bump is easiest to forget.
       - name: Compare manifest version with the mainline
         run: |
           BASE_BRANCH="${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}"
           git fetch --no-tags --depth=200 origin "$BASE_BRANCH"
-          BASE=$(git merge-base FETCH_HEAD HEAD)
-          echo "Comparing against ${BASE_BRANCH} at ${BASE}"
-          CODE_CHANGED=$(git diff --name-only "$BASE" HEAD \
-            -- 'models/**' 'views/**' 'wizard/**' 'controllers/**' \
-               'security/**' 'data/**' 'migrations/**' 'static/**' '__manifest__.py' \
-            | wc -l)
-          if [ "$CODE_CHANGED" -eq 0 ]; then
-            echo "No module code touched — version bump not required."
-            exit 0
-          fi
-          python - "$BASE" <<'PY'
-          import ast, subprocess, sys
-          base = sys.argv[1]
-
-          def version_of(text):
-              return tuple(int(p) for p in ast.literal_eval(text)['version'].split('.'))
-
-          new = version_of(open('__manifest__.py').read())
-          old = version_of(subprocess.run(
-              ['git', 'show', f'{base}:__manifest__.py'],
-              capture_output=True, text=True, check=True).stdout)
-
-          if new <= old:
-              print(f"::error file=__manifest__.py::Module code changed but version was not "
-                    f"bumped ({'.'.join(map(str, old))} -> {'.'.join(map(str, new))}). "
-                    f"Odoo skips the upgrade without a higher version.")
-              sys.exit(1)
-          print(f"Version bumped: {'.'.join(map(str, old))} -> {'.'.join(map(str, new))}")
-          PY
+          tools/ci_version_bump.sh FETCH_HEAD
 
   # ---------------------------------------------------------------------------
   # Install the module into a real Odoo of the matching series and run the
-  # module's own test suite. Uses the official community image; the module
-  # only depends on mail/base/crm, which all ship there. Enterprise-only
-  # tests (helpdesk) skip themselves.
+  # module's own test suite. Uses the official community image; the module only
+  # depends on mail/base/crm, which all ship there. Enterprise-only tests
+  # (helpdesk) skip themselves. Local equivalent: tools/ci.sh test
   # ---------------------------------------------------------------------------
   # The job name is static on purpose: it is a required status check, and a
   # name interpolated from the manifest would stop matching on a branch for a
@@ -272,79 +90,11 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     needs: lint
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: odoo
-          POSTGRES_PASSWORD: odoo
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     steps:
-      # Check out into a subdirectory so the parent can serve as addons_path
-      # without relying on the in-repo `pan_mail_pro -> .` symlink.
       - uses: actions/checkout@v7
-        with:
-          path: addons/pan_mail_pro
 
-      # `sale` and `mass_mailing` are not module dependencies, but nine tests
-      # skip themselves when they are absent — and a skip is invisible in the
-      # summary, so those paths silently went untested on every run. Both ship
-      # in community, so installing them here costs a minute and buys back the
-      # coverage. `helpdesk` cannot be added: it is Enterprise-only, so
-      # test_route_to_helpdesk stays a genuine CI gap and has to be covered by
-      # the functional testplan.
-      #
-      # --log-handler=odoo.tools.convert:DEBUG is on for a different reason:
-      # without it a bad view fails with "Invalid view <name> definition" and
-      # an empty error context, which says only *that* a view is wrong, never
-      # *why*. It adds the inner traceback. Note it does not surface the
-      # RelaxNG validation warnings — those are logged unconditionally by
-      # odoo.tools.view_validation, further up the log than the traceback.
-      - name: Run module tests
-        env:
-          SERIES: ${{ needs.lint.outputs.odoo-series }}
-        run: |
-          set -o pipefail
-          docker run --rm --network host \
-            -v "${{ github.workspace }}/addons:/mnt/extra-addons:ro" \
-            --entrypoint odoo "odoo:${SERIES}" \
-            -d ci_test \
-            --db_host=localhost --db_port=5432 --db_user=odoo --db_password=odoo \
-            --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
-            -i pan_mail_pro,sale,mass_mailing \
-            --test-enable --test-tags=pan_mail_pro \
-            --stop-after-init --without-demo=all \
-            --max-cron-threads=0 --log-level=info \
-            --log-handler=odoo.tools.convert:DEBUG 2>&1 | tee odoo-test.log
-
-      # Belt and braces: the step above already fails on a non-zero Odoo exit
-      # code. This asserts on the summary line as well, so a run that dies
-      # before reporting one — or reports having run nothing — cannot pass.
-      - name: Assert no test failures
-        run: addons/pan_mail_pro/tools/ci_assert_tests.sh odoo-test.log
-
-      # The step above prints skips but cannot know which ones were expected.
-      # This one pins the intent: if a future dependency bump stops `sale` or
-      # `mass_mailing` from installing, those tests would quietly go back to
-      # skipping and the build would stay green.
-      - name: Assert optional test dependencies installed
-        run: |
-          MISSING=$(docker run --rm --network host postgres:15 \
-            psql "postgresql://odoo:odoo@localhost:5432/ci_test" -tAc \
-            "SELECT name FROM ir_module_module
-              WHERE name IN ('sale','mass_mailing','crm') AND state <> 'installed'")
-          if [ -n "$MISSING" ]; then
-            echo "::error::Not installed, so their tests skipped instead of running: $(echo $MISSING | tr '\n' ' ')"
-            exit 1
-          fi
-          echo "sale, mass_mailing and crm are installed — no silent skips from missing modules."
+      - name: Fresh install and run the suite
+        run: tools/ci_odoo.sh --mode=fresh
 
       - name: Upload Odoo log
         if: always()
@@ -364,103 +114,25 @@ jobs:
   # Out of scope on purpose: the pan_outlook_pro -> pan_mail_pro rename, which
   # happens outside Odoo (tools/rename_to_mail_pro.sql) and so cannot be driven
   # from a module upgrade. That one stays a manual runbook.
+  #
+  # Local equivalent: tools/ci.sh upgrade
   # ---------------------------------------------------------------------------
   upgrade:
     name: Upgrade from last release
     runs-on: ubuntu-latest
     needs: lint
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: odoo
-          POSTGRES_PASSWORD: odoo
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     steps:
+      # Tags and full history: the script upgrades from the newest v<series>.*
+      # tag that is not HEAD.
       - uses: actions/checkout@v7
         with:
-          path: addons/pan_mail_pro
           fetch-depth: 0
 
-      # The newest tag of this series that is not HEAD itself. Nothing to
-      # upgrade *from* on a repo with no releases yet, so the job no-ops rather
-      # than failing — a first release must be allowed to happen.
-      - name: Resolve the previous release
-        id: baseline
-        working-directory: addons/pan_mail_pro
-        env:
-          SERIES: ${{ needs.lint.outputs.odoo-series }}
-        run: |
-          HEAD_SHA=$(git rev-parse HEAD)
-          for t in $(git tag -l "v${SERIES}.*" --sort=-v:refname); do
-            if [ "$(git rev-parse "${t}^{commit}")" != "$HEAD_SHA" ]; then
-              echo "tag=$t" >> "$GITHUB_OUTPUT"
-              echo "Upgrading from ${t}"
-              exit 0
-            fi
-          done
-          echo "tag=" >> "$GITHUB_OUTPUT"
-          echo "No previous v${SERIES}.* tag — nothing to upgrade from."
-
-      - name: Export the previous release
-        if: steps.baseline.outputs.tag != ''
-        working-directory: addons/pan_mail_pro
-        run: |
-          mkdir -p "${{ github.workspace }}/addons_base/pan_mail_pro"
-          git archive "${{ steps.baseline.outputs.tag }}" \
-            | tar -x -C "${{ github.workspace }}/addons_base/pan_mail_pro"
-          grep "'version'" "${{ github.workspace }}/addons_base/pan_mail_pro/__manifest__.py"
-
-      - name: Install the previous release
-        if: steps.baseline.outputs.tag != ''
-        env:
-          SERIES: ${{ needs.lint.outputs.odoo-series }}
-        run: |
-          set -o pipefail
-          docker run --rm --network host \
-            -v "${{ github.workspace }}/addons_base:/mnt/extra-addons:ro" \
-            --entrypoint odoo "odoo:${SERIES}" \
-            -d ci_upgrade \
-            --db_host=localhost --db_port=5432 --db_user=odoo --db_password=odoo \
-            --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
-            -i pan_mail_pro,sale,mass_mailing \
-            --stop-after-init --without-demo=all \
-            --max-cron-threads=0 --log-level=warn 2>&1 | tee odoo-baseline.log
-
-      # -u is what triggers the migration scripts, and --test-enable then runs
-      # the suite against the upgraded database rather than a fresh one.
-      - name: Upgrade to HEAD and run tests
-        if: steps.baseline.outputs.tag != ''
-        env:
-          SERIES: ${{ needs.lint.outputs.odoo-series }}
-        run: |
-          set -o pipefail
-          docker run --rm --network host \
-            -v "${{ github.workspace }}/addons:/mnt/extra-addons:ro" \
-            --entrypoint odoo "odoo:${SERIES}" \
-            -d ci_upgrade \
-            --db_host=localhost --db_port=5432 --db_user=odoo --db_password=odoo \
-            --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
-            -u pan_mail_pro \
-            --test-enable --test-tags=pan_mail_pro \
-            --stop-after-init \
-            --max-cron-threads=0 --log-level=info 2>&1 | tee odoo-upgrade.log
-
-      # -u on a module that is not installed silently does nothing and still
-      # exits 0, which is the exact failure this whole job would otherwise miss.
-      - name: Assert the upgrade ran its tests
-        if: steps.baseline.outputs.tag != ''
-        run: addons/pan_mail_pro/tools/ci_assert_tests.sh odoo-upgrade.log
+      - name: Install the last release, upgrade to HEAD, run the suite
+        run: tools/ci_odoo.sh --mode=upgrade
 
       - name: Upload upgrade logs
-        if: always() && steps.baseline.outputs.tag != ''
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: odoo-upgrade-log

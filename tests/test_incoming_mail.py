@@ -163,7 +163,59 @@ class TestPartnerMatching(TransactionCase):
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestAliasRouting(TransactionCase):
-    """Test email routing via aliases."""
+    """Routing an incoming mail through a mailbox that has no alias.
+
+    Kept apart from the Helpdesk class on purpose. This path needs no
+    Enterprise module, but it used to share a setUpClass that created a
+    helpdesk.team -- so it skipped itself on every CI run, losing coverage to
+    a dependency it never had.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.processor = cls.env['microsoft.incoming.mail.processor']
+        cls.partner = cls.env['res.partner'].create({
+            'name': 'Test Sender',
+            'email': 'sender@example.com',
+        })
+
+    def test_route_no_alias_falls_back_to_partner(self):
+        """Without alias, email should be posted to partner chatter."""
+        mailbox_no_alias = self.env['x_microsoft.mailbox'].create({
+            'email': 'noalias@company.com',
+            'x_mailbox_type': 'shared',
+        })
+
+        msg_dict = {
+            'message_type': 'email',
+            'subject': 'Test',
+            'body': '<p>Test</p>',
+            'attachments': [],
+            'message_id': '<test-456@example.com>',
+            'author_id': self.partner.id,
+            'email_from': 'sender@example.com',
+        }
+
+        record, message = self.processor._route_email_via_alias(
+            mailbox=mailbox_no_alias,
+            partner=self.partner,
+            msg_dict=msg_dict,
+            contact_email='sender@example.com',
+        )
+
+        self.assertEqual(record, self.partner)
+        self.assertTrue(message)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestHelpdeskRouting(TransactionCase):
+    """Routing an incoming mail onto a helpdesk ticket via the team alias.
+
+    `helpdesk` ships only in Odoo Enterprise, so this class skips itself on the
+    community image CI uses. It is the module's one genuine CI gap; run it
+    locally against the Enterprise source, and see TESTPLAN.md.
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -211,33 +263,6 @@ class TestAliasRouting(TransactionCase):
         self.assertEqual(record._name, 'helpdesk.ticket')
         self.assertEqual(record.name, 'Help needed')
         self.assertEqual(record.partner_id, self.partner)
-        self.assertTrue(message)
-
-    def test_route_no_alias_falls_back_to_partner(self):
-        """Without alias, email should be posted to partner chatter."""
-        mailbox_no_alias = self.env['x_microsoft.mailbox'].create({
-            'email': 'noalias@company.com',
-            'x_mailbox_type': 'shared',
-        })
-
-        msg_dict = {
-            'message_type': 'email',
-            'subject': 'Test',
-            'body': '<p>Test</p>',
-            'attachments': [],
-            'message_id': '<test-456@example.com>',
-            'author_id': self.partner.id,
-            'email_from': 'sender@example.com',
-        }
-
-        record, message = self.processor._route_email_via_alias(
-            mailbox=mailbox_no_alias,
-            partner=self.partner,
-            msg_dict=msg_dict,
-            contact_email='sender@example.com',
-        )
-
-        self.assertEqual(record, self.partner)
         self.assertTrue(message)
 
 
