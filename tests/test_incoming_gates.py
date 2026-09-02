@@ -24,7 +24,7 @@ from odoo.tests import tagged
 
 from ..models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 from ..models.pan_mail_fetcher import Skip
-from .common import OutlookProTestCase
+from .common import MailProTestCase
 
 CUSTOMER = 'customer@example.com'
 # The fixture declares gate-fixture.test as the company's own domain.
@@ -34,7 +34,7 @@ INTERNET_ID = '<gate-001@example.com>'
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestIncomingGates(OutlookProTestCase):
+class TestIncomingGates(MailProTestCase):
 
     def setUp(self):
         super().setUp()
