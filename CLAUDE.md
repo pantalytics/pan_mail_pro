@@ -322,7 +322,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | Script | What it is |
 |--------|------------|
 | `tools/ci.sh` | Entry point. `lint`, `test`, `upgrade` or all three |
-| `tools/ci_lint.sh` | Every static check the lint job runs |
+| `tools/ci_lint.sh` | Every static check the lint job runs, including that every `tests/test_*.py` is imported by `tests/__init__.py` — a file that is not on that list never runs, and nothing else can see that |
 | `tools/ci_version_bump.sh` | The manifest version bump, against a base ref |
 | `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh` or `--mode=upgrade` |
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
