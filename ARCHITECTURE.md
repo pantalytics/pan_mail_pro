@@ -225,6 +225,11 @@ of being cancelled. Nothing here has an opinion once the phase is `syncing`.
 
 Three properties are worth naming, because each was a bug first:
 
+- **There is one place to connect a mailbox, and it is not this page.** An
+  admin connects their own from their profile like every other user, so the
+  settings page names them and says to go there rather than growing a second
+  door with its own errors. The sentence uses their name: "an account is not
+  connected" reads as somebody else's problem.
 - **The answers are about the database, not about the reader.** "Connected"
   means *some* account on the provider is connected. A second admin opening the
   settings page must not be told the product is unconfigured because they
