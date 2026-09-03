@@ -1,0 +1,51 @@
+// The status line at the top of Settings → Mail Pro.
+//
+// One headline, one sentence, a hairline underneath. No card, no icon set and
+// no colour behind the text: the only colour on the line is the dot, which is
+// the one thing that has to be readable from across the room. Palette from
+// brand.pantalytics.com — dark teal for text, accent purple for "still busy".
+
+.o_mailpro_status {
+    padding: 2rem 0 1.75rem;
+    border-bottom: 1px solid rgba(0, 29, 33, 0.08);
+    margin-bottom: 1.5rem;
+
+    .o_mailpro_status_head {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+    }
+
+    .o_mailpro_dot {
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 50%;
+        flex: 0 0 auto;
+
+        &--setup   { background-color: #5b58d8; }
+        &--syncing { background-color: #1f9d63; }
+        &--error   { background-color: #c0392b; }
+    }
+
+    .o_mailpro_status_label {
+        font-size: 1.75rem;
+        font-weight: 300;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        color: #001d21;
+    }
+
+    .o_mailpro_status_detail {
+        margin-top: 0.35rem;
+        max-width: 52ch;
+        font-size: 0.95rem;
+        color: rgba(0, 29, 33, 0.6);
+    }
+
+    .o_mailpro_status_note {
+        margin-top: 0.75rem;
+        max-width: 62ch;
+        font-size: 0.85rem;
+        color: rgba(0, 29, 33, 0.6);
+    }
+}

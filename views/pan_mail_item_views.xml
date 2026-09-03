@@ -12,7 +12,7 @@
                 <field name="email_from" string="From"/>
                 <field name="subject"/>
                 <field name="reason"/>
-                <field name="ai_suggested_name" string="AI suggests" optional="show"/>
+                <field name="ai_suggested_name" string="AI suggests" optional="hide"/>
                 <field name="ai_confidence" widget="percentage" optional="hide"/>
                 <field name="mailbox_id"/>
                 <field name="state" widget="badge"

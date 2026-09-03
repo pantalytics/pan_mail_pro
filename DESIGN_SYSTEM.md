@@ -217,6 +217,38 @@ When a list is empty, show a helpful message:
 </list>
 ```
 
+### Status, not banners
+
+A screen that reports how the module is doing says it once, at the top, in one
+line. Three states and no fourth: **Setup**, **Syncing**, **Attention needed**.
+
+```xml
+<div class="o_mailpro_status">
+    <div class="o_mailpro_status_head">
+        <span class="o_mailpro_dot o_mailpro_dot--syncing"
+              invisible="x_setup_status != 'syncing'"/>
+        <field name="x_setup_status" nolabel="1" readonly="1"
+               class="o_mailpro_status_label"/>
+    </div>
+    <div class="o_mailpro_status_detail">
+        <field name="x_setup_status_detail" nolabel="1" readonly="1"/>
+    </div>
+</div>
+```
+
+Rules that make it read as one thing rather than three:
+
+- **A headline and one sentence.** The headline is the state; the sentence says
+  what to do about it. Nothing else goes on the line.
+- **The dot is the only colour.** No coloured background behind text, no icon
+  set, no border. Accent purple `#5b58d8` for setup, green `#1f9d63` for
+  syncing, red `#c0392b` for attention.
+- **Stacked alerts are the failure mode this replaces.** Three `alert-warning`
+  boxes at the top of a page are three things shouting; one status line with a
+  changing sentence is one thing speaking.
+- **Never invent a fourth state.** If something new can go wrong, it is a
+  sentence under "Attention needed", not a new colour.
+
 ---
 
 ## Checklist

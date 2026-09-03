@@ -12,27 +12,42 @@
                     <field name="x_provider_credentials_set" invisible="1"/>
                     <field name="x_provider_connected" invisible="1"/>
                     <field name="x_provider_uses_oauth" invisible="1"/>
+                    <field name="x_setup_connection_done" invisible="1"/>
                     <field name="x_setup_domains_done" invisible="1"/>
                     <field name="x_setup_notification_done" invisible="1"/>
                     <field name="x_setup_users_done" invisible="1"/>
                     <field name="x_setup_complete" invisible="1"/>
 
-                    <!-- Setup is not finished and mail is piling up because of it.
-                         Loud, and at the top, because the alternative is an admin
-                         who thinks the invitations they sent simply arrived. -->
-                    <div class="alert alert-warning mt-3" role="alert"
-                         invisible="x_setup_pending_notifications == 0">
-                        <i class="fa fa-clock-o me-2" title="Waiting"/>
-                        <field name="x_setup_pending_notifications" class="d-inline" readonly="1"/>
-                        email(s) — invitations, password resets — are held in the queue
-                        until the notification mailbox works. They are sent automatically
-                        once step 5 is done; nothing is lost.
-                    </div>
-
-                    <div class="alert alert-success mt-3" role="status" invisible="not x_setup_complete">
-                        <i class="fa fa-check-circle me-2" title="Ready"/>
-                        <strong>Mail Pro is ready.</strong>
-                        Email is sent and received through your own mailboxes.
+                    <!-- The status, in one line. Three states and no fourth:
+                         setting up, syncing, or syncing with a mailbox that
+                         stopped. Deliberately quiet — a headline and one
+                         sentence, no box and no icon set. See
+                         models/pan_mail_setup.py for what decides it. -->
+                    <div class="o_mailpro_status">
+                        <div class="o_mailpro_status_head">
+                            <span class="o_mailpro_dot o_mailpro_dot--setup"
+                                  invisible="x_setup_status != 'setup'"/>
+                            <span class="o_mailpro_dot o_mailpro_dot--syncing"
+                                  invisible="x_setup_status != 'syncing'"/>
+                            <span class="o_mailpro_dot o_mailpro_dot--error"
+                                  invisible="x_setup_status != 'error'"/>
+                            <field name="x_setup_status" nolabel="1" readonly="1"
+                                   class="o_mailpro_status_label"/>
+                        </div>
+                        <div class="o_mailpro_status_detail">
+                            <field name="x_setup_status_detail" nolabel="1" readonly="1"/>
+                        </div>
+                        <div class="o_mailpro_status_note"
+                             invisible="x_setup_pending_notifications == 0">
+                            <field name="x_setup_pending_notifications" class="d-inline" readonly="1"/>
+                            email(s) — invitations, password resets — are held in the queue
+                            until the notification mailbox works. They are sent automatically
+                            once step 5 is done; nothing is lost.
+                        </div>
+                        <div class="o_mailpro_status_note" invisible="x_setup_status != 'error'">
+                            <button type="action" name="%(action_pan_mail_mailbox)d"
+                                    string="Review mailboxes" icon="oi-arrow-right" class="oe_link ps-0"/>
+                        </div>
                     </div>
 
                     <!-- ============================================ -->
@@ -63,21 +78,41 @@
                         <div class="col-12 col-lg-6 o_setting_box" invisible="not x_mail_provider">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Progress</span>
-                                <div class="mt-2">
+                                <span class="o_form_label">The five steps</span>
+                                <div class="text-muted mb-2">
+                                    Answered for this database, not for you personally —
+                                    a colleague may have connected the account.
+                                </div>
+                                <div class="mt-1">
                                     <span class="text-muted" invisible="x_provider_credentials_set">
-                                        <i class="fa fa-circle-o me-1" title="To do"/>Credentials not filled in yet
+                                        <i class="fa fa-circle-o me-1" title="To do"/>2. Credentials
                                     </span>
                                     <span class="text-success" invisible="not x_provider_credentials_set">
-                                        <i class="fa fa-check-circle me-1" title="Done"/>Credentials filled in
+                                        <i class="fa fa-check-circle me-1" title="Done"/>2. Credentials
                                     </span>
                                 </div>
                                 <div class="mt-1">
-                                    <span class="text-muted" invisible="x_provider_connected">
-                                        <i class="fa fa-circle-o me-1" title="To do"/>Account not connected
+                                    <span class="text-muted" invisible="x_setup_connection_done">
+                                        <i class="fa fa-circle-o me-1" title="To do"/>3. Connected account
                                     </span>
-                                    <span class="text-success" invisible="not x_provider_connected">
-                                        <i class="fa fa-check-circle me-1" title="Done"/>Account connected
+                                    <span class="text-success" invisible="not x_setup_connection_done">
+                                        <i class="fa fa-check-circle me-1" title="Done"/>3. Connected account
+                                    </span>
+                                </div>
+                                <div class="mt-1">
+                                    <span class="text-muted" invisible="x_setup_domains_done">
+                                        <i class="fa fa-circle-o me-1" title="To do"/>4. Internal domains
+                                    </span>
+                                    <span class="text-success" invisible="not x_setup_domains_done">
+                                        <i class="fa fa-check-circle me-1" title="Done"/>4. Internal domains
+                                    </span>
+                                </div>
+                                <div class="mt-1">
+                                    <span class="text-muted" invisible="x_setup_notification_done">
+                                        <i class="fa fa-circle-o me-1" title="To do"/>5. Notification email
+                                    </span>
+                                    <span class="text-success" invisible="not x_setup_notification_done">
+                                        <i class="fa fa-check-circle me-1" title="Done"/>5. Notification email
                                     </span>
                                 </div>
                             </div>
@@ -325,7 +360,7 @@
                     <!-- ============================================ -->
                     <!-- STEP 5 - MAILBOXES -->
                     <!-- ============================================ -->
-                    <h2 invisible="not x_provider_credentials_set">5. Mailboxes</h2>
+                    <h2 invisible="not x_provider_credentials_set">5. Notification Email</h2>
                     <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
@@ -365,10 +400,14 @@
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- STEP 6 - INVITE YOUR TEAM -->
+                    <!-- INVITE YOUR TEAM -->
+                    <!-- Not a setup step and deliberately not numbered: mail -->
+                    <!-- flows with one connected account. It just does not -->
+                    <!-- flow for the colleagues who have not signed in yet, -->
+                    <!-- which is a rollout task, not a gate. -->
                     <!-- ============================================ -->
-                    <h2 invisible="not x_setup_notification_done">6. Your Team</h2>
-                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_setup_notification_done">
+                    <h2 invisible="not x_setup_complete">Your Team</h2>
+                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_setup_complete">
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
@@ -411,47 +450,6 @@
                                     Unauthorized copying, modification, distribution, or use of this module, in whole or in part,
                                     is strictly prohibited and may result in legal action. Protected under international copyright
                                     and trade secret law.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-
-                    <h2>AI Triage</h2>
-                    <div class="row mt-3 mb-4 o_settings_container">
-                        <div class="col-12 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">Suggest where unrouted mail belongs</span>
-                                <div class="text-muted mb-3">
-                                    Off by default. When on, mail that could not be filed
-                                    gets a suggested target you can accept or ignore —
-                                    nothing is ever filed automatically.
-                                </div>
-                                <div class="alert alert-warning" role="alert">
-                                    You supply your own API key and this database talks to
-                                    that provider directly. Pantalytics never sees the traffic.
-                                    Only an email's envelope is sent — subject, sender,
-                                    recipient, date, and candidate record names. Message
-                                    bodies and attachments are never sent.
-                                </div>
-                                <div class="content-group">
-                                    <div class="row mt-2">
-                                        <label class="col-lg-3 o_light_label" for="x_pan_ai_backend">Provider</label>
-                                        <field name="x_pan_ai_backend"/>
-                                    </div>
-                                    <div class="row mt-2" invisible="x_pan_ai_backend == 'none'">
-                                        <label class="col-lg-3 o_light_label" for="x_pan_ai_api_key">API Key</label>
-                                        <field name="x_pan_ai_api_key" password="True"
-                                               placeholder="sk-ant-..."/>
-                                    </div>
-                                    <div class="row mt-2" invisible="x_pan_ai_backend == 'none'">
-                                        <div class="col text-muted small">
-                                            Enable the cron
-                                            <em>Mail Pro: suggest a target for triage items</em>
-                                            to start analysing the queue.
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         </div>

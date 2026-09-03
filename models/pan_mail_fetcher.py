@@ -105,6 +105,18 @@ class PanMailFetcher(models.AbstractModel):
             ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
         ]).filtered(lambda m: m._has_working_credentials())
 
+        # Setup is not a warning, it is a phase: nothing is carried until all
+        # five steps are answered, and emptying the internal domain list later
+        # puts the module straight back into it. Recorded on the mailboxes
+        # rather than only logged -- a sync that stopped has to be visible
+        # where somebody looks, which is the mailbox, not the server log.
+        setup = self.env['pan.mail.setup']
+        if not setup.is_ready():
+            reason = setup.not_ready_error()
+            _logger.info('[Incoming Mail] %s', reason)
+            mailboxes.write({'state': 'error', 'error_message': reason})
+            return
+
         _logger.info(f"[Incoming Mail] Starting sync for {len(mailboxes)} mailbox(es)")
 
         for mailbox in mailboxes:

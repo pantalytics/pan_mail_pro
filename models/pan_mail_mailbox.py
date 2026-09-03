@@ -379,6 +379,10 @@ class PanMailMailbox(models.Model):
                 'refused here.'
             ))
 
+        setup = self.env['pan.mail.setup']
+        if not setup.is_ready():
+            raise UserError(setup.not_ready_error())
+
         if not self._syncs_incoming():
             raise UserError(_('Sync mode is set to "No sync". Change it to enable syncing.'))
 

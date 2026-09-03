@@ -6,8 +6,12 @@ Two things have to hold for that to be trustworthy: the picker offers exactly
 the providers the registry knows about, and the "how far along am I" flags the
 steps hide behind answer for the *selected* provider rather than for Microsoft.
 """
+from unittest.mock import patch
+
+from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
+from odoo.addons.pan_mail_pro.models import pan_mail_setup
 from odoo.addons.pan_mail_pro.models.mail_provider_client import PROVIDER_SELECTION
 
 
@@ -113,3 +117,105 @@ class TestSetupFlow(TransactionCase):
     def test_unconfigured_database_preselects_nothing(self):
         self._clear_credentials()
         self.assertFalse(self.Settings.default_get(['x_mail_provider']).get('x_mail_provider'))
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestSetupPhase(TransactionCase):
+    """The phase, and what it stops.
+
+    Setup is not advice. Until all five steps are answered the module is not in
+    service: the cron does not fetch and "Sync Now" refuses. The rule lives in
+    one place so a sixth reason to refuse cannot be invented at a call site.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Setup = cls.env['pan.mail.setup']
+        # A mailbox cannot be created at all until the domains are answered —
+        # see pan_mail_mailbox._check_internal_domains_configured.
+        cls.env['pan.mail.internal.domains'].set_domains(['company.test'])
+
+    def _answers(self, **overrides):
+        answers = {code: True for code, _label in pan_mail_setup.STEPS}
+        answers.update(overrides)
+        return answers
+
+    def test_the_five_steps_are_the_contract(self):
+        """A sixth step, or a reordering, has to be a deliberate edit here."""
+        self.assertEqual(
+            [code for code, _label in pan_mail_setup.STEPS],
+            ['provider', 'credentials', 'connection', 'domains', 'notification'],
+        )
+
+    def test_every_step_is_mandatory(self):
+        """Each one on its own is enough to hold the whole phase back, and the
+        status names that step rather than a generic "not configured"."""
+        for index, (code, label) in enumerate(pan_mail_setup.STEPS, start=1):
+            answers = self._answers(**{code: False})
+            self.assertEqual(self.Setup.phase(answers), pan_mail_setup.PHASE_SETUP,
+                             f'missing {code} must keep the module in setup')
+            self.assertFalse(self.Setup.is_ready(answers))
+            self.assertEqual(self.Setup.blocking_step(answers)[:2], (index, code))
+            self.assertIn(label, self.Setup.status_detail(answers))
+
+    def test_all_five_answered_is_syncing(self):
+        answers = self._answers()
+        self.assertEqual(self.Setup.phase(answers), pan_mail_setup.PHASE_SYNCING)
+        self.assertTrue(self.Setup.is_ready(answers))
+        self.assertFalse(self.Setup.blocking_step(answers))
+
+    def test_the_blocking_step_is_the_first_unanswered_one(self):
+        """The banner names the step to do next, not the last one that failed."""
+        answers = self._answers(connection=False, notification=False)
+        index, code, _label = self.Setup.blocking_step(answers)
+        self.assertEqual((index, code), (3, 'connection'))
+
+    def test_connection_is_about_the_database_not_about_you(self):
+        """A second admin opening the page must not be told the product is
+        unconfigured because they personally have not signed in."""
+        self.assertFalse(self.Setup.provider_is_connected('imap'))
+        account = self.env['pan.mail.account'].create({
+            'email': 'phase@company.test', 'provider': 'imap',
+            'imap_host': 'imap.soverin.net', 'smtp_host': 'smtp.soverin.net',
+            'password': 'hunter2',
+        })
+        self.assertFalse(account.user_id)
+        self.assertTrue(self.Setup.provider_is_connected('imap'))
+
+    def test_status_is_syncing_when_nothing_is_broken(self):
+        answers = self._answers()
+        with patch.object(type(self.Setup), '_mailboxes_in_error',
+                          return_value=self.env['pan.mail.mailbox']):
+            self.assertEqual(self.Setup.status(answers), pan_mail_setup.PHASE_SYNCING)
+
+    def test_a_broken_mailbox_shows_as_attention_without_stopping_the_rest(self):
+        """`error` is a status, not a phase: one stopped mailbox must not switch
+        the module off for every other mailbox."""
+        broken = self.env['pan.mail.mailbox'].create({
+            'email': 'broken@company.test',
+            'provider': 'imap',
+            'mailbox_type': 'shared',
+            'state': 'error',
+        })
+        answers = self._answers()
+        with patch.object(type(self.Setup), '_mailboxes_in_error', return_value=broken):
+            self.assertEqual(self.Setup.status(answers), pan_mail_setup.STATUS_ERROR)
+            self.assertTrue(self.Setup.is_ready(answers))
+
+    def test_cron_fetches_nothing_during_setup(self):
+        fetcher = self.env['pan.mail.fetcher']
+        with patch.object(type(self.Setup), 'is_ready', return_value=False), \
+                patch.object(type(fetcher), '_process_mailbox') as process:
+            fetcher._cron_fetch_incoming_mail()
+        process.assert_not_called()
+
+    def test_sync_now_refuses_during_setup(self):
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'phase-sync@company.test',
+            'provider': 'imap',
+            'mailbox_type': 'shared',
+        })
+        with patch.object(type(self.Setup), 'is_ready', return_value=False):
+            with self.assertRaises(UserError):
+                mailbox.action_sync_now()

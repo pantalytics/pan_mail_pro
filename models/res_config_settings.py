@@ -1,13 +1,19 @@
 # -*- coding: utf-8 -*-
 """The setup page.
 
-Six steps in a fixed order, each of which reports whether the *next* one can
-succeed — not whether somebody filled in a field. A notification mailbox whose
-owner's token expired is not a done step.
+Five mandatory steps in a fixed order, each of which reports whether the *next*
+one can succeed — not whether somebody filled in a field. A notification mailbox
+whose owner's token expired is not a done step. The steps themselves, and the
+rule that turns them into a phase, live in `pan_mail_setup.py`; this file is the
+form in front of them.
 
 The provider is asked first, because the steps genuinely differ per provider:
 Azure wants a tenant, Google does not, and IMAP has no global credential at all.
 Everything from step 4 on is provider-independent and never asks again.
+
+Anything after step 5 — inviting the team — belongs to the syncing phase. It is
+not a gate: mail flows with one connected user, it just does not flow for the
+colleagues who have not signed in yet.
 """
 import logging
 
@@ -18,7 +24,7 @@ from . import encryption_utils
 from . import mail_mail
 from . import pan_mail_internal_domains as internal_domains
 from .pan_mail_mailbox import SYNCING_MODES
-from .ai.pan_mail_ai import AI_SELECTION
+from .pan_mail_setup import PROVIDER_CREDENTIALS, STATUS_SELECTION
 from .mail_provider_client import (
     PARAM_SETUP_PROVIDER,
     PROVIDER_SELECTION,
@@ -27,19 +33,6 @@ from .mail_provider_client import (
 )
 
 _logger = logging.getLogger(__name__)
-
-# Where each provider's application credentials live. The client id is a plain
-# config parameter; the secret is Fernet-encrypted under its own key.
-PROVIDER_CREDENTIALS = {
-    'outlook': {
-        'client_id': 'pan_mail_pro.microsoft_client_id',
-        'secret': 'pan_mail_pro.microsoft_client_secret_encrypted',
-    },
-    'gmail': {
-        'client_id': 'pan_mail_pro.google_client_id',
-        'secret': 'pan_mail_pro.google_client_secret_encrypted',
-    },
-}
 
 # Shown instead of a secret that is already stored. Writing it back is a no-op,
 # which is what lets the form round-trip without the admin retyping it.
@@ -137,31 +130,15 @@ class ResConfigSettings(models.TransientModel):
     )
 
     # -------------------------------------------------------------------------
-    # AI triage
-    #
-    # Bring your own key: the call goes from this database straight to the AI
-    # provider. Pantalytics never proxies it, which is what lets the manifest
-    # keep saying no data reaches the module author, and what keeps Pantalytics
-    # out of every customer's processor chain.
-    # -------------------------------------------------------------------------
-    x_pan_ai_backend = fields.Selection(
-        AI_SELECTION,
-        string='AI Triage',
-        default='none',
-        config_parameter='pan_mail_pro.ai_backend',
-        help='Suggests where unrouted mail probably belongs. Off by default. '
-             'Only an email envelope is sent - never a body or an attachment.',
-    )
-    x_pan_ai_api_key = fields.Char(
-        string='AI API Key',
-        config_parameter='pan_mail_pro.ai_api_key',
-        help='Your own API key with the AI provider. Billing and data '
-             'processing are between you and them.',
-    )
-
-    # -------------------------------------------------------------------------
     # Checklist state
     # -------------------------------------------------------------------------
+    x_setup_status = fields.Selection(
+        STATUS_SELECTION, string='Status', compute='_compute_setup_status',
+        help='Setup until all five steps are done, syncing from then on, and '
+             'attention needed when a mailbox has stopped.',
+    )
+    x_setup_status_detail = fields.Char(compute='_compute_setup_status')
+    x_setup_connection_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_users_done = fields.Boolean(compute='_compute_setup_status')
@@ -353,17 +330,19 @@ class ResConfigSettings(models.TransientModel):
             domain.append(('id', '!=', odoobot.id))
         return self.env['res.users'].sudo().search(domain)
 
-    def _notification_mailbox_usable(self):
-        """Not just "does the record exist" — can it actually send?"""
-        mailbox = self.env['mail.mail']._notification_mailbox()
-        return bool(mailbox) and mailbox._has_working_credentials()
-
     @api.depends('x_mail_provider', 'x_provider_credentials_set', 'x_provider_connected',
                  'x_internal_domains', 'x_sync_internal_email')
     def _compute_setup_status(self):
+        """Ask `pan.mail.setup` for the phase, with the form's answers on top.
+
+        Two of the five answers can change while the admin is still typing, so
+        the record's own values win for those; the rest is what the database
+        says. Without that overlay the page would keep reporting "not done" for
+        a credential that is on screen but not yet saved.
+        """
+        Setup = self.env['pan.mail.setup']
         users = self._mail_pro_users()
         users_connected = len(users.filtered('x_pan_mail_connected'))
-        notification_ok = self._notification_mailbox_usable()
 
         pending = self.env['mail.mail'].sudo().search_count([
             ('state', '=', 'outgoing'),
@@ -372,21 +351,23 @@ class ResConfigSettings(models.TransientModel):
 
         Domains = self.env['pan.mail.internal.domains']
         for record in self:
-            record.x_setup_domains_done = (
+            answers = Setup.answers(provider=record.x_mail_provider)
+            answers['credentials'] = record.x_provider_credentials_set
+            answers['domains'] = (
                 bool(Domains._parse(record.x_internal_domains)) or record.x_sync_internal_email
             )
-            record.x_setup_notification_done = notification_ok
+
+            record.x_setup_connection_done = answers['connection']
+            record.x_setup_domains_done = answers['domains']
+            record.x_setup_notification_done = answers['notification']
+            record.x_setup_status = Setup.status(answers)
+            record.x_setup_status_detail = Setup.status_detail(answers)
+            record.x_setup_complete = Setup.is_ready(answers)
+
             record.x_setup_users_total = len(users)
             record.x_setup_users_connected = users_connected
             record.x_setup_users_done = bool(users) and users_connected == len(users)
             record.x_setup_pending_notifications = pending
-            record.x_setup_complete = bool(
-                record.x_mail_provider
-                and record.x_provider_credentials_set
-                and record.x_provider_connected
-                and record.x_setup_domains_done
-                and notification_ok
-            )
 
     # -------------------------------------------------------------------------
     # Actions

@@ -121,6 +121,7 @@ Providers disagree about sending as somebody else, which is why
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
 | `pan.mail.internal.domains` | The one definition of "is this address ours?" (abstract) |
+| `pan.mail.setup` | The five setup steps and the phase they add up to (abstract) |
 | `res.config.settings` | Module settings (provider choice, client id, secret, tenant) |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
@@ -181,6 +182,7 @@ pan_mail_pro/
 │   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
 │   ├── pan_mail_account.py        # Per-address credentials
 │   ├── pan_mail_internal_domains.py
+│   ├── pan_mail_setup.py          # Setup vs syncing: the five mandatory steps
 │   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral)
 │   ├── pan_mail_matcher.py        # Thread matching rule ladder
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
@@ -201,6 +203,41 @@ pan_mail_pro/
 
 There is no `wizard/` directory. Connecting an account is a controller redirect,
 not a wizard.
+
+### Two phases: setup, then syncing
+
+The module is either being **set up** or **syncing**. `pan.mail.setup` owns the
+difference, and everything that carries mail asks it rather than checking a
+condition of its own.
+
+| # | Step | Answered by |
+|---|------|-------------|
+| 1 | Email provider | `pan_mail_pro.setup_provider` |
+| 2 | Provider credentials | the app registration, or the IMAP accounts |
+| 3 | Connected account | any connected `pan.mail.account` on that provider |
+| 4 | Internal domains | `pan.mail.internal.domains.is_configured()` |
+| 5 | Notification email | a notification mailbox that can actually send |
+
+All five are mandatory. There is no partial service: while the phase is `setup`
+the incoming cron returns without fetching, "Sync Now" refuses with the step
+that is missing, and internal notifications queue with a readable reason instead
+of being cancelled. Nothing here has an opinion once the phase is `syncing`.
+
+Three properties are worth naming, because each was a bug first:
+
+- **The answers are about the database, not about the reader.** "Connected"
+  means *some* account on the provider is connected. A second admin opening the
+  settings page must not be told the product is unconfigured because they
+  personally have not signed in. The Connect button keeps its own user-scoped
+  question; the phase does not.
+- **Order is the contract.** Step 5 creates a mailbox owned by whoever is
+  setting up, so step 3 has to come first. Step 4 comes before any mailbox
+  exists because a mailbox refuses to enable sync while the domains are
+  unanswered, and meeting that as a validation error afterwards is worse than
+  being asked in order.
+- **Inviting the team is not a step.** Mail flows with one connected account; a
+  colleague who has not signed in is a rollout task, not a gate. It sits below
+  the five, unnumbered, and only appears once the phase is `syncing`.
 
 ---
 
@@ -773,6 +810,13 @@ could not place, which is what keeps it affordable on a one-minute cron.
 
 Auto-routing stays shut behind the `routing_smart` constraint until there is
 evidence from real suggestions that it should open.
+
+**Not shipped yet.** The seam exists; the feature does not. The settings page
+has no AI section, so `pan_mail_pro.ai_backend` stays at `none` unless somebody
+writes the config parameter by hand, and the enrichment cron ships inactive.
+That is deliberate: setup is the thing to get right first, and a configurable
+half-feature is a support burden with no user. Putting the section back is a
+view change, not a rewrite.
 
 ---
 

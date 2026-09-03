@@ -134,7 +134,12 @@ class TestInternalDomainGate(TransactionCase):
             self.env['pan.mail.fetcher']._process_mailbox(mailbox)
 
     def test_cron_records_the_block_on_the_mailbox(self):
-        """A blocked sync must be visible, not just logged."""
+        """A blocked sync must be visible, not just logged.
+
+        Emptying the list puts the module back into the setup phase, so the
+        cron stops before it fetches anything — but it still says so on the
+        mailbox, which is where somebody looks.
+        """
         self.Domains.set_domains(['gate.test'])
         mailbox = self._sync_mailbox()
         mailbox.write({'state': 'active'})
@@ -143,7 +148,7 @@ class TestInternalDomainGate(TransactionCase):
         self.env['pan.mail.fetcher']._cron_fetch_incoming_mail()
 
         self.assertEqual(mailbox.state, 'error')
-        self.assertIn('internal email domains', mailbox.error_message)
+        self.assertIn('still being set up', mailbox.error_message)
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

@@ -103,7 +103,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.6.3.0',
+    'version': '19.0.6.4.0',
     'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -129,6 +129,7 @@
     ],
     'assets': {
         'web.assets_backend': [
+            'pan_mail_pro/static/src/scss/setup_status.scss',
             'pan_mail_pro/static/src/js/mailbox_list_controller.js',
             'pan_mail_pro/static/src/xml/mailbox_list_view.xml',
         ],
