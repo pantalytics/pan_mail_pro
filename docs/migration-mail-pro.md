@@ -105,8 +105,37 @@ Target: `pan_mail_pro` 19.0.6.3.0 (branch `19.0`).
 The repository was renamed on GitHub, so `pan_outlook_pro.git` is a redirect to
 `pan_mail_pro.git` and CloudPepper keeps pulling the right code. It is cosmetic
 and it is *not* the upgrade: repointing the URL does not rename anything in the
-database. Repoint it anyway when the source is next touched, so the addons list
-stops lying about which repo it tracks.
+database.
+
+Repoint it **after** the upgrade, not before, and not during. CloudPepper names
+the checkout directory after the repo URL, and `addons_path` on both instances
+names it explicitly:
+
+```
+/var/odoo/<instance>/extra-addons/pan_outlook_pro.git-6a46530f52054
+```
+
+A new URL means a new directory and a stale `addons_path` entry pointing at the
+old one, so the module would vanish from the addons path mid-upgrade. That
+directory is a path entry rather than the addon itself — Odoo finds the module
+inside it through the `pan_mail_pro -> .` symlink at the repository root, which
+is what lets one single-addon repo be served under its own technical name from
+a directory called something else. The old directory name is therefore harmless
+and the rename of the source is a separate, later change that also edits
+`addons_path`.
+
+### The instances, concretely
+
+Both run on the server `Juffermans Machinebouw B.V.` at `46.224.81.33`.
+
+| | production | staging |
+|---|---|---|
+| `db_name` | `i5k88ysv55d.cloudpepper.site` | `staging-i5k88ysv55d.cloudpepper.site` |
+| instance root | `/var/odoo/i5k88ysv55d.cloudpepper.site` | `/var/odoo/staging-i5k88ysv55d.cloudpepper.site` |
+| module checkout | `<root>/extra-addons/pan_outlook_pro.git-6a46530f52054` | same name under the staging root |
+
+The database names contain dots, so quote them everywhere: `psql -d
+"i5k88ysv55d.cloudpepper.site"`.
 
 ### Staging is already in the broken half-state
 
@@ -148,10 +177,12 @@ the CloudPepper dashboard), by hand, both times.
    works, incoming sync lands a mail, and one full OAuth round trip completes.
 6. Only then production, same three steps in a quiet window: stop, rename SQL,
    pull `19.0`, `-u pan_mail_pro`, same five checks.
-7. Repoint the addon source to `https://github.com/pantalytics/pan_mail_pro.git`
-   and decide the webhook / auto-upgrade flags deliberately. Production is
+7. Decide the webhook / auto-upgrade flags deliberately. Production is
    currently pinned to `19.0-prod-rollback`; leaving auto-upgrade off until the
    upgrade is verified is the safer default.
+8. Separately, later: repoint the addon source to
+   `https://github.com/pantalytics/pan_mail_pro.git` and update `addons_path`
+   to the new checkout directory in the same change.
 
 Rollback at any point is the step 1 backup. The rename touches identity columns,
 not business data, so a restore returns cleanly to the starting state.
