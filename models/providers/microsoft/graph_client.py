@@ -108,20 +108,22 @@ class MicrosoftGraphClient(models.AbstractModel):
 
     @api.model
     def _get_config_params(self):
-        """Get Microsoft OAuth configuration from settings"""
-        ICP = self.env['ir.config_parameter'].sudo()
+        """Microsoft's own application registration — its `pan.mail.provider` row.
 
-        # Get encrypted client secret and decrypt it
-        encrypted_secret = ICP.get_param('pan_mail_pro.microsoft_client_secret_encrypted')
+        Looked up by provider code, not by which provider is active: a
+        database that switched to Gmail and back must find its old Azure
+        registration exactly as it left it.
+        """
+        provider = self.env['pan.mail.provider'].sudo().search(
+            [('provider', '=', 'outlook')], limit=1)
         client_secret = encryption_utils.decrypt_value(
-            self.env,
-            encrypted_secret
-        ) if encrypted_secret else False
+            self.env, provider.client_secret_encrypted
+        ) if provider.client_secret_encrypted else False
 
         return {
-            'client_id': ICP.get_param('pan_mail_pro.microsoft_client_id'),
+            'client_id': provider.client_id,
             'client_secret': client_secret,
-            'tenant_id': ICP.get_param('pan_mail_pro.microsoft_tenant_id'),
+            'tenant_id': provider.tenant_id,
         }
 
     @api.model

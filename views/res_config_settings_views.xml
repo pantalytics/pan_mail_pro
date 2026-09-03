@@ -9,149 +9,36 @@
             <xpath expr="//form" position="inside">
                 <app string="Mail Pro" name="pan_mail_pro" groups="base.group_system">
                     <!-- State the sections below hide behind. -->
-                    <field name="x_provider_credentials_set" invisible="1"/>
-                    <field name="x_provider_connected" invisible="1"/>
-                    <field name="x_provider_uses_oauth" invisible="1"/>
+                    <field name="x_setup_provider_done" invisible="1"/>
                     <field name="x_setup_domains_done" invisible="1"/>
                     <field name="x_setup_notification_done" invisible="1"/>
-                    <field name="x_setup_complete" invisible="1"/>
                     <field name="x_internal_domain_ids" invisible="1" widget="many2many_tags"/>
 
                     <!-- The three steps, in one shape: a coloured dot on the
                          left, the name, the answer, and the way to the place you
-                         change it. Steps 2 and 3 are tables, so that way is a
-                         link to the table; step 1 is the only one that opens in
-                         place. Anything longer than an answer — a warning, a fix
+                         change it. All three are tables now, so that way is
+                         always a link to the table — nothing is typed on this
+                         page. Anything longer than an answer — a warning, a fix
                          — goes on its own line under the name, never beside it,
                          so the column of dots and names stays a column. -->
                     <div class="o_mailpro_step">
                         <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
-                              invisible="not x_provider_credentials_set"/>
+                              invisible="not x_setup_provider_done"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
-                              invisible="x_provider_credentials_set"/>
+                              invisible="x_setup_provider_done"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">1. Email Provider</span>
-                                <i class="fa fa-info-circle text-muted" title="Where your company's email lives. The setup steps differ per provider, so only the chosen one is shown; each keeps its own credentials, so you can switch back."/>
-                                <span class="o_mailpro_step_value" invisible="not x_mail_provider">
-                                    <field name="x_mail_provider" nolabel="1" readonly="1"/>
+                                <i class="fa fa-info-circle text-muted" title="Where your company's email lives, and the application registration it sends mail through. Only one provider is in use at a time; switching keeps every provider's own credentials."/>
+                                <span class="o_mailpro_step_value" invisible="not x_setup_provider_done">
+                                    <field name="x_active_provider_id" nolabel="1" readonly="1"/>
                                 </span>
-                                <span class="o_mailpro_step_value" invisible="x_mail_provider">Not chosen yet</span>
+                                <span class="o_mailpro_step_value" invisible="x_setup_provider_done">Not set up yet</span>
                             </div>
                         </div>
-                        <field name="x_edit_provider" nolabel="1" widget="boolean_icon"
-                               options="{'icon': 'fa-arrow-right'}" class="o_mailpro_step_edit"/>
-                    </div>
-                    <!-- STEP 1 — the answer every step below depends on. -->
-                    <h2 invisible="x_provider_credentials_set and not x_edit_provider">1. Email Provider</h2>
-                    <div class="row mt-3 mb-4 o_settings_container" invisible="x_provider_credentials_set and not x_edit_provider">
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">Where is your email hosted?</span>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="The setup steps differ per provider, so only one provider's steps are shown. Each keeps its own credentials, so you can switch back."/>
-                                <div class="content-group mt-2">
-                                    <field name="x_mail_provider" class="col-lg-8"
-                                           placeholder="Search providers..."/>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Part of step 1: the registration for the chosen provider. 2A — Microsoft 365 -->
-                    <h2 invisible="x_provider_credentials_set and not x_edit_provider or x_mail_provider != 'outlook'">Microsoft 365 Credentials</h2>
-                    <div class="row mt-3 mb-4 o_settings_container" invisible="x_provider_credentials_set and not x_edit_provider or x_mail_provider != 'outlook'">
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">Azure app registration</span>
-                                <div class="content-group">
-                                    <div class="row mt-2">
-                                        <label class="col-lg-3 o_light_label" for="x_microsoft_client_id">Client ID</label>
-                                        <field name="x_microsoft_client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
-                                    </div>
-                                    <div class="row mt-2">
-                                        <label class="col-lg-3 o_light_label" for="x_microsoft_client_secret">Secret</label>
-                                        <field name="x_microsoft_client_secret" password="True"/>
-                                    </div>
-                                    <div class="row mt-2">
-                                        <label class="col-lg-3 o_light_label" for="x_microsoft_tenant_id">Tenant ID</label>
-                                        <field name="x_microsoft_tenant_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">Callback URL</span>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Paste this into Azure → Authentication → Redirect URIs. Sign-in fails until it matches exactly."/>
-                                <div class="content-group mt-2">
-                                    <field name="x_microsoft_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
-                                </div>
-                                <div class="mt-3">
-                                    <a href="https://pantalytics.gitbook.io/pantalytics-docs/getting-started/azure-setup" target="_blank">
-                                        <i class="fa fa-external-link me-1" title="Setup guide"/>Azure setup guide
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- STEP 2B — Google Workspace -->
-                    <h2 invisible="x_provider_credentials_set and not x_edit_provider or x_mail_provider != 'gmail'">Google Workspace Credentials</h2>
-                    <div class="row mt-3 mb-4 o_settings_container" invisible="x_provider_credentials_set and not x_edit_provider or x_mail_provider != 'gmail'">
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">Google Cloud OAuth client</span>
-                                <div class="content-group">
-                                    <div class="row mt-2">
-                                        <label class="col-lg-3 o_light_label" for="x_google_client_id">Client ID</label>
-                                        <field name="x_google_client_id" placeholder="xxxxxxxx.apps.googleusercontent.com"/>
-                                    </div>
-                                    <div class="row mt-2">
-                                        <label class="col-lg-3 o_light_label" for="x_google_client_secret">Secret</label>
-                                        <field name="x_google_client_secret" password="True"/>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">Redirect URI</span>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Paste this into Google Cloud → Credentials → Authorized redirect URIs. Sign-in fails until it matches exactly."/>
-                                <div class="content-group mt-2">
-                                    <field name="x_google_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
-                                </div>
-                                <div class="mt-3">
-                                    <a href="https://console.cloud.google.com/apis/credentials" target="_blank">
-                                        <i class="fa fa-external-link me-1" title="Google Cloud"/>Google Cloud credentials
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- STEP 2C — IMAP/SMTP has no global credential. -->
-                    <h2 invisible="x_provider_credentials_set and not x_edit_provider or x_mail_provider != 'imap'">Mail Accounts</h2>
-                    <div class="row mt-3 mb-4 o_settings_container" invisible="x_provider_credentials_set and not x_edit_provider or x_mail_provider != 'imap'">
-                        <div class="col-12 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">Server, login and password per address</span>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="There is no consent screen here. Have ready: IMAP server and port (usually 993, SSL/TLS), SMTP server and port (usually 465, SSL/TLS), and the mailbox password or app password. Test Connection checks reading and sending separately."/>
-                                <div class="mt-2">
-                                    <button type="action" name="%(action_pan_mail_account)d"
-                                            string="Email Accounts" icon="oi-arrow-right" class="oe_link ps-0"/>
-                                </div>
-                            </div>
-                        </div>
+                        <button type="action" name="%(action_pan_mail_provider)d"
+                                icon="oi-arrow-right" title="Providers"
+                                class="oe_link o_mailpro_step_edit"/>
                     </div>
 
                     <div class="o_mailpro_step">

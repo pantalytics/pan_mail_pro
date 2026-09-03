@@ -166,9 +166,12 @@ OAUTH_CALLBACK_PATHS = {
     'gmail': '/google_oauth/callback',
 }
 
-# The provider the admin is setting up. One config parameter, read by the
-# settings page, the connect link in the invitation email, and the mailboxes
-# created during setup.
+# Legacy: which provider was being set up used to live in this one config
+# parameter, read by the settings page, the connect link in the invitation
+# email, and the mailboxes created during setup. `pan.mail.provider.in_use`
+# (19.0.6.5.0) replaced it — a row is a better home for "which provider" once
+# there are per-provider credentials to hang off it. Kept only so the
+# migration that moved the parameter into that model has something to read.
 PARAM_SETUP_PROVIDER = 'pan_mail_pro.setup_provider'
 
 # Provider assumed by flows that are not yet mailbox-scoped (the OAuth connect
@@ -186,8 +189,13 @@ def get_provider_client(env, provider_code=DEFAULT_PROVIDER):
 
 
 def get_setup_provider(env):
-    """The provider this database is being set up for, if one was chosen."""
-    return env['ir.config_parameter'].sudo().get_param(PARAM_SETUP_PROVIDER)
+    """The provider this database is being set up for, if one was chosen.
+
+    Reads the in-use row of `pan.mail.provider` rather than a config
+    parameter — see the comment on `PARAM_SETUP_PROVIDER` above.
+    """
+    row = env['pan.mail.provider'].sudo().search([('in_use', '=', True)], limit=1)
+    return row.provider or False
 
 
 def oauth_redirect_uri(env, provider_code):

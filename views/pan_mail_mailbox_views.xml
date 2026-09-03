@@ -50,7 +50,7 @@
                             <div>
                                 <field name="mailbox_type" widget="radio" nolabel="1" class="d-inline-block"/>
                                 <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Personal: only the owner sends from it. Shared: everyone sends from this address — on Microsoft 365 with their own account, on Gmail and IMAP with the address's own credentials, so it needs no owner. Notification: system emails, sent with the owner's account."/>
+                                   title="Personal: only the owner sends from it. Shared: everyone sends from this address — on Microsoft 365 with their own account, on Gmail and IMAP with the address's own credentials, so it needs no owner."/>
                             </div>
                             <field name="owner_user_id"
                                    required="mailbox_type == 'personal' or is_notification_mailbox"/>

@@ -44,8 +44,10 @@ class TestGoogleProvider(TransactionCase):
         cls.user = cls.env['res.users'].create({
             'name': 'Gmail User', 'login': 'gmail_user@test.local', 'email': 'gmail_user@test.local',
         })
-        cls.env['ir.config_parameter'].sudo().set_param(
-            'pan_mail_pro.google_client_id', 'test-client-id.apps.googleusercontent.com')
+        cls.env['pan.mail.provider'].create({
+            'provider': 'gmail',
+            'client_id': 'test-client-id.apps.googleusercontent.com',
+        })
 
     def _google_account(self, **vals):
         base = {'email': 'gmail_user@test.local', 'provider': 'gmail', 'user_id': self.user.id}

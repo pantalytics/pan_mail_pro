@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- One row per provider. Credentials and status live here, not on the
+         settings page — the settings page only links to this table, the same
+         way it links to Internal Domains and Mailboxes. -->
+    <record id="view_pan_mail_provider_list" model="ir.ui.view">
+        <field name="name">pan.mail.provider.list</field>
+        <field name="model">pan.mail.provider</field>
+        <field name="arch" type="xml">
+            <list string="Providers" decoration-muted="not in_use">
+                <field name="provider"/>
+                <field name="status" widget="badge"
+                       decoration-success="status == 'connected'"
+                       decoration-warning="status == 'not_connected'"
+                       decoration-danger="status == 'not_configured'"/>
+                <field name="in_use" widget="boolean_toggle"/>
+                <field name="client_id" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pan_mail_provider_form" model="ir.ui.view">
+        <field name="name">pan.mail.provider.form</field>
+        <field name="model">pan.mail.provider</field>
+        <field name="arch" type="xml">
+            <form string="Provider">
+                <sheet>
+                    <field name="uses_oauth" invisible="1"/>
+                    <group>
+                        <group>
+                            <field name="provider"/>
+                            <field name="status" widget="badge" readonly="1"
+                                   decoration-success="status == 'connected'"
+                                   decoration-warning="status == 'not_connected'"
+                                   decoration-danger="status == 'not_configured'"/>
+                            <label for="in_use"/>
+                            <div>
+                                <field name="in_use" widget="boolean_toggle" nolabel="1" class="d-inline-block"/>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="The provider Mail Pro is set up for right now. Only one can be in use; switching keeps the credentials on the one you switch away from."/>
+                            </div>
+                        </group>
+                    </group>
+
+                    <group string="Application Registration" invisible="not uses_oauth">
+                        <group>
+                            <field name="client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                            <field name="client_secret" password="True"/>
+                            <field name="tenant_id" invisible="provider != 'outlook'"
+                                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                        </group>
+                        <group>
+                            <label for="redirect_uri"/>
+                            <div>
+                                <field name="redirect_uri" nolabel="1" readonly="1" widget="CopyClipboardChar"/>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="Paste this into the provider console's redirect URIs. Sign-in fails until it matches exactly."/>
+                            </div>
+                        </group>
+                    </group>
+
+                    <div class="alert alert-info" role="alert" invisible="uses_oauth">
+                        <i class="fa fa-info-circle me-2" title="Info"/>
+                        IMAP/SMTP has no application registration — a server, login and
+                        password are per address. "Configured" means at least one account
+                        exists; add one under Settings → Technical → Email → Email Accounts.
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pan_mail_provider" model="ir.actions.act_window">
+        <field name="name">Providers</field>
+        <field name="res_model">pan.mail.provider</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add a provider
+            </p>
+            <p>
+                Microsoft 365 and Gmail need an application registration here first;
+                IMAP/SMTP needs none — just add an account. Exactly one provider is
+                in use at a time, and switching keeps every provider's own credentials.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu: Settings → Technical → Email → Providers -->
+    <menuitem id="menu_pan_mail_provider"
+              name="Providers"
+              parent="base.menu_email"
+              action="action_pan_mail_provider"
+              sequence="4"
+              groups="base.group_system"/>
+</odoo>

@@ -43,8 +43,6 @@ import logging
 
 from odoo import _, api, models
 
-from .mail_provider_client import PARAM_SETUP_PROVIDER
-
 _logger = logging.getLogger(__name__)
 
 PHASE_SETUP = 'setup'
@@ -59,24 +57,6 @@ STEPS = (
     ('mailboxes', 'A notification mailbox'),
 )
 
-# Where each OAuth provider's application credentials live. The client id and
-# anything in `extra` are plain config parameters; the secret is
-# Fernet-encrypted under its own key. A provider without a consent screen has
-# no entry here at all — its credentials belong to one address, so "set up"
-# means the accounts exist.
-PROVIDER_CREDENTIALS = {
-    'outlook': {
-        'client_id': 'pan_mail_pro.microsoft_client_id',
-        'secret': 'pan_mail_pro.microsoft_client_secret_encrypted',
-        'extra': ('pan_mail_pro.microsoft_tenant_id',),
-    },
-    'gmail': {
-        'client_id': 'pan_mail_pro.google_client_id',
-        'secret': 'pan_mail_pro.google_client_secret_encrypted',
-        'extra': (),
-    },
-}
-
 
 class PanMailSetup(models.AbstractModel):
     _name = 'pan.mail.setup'
@@ -90,12 +70,14 @@ class PanMailSetup(models.AbstractModel):
     def answers(self, provider=None):
         """The three answers as the database has them.
 
-        `provider` overrides the stored choice, for the settings page: it has to
-        report on the provider the admin is looking at, which during setup is
-        not yet the one in the config parameter.
+        `provider` overrides which provider is judged, for a caller that wants
+        to ask about one before it is the in-use row (a test, mainly — the
+        settings page no longer edits credentials in place, so it never needs
+        this any more than the other two steps do).
         """
         if provider is None:
-            provider = self.env['ir.config_parameter'].sudo().get_param(PARAM_SETUP_PROVIDER)
+            row = self.env['pan.mail.provider'].sudo().search([('in_use', '=', True)], limit=1)
+            provider = row.provider if row else False
         return {
             'provider': bool(provider) and self.credentials_set(provider),
             'domains': self.env['pan.mail.domain'].is_configured(),
@@ -104,17 +86,22 @@ class PanMailSetup(models.AbstractModel):
 
     @api.model
     def credentials_set(self, provider):
-        """Is there an application registration for this provider?"""
+        """Is there an application registration for this provider?
+
+        Delegates to the provider's own row — `pan.mail.provider` is where
+        "outlook needs a tenant, gmail does not, imap needs neither" is decided
+        now, and this asks it rather than repeating the rule. Calls the row's
+        method directly rather than reading its `credentials_set` field: the
+        field is cached like any compute, and IMAP's answer depends on
+        `pan.mail.account` rows the field has no way to know changed. This is
+        asked at the moment it matters, same as before this model existed, so
+        it has to be right even inside a transaction that just created one.
+        """
         if not provider:
             return False
-        params = PROVIDER_CREDENTIALS.get(provider)
-        if not params:
-            # No consent screen, so there is no global credential to check:
-            # the accounts themselves carry the login.
-            return bool(self._provider_accounts(provider))
-        ICP = self.env['ir.config_parameter'].sudo()
-        required = (params['client_id'], params['secret']) + params['extra']
-        return all(ICP.get_param(name) for name in required)
+        row = self.env['pan.mail.provider'].sudo().search(
+            [('provider', '=', provider)], limit=1)
+        return bool(row) and row._credentials_present()
 
     @api.model
     def provider_is_connected(self, provider):

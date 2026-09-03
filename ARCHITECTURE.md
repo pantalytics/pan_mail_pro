@@ -53,8 +53,10 @@ Naming rules that follow:
   `res.users.x_default_mailbox_id`), which is what Odoo.sh asks for.
 - Nothing outside `models/providers/<vendor>/` carries a vendor's name.
   `microsoft.graph.client` is Microsoft's; `pan.mail.mailbox` is nobody's.
-- Configuration parameters live under `pan_mail_pro.`; a vendor-specific one
-  carries the vendor in the key (`pan_mail_pro.microsoft_client_id`).
+- Configuration parameters live under `pan_mail_pro.`. There is no vendor-specific
+  one any more — the application credentials that used to be
+  `pan_mail_pro.microsoft_client_id` and its siblings are `pan.mail.provider`
+  rows since 19.0.6.5.0, keyed by the `provider` field instead of the key name.
 - Log tags name the flow or the vendor, never both: `[Outgoing Mail]`,
   `[Incoming Mail]`, `[Mail Matcher]`, `[OAuth]`, `[Graph API]`,
   `[Gmail API]`, `[IMAP]`, `[SMTP]`, `[Mail AI]`, `[Encryption]`, and
@@ -120,9 +122,10 @@ Providers disagree about sending as somebody else, which is why
 |-------|---------|
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
+| `pan.mail.provider` | One row per provider's application registration, `in_use` naming the one in use. Has its own list under Settings → Technical → Email |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Communication → Configuration |
 | `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
-| `res.config.settings` | Module settings (provider choice, client id, secret, tenant) |
+| `res.config.settings` | The setup checklist — three lines, each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
 
@@ -181,6 +184,7 @@ pan_mail_pro/
 │   │   └── claude/claude_backend.py
 │   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
 │   ├── pan_mail_account.py        # Per-address credentials
+│   ├── pan_mail_provider.py       # Per-provider application registration + in-use flag
 │   ├── pan_mail_domain.py         # Internal domains + the fail-closed gate
 │   ├── pan_mail_setup.py          # Setup vs syncing: the three mandatory steps
 │   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral)
@@ -195,9 +199,9 @@ pan_mail_pro/
 │   ├── res_users.py / res_partner.py / res_config_settings.py
 │   └── encryption_utils.py        # Fernet encryption
 ├── controllers/main.py            # OAuth callbacks (Microsoft + Google, one handler)
-├── migrations/                    # 19.0.1.0.5, 2.1.0, 3.3.0, 4.0.0, 5.0.0, 6.0.0
+├── migrations/                    # One folder per schema-changing release — see migrations/
 ├── views/  data/  security/  static/
-├── tests/                         # 29 files; see §12
+├── tests/                         # 36 files; see §12
 └── tools/                         # CI helpers
 ```
 
@@ -212,7 +216,7 @@ condition of its own.
 
 | # | Step | Answered by |
 |---|------|-------------|
-| 1 | Email provider | a provider **and** its app registration, or its IMAP accounts |
+| 1 | Email provider | the in-use `pan.mail.provider` row, with its application registration complete — or, for IMAP, its accounts |
 | 2 | Internal domains | at least one `pan.mail.domain` row |
 | 3 | Mailboxes | a mailbox with `is_notification_mailbox` ticked that can send |
 
@@ -246,11 +250,12 @@ Three properties are worth naming, because each was a bug first:
   settings page must not be told the product is unconfigured because they
   personally have not signed in. The Connect button keeps its own user-scoped
   question; the phase does not.
-- **Order is the contract.** Step 3 creates a mailbox owned by whoever is
-  setting up, so step 3 has to come first. Step 4 comes before any mailbox
-  exists because a mailbox refuses to enable sync while the domains are
-  unanswered, and meeting that as a validation error afterwards is worse than
-  being asked in order.
+- **Order is the contract.** Domains come before mailboxes even though a
+  reader would name them the other way round: a mailbox refuses to be created
+  while the domains are unanswered, and meeting that as a validation error
+  after the fact is worse than being asked in order. The provider comes first
+  because it is the one every mailbox needs — you cannot create a mailbox on a
+  provider nobody has chosen.
 - **Inviting the team is not on this page at all.** Mail flows with one
   connected account, so a colleague who has not signed in is a rollout task,
   not a gate — and the invite button already lives on the user list, where the
@@ -1095,6 +1100,55 @@ still logged, so the record is not empty, only shorter. One real workflow for
 one setting that could quietly leak every internal thread in the database is
 not a trade worth keeping.
 
+### 9.13 The provider is a row, not a config parameter
+
+Application credentials — the Azure app registration, the Google Cloud OAuth
+client — were five loose `ir.config_parameter` entries plus a sixth naming
+which provider was "the" one (`pan_mail_pro.setup_provider`). Since
+19.0.6.5.0 they are `pan.mail.provider` rows, `in_use` doing the sixth
+parameter's job.
+
+Not called `active`: Odoo silently excludes `active = False` records from
+every plain `search()`, which is the state most rows are in most of the time
+here — only one provider is ever in use. `_get_config_params()` on the Graph
+and Gmail clients found this the hard way in review: a provider row that
+existed but was not the chosen one was invisible to its own client's lookup,
+so switching away and back would have found no credentials at all the moment
+anything tried to refresh a token. `in_use` carries the meaning without the
+collision.
+
+The property this buys, and the reason it is worth a model rather than a
+settings-page field per provider: **switching providers keeps the one you
+switch away from.** An admin who tries Microsoft, decides to test Google
+instead, and later goes back to Microsoft used to retype the Azure client
+secret, because there was exactly one `x_microsoft_client_secret` and nothing
+kept the old value once the picker moved on. A row per provider means the
+Microsoft row is still sitting there, complete, the whole time — untick its
+`in_use`, tick Google's, and nothing about either registration was touched.
+
+IMAP gets a row too, with no credential fields — its "configured" already
+meant "at least one account exists" before this model existed, and that
+question moved onto `pan.mail.provider.credentials_set` unchanged rather than
+staying a special case scattered across `pan_mail_setup.py` and the settings
+page. The one behavioural change: choosing IMAP is now the same action as
+choosing any other provider — add a row and tick it in use — rather than an
+implicit fallback with no record of the choice at all.
+
+`credentials_set` / `connected` / `status` are the other trap the same
+collision points at: for IMAP they read `pan.mail.account`, a different
+model, so nothing tells Odoo to invalidate them when an account changes.
+Fine for a view badge, which recomputes on every page load; wrong for a
+caller that might run inside a longer transaction. `pan.mail.setup` calls
+the row's `_credentials_present()` method directly rather than the field for
+exactly that reason — the method is always fresh, the field is a
+convenience for display.
+
+The client secret is Fernet-encrypted on the row exactly as it was on the
+config parameter (see §9.1), and the migration copies the ciphertext string
+directly rather than decrypting and re-encrypting it — same key, same
+database, so the string is portable as-is and a round trip only risks turning
+it into garbage.
+
 Note the asymmetry that makes this cheap: a mail with *any* outside recipient
 is correspondence and is still logged. "Internal" means every party is ours.
 
@@ -1195,15 +1249,15 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 
 ## 12. Tests
 
-29 files under `tests/`, roughly 7 500 lines. They fall into four groups:
+36 files under `tests/`, roughly 7 500 lines. They fall into four groups:
 
 | Group | Files | What they hold |
 |-------|-------|----------------|
 | Contracts | `test_provider_contract.py`, `test_ai_contract.py` | Every provider/backend answers the contract identically |
-| Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py` | Wire-level behaviour per vendor |
+| Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_pan_mail_provider.py` | Wire-level behaviour per vendor, and the credential rows behind them |
 | Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_mail_matcher.py`, `test_routing_log.py`, `test_mail_item.py` | Fetch → filter → match → post |
 | Sending & UI | `test_outgoing_*.py`, `test_compose_*.py`, `test_mailbox_*.py`, `test_setup_flow.py`, `test_onboarding.py` | Routing, threading, composer, permissions, onboarding |
-| Migrations | `test_account_migration.py`, `test_rename_migration.py` | The scripts in `migrations/`, run against real rows |
+| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py` | The scripts in `migrations/`, run against real rows |
 
 `tests/common.py` provides the shared fixture — a notification mailbox, a shared
 mailbox, a personal mailbox, connected users, an external partner, and a

@@ -6,6 +6,8 @@ from . import test_imap_provider
 from . import test_microsoft_provider
 from . import test_incoming_mail
 from . import test_internal_domains
+from . import test_pan_mail_provider
+from . import test_provider_migration
 from . import test_onboarding
 from . import test_incoming_sync
 from . import test_outgoing_mail

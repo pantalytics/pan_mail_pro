@@ -128,20 +128,20 @@ class GoogleGmailClient(models.AbstractModel):
     # -------------------------------------------------------------------------
     @api.model
     def _get_config_params(self):
-        """Read Google OAuth configuration from settings.
+        """Google's own application registration — its `pan.mail.provider` row.
 
-        Credentials are one set per provider (config params), mirroring how
-        Microsoft's live under pan_mail_pro.microsoft_* — the credential home decided
-        in Phase 2. The secret is Fernet-encrypted at rest like Microsoft's.
+        Looked up by provider code, not by which provider is active — see the
+        same comment on Microsoft's `_get_config_params()`. The secret is
+        Fernet-encrypted at rest like Microsoft's.
         """
-        ICP = self.env['ir.config_parameter'].sudo()
-        encrypted_secret = ICP.get_param('pan_mail_pro.google_client_secret_encrypted')
+        provider = self.env['pan.mail.provider'].sudo().search(
+            [('provider', '=', 'gmail')], limit=1)
         client_secret = encryption_utils.decrypt_value(
-            self.env, encrypted_secret
-        ) if encrypted_secret else False
+            self.env, provider.client_secret_encrypted
+        ) if provider.client_secret_encrypted else False
 
         return {
-            'client_id': ICP.get_param('pan_mail_pro.google_client_id'),
+            'client_id': provider.client_id,
             'client_secret': client_secret,
         }
 

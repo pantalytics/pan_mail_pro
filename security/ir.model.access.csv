@@ -10,3 +10,4 @@ access_pan_mail_thread_link_manager,pan.mail.thread.link.manager,model_pan_mail_
 access_pan_mail_routing_log_manager,pan.mail.routing.log.manager,model_pan_mail_routing_log,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
 access_pan_mail_domain_user,pan.mail.domain.user,model_pan_mail_domain,base.group_user,1,0,0,0
 access_pan_mail_domain_manager,pan.mail.domain.manager,model_pan_mail_domain,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
+access_pan_mail_provider_admin,pan.mail.provider.admin,model_pan_mail_provider,base.group_system,1,1,1,1
