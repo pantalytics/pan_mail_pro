@@ -212,18 +212,21 @@ condition of its own.
 
 | # | Step | Answered by |
 |---|------|-------------|
-| 1 | Email provider | `pan_mail_pro.setup_provider` |
-| 2 | Provider credentials | the app registration, or the IMAP accounts |
-| 3 | Internal domains | at least one `pan.mail.domain` row |
-| 4 | A notification mailbox | a mailbox with `is_notification_mailbox` ticked that can send |
+| 1 | Email provider | a provider **and** its app registration, or its IMAP accounts |
+| 2 | Internal domains | at least one `pan.mail.domain` row |
+| 3 | Mailboxes | a mailbox with `is_notification_mailbox` ticked that can send |
 
-All four are mandatory. There is no partial service: while the phase is `setup`
+All three are mandatory. There is no partial service: while the phase is `setup`
 the incoming cron returns without fetching, "Sync Now" refuses with the step
 that is missing, and internal notifications queue with a readable reason instead
 of being cancelled. Nothing here has an opinion once the phase is `syncing`.
 
 Three properties are worth naming, because each was a bug first:
 
+- **Half a provider is no provider.** Choosing one and filling in its
+  application registration were two steps; a provider without its registration
+  cannot do anything, so they are one answer. Two steps that can never be
+  usefully half-done are one step wearing a costume.
 - **"Has anybody connected yet" is not a step.** It was one, and it asked the
   question in the abstract before there was anything to send. It is a property
   of the notification mailbox instead: on a consent-screen provider that
@@ -237,7 +240,7 @@ Three properties are worth naming, because each was a bug first:
   settings page must not be told the product is unconfigured because they
   personally have not signed in. The Connect button keeps its own user-scoped
   question; the phase does not.
-- **Order is the contract.** Step 5 creates a mailbox owned by whoever is
+- **Order is the contract.** Step 3 creates a mailbox owned by whoever is
   setting up, so step 3 has to come first. Step 4 comes before any mailbox
   exists because a mailbox refuses to enable sync while the domains are
   unanswered, and meeting that as a validation error afterwards is worse than

@@ -138,7 +138,6 @@ class ResConfigSettings(models.TransientModel):
     # so a click is a client-side re-render and never saves the form; saving
     # rebuilds the record, which is what closes them again.
     x_edit_provider = fields.Boolean(default=False)
-    x_edit_credentials = fields.Boolean(default=False)
     x_edit_domains = fields.Boolean(default=False)
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
@@ -347,10 +346,10 @@ class ResConfigSettings(models.TransientModel):
 
         for record in self:
             answers = Setup.answers(provider=record.x_mail_provider)
-            answers['credentials'] = record.x_provider_credentials_set
+            answers['provider'] = bool(record.x_mail_provider) and record.x_provider_credentials_set
             answers['domains'] = bool(record.x_internal_domain_ids)
 
             record.x_setup_domains_done = answers['domains']
-            record.x_setup_notification_done = answers['notification']
+            record.x_setup_notification_done = answers['mailboxes']
             record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()
             record.x_setup_pending_notifications = pending

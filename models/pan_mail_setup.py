@@ -6,20 +6,23 @@ between, and no half-configured state that carries mail "as far as it can":
 that was the shape that let a database sync incoming mail before anyone had
 answered which domains are internal.
 
-Four answers, in this order, make the difference:
+Three things have to be true:
 
-1. provider      — where is the mail hosted
-2. credentials   — the application registration for that provider
-3. domains       — which domains are ours, so colleagues can be told from
-                   customers (there is no opt-out; see ARCHITECTURE.md §9.12)
-4. notification  — one mailbox ticked as the one system mail goes out from
+1. provider   — a provider is chosen and its application credentials are
+                complete, which is one answer: half a provider is no provider
+2. domains    — which domains are ours, so colleagues can be told from
+                customers (there is no opt-out; see ARCHITECTURE.md §9.12)
+3. mailboxes  — one mailbox ticked as the one system mail goes out from, and
+                able to send
 
-"Is anybody connected" used to be a step of its own. It is not a question the
-setup has to ask: a notification mailbox needs an owner and that owner has to
-have connected their mailbox, or it cannot send — so step 4 already answers it,
-and the mailbox says so at the moment somebody ticks the box.
+Two questions used to be steps and are not. "Are the credentials filled in" is
+not separate from "which provider": a provider without its registration cannot
+do anything, so they are one answer. And "is anybody connected" is a property
+of the notification mailbox — it needs an owner who has signed in, or it cannot
+send — so step 3 already answers it, and the mailbox says so at the moment
+somebody ticks the box.
 
-All four are mandatory. Until the last one is answered the phase is `setup`,
+All three are mandatory. Until the last one is answered the phase is `setup`,
 incoming sync does not run, and internal notifications queue with a readable
 reason instead of being cancelled. The moment it is answered the phase is
 `syncing` and nothing here has an opinion any more.
@@ -31,9 +34,10 @@ the product is unconfigured because *they* have not signed in yet; the settings
 page keeps its own user-scoped question for the Connect button, and asks this
 model for the phase.
 
-Order is the contract. Step 3 comes before any mailbox exists because a mailbox
-refuses to be created while the domains are unanswered, and meeting that as a
-validation error after the fact is worse than being asked in order.
+Order is the contract, and it is why the domains come before the mailboxes even
+though a reader would name them the other way round: a mailbox refuses to be
+created while the domains are unanswered, and meeting that as a validation
+error after the fact is worse than being asked in order.
 """
 import logging
 
@@ -62,9 +66,8 @@ STATUS_SELECTION = [
 # changes what the steps after it may assume.
 STEPS = (
     ('provider', 'Email provider'),
-    ('credentials', 'Provider credentials'),
     ('domains', 'Internal domains'),
-    ('notification', 'A notification mailbox'),
+    ('mailboxes', 'A notification mailbox'),
 )
 
 # Where each OAuth provider's application credentials live. The client id and
@@ -105,10 +108,9 @@ class PanMailSetup(models.AbstractModel):
         if provider is None:
             provider = self.env['ir.config_parameter'].sudo().get_param(PARAM_SETUP_PROVIDER)
         return {
-            'provider': bool(provider),
-            'credentials': self.credentials_set(provider),
+            'provider': bool(provider) and self.credentials_set(provider),
             'domains': self.env['pan.mail.domain'].is_configured(),
-            'notification': self.notification_mailbox_usable(),
+            'mailboxes': self.notification_mailbox_usable(),
         }
 
     @api.model
@@ -163,7 +165,7 @@ class PanMailSetup(models.AbstractModel):
 
     @api.model
     def is_ready(self, answers=None):
-        """True once all four steps are answered. Everything that carries mail
+        """True once all three are answered. Everything that carries mail
         asks this rather than checking a field of its own."""
         return self.phase(answers) == PHASE_SYNCING
 

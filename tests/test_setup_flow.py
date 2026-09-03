@@ -145,7 +145,7 @@ class TestSetupPhase(TransactionCase):
         """A new step, or a reordering, has to be a deliberate edit here."""
         self.assertEqual(
             [code for code, _label in pan_mail_setup.STEPS],
-            ['provider', 'credentials', 'domains', 'notification'],
+            ['provider', 'domains', 'mailboxes'],
         )
 
     def test_every_step_is_mandatory(self):
@@ -167,9 +167,9 @@ class TestSetupPhase(TransactionCase):
 
     def test_the_blocking_step_is_the_first_unanswered_one(self):
         """The banner names the step to do next, not the last one that failed."""
-        answers = self._answers(domains=False, notification=False)
+        answers = self._answers(domains=False, mailboxes=False)
         index, code, _label = self.Setup.blocking_step(answers)
-        self.assertEqual((index, code), (3, 'domains'))
+        self.assertEqual((index, code), (2, 'domains'))
 
     def test_connection_is_about_the_database_not_about_you(self):
         """`provider_is_connected` still answers for the database rather than
@@ -188,6 +188,11 @@ class TestSetupPhase(TransactionCase):
         with patch.object(type(self.Setup), '_mailboxes_in_error',
                           return_value=self.env['pan.mail.mailbox']):
             self.assertEqual(self.Setup.status(answers), pan_mail_setup.PHASE_SYNCING)
+
+    def test_half_a_provider_is_no_provider(self):
+        """Picking a provider without filling in its registration is not a step
+        answered — the two were separate steps and are one answer now."""
+        self.assertFalse(self.Setup.answers(provider='outlook')['provider'])
 
     def test_a_broken_mailbox_shows_as_attention_without_stopping_the_rest(self):
         """`error` is a status, not a phase: one stopped mailbox must not switch
