@@ -21,8 +21,7 @@ from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from . import encryption_utils
-from . import mail_mail
-from .pan_mail_setup import PROVIDER_CREDENTIALS, STATUS_SELECTION
+from .pan_mail_setup import PROVIDER_CREDENTIALS
 from .mail_provider_client import (
     PARAM_SETUP_PROVIDER,
     PROVIDER_SELECTION,
@@ -122,15 +121,9 @@ class ResConfigSettings(models.TransientModel):
     # -------------------------------------------------------------------------
     # Checklist state
     # -------------------------------------------------------------------------
-    x_setup_status = fields.Selection(
-        # Labelled 'Mail Pro Status', not 'Status': res.config.settings carries
-        # every installed module's fields, and a shared label is a registry
-        # warning on every worker start. The page renders it with nolabel.
-        STATUS_SELECTION, string='Mail Pro Status', compute='_compute_setup_status',
-        help='Setup until all five steps are done, syncing from then on, and '
-             'attention needed when a mailbox has stopped.',
-    )
-    x_setup_status_detail = fields.Char(compute='_compute_setup_status')
+    # A mailbox that stopped, in one sentence, on the mailboxes line of the
+    # checklist. Empty when nothing is wrong.
+    x_mailboxes_alert = fields.Char(compute='_compute_setup_status')
 
     # An answered step collapses to one line: a check, its name, and the answer
     # itself — not just the heading, or you have to open it again to see what
@@ -142,10 +135,6 @@ class ResConfigSettings(models.TransientModel):
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_complete = fields.Boolean(compute='_compute_setup_status')
-    x_setup_pending_notifications = fields.Integer(
-        compute='_compute_setup_status',
-        string='Emails Waiting for Setup',
-    )
 
     # -------------------------------------------------------------------------
     # Provider state
@@ -339,10 +328,7 @@ class ResConfigSettings(models.TransientModel):
         a credential that is on screen but not yet saved.
         """
         Setup = self.env['pan.mail.setup']
-        pending = self.env['mail.mail'].sudo().search_count([
-            ('state', '=', 'outgoing'),
-            ('failure_reason', '=', mail_mail.NOTIFICATION_PENDING_REASON),
-        ])
+        alert = Setup.mailbox_alert()
 
         for record in self:
             answers = Setup.answers(provider=record.x_mail_provider)
@@ -352,4 +338,4 @@ class ResConfigSettings(models.TransientModel):
             record.x_setup_domains_done = answers['domains']
             record.x_setup_notification_done = answers['mailboxes']
             record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()
-            record.x_setup_pending_notifications = pending
+            record.x_mailboxes_alert = alert

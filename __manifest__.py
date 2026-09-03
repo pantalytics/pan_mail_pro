@@ -119,6 +119,7 @@
         'views/pan_mail_routing_log_views.xml',
         'views/pan_mail_account_views.xml',
         'views/mail_message_views.xml',
+        'views/pan_mail_domain_views.xml',
         'views/pan_mail_coverage_views.xml',
         'views/pan_mail_item_views.xml',
         'views/templates/oauth_templates.xml',

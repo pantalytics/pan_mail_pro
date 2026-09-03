@@ -103,12 +103,19 @@ class TestNotificationGapQueuesMail(TransactionCase):
                          "invitations must survive an unfinished setup")
         self.assertEqual(mail.failure_reason, NOTIFICATION_PENDING_REASON)
 
-    def test_queued_mail_is_visible_in_the_checklist(self):
+    def test_queued_mail_says_why_in_the_mail_queue(self):
+        """The settings page no longer counts these. The reason has to be on
+        the mail itself, or a held invitation is indistinguishable from a
+        failed one for whoever opens the queue."""
         self._notification_to_colleague().send()
 
-        settings = self.env['res.config.settings'].create({})
+        held = self.env['mail.mail'].search([
+            ('state', '=', 'outgoing'),
+            ('failure_reason', '=', NOTIFICATION_PENDING_REASON),
+        ])
 
-        self.assertEqual(settings.x_setup_pending_notifications, 1)
+        self.assertEqual(len(held), 1)
+        self.assertIn('Notification mailbox', held.failure_reason)
 
     def test_a_chosen_sender_is_not_held_for_the_notification_mailbox(self):
         """The hold is for mail that would take the notification route.

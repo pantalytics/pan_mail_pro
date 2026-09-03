@@ -120,7 +120,7 @@ Providers disagree about sending as somebody else, which is why
 |-------|---------|
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
-| `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?" |
+| `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Communication → Configuration |
 | `pan.mail.setup` | The five setup steps and the phase they add up to (abstract) |
 | `res.config.settings` | Module settings (provider choice, client id, secret, tenant) |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
@@ -223,6 +223,12 @@ of being cancelled. Nothing here has an opinion once the phase is `syncing`.
 
 Three properties are worth naming, because each was a bug first:
 
+- **The checklist is the status.** There is no banner at the top of the
+  settings page. Three lines, each either a green check with its answer beside
+  it or an open section, say in one look whether the module is in service — and
+  a mailbox that stopped shows as a red triangle on the mailboxes line rather
+  than as a fourth thing to read. A separate status block repeated what the
+  lines already said.
 - **Half a provider is no provider.** Choosing one and filling in its
   application registration were two steps; a provider without its registration
   cannot do anything, so they are one answer. Two steps that can never be

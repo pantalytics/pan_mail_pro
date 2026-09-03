@@ -50,17 +50,6 @@ _logger = logging.getLogger(__name__)
 PHASE_SETUP = 'setup'
 PHASE_SYNCING = 'syncing'
 
-# What the settings page shows at the top. `error` is not a third phase: mail
-# still flows, one mailbox has stopped. Keeping it out of `phase()` is what
-# stops a single broken mailbox from switching the whole module off.
-STATUS_ERROR = 'error'
-
-STATUS_SELECTION = [
-    (PHASE_SETUP, 'Setup'),
-    (PHASE_SYNCING, 'Syncing'),
-    (STATUS_ERROR, 'Attention needed'),
-]
-
 # The five steps, in the order they have to be answered. This tuple is the
 # order: the settings page numbers its sections from it, and a step that moves
 # changes what the steps after it may assume.
@@ -180,37 +169,22 @@ class PanMailSetup(models.AbstractModel):
                  index=index, total=len(STEPS), label=label)
 
     # -------------------------------------------------------------------------
-    # The status line
+    # Something broke after setup
     # -------------------------------------------------------------------------
 
     @api.model
-    def status(self, answers=None):
-        """Setup, syncing, or syncing with something broken."""
-        if not self.is_ready(answers):
-            return PHASE_SETUP
-        return STATUS_ERROR if self._mailboxes_in_error() else PHASE_SYNCING
+    def mailbox_alert(self):
+        """One sentence when a mailbox has stopped, or '' when none has.
 
-    @api.model
-    def status_detail(self, answers=None):
-        """The one sentence under the status. Says what to do, not what broke."""
-        if not self.is_ready(answers):
-            blocking = self.blocking_step(answers)
-            index, _code, label = blocking
-            return _(
-                '%(label)s — step %(index)s of %(total)s. Mail is not sent or '
-                'received until every step is done.',
-                label=label, index=index, total=len(STEPS),
-            )
+        Not a phase and not a fourth step: mail still flows, one mailbox has
+        stopped. It hangs off the mailboxes line of the checklist, which is the
+        line that would otherwise show a green check while something is red.
+        """
         broken = self._mailboxes_in_error()
-        if broken:
-            return _(
-                '%(count)s mailbox(es) stopped syncing. The rest is unaffected.',
-                count=len(broken),
-            )
-        syncing = self.env['pan.mail.mailbox'].sudo().search_count([
-            ('sync_mode', '!=', 'none'),
-        ])
-        return _('Sending and receiving through %(count)s mailbox(es).', count=syncing)
+        if not broken:
+            return ''
+        return _('%(count)s mailbox(es) stopped syncing. The rest is unaffected.',
+                 count=len(broken))
 
     @api.model
     def _mailboxes_in_error(self):

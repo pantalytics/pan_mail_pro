@@ -217,37 +217,20 @@ When a list is empty, show a helpful message:
 </list>
 ```
 
-### Status, not banners
+### The checklist is the status
 
-A screen that reports how the module is doing says it once, at the top, in one
-line. Three states and no fourth: **Setup**, **Syncing**, **Attention needed**.
+A screen that reports how something is doing does not need a banner saying so.
+A list of steps, each showing a check and its answer, says it in one look.
 
-```xml
-<div class="o_mailpro_status">
-    <div class="o_mailpro_status_head">
-        <span class="o_mailpro_dot o_mailpro_dot--syncing"
-              invisible="x_setup_status != 'syncing'"/>
-        <field name="x_setup_status" nolabel="1" readonly="1"
-               class="o_mailpro_status_label"/>
-    </div>
-    <div class="o_mailpro_status_detail">
-        <field name="x_setup_status_detail" nolabel="1" readonly="1"/>
-    </div>
-</div>
-```
-
-Rules that make it read as one thing rather than three:
-
-- **A headline and one sentence.** The headline is the state; the sentence says
-  what to do about it. Nothing else goes on the line.
-- **The dot is the only colour.** No coloured background behind text, no icon
-  set, no border. Accent purple `#5b58d8` for setup, green `#1f9d63` for
-  syncing, red `#c0392b` for attention.
-- **Stacked alerts are the failure mode this replaces.** Three `alert-warning`
-  boxes at the top of a page are three things shouting; one status line with a
-  changing sentence is one thing speaking.
-- **Never invent a fourth state.** If something new can go wrong, it is a
-  sentence under "Attention needed", not a new colour.
+- **A banner repeats what the list already says.** Setup / Syncing was a
+  headline above three lines that carried the same information.
+- **A failure belongs on the line it happened to**, not in a summary at the
+  top: a stopped mailbox is a red triangle on the mailboxes line, where the
+  reader is already looking for it.
+- **Two states per line, not four.** Answered, or open. Anything else is a
+  sentence on the line.
+- **Never a colour that means nothing.** Green for done, red for broken. There
+  is no third.
 
 ### A finished step collapses into its answer
 

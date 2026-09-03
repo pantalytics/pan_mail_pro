@@ -157,7 +157,7 @@ class TestSetupPhase(TransactionCase):
                              f'missing {code} must keep the module in setup')
             self.assertFalse(self.Setup.is_ready(answers))
             self.assertEqual(self.Setup.blocking_step(answers)[:2], (index, code))
-            self.assertIn(label, self.Setup.status_detail(answers))
+            self.assertIn(label, self.Setup.blocking_step_label(answers))
 
     def test_all_five_answered_is_syncing(self):
         answers = self._answers()
@@ -183,20 +183,19 @@ class TestSetupPhase(TransactionCase):
         self.assertFalse(account.user_id)
         self.assertTrue(self.Setup.provider_is_connected('imap'))
 
-    def test_status_is_syncing_when_nothing_is_broken(self):
-        answers = self._answers()
+    def test_no_alert_when_nothing_is_broken(self):
         with patch.object(type(self.Setup), '_mailboxes_in_error',
                           return_value=self.env['pan.mail.mailbox']):
-            self.assertEqual(self.Setup.status(answers), pan_mail_setup.PHASE_SYNCING)
+            self.assertEqual(self.Setup.mailbox_alert(), '')
 
     def test_half_a_provider_is_no_provider(self):
         """Picking a provider without filling in its registration is not a step
         answered — the two were separate steps and are one answer now."""
         self.assertFalse(self.Setup.answers(provider='outlook')['provider'])
 
-    def test_a_broken_mailbox_shows_as_attention_without_stopping_the_rest(self):
-        """`error` is a status, not a phase: one stopped mailbox must not switch
-        the module off for every other mailbox."""
+    def test_a_broken_mailbox_is_an_alert_not_a_phase(self):
+        """One stopped mailbox must not switch the module off for the others:
+        it is a line on the checklist, never a reason to report `setup`."""
         broken = self.env['pan.mail.mailbox'].create({
             'email': 'broken@company.test',
             'provider': 'imap',
@@ -205,8 +204,9 @@ class TestSetupPhase(TransactionCase):
         })
         answers = self._answers()
         with patch.object(type(self.Setup), '_mailboxes_in_error', return_value=broken):
-            self.assertEqual(self.Setup.status(answers), pan_mail_setup.STATUS_ERROR)
+            self.assertIn('stopped syncing', self.Setup.mailbox_alert())
             self.assertTrue(self.Setup.is_ready(answers))
+            self.assertEqual(self.Setup.phase(answers), pan_mail_setup.PHASE_SYNCING)
 
     def test_cron_fetches_nothing_during_setup(self):
         fetcher = self.env['pan.mail.fetcher']

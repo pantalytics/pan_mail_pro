@@ -16,39 +16,6 @@
                     <field name="x_setup_notification_done" invisible="1"/>
                     <field name="x_setup_complete" invisible="1"/>
 
-                    <!-- One status. Setup, Syncing or Attention needed — never
-                         two at once, and never a stack of banners. A headline,
-                         one sentence, and a dot. Everything that used to be
-                         explained here is behind an info icon on the step it
-                         belongs to. -->
-                    <div class="o_mailpro_status">
-                        <div class="o_mailpro_status_head">
-                            <span class="o_mailpro_dot o_mailpro_dot--setup"
-                                  invisible="x_setup_status != 'setup'"/>
-                            <span class="o_mailpro_dot o_mailpro_dot--syncing"
-                                  invisible="x_setup_status != 'syncing'"/>
-                            <span class="o_mailpro_dot o_mailpro_dot--error"
-                                  invisible="x_setup_status != 'error'"/>
-                            <field name="x_setup_status" nolabel="1" readonly="1"
-                                   class="o_mailpro_status_label"/>
-                        </div>
-                        <div class="o_mailpro_status_detail">
-                            <field name="x_setup_status_detail" nolabel="1" readonly="1"/>
-                        </div>
-                        <div class="o_mailpro_status_note"
-                             invisible="x_setup_pending_notifications == 0">
-                            <field name="x_setup_pending_notifications" class="d-inline" readonly="1"/>
-                            queued
-                            <i class="fa fa-info-circle ms-1"
-                               title="Invitations and password resets wait here until the notification mailbox works. They are sent automatically once it does — nothing is lost."/>
-                        </div>
-                        <div class="o_mailpro_status_note" invisible="x_setup_status != 'error'">
-                            <button type="action" name="%(action_pan_mail_mailbox)d"
-                                    string="Review mailboxes" icon="oi-arrow-right"
-                                    class="oe_link ps-0"/>
-                        </div>
-                    </div>
-
                     <div class="o_mailpro_step" invisible="not x_provider_credentials_set or x_edit_provider">
                         <i class="fa fa-check-circle o_mailpro_step_check" title="Done"/>
                         <span class="o_mailpro_step_name">1. Email Provider</span>
@@ -176,15 +143,17 @@
                                options="{'icon': 'fa-pencil'}" class="o_mailpro_step_edit"/>
                     </div>
                     <!-- STEP 2 — before mailboxes, because a mailbox refuses to
-                         enable sync until this is answered. -->
+                         be created while the domains are unanswered. Its own
+                         table, reached the same way the mailboxes are. -->
                     <h2 invisible="x_setup_domains_done and not x_edit_domains or not x_provider_credentials_set">2. Internal Domains</h2>
-                    <div class="row mt-3 mb-4 o_settings_container" invisible="x_setup_domains_done and not x_edit_domains or not x_provider_credentials_set">
-                        <div class="col-12 col-lg-6 o_setting_box">
+                    <div class="row mt-3 mb-4 o_settings_container"
+                         invisible="x_setup_domains_done and not x_edit_domains or not x_provider_credentials_set">
+                        <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
                                 <span class="o_form_label">Your domains</span>
                                 <i class="fa fa-info-circle text-muted ms-1"
-                                   title="One tag per domain, e.g. company.com. Type a domain and press enter to add it. Mail between these domains is never synced into Odoo, and incoming sync stays off until the list is filled in."/>
+                                   title="One row per domain your company owns, e.g. company.com. Mail between them is never synced into Odoo, and no mailbox can be created until at least one is here."/>
                                 <div class="content-group mt-2">
                                     <field name="x_internal_domain_ids" nolabel="1"
                                            widget="many2many_tags"
@@ -203,15 +172,28 @@
                                         <field name="x_internal_domains_uncovered" class="d-inline" readonly="1"/>
                                         are treated as external.
                                     </div>
+                                    <div class="mt-2">
+                                        <button type="action" name="%(action_pan_mail_domain)d"
+                                                string="Internal Domains" icon="oi-arrow-right"
+                                                class="oe_link ps-0"/>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="o_mailpro_step" invisible="not (x_setup_notification_done)">
-                        <i class="fa fa-check-circle o_mailpro_step_check" title="Done"/>
+                    <div class="o_mailpro_step" invisible="not x_setup_notification_done">
+                        <i class="fa fa-check-circle o_mailpro_step_check"
+                           title="Done" invisible="x_mailboxes_alert"/>
+                        <i class="fa fa-exclamation-triangle o_mailpro_step_warn"
+                           title="Attention needed" invisible="not x_mailboxes_alert"/>
                         <span class="o_mailpro_step_name">3. Mailboxes</span>
-                        <span class="o_mailpro_step_value"><field name="x_notification_mailbox_id" nolabel="1" readonly="1"/></span>
+                        <span class="o_mailpro_step_value" invisible="x_mailboxes_alert">
+                            <field name="x_notification_mailbox_id" nolabel="1" readonly="1"/>
+                        </span>
+                        <span class="o_mailpro_step_value o_mailpro_step_warn" invisible="not x_mailboxes_alert">
+                            <field name="x_mailboxes_alert" nolabel="1" readonly="1"/>
+                        </span>
                         <button type="action" name="%(action_pan_mail_mailbox)d"
                                 icon="oi-arrow-right" class="oe_link o_mailpro_step_edit"/>
                     </div>
