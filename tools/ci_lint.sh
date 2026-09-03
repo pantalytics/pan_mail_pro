@@ -124,7 +124,8 @@ step "Every test file is imported by tests/__init__.py"
 # what it appeared to. ci_assert_tests.sh cannot see it -- a suite that never
 # had the tests has no count to have lost.
 ON_DISK=$(cd tests && ls test_*.py 2>/dev/null | sed 's/\.py$//' | sort)
-IMPORTED=$(grep -oP '^from \. import \K(test_\w+)' tests/__init__.py | sort)
+# sed, not `grep -oP`: -P is GNU-only and this must run on macOS too.
+IMPORTED=$(sed -n 's/^from \. import \(test_[A-Za-z0-9_]*\).*/\1/p' tests/__init__.py | sort)
 if [ "$ON_DISK" != "$IMPORTED" ]; then
     comm -23 <(echo "$ON_DISK") <(echo "$IMPORTED") | while read -r f; do
         [ -n "$f" ] && echo "::error file=tests/__init__.py::tests/$f.py is never imported, so it never runs"

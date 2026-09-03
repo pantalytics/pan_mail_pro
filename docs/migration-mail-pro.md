@@ -43,9 +43,20 @@ Both can be renamed later as isolated changes with their own migrations.
    create_backup(instance_id = <production instance>)
    ```
 
-2. **Rehearse on staging.** Restore that backup into the staging instance and
-   run steps 3 to 6 there first. Confirm sending, inbound sync and the OAuth
-   flow all still work before touching production.
+2. **Rehearse against the backup.** First locally, in a throwaway database:
+
+   ```
+   BASE_DUMP=/path/to/backup tools/ci_rename_rehearsal.sh
+   ```
+
+   That restores the backup, neutralizes the copy, runs the rename SQL and
+   upgrades to HEAD — the exact path production will take. Read the row counts
+   in every migration line and the parameter report at the end; a backfill
+   that logs 0 rows against this baseline did not do its job.
+
+   Then restore the same backup into the staging instance and run steps 3 to 6
+   there. Confirm sending, inbound sync and the OAuth flow all still work
+   before touching production.
 
 3. **Stop Odoo** on the target instance. The script must not race the registry
    loading.
