@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- One row per domain, edited in place. Same shape as the mailbox list:
+         a table of things you add and remove, not a setting you retype. -->
+    <record id="view_pan_mail_domain_list" model="ir.ui.view">
+        <field name="name">pan.mail.domain.list</field>
+        <field name="model">pan.mail.domain</field>
+        <field name="arch" type="xml">
+            <list string="Internal Domains" editable="bottom">
+                <field name="name" placeholder="company.com"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_pan_mail_domain" model="ir.actions.act_window">
+        <field name="name">Internal Domains</field>
+        <field name="res_model">pan.mail.domain</field>
+        <field name="view_mode">list</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add your company's domains
+            </p>
+            <p>
+                Mail between these domains is never synced into Odoo. Until at
+                least one is here, no mailbox can be created and nothing is
+                fetched — without them Mail Pro cannot tell a colleague from a
+                customer.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_communication_domains"
+              name="Internal Domains"
+              parent="menu_communication_config"
+              action="action_pan_mail_domain"
+              sequence="20"
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+</odoo>

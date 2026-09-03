@@ -120,7 +120,8 @@ Providers disagree about sending as somebody else, which is why
 |-------|---------|
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
-| `pan.mail.internal.domains` | The one definition of "is this address ours?" (abstract) |
+| `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Communication → Configuration |
+| `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
 | `res.config.settings` | Module settings (provider choice, client id, secret, tenant) |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
@@ -180,7 +181,8 @@ pan_mail_pro/
 │   │   └── claude/claude_backend.py
 │   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
 │   ├── pan_mail_account.py        # Per-address credentials
-│   ├── pan_mail_internal_domains.py
+│   ├── pan_mail_domain.py         # Internal domains + the fail-closed gate
+│   ├── pan_mail_setup.py          # Setup vs syncing: the three mandatory steps
 │   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral)
 │   ├── pan_mail_matcher.py        # Thread matching rule ladder
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
@@ -202,6 +204,58 @@ pan_mail_pro/
 There is no `wizard/` directory. Connecting an account is a controller redirect,
 not a wizard.
 
+### Two phases: setup, then syncing
+
+The module is either being **set up** or **syncing**. `pan.mail.setup` owns the
+difference, and everything that carries mail asks it rather than checking a
+condition of its own.
+
+| # | Step | Answered by |
+|---|------|-------------|
+| 1 | Email provider | a provider **and** its app registration, or its IMAP accounts |
+| 2 | Internal domains | at least one `pan.mail.domain` row |
+| 3 | Mailboxes | a mailbox with `is_notification_mailbox` ticked that can send |
+
+All three are mandatory. There is no partial service: while the phase is `setup`
+the incoming cron returns without fetching, "Sync Now" refuses with the step
+that is missing, and internal notifications queue with a readable reason instead
+of being cancelled. Nothing here has an opinion once the phase is `syncing`.
+
+Three properties are worth naming, because each was a bug first:
+
+- **The checklist is the status.** There is no banner at the top of the
+  settings page. Three lines, each either a green check with its answer beside
+  it or an open section, say in one look whether the module is in service — and
+  a mailbox that stopped shows as a red triangle on the mailboxes line rather
+  than as a fourth thing to read. A separate status block repeated what the
+  lines already said.
+- **Half a provider is no provider.** Choosing one and filling in its
+  application registration were two steps; a provider without its registration
+  cannot do anything, so they are one answer. Two steps that can never be
+  usefully half-done are one step wearing a costume.
+- **"Has anybody connected yet" is not a step.** It was one, and it asked the
+  question in the abstract before there was anything to send. It is a property
+  of the notification mailbox instead: on a consent-screen provider that
+  mailbox's owner must have signed in, enforced where the box is ticked. On
+  IMAP the credentials belong to the address rather than to a person, so the
+  owner's own connection says nothing and the constraint does not ask. An admin
+  connects their own mailbox from their profile like every other user; there is
+  no second door on the settings page.
+- **The answers are about the database, not about the reader.** "Connected"
+  means *some* account on the provider is connected. A second admin opening the
+  settings page must not be told the product is unconfigured because they
+  personally have not signed in. The Connect button keeps its own user-scoped
+  question; the phase does not.
+- **Order is the contract.** Step 3 creates a mailbox owned by whoever is
+  setting up, so step 3 has to come first. Step 4 comes before any mailbox
+  exists because a mailbox refuses to enable sync while the domains are
+  unanswered, and meeting that as a validation error afterwards is worse than
+  being asked in order.
+- **Inviting the team is not on this page at all.** Mail flows with one
+  connected account, so a colleague who has not signed in is a rollout task,
+  not a gate — and the invite button already lives on the user list, where the
+  users are. A second copy in Settings was a second front door to one action.
+
 ---
 
 ## 2. Mailbox types
@@ -210,7 +264,17 @@ not a wizard.
 |------|--------------|--------------------|----------|
 | **Personal** | Only owner | Owner's | User's own mailbox (john@company.com) |
 | **Shared** | Everyone | Sender's own on Microsoft 365; the address's own on Gmail and IMAP | Team mailbox (sales@company.com) |
-| **Notification** | Everyone | Owner's | System emails (notifications@company.com) |
+
+**Notification** is not a type. Exactly one mailbox has `is_notification_mailbox`
+ticked, and system email goes out from it with its owner's credentials. The tick
+box is editable straight from the mailbox list, so moving it is untick here,
+tick there — and the settings page has no form of its own for it, it reports
+which mailbox carries it. It used
+to be a third Type value, which forced "personal or shared?" to be answerable
+with "neither" and made every rule about types carry an exception. As a tick box
+it is a property of one mailbox, and the one exception left is explicit: the
+notification mailbox is personal but sendable by any author, because that is the
+job it exists to do.
 
 Which credentials a mailbox runs on is asked of the provider
 (`resolve_sending_account` / `resolve_receiving_account`), never assumed by the
@@ -269,9 +333,10 @@ Two booleans remain, and neither is a mode:
 
 ### Internal domains are a gate, not a preference
 
-`pan.mail.internal.domains` is the only place that answers "is this address one
-of ours?". **No mailbox can exist while the list is empty**, and a sync run
-aborts if it is emptied later.
+`pan.mail.domain` is the only place that answers "is this address one of ours?",
+and it is a table: one row per domain, cleaned on the way in so a pasted address
+or a stray `@` lands as a bare domain. **No mailbox can exist while the table is
+empty**, and a sync run aborts if it is emptied later.
 
 The gate sits on the mailbox rather than on the sync switch, because a mailbox
 is the moment Mail Pro takes over the company's mail: the SMTP takeover fires
@@ -280,14 +345,14 @@ as an option belonging to sync — which is exactly how it read right up until i
 mattered. Not at install, though: an empty database has no domains to derive
 and nobody to protect.
 
-**A configured list is not a complete one**, and only the second is worth
-anything. `uncovered_domains()` compares the list against the domains this
+**Empty is the only refusal.** What the list contains after that is the
+admin's call: a mailbox on a domain they left off is treated as external, which
+is the setting doing its job. `suggest_domains()` reads the domains this
 database can demonstrate belong to the company — its mailboxes and its internal
-users' own addresses — and saving the settings with one of them missing is
-refused. The users are the source that matters: a company that acquired another
-has colleagues on its domain long before it has mailboxes on it, so a list
-built from mailboxes alone reads as complete and treats those colleagues as
-outsiders.
+users' own addresses — and offers them with one click while the list is still
+empty, so nobody has to type them on day one. The users are the source that
+matters: a company that acquired another has colleagues on its domain long
+before it has mailboxes on it.
 
 Two exclusions, both load-bearing. Portal users, since a customer with a login
 is not the company. And public mail providers, since a colleague whose Odoo
@@ -303,8 +368,8 @@ This used to read `mail.alias.domain`, where "no domains configured" meant
 internal email into Odoo. Fail-closed, because the failure mode is a data leak.
 Alias domains still feed `suggest_domains()`; they no longer decide anything.
 
-Turning the filter off is possible but explicit: globally via "Sync internal
-email", or per mailbox via "Exclude Internal".
+**The filter has no off switch.** Not globally and not per mailbox — see
+§9.12.
 
 ### The gate ladder
 
@@ -774,6 +839,13 @@ could not place, which is what keeps it affordable on a one-minute cron.
 Auto-routing stays shut behind the `routing_smart` constraint until there is
 evidence from real suggestions that it should open.
 
+**Not shipped yet.** The seam exists; the feature does not. The settings page
+has no AI section, so `pan_mail_pro.ai_backend` stays at `none` unless somebody
+writes the config parameter by hand, and the enrichment cron ships inactive.
+That is deliberate: setup is the thing to get right first, and a configurable
+half-feature is a support burden with no user. Putting the section back is a
+view change, not a rewrite.
+
 ---
 
 ## 9. Design decisions
@@ -988,14 +1060,43 @@ garbage-collected and `mail.notification` is not. The table still standing
 later is the one anybody reading the database, or the chatter, believes.
 
 The cancel path used to write `state = 'cancel'` and stop there, leaving the
-notifications at `ready` — "queued, not sent yet" — permanently. At Juffermans
-Machinebouw seventeen rows from one sync run still read `ready` eleven days
+notifications at `ready` — "queued, not sent yet" — permanently. At one
+customer, seventeen rows from one sync run still read `ready` eleven days
 after their mails were cancelled: the chatter showed mail as pending that no
 longer existed. `mail.mail._cancel_notifications()` closes that, taking the
 value from Odoo's own `_get_notification_status()` so the two cannot drift.
 
 Failures already worked this way, through `_postprocess_sent_message`. Cancels
 were the one terminal outcome that did not.
+
+### 9.12 Internal mail is always filtered
+
+Mail between the company's own domains is never synced into Odoo. There is no
+global setting and no per-mailbox toggle, and the two that existed —
+`sync_internal_email` and `exclude_internal` — were removed in 19.0.6.4.0
+rather than defaulted off.
+
+A safety control with a switch is a safety control someone will flip. Both
+switches were reachable from a settings page, neither was reversible in effect
+(mail copied into a record stays there), and the failure they guard is a data
+leak: a colleague's confidential thread readable by everyone with access to the
+record. A default protects the databases nobody touched; removing the switch
+protects all of them.
+
+It also removed a question the product had no business asking. "Do you want
+your internal email in Odoo?" reads like a preference and is not one — the
+right answer is the same for every customer, and the customer cannot see the
+consequence of the wrong one until it is in the database.
+
+**The case being dropped**: a team mailbox where internal forwarding should be
+logged, e.g. support@ receiving a colleague's forward of a customer complaint.
+That thread now stops at the forward. The customer's own mail to support@ is
+still logged, so the record is not empty, only shorter. One real workflow for
+one setting that could quietly leak every internal thread in the database is
+not a trade worth keeping.
+
+Note the asymmetry that makes this cheap: a mail with *any* outside recipient
+is correspondence and is still logged. "Internal" means every party is ours.
 
 ## 10. Security and permissions
 

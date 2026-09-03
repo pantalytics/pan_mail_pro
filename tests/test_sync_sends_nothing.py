@@ -20,8 +20,8 @@ Four things have to be covered separately, because each could break on its own:
 
 1. **The rule itself**, with no provider anywhere near it. This is the boundary.
 2. **Both directions.** Inbox and Sent Items are different branches of
-   `_process_message`, and it was the Sent Items branch that leaked at
-   Juffermans.
+   `_process_message`, and it was the Sent Items branch that leaked in the
+   incident this file exists for.
 3. **All three providers.** Graph, Gmail and IMAP feed the same
    `_process_message`, so they cannot disagree by construction -- but "cannot
    disagree by construction" is exactly what was believed about the internal
@@ -240,7 +240,7 @@ class TestGraphSyncSendsNothing(MailProTestCase, QuietSyncMixin):
         self.assertSyncSentNothing(before, self.external_partner)
 
     def test_sent_items_sync_sends_nothing(self):
-        """The Juffermans direction. A colleague's own sent mail landed on a
+        """The direction that leaked. A colleague's own sent mail landed on a
         contact card, the contact was following that card, and it went back
         out."""
         before = self.snapshot(self.external_partner)

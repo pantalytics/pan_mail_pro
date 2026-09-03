@@ -40,7 +40,7 @@ class TestRenameMigration(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        self.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        self.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         self.pre = _load('pre-migrate.py')
         self.post = _load('post-migrate.py')
         self.ICP = self.env['ir.config_parameter'].sudo()

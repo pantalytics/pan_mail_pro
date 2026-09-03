@@ -25,7 +25,7 @@ class TestInternalDomainParsing(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
 
     def test_parses_separators_and_case(self):
         self.assertEqual(
@@ -58,7 +58,7 @@ class TestInternalDomainGate(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
         cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.user = cls.env['res.users'].create({
             'name': 'Gate Owner', 'login': 'gate@test.local', 'email': 'gate@test.local',
@@ -75,7 +75,8 @@ class TestInternalDomainGate(TransactionCase):
         cls.Domains.set_domains(['gate.test'])
         cls.notification_mailbox = cls.Mailbox.create({
             'email': 'notifications@gate.test',
-            'mailbox_type': 'notification',
+            'mailbox_type': 'personal',
+            'is_notification_mailbox': True,
             'owner_user_id': cls.user.id,
         })
         cls.Domains.set_domains([])
@@ -96,14 +97,6 @@ class TestInternalDomainGate(TransactionCase):
 
     def test_enabling_sync_with_domains_is_allowed(self):
         self.Domains.set_domains(['gate.test'])
-        mailbox = self._sync_mailbox()
-        self.assertEqual(mailbox.sync_mode, 'all')
-
-    def test_explicit_opt_out_unblocks(self):
-        """The escape hatch has to work — but only when someone asked for it."""
-        self.env['ir.config_parameter'].sudo().set_param(
-            'pan_mail_pro.sync_internal_email', 'True'
-        )
         mailbox = self._sync_mailbox()
         self.assertEqual(mailbox.sync_mode, 'all')
 
@@ -134,7 +127,12 @@ class TestInternalDomainGate(TransactionCase):
             self.env['pan.mail.fetcher']._process_mailbox(mailbox)
 
     def test_cron_records_the_block_on_the_mailbox(self):
-        """A blocked sync must be visible, not just logged."""
+        """A blocked sync must be visible, not just logged.
+
+        Emptying the list puts the module back into the setup phase, so the
+        cron stops before it fetches anything — but it still says so on the
+        mailbox, which is where somebody looks.
+        """
         self.Domains.set_domains(['gate.test'])
         mailbox = self._sync_mailbox()
         mailbox.write({'state': 'active'})
@@ -143,7 +141,7 @@ class TestInternalDomainGate(TransactionCase):
         self.env['pan.mail.fetcher']._cron_fetch_incoming_mail()
 
         self.assertEqual(mailbox.state, 'error')
-        self.assertIn('internal email domains', mailbox.error_message)
+        self.assertIn('still being set up', mailbox.error_message)
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -153,7 +151,7 @@ class TestInternalDomainFiltering(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
         cls.Domains.set_domains(['company.com'])
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'info@company.com', 'mailbox_type': 'shared',
@@ -165,15 +163,18 @@ class TestInternalDomainFiltering(TransactionCase):
     def test_external_sender_is_kept(self):
         self.assertFalse(self.Domains.should_skip('customer@example.com', self.mailbox))
 
-    def test_global_opt_out_keeps_everything(self):
+    def test_there_is_no_opt_out(self):
+        """The filter has no off switch, globally or per mailbox.
+
+        The old global parameter is still readable by anything that kept a
+        reference to it; setting it must change nothing. See ARCHITECTURE.md
+        §9.12 for why the escape hatch was removed rather than defaulted off.
+        """
         self.env['ir.config_parameter'].sudo().set_param(
             'pan_mail_pro.sync_internal_email', 'True'
         )
-        self.assertFalse(self.Domains.should_skip('colleague@company.com', self.mailbox))
-
-    def test_per_mailbox_opt_out_keeps_everything_for_that_mailbox(self):
-        self.mailbox.exclude_internal = False
-        self.assertFalse(self.Domains.should_skip('colleague@company.com', self.mailbox))
+        self.assertTrue(self.Domains.should_skip('colleague@company.com', self.mailbox))
+        self.assertNotIn('exclude_internal', self.env['pan.mail.mailbox']._fields)
 
     def test_empty_list_no_longer_means_nothing_is_internal(self):
         """The original bug, pinned.
@@ -194,7 +195,7 @@ class TestInternalDomainSuggestions(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
         cls.Domains.set_domains(['scaffolding.test'])
         cls.env['pan.mail.mailbox'].create({
             'email': 'info@suggested.test', 'mailbox_type': 'shared',
@@ -203,34 +204,27 @@ class TestInternalDomainSuggestions(TransactionCase):
     def test_mailbox_domains_are_suggested(self):
         self.assertIn('suggested.test', self.Domains.suggest_domains())
 
-    def test_uncovered_mailbox_domain_is_reported(self):
-        """A mailbox we send from is ours by definition — a list missing it is wrong."""
+    def test_a_mailbox_domain_is_suggested_whatever_is_configured(self):
+        """The suggestion describes the database, not the current list: an
+        admin who typed one domain still gets offered the rest."""
         self.Domains.set_domains(['elsewhere.test'])
-        self.assertIn('suggested.test', self.Domains.uncovered_domains())
-
-    def test_nothing_uncovered_when_list_matches(self):
-        """Everything the database can demonstrate is ours, not only the
-        mailbox: the internal users' own domains count too, which is the whole
-        point of the check."""
-        self.Domains.set_domains(self.Domains.suggest_domains())
-        self.assertEqual(self.Domains.uncovered_domains(), [])
+        self.assertIn('suggested.test', self.Domains.suggest_domains())
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestInternalDomainCompleteness(TransactionCase):
-    """Configured is not the same as complete, and only complete is worth much.
+class TestInternalDomainSuggestion(TransactionCase):
+    """Where the suggested domains come from, and what they leave out.
 
-    A list that names the obvious domain and misses a second one passes every
-    check that asks whether it is configured, and then treats a colleague on
-    that second domain as a customer. That is the original leak, on a database
-    nothing objects to. Juffermans Machinebouw is the shape: every mailbox on
-    one domain, a colleague on another.
+    A list built from mailboxes alone misses a company that acquired another
+    one: it has colleagues on the second domain long before it has mailboxes
+    there. The users are the source that matters. The shape is: every mailbox
+    on one domain, a colleague on another.
     """
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
         cls.Domains.set_domains(['scaffolding.test'])
         cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.Mailbox.create({
@@ -267,26 +261,17 @@ class TestInternalDomainCompleteness(TransactionCase):
         self.assertTrue(portal.share, "fixture must be a share user to prove this")
         self.assertNotIn('customer.test', self.Domains.suggest_domains())
 
-    def test_a_list_missing_our_own_domain_is_incomplete(self):
-        self.Domains.set_domains(['first.test'])
-
-        missing = self.Domains.uncovered_domains()
-
-        self.assertIn('second.test', missing)
-        self.assertIsNotNone(self.Domains.completeness_error())
-
-    def test_applying_the_suggestion_always_makes_the_list_complete(self):
-        """The property the "Apply suggested" button promises.
+    def test_applying_the_suggestion_carries_every_domain_it_named(self):
+        """The property the "Add" button promises.
 
         Hardcoding the expected domains would test this fixture rather than the
         rule: any database carries users the fixture did not create, and the
-        real question is whether one click can ever leave the admin with a list
-        the save still refuses.
+        real question is whether one click puts all of them on the list.
         """
-        self.Domains.set_domains(self.Domains.suggest_domains())
+        suggested = self.Domains.suggest_domains()
+        self.Domains.set_domains(suggested)
 
-        self.assertEqual(self.Domains.uncovered_domains(), [])
-        self.assertIsNone(self.Domains.completeness_error())
+        self.assertTrue(set(suggested) <= set(self.Domains.get_domains()))
 
     def test_a_personal_address_does_not_drag_its_provider_in(self):
         """A colleague whose Odoo login is a personal address must not put a
@@ -300,30 +285,35 @@ class TestInternalDomainCompleteness(TransactionCase):
         })
 
         self.assertNotIn('gmail.com', self.Domains.suggest_domains())
-        self.assertNotIn('gmail.com', self.Domains.uncovered_domains())
 
-    def test_an_empty_list_is_absent_rather_than_incomplete(self):
-        """Two different failures with two different gates. This one is the
-        mailbox constraint's job, and saying both at once would be noise."""
+    def test_an_empty_list_is_the_one_thing_that_is_refused(self):
+        """Absent is a gate; anything else about the list is the admin's
+        choice. A mailbox on a domain that is not listed is treated as
+        external, which is the setting doing its job, not a mistake."""
         self.Domains.set_domains([])
 
-        self.assertEqual(self.Domains.uncovered_domains(), [])
-        self.assertIsNone(self.Domains.completeness_error())
         self.assertIsNotNone(self.Domains.configuration_error())
 
-    def test_saving_settings_refuses_an_incomplete_list(self):
-        settings = self.env['res.config.settings'].create({
-            'x_internal_domains': 'first.test',
+    def _settings_with(self, domains):
+        rows = self.Domains.create([{'name': d} for d in domains])
+        return self.env['res.config.settings'].create({
+            'x_internal_domain_ids': [(6, 0, rows.ids)],
         })
 
-        with self.assertRaises(UserError):
-            settings.set_values()
-
-    def test_saving_settings_accepts_a_complete_list(self):
-        settings = self.env['res.config.settings'].create({
-            'x_internal_domains': ', '.join(self.Domains.suggest_domains()),
-        })
+    def test_saving_settings_never_deletes_a_domain(self):
+        """The list is edited in its own table now, so a settings page built
+        before a domain was added must not take it away again."""
+        settings = self._settings_with(self.Domains.suggest_domains())
+        added = self.Domains.create({'name': 'later.test'})
 
         settings.set_values()
 
-        self.assertIn('second.test', self.Domains.get_domains())
+        self.assertIn(added.name, self.Domains.get_domains())
+
+    def test_a_domain_is_cleaned_on_the_way_in(self):
+        """An admin pastes an address or a stray @; a domain comes out."""
+        self.assertEqual(self.Domains.create({'name': '@Company.COM'}).name, 'company.com')
+        self.assertEqual(
+            self.Domains.create({'name': 'jan@voorbeeld.test'}).name, 'voorbeeld.test')
+        with self.assertRaises(ValidationError):
+            self.Domains.create({'name': 'not a domain'})

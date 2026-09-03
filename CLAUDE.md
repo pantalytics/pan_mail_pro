@@ -54,7 +54,8 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_matcher.py` | Thread matching: which Odoo record does this mail belong to |
 | `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |
 | `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
-| `models/pan_mail_internal_domains.py` | Internal domain list + the fail-closed gate on incoming sync |
+| `models/pan_mail_domain.py` | Internal domain list + the fail-closed gate on incoming sync |
+| `models/pan_mail_setup.py` | The three mandatory setup steps and the phase (`setup` / `syncing`) they add up to |
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect |
@@ -160,7 +161,7 @@ Each addon repo can be tested independently with its own `.local/` directory. A 
 │       └── odoo.conf
 ├── odoo-pantalytics/
 │   └── .local/                   ← Per-repo Docker config
-└── odoo-customer-goudsmit/
+└── odoo-customer-example/
     └── .local/                   ← Per-repo Docker config
 ```
 
@@ -178,7 +179,7 @@ Each addon repo can be tested independently with its own `.local/` directory. A 
 |------|-------|--------|
 | pan_mail_pro | `..:/mnt/extra-addons/pan_mail_pro` | Single addon, direct from repo |
 | odoo-pantalytics | `../addons:/mnt/extra-addons` | All addons via submodules |
-| odoo-customer-goudsmit | `../addons:/mnt/extra-addons` | All addons via submodules |
+| odoo-customer-example | `../addons:/mnt/extra-addons` | All addons via submodules |
 
 Key config: `data_dir = /var/lib/odoo` in odoo.conf MUST match the volume mount in docker-compose.yml.
 

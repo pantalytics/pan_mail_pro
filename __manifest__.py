@@ -103,7 +103,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.6.3.1',
+    'version': '19.0.6.4.0',
     'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -119,6 +119,7 @@
         'views/pan_mail_routing_log_views.xml',
         'views/pan_mail_account_views.xml',
         'views/mail_message_views.xml',
+        'views/pan_mail_domain_views.xml',
         'views/pan_mail_coverage_views.xml',
         'views/pan_mail_item_views.xml',
         'views/templates/oauth_templates.xml',
@@ -129,6 +130,7 @@
     ],
     'assets': {
         'web.assets_backend': [
+            'pan_mail_pro/static/src/scss/setup_status.scss',
             'pan_mail_pro/static/src/js/mailbox_list_controller.js',
             'pan_mail_pro/static/src/xml/mailbox_list_view.xml',
         ],

@@ -317,8 +317,8 @@ class MailMail(models.Model):
         means "queued, not sent yet". The chatter renders that as pending, and
         it is the row that outlives the mail: `mail.mail` is garbage-collected
         and `mail.notification` is not, so the table still standing is the one
-        telling the wrong story. At Juffermans Machinebouw seventeen of them
-        still read `ready` eleven days after the mails were cancelled.
+        telling the wrong story. At one customer, seventeen of them still read
+        `ready` eleven days after the mails were cancelled.
 
         Odoo's own state-to-status mapping decides the value, so this cannot
         drift from what the rest of the mail stack believes.
@@ -667,7 +667,7 @@ class MailMail(models.Model):
     @api.model
     def _notification_mailbox(self):
         return self.env['pan.mail.mailbox'].sudo().search([
-            ('mailbox_type', '=', 'notification'),
+            ('is_notification_mailbox', '=', True),
             ('active', '=', True),
         ], limit=1)
 

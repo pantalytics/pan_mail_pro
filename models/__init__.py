@@ -4,7 +4,8 @@ from . import encryption_utils
 from . import mail_provider_client
 from . import providers
 from . import ai
-from . import pan_mail_internal_domains
+from . import pan_mail_domain
+from . import pan_mail_setup
 from . import res_config_settings
 from . import pan_mail_account
 from . import res_users

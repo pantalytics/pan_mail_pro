@@ -21,7 +21,7 @@
                 </header>
             </xpath>
             <xpath expr="//field[@name='login']" position="after">
-                <field name="x_pan_mail_connected" string="Mailbox Connected" optional="hide"/>
+                <field name="x_pan_mail_connected" string="Mailbox Connected" optional="show"/>
             </xpath>
         </field>
     </record>

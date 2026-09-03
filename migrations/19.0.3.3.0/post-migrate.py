@@ -6,6 +6,18 @@ from odoo import SUPERUSER_ID, api
 _logger = logging.getLogger(__name__)
 
 
+def _already_configured(env):
+    """Does this database already have an internal domain list?
+
+    Reads both homes: the pre-19.0.6.4.0 config parameter, which is where a
+    database arriving here still keeps it, and the rows, which is where a
+    database that has already been migrated keeps it.
+    """
+    if env['ir.config_parameter'].sudo().get_param('pan_mail_pro.internal_domains'):
+        return True
+    return bool(env['pan.mail.domain'].sudo().search_count([]))
+
+
 def migrate(cr, version):
     """Pre-fill internal domains so upgraded databases are not blocked.
 
@@ -33,13 +45,22 @@ def migrate(cr, version):
     gate's escape hatch to be missing.
     """
     env = api.Environment(cr, SUPERUSER_ID, {})
-    Domains = env['pan.mail.internal.domains']
+    # 19.0.6.4.0 renamed this model and moved the list into rows, and a database
+    # crossing several releases in one upgrade runs this script against that
+    # newer code — while the list it has to judge is still in the old config
+    # parameter, because the script that moves it runs after this one.
+    Domains = env['pan.mail.domain']
 
-    if Domains.get_domains():
+    if _already_configured(env):
         _logger.info('[Mail Pro] Internal domains already configured, leaving them alone')
         return
 
-    if Domains.sync_internal_enabled():
+    # Read the parameter directly: 19.0.6.4.0 removed the opt-out and the
+    # helper that answered for it, and a database crossing several releases
+    # in one upgrade runs this script against that newer code.
+    opted_out = env['ir.config_parameter'].sudo().get_param(
+        'pan_mail_pro.sync_internal_email') in ('True', 'true', '1')
+    if opted_out:
         _logger.info('[Mail Pro] Internal sync explicitly enabled, nothing to pre-fill')
         return
 

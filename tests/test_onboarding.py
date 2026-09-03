@@ -14,7 +14,7 @@ Two changes are pinned here:
 - internal notifications are queued, not cancelled, while notifications@ is
   still missing
 """
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models.mail_mail import NOTIFICATION_PENDING_REASON
@@ -29,7 +29,7 @@ class TestSmtpTakeover(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.MailServer = cls.env['ir.mail_server'].with_context(active_test=False)
         cls.placeholder = cls.env.ref('pan_mail_pro.mail_server_disabled')
@@ -74,7 +74,7 @@ class TestNotificationGapQueuesMail(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.colleague = cls.env['res.users'].create({
             'name': 'Colleague', 'login': 'colleague@gap.test',
             'email': 'colleague@gap.test', 'notification_type': 'email',
@@ -103,12 +103,19 @@ class TestNotificationGapQueuesMail(TransactionCase):
                          "invitations must survive an unfinished setup")
         self.assertEqual(mail.failure_reason, NOTIFICATION_PENDING_REASON)
 
-    def test_queued_mail_is_visible_in_the_checklist(self):
+    def test_queued_mail_says_why_in_the_mail_queue(self):
+        """The settings page no longer counts these. The reason has to be on
+        the mail itself, or a held invitation is indistinguishable from a
+        failed one for whoever opens the queue."""
         self._notification_to_colleague().send()
 
-        settings = self.env['res.config.settings'].create({})
+        held = self.env['mail.mail'].search([
+            ('state', '=', 'outgoing'),
+            ('failure_reason', '=', NOTIFICATION_PENDING_REASON),
+        ])
 
-        self.assertEqual(settings.x_setup_pending_notifications, 1)
+        self.assertEqual(len(held), 1)
+        self.assertIn('Notification mailbox', held.failure_reason)
 
     def test_a_chosen_sender_is_not_held_for_the_notification_mailbox(self):
         """The hold is for mail that would take the notification route.
@@ -159,55 +166,69 @@ class TestSetupChecklist(TransactionCase):
             'user_id': cls.admin.id,
             'refresh_token': 'fake-refresh', 'access_token': 'fake-access',
         })
-        cls.env['pan.mail.internal.domains'].set_domains(['checklist.test'])
+        cls.env['pan.mail.domain'].set_domains(['checklist.test'])
 
     def _settings(self, vals=None):
         return self.env['res.config.settings'].create(vals or {})
 
-    def test_notification_mailbox_is_one_click(self):
-        settings = self._settings({
-            'x_mail_provider': 'outlook',
-            'x_notification_mailbox_email': 'notifications@checklist.test',
+    def test_the_notification_mailbox_is_whichever_one_is_ticked(self):
+        """Step 5 has no form of its own: it reports the tick box on a mailbox."""
+        self.assertFalse(self._settings().x_setup_notification_done)
+
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'notifications@checklist.test',
+            'mailbox_type': 'personal',
+            'is_notification_mailbox': True,
+            'provider': 'outlook',
+            'owner_user_id': self.admin.id,
         })
 
-        settings.action_create_notification_mailbox()
-
-        mailbox = self.env['pan.mail.mailbox'].search([
-            ('mailbox_type', '=', 'notification'),
-        ])
-        self.assertEqual(mailbox.email, 'notifications@checklist.test')
-        self.assertEqual(mailbox.owner_user_id, self.admin,
-                         "the admin who ran setup owns it — that is why step 3 "
-                         "connects their account first")
-        self.assertEqual(mailbox.provider, 'outlook',
-                         "the mailbox is served by the provider being set up, "
-                         "whichever one that is")
-
-    def test_notification_address_is_prefilled_from_the_domain(self):
         settings = self._settings()
-        self.assertEqual(settings.x_notification_mailbox_email,
-                         'notifications@checklist.test')
+        self.assertTrue(settings.x_setup_notification_done)
+        self.assertEqual(settings.x_notification_mailbox_id, mailbox)
 
-    def test_refuses_a_second_notification_mailbox(self):
-        self._settings({
-            'x_mail_provider': 'outlook',
-            'x_notification_mailbox_email': 'notifications@checklist.test',
-        }).action_create_notification_mailbox()
+    def test_an_oauth_notification_mailbox_needs_a_connected_owner(self):
+        """The step that asked "has anybody signed in" is now this constraint."""
+        stranger = self.env['res.users'].create({
+            'name': 'Not Connected', 'login': 'stranger@checklist.test',
+        })
+        with self.assertRaises(ValidationError):
+            self.env['pan.mail.mailbox'].create({
+                'email': 'notifications@checklist.test',
+                'mailbox_type': 'personal',
+                'is_notification_mailbox': True,
+                'provider': 'outlook',
+                'owner_user_id': stranger.id,
+            })
 
-        with self.assertRaises(UserError):
-            self._settings({
-                'x_mail_provider': 'outlook',
-                'x_notification_mailbox_email': 'other@checklist.test',
-            }).action_create_notification_mailbox()
+    def test_moving_it_is_untick_here_tick_there(self):
+        first = self.env['pan.mail.mailbox'].create({
+            'email': 'notifications@checklist.test',
+            'mailbox_type': 'personal',
+            'is_notification_mailbox': True,
+            'provider': 'outlook',
+            'owner_user_id': self.admin.id,
+        })
+        second = self.env['pan.mail.mailbox'].create({
+            'email': 'system@checklist.test',
+            'mailbox_type': 'personal',
+            'provider': 'outlook',
+            'owner_user_id': self.admin.id,
+        })
 
-    def test_domains_step_accepts_either_answer(self):
-        """Configured domains and a deliberate opt-out both complete the step."""
+        with self.assertRaises(ValidationError):
+            second.is_notification_mailbox = True
+
+        first.is_notification_mailbox = False
+        second.is_notification_mailbox = True
+        self.assertEqual(self._settings().x_notification_mailbox_id, second)
+
+    def test_domains_step_needs_a_domain(self):
+        """The only way to finish step 4 is to name your domains."""
         self.assertTrue(self._settings().x_setup_domains_done)
 
-        self.env['pan.mail.internal.domains'].set_domains([])
+        self.env['pan.mail.domain'].set_domains([])
         self.assertFalse(self._settings().x_setup_domains_done)
-
-        self.assertTrue(self._settings({'x_sync_internal_email': True}).x_setup_domains_done)
 
     def test_suggestion_button_fills_the_domain_field(self):
         self.env['pan.mail.mailbox'].create({
@@ -217,23 +238,12 @@ class TestSetupChecklist(TransactionCase):
 
         settings.action_apply_suggested_internal_domains()
 
-        self.assertIn('suggestme.test', settings.x_internal_domains)
+        self.assertIn('suggestme.test', settings.x_internal_domain_ids.mapped('name'))
 
-    def test_notification_mailbox_needs_a_provider(self):
-        """Step 1 gates step 5: without a provider there is nothing to serve it."""
-        self.env['ir.config_parameter'].sudo().set_param(
-            'pan_mail_pro.setup_provider', ''
-        )
-        with self.assertRaises(UserError):
-            self._settings({
-                'x_notification_mailbox_email': 'notifications@checklist.test',
-            }).action_create_notification_mailbox()
-
-    def test_uncovered_mailbox_domain_surfaces_in_settings(self):
-        self.env['pan.mail.mailbox'].create({
-            'email': 'info@forgotten.test', 'mailbox_type': 'shared',
-        })
+    def test_the_domains_line_shows_the_list(self):
+        """The step shows its answer, not just its heading."""
+        self.env['pan.mail.domain'].set_domains(['one.test', 'two.test'])
 
         settings = self._settings()
 
-        self.assertIn('forgotten.test', settings.x_internal_domains_uncovered)
+        self.assertEqual(settings.x_internal_domains_summary, 'one.test, two.test')

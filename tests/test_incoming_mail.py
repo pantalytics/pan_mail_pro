@@ -21,7 +21,7 @@ class TestInternalDomain(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.processor = cls.env['pan.mail.fetcher']
-        cls.env['pan.mail.internal.domains'].set_domains(['company.com', 'internal.org'])
+        cls.env['pan.mail.domain'].set_domains(['company.com', 'internal.org'])
 
     def test_internal_domain_match(self):
         """Emails from configured domains should be detected as internal."""
@@ -48,25 +48,13 @@ class TestInternalDomain(TransactionCase):
         """When the email domain isn't in the list, it's not internal."""
         self.assertFalse(self.processor._is_internal_domain('user@external.net'))
 
-    def test_per_mailbox_exclude_internal_enabled(self):
-        """With per-mailbox exclude_internal enabled, internal emails are skipped."""
-        mailbox = self.env['pan.mail.mailbox'].create({
-            'email': 'support@company.com',
-            'mailbox_type': 'shared',
-            'exclude_internal': True,  # Default: exclude internal
-        })
-        # Internal email should be skipped
-        self.assertTrue(self.processor._is_internal_domain('user@company.com', mailbox))
-
-    def test_per_mailbox_exclude_internal_disabled(self):
-        """With per-mailbox exclude_internal disabled, internal emails are included."""
+    def test_no_mailbox_can_opt_out_of_the_internal_filter(self):
+        """There is no per-mailbox escape hatch left. Every mailbox filters."""
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'team@company.com',
             'mailbox_type': 'shared',
-            'exclude_internal': False,  # Include internal emails for this mailbox
         })
-        # Internal email should NOT be skipped for this mailbox
-        self.assertFalse(self.processor._is_internal_domain('user@company.com', mailbox))
+        self.assertTrue(self.processor._is_internal_domain('user@company.com', mailbox))
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -184,7 +172,7 @@ class TestAliasRouting(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.processor = cls.env['pan.mail.fetcher']
         cls.partner = cls.env['res.partner'].create({
             'name': 'Test Sender',
@@ -234,7 +222,7 @@ class TestHelpdeskRouting(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         if 'helpdesk.team' not in cls.env:
             raise unittest.SkipTest("Helpdesk module not installed")
         cls.processor = cls.env['pan.mail.fetcher']
@@ -297,7 +285,7 @@ class TestSavepointIsolation(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.processor = cls.env['pan.mail.fetcher']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'inbox@company.test',

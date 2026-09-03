@@ -15,20 +15,22 @@ configured when it was not — and an empty list used to mean "nothing is
 internal", so a database without alias domains synced every internal mail into
 Odoo. That is a data leak, not a missing feature.
 
-The rule now: incoming sync stays switched off until the domains are configured
-or an admin explicitly opts out. Alias domains still feed `suggest_domains()`,
-they just no longer decide anything by themselves.
+The rule now: no mailbox exists until the domains are configured, and mail
+between them is never synced. There is no opt-out, global or per mailbox --
+see ARCHITECTURE.md §9.12. Alias domains still feed `suggest_domains()`, they
+just no longer decide anything by themselves.
 """
 import logging
 import re
 
-from odoo import _, api, models
+from odoo import _, api, fields, models
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
 # Config parameters live under the module's existing namespace.
+# The pre-19.0.6.4.0 home of this list. Only the migration reads it.
 PARAM_DOMAINS = 'pan_mail_pro.internal_domains'
-PARAM_SYNC_INTERNAL = 'pan_mail_pro.sync_internal_email'
 
 _SPLIT_RE = re.compile(r'[\s,;]+')
 
@@ -52,9 +54,49 @@ PUBLIC_MAIL_DOMAINS = frozenset({
 })
 
 
-class PanMailInternalDomains(models.AbstractModel):
-    _name = 'pan.mail.internal.domains'
-    _description = 'Internal Email Domain Configuration'
+class PanMailDomain(models.Model):
+    _name = 'pan.mail.domain'
+    _description = 'Internal Email Domain'
+    _order = 'name'
+    _rec_name = 'name'
+
+    name = fields.Char(
+        string='Domain',
+        required=True,
+        index=True,
+        help='A domain your company owns, e.g. company.com. Mail between these '
+             'domains is never synced into Odoo.',
+    )
+
+    _sql_constraints = [
+        ('name_unique', 'unique(name)', 'That domain is already on the list.'),
+    ]
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Clean on the way in, so nothing downstream has to.
+
+        An admin types `@Company.COM` or pastes a whole address; both are the
+        domain `company.com`, and storing the raw text would put the parsing
+        back at every read.
+        """
+        for vals in vals_list:
+            vals['name'] = self._clean_one(vals.get('name'))
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if 'name' in vals:
+            vals['name'] = self._clean_one(vals['name'])
+        return super().write(vals)
+
+    @api.model
+    def _clean_one(self, raw):
+        parsed = self._parse(raw)
+        if not parsed:
+            raise ValidationError(_(
+                '%s is not a domain. Enter something like company.com.'
+            ) % (raw or ''))
+        return parsed[0]
 
     # -------------------------------------------------------------------------
     # Reading / writing the configuration
@@ -79,21 +121,16 @@ class PanMailInternalDomains(models.AbstractModel):
     @api.model
     def get_domains(self):
         """The configured internal domains, lowercase, no duplicates."""
-        raw = self.env['ir.config_parameter'].sudo().get_param(PARAM_DOMAINS, '')
-        return self._parse(raw)
+        return self.sudo().search([]).mapped('name')
 
     @api.model
     def set_domains(self, domains):
-        self.env['ir.config_parameter'].sudo().set_param(
-            PARAM_DOMAINS, ', '.join(self._parse(', '.join(domains)))
-        )
-
-    @api.model
-    def sync_internal_enabled(self):
-        """True when an admin deliberately turned the internal filter off."""
-        return self.env['ir.config_parameter'].sudo().get_param(
-            PARAM_SYNC_INTERNAL
-        ) in ('True', 'true', '1')
+        """Replace the whole list. The one writer that is not a person."""
+        wanted = self._parse(', '.join(domains))
+        existing = self.sudo().search([])
+        (existing.filtered(lambda d: d.name not in wanted)).unlink()
+        have = set(existing.exists().mapped('name'))
+        self.sudo().create([{'name': d} for d in wanted if d not in have])
 
     @api.model
     def is_configured(self):
@@ -116,7 +153,7 @@ class PanMailInternalDomains(models.AbstractModel):
         empty database has no domains to derive and nobody to protect, and the
         SMTP takeover waits for the same moment for the same reason.
         """
-        if self.is_configured() or self.sync_internal_enabled():
+        if self.is_configured():
             return None
         return _(
             'No internal email domains are configured. Mail Pro cannot be used '
@@ -124,30 +161,8 @@ class PanMailInternalDomains(models.AbstractModel):
             'customers — and every internal email, confidential ones included, '
             'would be copied into Odoo.\n\n'
             'Go to Settings → Mail Pro → Internal Domains and enter your company '
-            'domains, or explicitly enable "Sync internal email" if that is what '
-            'you want.'
+            'domains.'
         )
-
-    @api.model
-    def completeness_error(self):
-        """Which of our own domains the list is missing, or None when none.
-
-        Separate from `configuration_error()` because they fail differently:
-        one says the list is absent, this one says the list is wrong. The
-        second is the more dangerous of the two, because a database with a
-        half-filled list passes every check that asks whether it is configured.
-        """
-        missing = self.uncovered_domains()
-        if not missing:
-            return None
-        return _(
-            'These domains belong to your company but are not in the internal '
-            'domain list: %s\n\n'
-            'Mail sent to or from them would be treated as customer '
-            'correspondence and copied into Odoo. Add them, or use "Apply '
-            'suggested" to fill the list from the addresses already in this '
-            'database.'
-        ) % ', '.join(missing)
 
     # -------------------------------------------------------------------------
     # The question everything else asks
@@ -168,14 +183,11 @@ class PanMailInternalDomains(models.AbstractModel):
     def should_skip(self, email, mailbox=None):
         """Should this incoming message be skipped as internal?
 
-        Three ways to answer "no": the global opt-out is on, this mailbox opted
-        out (a team mailbox that wants internal forwards logged), or the address
-        simply is not ours.
+        One answer, for every mailbox: our own domains are never synced. The
+        `mailbox` argument is kept because every caller has one and a future
+        rule may need it, but nothing about a mailbox can turn the filter off
+        any more — see ARCHITECTURE.md §9.12.
         """
-        if self.sync_internal_enabled():
-            return False
-        if mailbox is not None and mailbox and not mailbox.exclude_internal:
-            return False
         return self.is_internal(email)
 
     # -------------------------------------------------------------------------
@@ -189,8 +201,8 @@ class PanMailInternalDomains(models.AbstractModel):
         mailbox is ours by definition. So is an internal user's own address --
         and that is the source that catches a second domain, because a company
         that acquired another one has colleagues on it long before it has
-        mailboxes on it. Juffermans Machinebouw runs every mailbox on one
-        domain and has a colleague on a second; a list built from mailboxes
+        mailboxes on it. One customer runs every mailbox on one domain and
+        has a colleague on a second; a list built from mailboxes
         alone reads as complete and treats that colleague as an outsider.
 
         Portal and public users are excluded: a customer with a login is not
@@ -229,18 +241,3 @@ class PanMailInternalDomains(models.AbstractModel):
 
         return self._parse(', '.join(filter(None, candidates)))
 
-    @api.model
-    def uncovered_domains(self):
-        """Our own domains that the configured list does not carry.
-
-        A configured list is not the same as a complete one, and only the
-        second is worth anything: a domain we demonstrably own that is missing
-        from the list has all of its internal mail treated as correspondence
-        and synced. That is the original leak exactly, on a database that
-        passes every "is it configured" check.
-        """
-        if not self.is_configured():
-            return []
-        configured = set(self.get_domains())
-        own = self._parse(', '.join(self._own_addresses()))
-        return [d for d in own if d not in configured]

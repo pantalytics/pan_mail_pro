@@ -98,7 +98,7 @@ class ImapSmtpClient(models.AbstractModel):
     # mailbox type is serviceable as long as somebody enters its credentials.
     supports_shared_mailbox = False
     supports_delegation = False
-    supported_mailbox_types = ('personal', 'shared', 'notification')
+    supported_mailbox_types = ('personal', 'shared')
     # There is no consent screen: credentials are a server, a login and a
     # password, typed in once on the account.
     uses_oauth = False

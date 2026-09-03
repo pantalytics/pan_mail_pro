@@ -107,8 +107,8 @@ class TestSystemNotifications(MailProTestCase):
 
         `mail.mail` is garbage-collected and `mail.notification` is not, so the
         row that survives is the one anybody reading the database later sees.
-        At Juffermans Machinebouw seventeen of them read `ready` eleven days
-        after the mails were cancelled.
+        At one customer, seventeen of them read `ready` eleven days after the
+        mails were cancelled.
         """
         no_email_user = self._silent('res.users').create({
             'name': 'Also No Email',

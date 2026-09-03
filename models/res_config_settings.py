@@ -1,24 +1,26 @@
 # -*- coding: utf-8 -*-
 """The setup page.
 
-Six steps in a fixed order, each of which reports whether the *next* one can
-succeed — not whether somebody filled in a field. A notification mailbox whose
-owner's token expired is not a done step.
+Five mandatory steps in a fixed order, each of which reports whether the *next*
+one can succeed — not whether somebody filled in a field. A notification mailbox
+whose owner's token expired is not a done step. The steps themselves, and the
+rule that turns them into a phase, live in `pan_mail_setup.py`; this file is the
+form in front of them.
 
 The provider is asked first, because the steps genuinely differ per provider:
 Azure wants a tenant, Google does not, and IMAP has no global credential at all.
 Everything from step 4 on is provider-independent and never asks again.
+
+Nothing else lives here. Inviting colleagues to connect is a real job but not a
+setup step, and its button is on the user list, next to the column that says who
+is still missing.
 """
 import logging
 
-from odoo import api, fields, models, _
-from odoo.exceptions import UserError
+from odoo import api, fields, models
 
 from . import encryption_utils
-from . import mail_mail
-from . import pan_mail_internal_domains as internal_domains
-from .pan_mail_mailbox import SYNCING_MODES
-from .ai.pan_mail_ai import AI_SELECTION
+from .pan_mail_setup import PROVIDER_CREDENTIALS
 from .mail_provider_client import (
     PARAM_SETUP_PROVIDER,
     PROVIDER_SELECTION,
@@ -27,19 +29,6 @@ from .mail_provider_client import (
 )
 
 _logger = logging.getLogger(__name__)
-
-# Where each provider's application credentials live. The client id is a plain
-# config parameter; the secret is Fernet-encrypted under its own key.
-PROVIDER_CREDENTIALS = {
-    'outlook': {
-        'client_id': 'pan_mail_pro.microsoft_client_id',
-        'secret': 'pan_mail_pro.microsoft_client_secret_encrypted',
-    },
-    'gmail': {
-        'client_id': 'pan_mail_pro.google_client_id',
-        'secret': 'pan_mail_pro.google_client_secret_encrypted',
-    },
-}
 
 # Shown instead of a secret that is already stored. Writing it back is a no-op,
 # which is what lets the form round-trip without the admin retyping it.
@@ -108,70 +97,44 @@ class ResConfigSettings(models.TransientModel):
     #
     # The one setting whose absence leaks data, so it is a gate rather than a
     # preference: incoming sync cannot be switched on until it is answered, one
-    # way or the other. See pan_mail_internal_domains.py.
+    # way or the other. See pan_mail_domain.py.
     # -------------------------------------------------------------------------
-    x_internal_domains = fields.Char(
+    x_internal_domain_ids = fields.Many2many(
+        'pan.mail.domain',
         string='Internal Domains',
-        config_parameter=internal_domains.PARAM_DOMAINS,
-        help='Your own email domains, comma separated (e.g. company.com, company.be). '
-             'Email from these domains is not synced into Odoo.',
+        help='Your own email domains. Mail between them is never synced into Odoo.',
     )
-    x_sync_internal_email = fields.Boolean(
-        string='Sync Internal Email',
-        config_parameter=internal_domains.PARAM_SYNC_INTERNAL,
-        help='Turn the internal filter off entirely and sync email between '
-             'colleagues into Odoo as well. Everyone with access to a record '
-             'can then read that correspondence.',
-    )
+    x_internal_domains_summary = fields.Char(compute='_compute_internal_domains_status')
     x_internal_domains_suggested = fields.Char(compute='_compute_internal_domains_status')
-    x_internal_domains_uncovered = fields.Char(compute='_compute_internal_domains_status')
-    x_internal_sync_mailbox_count = fields.Integer(compute='_compute_internal_domains_status')
 
     # -------------------------------------------------------------------------
     # Step 5 — the notification mailbox
     # -------------------------------------------------------------------------
-    x_notification_mailbox_email = fields.Char(
-        string='Notification Address',
-        default=lambda self: self._default_notification_mailbox_email(),
-        help='Address system emails are sent from, e.g. notifications@company.com',
-    )
-
-    # -------------------------------------------------------------------------
-    # AI triage
-    #
-    # Bring your own key: the call goes from this database straight to the AI
-    # provider. Pantalytics never proxies it, which is what lets the manifest
-    # keep saying no data reaches the module author, and what keeps Pantalytics
-    # out of every customer's processor chain.
-    # -------------------------------------------------------------------------
-    x_pan_ai_backend = fields.Selection(
-        AI_SELECTION,
-        string='AI Triage',
-        default='none',
-        config_parameter='pan_mail_pro.ai_backend',
-        help='Suggests where unrouted mail probably belongs. Off by default. '
-             'Only an email envelope is sent - never a body or an attachment.',
-    )
-    x_pan_ai_api_key = fields.Char(
-        string='AI API Key',
-        config_parameter='pan_mail_pro.ai_api_key',
-        help='Your own API key with the AI provider. Billing and data '
-             'processing are between you and them.',
+    x_notification_mailbox_id = fields.Many2one(
+        'pan.mail.mailbox',
+        string='Notification Mailbox',
+        compute='_compute_setup_status',
+        help='The mailbox with "Notification Mailbox" ticked, if there is one.',
     )
 
     # -------------------------------------------------------------------------
     # Checklist state
     # -------------------------------------------------------------------------
+    # A mailbox that stopped, in one sentence, on the mailboxes line of the
+    # checklist. Empty when nothing is wrong.
+    x_mailboxes_alert = fields.Char(compute='_compute_setup_status')
+
+    # Every step is one line: a status icon, its name, the answer itself — not
+    # just the heading, or you have to open it again to see what you picked —
+    # and the way to the place it is changed. For the domains and the mailboxes
+    # that place is their own table; the provider is the only one that opens in
+    # place, which is what this boolean does. Plain boolean on the transient
+    # record, so a click is a client-side re-render and never saves the form;
+    # saving rebuilds the record, which is what closes it again.
+    x_edit_provider = fields.Boolean(default=False)
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
-    x_setup_users_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_complete = fields.Boolean(compute='_compute_setup_status')
-    x_setup_users_total = fields.Integer(compute='_compute_setup_status')
-    x_setup_users_connected = fields.Integer(compute='_compute_setup_status')
-    x_setup_pending_notifications = fields.Integer(
-        compute='_compute_setup_status',
-        string='Emails Waiting for Setup',
-    )
 
     # -------------------------------------------------------------------------
     # Provider state
@@ -243,6 +206,8 @@ class ResConfigSettings(models.TransientModel):
         there is genuinely nothing stored.
         """
         res = super().get_values()
+        res['x_internal_domain_ids'] = [
+            (6, 0, self.env['pan.mail.domain'].sudo().search([]).ids)]
         ICP = self.env['ir.config_parameter'].sudo()
         if not ICP.get_param(PARAM_SETUP_PROVIDER):
             for provider, params in PROVIDER_CREDENTIALS.items():
@@ -290,191 +255,61 @@ class ResConfigSettings(models.TransientModel):
     # Internal domains
     # -------------------------------------------------------------------------
 
-    @api.depends('x_internal_domains')
+    @api.depends('x_internal_domain_ids')
     def _compute_internal_domains_status(self):
-        Domains = self.env['pan.mail.internal.domains']
-        suggested = ', '.join(Domains.suggest_domains())
-        uncovered = ', '.join(Domains.uncovered_domains())
-        internal_sync_count = self.env['pan.mail.mailbox'].sudo().search_count([
-            ('exclude_internal', '=', False),
-            ('sync_mode', 'in', SYNCING_MODES),
-        ])
-        for record in self:
-            # Read the form's value, not the saved parameter: the admin may be
-            # typing domains right now and the warnings should follow along.
-            configured = bool(Domains._parse(record.x_internal_domains))
-            record.x_internal_domains_suggested = suggested
-            record.x_internal_domains_uncovered = uncovered if configured else ''
-            record.x_internal_sync_mailbox_count = internal_sync_count
+        """The list as one line, and what is left to suggest.
 
-    def set_values(self):
-        """Refuse a domain list that leaves one of our own domains out.
-
-        Checked after `super()` rather than before, so the question is asked of
-        the value being saved rather than the one on the form; the raise rolls
-        the write back with it.
-
-        Only a *configured* list can be incomplete, so this never blocks the
-        first save on an empty database. Absent and incomplete are two different
-        failures with two different gates: the mailbox constraint catches the
-        first, this catches the second, and the second is the more dangerous
-        because it passes every check that asks whether the list is configured.
+        Both read the record's own selection rather than the stored rows: the
+        admin may have just clicked "Add" and the line has to follow along
+        without a save.
         """
-        super().set_values()
-        error = self.env['pan.mail.internal.domains'].completeness_error()
-        if error:
-            raise UserError(error)
+        suggested = self.env['pan.mail.domain'].suggest_domains()
+        for record in self:
+            selected = record.x_internal_domain_ids.mapped('name')
+            record.x_internal_domains_summary = ', '.join(sorted(selected))
+            record.x_internal_domains_suggested = ', '.join(
+                d for d in suggested if d not in selected)
+
 
     def action_apply_suggested_internal_domains(self):
-        """Fill the domain list with everything we can derive from the database.
+        """Add every domain we can derive from the database to the list.
 
-        The admin still has to save, so this is a suggestion they confirm rather
-        than a setting that appears behind their back. Returns nothing on
-        purpose: the client re-reads this same transient record, so the filled-in
-        field survives — re-opening the settings action would build a fresh one
-        from the saved parameters and throw this away.
+        The click is the confirmation: the domains are rows, so this creates
+        them and the settings page has nothing left to save. Returns nothing on
+        purpose — the client re-reads this same transient record, so the line
+        redraws with the new domains on it.
         """
         self.ensure_one()
-        self.x_internal_domains = self.x_internal_domains_suggested
+        Domain = self.env['pan.mail.domain']
+        names = Domain.suggest_domains()
+        existing = Domain.sudo().search([('name', 'in', names)])
+        missing = [n for n in names if n not in existing.mapped('name')]
+        self.x_internal_domain_ids |= existing | Domain.sudo().create(
+            [{'name': n} for n in missing])
 
     # -------------------------------------------------------------------------
     # Checklist
     # -------------------------------------------------------------------------
 
-    def _mail_pro_users(self):
-        """Internal users who are expected to connect a mailbox.
-
-        OdooBot is excluded: it is an internal user that will never authorize
-        anything, and counting it would leave step 6 permanently at "almost".
-        """
-        domain = [('share', '=', False), ('active', '=', True)]
-        odoobot = self.env.ref('base.user_root', raise_if_not_found=False)
-        if odoobot:
-            domain.append(('id', '!=', odoobot.id))
-        return self.env['res.users'].sudo().search(domain)
-
-    def _notification_mailbox_usable(self):
-        """Not just "does the record exist" — can it actually send?"""
-        mailbox = self.env['mail.mail']._notification_mailbox()
-        return bool(mailbox) and mailbox._has_working_credentials()
-
     @api.depends('x_mail_provider', 'x_provider_credentials_set', 'x_provider_connected',
-                 'x_internal_domains', 'x_sync_internal_email')
+                 'x_internal_domain_ids')
     def _compute_setup_status(self):
-        users = self._mail_pro_users()
-        users_connected = len(users.filtered('x_pan_mail_connected'))
-        notification_ok = self._notification_mailbox_usable()
+        """Ask `pan.mail.setup` for the phase, with the form's answers on top.
 
-        pending = self.env['mail.mail'].sudo().search_count([
-            ('state', '=', 'outgoing'),
-            ('failure_reason', '=', mail_mail.NOTIFICATION_PENDING_REASON),
-        ])
-
-        Domains = self.env['pan.mail.internal.domains']
-        for record in self:
-            record.x_setup_domains_done = (
-                bool(Domains._parse(record.x_internal_domains)) or record.x_sync_internal_email
-            )
-            record.x_setup_notification_done = notification_ok
-            record.x_setup_users_total = len(users)
-            record.x_setup_users_connected = users_connected
-            record.x_setup_users_done = bool(users) and users_connected == len(users)
-            record.x_setup_pending_notifications = pending
-            record.x_setup_complete = bool(
-                record.x_mail_provider
-                and record.x_provider_credentials_set
-                and record.x_provider_connected
-                and record.x_setup_domains_done
-                and notification_ok
-            )
-
-    # -------------------------------------------------------------------------
-    # Actions
-    # -------------------------------------------------------------------------
-
-    def action_connect_provider(self):
-        """Connect the admin's own account to the selected provider."""
-        self.ensure_one()
-        return self.env.user.action_connect_mailbox(self.x_mail_provider)
-
-    def _default_notification_mailbox_email(self):
-        """Pre-fill notifications@<your domain> so step 5 is one click."""
-        Domains = self.env['pan.mail.internal.domains']
-        domains = Domains.get_domains() or Domains.suggest_domains()
-        return f'notifications@{domains[0]}' if domains else False
-
-    def action_create_notification_mailbox(self):
-        """Create notifications@ in one click, owned by whoever is setting up.
-
-        Step 3 (connect your own account) comes first precisely so this button
-        has a connected owner to point at — that is what breaks the
-        chicken-and-egg where you need a working notification mailbox to invite
-        the users whose accounts you need.
+        Two of the three answers can change while the admin is still typing,
+        so the record's own values win for those; the rest is what the
+        database says. Without that overlay the page would keep reporting
+        "not done" for a credential that is on screen but not yet saved.
         """
-        self.ensure_one()
-        email = (self.x_notification_mailbox_email or '').strip()
-        if not email:
-            raise UserError(_('Please enter the address system emails should be sent from.'))
-        if not self.x_mail_provider:
-            raise UserError(_('Choose your email provider first.'))
-        if not self.env.user.x_pan_mail_connected:
-            raise UserError(_(
-                'Connect your own email account first — the notification mailbox '
-                'sends with its owner\'s credentials.'
-            ))
+        Setup = self.env['pan.mail.setup']
+        alert = Setup.mailbox_alert()
 
-        Mailbox = self.env['pan.mail.mailbox']
-        existing = Mailbox.with_context(active_test=False).search([
-            ('mailbox_type', '=', 'notification'),
-        ], limit=1)
-        if existing:
-            raise UserError(_(
-                'A Notification mailbox already exists (%s). Edit that one instead.'
-            ) % existing.email)
+        for record in self:
+            answers = Setup.answers(provider=record.x_mail_provider)
+            answers['provider'] = bool(record.x_mail_provider) and record.x_provider_credentials_set
+            answers['domains'] = bool(record.x_internal_domain_ids)
 
-        mailbox = Mailbox.create({
-            'email': email,
-            'mailbox_type': 'notification',
-            'provider': self.x_mail_provider,
-            'owner_user_id': self.env.user.id,
-        })
-        _logger.info(f"[Mail Pro] Created notification mailbox {mailbox.email} from setup checklist")
-
-        return self._notify(
-            _('Notification Mailbox Created'),
-            _('System emails are now sent from %s.') % mailbox.email,
-            # Stay on the settings page — navigating to the mailbox form would
-            # discard whatever else the admin has typed.
-            reload=True,
-        )
-
-    def _unconnected_users(self):
-        return self._mail_pro_users().filtered(lambda u: not u.x_pan_mail_connected)
-
-    def action_open_unconnected_users(self):
-        """Show exactly who still has to connect their mailbox."""
-        self.ensure_one()
-        return {
-            'type': 'ir.actions.act_window',
-            'name': _('Users Without a Connected Mailbox'),
-            'res_model': 'res.users',
-            'view_mode': 'list,form',
-            'domain': [('id', 'in', self._unconnected_users().ids)],
-            'target': 'current',
-        }
-
-    def action_send_connect_invites(self):
-        """Ask every user who has not connected yet to do so."""
-        self.ensure_one()
-        sent = self._unconnected_users()._send_connect_invites()
-        return self._notify(
-            _('Invitations Sent'),
-            _('Asked %d user(s) to connect their mailbox.') % sent,
-        )
-
-    @staticmethod
-    def _notify(title, message, reload=False):
-        params = {'title': title, 'message': message, 'type': 'success', 'sticky': False}
-        if reload:
-            params['next'] = {'type': 'ir.actions.client', 'tag': 'soft_reload'}
-        return {'type': 'ir.actions.client', 'tag': 'display_notification', 'params': params}
+            record.x_setup_domains_done = answers['domains']
+            record.x_setup_notification_done = answers['mailboxes']
+            record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()
+            record.x_mailboxes_alert = alert

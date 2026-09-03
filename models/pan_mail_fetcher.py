@@ -105,6 +105,18 @@ class PanMailFetcher(models.AbstractModel):
             ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
         ]).filtered(lambda m: m._has_working_credentials())
 
+        # Setup is not a warning, it is a phase: nothing is carried until all
+        # three steps are answered, and emptying the internal domain list
+        # later puts the module straight back into it. Recorded on the mailboxes
+        # rather than only logged -- a sync that stopped has to be visible
+        # where somebody looks, which is the mailbox, not the server log.
+        setup = self.env['pan.mail.setup']
+        if not setup.is_ready():
+            reason = setup.not_ready_error()
+            _logger.info('[Incoming Mail] %s', reason)
+            mailboxes.write({'state': 'error', 'error_message': reason})
+            return
+
         _logger.info(f"[Incoming Mail] Starting sync for {len(mailboxes)} mailbox(es)")
 
         for mailbox in mailboxes:
@@ -141,7 +153,7 @@ class PanMailFetcher(models.AbstractModel):
         """
         _logger.info(f"[Incoming Mail] Processing mailbox: {mailbox.email}")
 
-        gate = self.env['pan.mail.internal.domains'].configuration_error()
+        gate = self.env['pan.mail.domain'].configuration_error()
         if gate:
             raise UserError(gate)
 
@@ -378,8 +390,8 @@ class PanMailFetcher(models.AbstractModel):
         inbox. The old reasoning was half right: the sender of a sent item is
         always us, so checking the *sender* there would skip everything. The
         answer to that is to check the counterpart, not to stop checking — and
-        for months it was the second one. Every mail in the Juffermans incident
-        came through this gap.
+        for months it was the second one. Every mail in the incident that
+        produced this gate came through this gap.
 
         With several recipients the rule is "any external party means this is
         correspondence": the first external one becomes the counterpart and the
@@ -748,18 +760,18 @@ class PanMailFetcher(models.AbstractModel):
         """
         Check if email is from an internal company domain.
 
-        The domain list, the global opt-out and the per-mailbox 'Exclude
-        Internal Emails' setting all live in `pan.mail.internal.domains`; this
-        is only the call site.
+        The domain list lives in `pan.mail.domain`; this is only the
+        call site. There is no way to switch the filter off — see
+        ARCHITECTURE.md §9.12.
 
         Args:
             email: Email address to check
-            mailbox: pan.mail.mailbox record (optional, for per-mailbox setting)
+            mailbox: pan.mail.mailbox record, passed through unchanged
 
         Returns:
             bool: True if email should be skipped as internal
         """
-        return self.env['pan.mail.internal.domains'].should_skip(email, mailbox)
+        return self.env['pan.mail.domain'].should_skip(email, mailbox)
 
     def _find_partner(self, email):
         """

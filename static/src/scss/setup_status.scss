@@ -1,0 +1,89 @@
+// Settings → Mail Pro.
+//
+// There is no status banner: the checklist is the status. Three lines in one
+// shape — a coloured dot saying where the step stands, its name, the answer,
+// and the way to the place it is changed. Palette from brand.pantalytics.com.
+
+// Info icons. The explanation is one hover away, not printed under every
+// field: a settings page people read once should not read like a manual.
+.fa-info-circle[title] {
+    cursor: help;
+    opacity: 0.45;
+
+    &:hover { opacity: 0.9; }
+}
+
+// One step, one line. Baymard's accordion-checkout finding applies here too:
+// a collapsed step must show the answer, not only its heading, or the reader
+// has to reopen it to see what they picked.
+//
+// The dot is the whole status. One shape in three colours rather than three
+// glyphs, because a column of different icons reads as a column of different
+// kinds of thing.
+.o_mailpro_step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid rgba(0, 29, 33, 0.06);
+
+    .o_mailpro_dot {
+        flex: 0 0 auto;
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 50%;
+        // Line height of the name, so the dot sits on the first line however
+        // many lines the step grows to.
+        margin-top: 0.45rem;
+    }
+
+    .o_mailpro_dot_ok { background: #1f9d63; }
+    .o_mailpro_dot_warn { background: #c0392b; }
+
+    // Not done is not the same as wrong, and a setup page that opens in red
+    // reads as broken. An outline, not a fill.
+    .o_mailpro_dot_todo {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px rgba(0, 29, 33, 0.3);
+    }
+
+    .o_mailpro_step_body {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .o_mailpro_step_head {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .o_mailpro_step_name {
+        font-weight: 600;
+        color: #001d21;
+    }
+
+    .o_mailpro_step_value {
+        color: rgba(0, 29, 33, 0.6);
+        min-width: 0;
+    }
+
+    // Anything longer than an answer: a warning, or the fix for one. Under the
+    // name rather than beside it, so a long sentence cannot push the arrow off
+    // the line or turn the column of names into a ragged edge.
+    .o_mailpro_step_msg {
+        margin-top: 0.2rem;
+        font-size: 0.9em;
+        color: rgba(0, 29, 33, 0.6);
+    }
+
+    .o_mailpro_msg_warn {
+        color: #c0392b;
+    }
+
+    .o_mailpro_step_edit {
+        flex: 0 0 auto;
+        margin-left: auto;
+    }
+}
