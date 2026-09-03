@@ -164,27 +164,6 @@ class PanMailDomain(models.Model):
             'domains.'
         )
 
-    @api.model
-    def completeness_error(self):
-        """Which of our own domains the list is missing, or None when none.
-
-        Separate from `configuration_error()` because they fail differently:
-        one says the list is absent, this one says the list is wrong. The
-        second is the more dangerous of the two, because a database with a
-        half-filled list passes every check that asks whether it is configured.
-        """
-        missing = self.uncovered_domains()
-        if not missing:
-            return None
-        return _(
-            'These domains belong to your company but are not in the internal '
-            'domain list: %s\n\n'
-            'Mail sent to or from them would be treated as customer '
-            'correspondence and copied into Odoo. Add them, or use "Apply '
-            'suggested" to fill the list from the addresses already in this '
-            'database.'
-        ) % ', '.join(missing)
-
     # -------------------------------------------------------------------------
     # The question everything else asks
     # -------------------------------------------------------------------------
@@ -262,22 +241,3 @@ class PanMailDomain(models.Model):
 
         return self._parse(', '.join(filter(None, candidates)))
 
-    @api.model
-    def own_domains(self):
-        """Every domain this database can demonstrate belongs to the company."""
-        return self._parse(', '.join(self._own_addresses()))
-
-    @api.model
-    def uncovered_domains(self):
-        """Our own domains that the configured list does not carry.
-
-        A configured list is not the same as a complete one, and only the
-        second is worth anything: a domain we demonstrably own that is missing
-        from the list has all of its internal mail treated as correspondence
-        and synced. That is the original leak exactly, on a database that
-        passes every "is it configured" check.
-        """
-        if not self.is_configured():
-            return []
-        configured = set(self.get_domains())
-        return [d for d in self.own_domains() if d not in configured]

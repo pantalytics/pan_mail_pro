@@ -204,28 +204,21 @@ class TestInternalDomainSuggestions(TransactionCase):
     def test_mailbox_domains_are_suggested(self):
         self.assertIn('suggested.test', self.Domains.suggest_domains())
 
-    def test_uncovered_mailbox_domain_is_reported(self):
-        """A mailbox we send from is ours by definition — a list missing it is wrong."""
+    def test_a_mailbox_domain_is_suggested_whatever_is_configured(self):
+        """The suggestion describes the database, not the current list: an
+        admin who typed one domain still gets offered the rest."""
         self.Domains.set_domains(['elsewhere.test'])
-        self.assertIn('suggested.test', self.Domains.uncovered_domains())
-
-    def test_nothing_uncovered_when_list_matches(self):
-        """Everything the database can demonstrate is ours, not only the
-        mailbox: the internal users' own domains count too, which is the whole
-        point of the check."""
-        self.Domains.set_domains(self.Domains.suggest_domains())
-        self.assertEqual(self.Domains.uncovered_domains(), [])
+        self.assertIn('suggested.test', self.Domains.suggest_domains())
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestInternalDomainCompleteness(TransactionCase):
-    """Configured is not the same as complete, and only complete is worth much.
+class TestInternalDomainSuggestion(TransactionCase):
+    """Where the suggested domains come from, and what they leave out.
 
-    A list that names the obvious domain and misses a second one passes every
-    check that asks whether it is configured, and then treats a colleague on
-    that second domain as a customer. That is the original leak, on a database
-    nothing objects to. The shape is: every mailbox on one domain, a colleague
-    on another.
+    A list built from mailboxes alone misses a company that acquired another
+    one: it has colleagues on the second domain long before it has mailboxes
+    there. The users are the source that matters. The shape is: every mailbox
+    on one domain, a colleague on another.
     """
 
     @classmethod
@@ -268,26 +261,17 @@ class TestInternalDomainCompleteness(TransactionCase):
         self.assertTrue(portal.share, "fixture must be a share user to prove this")
         self.assertNotIn('customer.test', self.Domains.suggest_domains())
 
-    def test_a_list_missing_our_own_domain_is_incomplete(self):
-        self.Domains.set_domains(['first.test'])
-
-        missing = self.Domains.uncovered_domains()
-
-        self.assertIn('second.test', missing)
-        self.assertIsNotNone(self.Domains.completeness_error())
-
-    def test_applying_the_suggestion_always_makes_the_list_complete(self):
-        """The property the "Apply suggested" button promises.
+    def test_applying_the_suggestion_carries_every_domain_it_named(self):
+        """The property the "Add" button promises.
 
         Hardcoding the expected domains would test this fixture rather than the
         rule: any database carries users the fixture did not create, and the
-        real question is whether one click can ever leave the admin with a list
-        the save still refuses.
+        real question is whether one click puts all of them on the list.
         """
-        self.Domains.set_domains(self.Domains.suggest_domains())
+        suggested = self.Domains.suggest_domains()
+        self.Domains.set_domains(suggested)
 
-        self.assertEqual(self.Domains.uncovered_domains(), [])
-        self.assertIsNone(self.Domains.completeness_error())
+        self.assertTrue(set(suggested) <= set(self.Domains.get_domains()))
 
     def test_a_personal_address_does_not_drag_its_provider_in(self):
         """A colleague whose Odoo login is a personal address must not put a
@@ -301,15 +285,13 @@ class TestInternalDomainCompleteness(TransactionCase):
         })
 
         self.assertNotIn('gmail.com', self.Domains.suggest_domains())
-        self.assertNotIn('gmail.com', self.Domains.uncovered_domains())
 
-    def test_an_empty_list_is_absent_rather_than_incomplete(self):
-        """Two different failures with two different gates. This one is the
-        mailbox constraint's job, and saying both at once would be noise."""
+    def test_an_empty_list_is_the_one_thing_that_is_refused(self):
+        """Absent is a gate; anything else about the list is the admin's
+        choice. A mailbox on a domain that is not listed is treated as
+        external, which is the setting doing its job, not a mistake."""
         self.Domains.set_domains([])
 
-        self.assertEqual(self.Domains.uncovered_domains(), [])
-        self.assertIsNone(self.Domains.completeness_error())
         self.assertIsNotNone(self.Domains.configuration_error())
 
     def _settings_with(self, domains):
@@ -317,15 +299,6 @@ class TestInternalDomainCompleteness(TransactionCase):
         return self.env['res.config.settings'].create({
             'x_internal_domain_ids': [(6, 0, rows.ids)],
         })
-
-    def test_saving_settings_refuses_an_incomplete_list(self):
-        with self.assertRaises(UserError):
-            self._settings_with(['first.test']).set_values()
-
-    def test_saving_settings_accepts_a_complete_list(self):
-        self._settings_with(self.Domains.suggest_domains()).set_values()
-
-        self.assertIn('second.test', self.Domains.get_domains())
 
     def test_saving_settings_never_deletes_a_domain(self):
         """The list is edited in its own table now, so a settings page built

@@ -15,6 +15,7 @@
                     <field name="x_setup_domains_done" invisible="1"/>
                     <field name="x_setup_notification_done" invisible="1"/>
                     <field name="x_setup_complete" invisible="1"/>
+                    <field name="x_internal_domain_ids" invisible="1" widget="many2many_tags"/>
 
                     <!-- The three steps, in one shape: a coloured dot on the
                          left, the name, the answer, and the way to the place you
@@ -155,9 +156,7 @@
 
                     <div class="o_mailpro_step">
                         <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
-                              invisible="not x_setup_domains_done or x_internal_domains_uncovered"/>
-                        <span class="o_mailpro_dot o_mailpro_dot_warn" title="Attention needed"
-                              invisible="not x_internal_domains_uncovered"/>
+                              invisible="not x_setup_domains_done"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
                               invisible="x_setup_domains_done"/>
                         <div class="o_mailpro_step_body">
@@ -165,20 +164,18 @@
                                 <span class="o_mailpro_step_name">2. Internal Domains</span>
                                 <i class="fa fa-info-circle text-muted" title="One row per domain your company owns, e.g. company.com. Mail between them is never synced into Odoo, and no mailbox can be created until at least one is listed."/>
                                 <span class="o_mailpro_step_value" invisible="not x_setup_domains_done">
-                                    <field name="x_internal_domain_ids" nolabel="1" readonly="1" widget="many2many_tags"/>
+                                    <field name="x_internal_domains_summary" nolabel="1" readonly="1"/>
                                 </span>
                                 <span class="o_mailpro_step_value" invisible="x_setup_domains_done">Not set yet</span>
                             </div>
-                            <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_internal_domains_uncovered">
-                                Mailboxes on
-                                <field name="x_internal_domains_uncovered" class="d-inline" readonly="1" nolabel="1"/>
-                                are treated as external.
-                            </div>
-                            <!-- The one fix worth a line of its own: the domains
-                                 can be read off the addresses already in the
-                                 database, so neither an empty list nor an
-                                 incomplete one has to be typed. -->
-                            <div class="o_mailpro_step_msg" invisible="not x_internal_domains_suggested">
+                            <!-- Only while the list is empty: the domains can be
+                                 read off the addresses already in the database,
+                                 so nobody has to type them on day one. A list
+                                 that has something in it is the admin's, and
+                                 offering additions to it forever would read as
+                                 a complaint about a deliberate choice. -->
+                            <div class="o_mailpro_step_msg"
+                                 invisible="x_setup_domains_done or not x_internal_domains_suggested">
                                 <button name="action_apply_suggested_internal_domains" type="object"
                                         class="btn-link btn-sm p-0" string="Add"/>
                                 <field name="x_internal_domains_suggested" class="d-inline" readonly="1" nolabel="1"/>

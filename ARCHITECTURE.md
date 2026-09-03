@@ -345,14 +345,14 @@ as an option belonging to sync — which is exactly how it read right up until i
 mattered. Not at install, though: an empty database has no domains to derive
 and nobody to protect.
 
-**A configured list is not a complete one**, and only the second is worth
-anything. `uncovered_domains()` compares the list against the domains this
+**Empty is the only refusal.** What the list contains after that is the
+admin's call: a mailbox on a domain they left off is treated as external, which
+is the setting doing its job. `suggest_domains()` reads the domains this
 database can demonstrate belong to the company — its mailboxes and its internal
-users' own addresses — and saving the settings with one of them missing is
-refused. The users are the source that matters: a company that acquired another
-has colleagues on its domain long before it has mailboxes on it, so a list
-built from mailboxes alone reads as complete and treats those colleagues as
-outsiders.
+users' own addresses — and offers them with one click while the list is still
+empty, so nobody has to type them on day one. The users are the source that
+matters: a company that acquired another has colleagues on its domain long
+before it has mailboxes on it.
 
 Two exclusions, both load-bearing. Portal users, since a customer with a login
 is not the company. And public mail providers, since a colleague whose Odoo

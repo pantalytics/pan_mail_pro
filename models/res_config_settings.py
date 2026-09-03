@@ -18,7 +18,6 @@ is still missing.
 import logging
 
 from odoo import api, fields, models
-from odoo.exceptions import UserError
 
 from . import encryption_utils
 from .pan_mail_setup import PROVIDER_CREDENTIALS
@@ -105,8 +104,8 @@ class ResConfigSettings(models.TransientModel):
         string='Internal Domains',
         help='Your own email domains. Mail between them is never synced into Odoo.',
     )
+    x_internal_domains_summary = fields.Char(compute='_compute_internal_domains_status')
     x_internal_domains_suggested = fields.Char(compute='_compute_internal_domains_status')
-    x_internal_domains_uncovered = fields.Char(compute='_compute_internal_domains_status')
 
     # -------------------------------------------------------------------------
     # Step 5 — the notification mailbox
@@ -258,45 +257,19 @@ class ResConfigSettings(models.TransientModel):
 
     @api.depends('x_internal_domain_ids')
     def _compute_internal_domains_status(self):
-        """The suggestion, and which of our own domains the form is missing.
+        """The list as one line, and what is left to suggest.
 
         Both read the record's own selection rather than the stored rows: the
-        admin may be adding domains right now and the warning has to follow
-        along.
+        admin may have just clicked "Add" and the line has to follow along
+        without a save.
         """
-        Domains = self.env['pan.mail.domain']
-        suggested = Domains.suggest_domains()
-        own = Domains.own_domains()
+        suggested = self.env['pan.mail.domain'].suggest_domains()
         for record in self:
-            selected = set(record.x_internal_domain_ids.mapped('name'))
+            selected = record.x_internal_domain_ids.mapped('name')
+            record.x_internal_domains_summary = ', '.join(sorted(selected))
             record.x_internal_domains_suggested = ', '.join(
                 d for d in suggested if d not in selected)
-            record.x_internal_domains_uncovered = ', '.join(
-                d for d in own if d not in selected) if selected else ''
 
-
-    def set_values(self):
-        """Refuse a domain list that leaves one of our own domains out.
-
-        Checked after `super()` rather than before, so the question is asked of
-        the value being saved rather than the one on the form; the raise rolls
-        the write back with it.
-
-        The list itself is edited in its own table, not here, so this never
-        deletes a row — it only refuses to let the page be saved while the list
-        is demonstrably wrong. The fix is one click away on the same page: the
-        hint under the domains line offers exactly the missing domains.
-
-        Only a *configured* list can be incomplete, so this never blocks the
-        first save on an empty database. Absent and incomplete are two different
-        failures with two different gates: the mailbox constraint catches the
-        first, this catches the second, and the second is the more dangerous
-        because it passes every check that asks whether the list is configured.
-        """
-        super().set_values()
-        error = self.env['pan.mail.domain'].sudo().completeness_error()
-        if error:
-            raise UserError(error)
 
     def action_apply_suggested_internal_domains(self):
         """Add every domain we can derive from the database to the list.

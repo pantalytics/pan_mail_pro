@@ -240,11 +240,10 @@ class TestSetupChecklist(TransactionCase):
 
         self.assertIn('suggestme.test', settings.x_internal_domain_ids.mapped('name'))
 
-    def test_uncovered_mailbox_domain_surfaces_in_settings(self):
-        self.env['pan.mail.mailbox'].create({
-            'email': 'info@forgotten.test', 'mailbox_type': 'shared',
-        })
+    def test_the_domains_line_shows_the_list(self):
+        """The step shows its answer, not just its heading."""
+        self.env['pan.mail.domain'].set_domains(['one.test', 'two.test'])
 
         settings = self._settings()
 
-        self.assertIn('forgotten.test', settings.x_internal_domains_uncovered)
+        self.assertEqual(settings.x_internal_domains_summary, 'one.test, two.test')
