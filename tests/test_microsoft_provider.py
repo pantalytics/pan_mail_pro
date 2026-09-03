@@ -42,9 +42,11 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
             'name': 'Graph User', 'login': 'graph_user@test.local',
             'email': 'graph_user@test.local',
         })
-        ICP = cls.env['ir.config_parameter'].sudo()
-        ICP.set_param('pan_mail_pro.microsoft_client_id', 'test-client-id')
-        ICP.set_param('pan_mail_pro.microsoft_tenant_id', 'test-tenant-id')
+        cls.env['pan.mail.provider'].create({
+            'provider': 'outlook',
+            'client_id': 'test-client-id',
+            'tenant_id': 'test-tenant-id',
+        })
 
     def _account(self, **vals):
         base = {
@@ -252,9 +254,11 @@ class TestGraphAuthorizationScopes(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.client = get_provider_client(cls.env, 'outlook')
-        ICP = cls.env['ir.config_parameter'].sudo()
-        ICP.set_param('pan_mail_pro.microsoft_client_id', 'test-client-id')
-        ICP.set_param('pan_mail_pro.microsoft_tenant_id', 'test-tenant-id')
+        cls.env['pan.mail.provider'].create({
+            'provider': 'outlook',
+            'client_id': 'test-client-id',
+            'tenant_id': 'test-tenant-id',
+        })
 
     def test_both_halves_of_the_draft_then_send_flow_are_requested(self):
         url = self.client.get_authorization_url(

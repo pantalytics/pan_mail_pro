@@ -26,6 +26,14 @@ the model, so this script only reads it. It runs before that happens.
 
 Idempotent: deleting a parameter that is already gone is a no-op, and the
 domain list is only written when it is empty.
+
+`_domains_become_rows()` has to run before the `opted_out` check below reads
+`Domains.is_configured()` — otherwise the table is still empty at that point
+regardless of what the old parameter held, and a database with a perfectly
+good explicit list gets a derived guess in its place instead of what the
+admin actually typed. `_notification_is_a_flag()` has no such ordering
+requirement, but runs alongside it for the same reason: a migration script
+that defines a step and never calls it is a step that silently does not run.
 """
 import logging
 
@@ -43,6 +51,9 @@ def migrate(cr, version):
 
     env = api.Environment(cr, SUPERUSER_ID, {})
     Domains = env['pan.mail.domain']
+
+    _domains_become_rows(env)
+    _notification_is_a_flag(env, cr)
 
     opted_out = env['ir.config_parameter'].sudo().get_param(
         PARAM_SYNC_INTERNAL) in ('True', 'true', '1')

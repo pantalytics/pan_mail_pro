@@ -283,21 +283,16 @@ name, the answer itself, and the way to the place it is changed.
 - **A sentence goes under the name, never beside it.** The answer is short
   enough to sit on the first line; a fix or an alert is not. Beside the name a
   long one pushes the arrow off the line and turns the column of names ragged.
-- **The arrow goes to the data.** Two of the three steps are tables — the
-  domains and the mailboxes — so the line links to the table rather than
-  growing an editor of its own. The settings page shows the answer; the table
-  owns it.
-- **The provider is the exception, and looks like it is not.** It has no table,
-  so its arrow opens the credentials in place with `boolean_icon`, which Odoo
-  ships: a clickable icon bound to a boolean, no JavaScript of ours, and the
-  click is a client-side re-render rather than a save.
+- **The arrow goes to the data.** All three steps are tables — providers,
+  domains, mailboxes — so every line links to the table rather than growing an
+  editor of its own on this page. The settings page shows the answer; the
+  table owns it. The provider used to be the one exception, opening its
+  credentials in place; once the credentials became a `pan.mail.provider`
+  row like the other two answers, the exception had no reason left to exist.
 - **A fix line lives only while it is a fix.** The domains line offers the
   domains it can read off the database, and only while the list is empty. A
   list with something in it is the admin's, and offering additions to it
   forever would read as a complaint about a deliberate choice.
-- **Saving closes the provider again**, because the transient record is
-  rebuilt. That is the behaviour, not a bug: you open one step, save, and the
-  page is three lines of answers again.
 
 ### Explanation belongs behind an info icon
 
