@@ -14,7 +14,6 @@
                     <field name="x_provider_uses_oauth" invisible="1"/>
                     <field name="x_setup_domains_done" invisible="1"/>
                     <field name="x_setup_notification_done" invisible="1"/>
-                    <field name="x_setup_users_done" invisible="1"/>
                     <field name="x_setup_complete" invisible="1"/>
 
                     <!-- One status. Setup, Syncing or Attention needed — never
@@ -245,30 +244,6 @@
                                 <div class="mt-2">
                                     <button type="action" name="%(action_pan_mail_mailbox)d"
                                             string="Manage" icon="oi-arrow-right" class="oe_link ps-0"/>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Not a step: mail flows with one connected account. -->
-                    <h2 invisible="not x_setup_complete">Your Team</h2>
-                    <div class="row mt-3 mb-4 o_settings_container" invisible="not x_setup_complete">
-                        <div class="col-12 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">
-                                    <field name="x_setup_users_connected" class="d-inline" readonly="1"/>
-                                    of
-                                    <field name="x_setup_users_total" class="d-inline" readonly="1"/>
-                                    users connected
-                                </span>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Mail already flows. A colleague who has not connected their mailbox simply sends from the notification address instead of their own."/>
-                                <div class="mt-2" invisible="x_setup_users_done">
-                                    <button name="action_send_connect_invites" type="object"
-                                            string="Send invitations" class="btn-primary btn-sm"/>
-                                    <button name="action_open_unconnected_users" type="object"
-                                            string="Show who is missing" class="btn-link btn-sm"/>
                                 </div>
                             </div>
                         </div>

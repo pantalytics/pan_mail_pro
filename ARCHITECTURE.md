@@ -235,9 +235,10 @@ Three properties are worth naming, because each was a bug first:
   exists because a mailbox refuses to enable sync while the domains are
   unanswered, and meeting that as a validation error afterwards is worse than
   being asked in order.
-- **Inviting the team is not a step.** Mail flows with one connected account; a
-  colleague who has not signed in is a rollout task, not a gate. It sits below
-  the five, unnumbered, and only appears once the phase is `syncing`.
+- **Inviting the team is not on this page at all.** Mail flows with one
+  connected account, so a colleague who has not signed in is a rollout task,
+  not a gate — and the invite button already lives on the user list, where the
+  users are. A second copy in Settings was a second front door to one action.
 
 ---
 

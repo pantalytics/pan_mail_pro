@@ -11,9 +11,9 @@ The provider is asked first, because the steps genuinely differ per provider:
 Azure wants a tenant, Google does not, and IMAP has no global credential at all.
 Everything from step 4 on is provider-independent and never asks again.
 
-Anything after step 5 — inviting the team — belongs to the syncing phase. It is
-not a gate: mail flows with one connected user, it just does not flow for the
-colleagues who have not signed in yet.
+Nothing else lives here. Inviting colleagues to connect is a real job but not a
+setup step, and its button is on the user list, next to the column that says who
+is still missing.
 """
 import logging
 
@@ -134,10 +134,7 @@ class ResConfigSettings(models.TransientModel):
     x_setup_status_detail = fields.Char(compute='_compute_setup_status')
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
-    x_setup_users_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_complete = fields.Boolean(compute='_compute_setup_status')
-    x_setup_users_total = fields.Integer(compute='_compute_setup_status')
-    x_setup_users_connected = fields.Integer(compute='_compute_setup_status')
     x_setup_pending_notifications = fields.Integer(
         compute='_compute_setup_status',
         string='Emails Waiting for Setup',
@@ -306,18 +303,6 @@ class ResConfigSettings(models.TransientModel):
     # Checklist
     # -------------------------------------------------------------------------
 
-    def _mail_pro_users(self):
-        """Internal users who are expected to connect a mailbox.
-
-        OdooBot is excluded: it is an internal user that will never authorize
-        anything, and counting it would leave step 6 permanently at "almost".
-        """
-        domain = [('share', '=', False), ('active', '=', True)]
-        odoobot = self.env.ref('base.user_root', raise_if_not_found=False)
-        if odoobot:
-            domain.append(('id', '!=', odoobot.id))
-        return self.env['res.users'].sudo().search(domain)
-
     @api.depends('x_mail_provider', 'x_provider_credentials_set', 'x_provider_connected',
                  'x_internal_domains')
     def _compute_setup_status(self):
@@ -329,9 +314,6 @@ class ResConfigSettings(models.TransientModel):
         a credential that is on screen but not yet saved.
         """
         Setup = self.env['pan.mail.setup']
-        users = self._mail_pro_users()
-        users_connected = len(users.filtered('x_pan_mail_connected'))
-
         pending = self.env['mail.mail'].sudo().search_count([
             ('state', '=', 'outgoing'),
             ('failure_reason', '=', mail_mail.NOTIFICATION_PENDING_REASON),
@@ -349,9 +331,6 @@ class ResConfigSettings(models.TransientModel):
             record.x_setup_status_detail = Setup.status_detail(answers)
             record.x_setup_complete = Setup.is_ready(answers)
 
-            record.x_setup_users_total = len(users)
-            record.x_setup_users_connected = users_connected
-            record.x_setup_users_done = bool(users) and users_connected == len(users)
             record.x_setup_pending_notifications = pending
 
     # -------------------------------------------------------------------------
@@ -412,30 +391,6 @@ class ResConfigSettings(models.TransientModel):
             # Stay on the settings page — navigating to the mailbox form would
             # discard whatever else the admin has typed.
             reload=True,
-        )
-
-    def _unconnected_users(self):
-        return self._mail_pro_users().filtered(lambda u: not u.x_pan_mail_connected)
-
-    def action_open_unconnected_users(self):
-        """Show exactly who still has to connect their mailbox."""
-        self.ensure_one()
-        return {
-            'type': 'ir.actions.act_window',
-            'name': _('Users Without a Connected Mailbox'),
-            'res_model': 'res.users',
-            'view_mode': 'list,form',
-            'domain': [('id', 'in', self._unconnected_users().ids)],
-            'target': 'current',
-        }
-
-    def action_send_connect_invites(self):
-        """Ask every user who has not connected yet to do so."""
-        self.ensure_one()
-        sent = self._unconnected_users()._send_connect_invites()
-        return self._notify(
-            _('Invitations Sent'),
-            _('Asked %d user(s) to connect their mailbox.') % sent,
         )
 
     @staticmethod
