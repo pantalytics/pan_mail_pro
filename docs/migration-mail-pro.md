@@ -85,3 +85,104 @@ Both can be renamed later as isolated changes with their own migrations.
 Restore the backup from step 1 and redeploy the previous module version. The
 rename touches identity columns rather than business data, so a restore returns
 you cleanly to the starting state — provided you did step 1.
+
+## Juffermans on CloudPepper — the concrete plan
+
+State on 2026-09-03, read from the CloudPepper API:
+
+| | production | staging |
+|---|---|---|
+| instance | `juffermans.cloudpepper.site` | `staging-i5k88ysv55d.cloudpepper.site` |
+| instance id | `019f1d30-a256-75f0-89aa-6e17590e10f5` | `019f1d39-9ffb-7f27-aede-4e6c82a54eb4` |
+| module in `ir.module.module` | `pan_outlook_pro` 19.0.1.2.0 | `pan_outlook_pro` 19.0.1.2.0 |
+| addon source | `pan_outlook_pro.git` @ `19.0-prod-rollback` | `pan_outlook_pro.git` @ `19.0` |
+| module id | `019f22b4-7280-724b-a481-6be1f4e73104` | `019f22b4-7280-724b-a481-6be1f4e73104` |
+
+Target: `pan_mail_pro` 19.0.6.3.0 (branch `19.0`).
+
+### About the old GitHub URL
+
+The repository was renamed on GitHub, so `pan_outlook_pro.git` is a redirect to
+`pan_mail_pro.git` and CloudPepper keeps pulling the right code. It is cosmetic
+and it is *not* the upgrade: repointing the URL does not rename anything in the
+database.
+
+Repoint it **after** the upgrade, not before, and not during. CloudPepper names
+the checkout directory after the repo URL, and `addons_path` on both instances
+names it explicitly:
+
+```
+/var/odoo/<instance>/extra-addons/pan_outlook_pro.git-6a46530f52054
+```
+
+A new URL means a new directory and a stale `addons_path` entry pointing at the
+old one, so the module would vanish from the addons path mid-upgrade. That
+directory is a path entry rather than the addon itself — Odoo finds the module
+inside it through the `pan_mail_pro -> .` symlink at the repository root, which
+is what lets one single-addon repo be served under its own technical name from
+a directory called something else. The old directory name is therefore harmless
+and the rename of the source is a separate, later change that also edits
+`addons_path`.
+
+### The instances, concretely
+
+Both run on the server `Juffermans Machinebouw B.V.` at `46.224.81.33`.
+
+| | production | staging |
+|---|---|---|
+| `db_name` | `i5k88ysv55d.cloudpepper.site` | `staging-i5k88ysv55d.cloudpepper.site` |
+| instance root | `/var/odoo/i5k88ysv55d.cloudpepper.site` | `/var/odoo/staging-i5k88ysv55d.cloudpepper.site` |
+| module checkout | `<root>/extra-addons/pan_outlook_pro.git-6a46530f52054` | same name under the staging root |
+
+The database names contain dots, so quote them everywhere: `psql -d
+"i5k88ysv55d.cloudpepper.site"`.
+
+### Staging is already in the broken half-state
+
+Staging tracks branch `19.0`, so its disk carries the module directory
+`pan_mail_pro` while its database still has `pan_outlook_pro` installed. Odoo
+sees an installed module that is missing on disk and a new module that is not
+installed. Mail is not working there and no amount of `-u` fixes it — only the
+rename SQL does. Do not read staging's current behaviour as a preview of
+production.
+
+### The step production actually takes
+
+Production sits on 19.0.1.2.0, so a single `-u pan_mail_pro` crosses seven
+migration folders (19.0.2.1.0 through 19.0.6.3.0) on top of the SQL rename.
+Nothing in CI covers that combination against real data; `ci_rename_rehearsal.sh`
+covers the chain from a fresh baseline, where every backfill moves zero rows.
+The rehearsal on a restored production backup is therefore the only real test,
+and it is not optional.
+
+### What no tool can do for us
+
+`tools/rename_to_mail_pro.sql` needs `psql` on the instance with Odoo stopped.
+The CloudPepper MCP exposes backups, module pulls, restarts, index and Postgres
+tuning — but no arbitrary SQL. So step 3 below is a shell on the server (SSH or
+the CloudPepper dashboard), by hand, both times.
+
+### Runbook
+
+1. Back up production (`create_backup`, note it `pre-mail-pro-rename`).
+2. Restore that backup into staging, neutralized. Staging is now a true copy of
+   the pre-rename production database.
+3. On staging: stop Odoo, run `tools/rename_to_mail_pro.sql`, check that every
+   `leftover` count is 0 and `pan_mail_pro` comes back `installed`.
+4. On staging: pull branch `19.0` and run `-u pan_mail_pro`. Read the migration
+   log — this is the run where the backfills touch real rows, so a row count of
+   0 is a finding, not a pass.
+5. Verify on staging: Settings opens with the Azure configuration intact (proves
+   the config parameters survived 19.0.6.0.0), a test send from a shared mailbox
+   works, incoming sync lands a mail, and one full OAuth round trip completes.
+6. Only then production, same three steps in a quiet window: stop, rename SQL,
+   pull `19.0`, `-u pan_mail_pro`, same five checks.
+7. Decide the webhook / auto-upgrade flags deliberately. Production is
+   currently pinned to `19.0-prod-rollback`; leaving auto-upgrade off until the
+   upgrade is verified is the safer default.
+8. Separately, later: repoint the addon source to
+   `https://github.com/pantalytics/pan_mail_pro.git` and update `addons_path`
+   to the new checkout directory in the same change.
+
+Rollback at any point is the step 1 backup. The rename touches identity columns,
+not business data, so a restore returns cleanly to the starting state.
