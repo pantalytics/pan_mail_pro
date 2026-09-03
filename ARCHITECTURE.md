@@ -235,6 +235,9 @@ Three properties are worth naming, because each was a bug first:
   exists because a mailbox refuses to enable sync while the domains are
   unanswered, and meeting that as a validation error afterwards is worse than
   being asked in order.
+- **The checklist folds away when it is done.** Setup is a phase you leave, so
+  a finished checklist stops being the page and the status line takes over. The
+  steps are one toggle away, unchanged.
 - **Inviting the team is not on this page at all.** Mail flows with one
   connected account, so a colleague who has not signed in is a rollout task,
   not a gate — and the invite button already lives on the user list, where the
