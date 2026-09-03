@@ -11,7 +11,8 @@ Five answers, in this order, make the difference:
 1. provider      — where is the mail hosted
 2. credentials   — the application registration for that provider
 3. connection    — at least one account actually reaches it
-4. domains       — which domains are ours (or an explicit opt-out)
+4. domains       — which domains are ours, so colleagues can be told from
+                   customers (there is no opt-out; see ARCHITECTURE.md §9.12)
 5. notification  — the address system mail goes out from
 
 All five are mandatory. Until the last one is answered the phase is `setup`,

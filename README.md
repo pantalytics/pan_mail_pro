@@ -154,9 +154,9 @@ Go to **Settings** → **Mail Pro** → **Manage Mailbox List**
 - Internal domains must be configured in Settings → Mail Pro before any mailbox
   can sync. Odoo suggests them from your mailboxes, company email and alias
   domains; you confirm the list. Email from those domains is never synced.
-- To sync internal email anyway, switch on "Sync internal email" explicitly, or
-  turn off "Exclude Internal" on a single mailbox (e.g. a team mailbox where
-  internal forwards should be logged)
+- There is no way to switch this off, globally or per mailbox. A mail with any
+  outside recipient is correspondence and is still logged, so "internal" means
+  every party is one of your own domains
 - Internal users (employees with Odoo accounts) are always excluded
 - Emails sync automatically every minute
 - Set a sync start date to import historical emails (default: sync from now)

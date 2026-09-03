@@ -153,8 +153,8 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
       **weigeren** met uitleg
 - [ ] Domeinen invullen (Odoo stelt ze voor), daarna kan het wel
 - [ ] Lijst achteraf leeghalen → een lopende sync stopt en zet de mailbox op error
-- [ ] Mail van een intern domein wordt niet gesynct; met "Sync internal email"
-      aan wél
+- [ ] Mail van een intern domein wordt nooit gesynct. Er is geen schakelaar
+      meer om dat uit te zetten (19.0.6.4.0, ARCHITECTURE.md §9.12)
 
 ### Zichtbaarheid (19.0.4.0.0) — nooit functioneel getest
 - [ ] **Mail Routing** krijgt een rij per afgeleverde mail, met regel en

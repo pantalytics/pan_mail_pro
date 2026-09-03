@@ -760,13 +760,13 @@ class PanMailFetcher(models.AbstractModel):
         """
         Check if email is from an internal company domain.
 
-        The domain list, the global opt-out and the per-mailbox 'Exclude
-        Internal Emails' setting all live in `pan.mail.internal.domains`; this
-        is only the call site.
+        The domain list lives in `pan.mail.internal.domains`; this is only the
+        call site. There is no way to switch the filter off — see
+        ARCHITECTURE.md §9.12.
 
         Args:
             email: Email address to check
-            mailbox: pan.mail.mailbox record (optional, for per-mailbox setting)
+            mailbox: pan.mail.mailbox record, passed through unchanged
 
         Returns:
             bool: True if email should be skipped as internal
