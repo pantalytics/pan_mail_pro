@@ -133,7 +133,10 @@ class ResConfigSettings(models.TransientModel):
     # Checklist state
     # -------------------------------------------------------------------------
     x_setup_status = fields.Selection(
-        STATUS_SELECTION, string='Status', compute='_compute_setup_status',
+        # Labelled 'Mail Pro Status', not 'Status': res.config.settings carries
+        # every installed module's fields, and a shared label is a registry
+        # warning on every worker start. The page renders it with nolabel.
+        STATUS_SELECTION, string='Mail Pro Status', compute='_compute_setup_status',
         help='Setup until all five steps are done, syncing from then on, and '
              'attention needed when a mailbox has stopped.',
     )
