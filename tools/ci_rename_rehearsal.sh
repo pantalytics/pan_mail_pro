@@ -37,6 +37,12 @@ set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 BASE_TAG=${BASE_TAG:-v19.0.2.0.1}
 BASE_DUMP=${BASE_DUMP:-}
+# Not postgres:15. Customer dumps come from the server Cloudpepper actually
+# runs: PostgreSQL 17 (a dump taken there says `SET transaction_timeout`,
+# which an older server rejects) with the pgvector extension installed. The
+# official pgvector image is postgres:17 plus that extension, and a newer
+# server loads older dumps fine, so both modes use it.
+PG_IMAGE=${PG_IMAGE:-pgvector/pgvector:pg17}
 LOG_DIR=${LOG_DIR:-$REPO}
 NET=pan_reh_net
 DB=pan_reh_db
@@ -64,7 +70,7 @@ docker rm -f "$DB" >/dev/null 2>&1 || true
 docker network create "$NET" >/dev/null 2>&1 || true
 docker run -d --name "$DB" --network "$NET" \
     -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo -e POSTGRES_DB=postgres \
-    postgres:15 >/dev/null
+    "$PG_IMAGE" >/dev/null
 echo -n "Waiting for Postgres"
 for _ in $(seq 1 60); do
     docker exec "$DB" pg_isready -U odoo >/dev/null 2>&1 && { echo " ready."; break; }
@@ -86,7 +92,7 @@ odoo_run() {
 }
 
 pg() {
-    docker run --rm -i --network "$NET" postgres:15 \
+    docker run --rm -i --network "$NET" "$PG_IMAGE" \
         psql "postgresql://odoo:odoo@${DB}:5432/${DBNAME}" -v ON_ERROR_STOP=1 "$@"
 }
 
@@ -96,7 +102,7 @@ if [ -n "$BASE_DUMP" ]; then
     docker exec "$DB" createdb -U odoo "$DBNAME"
     case "$(file -b "$BASE_DUMP")" in
         PostgreSQL\ custom\ database\ dump*)
-            docker run --rm -i --network "$NET" postgres:15 \
+            docker run --rm -i --network "$NET" "$PG_IMAGE" \
                 pg_restore --no-owner --no-privileges \
                 -d "postgresql://odoo:odoo@${DB}:5432/${DBNAME}" < "$BASE_DUMP" ;;
         Zip\ archive*)  # an Odoo backup: dump.sql next to the filestore
@@ -156,7 +162,7 @@ fi
 
 if [ "$OLD_NAME" = "pan_outlook_pro" ]; then
     echo "=== Rename, in SQL, with Odoo stopped"
-    docker run --rm --network "$NET" -v "$REPO/tools:/sql:ro" postgres:15 \
+    docker run --rm --network "$NET" -v "$REPO/tools:/sql:ro" "$PG_IMAGE" \
         psql "postgresql://odoo:odoo@${DB}:5432/${DBNAME}" \
         -v ON_ERROR_STOP=1 -f /sql/rename_to_mail_pro.sql
 fi
