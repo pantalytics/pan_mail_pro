@@ -13,7 +13,7 @@ Five answers, in this order, make the difference:
 3. connection    — at least one account actually reaches it
 4. domains       — which domains are ours, so colleagues can be told from
                    customers (there is no opt-out; see ARCHITECTURE.md §9.12)
-5. notification  — the address system mail goes out from
+5. notification  — one mailbox ticked as the one system mail goes out from
 
 All five are mandatory. Until the last one is answered the phase is `setup`,
 incoming sync does not run, and internal notifications queue with a readable
@@ -62,7 +62,7 @@ STEPS = (
     ('credentials', 'Provider credentials'),
     ('connection', 'Connected account'),
     ('domains', 'Internal domains'),
-    ('notification', 'Notification email'),
+    ('notification', 'A notification mailbox'),
 )
 
 # Where each OAuth provider's application credentials live. The client id and

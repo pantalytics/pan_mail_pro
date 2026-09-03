@@ -219,14 +219,14 @@
                     </div>
 
                     <!-- STEP 5 — the last gate. -->
-                    <h2 invisible="not x_provider_credentials_set">5. Notification Email</h2>
+                    <h2 invisible="not x_provider_credentials_set">5. Mailboxes</h2>
                     <div class="row mt-3 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">System emails come from</span>
+                                <span class="o_form_label">Your mailboxes</span>
                                 <i class="fa fa-info-circle text-muted ms-1"
-                                   title="User invitations, password resets and activity reminders. Tick 'Notification Mailbox' on the mailbox that should send them; it sends with that mailbox's own credentials, so connect an account in step 3 first."/>
+                                   title="Add the addresses Mail Pro sends and receives on. One of them needs 'Notification Mailbox' ticked: user invitations, password resets and activity reminders go out from it, with that mailbox's own credentials."/>
                                 <div class="mt-2" invisible="not x_setup_notification_done">
                                     <span class="text-success">
                                         <i class="fa fa-check-circle me-1" title="Ready"/>

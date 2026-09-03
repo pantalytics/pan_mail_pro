@@ -216,7 +216,7 @@ condition of its own.
 | 2 | Provider credentials | the app registration, or the IMAP accounts |
 | 3 | Connected account | any connected `pan.mail.account` on that provider |
 | 4 | Internal domains | at least one `pan.mail.domain` row |
-| 5 | Notification email | a mailbox with `is_notification_mailbox` ticked that can send |
+| 5 | A notification mailbox | a mailbox with `is_notification_mailbox` ticked that can send |
 
 All five are mandatory. There is no partial service: while the phase is `setup`
 the incoming cron returns without fetching, "Sync Now" refuses with the step
