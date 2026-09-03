@@ -14,8 +14,12 @@
                        decoration-success="health_status == 'healthy'"
                        decoration-warning="health_status == 'warning'"
                        decoration-danger="health_status == 'error'"/>
+                <!-- Editable straight from the list: which mailbox sends the
+                     system email is one tick, and moving it is untick here,
+                     tick there. -->
+                <field name="is_notification_mailbox" string="Notification"
+                       widget="boolean_toggle"/>
                 <field name="mailbox_type" string="Type" optional="hide"/>
-                <field name="is_notification_mailbox" string="Notification" optional="hide"/>
                 <field name="provider" string="Provider" optional="hide"/>
                 <field name="owner_user_id" string="Owner" optional="hide"/>
                 <field name="sync_mode" string="Incoming" optional="hide"/>

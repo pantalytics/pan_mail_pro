@@ -17,7 +17,7 @@ is still missing.
 """
 import logging
 
-from odoo import api, fields, models, _
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from . import encryption_utils
@@ -112,10 +112,11 @@ class ResConfigSettings(models.TransientModel):
     # -------------------------------------------------------------------------
     # Step 5 — the notification mailbox
     # -------------------------------------------------------------------------
-    x_notification_mailbox_email = fields.Char(
-        string='Notification Address',
-        default=lambda self: self._default_notification_mailbox_email(),
-        help='Address system emails are sent from, e.g. notifications@company.com',
+    x_notification_mailbox_id = fields.Many2one(
+        'pan.mail.mailbox',
+        string='Notification Mailbox',
+        compute='_compute_setup_status',
+        help='The mailbox with "Notification Mailbox" ticked, if there is one.',
     )
 
     # -------------------------------------------------------------------------
@@ -342,6 +343,7 @@ class ResConfigSettings(models.TransientModel):
 
             record.x_setup_domains_done = answers['domains']
             record.x_setup_notification_done = answers['notification']
+            record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()
             record.x_setup_status = Setup.status(answers)
             record.x_setup_status_detail = Setup.status_detail(answers)
             record.x_setup_complete = Setup.is_ready(answers)
@@ -356,62 +358,3 @@ class ResConfigSettings(models.TransientModel):
         """Connect the admin's own account to the selected provider."""
         self.ensure_one()
         return self.env.user.action_connect_mailbox(self.x_mail_provider)
-
-    def _default_notification_mailbox_email(self):
-        """Pre-fill notifications@<your domain> so step 5 is one click."""
-        Domains = self.env['pan.mail.domain']
-        domains = Domains.get_domains() or Domains.suggest_domains()
-        return f'notifications@{domains[0]}' if domains else False
-
-    def action_create_notification_mailbox(self):
-        """Create notifications@ in one click, owned by whoever is setting up.
-
-        Step 3 (connect your own account) comes first precisely so this button
-        has a connected owner to point at — that is what breaks the
-        chicken-and-egg where you need a working notification mailbox to invite
-        the users whose accounts you need.
-        """
-        self.ensure_one()
-        email = (self.x_notification_mailbox_email or '').strip()
-        if not email:
-            raise UserError(_('Please enter the address system emails should be sent from.'))
-        if not self.x_mail_provider:
-            raise UserError(_('Choose your email provider first.'))
-        if not self.env.user.x_pan_mail_connected:
-            raise UserError(_(
-                'Connect your own email account first — the notification mailbox '
-                'sends with its owner\'s credentials.'
-            ))
-
-        Mailbox = self.env['pan.mail.mailbox']
-        existing = Mailbox.with_context(active_test=False).search([
-            ('is_notification_mailbox', '=', True),
-        ], limit=1)
-        if existing:
-            raise UserError(_(
-                'A Notification mailbox already exists (%s). Edit that one instead.'
-            ) % existing.email)
-
-        mailbox = Mailbox.create({
-            'email': email,
-            'mailbox_type': 'personal',
-            'is_notification_mailbox': True,
-            'provider': self.x_mail_provider,
-            'owner_user_id': self.env.user.id,
-        })
-        _logger.info(f"[Mail Pro] Created notification mailbox {mailbox.email} from setup checklist")
-
-        return self._notify(
-            _('Notification Mailbox Created'),
-            _('System emails are now sent from %s.') % mailbox.email,
-            # Stay on the settings page — navigating to the mailbox form would
-            # discard whatever else the admin has typed.
-            reload=True,
-        )
-
-    @staticmethod
-    def _notify(title, message, reload=False):
-        params = {'title': title, 'message': message, 'type': 'success', 'sticky': False}
-        if reload:
-            params['next'] = {'type': 'ir.actions.client', 'tag': 'soft_reload'}
-        return {'type': 'ir.actions.client', 'tag': 'display_notification', 'params': params}

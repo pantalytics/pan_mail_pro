@@ -221,31 +221,21 @@
                     <!-- STEP 5 — the last gate. -->
                     <h2 invisible="not x_provider_credentials_set">5. Notification Email</h2>
                     <div class="row mt-3 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
-                        <div class="col-12 col-lg-6 o_setting_box">
+                        <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
                                 <span class="o_form_label">System emails come from</span>
                                 <i class="fa fa-info-circle text-muted ms-1"
-                                   title="User invitations, password resets and activity reminders. Tick 'Notification Mailbox' on any mailbox to move it; the mailbox sends with its owner's credentials, so connect your own account in step 3 first."/>
-                                <div class="d-flex align-items-center gap-2 mt-2" invisible="x_setup_notification_done">
-                                    <field name="x_notification_mailbox_email" nolabel="1"
-                                           placeholder="notifications@company.com" class="w-auto"/>
-                                    <button name="action_create_notification_mailbox" type="object"
-                                            string="Create" class="btn-primary btn-sm"
-                                            invisible="not x_provider_connected"/>
+                                   title="User invitations, password resets and activity reminders. Tick 'Notification Mailbox' on the mailbox that should send them; it sends with that mailbox's own credentials, so connect an account in step 3 first."/>
+                                <div class="mt-2" invisible="not x_setup_notification_done">
+                                    <span class="text-success">
+                                        <i class="fa fa-check-circle me-1" title="Ready"/>
+                                    </span>
+                                    <field name="x_notification_mailbox_id" class="d-inline" readonly="1" nolabel="1"/>
                                 </div>
-                                <span class="text-success" invisible="not x_setup_notification_done">
-                                    <i class="fa fa-check-circle me-1" title="Ready"/>Ready
-                                </span>
-                            </div>
-                        </div>
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">Mailboxes</span>
                                 <div class="mt-2">
                                     <button type="action" name="%(action_pan_mail_mailbox)d"
-                                            string="Manage" icon="oi-arrow-right" class="oe_link ps-0"/>
+                                            string="Mailboxes" icon="oi-arrow-right" class="oe_link ps-0"/>
                                 </div>
                             </div>
                         </div>

@@ -136,7 +136,8 @@ Go to **Settings** → **Mail Pro** → **Manage Mailbox List**
 
 Exactly one mailbox also has **Notification Mailbox** ticked: system emails —
 user invitations, password resets, activity reminders — go out from it, using
-its owner's credentials.
+its owner's credentials. Tick it straight from the mailbox list; to move it,
+untick the current one first.
 
 ### Incoming Email Sync
 
