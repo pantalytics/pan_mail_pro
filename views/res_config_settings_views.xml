@@ -8,21 +8,20 @@
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
                 <app string="Mail Pro" name="pan_mail_pro" groups="base.group_system">
-                    <!-- Checklist state, read by the invisible= conditions below -->
+                    <!-- State the sections below hide behind. -->
                     <field name="x_provider_credentials_set" invisible="1"/>
                     <field name="x_provider_connected" invisible="1"/>
                     <field name="x_provider_uses_oauth" invisible="1"/>
-                    <field name="x_setup_connection_done" invisible="1"/>
                     <field name="x_setup_domains_done" invisible="1"/>
                     <field name="x_setup_notification_done" invisible="1"/>
                     <field name="x_setup_users_done" invisible="1"/>
                     <field name="x_setup_complete" invisible="1"/>
 
-                    <!-- The status, in one line. Three states and no fourth:
-                         setting up, syncing, or syncing with a mailbox that
-                         stopped. Deliberately quiet — a headline and one
-                         sentence, no box and no icon set. See
-                         models/pan_mail_setup.py for what decides it. -->
+                    <!-- One status. Setup, Syncing or Attention needed — never
+                         two at once, and never a stack of banners. A headline,
+                         one sentence, and a dot. Everything that used to be
+                         explained here is behind an info icon on the step it
+                         belongs to. -->
                     <div class="o_mailpro_status">
                         <div class="o_mailpro_status_head">
                             <span class="o_mailpro_dot o_mailpro_dot--setup"
@@ -40,104 +39,49 @@
                         <div class="o_mailpro_status_note"
                              invisible="x_setup_pending_notifications == 0">
                             <field name="x_setup_pending_notifications" class="d-inline" readonly="1"/>
-                            email(s) — invitations, password resets — are held in the queue
-                            until the notification mailbox works. They are sent automatically
-                            once step 5 is done; nothing is lost.
+                            queued
+                            <i class="fa fa-info-circle ms-1"
+                               title="Invitations and password resets wait here until the notification mailbox works. They are sent automatically once it does — nothing is lost."/>
                         </div>
                         <div class="o_mailpro_status_note" invisible="x_setup_status != 'error'">
                             <button type="action" name="%(action_pan_mail_mailbox)d"
-                                    string="Review mailboxes" icon="oi-arrow-right" class="oe_link ps-0"/>
+                                    string="Review mailboxes" icon="oi-arrow-right"
+                                    class="oe_link ps-0"/>
                         </div>
                     </div>
 
-                    <!-- ============================================ -->
-                    <!-- STEP 1 - WHERE IS YOUR MAIL? -->
-                    <!-- Everything below follows from this answer, because -->
-                    <!-- the setup steps genuinely differ per provider. -->
-                    <!-- ============================================ -->
+                    <!-- STEP 1 — the answer every step below depends on. -->
                     <h2>1. Email Provider</h2>
-                    <div class="row mt-4 mb-4 o_settings_container">
-                        <!-- LEFT: the picker -->
+                    <div class="row mt-3 mb-4 o_settings_container">
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
                                 <span class="o_form_label">Where is your email hosted?</span>
-                                <div class="text-muted mb-3">
-                                    Choose a provider to see its setup steps. Each provider keeps its own
-                                    credentials, so you can switch back at any time.
-                                </div>
-                                <div class="content-group">
-                                    <div class="row mt-2">
-                                        <field name="x_mail_provider" class="col-lg-8"
-                                               placeholder="Search providers..."/>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- RIGHT: how far along this provider is -->
-                        <div class="col-12 col-lg-6 o_setting_box" invisible="not x_mail_provider">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">The five steps</span>
-                                <div class="text-muted mb-2">
-                                    Answered for this database, not for you personally —
-                                    a colleague may have connected the account.
-                                </div>
-                                <div class="mt-1">
-                                    <span class="text-muted" invisible="x_provider_credentials_set">
-                                        <i class="fa fa-circle-o me-1" title="To do"/>2. Credentials
-                                    </span>
-                                    <span class="text-success" invisible="not x_provider_credentials_set">
-                                        <i class="fa fa-check-circle me-1" title="Done"/>2. Credentials
-                                    </span>
-                                </div>
-                                <div class="mt-1">
-                                    <span class="text-muted" invisible="x_setup_connection_done">
-                                        <i class="fa fa-circle-o me-1" title="To do"/>3. Connected account
-                                    </span>
-                                    <span class="text-success" invisible="not x_setup_connection_done">
-                                        <i class="fa fa-check-circle me-1" title="Done"/>3. Connected account
-                                    </span>
-                                </div>
-                                <div class="mt-1">
-                                    <span class="text-muted" invisible="x_setup_domains_done">
-                                        <i class="fa fa-circle-o me-1" title="To do"/>4. Internal domains
-                                    </span>
-                                    <span class="text-success" invisible="not x_setup_domains_done">
-                                        <i class="fa fa-check-circle me-1" title="Done"/>4. Internal domains
-                                    </span>
-                                </div>
-                                <div class="mt-1">
-                                    <span class="text-muted" invisible="x_setup_notification_done">
-                                        <i class="fa fa-circle-o me-1" title="To do"/>5. Notification email
-                                    </span>
-                                    <span class="text-success" invisible="not x_setup_notification_done">
-                                        <i class="fa fa-check-circle me-1" title="Done"/>5. Notification email
-                                    </span>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="The setup steps differ per provider, so only one provider's steps are shown. Each keeps its own credentials, so you can switch back."/>
+                                <div class="content-group mt-2">
+                                    <field name="x_mail_provider" class="col-lg-8"
+                                           placeholder="Search providers..."/>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- ============================================ -->
-                    <!-- STEP 2A - MICROSOFT 365 CREDENTIALS -->
-                    <!-- ============================================ -->
+                    <!-- STEP 2A — Microsoft 365 -->
                     <h2 invisible="x_mail_provider != 'outlook'">2. Microsoft 365 Credentials</h2>
-                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'outlook'">
-                        <!-- LEFT: Credentials -->
+                    <div class="row mt-3 mb-4 o_settings_container" invisible="x_mail_provider != 'outlook'">
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Credentials</span>
-                                <div class="text-muted mb-3">Copy from your Azure app registration</div>
+                                <span class="o_form_label">Azure app registration</span>
                                 <div class="content-group">
                                     <div class="row mt-2">
                                         <label class="col-lg-3 o_light_label" for="x_microsoft_client_id">Client ID</label>
-                                        <field name="x_microsoft_client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" class="o_field_widget"/>
+                                        <field name="x_microsoft_client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
                                     </div>
                                     <div class="row mt-2">
                                         <label class="col-lg-3 o_light_label" for="x_microsoft_client_secret">Secret</label>
-                                        <field name="x_microsoft_client_secret" password="True" placeholder="Client secret value"/>
+                                        <field name="x_microsoft_client_secret" password="True"/>
                                     </div>
                                     <div class="row mt-2">
                                         <label class="col-lg-3 o_light_label" for="x_microsoft_tenant_id">Tenant ID</label>
@@ -146,38 +90,31 @@
                                 </div>
                             </div>
                         </div>
-                        <!-- RIGHT: Instructions + Callback URL -->
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Setup Guide</span>
-                                <div class="content-group">
-                                    <div class="mb-3">
-                                        <a href="https://pantalytics.gitbook.io/pantalytics-docs/getting-started/azure-setup" target="_blank">
-                                            <i class="fa fa-external-link me-1" title="Setup guide"/>Step-by-step Azure setup instructions
-                                        </a>
-                                    </div>
-                                    <div class="mt-4">
-                                        <span class="o_form_label">Callback URL</span>
-                                        <div class="text-muted mb-2">Copy to Azure → Authentication → Redirect URIs</div>
-                                        <field name="x_microsoft_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
-                                    </div>
+                                <span class="o_form_label">Callback URL</span>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="Paste this into Azure → Authentication → Redirect URIs. Sign-in fails until it matches exactly."/>
+                                <div class="content-group mt-2">
+                                    <field name="x_microsoft_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
+                                </div>
+                                <div class="mt-3">
+                                    <a href="https://pantalytics.gitbook.io/pantalytics-docs/getting-started/azure-setup" target="_blank">
+                                        <i class="fa fa-external-link me-1" title="Setup guide"/>Azure setup guide
+                                    </a>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- ============================================ -->
-                    <!-- STEP 2B - GOOGLE WORKSPACE CREDENTIALS -->
-                    <!-- ============================================ -->
+                    <!-- STEP 2B — Google Workspace -->
                     <h2 invisible="x_mail_provider != 'gmail'">2. Google Workspace Credentials</h2>
-                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'gmail'">
-                        <!-- LEFT: Credentials -->
+                    <div class="row mt-3 mb-4 o_settings_container" invisible="x_mail_provider != 'gmail'">
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Credentials</span>
-                                <div class="text-muted mb-3">Copy from your Google Cloud OAuth client</div>
+                                <span class="o_form_label">Google Cloud OAuth client</span>
                                 <div class="content-group">
                                     <div class="row mt-2">
                                         <label class="col-lg-3 o_light_label" for="x_google_client_id">Client ID</label>
@@ -185,94 +122,61 @@
                                     </div>
                                     <div class="row mt-2">
                                         <label class="col-lg-3 o_light_label" for="x_google_client_secret">Secret</label>
-                                        <field name="x_google_client_secret" password="True" placeholder="Client secret value"/>
+                                        <field name="x_google_client_secret" password="True"/>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <!-- RIGHT: Setup guide + Redirect URI -->
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Setup Guide</span>
-                                <div class="content-group">
-                                    <div class="mb-3">
-                                        <a href="https://console.cloud.google.com/apis/credentials" target="_blank">
-                                            <i class="fa fa-external-link me-1" title="Setup guide"/>Google Cloud → Credentials
-                                        </a>
-                                    </div>
-                                    <div class="mt-4">
-                                        <span class="o_form_label">Redirect URI</span>
-                                        <div class="text-muted mb-2">Copy to Google Cloud → Credentials → Authorized redirect URIs</div>
-                                        <field name="x_google_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
-                                    </div>
+                                <span class="o_form_label">Redirect URI</span>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="Paste this into Google Cloud → Credentials → Authorized redirect URIs. Sign-in fails until it matches exactly."/>
+                                <div class="content-group mt-2">
+                                    <field name="x_google_redirect_uri" readonly="1" widget="CopyClipboardChar"/>
+                                </div>
+                                <div class="mt-3">
+                                    <a href="https://console.cloud.google.com/apis/credentials" target="_blank">
+                                        <i class="fa fa-external-link me-1" title="Google Cloud"/>Google Cloud credentials
+                                    </a>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- ============================================ -->
-                    <!-- STEP 2C - IMAP / SMTP CREDENTIALS -->
-                    <!-- No global credential to fill in: an IMAP login belongs -->
-                    <!-- to one address, so the step is "add the accounts". -->
-                    <!-- ============================================ -->
+                    <!-- STEP 2C — IMAP/SMTP has no global credential. -->
                     <h2 invisible="x_mail_provider != 'imap'">2. Mail Accounts</h2>
-                    <div class="row mt-4 mb-4 o_settings_container" invisible="x_mail_provider != 'imap'">
-                        <!-- LEFT: where the credentials go -->
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">Credentials</span>
-                                <div class="text-muted mb-3">
-                                    There is no consent screen here. Enter the server, login and
-                                    password once per address; Test Connection checks reading and
-                                    sending separately.
-                                </div>
-                                <div class="mt-1">
-                                    <button type="action" name="%(action_pan_mail_account)d"
-                                            string="Email Accounts" icon="oi-arrow-right" class="oe_link"/>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- RIGHT: what to have ready -->
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <span class="o_form_label">What You Need</span>
-                                <div class="content-group text-muted">
-                                    <div>IMAP server and port (usually 993, SSL/TLS)</div>
-                                    <div>SMTP server and port (usually 465, SSL/TLS)</div>
-                                    <div>The mailbox password, or an app password where the
-                                         hoster requires one</div>
-                                </div>
-                                <div class="text-muted mt-3">
-                                    Soverin addresses fill their own servers in.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- ============================================ -->
-                    <!-- STEP 3 - CONNECT YOUR ACCOUNT -->
-                    <!-- One step, one button per provider: the branding -->
-                    <!-- differs, the step does not. -->
-                    <!-- ============================================ -->
-                    <h2 invisible="not x_provider_credentials_set">3. Connect Your Account</h2>
-                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
+                    <div class="row mt-3 mb-4 o_settings_container" invisible="x_mail_provider != 'imap'">
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Account</span>
-                                <div class="text-muted small">Sign in so Odoo can send and read mail on your behalf</div>
+                                <span class="o_form_label">Server, login and password per address</span>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="There is no consent screen here. Have ready: IMAP server and port (usually 993, SSL/TLS), SMTP server and port (usually 465, SSL/TLS), and the mailbox password or app password. Test Connection checks reading and sending separately."/>
+                                <div class="mt-2">
+                                    <button type="action" name="%(action_pan_mail_account)d"
+                                            string="Email Accounts" icon="oi-arrow-right" class="oe_link ps-0"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 3 — one button per provider; the step is the same. -->
+                    <h2 invisible="not x_provider_credentials_set">3. Connect Your Account</h2>
+                    <div class="row mt-3 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
+                        <div class="col-12 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">Sign in</span>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="Odoo sends and reads mail on your behalf. Step 5 needs a connected account to own the notification mailbox."/>
                                 <div class="mt-2">
                                     <button name="action_connect_provider" type="object"
                                             string="Connect" class="btn-primary" icon="fa-sign-in"
                                             invisible="not x_provider_uses_oauth or x_provider_connected"/>
-                                    <!-- A provider without a consent screen (IMAP/SMTP) has
-                                         nowhere to sign in: an account is connected the moment
-                                         its credentials are complete, so this step only reports. -->
                                     <button type="action" name="%(action_pan_mail_account)d"
-                                            string="Review Accounts" icon="oi-arrow-right" class="oe_link"
+                                            string="Review Accounts" icon="oi-arrow-right" class="oe_link ps-0"
                                             invisible="x_provider_uses_oauth"/>
                                     <span class="text-success" invisible="not x_provider_connected">
                                         <i class="fa fa-check-circle me-1" title="Connected"/>Connected
@@ -282,45 +186,31 @@
                         </div>
                     </div>
 
-                    <!-- ============================================ -->
-                    <!-- STEP 4 - INTERNAL DOMAINS -->
-                    <!-- Before mailboxes on purpose: a mailbox cannot enable -->
-                    <!-- sync until this is answered, so asking afterwards -->
-                    <!-- means walking into a validation error. -->
-                    <!-- ============================================ -->
+                    <!-- STEP 4 — before mailboxes, because a mailbox refuses to
+                         enable sync until this is answered. -->
                     <h2 invisible="not x_provider_credentials_set">4. Internal Domains</h2>
-                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
+                    <div class="row mt-3 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
                                 <span class="o_form_label">Your domains</span>
-                                <div class="text-muted mb-3">
-                                    Email from these domains is treated as internal and is not synced
-                                    into Odoo. Comma separated.
-                                </div>
-                                <div class="content-group">
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="Comma separated, e.g. company.com, company.be. Email between these domains is treated as internal and is not synced into Odoo. Incoming sync stays off until this is answered."/>
+                                <div class="content-group mt-2">
                                     <field name="x_internal_domains" nolabel="1"
                                            placeholder="company.com, company.be"/>
                                     <div class="mt-2" invisible="not x_internal_domains_suggested">
                                         <button name="action_apply_suggested_internal_domains" type="object"
-                                                class="btn-link btn-sm ps-0"
-                                                string="Use suggestion"/>
+                                                class="btn-link btn-sm ps-0" string="Use suggestion"/>
                                         <span class="text-muted small">
                                             <field name="x_internal_domains_suggested" class="d-inline" readonly="1"/>
                                         </span>
                                     </div>
-                                    <div class="alert alert-danger mt-3 mb-0" role="alert"
-                                         invisible="x_setup_domains_done">
-                                        <i class="fa fa-exclamation-triangle me-2" title="Blocked"/>
-                                        Incoming sync is blocked until this is filled in.
-                                    </div>
-                                    <div class="alert alert-warning mt-3 mb-0" role="alert"
-                                         invisible="not x_internal_domains_uncovered">
-                                        <i class="fa fa-exclamation-triangle me-2" title="Warning"/>
-                                        You have mailboxes on
-                                        <field name="x_internal_domains_uncovered" class="d-inline" readonly="1"/>,
-                                        which is not in the list above. Email from that domain is synced
-                                        as if it were external.
+                                    <div class="text-warning small mt-2" invisible="not x_internal_domains_uncovered">
+                                        <i class="fa fa-exclamation-triangle me-1" title="Warning"/>
+                                        Mailboxes on
+                                        <field name="x_internal_domains_uncovered" class="d-inline" readonly="1"/>
+                                        are treated as external.
                                     </div>
                                 </div>
                             </div>
@@ -328,58 +218,38 @@
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Exceptions</span>
-                                <div class="text-muted mb-3">Turn the filter off deliberately, never by accident.</div>
-                                <div class="content-group">
-                                    <div class="d-flex align-items-center">
-                                        <field name="x_sync_internal_email" widget="boolean_toggle" nolabel="1" class="me-2"/>
-                                        <span>Sync internal email too</span>
-                                    </div>
-                                    <div class="alert alert-warning mt-2 mb-0" role="alert"
-                                         invisible="not x_sync_internal_email">
-                                        <i class="fa fa-exclamation-triangle me-2" title="Warning"/>
-                                        Email between colleagues — including confidential threads — is
-                                        copied into Odoo and readable by everyone with access to the record.
-                                    </div>
-                                    <div class="mt-3" invisible="x_internal_sync_mailbox_count == 0">
-                                        <span class="text-warning">
-                                            <i class="fa fa-exclamation-triangle me-1" title="Warning"/>
-                                            <field name="x_internal_sync_mailbox_count" class="d-inline" readonly="1"/>
-                                            mailbox(es) have "Exclude Internal" switched off.
-                                        </span>
-                                        <div class="mt-1">
-                                            <button type="action" name="%(action_pan_mail_mailbox)d"
-                                                    string="Review" icon="oi-arrow-right" class="oe_link"/>
-                                        </div>
-                                    </div>
+                                <div class="d-flex align-items-center">
+                                    <field name="x_sync_internal_email" widget="boolean_toggle" nolabel="1" class="me-2"/>
+                                    <span class="o_form_label">Sync internal email too</span>
+                                    <i class="fa fa-info-circle text-muted ms-1"
+                                       title="Off by default. On, email between colleagues — confidential threads included — is copied into Odoo and readable by everyone with access to the record."/>
+                                </div>
+                                <div class="text-warning small mt-2" invisible="x_internal_sync_mailbox_count == 0">
+                                    <i class="fa fa-exclamation-triangle me-1" title="Warning"/>
+                                    <field name="x_internal_sync_mailbox_count" class="d-inline" readonly="1"/>
+                                    mailbox(es) do not exclude internal mail.
+                                    <button type="action" name="%(action_pan_mail_mailbox)d"
+                                            string="Review" icon="oi-arrow-right" class="oe_link ps-0"/>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- ============================================ -->
-                    <!-- STEP 5 - MAILBOXES -->
-                    <!-- ============================================ -->
+                    <!-- STEP 5 — the last gate. -->
                     <h2 invisible="not x_provider_credentials_set">5. Notification Email</h2>
-                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
+                    <div class="row mt-3 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Notification mailbox</span>
-                                <div class="text-muted small mb-2">
-                                    The address system emails go out from — user invitations, password
-                                    resets, activity reminders.
-                                </div>
-                                <div class="d-flex align-items-center gap-2" invisible="x_setup_notification_done">
+                                <span class="o_form_label">System emails come from</span>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="User invitations, password resets and activity reminders. The mailbox sends with its owner's credentials, so connect your own account in step 3 first."/>
+                                <div class="d-flex align-items-center gap-2 mt-2" invisible="x_setup_notification_done">
                                     <field name="x_notification_mailbox_email" nolabel="1"
                                            placeholder="notifications@company.com" class="w-auto"/>
                                     <button name="action_create_notification_mailbox" type="object"
                                             string="Create" class="btn-primary btn-sm"
                                             invisible="not x_provider_connected"/>
-                                </div>
-                                <div class="text-muted small" invisible="x_setup_notification_done or x_provider_connected">
-                                    Connect your own account in step 3 first — this mailbox sends with
-                                    its owner's credentials.
                                 </div>
                                 <span class="text-success" invisible="not x_setup_notification_done">
                                     <i class="fa fa-check-circle me-1" title="Ready"/>Ready
@@ -389,72 +259,52 @@
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">All mailboxes</span>
-                                <div class="text-muted small">Configure sending and sync</div>
-                                <div class="mt-1">
+                                <span class="o_form_label">Mailboxes</span>
+                                <div class="mt-2">
                                     <button type="action" name="%(action_pan_mail_mailbox)d"
-                                            string="Manage" icon="oi-arrow-right" class="oe_link"/>
+                                            string="Manage" icon="oi-arrow-right" class="oe_link ps-0"/>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- ============================================ -->
-                    <!-- INVITE YOUR TEAM -->
-                    <!-- Not a setup step and deliberately not numbered: mail -->
-                    <!-- flows with one connected account. It just does not -->
-                    <!-- flow for the colleagues who have not signed in yet, -->
-                    <!-- which is a rollout task, not a gate. -->
-                    <!-- ============================================ -->
+                    <!-- Not a step: mail flows with one connected account. -->
                     <h2 invisible="not x_setup_complete">Your Team</h2>
-                    <div class="row mt-4 mb-4 o_settings_container" invisible="not x_setup_complete">
+                    <div class="row mt-3 mb-4 o_settings_container" invisible="not x_setup_complete">
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Connected users</span>
-                                <div class="text-muted small mb-2">
+                                <span class="o_form_label">
                                     <field name="x_setup_users_connected" class="d-inline" readonly="1"/>
                                     of
                                     <field name="x_setup_users_total" class="d-inline" readonly="1"/>
-                                    users have connected their mailbox.
-                                </div>
-                                <div invisible="x_setup_users_done">
+                                    users connected
+                                </span>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="Mail already flows. A colleague who has not connected their mailbox simply sends from the notification address instead of their own."/>
+                                <div class="mt-2" invisible="x_setup_users_done">
                                     <button name="action_send_connect_invites" type="object"
                                             string="Send invitations" class="btn-primary btn-sm"/>
                                     <button name="action_open_unconnected_users" type="object"
                                             string="Show who is missing" class="btn-link btn-sm"/>
                                 </div>
-                                <span class="text-success" invisible="not x_setup_users_done">
-                                    <i class="fa fa-check-circle me-1" title="Done"/>Everyone is connected
-                                </span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- ============================================ -->
-                    <!-- ABOUT -->
-                    <!-- ============================================ -->
                     <h2>About</h2>
-                    <div class="row mt-4 o_settings_container">
+                    <div class="row mt-3 o_settings_container">
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Documentation</span>
-                                <div class="mt-1">
-                                    <a href="https://pantalytics.gitbook.io/pantalytics-docs/" target="_blank">
-                                        <i class="fa fa-external-link me-1" title="Documentation"/>pantalytics.gitbook.io
-                                    </a>
-                                </div>
-                                <div class="mt-3 text-muted small">
-                                    © Pantalytics B.V. All rights reserved. This software is proprietary and confidential.
-                                    Unauthorized copying, modification, distribution, or use of this module, in whole or in part,
-                                    is strictly prohibited and may result in legal action. Protected under international copyright
-                                    and trade secret law.
-                                </div>
+                                <a href="https://pantalytics.gitbook.io/pantalytics-docs/" target="_blank">
+                                    <i class="fa fa-external-link me-1" title="Documentation"/>Documentation
+                                </a>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="© Pantalytics B.V. All rights reserved. This software is proprietary and confidential. Unauthorized copying, modification, distribution, or use of this module, in whole or in part, is strictly prohibited and may result in legal action. Protected under international copyright and trade secret law."/>
                             </div>
                         </div>
                     </div>
-
                 </app>
             </xpath>
         </field>

@@ -49,3 +49,12 @@
         color: rgba(0, 29, 33, 0.6);
     }
 }
+
+// Info icons. The explanation is one hover away, not printed under every
+// field: a settings page people read once should not read like a manual.
+.fa-info-circle[title] {
+    cursor: help;
+    opacity: 0.45;
+
+    &:hover { opacity: 0.9; }
+}

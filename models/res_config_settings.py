@@ -141,7 +141,6 @@ class ResConfigSettings(models.TransientModel):
              'attention needed when a mailbox has stopped.',
     )
     x_setup_status_detail = fields.Char(compute='_compute_setup_status')
-    x_setup_connection_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_users_done = fields.Boolean(compute='_compute_setup_status')
@@ -360,7 +359,6 @@ class ResConfigSettings(models.TransientModel):
                 bool(Domains._parse(record.x_internal_domains)) or record.x_sync_internal_email
             )
 
-            record.x_setup_connection_done = answers['connection']
             record.x_setup_domains_done = answers['domains']
             record.x_setup_notification_done = answers['notification']
             record.x_setup_status = Setup.status(answers)

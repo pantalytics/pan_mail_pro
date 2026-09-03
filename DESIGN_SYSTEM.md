@@ -249,6 +249,24 @@ Rules that make it read as one thing rather than three:
 - **Never invent a fourth state.** If something new can go wrong, it is a
   sentence under "Attention needed", not a new colour.
 
+### Explanation belongs behind an info icon
+
+A paragraph of help text under every field turns a settings page into a manual.
+Put the label on the screen and the reason one hover away:
+
+```xml
+<span class="o_form_label">Your domains</span>
+<i class="fa fa-info-circle text-muted ms-1"
+   title="Comma separated. Email between these domains is not synced into Odoo."/>
+```
+
+- **On screen**: the label, the field, the button. Nothing else.
+- **Behind the icon**: why it exists, what the wrong answer costs, what format to
+  type.
+- **Still on screen**: a consequence somebody is about to walk into — a
+  confidential-mail warning, a step that is blocking. Those are one short line
+  in `text-warning`, not an `alert` box.
+
 ---
 
 ## Checklist
