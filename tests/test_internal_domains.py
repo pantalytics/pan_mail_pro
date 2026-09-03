@@ -327,16 +327,15 @@ class TestInternalDomainCompleteness(TransactionCase):
 
         self.assertIn('second.test', self.Domains.get_domains())
 
-    def test_a_domain_removed_from_the_form_is_removed_from_the_table(self):
-        """The tags widget is the whole list, so an untagged domain is gone."""
-        self.Domains.set_domains(['gone.test'] + self.Domains.suggest_domains())
-        keep = self.Domains.search([('name', '!=', 'gone.test')])
+    def test_saving_settings_never_deletes_a_domain(self):
+        """The list is edited in its own table now, so a settings page built
+        before a domain was added must not take it away again."""
+        settings = self._settings_with(self.Domains.suggest_domains())
+        added = self.Domains.create({'name': 'later.test'})
 
-        self.env['res.config.settings'].create({
-            'x_internal_domain_ids': [(6, 0, keep.ids)],
-        }).set_values()
+        settings.set_values()
 
-        self.assertNotIn('gone.test', self.Domains.get_domains())
+        self.assertIn(added.name, self.Domains.get_domains())
 
     def test_a_domain_is_cleaned_on_the_way_in(self):
         """An admin pastes an address or a stray @; a domain comes out."""

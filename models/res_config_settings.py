@@ -125,13 +125,14 @@ class ResConfigSettings(models.TransientModel):
     # checklist. Empty when nothing is wrong.
     x_mailboxes_alert = fields.Char(compute='_compute_setup_status')
 
-    # An answered step collapses to one line: a check, its name, and the answer
-    # itself — not just the heading, or you have to open it again to see what
-    # you picked. The pencil reopens it. Plain booleans on the transient record,
-    # so a click is a client-side re-render and never saves the form; saving
-    # rebuilds the record, which is what closes them again.
+    # Every step is one line: a status icon, its name, the answer itself — not
+    # just the heading, or you have to open it again to see what you picked —
+    # and the way to the place it is changed. For the domains and the mailboxes
+    # that place is their own table; the provider is the only one that opens in
+    # place, which is what this boolean does. Plain boolean on the transient
+    # record, so a click is a client-side re-render and never saves the form;
+    # saving rebuilds the record, which is what closes it again.
     x_edit_provider = fields.Boolean(default=False)
-    x_edit_domains = fields.Boolean(default=False)
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_complete = fields.Boolean(compute='_compute_setup_status')
@@ -281,6 +282,11 @@ class ResConfigSettings(models.TransientModel):
         the value being saved rather than the one on the form; the raise rolls
         the write back with it.
 
+        The list itself is edited in its own table, not here, so this never
+        deletes a row — it only refuses to let the page be saved while the list
+        is demonstrably wrong. The fix is one click away on the same page: the
+        hint under the domains line offers exactly the missing domains.
+
         Only a *configured* list can be incomplete, so this never blocks the
         first save on an empty database. Absent and incomplete are two different
         failures with two different gates: the mailbox constraint catches the
@@ -288,22 +294,17 @@ class ResConfigSettings(models.TransientModel):
         because it passes every check that asks whether the list is configured.
         """
         super().set_values()
-        Domain = self.env['pan.mail.domain'].sudo()
-        # A tag removed on the form is a row nobody wants any more. Quick-create
-        # already made the added ones, which is why only the removals are here.
-        (Domain.search([]) - self.x_internal_domain_ids.sudo()).unlink()
-        error = Domain.completeness_error()
+        error = self.env['pan.mail.domain'].sudo().completeness_error()
         if error:
             raise UserError(error)
 
     def action_apply_suggested_internal_domains(self):
-        """Add everything we can derive from the database to the selection.
+        """Add every domain we can derive from the database to the list.
 
-        The admin still has to save, so this is a suggestion they confirm rather
-        than a list that appears behind their back. Returns nothing on purpose:
-        the client re-reads this same transient record, so the added tags
-        survive — re-opening the settings action would build a fresh one from
-        the stored rows and throw this away.
+        The click is the confirmation: the domains are rows, so this creates
+        them and the settings page has nothing left to save. Returns nothing on
+        purpose — the client re-reads this same transient record, so the line
+        redraws with the new domains on it.
         """
         self.ensure_one()
         Domain = self.env['pan.mail.domain']

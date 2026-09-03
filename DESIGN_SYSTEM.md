@@ -232,32 +232,52 @@ A list of steps, each showing a check and its answer, says it in one look.
 - **Never a colour that means nothing.** Green for done, red for broken. There
   is no third.
 
-### A finished step collapses into its answer
+### Every step is the same line
 
-An answered setup step becomes one line: a check, its name, the answer itself,
-and a pencil that reopens it.
+A setup step is one line, and all of them are the same line: a status icon, its
+name, the answer itself, and the way to the place it is changed.
 
 ```xml
-<div class="o_mailpro_step" invisible="not x_setup_domains_done or x_edit_domains">
-    <i class="fa fa-check-circle o_mailpro_step_check" title="Done"/>
-    <span class="o_mailpro_step_name">4. Internal Domains</span>
+<div class="o_mailpro_step">
+    <i class="fa fa-check-circle o_mailpro_step_check" title="Done"
+       invisible="not x_setup_domains_done or x_internal_domains_uncovered"/>
+    <i class="fa fa-exclamation-triangle o_mailpro_step_warn" title="Attention needed"
+       invisible="not x_internal_domains_uncovered"/>
+    <i class="fa fa-circle-o o_mailpro_step_todo" title="To do"
+       invisible="x_setup_domains_done"/>
+    <span class="o_mailpro_step_name">2. Internal Domains</span>
+    <i class="fa fa-info-circle text-muted" title="One row per domain your company owns..."/>
     <span class="o_mailpro_step_value">
         <field name="x_internal_domain_ids" nolabel="1" readonly="1" widget="many2many_tags"/>
     </span>
-    <field name="x_edit_domains" nolabel="1" widget="boolean_icon"
-           options="{'icon': 'fa-pencil'}" class="o_mailpro_step_edit"/>
+    <button type="action" name="%(action_pan_mail_domain)d"
+            icon="oi-arrow-right" title="Internal Domains"
+            class="oe_link o_mailpro_step_edit"/>
 </div>
 ```
 
 - **Show the answer, not just the heading.** Baymard tested this on accordion
   checkouts: a collapsed step that shows only its title makes people reopen it
   to see what they picked, which is worse than not collapsing at all.
-- **`boolean_icon` is the pencil.** Odoo ships it; it binds a clickable icon to
-  a boolean with no JavaScript of ours, and the click is a client-side
-  re-render rather than a save.
-- **Saving re-collapses everything**, because the transient record is rebuilt.
-  That is the behaviour, not a bug: you edit one step, save, and the page is a
-  list of answers again.
+- **Three icons, three states.** Green check for answered, red triangle for
+  answered-but-wrong, an empty grey circle for not yet. Not-done is not the same
+  as broken, and a setup page that opens in red reads as a product that is
+  already failing.
+- **The arrow goes to the data.** Two of the three steps are tables — the
+  domains and the mailboxes — so the line links to the table rather than
+  growing an editor of its own. The settings page shows the answer; the table
+  owns it.
+- **The provider is the exception, and looks like it is not.** It has no table,
+  so its arrow opens the credentials in place with `boolean_icon`, which Odoo
+  ships: a clickable icon bound to a boolean, no JavaScript of ours, and the
+  click is a client-side re-render rather than a save.
+- **A step gets at most one hint line under it**, for the fix it can offer.
+  The domains line offers the domains it can read off the database, which is
+  both the shortcut on an empty database and the one-click repair for a list
+  that is missing one.
+- **Saving closes the provider again**, because the transient record is
+  rebuilt. That is the behaviour, not a bug: you open one step, save, and the
+  page is three lines of answers again.
 
 ### Explanation belongs behind an info icon
 

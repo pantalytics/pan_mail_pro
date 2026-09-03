@@ -1,8 +1,8 @@
 // Settings → Mail Pro.
 //
-// There is no status banner: the checklist is the status. Three lines, each
-// either a green check with the answer beside it or an open section. Palette
-// from brand.pantalytics.com.
+// There is no status banner: the checklist is the status. Three lines in one
+// shape — an icon saying where the step stands, its name, the answer, and the
+// way to the place it is changed. Palette from brand.pantalytics.com.
 
 // Info icons. The explanation is one hover away, not printed under every
 // field: a settings page people read once should not read like a manual.
@@ -31,6 +31,13 @@
         color: #c0392b;
     }
 
+    // A step nobody has answered yet. An empty circle rather than a red cross:
+    // not done is not the same as wrong, and a setup page that opens in red
+    // reads as broken.
+    .o_mailpro_step_todo {
+        color: rgba(0, 29, 33, 0.25);
+    }
+
     .o_mailpro_step_name {
         font-weight: 600;
         color: #001d21;
@@ -47,4 +54,15 @@
         flex: 0 0 auto;
         margin-left: auto;
     }
+}
+
+// One line under a step, for the fix it can offer. Same left edge as the step
+// above it, so it reads as belonging to it rather than as a fourth step.
+.o_mailpro_step_hint {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0 0.55rem 1.6rem;
+    font-size: 0.9em;
+    color: rgba(0, 29, 33, 0.6);
 }
