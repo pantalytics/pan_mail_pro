@@ -67,7 +67,7 @@ class MailMessage(models.Model):
 
     x_account_id = fields.Many2one(
         'pan.mail.account',
-        string='Account',
+        string='Mail Account',
         ondelete='set null',
         # Deliberately unindexed: it is shown, never grouped or searched by.
         help='The credentials that carried this message.',
