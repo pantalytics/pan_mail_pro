@@ -326,6 +326,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_version_bump.sh` | The manifest version bump, against a base ref |
 | `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh` or `--mode=upgrade` |
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
+| `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag, run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 
 **Fresh install vs. upgraded database.** The `test` job installs fresh; the
 `upgrade` job installs the newest `v<series>.*` tag that is not HEAD and then
@@ -337,7 +338,17 @@ must still create those columns themselves — see
 
 The `pan_outlook_pro` → `pan_mail_pro` rename is *not* covered by that job: it
 happens outside Odoo (`tools/rename_to_mail_pro.sql`), before the registry
-loads, so no module upgrade can drive it. It stays a manual runbook.
+loads, so no module upgrade can drive it. It stays a manual runbook —
+`tools/ci_rename_rehearsal.sh` walks it end to end (old tag → rename SQL →
+upgrade to HEAD → full suite), which is the only thing that exercises more than
+one migration folder at a time. Run it before a rollout; it is not in CI
+because it takes a second Odoo install.
+
+**The upgrade job hops one version.** A customer sitting on 19.0.1.x crosses
+eight migration folders in a single `-u`, and nothing in CI does that. The
+rehearsal does, but from a *fresh* baseline, so every data-moving migration
+logs "0 rows". Neither proves the backfills move real data at volume — that
+needs a restored customer backup.
 
 ## Working from Claude Code (mobile, web, cloud sessions)
 
