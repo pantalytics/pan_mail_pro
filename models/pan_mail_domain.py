@@ -222,8 +222,8 @@ class PanMailDomain(models.Model):
         mailbox is ours by definition. So is an internal user's own address --
         and that is the source that catches a second domain, because a company
         that acquired another one has colleagues on it long before it has
-        mailboxes on it. Juffermans Machinebouw runs every mailbox on one
-        domain and has a colleague on a second; a list built from mailboxes
+        mailboxes on it. One customer runs every mailbox on one domain and
+        has a colleague on a second; a list built from mailboxes
         alone reads as complete and treats that colleague as an outsider.
 
         Portal and public users are excluded: a customer with a login is not

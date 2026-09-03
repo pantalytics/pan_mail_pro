@@ -4,7 +4,7 @@ The module's technical name changed from `pan_outlook_pro` to `pan_mail_pro`
 in version 19.0.3.0.0. Fresh installs need nothing from this page. Databases
 that already run the module need the rename applied to their data first.
 
-At the time of writing that is one database: Juffermans.
+At the time of writing that is one database.
 
 ## Why order matters
 

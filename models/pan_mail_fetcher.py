@@ -390,8 +390,8 @@ class PanMailFetcher(models.AbstractModel):
         inbox. The old reasoning was half right: the sender of a sent item is
         always us, so checking the *sender* there would skip everything. The
         answer to that is to check the counterpart, not to stop checking — and
-        for months it was the second one. Every mail in the Juffermans incident
-        came through this gap.
+        for months it was the second one. Every mail in the incident that
+        produced this gate came through this gap.
 
         With several recipients the rule is "any external party means this is
         correspondence": the first external one becomes the counterpart and the

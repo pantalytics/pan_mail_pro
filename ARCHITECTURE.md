@@ -1041,8 +1041,8 @@ garbage-collected and `mail.notification` is not. The table still standing
 later is the one anybody reading the database, or the chatter, believes.
 
 The cancel path used to write `state = 'cancel'` and stop there, leaving the
-notifications at `ready` — "queued, not sent yet" — permanently. At Juffermans
-Machinebouw seventeen rows from one sync run still read `ready` eleven days
+notifications at `ready` — "queued, not sent yet" — permanently. At one
+customer, seventeen rows from one sync run still read `ready` eleven days
 after their mails were cancelled: the chatter showed mail as pending that no
 longer existed. `mail.mail._cancel_notifications()` closes that, taking the
 value from Odoo's own `_get_notification_status()` so the two cannot drift.

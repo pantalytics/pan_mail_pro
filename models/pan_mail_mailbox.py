@@ -566,8 +566,8 @@ class PanMailMailbox(models.Model):
         takeover fires here, sending starts here, and a database that gets this
         far without knowing its own domains is one switch away from copying
         internal mail into Odoo. Gating only the switch left the setting reading
-        as an option belonging to sync, which is what it looked like at
-        Juffermans Machinebouw right up until it mattered.
+        as an option belonging to sync, which is what it looked like at one
+        customer right up until it mattered.
         """
         gate = self.env['pan.mail.domain'].configuration_error()
         if gate:

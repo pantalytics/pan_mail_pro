@@ -161,7 +161,7 @@ Each addon repo can be tested independently with its own `.local/` directory. A 
 │       └── odoo.conf
 ├── odoo-pantalytics/
 │   └── .local/                   ← Per-repo Docker config
-└── odoo-customer-goudsmit/
+└── odoo-customer-example/
     └── .local/                   ← Per-repo Docker config
 ```
 
@@ -179,7 +179,7 @@ Each addon repo can be tested independently with its own `.local/` directory. A 
 |------|-------|--------|
 | pan_mail_pro | `..:/mnt/extra-addons/pan_mail_pro` | Single addon, direct from repo |
 | odoo-pantalytics | `../addons:/mnt/extra-addons` | All addons via submodules |
-| odoo-customer-goudsmit | `../addons:/mnt/extra-addons` | All addons via submodules |
+| odoo-customer-example | `../addons:/mnt/extra-addons` | All addons via submodules |
 
 Key config: `data_dir = /var/lib/odoo` in odoo.conf MUST match the volume mount in docker-compose.yml.
 

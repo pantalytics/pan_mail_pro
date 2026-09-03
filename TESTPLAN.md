@@ -203,7 +203,7 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
 
 ## Fase C — Klanten
 
-- [ ] Juffermans: backup, module-upgrade, smoke test
+- [ ] Eerste klantendatabase: backup, module-upgrade, smoke test
 - [ ] Overige klantendatabases idem
 - [ ] Nazorg: logs eerste dagen monitoren op `[Outgoing Mail]` / `[Incoming Mail]`
 - [ ] Per klant beslissen of interne domeinen goed staan — bij een upgrade van

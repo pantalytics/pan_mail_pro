@@ -149,7 +149,7 @@ class TestIncomingGates(MailProTestCase):
     # The counterpart rule — both directions, any external party
     # ------------------------------------------------------------------ #
     def test_a_sent_item_to_our_own_address_never_enters(self):
-        """The Juffermans case, in one test.
+        """The case that produced this gate, in one test.
 
         A colleague mails a shared internal address; the sync reads it from the
         Sent folder. This gate guarded the inbox only, so the mail came in,

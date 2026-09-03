@@ -224,8 +224,8 @@ class TestInternalDomainCompleteness(TransactionCase):
     A list that names the obvious domain and misses a second one passes every
     check that asks whether it is configured, and then treats a colleague on
     that second domain as a customer. That is the original leak, on a database
-    nothing objects to. Juffermans Machinebouw is the shape: every mailbox on
-    one domain, a colleague on another.
+    nothing objects to. The shape is: every mailbox on one domain, a colleague
+    on another.
     """
 
     @classmethod

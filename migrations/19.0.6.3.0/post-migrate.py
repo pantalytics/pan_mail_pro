@@ -4,8 +4,8 @@
 Until 19.0.6.3.0 the cancel branch in `mail.mail._send_via_mail_pro` wrote
 `state = 'cancel'` and left the linked `mail.notification` rows at `ready`,
 which means "queued, not sent yet". The chatter shows those as pending
-forever. At Juffermans Machinebouw seventeen rows from one sync run still read
-`ready` eleven days later.
+forever. At one customer, seventeen rows from one sync run still read `ready`
+eleven days later.
 
 The code no longer produces them. This clears the ones already written.
 
