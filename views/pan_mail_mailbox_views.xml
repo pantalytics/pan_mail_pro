@@ -157,7 +157,8 @@
                 Add your first mailbox
             </p>
             <p>
-                Configure mailboxes for sending and receiving email via Microsoft 365.
+                A mailbox is an address Mail Pro sends and receives on, using the
+                provider you set up. One of them carries the system email.
             </p>
         </field>
     </record>
