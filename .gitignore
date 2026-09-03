@@ -30,3 +30,7 @@ Thumbs.db
 odoo-test.log
 odoo-baseline.log
 odoo-upgrade.log
+odoo-rehearsal.log
+
+# dream-skill staging (local machine artifact)
+.dream-staging-*/
