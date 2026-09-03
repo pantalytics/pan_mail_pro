@@ -120,12 +120,6 @@ class ResConfigSettings(models.TransientModel):
         help='Address system emails are sent from, e.g. notifications@company.com',
     )
 
-    # Progressive disclosure. Once every step is answered the checklist folds
-    # away and the page is a status line: a finished checklist is not what an
-    # admin opens this page for. Plain boolean rather than a compute, so
-    # toggling it is a client-side re-render and never saves the form.
-    x_setup_show_steps = fields.Boolean(string='Show Setup Steps', default=False)
-
     # -------------------------------------------------------------------------
     # Checklist state
     # -------------------------------------------------------------------------

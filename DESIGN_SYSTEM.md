@@ -248,11 +248,6 @@ Rules that make it read as one thing rather than three:
   changing sentence is one thing speaking.
 - **Never invent a fourth state.** If something new can go wrong, it is a
   sentence under "Attention needed", not a new colour.
-- **A finished checklist folds away.** Once every step is answered the steps
-  collapse and the status line is the page; a toggle brings them back. Use a
-  plain `fields.Boolean` on the transient record and one `invisible=` on a
-  wrapper div — that is a client-side re-render, where a button would save the
-  form on its way to the server.
 
 ### Explanation belongs behind an info icon
 

@@ -50,17 +50,6 @@
     }
 }
 
-// The disclosure row that replaces the checklist once setup is done. Quiet on
-// purpose: it is a way back in, not a call to action.
-.o_mailpro_reveal {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: -0.5rem 0 1.5rem;
-    font-size: 0.85rem;
-    color: rgba(0, 29, 33, 0.6);
-}
-
 // Info icons. The explanation is one hover away, not printed under every
 // field: a settings page people read once should not read like a manual.
 .fa-info-circle[title] {
