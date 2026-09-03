@@ -50,9 +50,9 @@ _logger = logging.getLogger(__name__)
 PHASE_SETUP = 'setup'
 PHASE_SYNCING = 'syncing'
 
-# The five steps, in the order they have to be answered. This tuple is the
-# order: the settings page numbers its sections from it, and a step that moves
-# changes what the steps after it may assume.
+# The three, in the order they have to be answered. This tuple is the order:
+# the settings page numbers its sections from it, and a step that moves changes
+# what the steps after it may assume.
 STEPS = (
     ('provider', 'Email provider'),
     ('domains', 'Internal domains'),
@@ -88,7 +88,7 @@ class PanMailSetup(models.AbstractModel):
 
     @api.model
     def answers(self, provider=None):
-        """The five answers as the database has them.
+        """The three answers as the database has them.
 
         `provider` overrides the stored choice, for the settings page: it has to
         report on the provider the admin is looking at, which during setup is

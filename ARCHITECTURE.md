@@ -121,7 +121,7 @@ Providers disagree about sending as somebody else, which is why
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Communication → Configuration |
-| `pan.mail.setup` | The five setup steps and the phase they add up to (abstract) |
+| `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
 | `res.config.settings` | Module settings (provider choice, client id, secret, tenant) |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
@@ -182,7 +182,7 @@ pan_mail_pro/
 │   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
 │   ├── pan_mail_account.py        # Per-address credentials
 │   ├── pan_mail_domain.py         # Internal domains + the fail-closed gate
-│   ├── pan_mail_setup.py          # Setup vs syncing: the five mandatory steps
+│   ├── pan_mail_setup.py          # Setup vs syncing: the three mandatory steps
 │   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral)
 │   ├── pan_mail_matcher.py        # Thread matching rule ladder
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link

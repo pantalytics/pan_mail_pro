@@ -322,10 +322,10 @@ class ResConfigSettings(models.TransientModel):
     def _compute_setup_status(self):
         """Ask `pan.mail.setup` for the phase, with the form's answers on top.
 
-        Two of the five answers can change while the admin is still typing, so
-        the record's own values win for those; the rest is what the database
-        says. Without that overlay the page would keep reporting "not done" for
-        a credential that is on screen but not yet saved.
+        Two of the three answers can change while the admin is still typing,
+        so the record's own values win for those; the rest is what the
+        database says. Without that overlay the page would keep reporting
+        "not done" for a credential that is on screen but not yet saved.
         """
         Setup = self.env['pan.mail.setup']
         alert = Setup.mailbox_alert()

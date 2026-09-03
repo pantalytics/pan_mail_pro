@@ -123,9 +123,10 @@ class TestSetupFlow(TransactionCase):
 class TestSetupPhase(TransactionCase):
     """The phase, and what it stops.
 
-    Setup is not advice. Until all five steps are answered the module is not in
-    service: the cron does not fetch and "Sync Now" refuses. The rule lives in
-    one place so a sixth reason to refuse cannot be invented at a call site.
+    Setup is not advice. Until all three steps are answered the module is not
+    in service: the cron does not fetch and "Sync Now" refuses. The rule lives
+    in one place so a fourth reason to refuse cannot be invented at a call
+    site.
     """
 
     @classmethod
@@ -159,7 +160,7 @@ class TestSetupPhase(TransactionCase):
             self.assertEqual(self.Setup.blocking_step(answers)[:2], (index, code))
             self.assertIn(label, self.Setup.blocking_step_label(answers))
 
-    def test_all_five_answered_is_syncing(self):
+    def test_all_three_answered_is_syncing(self):
         answers = self._answers()
         self.assertEqual(self.Setup.phase(answers), pan_mail_setup.PHASE_SYNCING)
         self.assertTrue(self.Setup.is_ready(answers))
