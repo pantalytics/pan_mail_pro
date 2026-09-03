@@ -215,24 +215,6 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <div class="d-flex align-items-center">
-                                    <field name="x_sync_internal_email" widget="boolean_toggle" nolabel="1" class="me-2"/>
-                                    <span class="o_form_label">Sync internal email too</span>
-                                    <i class="fa fa-info-circle text-muted ms-1"
-                                       title="Off by default. On, email between colleagues — confidential threads included — is copied into Odoo and readable by everyone with access to the record."/>
-                                </div>
-                                <div class="text-warning small mt-2" invisible="x_internal_sync_mailbox_count == 0">
-                                    <i class="fa fa-exclamation-triangle me-1" title="Warning"/>
-                                    <field name="x_internal_sync_mailbox_count" class="d-inline" readonly="1"/>
-                                    mailbox(es) do not exclude internal mail.
-                                    <button type="action" name="%(action_pan_mail_mailbox)d"
-                                            string="Review" icon="oi-arrow-right" class="oe_link ps-0"/>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- STEP 5 — the last gate. -->

@@ -15,9 +15,10 @@ configured when it was not — and an empty list used to mean "nothing is
 internal", so a database without alias domains synced every internal mail into
 Odoo. That is a data leak, not a missing feature.
 
-The rule now: incoming sync stays switched off until the domains are configured
-or an admin explicitly opts out. Alias domains still feed `suggest_domains()`,
-they just no longer decide anything by themselves.
+The rule now: no mailbox exists until the domains are configured, and mail
+between them is never synced. There is no opt-out, global or per mailbox --
+see ARCHITECTURE.md §9.12. Alias domains still feed `suggest_domains()`, they
+just no longer decide anything by themselves.
 """
 import logging
 import re
@@ -28,7 +29,6 @@ _logger = logging.getLogger(__name__)
 
 # Config parameters live under the module's existing namespace.
 PARAM_DOMAINS = 'pan_mail_pro.internal_domains'
-PARAM_SYNC_INTERNAL = 'pan_mail_pro.sync_internal_email'
 
 _SPLIT_RE = re.compile(r'[\s,;]+')
 
@@ -89,13 +89,6 @@ class PanMailInternalDomains(models.AbstractModel):
         )
 
     @api.model
-    def sync_internal_enabled(self):
-        """True when an admin deliberately turned the internal filter off."""
-        return self.env['ir.config_parameter'].sudo().get_param(
-            PARAM_SYNC_INTERNAL
-        ) in ('True', 'true', '1')
-
-    @api.model
     def is_configured(self):
         return bool(self.get_domains())
 
@@ -116,7 +109,7 @@ class PanMailInternalDomains(models.AbstractModel):
         empty database has no domains to derive and nobody to protect, and the
         SMTP takeover waits for the same moment for the same reason.
         """
-        if self.is_configured() or self.sync_internal_enabled():
+        if self.is_configured():
             return None
         return _(
             'No internal email domains are configured. Mail Pro cannot be used '
@@ -124,8 +117,7 @@ class PanMailInternalDomains(models.AbstractModel):
             'customers — and every internal email, confidential ones included, '
             'would be copied into Odoo.\n\n'
             'Go to Settings → Mail Pro → Internal Domains and enter your company '
-            'domains, or explicitly enable "Sync internal email" if that is what '
-            'you want.'
+            'domains.'
         )
 
     @api.model
@@ -168,14 +160,11 @@ class PanMailInternalDomains(models.AbstractModel):
     def should_skip(self, email, mailbox=None):
         """Should this incoming message be skipped as internal?
 
-        Three ways to answer "no": the global opt-out is on, this mailbox opted
-        out (a team mailbox that wants internal forwards logged), or the address
-        simply is not ours.
+        One answer, for every mailbox: our own domains are never synced. The
+        `mailbox` argument is kept because every caller has one and a future
+        rule may need it, but nothing about a mailbox can turn the filter off
+        any more — see ARCHITECTURE.md §9.12.
         """
-        if self.sync_internal_enabled():
-            return False
-        if mailbox is not None and mailbox and not mailbox.exclude_internal:
-            return False
         return self.is_internal(email)
 
     # -------------------------------------------------------------------------

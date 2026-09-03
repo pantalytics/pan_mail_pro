@@ -200,14 +200,12 @@ class TestSetupChecklist(TransactionCase):
                 'x_notification_mailbox_email': 'other@checklist.test',
             }).action_create_notification_mailbox()
 
-    def test_domains_step_accepts_either_answer(self):
-        """Configured domains and a deliberate opt-out both complete the step."""
+    def test_domains_step_needs_a_domain(self):
+        """The only way to finish step 4 is to name your domains."""
         self.assertTrue(self._settings().x_setup_domains_done)
 
         self.env['pan.mail.internal.domains'].set_domains([])
         self.assertFalse(self._settings().x_setup_domains_done)
-
-        self.assertTrue(self._settings({'x_sync_internal_email': True}).x_setup_domains_done)
 
     def test_suggestion_button_fills_the_domain_field(self):
         self.env['pan.mail.mailbox'].create({

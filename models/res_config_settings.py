@@ -23,7 +23,6 @@ from odoo.exceptions import UserError
 from . import encryption_utils
 from . import mail_mail
 from . import pan_mail_internal_domains as internal_domains
-from .pan_mail_mailbox import SYNCING_MODES
 from .pan_mail_setup import PROVIDER_CREDENTIALS, STATUS_SELECTION
 from .mail_provider_client import (
     PARAM_SETUP_PROVIDER,
@@ -109,16 +108,8 @@ class ResConfigSettings(models.TransientModel):
         help='Your own email domains, comma separated (e.g. company.com, company.be). '
              'Email from these domains is not synced into Odoo.',
     )
-    x_sync_internal_email = fields.Boolean(
-        string='Sync Internal Email',
-        config_parameter=internal_domains.PARAM_SYNC_INTERNAL,
-        help='Turn the internal filter off entirely and sync email between '
-             'colleagues into Odoo as well. Everyone with access to a record '
-             'can then read that correspondence.',
-    )
     x_internal_domains_suggested = fields.Char(compute='_compute_internal_domains_status')
     x_internal_domains_uncovered = fields.Char(compute='_compute_internal_domains_status')
-    x_internal_sync_mailbox_count = fields.Integer(compute='_compute_internal_domains_status')
 
     # -------------------------------------------------------------------------
     # Step 5 — the notification mailbox
@@ -274,17 +265,12 @@ class ResConfigSettings(models.TransientModel):
         Domains = self.env['pan.mail.internal.domains']
         suggested = ', '.join(Domains.suggest_domains())
         uncovered = ', '.join(Domains.uncovered_domains())
-        internal_sync_count = self.env['pan.mail.mailbox'].sudo().search_count([
-            ('exclude_internal', '=', False),
-            ('sync_mode', 'in', SYNCING_MODES),
-        ])
         for record in self:
             # Read the form's value, not the saved parameter: the admin may be
             # typing domains right now and the warnings should follow along.
             configured = bool(Domains._parse(record.x_internal_domains))
             record.x_internal_domains_suggested = suggested
             record.x_internal_domains_uncovered = uncovered if configured else ''
-            record.x_internal_sync_mailbox_count = internal_sync_count
 
     def set_values(self):
         """Refuse a domain list that leaves one of our own domains out.
@@ -333,7 +319,7 @@ class ResConfigSettings(models.TransientModel):
         return self.env['res.users'].sudo().search(domain)
 
     @api.depends('x_mail_provider', 'x_provider_credentials_set', 'x_provider_connected',
-                 'x_internal_domains', 'x_sync_internal_email')
+                 'x_internal_domains')
     def _compute_setup_status(self):
         """Ask `pan.mail.setup` for the phase, with the form's answers on top.
 
@@ -355,9 +341,7 @@ class ResConfigSettings(models.TransientModel):
         for record in self:
             answers = Setup.answers(provider=record.x_mail_provider)
             answers['credentials'] = record.x_provider_credentials_set
-            answers['domains'] = (
-                bool(Domains._parse(record.x_internal_domains)) or record.x_sync_internal_email
-            )
+            answers['domains'] = bool(Domains._parse(record.x_internal_domains))
 
             record.x_setup_domains_done = answers['domains']
             record.x_setup_notification_done = answers['notification']

@@ -39,7 +39,12 @@ def migrate(cr, version):
         _logger.info('[Mail Pro] Internal domains already configured, leaving them alone')
         return
 
-    if Domains.sync_internal_enabled():
+    # Read the parameter directly: 19.0.6.4.0 removed the opt-out and the
+    # helper that answered for it, and a database crossing several releases
+    # in one upgrade runs this script against that newer code.
+    opted_out = env['ir.config_parameter'].sudo().get_param(
+        'pan_mail_pro.sync_internal_email') in ('True', 'true', '1')
+    if opted_out:
         _logger.info('[Mail Pro] Internal sync explicitly enabled, nothing to pre-fill')
         return
 

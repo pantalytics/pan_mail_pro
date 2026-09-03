@@ -184,15 +184,6 @@ class PanMailMailbox(models.Model):
         help='Hold for manual review instead of auto-creating contacts'
     )
 
-    exclude_internal = fields.Boolean(
-        string='Exclude Internal',
-        default=True,
-        help='Keep the company\'s own mail out of Odoo, in both directions: '
-             'received from one of your domains, and sent to one. A mail with '
-             'any outside recipient is correspondence and is still logged. '
-             'Disable for team mailboxes where internal forwarding should be '
-             'logged.'
-    )
     # Keep for backwards compatibility / internal use
     sync_start_date = fields.Datetime(
         string='Import From',
@@ -545,7 +536,7 @@ class PanMailMailbox(models.Model):
                         'Existing notification mailbox: %s'
                     ) % existing.email)
 
-    @api.constrains('email', 'sync_mode', 'exclude_internal')
+    @api.constrains('email', 'sync_mode')
     def _check_internal_domains_configured(self):
         """No mailbox at all before the internal domains exist.
 

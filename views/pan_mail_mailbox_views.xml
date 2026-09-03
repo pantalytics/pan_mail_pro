@@ -70,19 +70,12 @@
                                 <i class="fa fa-info-circle text-muted ms-1"
                                    title="Mail is imported oldest first, up to 200 per minute. From anyone: senders who are not contacts yet are created automatically, unless you hold them for review below."/>
                             </div>
-                            <field name="exclude_internal" widget="boolean_toggle"
-                                   invisible="sync_mode == 'none'"/>
                             <field name="sync_start_date"
                                    invisible="sync_mode == 'none'"/>
                             <field name="last_sync_date" readonly="1"
                                    invisible="sync_mode == 'none' or not last_sync_date"/>
                         </group>
-                        <group>
-                            <div class="text-warning" invisible="sync_mode == 'none' or exclude_internal">
-                                <i class="fa fa-exclamation-triangle me-1" title="Warning"/>
-                                Confidential internal threads are synced into Odoo.
-                            </div>
-                        </group>
+                        <group/>
                     </group>
 
                     <!-- SECTION 3: ROUTING (only when sync enabled) -->

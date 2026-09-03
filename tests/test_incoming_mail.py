@@ -48,25 +48,13 @@ class TestInternalDomain(TransactionCase):
         """When the email domain isn't in the list, it's not internal."""
         self.assertFalse(self.processor._is_internal_domain('user@external.net'))
 
-    def test_per_mailbox_exclude_internal_enabled(self):
-        """With per-mailbox exclude_internal enabled, internal emails are skipped."""
-        mailbox = self.env['pan.mail.mailbox'].create({
-            'email': 'support@company.com',
-            'mailbox_type': 'shared',
-            'exclude_internal': True,  # Default: exclude internal
-        })
-        # Internal email should be skipped
-        self.assertTrue(self.processor._is_internal_domain('user@company.com', mailbox))
-
-    def test_per_mailbox_exclude_internal_disabled(self):
-        """With per-mailbox exclude_internal disabled, internal emails are included."""
+    def test_no_mailbox_can_opt_out_of_the_internal_filter(self):
+        """There is no per-mailbox escape hatch left. Every mailbox filters."""
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'team@company.com',
             'mailbox_type': 'shared',
-            'exclude_internal': False,  # Include internal emails for this mailbox
         })
-        # Internal email should NOT be skipped for this mailbox
-        self.assertFalse(self.processor._is_internal_domain('user@company.com', mailbox))
+        self.assertTrue(self.processor._is_internal_domain('user@company.com', mailbox))
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

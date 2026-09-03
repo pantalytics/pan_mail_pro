@@ -340,8 +340,8 @@ This used to read `mail.alias.domain`, where "no domains configured" meant
 internal email into Odoo. Fail-closed, because the failure mode is a data leak.
 Alias domains still feed `suggest_domains()`; they no longer decide anything.
 
-Turning the filter off is possible but explicit: globally via "Sync internal
-email", or per mailbox via "Exclude Internal".
+**The filter has no off switch.** Not globally and not per mailbox — see
+§9.12.
 
 ### The gate ladder
 
@@ -1040,6 +1040,35 @@ value from Odoo's own `_get_notification_status()` so the two cannot drift.
 
 Failures already worked this way, through `_postprocess_sent_message`. Cancels
 were the one terminal outcome that did not.
+
+### 9.12 Internal mail is always filtered
+
+Mail between the company's own domains is never synced into Odoo. There is no
+global setting and no per-mailbox toggle, and the two that existed —
+`sync_internal_email` and `exclude_internal` — were removed in 19.0.6.4.0
+rather than defaulted off.
+
+A safety control with a switch is a safety control someone will flip. Both
+switches were reachable from a settings page, neither was reversible in effect
+(mail copied into a record stays there), and the failure they guard is a data
+leak: a colleague's confidential thread readable by everyone with access to the
+record. A default protects the databases nobody touched; removing the switch
+protects all of them.
+
+It also removed a question the product had no business asking. "Do you want
+your internal email in Odoo?" reads like a preference and is not one — the
+right answer is the same for every customer, and the customer cannot see the
+consequence of the wrong one until it is in the database.
+
+**The case being dropped**: a team mailbox where internal forwarding should be
+logged, e.g. support@ receiving a colleague's forward of a customer complaint.
+That thread now stops at the forward. The customer's own mail to support@ is
+still logged, so the record is not empty, only shorter. One real workflow for
+one setting that could quietly leak every internal thread in the database is
+not a trade worth keeping.
+
+Note the asymmetry that makes this cheap: a mail with *any* outside recipient
+is correspondence and is still logged. "Internal" means every party is ours.
 
 ## 10. Security and permissions
 

@@ -99,14 +99,6 @@ class TestInternalDomainGate(TransactionCase):
         mailbox = self._sync_mailbox()
         self.assertEqual(mailbox.sync_mode, 'all')
 
-    def test_explicit_opt_out_unblocks(self):
-        """The escape hatch has to work — but only when someone asked for it."""
-        self.env['ir.config_parameter'].sudo().set_param(
-            'pan_mail_pro.sync_internal_email', 'True'
-        )
-        mailbox = self._sync_mailbox()
-        self.assertEqual(mailbox.sync_mode, 'all')
-
     def test_a_send_only_mailbox_is_blocked_too(self):
         """The gate moved from the sync switch to the mailbox.
 
@@ -170,15 +162,18 @@ class TestInternalDomainFiltering(TransactionCase):
     def test_external_sender_is_kept(self):
         self.assertFalse(self.Domains.should_skip('customer@example.com', self.mailbox))
 
-    def test_global_opt_out_keeps_everything(self):
+    def test_there_is_no_opt_out(self):
+        """The filter has no off switch, globally or per mailbox.
+
+        The old global parameter is still readable by anything that kept a
+        reference to it; setting it must change nothing. See ARCHITECTURE.md
+        §9.12 for why the escape hatch was removed rather than defaulted off.
+        """
         self.env['ir.config_parameter'].sudo().set_param(
             'pan_mail_pro.sync_internal_email', 'True'
         )
-        self.assertFalse(self.Domains.should_skip('colleague@company.com', self.mailbox))
-
-    def test_per_mailbox_opt_out_keeps_everything_for_that_mailbox(self):
-        self.mailbox.exclude_internal = False
-        self.assertFalse(self.Domains.should_skip('colleague@company.com', self.mailbox))
+        self.assertTrue(self.Domains.should_skip('colleague@company.com', self.mailbox))
+        self.assertNotIn('exclude_internal', self.env['pan.mail.mailbox']._fields)
 
     def test_empty_list_no_longer_means_nothing_is_internal(self):
         """The original bug, pinned.
