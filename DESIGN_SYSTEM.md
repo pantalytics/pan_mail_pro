@@ -234,22 +234,30 @@ A list of steps, each showing a check and its answer, says it in one look.
 
 ### Every step is the same line
 
-A setup step is one line, and all of them are the same line: a status icon, its
+A setup step is one line, and all of them are the same line: a coloured dot, its
 name, the answer itself, and the way to the place it is changed.
 
 ```xml
 <div class="o_mailpro_step">
-    <i class="fa fa-check-circle o_mailpro_step_check" title="Done"
-       invisible="not x_setup_domains_done or x_internal_domains_uncovered"/>
-    <i class="fa fa-exclamation-triangle o_mailpro_step_warn" title="Attention needed"
-       invisible="not x_internal_domains_uncovered"/>
-    <i class="fa fa-circle-o o_mailpro_step_todo" title="To do"
-       invisible="x_setup_domains_done"/>
-    <span class="o_mailpro_step_name">2. Internal Domains</span>
-    <i class="fa fa-info-circle text-muted" title="One row per domain your company owns..."/>
-    <span class="o_mailpro_step_value">
-        <field name="x_internal_domain_ids" nolabel="1" readonly="1" widget="many2many_tags"/>
-    </span>
+    <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
+          invisible="not x_setup_domains_done or x_internal_domains_uncovered"/>
+    <span class="o_mailpro_dot o_mailpro_dot_warn" title="Attention needed"
+          invisible="not x_internal_domains_uncovered"/>
+    <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
+          invisible="x_setup_domains_done"/>
+    <div class="o_mailpro_step_body">
+        <div class="o_mailpro_step_head">
+            <span class="o_mailpro_step_name">2. Internal Domains</span>
+            <i class="fa fa-info-circle text-muted" title="One row per domain your company owns..."/>
+            <span class="o_mailpro_step_value">
+                <field name="x_internal_domain_ids" nolabel="1" readonly="1" widget="many2many_tags"/>
+            </span>
+        </div>
+        <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_internal_domains_uncovered">
+            Mailboxes on <field name="x_internal_domains_uncovered" class="d-inline" readonly="1" nolabel="1"/>
+            are treated as external.
+        </div>
+    </div>
     <button type="action" name="%(action_pan_mail_domain)d"
             icon="oi-arrow-right" title="Internal Domains"
             class="oe_link o_mailpro_step_edit"/>
@@ -259,10 +267,15 @@ name, the answer itself, and the way to the place it is changed.
 - **Show the answer, not just the heading.** Baymard tested this on accordion
   checkouts: a collapsed step that shows only its title makes people reopen it
   to see what they picked, which is worse than not collapsing at all.
-- **Three icons, three states.** Green check for answered, red triangle for
-  answered-but-wrong, an empty grey circle for not yet. Not-done is not the same
-  as broken, and a setup page that opens in red reads as a product that is
-  already failing.
+- **One shape in three colours, always in the same place.** Green for answered,
+  red for answered-but-wrong, an outlined circle for not yet. A column of
+  different glyphs reads as a column of different kinds of thing; a column of
+  dots reads as one status you can scan in a second. Not-done is an outline
+  rather than a fill, because a setup page that opens in red reads as a product
+  that is already failing.
+- **A sentence goes under the name, never beside it.** The answer is short
+  enough to sit on the first line; a warning or a fix is not. Beside the name a
+  long one pushes the arrow off the line and turns the column of names ragged.
 - **The arrow goes to the data.** Two of the three steps are tables — the
   domains and the mailboxes — so the line links to the table rather than
   growing an editor of its own. The settings page shows the answer; the table
@@ -271,10 +284,9 @@ name, the answer itself, and the way to the place it is changed.
   so its arrow opens the credentials in place with `boolean_icon`, which Odoo
   ships: a clickable icon bound to a boolean, no JavaScript of ours, and the
   click is a client-side re-render rather than a save.
-- **A step gets at most one hint line under it**, for the fix it can offer.
-  The domains line offers the domains it can read off the database, which is
-  both the shortcut on an empty database and the one-click repair for a list
-  that is missing one.
+- **A step gets at most one fix line**, under the message. The domains line
+  offers the domains it can read off the database, which is both the shortcut on
+  an empty database and the one-click repair for a list that is missing one.
 - **Saving closes the provider again**, because the transient record is
   rebuilt. That is the behaviour, not a bug: you open one step, save, and the
   page is three lines of answers again.

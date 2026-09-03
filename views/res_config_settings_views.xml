@@ -16,21 +16,28 @@
                     <field name="x_setup_notification_done" invisible="1"/>
                     <field name="x_setup_complete" invisible="1"/>
 
-                    <!-- The three steps, in one shape: a status icon, the name,
-                         the answer, and the way to the place you change it.
-                         Steps 2 and 3 are tables, so that way is a link to the
-                         table; step 1 is the only one that opens in place. -->
+                    <!-- The three steps, in one shape: a coloured dot on the
+                         left, the name, the answer, and the way to the place you
+                         change it. Steps 2 and 3 are tables, so that way is a
+                         link to the table; step 1 is the only one that opens in
+                         place. Anything longer than an answer — a warning, a fix
+                         — goes on its own line under the name, never beside it,
+                         so the column of dots and names stays a column. -->
                     <div class="o_mailpro_step">
-                        <i class="fa fa-check-circle o_mailpro_step_check" title="Done"
-                           invisible="not x_provider_credentials_set"/>
-                        <i class="fa fa-circle-o o_mailpro_step_todo" title="To do"
-                           invisible="x_provider_credentials_set"/>
-                        <span class="o_mailpro_step_name">1. Email Provider</span>
-                        <i class="fa fa-info-circle text-muted" title="Where your company's email lives. The setup steps differ per provider, so only the chosen one is shown; each keeps its own credentials, so you can switch back."/>
-                        <span class="o_mailpro_step_value" invisible="not x_mail_provider">
-                            <field name="x_mail_provider" nolabel="1" readonly="1"/>
-                        </span>
-                        <span class="o_mailpro_step_value" invisible="x_mail_provider">Not chosen yet</span>
+                        <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
+                              invisible="not x_provider_credentials_set"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
+                              invisible="x_provider_credentials_set"/>
+                        <div class="o_mailpro_step_body">
+                            <div class="o_mailpro_step_head">
+                                <span class="o_mailpro_step_name">1. Email Provider</span>
+                                <i class="fa fa-info-circle text-muted" title="Where your company's email lives. The setup steps differ per provider, so only the chosen one is shown; each keeps its own credentials, so you can switch back."/>
+                                <span class="o_mailpro_step_value" invisible="not x_mail_provider">
+                                    <field name="x_mail_provider" nolabel="1" readonly="1"/>
+                                </span>
+                                <span class="o_mailpro_step_value" invisible="x_mail_provider">Not chosen yet</span>
+                            </div>
+                        </div>
                         <field name="x_edit_provider" nolabel="1" widget="boolean_icon"
                                options="{'icon': 'fa-arrow-right'}" class="o_mailpro_step_edit"/>
                     </div>
@@ -147,55 +154,61 @@
                     </div>
 
                     <div class="o_mailpro_step">
-                        <i class="fa fa-check-circle o_mailpro_step_check" title="Done"
-                           invisible="not x_setup_domains_done or x_internal_domains_uncovered"/>
-                        <i class="fa fa-exclamation-triangle o_mailpro_step_warn" title="Attention needed"
-                           invisible="not x_internal_domains_uncovered"/>
-                        <i class="fa fa-circle-o o_mailpro_step_todo" title="To do"
-                           invisible="x_setup_domains_done"/>
-                        <span class="o_mailpro_step_name">2. Internal Domains</span>
-                        <i class="fa fa-info-circle text-muted" title="One row per domain your company owns, e.g. company.com. Mail between them is never synced into Odoo, and no mailbox can be created until at least one is listed."/>
-                        <span class="o_mailpro_step_value" invisible="not x_setup_domains_done or x_internal_domains_uncovered">
-                            <field name="x_internal_domain_ids" nolabel="1" readonly="1" widget="many2many_tags"/>
-                        </span>
-                        <span class="o_mailpro_step_value o_mailpro_step_warn" invisible="not x_internal_domains_uncovered">
-                            Mailboxes on
-                            <field name="x_internal_domains_uncovered" class="d-inline" readonly="1" nolabel="1"/>
-                            are treated as external.
-                        </span>
-                        <span class="o_mailpro_step_value" invisible="x_setup_domains_done">Not set yet</span>
+                        <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
+                              invisible="not x_setup_domains_done or x_internal_domains_uncovered"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_warn" title="Attention needed"
+                              invisible="not x_internal_domains_uncovered"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
+                              invisible="x_setup_domains_done"/>
+                        <div class="o_mailpro_step_body">
+                            <div class="o_mailpro_step_head">
+                                <span class="o_mailpro_step_name">2. Internal Domains</span>
+                                <i class="fa fa-info-circle text-muted" title="One row per domain your company owns, e.g. company.com. Mail between them is never synced into Odoo, and no mailbox can be created until at least one is listed."/>
+                                <span class="o_mailpro_step_value" invisible="not x_setup_domains_done">
+                                    <field name="x_internal_domain_ids" nolabel="1" readonly="1" widget="many2many_tags"/>
+                                </span>
+                                <span class="o_mailpro_step_value" invisible="x_setup_domains_done">Not set yet</span>
+                            </div>
+                            <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_internal_domains_uncovered">
+                                Mailboxes on
+                                <field name="x_internal_domains_uncovered" class="d-inline" readonly="1" nolabel="1"/>
+                                are treated as external.
+                            </div>
+                            <!-- The one fix worth a line of its own: the domains
+                                 can be read off the addresses already in the
+                                 database, so neither an empty list nor an
+                                 incomplete one has to be typed. -->
+                            <div class="o_mailpro_step_msg" invisible="not x_internal_domains_suggested">
+                                <button name="action_apply_suggested_internal_domains" type="object"
+                                        class="btn-link btn-sm p-0" string="Add"/>
+                                <field name="x_internal_domains_suggested" class="d-inline" readonly="1" nolabel="1"/>
+                            </div>
+                        </div>
                         <button type="action" name="%(action_pan_mail_domain)d"
                                 icon="oi-arrow-right" title="Internal Domains"
                                 class="oe_link o_mailpro_step_edit"/>
                     </div>
-                    <!-- The one shortcut worth a line of its own: the domains
-                         can be read off the addresses already in the database,
-                         so neither an empty list nor an incomplete one has to be
-                         typed. It is also the fix for the warning above, which
-                         is why it is not hidden once the list has something in
-                         it. -->
-                    <div class="o_mailpro_step_hint" invisible="not x_internal_domains_suggested">
-                        <button name="action_apply_suggested_internal_domains" type="object"
-                                class="btn-link btn-sm ps-0" string="Add"/>
-                        <field name="x_internal_domains_suggested" class="d-inline" readonly="1" nolabel="1"/>
-                    </div>
 
                     <div class="o_mailpro_step">
-                        <i class="fa fa-check-circle o_mailpro_step_check" title="Done"
-                           invisible="not x_setup_notification_done or x_mailboxes_alert"/>
-                        <i class="fa fa-exclamation-triangle o_mailpro_step_warn" title="Attention needed"
-                           invisible="not x_mailboxes_alert"/>
-                        <i class="fa fa-circle-o o_mailpro_step_todo" title="To do"
-                           invisible="x_setup_notification_done"/>
-                        <span class="o_mailpro_step_name">3. Mailboxes</span>
-                        <i class="fa fa-info-circle text-muted" title="The addresses Mail Pro sends and receives on. One needs 'Notification Mailbox' ticked: user invitations, password resets and activity reminders go out from it, using its owner's connected account."/>
-                        <span class="o_mailpro_step_value" invisible="not x_setup_notification_done or x_mailboxes_alert">
-                            <field name="x_notification_mailbox_id" nolabel="1" readonly="1"/>
-                        </span>
-                        <span class="o_mailpro_step_value o_mailpro_step_warn" invisible="not x_mailboxes_alert">
-                            <field name="x_mailboxes_alert" nolabel="1" readonly="1"/>
-                        </span>
-                        <span class="o_mailpro_step_value" invisible="x_setup_notification_done">No notification mailbox</span>
+                        <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
+                              invisible="not x_setup_notification_done or x_mailboxes_alert"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_warn" title="Attention needed"
+                              invisible="not x_mailboxes_alert"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
+                              invisible="x_setup_notification_done"/>
+                        <div class="o_mailpro_step_body">
+                            <div class="o_mailpro_step_head">
+                                <span class="o_mailpro_step_name">3. Mailboxes</span>
+                                <i class="fa fa-info-circle text-muted" title="The addresses Mail Pro sends and receives on. One needs 'Notification Mailbox' ticked: user invitations, password resets and activity reminders go out from it, using its owner's connected account."/>
+                                <span class="o_mailpro_step_value" invisible="not x_setup_notification_done">
+                                    <field name="x_notification_mailbox_id" nolabel="1" readonly="1"/>
+                                </span>
+                                <span class="o_mailpro_step_value" invisible="x_setup_notification_done">No notification mailbox</span>
+                            </div>
+                            <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_mailboxes_alert">
+                                <field name="x_mailboxes_alert" nolabel="1" readonly="1"/>
+                            </div>
+                        </div>
                         <button type="action" name="%(action_pan_mail_mailbox)d"
                                 icon="oi-arrow-right" title="Mailboxes"
                                 class="oe_link o_mailpro_step_edit"/>
