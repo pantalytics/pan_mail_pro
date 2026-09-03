@@ -37,10 +37,12 @@ set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 BASE_TAG=${BASE_TAG:-v19.0.2.0.1}
 BASE_DUMP=${BASE_DUMP:-}
-# 17, not 15: customer dumps come from the server Cloudpepper actually runs,
-# and a dump taken on 17 (`SET transaction_timeout`) does not load into an
-# older server. The newer server loads older dumps fine, so both modes use it.
-PG_IMAGE=${PG_IMAGE:-postgres:17}
+# Not postgres:15. Customer dumps come from the server Cloudpepper actually
+# runs: PostgreSQL 17 (a dump taken there says `SET transaction_timeout`,
+# which an older server rejects) with the pgvector extension installed. The
+# official pgvector image is postgres:17 plus that extension, and a newer
+# server loads older dumps fine, so both modes use it.
+PG_IMAGE=${PG_IMAGE:-pgvector/pgvector:pg17}
 LOG_DIR=${LOG_DIR:-$REPO}
 NET=pan_reh_net
 DB=pan_reh_db
