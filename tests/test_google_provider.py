@@ -38,7 +38,7 @@ class TestGoogleProvider(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.Account = cls.env['pan.mail.account']
         cls.client = get_provider_client(cls.env, 'gmail')
         cls.user = cls.env['res.users'].create({
@@ -67,7 +67,7 @@ class TestGoogleProvider(TransactionCase):
         # 'shared' works, but as a service account — not by lending the author's
         # token the way Microsoft's SendAs does.
         self.assertEqual(set(self.client.supported_mailbox_types),
-                         {'personal', 'shared', 'notification'})
+                         {'personal', 'shared'})
         self.assertFalse(self.client.supports_shared_mailbox)
         self.assertTrue(self.client.supports_delegation)
 
@@ -596,10 +596,11 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         # scaffolding.
         # The gate has to open before the fixture builds a mailbox, not after:
         # the constraint runs on create, so ordering is the whole of it.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.notification_mailbox = cls.Mailbox.create({
             'email': 'notifications@test.local', 'provider': 'gmail',
-            'mailbox_type': 'notification', 'owner_user_id': cls.user.id,
+            'mailbox_type': 'personal',
+            'is_notification_mailbox': True, 'owner_user_id': cls.user.id,
         })
         # Incoming sync is gated on internal domains being declared. A domain
         # nothing in this fixture uses, so the gate opens without turning any

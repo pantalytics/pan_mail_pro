@@ -64,7 +64,7 @@ class GoogleGmailClient(models.AbstractModel):
     # real Workspace account, authorized once, with its own credentials.
     supports_shared_mailbox = False
     supports_delegation = True
-    supported_mailbox_types = ('personal', 'shared', 'notification')
+    supported_mailbox_types = ('personal', 'shared')
 
     # Odoo's folder vocabulary -> Gmail's system labels.
     _LABEL_MAP = {

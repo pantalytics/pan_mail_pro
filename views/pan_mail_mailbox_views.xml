@@ -15,6 +15,7 @@
                        decoration-warning="health_status == 'warning'"
                        decoration-danger="health_status == 'error'"/>
                 <field name="mailbox_type" string="Type" optional="hide"/>
+                <field name="is_notification_mailbox" string="Notification" optional="hide"/>
                 <field name="provider" string="Provider" optional="hide"/>
                 <field name="owner_user_id" string="Owner" optional="hide"/>
                 <field name="sync_mode" string="Incoming" optional="hide"/>
@@ -48,7 +49,14 @@
                                    title="Personal: only the owner sends from it. Shared: everyone sends from this address — on Microsoft 365 with their own account, on Gmail and IMAP with the address's own credentials, so it needs no owner. Notification: system emails, sent with the owner's account."/>
                             </div>
                             <field name="owner_user_id"
-                                   required="mailbox_type in ('personal', 'notification')"/>
+                                   required="mailbox_type == 'personal' or is_notification_mailbox"/>
+                            <label for="is_notification_mailbox"/>
+                            <div>
+                                <field name="is_notification_mailbox" widget="boolean_toggle"
+                                       nolabel="1" class="d-inline-block"/>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="System emails — user invitations, password resets, activity reminders — go out from this mailbox. Exactly one mailbox has it ticked."/>
+                            </div>
                         </group>
                         <group>
                             <div invisible="provider != 'imap'">
@@ -62,7 +70,7 @@
                     </group>
 
                     <!-- SECTION 2: INCOMING EMAIL (not for notification) -->
-                    <group string="Incoming Email" invisible="mailbox_type == 'notification'">
+                    <group string="Incoming Email" invisible="is_notification_mailbox">
                         <group>
                             <label for="sync_mode"/>
                             <div>
@@ -79,7 +87,7 @@
                     </group>
 
                     <!-- SECTION 3: ROUTING (only when sync enabled) -->
-                    <group string="Routing" invisible="mailbox_type == 'notification' or sync_mode == 'none'">
+                    <group string="Routing" invisible="is_notification_mailbox or sync_mode == 'none'">
                         <group>
                             <label for="route_to_team"/>
                             <div>
@@ -99,7 +107,7 @@
                     <field name="routing_smart" invisible="1"/>
 
                     <!-- SECTION 4: REVIEW QUEUE (only when unknown senders are synced) -->
-                    <group string="Review Queue" invisible="mailbox_type == 'notification' or sync_mode != 'all'">
+                    <group string="Review Queue" invisible="is_notification_mailbox or sync_mode != 'all'">
                         <group>
                             <label for="queue_unknown_contacts" string="Hold for review"/>
                             <div>
@@ -113,7 +121,7 @@
                     </group>
 
                     <!-- SYNC BUTTON -->
-                    <group invisible="mailbox_type == 'notification' or sync_mode == 'none'">
+                    <group invisible="is_notification_mailbox or sync_mode == 'none'">
                         <group>
                             <button name="action_sync_now" string="Sync Now"
                                     type="object" class="btn-primary" icon="fa-refresh"/>

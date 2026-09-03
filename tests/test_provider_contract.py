@@ -32,7 +32,7 @@ class TestProviderRegistry(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain list is
         # empty. A domain nothing in this fixture uses, so the gate opens
         # without turning any fixture address internal.
-        self.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        self.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
 
     def test_every_registered_provider_resolves_to_a_client(self):
         for code in PROVIDER_CLIENTS:
@@ -85,13 +85,13 @@ class TestProviderCapabilities(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain list is
         # empty. A domain nothing in this fixture uses, so the gate opens
         # without turning any fixture address internal.
-        self.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        self.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         self.client = get_provider_client(self.env, 'outlook')
 
     def test_outlook_supports_shared_mailboxes(self):
         # Microsoft 365 sends from a shared mailbox with the user's own token.
         self.assertTrue(self.client.supports_shared_mailbox)
-        for mailbox_type in ('personal', 'shared', 'notification'):
+        for mailbox_type in ('personal', 'shared'):
             self.client.check_mailbox_supported(mailbox_type)
 
     def test_unsupported_mailbox_type_is_rejected(self):
@@ -135,7 +135,8 @@ class TestProviderCapabilities(TransactionCase):
         other = self._connected_user('someone-else@company.test')
         mailbox = self.env['pan.mail.mailbox'].new({
             'email': 'notifications@company.test',
-            'mailbox_type': 'notification',
+            'mailbox_type': 'personal',
+            'is_notification_mailbox': True,
             'owner_user_id': owner.id,
         })
         resolved = self.client.resolve_sending_account(mailbox, author_user=other)

@@ -22,7 +22,6 @@ from odoo.exceptions import UserError
 
 from . import encryption_utils
 from . import mail_mail
-from . import pan_mail_internal_domains as internal_domains
 from .pan_mail_setup import PROVIDER_CREDENTIALS, STATUS_SELECTION
 from .mail_provider_client import (
     PARAM_SETUP_PROVIDER,
@@ -100,13 +99,12 @@ class ResConfigSettings(models.TransientModel):
     #
     # The one setting whose absence leaks data, so it is a gate rather than a
     # preference: incoming sync cannot be switched on until it is answered, one
-    # way or the other. See pan_mail_internal_domains.py.
+    # way or the other. See pan_mail_domain.py.
     # -------------------------------------------------------------------------
-    x_internal_domains = fields.Char(
+    x_internal_domain_ids = fields.Many2many(
+        'pan.mail.domain',
         string='Internal Domains',
-        config_parameter=internal_domains.PARAM_DOMAINS,
-        help='Your own email domains, comma separated (e.g. company.com, company.be). '
-             'Email from these domains is not synced into Odoo.',
+        help='Your own email domains. Mail between them is never synced into Odoo.',
     )
     x_internal_domains_suggested = fields.Char(compute='_compute_internal_domains_status')
     x_internal_domains_uncovered = fields.Char(compute='_compute_internal_domains_status')
@@ -210,6 +208,8 @@ class ResConfigSettings(models.TransientModel):
         there is genuinely nothing stored.
         """
         res = super().get_values()
+        res['x_internal_domain_ids'] = [
+            (6, 0, self.env['pan.mail.domain'].sudo().search([]).ids)]
         ICP = self.env['ir.config_parameter'].sudo()
         if not ICP.get_param(PARAM_SETUP_PROVIDER):
             for provider, params in PROVIDER_CREDENTIALS.items():
@@ -257,17 +257,24 @@ class ResConfigSettings(models.TransientModel):
     # Internal domains
     # -------------------------------------------------------------------------
 
-    @api.depends('x_internal_domains')
+    @api.depends('x_internal_domain_ids')
     def _compute_internal_domains_status(self):
-        Domains = self.env['pan.mail.internal.domains']
-        suggested = ', '.join(Domains.suggest_domains())
-        uncovered = ', '.join(Domains.uncovered_domains())
+        """The suggestion, and which of our own domains the form is missing.
+
+        Both read the record's own selection rather than the stored rows: the
+        admin may be adding domains right now and the warning has to follow
+        along.
+        """
+        Domains = self.env['pan.mail.domain']
+        suggested = Domains.suggest_domains()
+        own = Domains.own_domains()
         for record in self:
-            # Read the form's value, not the saved parameter: the admin may be
-            # typing domains right now and the warnings should follow along.
-            configured = bool(Domains._parse(record.x_internal_domains))
-            record.x_internal_domains_suggested = suggested
-            record.x_internal_domains_uncovered = uncovered if configured else ''
+            selected = set(record.x_internal_domain_ids.mapped('name'))
+            record.x_internal_domains_suggested = ', '.join(
+                d for d in suggested if d not in selected)
+            record.x_internal_domains_uncovered = ', '.join(
+                d for d in own if d not in selected) if selected else ''
+
 
     def set_values(self):
         """Refuse a domain list that leaves one of our own domains out.
@@ -283,28 +290,37 @@ class ResConfigSettings(models.TransientModel):
         because it passes every check that asks whether the list is configured.
         """
         super().set_values()
-        error = self.env['pan.mail.internal.domains'].completeness_error()
+        Domain = self.env['pan.mail.domain'].sudo()
+        # A tag removed on the form is a row nobody wants any more. Quick-create
+        # already made the added ones, which is why only the removals are here.
+        (Domain.search([]) - self.x_internal_domain_ids.sudo()).unlink()
+        error = Domain.completeness_error()
         if error:
             raise UserError(error)
 
     def action_apply_suggested_internal_domains(self):
-        """Fill the domain list with everything we can derive from the database.
+        """Add everything we can derive from the database to the selection.
 
         The admin still has to save, so this is a suggestion they confirm rather
-        than a setting that appears behind their back. Returns nothing on
-        purpose: the client re-reads this same transient record, so the filled-in
-        field survives — re-opening the settings action would build a fresh one
-        from the saved parameters and throw this away.
+        than a list that appears behind their back. Returns nothing on purpose:
+        the client re-reads this same transient record, so the added tags
+        survive — re-opening the settings action would build a fresh one from
+        the stored rows and throw this away.
         """
         self.ensure_one()
-        self.x_internal_domains = self.x_internal_domains_suggested
+        Domain = self.env['pan.mail.domain']
+        names = Domain.suggest_domains()
+        existing = Domain.sudo().search([('name', 'in', names)])
+        missing = [n for n in names if n not in existing.mapped('name')]
+        self.x_internal_domain_ids |= existing | Domain.sudo().create(
+            [{'name': n} for n in missing])
 
     # -------------------------------------------------------------------------
     # Checklist
     # -------------------------------------------------------------------------
 
     @api.depends('x_mail_provider', 'x_provider_credentials_set', 'x_provider_connected',
-                 'x_internal_domains')
+                 'x_internal_domain_ids')
     def _compute_setup_status(self):
         """Ask `pan.mail.setup` for the phase, with the form's answers on top.
 
@@ -319,11 +335,10 @@ class ResConfigSettings(models.TransientModel):
             ('failure_reason', '=', mail_mail.NOTIFICATION_PENDING_REASON),
         ])
 
-        Domains = self.env['pan.mail.internal.domains']
         for record in self:
             answers = Setup.answers(provider=record.x_mail_provider)
             answers['credentials'] = record.x_provider_credentials_set
-            answers['domains'] = bool(Domains._parse(record.x_internal_domains))
+            answers['domains'] = bool(record.x_internal_domain_ids)
 
             record.x_setup_domains_done = answers['domains']
             record.x_setup_notification_done = answers['notification']
@@ -344,7 +359,7 @@ class ResConfigSettings(models.TransientModel):
 
     def _default_notification_mailbox_email(self):
         """Pre-fill notifications@<your domain> so step 5 is one click."""
-        Domains = self.env['pan.mail.internal.domains']
+        Domains = self.env['pan.mail.domain']
         domains = Domains.get_domains() or Domains.suggest_domains()
         return f'notifications@{domains[0]}' if domains else False
 
@@ -370,7 +385,7 @@ class ResConfigSettings(models.TransientModel):
 
         Mailbox = self.env['pan.mail.mailbox']
         existing = Mailbox.with_context(active_test=False).search([
-            ('mailbox_type', '=', 'notification'),
+            ('is_notification_mailbox', '=', True),
         ], limit=1)
         if existing:
             raise UserError(_(
@@ -379,7 +394,8 @@ class ResConfigSettings(models.TransientModel):
 
         mailbox = Mailbox.create({
             'email': email,
-            'mailbox_type': 'notification',
+            'mailbox_type': 'personal',
+            'is_notification_mailbox': True,
             'provider': self.x_mail_provider,
             'owner_user_id': self.env.user.id,
         })

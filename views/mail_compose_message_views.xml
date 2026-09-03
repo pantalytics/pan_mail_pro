@@ -18,7 +18,7 @@
                 <field name="x_send_from_mailbox_id"
                        placeholder="Select mailbox to send from..."
                        invisible="subtype_is_log"
-                       domain="['&amp;', ('active', '=', True), ('mailbox_type', '!=', 'notification'), '|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', uid)]"
+                       domain="['&amp;', ('active', '=', True), ('is_notification_mailbox', '=', False), '|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', uid)]"
                        options="{'no_create': True, 'no_open': True}"/>
             </xpath>
         </field>

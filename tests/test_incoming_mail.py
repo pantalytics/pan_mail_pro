@@ -21,7 +21,7 @@ class TestInternalDomain(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.processor = cls.env['pan.mail.fetcher']
-        cls.env['pan.mail.internal.domains'].set_domains(['company.com', 'internal.org'])
+        cls.env['pan.mail.domain'].set_domains(['company.com', 'internal.org'])
 
     def test_internal_domain_match(self):
         """Emails from configured domains should be detected as internal."""
@@ -172,7 +172,7 @@ class TestAliasRouting(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.processor = cls.env['pan.mail.fetcher']
         cls.partner = cls.env['res.partner'].create({
             'name': 'Test Sender',
@@ -222,7 +222,7 @@ class TestHelpdeskRouting(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         if 'helpdesk.team' not in cls.env:
             raise unittest.SkipTest("Helpdesk module not installed")
         cls.processor = cls.env['pan.mail.fetcher']
@@ -285,7 +285,7 @@ class TestSavepointIsolation(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.processor = cls.env['pan.mail.fetcher']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'inbox@company.test',

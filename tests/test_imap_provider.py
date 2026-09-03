@@ -150,7 +150,7 @@ class TestImapProvider(TransactionCase):
         # Incoming sync is gated on internal domains being declared. A domain
         # nothing in this fixture uses, so the gate opens without turning any
         # fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
 
     def _imap_account(self, email='info@company.test', **vals):
         base = {
@@ -179,7 +179,7 @@ class TestImapProvider(TransactionCase):
         # An address is a login: there is no send-as to borrow and nothing to
         # delegate, so a shared mailbox is its own account.
         self.assertEqual(set(self.client.supported_mailbox_types),
-                         {'personal', 'shared', 'notification'})
+                         {'personal', 'shared'})
         self.assertFalse(self.client.supports_shared_mailbox)
         self.assertFalse(self.client.supports_delegation)
 
@@ -187,7 +187,8 @@ class TestImapProvider(TransactionCase):
         """The constraint that demands an owner is Microsoft's SendAs model.
         Requiring one here would make the mailbox unconfigurable."""
         self.env['pan.mail.mailbox'].create({
-            'email': 'notifications@company.test', 'mailbox_type': 'notification',
+            'email': 'notifications@company.test', 'mailbox_type': 'personal',
+            'is_notification_mailbox': True,
             'owner_user_id': self.user.id,
         })
         mailbox = self._mailbox(sync_mode='known_partners')
@@ -251,7 +252,8 @@ class TestImapProvider(TransactionCase):
         the answer instead, so there is nothing left to keep in sync.
         """
         self.env['pan.mail.mailbox'].create({
-            'email': 'notifications@company.test', 'mailbox_type': 'notification',
+            'email': 'notifications@company.test', 'mailbox_type': 'personal',
+            'is_notification_mailbox': True,
             'owner_user_id': self.user.id,
         })
         mailbox = self._mailbox(sync_mode='all')
@@ -786,7 +788,7 @@ class TestImapOutgoingRouting(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.user = cls.env['res.users'].create({
             'name': 'IMAP Sender', 'login': 'imap_sender@test.local',
             'email': 'imap_sender@test.local',

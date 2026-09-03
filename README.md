@@ -133,11 +133,14 @@ Go to **Settings** → **Mail Pro** → **Manage Mailbox List**
 |------|-------------|
 | **Personal** | User's own mailbox. Auto-created on connect. Only visible to owner. |
 | **Shared** | Team mailbox (sales@, support@). Visible to all users. Each user sends with own OAuth. |
-| **Notification** | System emails. One designated sender user. |
+
+Exactly one mailbox also has **Notification Mailbox** ticked: system emails —
+user invitations, password resets, activity reminders — go out from it, using
+its owner's credentials.
 
 ### Incoming Email Sync
 
-**Prerequisite:** Create a **Notification mailbox** first (required for handling emails from external authors).
+**Prerequisite:** one mailbox must have **Notification Mailbox** ticked (required for handling emails from external authors).
 
 1. Open a mailbox
 2. Choose **Incoming Mail**:
@@ -152,8 +155,8 @@ Go to **Settings** → **Mail Pro** → **Manage Mailbox List**
 
 **Sync behavior:**
 - Internal domains must be configured in Settings → Mail Pro before any mailbox
-  can sync. Odoo suggests them from your mailboxes, company email and alias
-  domains; you confirm the list. Email from those domains is never synced.
+  can sync. Add one tag per domain; Odoo suggests them from your mailboxes,
+  company email and alias domains. Email between those domains is never synced.
 - There is no way to switch this off, globally or per mailbox. A mail with any
   outside recipient is correspondence and is still logged, so "internal" means
   every party is one of your own domains

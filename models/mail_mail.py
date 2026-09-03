@@ -667,7 +667,7 @@ class MailMail(models.Model):
     @api.model
     def _notification_mailbox(self):
         return self.env['pan.mail.mailbox'].sudo().search([
-            ('mailbox_type', '=', 'notification'),
+            ('is_notification_mailbox', '=', True),
             ('active', '=', True),
         ], limit=1)
 

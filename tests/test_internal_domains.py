@@ -25,7 +25,7 @@ class TestInternalDomainParsing(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
 
     def test_parses_separators_and_case(self):
         self.assertEqual(
@@ -58,7 +58,7 @@ class TestInternalDomainGate(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
         cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.user = cls.env['res.users'].create({
             'name': 'Gate Owner', 'login': 'gate@test.local', 'email': 'gate@test.local',
@@ -75,7 +75,8 @@ class TestInternalDomainGate(TransactionCase):
         cls.Domains.set_domains(['gate.test'])
         cls.notification_mailbox = cls.Mailbox.create({
             'email': 'notifications@gate.test',
-            'mailbox_type': 'notification',
+            'mailbox_type': 'personal',
+            'is_notification_mailbox': True,
             'owner_user_id': cls.user.id,
         })
         cls.Domains.set_domains([])
@@ -150,7 +151,7 @@ class TestInternalDomainFiltering(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
         cls.Domains.set_domains(['company.com'])
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'info@company.com', 'mailbox_type': 'shared',
@@ -194,7 +195,7 @@ class TestInternalDomainSuggestions(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
         cls.Domains.set_domains(['scaffolding.test'])
         cls.env['pan.mail.mailbox'].create({
             'email': 'info@suggested.test', 'mailbox_type': 'shared',
@@ -230,7 +231,7 @@ class TestInternalDomainCompleteness(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.Domains = cls.env['pan.mail.internal.domains']
+        cls.Domains = cls.env['pan.mail.domain']
         cls.Domains.set_domains(['scaffolding.test'])
         cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.Mailbox.create({
@@ -311,19 +312,36 @@ class TestInternalDomainCompleteness(TransactionCase):
         self.assertIsNone(self.Domains.completeness_error())
         self.assertIsNotNone(self.Domains.configuration_error())
 
-    def test_saving_settings_refuses_an_incomplete_list(self):
-        settings = self.env['res.config.settings'].create({
-            'x_internal_domains': 'first.test',
+    def _settings_with(self, domains):
+        rows = self.Domains.create([{'name': d} for d in domains])
+        return self.env['res.config.settings'].create({
+            'x_internal_domain_ids': [(6, 0, rows.ids)],
         })
 
+    def test_saving_settings_refuses_an_incomplete_list(self):
         with self.assertRaises(UserError):
-            settings.set_values()
+            self._settings_with(['first.test']).set_values()
 
     def test_saving_settings_accepts_a_complete_list(self):
-        settings = self.env['res.config.settings'].create({
-            'x_internal_domains': ', '.join(self.Domains.suggest_domains()),
-        })
-
-        settings.set_values()
+        self._settings_with(self.Domains.suggest_domains()).set_values()
 
         self.assertIn('second.test', self.Domains.get_domains())
+
+    def test_a_domain_removed_from_the_form_is_removed_from_the_table(self):
+        """The tags widget is the whole list, so an untagged domain is gone."""
+        self.Domains.set_domains(['gone.test'] + self.Domains.suggest_domains())
+        keep = self.Domains.search([('name', '!=', 'gone.test')])
+
+        self.env['res.config.settings'].create({
+            'x_internal_domain_ids': [(6, 0, keep.ids)],
+        }).set_values()
+
+        self.assertNotIn('gone.test', self.Domains.get_domains())
+
+    def test_a_domain_is_cleaned_on_the_way_in(self):
+        """An admin pastes an address or a stray @; a domain comes out."""
+        self.assertEqual(self.Domains.create({'name': '@Company.COM'}).name, 'company.com')
+        self.assertEqual(
+            self.Domains.create({'name': 'jan@voorbeeld.test'}).name, 'voorbeeld.test')
+        with self.assertRaises(ValidationError):
+            self.Domains.create({'name': 'not a domain'})

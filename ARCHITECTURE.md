@@ -120,7 +120,7 @@ Providers disagree about sending as somebody else, which is why
 |-------|---------|
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
-| `pan.mail.internal.domains` | The one definition of "is this address ours?" (abstract) |
+| `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?" |
 | `pan.mail.setup` | The five setup steps and the phase they add up to (abstract) |
 | `res.config.settings` | Module settings (provider choice, client id, secret, tenant) |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
@@ -181,7 +181,7 @@ pan_mail_pro/
 │   │   └── claude/claude_backend.py
 │   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
 │   ├── pan_mail_account.py        # Per-address credentials
-│   ├── pan_mail_internal_domains.py
+│   ├── pan_mail_domain.py         # Internal domains + the fail-closed gate
 │   ├── pan_mail_setup.py          # Setup vs syncing: the five mandatory steps
 │   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral)
 │   ├── pan_mail_matcher.py        # Thread matching rule ladder
@@ -215,8 +215,8 @@ condition of its own.
 | 1 | Email provider | `pan_mail_pro.setup_provider` |
 | 2 | Provider credentials | the app registration, or the IMAP accounts |
 | 3 | Connected account | any connected `pan.mail.account` on that provider |
-| 4 | Internal domains | `pan.mail.internal.domains.is_configured()` |
-| 5 | Notification email | a notification mailbox that can actually send |
+| 4 | Internal domains | at least one `pan.mail.domain` row |
+| 5 | Notification email | a mailbox with `is_notification_mailbox` that can send |
 
 All five are mandatory. There is no partial service: while the phase is `setup`
 the incoming cron returns without fetching, "Sync Now" refuses with the step
@@ -248,7 +248,14 @@ Three properties are worth naming, because each was a bug first:
 |------|--------------|--------------------|----------|
 | **Personal** | Only owner | Owner's | User's own mailbox (john@company.com) |
 | **Shared** | Everyone | Sender's own on Microsoft 365; the address's own on Gmail and IMAP | Team mailbox (sales@company.com) |
-| **Notification** | Everyone | Owner's | System emails (notifications@company.com) |
+
+**Notification** is not a type. Exactly one mailbox has `is_notification_mailbox`
+ticked, and system email goes out from it with its owner's credentials. It used
+to be a third Type value, which forced "personal or shared?" to be answerable
+with "neither" and made every rule about types carry an exception. As a tick box
+it is a property of one mailbox, and the one exception left is explicit: the
+notification mailbox is personal but sendable by any author, because that is the
+job it exists to do.
 
 Which credentials a mailbox runs on is asked of the provider
 (`resolve_sending_account` / `resolve_receiving_account`), never assumed by the
@@ -307,9 +314,10 @@ Two booleans remain, and neither is a mode:
 
 ### Internal domains are a gate, not a preference
 
-`pan.mail.internal.domains` is the only place that answers "is this address one
-of ours?". **No mailbox can exist while the list is empty**, and a sync run
-aborts if it is emptied later.
+`pan.mail.domain` is the only place that answers "is this address one of ours?",
+and it is a table: one row per domain, cleaned on the way in so a pasted address
+or a stray `@` lands as a bare domain. **No mailbox can exist while the table is
+empty**, and a sync run aborts if it is emptied later.
 
 The gate sits on the mailbox rather than on the sync switch, because a mailbox
 is the moment Mail Pro takes over the company's mail: the SMTP takeover fires

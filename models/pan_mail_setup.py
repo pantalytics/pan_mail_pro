@@ -106,7 +106,7 @@ class PanMailSetup(models.AbstractModel):
             'provider': bool(provider),
             'credentials': self.credentials_set(provider),
             'connection': self.provider_is_connected(provider),
-            'domains': self.env['pan.mail.internal.domains'].is_configured(),
+            'domains': self.env['pan.mail.domain'].is_configured(),
             'notification': self.notification_mailbox_usable(),
         }
 

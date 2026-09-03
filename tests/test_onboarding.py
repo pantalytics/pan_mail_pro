@@ -29,7 +29,7 @@ class TestSmtpTakeover(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.MailServer = cls.env['ir.mail_server'].with_context(active_test=False)
         cls.placeholder = cls.env.ref('pan_mail_pro.mail_server_disabled')
@@ -74,7 +74,7 @@ class TestNotificationGapQueuesMail(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.colleague = cls.env['res.users'].create({
             'name': 'Colleague', 'login': 'colleague@gap.test',
             'email': 'colleague@gap.test', 'notification_type': 'email',
@@ -159,7 +159,7 @@ class TestSetupChecklist(TransactionCase):
             'user_id': cls.admin.id,
             'refresh_token': 'fake-refresh', 'access_token': 'fake-access',
         })
-        cls.env['pan.mail.internal.domains'].set_domains(['checklist.test'])
+        cls.env['pan.mail.domain'].set_domains(['checklist.test'])
 
     def _settings(self, vals=None):
         return self.env['res.config.settings'].create(vals or {})
@@ -173,7 +173,7 @@ class TestSetupChecklist(TransactionCase):
         settings.action_create_notification_mailbox()
 
         mailbox = self.env['pan.mail.mailbox'].search([
-            ('mailbox_type', '=', 'notification'),
+            ('is_notification_mailbox', '=', True),
         ])
         self.assertEqual(mailbox.email, 'notifications@checklist.test')
         self.assertEqual(mailbox.owner_user_id, self.admin,
@@ -204,7 +204,7 @@ class TestSetupChecklist(TransactionCase):
         """The only way to finish step 4 is to name your domains."""
         self.assertTrue(self._settings().x_setup_domains_done)
 
-        self.env['pan.mail.internal.domains'].set_domains([])
+        self.env['pan.mail.domain'].set_domains([])
         self.assertFalse(self._settings().x_setup_domains_done)
 
     def test_suggestion_button_fills_the_domain_field(self):
@@ -215,7 +215,7 @@ class TestSetupChecklist(TransactionCase):
 
         settings.action_apply_suggested_internal_domains()
 
-        self.assertIn('suggestme.test', settings.x_internal_domains)
+        self.assertIn('suggestme.test', settings.x_internal_domain_ids.mapped('name'))
 
     def test_notification_mailbox_needs_a_provider(self):
         """Step 1 gates step 5: without a provider there is nothing to serve it."""

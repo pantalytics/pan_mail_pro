@@ -153,7 +153,7 @@ class PanMailFetcher(models.AbstractModel):
         """
         _logger.info(f"[Incoming Mail] Processing mailbox: {mailbox.email}")
 
-        gate = self.env['pan.mail.internal.domains'].configuration_error()
+        gate = self.env['pan.mail.domain'].configuration_error()
         if gate:
             raise UserError(gate)
 
@@ -760,7 +760,7 @@ class PanMailFetcher(models.AbstractModel):
         """
         Check if email is from an internal company domain.
 
-        The domain list lives in `pan.mail.internal.domains`; this is only the
+        The domain list lives in `pan.mail.domain`; this is only the
         call site. There is no way to switch the filter off — see
         ARCHITECTURE.md §9.12.
 
@@ -771,7 +771,7 @@ class PanMailFetcher(models.AbstractModel):
         Returns:
             bool: True if email should be skipped as internal
         """
-        return self.env['pan.mail.internal.domains'].should_skip(email, mailbox)
+        return self.env['pan.mail.domain'].should_skip(email, mailbox)
 
     def _find_partner(self, email):
         """

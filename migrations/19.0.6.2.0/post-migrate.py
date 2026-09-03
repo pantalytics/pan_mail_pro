@@ -21,14 +21,30 @@ from odoo import api, SUPERUSER_ID
 _logger = logging.getLogger(__name__)
 
 
+def _already_configured(env):
+    """Does this database already have an internal domain list?
+
+    Reads both homes: the pre-19.0.6.4.0 config parameter, which is where a
+    database arriving here still keeps it, and the rows, which is where a
+    database that has already been migrated keeps it.
+    """
+    if env['ir.config_parameter'].sudo().get_param('pan_mail_pro.internal_domains'):
+        return True
+    return bool(env['pan.mail.domain'].sudo().search_count([]))
+
+
 def migrate(cr, version):
     if not version:
         return
 
     env = api.Environment(cr, SUPERUSER_ID, {})
-    Domains = env['pan.mail.internal.domains']
+    # 19.0.6.4.0 renamed this model and moved the list into rows, and a database
+    # crossing several releases in one upgrade runs this script against that
+    # newer code — while the list it has to judge is still in the old config
+    # parameter, because the script that moves it runs after this one.
+    Domains = env['pan.mail.domain']
 
-    if Domains.is_configured():
+    if _already_configured(env):
         missing = Domains.uncovered_domains()
         if missing:
             _logger.warning(

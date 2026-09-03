@@ -46,7 +46,7 @@ class MicrosoftGraphClient(models.AbstractModel):
     # their own delegated token, given SendAs rights in Exchange.
     supports_shared_mailbox = True
     supports_delegation = False
-    supported_mailbox_types = ('personal', 'shared', 'notification')
+    supported_mailbox_types = ('personal', 'shared')
 
     # Odoo's folder vocabulary -> Graph's well-known folder names.
     _FOLDER_MAP = {
@@ -87,7 +87,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         account and no user at all, which is why `resolve_sending_account` is
         the contract method and this one is not.
         """
-        if mailbox.mailbox_type in ('notification', 'personal'):
+        if mailbox.mailbox_type == 'personal' or mailbox.is_notification_mailbox:
             return mailbox.owner_user_id
         if author_user:
             return author_user

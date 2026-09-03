@@ -60,20 +60,20 @@ class PanMailMailbox(models.Model):
         a convenience for the UI, never a boundary — the field is writable over
         RPC. This method is the boundary.
 
-        Only personal mailboxes are restricted. A notification mailbox also
-        sends with its owner's token, but that is documented behaviour the whole
-        module rests on — every internal notification goes out through it, from
-        any author. Restricting it here broke
-        test_05_dropdown_notification_uses_notification_owner, and rightly so:
-        the hole was somebody sending as a named colleague, not the company's
-        system-mail address doing what it exists to do.
+        Only personal mailboxes are restricted, and the notification mailbox is
+        exempt even though it is one — see the comment on that branch.
 
         Shared mailboxes are shared on purpose.
         """
         self.ensure_one()
         if not self.active:
             return False
-        if self.mailbox_type == 'personal':
+        # The notification mailbox is personal in every other respect — it has
+        # an owner and sends with that owner's token — but every internal
+        # notification goes out through it from any author, which is the job it
+        # exists to do. The hole this method closes is sending as a named
+        # colleague, not the company's system address behaving normally.
+        if self.mailbox_type == 'personal' and not self.is_notification_mailbox:
             return bool(self.owner_user_id) and self.owner_user_id == user
         return True
 
@@ -96,7 +96,7 @@ class PanMailMailbox(models.Model):
         somebody else's behalf without being told whose token to use.
         """
         self.ensure_one()
-        return self.mailbox_type in ('personal', 'notification') or self._syncs_incoming()
+        return self.mailbox_type == 'personal' or self.is_notification_mailbox or self._syncs_incoming()
 
     def _has_working_credentials(self):
         """Whether this mailbox can actually reach its provider right now.
@@ -131,19 +131,31 @@ class PanMailMailbox(models.Model):
     mailbox_type = fields.Selection([
         ('personal', 'Personal'),
         ('shared', 'Shared'),
-        ('notification', 'Notification'),
     ], string='Type', default='personal', required=True,
         help='Personal: Only the owner can send from this mailbox\n'
              'Shared: All users send from this address; which credentials are used '
-             'depends on the provider\n'
-             'Notification: Used for system emails, owner\'s account is used to send')
+             'depends on the provider')
+
+    # Which mailbox sends the system email is a property of a mailbox, not a
+    # third kind of mailbox. It used to be a Type value, which forced the
+    # question "personal or shared?" to be answered "neither" and made every
+    # rule about types carry an exception. A tick box on the one mailbox that
+    # does the job says the same thing without the exception.
+    # Named for the model it is not: `mail.mail.is_notification` is Odoo's own
+    # flag for "this mail is a notification", and the two meet in mail_mail.py.
+    is_notification_mailbox = fields.Boolean(
+        string='Notification Mailbox',
+        default=False,
+        help='System emails — user invitations, password resets, activity '
+             'reminders — are sent from this mailbox. Exactly one mailbox has '
+             'this ticked.',
+    )
 
     owner_user_id = fields.Many2one(
         'res.users',
         string='Owner',
         domain="[('x_pan_mail_connected', '=', True)]",
-        help='Personal mailbox: the user who owns and sends from this mailbox.\n'
-             'Notification mailbox: the user whose OAuth token is used to send system emails.',
+        help='The user whose credentials this mailbox sends with.',
         index=True
     )
 
@@ -485,16 +497,19 @@ class PanMailMailbox(models.Model):
                 if existing:
                     raise ValidationError(_('This email address is already registered!'))
 
-    @api.constrains('mailbox_type', 'owner_user_id', 'sync_mode', 'provider')
+    @api.constrains('mailbox_type', 'is_notification_mailbox', 'owner_user_id', 'sync_mode', 'provider')
     def _check_owner_required(self):
         """Ensure an owner is set where the provider actually needs one."""
         for record in self:
             provider = record._get_client().provider_label()
-            if record.mailbox_type in ('personal', 'notification') and not record.owner_user_id:
+            if (record.mailbox_type == 'personal' or record.is_notification_mailbox) \
+                    and not record.owner_user_id:
                 raise ValidationError(_(
                     '%(type)s mailbox requires an Owner. '
                     'Please select a user with %(provider)s connected.',
-                    type=record.mailbox_type.capitalize(), provider=provider,
+                    type=_('Notification') if record.is_notification_mailbox
+                    else record.mailbox_type.capitalize(),
+                    provider=provider,
                 ))
             # A shared mailbox needs an owner only where reading it means
             # borrowing a person's delegated token. On Gmail the shared address
@@ -520,13 +535,13 @@ class PanMailMailbox(models.Model):
         for record in self:
             record._get_client().check_mailbox_supported(record.mailbox_type)
 
-    @api.constrains('mailbox_type')
+    @api.constrains('is_notification_mailbox')
     def _check_single_notification_mailbox(self):
         """Ensure only one notification mailbox exists."""
         for record in self:
-            if record.mailbox_type == 'notification':
+            if record.is_notification_mailbox:
                 existing = self.search([
-                    ('mailbox_type', '=', 'notification'),
+                    ('is_notification_mailbox', '=', True),
                     ('id', '!=', record.id),
                     ('active', '=', True),
                 ], limit=1)
@@ -554,7 +569,7 @@ class PanMailMailbox(models.Model):
         as an option belonging to sync, which is what it looked like at
         Juffermans Machinebouw right up until it mattered.
         """
-        gate = self.env['pan.mail.internal.domains'].configuration_error()
+        gate = self.env['pan.mail.domain'].configuration_error()
         if gate:
             raise ValidationError(gate)
 
@@ -562,15 +577,16 @@ class PanMailMailbox(models.Model):
     def _check_notification_mailbox_for_sync(self):
         """Ensure notification mailbox exists when enabling incoming sync."""
         for record in self:
-            if record._syncs_incoming() and record.mailbox_type != 'notification':
+            if record._syncs_incoming() and not record.is_notification_mailbox:
                 notification_mailbox = self.search([
-                    ('mailbox_type', '=', 'notification'),
+                    ('is_notification_mailbox', '=', True),
                     ('active', '=', True),
                 ], limit=1)
                 if not notification_mailbox:
                     raise ValidationError(_(
                         'A Notification mailbox is required for incoming email sync. '
-                        'Please create a mailbox with type "Notification" first.'
+                        'Tick "Notification Mailbox" on the mailbox that should send '
+                        'system email first.'
                     ))
 
     @api.constrains('route_to_team', 'alias_id')

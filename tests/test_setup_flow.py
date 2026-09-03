@@ -134,7 +134,7 @@ class TestSetupPhase(TransactionCase):
         cls.Setup = cls.env['pan.mail.setup']
         # A mailbox cannot be created at all until the domains are answered —
         # see pan_mail_mailbox._check_internal_domains_configured.
-        cls.env['pan.mail.internal.domains'].set_domains(['company.test'])
+        cls.env['pan.mail.domain'].set_domains(['company.test'])
 
     def _answers(self, **overrides):
         answers = {code: True for code, _label in pan_mail_setup.STEPS}

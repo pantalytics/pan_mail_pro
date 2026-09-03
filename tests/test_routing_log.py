@@ -21,7 +21,7 @@ class TestRoutingLog(TransactionCase):
         # Mail Pro refuses to create a mailbox while the internal domain
         # list is empty. A domain nothing in this fixture uses, so the gate
         # opens without turning any fixture address internal.
-        cls.env['pan.mail.internal.domains'].set_domains(['gate-fixture.test'])
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.Log = cls.env['pan.mail.routing.log']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'support@company.test', 'mailbox_type': 'shared',

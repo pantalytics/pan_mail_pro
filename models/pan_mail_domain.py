@@ -23,11 +23,13 @@ just no longer decide anything by themselves.
 import logging
 import re
 
-from odoo import _, api, models
+from odoo import _, api, fields, models
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
 # Config parameters live under the module's existing namespace.
+# The pre-19.0.6.4.0 home of this list. Only the migration reads it.
 PARAM_DOMAINS = 'pan_mail_pro.internal_domains'
 
 _SPLIT_RE = re.compile(r'[\s,;]+')
@@ -52,9 +54,49 @@ PUBLIC_MAIL_DOMAINS = frozenset({
 })
 
 
-class PanMailInternalDomains(models.AbstractModel):
-    _name = 'pan.mail.internal.domains'
-    _description = 'Internal Email Domain Configuration'
+class PanMailDomain(models.Model):
+    _name = 'pan.mail.domain'
+    _description = 'Internal Email Domain'
+    _order = 'name'
+    _rec_name = 'name'
+
+    name = fields.Char(
+        string='Domain',
+        required=True,
+        index=True,
+        help='A domain your company owns, e.g. company.com. Mail between these '
+             'domains is never synced into Odoo.',
+    )
+
+    _sql_constraints = [
+        ('name_unique', 'unique(name)', 'That domain is already on the list.'),
+    ]
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Clean on the way in, so nothing downstream has to.
+
+        An admin types `@Company.COM` or pastes a whole address; both are the
+        domain `company.com`, and storing the raw text would put the parsing
+        back at every read.
+        """
+        for vals in vals_list:
+            vals['name'] = self._clean_one(vals.get('name'))
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if 'name' in vals:
+            vals['name'] = self._clean_one(vals['name'])
+        return super().write(vals)
+
+    @api.model
+    def _clean_one(self, raw):
+        parsed = self._parse(raw)
+        if not parsed:
+            raise ValidationError(_(
+                '%s is not a domain. Enter something like company.com.'
+            ) % (raw or ''))
+        return parsed[0]
 
     # -------------------------------------------------------------------------
     # Reading / writing the configuration
@@ -79,14 +121,16 @@ class PanMailInternalDomains(models.AbstractModel):
     @api.model
     def get_domains(self):
         """The configured internal domains, lowercase, no duplicates."""
-        raw = self.env['ir.config_parameter'].sudo().get_param(PARAM_DOMAINS, '')
-        return self._parse(raw)
+        return self.sudo().search([]).mapped('name')
 
     @api.model
     def set_domains(self, domains):
-        self.env['ir.config_parameter'].sudo().set_param(
-            PARAM_DOMAINS, ', '.join(self._parse(', '.join(domains)))
-        )
+        """Replace the whole list. The one writer that is not a person."""
+        wanted = self._parse(', '.join(domains))
+        existing = self.sudo().search([])
+        (existing.filtered(lambda d: d.name not in wanted)).unlink()
+        have = set(existing.exists().mapped('name'))
+        self.sudo().create([{'name': d} for d in wanted if d not in have])
 
     @api.model
     def is_configured(self):
@@ -219,6 +263,11 @@ class PanMailInternalDomains(models.AbstractModel):
         return self._parse(', '.join(filter(None, candidates)))
 
     @api.model
+    def own_domains(self):
+        """Every domain this database can demonstrate belongs to the company."""
+        return self._parse(', '.join(self._own_addresses()))
+
+    @api.model
     def uncovered_domains(self):
         """Our own domains that the configured list does not carry.
 
@@ -231,5 +280,4 @@ class PanMailInternalDomains(models.AbstractModel):
         if not self.is_configured():
             return []
         configured = set(self.get_domains())
-        own = self._parse(', '.join(self._own_addresses()))
-        return [d for d in own if d not in configured]
+        return [d for d in self.own_domains() if d not in configured]
