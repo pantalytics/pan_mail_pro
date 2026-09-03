@@ -161,25 +161,29 @@
                         </div>
                     </div>
 
-                    <!-- STEP 3 — one button per provider; the step is the same. -->
+                    <!-- STEP 3 — the same door every user goes through. There is
+                         no Connect button here on purpose: an admin connects
+                         their own mailbox from their profile like everybody
+                         else, so there is one place that does it and one thing
+                         to explain. -->
                     <h2 invisible="not x_provider_credentials_set">3. Connect Your Account</h2>
                     <div class="row mt-3 mb-4 o_settings_container" invisible="not x_provider_credentials_set">
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane"/>
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Sign in</span>
+                                <span class="o_form_label">Your mailbox</span>
                                 <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Odoo sends and reads mail on your behalf. Step 5 needs a connected account to own the notification mailbox."/>
+                                   title="Odoo sends and reads mail on your behalf, so it needs your own sign-in. Step 5 also needs a connected account to own the notification mailbox."/>
+                                <div class="mt-2" invisible="x_provider_connected or not x_provider_uses_oauth">
+                                    <field name="x_setup_connect_hint" nolabel="1" readonly="1"/>
+                                </div>
                                 <div class="mt-2">
-                                    <button name="action_connect_provider" type="object"
-                                            string="Connect" class="btn-primary" icon="fa-sign-in"
-                                            invisible="not x_provider_uses_oauth or x_provider_connected"/>
-                                    <button type="action" name="%(action_pan_mail_account)d"
-                                            string="Review Accounts" icon="oi-arrow-right" class="oe_link ps-0"
-                                            invisible="x_provider_uses_oauth"/>
                                     <span class="text-success" invisible="not x_provider_connected">
                                         <i class="fa fa-check-circle me-1" title="Connected"/>Connected
                                     </span>
+                                    <button type="action" name="%(action_pan_mail_account)d"
+                                            string="Email Accounts" icon="oi-arrow-right" class="oe_link ps-0"
+                                            invisible="x_provider_uses_oauth"/>
                                 </div>
                             </div>
                         </div>

@@ -17,7 +17,7 @@ is still missing.
 """
 import logging
 
-from odoo import api, fields, models
+from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 
 from . import encryption_utils
@@ -131,6 +131,7 @@ class ResConfigSettings(models.TransientModel):
              'attention needed when a mailbox has stopped.',
     )
     x_setup_status_detail = fields.Char(compute='_compute_setup_status')
+    x_setup_connect_hint = fields.Char(compute='_compute_setup_status')
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_complete = fields.Boolean(compute='_compute_setup_status')
@@ -344,17 +345,17 @@ class ResConfigSettings(models.TransientModel):
             record.x_setup_domains_done = answers['domains']
             record.x_setup_notification_done = answers['notification']
             record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()
+            # Named on purpose. "An account is not connected" reads as somebody
+            # else's problem; "Rutger, your mailbox is not connected" is the
+            # sentence that gets the person in front of the screen to act.
+            record.x_setup_connect_hint = _(
+                '%(name)s, your own mailbox is not connected yet. Open the user '
+                'menu at the top right → My Profile → Mail Pro, and connect it '
+                'there. Nothing below this step works until you do.',
+                name=self.env.user.name,
+            )
             record.x_setup_status = Setup.status(answers)
             record.x_setup_status_detail = Setup.status_detail(answers)
             record.x_setup_complete = Setup.is_ready(answers)
 
             record.x_setup_pending_notifications = pending
-
-    # -------------------------------------------------------------------------
-    # Actions
-    # -------------------------------------------------------------------------
-
-    def action_connect_provider(self):
-        """Connect the admin's own account to the selected provider."""
-        self.ensure_one()
-        return self.env.user.action_connect_mailbox(self.x_mail_provider)
