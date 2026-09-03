@@ -132,6 +132,16 @@ class ResConfigSettings(models.TransientModel):
     )
     x_setup_status_detail = fields.Char(compute='_compute_setup_status')
     x_setup_connect_hint = fields.Char(compute='_compute_setup_status')
+    x_setup_connection_done = fields.Boolean(compute='_compute_setup_status')
+
+    # An answered step collapses to one line: a check, its name, and the answer
+    # itself — not just the heading, or you have to open it again to see what
+    # you picked. The pencil reopens it. Plain booleans on the transient record,
+    # so a click is a client-side re-render and never saves the form; saving
+    # rebuilds the record, which is what closes them again.
+    x_edit_provider = fields.Boolean(default=False)
+    x_edit_credentials = fields.Boolean(default=False)
+    x_edit_domains = fields.Boolean(default=False)
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_complete = fields.Boolean(compute='_compute_setup_status')
@@ -342,6 +352,7 @@ class ResConfigSettings(models.TransientModel):
             answers['credentials'] = record.x_provider_credentials_set
             answers['domains'] = bool(record.x_internal_domain_ids)
 
+            record.x_setup_connection_done = answers['connection']
             record.x_setup_domains_done = answers['domains']
             record.x_setup_notification_done = answers['notification']
             record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()

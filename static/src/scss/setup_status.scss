@@ -58,3 +58,35 @@
 
     &:hover { opacity: 0.9; }
 }
+
+// A finished step, collapsed to one line. Baymard's accordion-checkout finding
+// applies here too: a collapsed step must show the answer, not only its
+// heading, or the reader has to reopen it to see what they picked.
+.o_mailpro_step {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid rgba(0, 29, 33, 0.06);
+
+    .o_mailpro_step_check {
+        color: #1f9d63;
+    }
+
+    .o_mailpro_step_name {
+        font-weight: 600;
+        color: #001d21;
+        flex: 0 0 auto;
+    }
+
+    .o_mailpro_step_value {
+        color: rgba(0, 29, 33, 0.6);
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .o_mailpro_step_edit {
+        flex: 0 0 auto;
+        margin-left: auto;
+    }
+}

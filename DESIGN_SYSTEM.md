@@ -249,6 +249,33 @@ Rules that make it read as one thing rather than three:
 - **Never invent a fourth state.** If something new can go wrong, it is a
   sentence under "Attention needed", not a new colour.
 
+### A finished step collapses into its answer
+
+An answered setup step becomes one line: a check, its name, the answer itself,
+and a pencil that reopens it.
+
+```xml
+<div class="o_mailpro_step" invisible="not x_setup_domains_done or x_edit_domains">
+    <i class="fa fa-check-circle o_mailpro_step_check" title="Done"/>
+    <span class="o_mailpro_step_name">4. Internal Domains</span>
+    <span class="o_mailpro_step_value">
+        <field name="x_internal_domain_ids" nolabel="1" readonly="1" widget="many2many_tags"/>
+    </span>
+    <field name="x_edit_domains" nolabel="1" widget="boolean_icon"
+           options="{'icon': 'fa-pencil'}" class="o_mailpro_step_edit"/>
+</div>
+```
+
+- **Show the answer, not just the heading.** Baymard tested this on accordion
+  checkouts: a collapsed step that shows only its title makes people reopen it
+  to see what they picked, which is worse than not collapsing at all.
+- **`boolean_icon` is the pencil.** Odoo ships it; it binds a clickable icon to
+  a boolean with no JavaScript of ours, and the click is a client-side
+  re-render rather than a save.
+- **Saving re-collapses everything**, because the transient record is rebuilt.
+  That is the behaviour, not a bug: you edit one step, save, and the page is a
+  list of answers again.
+
 ### Explanation belongs behind an info icon
 
 A paragraph of help text under every field turns a settings page into a manual.
