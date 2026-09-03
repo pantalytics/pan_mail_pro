@@ -6,16 +6,20 @@ between, and no half-configured state that carries mail "as far as it can":
 that was the shape that let a database sync incoming mail before anyone had
 answered which domains are internal.
 
-Five answers, in this order, make the difference:
+Four answers, in this order, make the difference:
 
 1. provider      — where is the mail hosted
 2. credentials   — the application registration for that provider
-3. connection    — at least one account actually reaches it
-4. domains       — which domains are ours, so colleagues can be told from
+3. domains       — which domains are ours, so colleagues can be told from
                    customers (there is no opt-out; see ARCHITECTURE.md §9.12)
-5. notification  — one mailbox ticked as the one system mail goes out from
+4. notification  — one mailbox ticked as the one system mail goes out from
 
-All five are mandatory. Until the last one is answered the phase is `setup`,
+"Is anybody connected" used to be a step of its own. It is not a question the
+setup has to ask: a notification mailbox needs an owner and that owner has to
+have connected their mailbox, or it cannot send — so step 4 already answers it,
+and the mailbox says so at the moment somebody ticks the box.
+
+All four are mandatory. Until the last one is answered the phase is `setup`,
 incoming sync does not run, and internal notifications queue with a readable
 reason instead of being cancelled. The moment it is answered the phase is
 `syncing` and nothing here has an opinion any more.
@@ -27,10 +31,9 @@ the product is unconfigured because *they* have not signed in yet; the settings
 page keeps its own user-scoped question for the Connect button, and asks this
 model for the phase.
 
-Order is the contract. Step 5 creates a mailbox owned by whoever is setting up,
-which is why step 3 comes first; step 4 comes before any mailbox exists because
-a mailbox refuses to enable sync while the domains are unanswered, and meeting
-that as a validation error after the fact is worse than being asked in order.
+Order is the contract. Step 3 comes before any mailbox exists because a mailbox
+refuses to be created while the domains are unanswered, and meeting that as a
+validation error after the fact is worse than being asked in order.
 """
 import logging
 
@@ -60,7 +63,6 @@ STATUS_SELECTION = [
 STEPS = (
     ('provider', 'Email provider'),
     ('credentials', 'Provider credentials'),
-    ('connection', 'Connected account'),
     ('domains', 'Internal domains'),
     ('notification', 'A notification mailbox'),
 )
@@ -105,7 +107,6 @@ class PanMailSetup(models.AbstractModel):
         return {
             'provider': bool(provider),
             'credentials': self.credentials_set(provider),
-            'connection': self.provider_is_connected(provider),
             'domains': self.env['pan.mail.domain'].is_configured(),
             'notification': self.notification_mailbox_usable(),
         }
@@ -162,7 +163,7 @@ class PanMailSetup(models.AbstractModel):
 
     @api.model
     def is_ready(self, answers=None):
-        """True once all five steps are answered. Everything that carries mail
+        """True once all four steps are answered. Everything that carries mail
         asks this rather than checking a field of its own."""
         return self.phase(answers) == PHASE_SYNCING
 
@@ -195,7 +196,7 @@ class PanMailSetup(models.AbstractModel):
             index, _code, label = blocking
             return _(
                 '%(label)s — step %(index)s of %(total)s. Mail is not sent or '
-                'received until all five are done.',
+                'received until every step is done.',
                 label=label, index=index, total=len(STEPS),
             )
         broken = self._mailboxes_in_error()
@@ -218,6 +219,6 @@ class PanMailSetup(models.AbstractModel):
         """The message shown to whoever tried to sync too early."""
         return _(
             'Mail Pro is still being set up (%(step)s). Incoming mail is not '
-            'synced until all five setup steps are done — Settings → Mail Pro.',
+            'synced until every setup step is done — Settings → Mail Pro.',
             step=self.blocking_step_label(),
         )

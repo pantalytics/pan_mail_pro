@@ -188,7 +188,7 @@ class TestImapProvider(TransactionCase):
         Requiring one here would make the mailbox unconfigurable."""
         self.env['pan.mail.mailbox'].create({
             'email': 'notifications@company.test', 'mailbox_type': 'personal',
-            'is_notification_mailbox': True,
+            'is_notification_mailbox': True, 'provider': 'imap',
             'owner_user_id': self.user.id,
         })
         mailbox = self._mailbox(sync_mode='known_partners')
@@ -253,7 +253,7 @@ class TestImapProvider(TransactionCase):
         """
         self.env['pan.mail.mailbox'].create({
             'email': 'notifications@company.test', 'mailbox_type': 'personal',
-            'is_notification_mailbox': True,
+            'is_notification_mailbox': True, 'provider': 'imap',
             'owner_user_id': self.user.id,
         })
         mailbox = self._mailbox(sync_mode='all')

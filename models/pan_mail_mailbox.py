@@ -535,6 +535,41 @@ class PanMailMailbox(models.Model):
         for record in self:
             record._get_client().check_mailbox_supported(record.mailbox_type)
 
+    @api.constrains('is_notification_mailbox', 'owner_user_id', 'provider')
+    def _check_notification_owner_is_connected(self):
+        """On a consent-screen provider, the notification mailbox's owner has to
+        have signed in — it sends with their grant and nothing else.
+
+        This is where "has anybody connected yet?" belongs. It used to be a
+        numbered setup step of its own, which asked the question in the
+        abstract, in another screen, before there was anything to send. Here it
+        is asked of the one mailbox that cannot do its job without an answer, at
+        the moment somebody ticks the box.
+
+        Only where the provider uses OAuth. On IMAP the credentials belong to
+        the address rather than to a person, so the owner's own connection says
+        nothing — asking it there would be the "is this user connected" mistake
+        wearing a new hat, and would make the mailbox impossible to create
+        before its account exists.
+
+        Only on write of these fields, too: an owner who disconnects later must
+        not block every unrelated edit. That case surfaces where it belongs —
+        the phase reports `setup` again, because the mailbox can no longer send.
+        """
+        for record in self:
+            if not record.is_notification_mailbox:
+                continue
+            if not record._get_client().uses_oauth:
+                continue
+            if not record.owner_user_id.x_pan_mail_connected:
+                raise ValidationError(_(
+                    'The notification mailbox sends with its owner\'s account, and '
+                    '%(owner)s has not connected their mailbox yet. Ask them to open '
+                    'the user menu at the top right → My Profile → Mail Pro, or pick '
+                    'an owner who has.',
+                    owner=record.owner_user_id.name or _('nobody'),
+                ))
+
     @api.constrains('is_notification_mailbox')
     def _check_single_notification_mailbox(self):
         """Ensure only one notification mailbox exists."""

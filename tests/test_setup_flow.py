@@ -141,11 +141,11 @@ class TestSetupPhase(TransactionCase):
         answers.update(overrides)
         return answers
 
-    def test_the_five_steps_are_the_contract(self):
-        """A sixth step, or a reordering, has to be a deliberate edit here."""
+    def test_the_steps_are_the_contract(self):
+        """A new step, or a reordering, has to be a deliberate edit here."""
         self.assertEqual(
             [code for code, _label in pan_mail_setup.STEPS],
-            ['provider', 'credentials', 'connection', 'domains', 'notification'],
+            ['provider', 'credentials', 'domains', 'notification'],
         )
 
     def test_every_step_is_mandatory(self):
@@ -167,13 +167,13 @@ class TestSetupPhase(TransactionCase):
 
     def test_the_blocking_step_is_the_first_unanswered_one(self):
         """The banner names the step to do next, not the last one that failed."""
-        answers = self._answers(connection=False, notification=False)
+        answers = self._answers(domains=False, notification=False)
         index, code, _label = self.Setup.blocking_step(answers)
-        self.assertEqual((index, code), (3, 'connection'))
+        self.assertEqual((index, code), (3, 'domains'))
 
     def test_connection_is_about_the_database_not_about_you(self):
-        """A second admin opening the page must not be told the product is
-        unconfigured because they personally have not signed in."""
+        """`provider_is_connected` still answers for the database rather than
+        for the reader, even though it is no longer a step of its own."""
         self.assertFalse(self.Setup.provider_is_connected('imap'))
         account = self.env['pan.mail.account'].create({
             'email': 'phase@company.test', 'provider': 'imap',

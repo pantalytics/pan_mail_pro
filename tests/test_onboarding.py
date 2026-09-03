@@ -180,6 +180,20 @@ class TestSetupChecklist(TransactionCase):
         self.assertTrue(settings.x_setup_notification_done)
         self.assertEqual(settings.x_notification_mailbox_id, mailbox)
 
+    def test_an_oauth_notification_mailbox_needs_a_connected_owner(self):
+        """The step that asked "has anybody signed in" is now this constraint."""
+        stranger = self.env['res.users'].create({
+            'name': 'Not Connected', 'login': 'stranger@checklist.test',
+        })
+        with self.assertRaises(ValidationError):
+            self.env['pan.mail.mailbox'].create({
+                'email': 'notifications@checklist.test',
+                'mailbox_type': 'personal',
+                'is_notification_mailbox': True,
+                'provider': 'outlook',
+                'owner_user_id': stranger.id,
+            })
+
     def test_moving_it_is_untick_here_tick_there(self):
         first = self.env['pan.mail.mailbox'].create({
             'email': 'notifications@checklist.test',

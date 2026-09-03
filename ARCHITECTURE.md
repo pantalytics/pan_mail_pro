@@ -214,22 +214,24 @@ condition of its own.
 |---|------|-------------|
 | 1 | Email provider | `pan_mail_pro.setup_provider` |
 | 2 | Provider credentials | the app registration, or the IMAP accounts |
-| 3 | Connected account | any connected `pan.mail.account` on that provider |
-| 4 | Internal domains | at least one `pan.mail.domain` row |
-| 5 | A notification mailbox | a mailbox with `is_notification_mailbox` ticked that can send |
+| 3 | Internal domains | at least one `pan.mail.domain` row |
+| 4 | A notification mailbox | a mailbox with `is_notification_mailbox` ticked that can send |
 
-All five are mandatory. There is no partial service: while the phase is `setup`
+All four are mandatory. There is no partial service: while the phase is `setup`
 the incoming cron returns without fetching, "Sync Now" refuses with the step
 that is missing, and internal notifications queue with a readable reason instead
 of being cancelled. Nothing here has an opinion once the phase is `syncing`.
 
 Three properties are worth naming, because each was a bug first:
 
-- **There is one place to connect a mailbox, and it is not this page.** An
-  admin connects their own from their profile like every other user, so the
-  settings page names them and says to go there rather than growing a second
-  door with its own errors. The sentence uses their name: "an account is not
-  connected" reads as somebody else's problem.
+- **"Has anybody connected yet" is not a step.** It was one, and it asked the
+  question in the abstract before there was anything to send. It is a property
+  of the notification mailbox instead: on a consent-screen provider that
+  mailbox's owner must have signed in, enforced where the box is ticked. On
+  IMAP the credentials belong to the address rather than to a person, so the
+  owner's own connection says nothing and the constraint does not ask. An admin
+  connects their own mailbox from their profile like every other user; there is
+  no second door on the settings page.
 - **The answers are about the database, not about the reader.** "Connected"
   means *some* account on the provider is connected. A second admin opening the
   settings page must not be told the product is unconfigured because they
