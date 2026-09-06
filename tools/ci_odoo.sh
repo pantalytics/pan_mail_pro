@@ -56,16 +56,20 @@ docker run -d --name "$DB" --network "$NET" \
     -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo -e POSTGRES_DB=postgres \
     postgres:15 >/dev/null
 
+# Over TCP, not the unix socket: the image's entrypoint runs a temporary
+# server with listen_addresses='' while it initialises, then stops it and
+# starts the real one. A socket check answers "ready" to the temporary server
+# and the very next command lands in the restart gap, exit 1, no message.
 echo -n "Waiting for Postgres"
 for _ in $(seq 1 60); do
-    if docker exec "$DB" pg_isready -U odoo >/dev/null 2>&1; then
+    if docker exec "$DB" pg_isready -h localhost -U odoo >/dev/null 2>&1; then
         echo " ready."
         break
     fi
     echo -n "."
     sleep 1
 done
-docker exec "$DB" pg_isready -U odoo >/dev/null
+docker exec "$DB" pg_isready -h localhost -U odoo >/dev/null
 
 odoo_run() {
     # $1 = the module directory on the host, $2 = database, rest = odoo arguments
