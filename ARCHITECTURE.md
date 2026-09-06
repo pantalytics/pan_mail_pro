@@ -1100,6 +1100,9 @@ still logged, so the record is not empty, only shorter. One real workflow for
 one setting that could quietly leak every internal thread in the database is
 not a trade worth keeping.
 
+Note the asymmetry that makes this cheap: a mail with *any* outside recipient
+is correspondence and is still logged. "Internal" means every party is ours.
+
 ### 9.13 The provider is a row, not a config parameter
 
 Application credentials — the Azure app registration, the Google Cloud OAuth
@@ -1149,8 +1152,55 @@ directly rather than decrypting and re-encrypting it — same key, same
 database, so the string is portable as-is and a round trip only risks turning
 it into garbage.
 
-Note the asymmetry that makes this cheap: a mail with *any* outside recipient
-is correspondence and is still logged. "Internal" means every party is ours.
+### 9.14 Mail stays in Odoo; the cloud layer is thin
+
+The question comes up because the payoff is real: a hosted Mail Pro would
+bill per month, share one Azure and Google app registration across every
+customer, report its own errors, and run AI on Pantalytics' key. The
+recommendation is to take every one of those without moving the mail. The
+Odoo module keeps sending, fetching, matching and posting. A Pantalytics
+service does licensing, telemetry and, later, token brokering and metered AI.
+Nothing that carries a message body leaves the customer's database.
+
+**Why the mail cannot move.** Almost everything hard in this module is an
+ORM-side fact. `message_new()` (§9.3), the two indexes on `mail.message`
+(§4), the routing log, alias routing into `helpdesk.team`, follower
+suppression on import (§9.10), the savepoint per message in a one-minute
+cron. A cloud fetcher would reimplement all of it over JSON-RPC with one
+round trip per chatter post and no transaction around it, and the customer
+would still install an Odoo module to receive the result. That is two
+codebases where there is one today, and the second one has 454 tests to
+re-earn.
+
+**Why the mail should not move.** Today the manifest's data-disclosure
+statement is true because Pantalytics sees nothing: not a body, not a token,
+not an address (§8). A hosted fetcher makes Pantalytics a processor for every
+customer's mail, which is a DPA per customer, a restricted-scope review with
+Google every year, and a store of refresh tokens for other companies'
+mailboxes with nobody on call to defend it. A mailbox that stops when
+Pantalytics is down is also a new kind of outage: the customer's Odoo being
+down is theirs to accept, ours is not. For a team of two that is the cost
+that matters, not the engineering.
+
+**What the thin layer is.** Each benefit Daniel named has a home that does not
+touch mail:
+
+| Benefit | Where it lives | Size |
+|---------|----------------|------|
+| Monthly payment | A licence check from the module to the MCP Pro billing endpoint. Same metering, new product key | Small |
+| Error visibility | Opt-in telemetry: exception class, module version, provider, count. Never a subject or address | Small |
+| One app registration | A token broker: the OAuth dance and every refresh go through Pantalytics, which holds the client secret. Tokens are handed to Odoo, mail never passes through | Medium, and only when setup drop-off shows the customer's own registration is what stops them |
+| AI on our key | A metered proxy for the envelope the seam already sends (§8). BYOK stays the default | After the AI feature exists at all |
+
+Sequence in that order. The licence check alone delivers the monthly payment,
+which is the reason the question was asked.
+
+**The case being dropped**: Odoo Online, where custom modules cannot be
+installed and only a fully hosted version could reach. Those customers
+already have Odoo's own Outlook and Gmail modules, and the parts that
+distinguish Mail Pro (per-user mailboxes, shared mailboxes, sync modes, the
+routing log) are exactly the ORM-side parts a hosted version would have to
+give up. Not a market worth a second architecture.
 
 ## 10. Security and permissions
 
