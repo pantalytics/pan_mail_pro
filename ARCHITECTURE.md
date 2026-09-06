@@ -1195,6 +1195,24 @@ touch mail:
 Sequence in that order. The licence check alone delivers the monthly payment,
 which is the reason the question was asked.
 
+**How the licence check signs in.** The instance is linked once, by an admin,
+through the OAuth Device Authorization Grant (RFC 8628) against the same
+Zitadel that already fronts MCP Pro and Knap: the settings page shows a code
+and a link, the admin signs in at Pantalytics, and Odoo polls the token
+endpoint until the workspace is bound. No redirect URI exists, which is the
+point. Zitadel wants exact-match redirects, every customer's Odoo has a
+different URL, and Odoo's own `web.base.url` is wrong behind half the reverse
+proxies out there — the browser round trip would break on exactly the
+installs a support desk does not exist for. The fallback, if a browser
+redirect is ever wanted, is auth code + PKCE with one fixed redirect at
+Pantalytics that bounces to the Odoo URL carried in a signed `state`.
+
+The link is per database, not per user. Replacing Odoo's login with Zitadel is
+possible (`auth_oauth`, or OCA's `auth_oidc`) and is the wrong tool: it
+couples every customer's sign-in to Pantalytics being up, and the ones on
+Enterprise already have an identity provider. The module reports the seat
+count (connected mailboxes) to the licence endpoint instead.
+
 **The case being dropped**: Odoo Online, where custom modules cannot be
 installed and only a fully hosted version could reach. Those customers
 already have Odoo's own Outlook and Gmail modules, and the parts that
