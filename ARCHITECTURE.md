@@ -337,7 +337,7 @@ five that went were computes over one choice. This one is a second choice that
 was riding on the first. Reading the inbox is "mail arrived at this address,
 put it in Odoo". Reading Sent is "copy what this person wrote in Outlook" — a
 different promise to the mailbox's owner, with a different person to ask, and
-until 19.0.7.4.0 answering yes to the first answered yes to the second without
+until 19.0.7.5.0 answering yes to the first answered yes to the second without
 saying so. `_folders_to_sync()` is where the two now diverge, and it is the only
 place that maps a setting to a folder.
 

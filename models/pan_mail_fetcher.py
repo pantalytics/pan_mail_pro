@@ -185,7 +185,7 @@ class PanMailFetcher(models.AbstractModel):
         # Reading the inbox is "mail arrives here, put it in Odoo"; reading Sent
         # is "copy what this person wrote in Outlook", which is a different
         # promise to make to the mailbox's owner. They shared one switch until
-        # 19.0.7.4.0, so turning on incoming mail silently turned on the second.
+        # 19.0.7.5.0, so turning on incoming mail silently turned on the second.
         processed_count = 0
         folder_cursors = []
         for folder in self._folders_to_sync(mailbox):

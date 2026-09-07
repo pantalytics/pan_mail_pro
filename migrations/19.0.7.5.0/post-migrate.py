@@ -36,7 +36,7 @@ def migrate(cr, version):
         (SYNCING_MODES,),
     )
     _logger.info(
-        '[Mail Pro] 19.0.7.4.0: kept Sent-folder capture on for %s mailbox(es) '
+        '[Mail Pro] 19.0.7.5.0: kept Sent-folder capture on for %s mailbox(es) '
         'that were already syncing it.',
         cr.rowcount,
     )

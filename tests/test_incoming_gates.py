@@ -289,7 +289,7 @@ class TestIncomingGates(MailProTestCase):
 class TestOutgoingCaptureIsItsOwnSwitch(MailProTestCase):
     """Incoming mail and mail sent outside Odoo are two questions, not one.
 
-    They shared `sync_mode` until 19.0.7.4.0, so a customer who asked for
+    They shared `sync_mode` until 19.0.7.5.0, so a customer who asked for
     incoming mail also got a copy of everything their people wrote in Outlook.
     That is a different promise to the mailbox's owner, and nobody was asked to
     make it. These assertions pin the split: which folders a mailbox reads, and
