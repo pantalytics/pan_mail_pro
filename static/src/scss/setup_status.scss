@@ -28,7 +28,11 @@
 // The dot is the whole status. One shape in three colours rather than three
 // glyphs, because a column of different icons reads as a column of different
 // kinds of thing.
-.o_mailpro_step {
+// `o_mailpro_team` is the same line without a dot: it is not a setup step and
+// must not draw one, but it shares every other rule so the name and the answer
+// sit in the same two columns as the three steps above it.
+.o_mailpro_step,
+.o_mailpro_team {
     display: flex;
     align-items: flex-start;
     gap: 0.7rem;
@@ -108,4 +112,12 @@
 // wraps at a readable length instead of running the width of the window.
 .o_mailpro_about {
     max-width: 46rem;
+}
+
+// Aligned with the step names above it: the dot's width plus the gap that
+// follows it, so the two blocks under their two headings read as one column.
+// After the shared rule, which sets the padding these two lines override.
+.o_mailpro_team {
+    border-bottom: 0;
+    padding-left: 1.3rem;
 }

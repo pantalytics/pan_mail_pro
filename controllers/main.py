@@ -13,6 +13,11 @@ from ..models.mail_provider_client import (
 
 _logger = logging.getLogger(__name__)
 
+# The Mail Pro page of Odoo's settings. The fragment is the `name` of the
+# `<app>` element in `res_config_settings_views.xml`; anything else lands on
+# the general settings page with no sign that a jump was intended.
+SETTINGS_URL = '/odoo/settings#pan_mail_pro'
+
 
 def _result_page(success, title, message):
     return request.render('pan_mail_pro.oauth_result', {
@@ -39,9 +44,9 @@ class MailProConnectController(http.Controller):
         # client only what it knows: does it have a sign-in screen.
         provider = provider or get_setup_provider(request.env)
         if provider not in PROVIDER_CLIENTS:
-            return request.redirect('/odoo/settings#mail_pro')
+            return request.redirect(SETTINGS_URL)
         if not get_provider_client(request.env, provider).uses_oauth:
-            return request.redirect('/odoo/settings#mail_pro')
+            return request.redirect(SETTINGS_URL)
 
         action = request.env.user.action_connect_mailbox(provider)
         return request.redirect(action['url'], local=False)
