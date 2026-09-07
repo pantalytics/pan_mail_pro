@@ -40,7 +40,9 @@
                     <group string="Mailbox">
                         <group>
                             <field name="email" placeholder="support@company.com"/>
-                            <field name="provider"/>
+                            <!-- Inherited from the one provider this database
+                                 runs on; only the IMAP button below reads it. -->
+                            <field name="provider" invisible="1"/>
                             <field name="health_status" string="Status" widget="badge"
                                    decoration-success="health_status == 'healthy'"
                                    decoration-warning="health_status == 'warning'"

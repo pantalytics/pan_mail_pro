@@ -3,7 +3,7 @@ from odoo import fields, models, api, _
 from odoo.exceptions import ValidationError
 
 from . import encryption_utils
-from .mail_provider_client import DEFAULT_PROVIDER, PROVIDER_SELECTION, get_provider_client
+from .mail_provider_client import PROVIDER_SELECTION, get_provider_client
 
 # Hosts we can fill in for the admin. Keyed on the mail domain, because that is
 # what an admin types first. Deliberately tiny: this is a convenience, not a
@@ -56,7 +56,7 @@ class PanMailAccount(models.Model):
         PROVIDER_SELECTION,
         string='Provider',
         required=True,
-        default=DEFAULT_PROVIDER,
+        default=lambda self: self.env['pan.mail.provider'].current_code(),
     )
     user_id = fields.Many2one(
         'res.users',
