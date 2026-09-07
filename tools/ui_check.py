@@ -1,0 +1,321 @@
+#!/usr/bin/env python3
+"""What the test suite cannot see: whether the pages actually read.
+
+Run against the instance `tools/ui_preview.sh` boots, seeded as that script
+seeds it. Every assertion here is a bug this module has actually shipped:
+
+  * the setup checklist ran the full width of the window, so on a wide screen
+    the arrow sat a screen away from the step it belongs to
+  * the provider line read `outlook` where its own form says "Microsoft 365"
+  * a mailbox that had stopped drew two status dots at once
+  * every menu the module declares opens; a broken view is a traceback, not
+    a red test
+  * a brand new provider opened carrying IMAP's explanation, because "has no
+    OAuth" and "nothing chosen yet" were one condition
+  * the connect banner is drawn by patching Odoo's own webclient template, so
+    a wrong xpath breaks every screen and nothing server-side can see it
+
+    tools/ui_check.py                     # assert, and write screenshots
+    tools/ui_check.py --out=ui-screenshots
+
+Exit code 1 with the failures listed is the whole interface; CI reads that.
+"""
+import argparse
+import ast
+import os
+import sys
+import xmlrpc.client
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    sys.exit('playwright is not installed — pip install playwright')
+
+CHROME = os.environ.get('PAN_UI_CHROME', '/opt/pw-browsers/chromium')
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The width a real desk monitor has. The layout bug that started all this was
+# invisible at 1440 and obvious here.
+WIDE = 2000
+# A step is a name, an answer and the way to change it. Wider than this and it
+# stops being one line the eye can cross.
+MAX_STEP_WIDTH = 800
+
+# Selection *values* — none of these may ever be what a user reads.
+PROVIDER_CODES = ('outlook', 'gmail', 'imap')
+
+
+def manifest_version():
+    manifest = ast.literal_eval(open(f'{REPO}/__manifest__.py').read())
+    return manifest['version']
+
+
+class Checks:
+    def __init__(self, page, out, browser=None):
+        self.page = page
+        self.out = out
+        self.browser = browser
+        self.failures = []
+
+    def fail(self, message):
+        self.failures.append(message)
+
+    def shot(self, name):
+        if self.out:
+            self.page.screenshot(path=os.path.join(self.out, name), full_page=True)
+
+    # -- Settings → Mail Pro --------------------------------------------------
+
+    def settings(self):
+        page = self.page
+        page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+        page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+        page.click('a.tab[data-key=pan_mail_pro]')
+        page.wait_for_selector('.o_mailpro_step', timeout=30000)
+        page.wait_for_timeout(800)
+        self.shot('settings-mail-pro.png')
+
+        steps = page.query_selector_all('.o_mailpro_step')
+        if len(steps) != 3:
+            self.fail(f'the checklist has {len(steps)} steps, expected 3')
+
+        for index, step in enumerate(steps, start=1):
+            width = step.bounding_box()['width']
+            if width > MAX_STEP_WIDTH:
+                self.fail(
+                    f'step {index} is {width:.0f}px wide at a {WIDE}px window '
+                    f'(max {MAX_STEP_WIDTH}) — the arrow ends up a screen away '
+                    f'from its step')
+
+            dots = [d for d in step.query_selector_all('.o_mailpro_dot') if d.is_visible()]
+            if len(dots) != 1:
+                self.fail(f'step {index} shows {len(dots)} status dots, expected 1')
+
+        block = page.query_selector('div.app_settings_block[data-key=pan_mail_pro]')
+        text = block.inner_text()
+        for code in PROVIDER_CODES:
+            # A code on its own line, not a substring of a real address.
+            if any(line.strip() == code for line in text.splitlines()):
+                self.fail(f'the page shows the selection code "{code}" instead of its label')
+
+        version = manifest_version()
+        if version not in text:
+            self.fail(f'About does not show the version {version}')
+        if 'Pantalytics B.V.' not in text:
+            self.fail('About does not carry the copyright line')
+
+    # -- Every menu this module adds -----------------------------------------
+
+    def menus(self):
+        """Open every menu the module declares and prove it renders.
+
+        The menus are read from the server rather than clicked out of the
+        navbar: they moved from an app of their own to Settings → Technical in
+        19.0.7.0.0, and a check that walks the navbar only ever tests where
+        they happen to live today. Half of them are behind developer mode,
+        which a browser walk would have to switch on first; their action URL
+        opens regardless.
+        """
+        for name, action_id in module_menu_actions(self.call):
+            self.page.goto(f'{self.base}/odoo/action-{action_id}',
+                           wait_until='domcontentloaded')
+            self.page.wait_for_timeout(2000)
+            self.error_free(name)
+            self.shot(f'view-{slug(name)}.png')
+
+    # -- The provider form ----------------------------------------------------
+
+    # What each provider's registration asks for. Microsoft is the only one
+    # with a tenant; IMAP has no registration at all, and says so.
+    PROVIDER_FIELDS = {
+        'outlook': {'shows': ('Client ID', 'Client Secret', 'Tenant ID', 'Callback URL'),
+                    'hides': ('has no application registration',)},
+        'gmail': {'shows': ('Client ID', 'Client Secret', 'Callback URL'),
+                  'hides': ('Tenant ID', 'has no application registration')},
+        'imap': {'shows': ('has no application registration',),
+                 'hides': ('Client ID', 'Client Secret', 'Tenant ID', 'Callback URL')},
+    }
+
+    def provider_form(self):
+        """Each provider asks for its own credentials, and only for those.
+
+        There is one provider row, so the three shapes are walked by switching
+        it — which is also how an admin moves to another provider now. An
+        empty new record used to open carrying IMAP's explanation, because
+        "has no OAuth" and "nothing chosen yet" were the same condition.
+        """
+        action = dict((name, aid) for name, aid in module_menu_actions(self.call)).get('Providers')
+        if not action:
+            self.fail('there is no Providers menu')
+            return
+        rows = self.call('pan.mail.provider', 'search_read', [], fields=['provider'])
+        if len(rows) != 1:
+            self.fail(f'there are {len(rows)} provider rows, expected exactly 1')
+            return
+        row_id, was = rows[0]['id'], rows[0]['provider']
+
+        try:
+            for code, expected in self.PROVIDER_FIELDS.items():
+                self.call('pan.mail.provider', 'write', [row_id], {'provider': code})
+                text = self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
+                self.shot(f'provider-{code}.png')
+                for shown in expected['shows']:
+                    if shown not in text:
+                        self.fail(f'the {code} form does not show "{shown}"')
+                for hidden in expected['hides']:
+                    if hidden in text:
+                        self.fail(f'the {code} form shows "{hidden}", which is not its')
+        finally:
+            self.call('pan.mail.provider', 'write', [row_id], {'provider': was})
+
+        text = self.form_text(f'{self.base}/odoo/action-{action}/new')
+        self.shot('provider-new.png')
+        for hidden in ('has no application registration', 'Client ID', 'Tenant ID'):
+            if hidden in text:
+                self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
+
+    # -- The connect banner ---------------------------------------------------
+
+    def connect_banner(self):
+        """It reaches the people who have to act, and nobody else.
+
+        Both halves are the check. The banner lives inside `web.WebClient`
+        rather than in an action, so a wrong xpath takes the whole client down
+        and no server-side check can see it -- and one shown to somebody who is
+        already connected is a bar on every screen that teaches people to stop
+        reading bars. The seed connects admin, so admin must not see it; a
+        colleague who has not signed in must.
+        """
+        self.page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+        self.page.wait_for_selector('.o_main_navbar', timeout=60000)
+        self.page.wait_for_timeout(1200)
+        self.error_free('the webclient')
+        if self.page.query_selector('.o_mailpro_connect_banner'):
+            self.fail('the connect banner is shown to a user who is already connected')
+
+        login = 'ui-unconnected@example.com'
+        found = self.call('res.users', 'search', [('login', '=', login)])
+        if not found:
+            self.call('res.users', 'create', {
+                'name': 'Not Connected Yet', 'login': login, 'password': login,
+                'group_ids': [(6, 0, self.call(
+                    'ir.model.data', 'check_object_reference', 'base', 'group_user')[1:])],
+            })
+
+        page = self.browser.new_context(
+            viewport={'width': WIDE, 'height': 1100}).new_page()
+        try:
+            page.goto(f'{self.base}/web/login', wait_until='domcontentloaded')
+            page.fill('input[name=login]', login)
+            page.fill('input[name=password]', login)
+            page.click('button[type=submit]')
+            page.wait_for_selector('.o_main_navbar', timeout=60000)
+            page.wait_for_timeout(1500)
+            banner = page.query_selector('.o_mailpro_connect_banner')
+            if not banner:
+                self.fail('a user who has not connected a mailbox is never asked to')
+                return
+            if self.out:
+                page.screenshot(path=os.path.join(self.out, 'connect-banner.png'))
+            box = banner.bounding_box()
+            navbar = page.query_selector('.o_main_navbar').bounding_box()
+            if box['y'] < navbar['y'] + navbar['height'] - 1:
+                self.fail('the connect banner covers the navbar instead of sitting under it')
+            content = page.query_selector('.o_action_manager, .o_content').bounding_box()
+            if content['y'] < box['y'] + box['height'] - 1:
+                self.fail('the connect banner floats over the page instead of pushing it down')
+            if not banner.query_selector('a[href="/mail_pro/connect"]'):
+                self.fail('the connect banner has no way into the consent screen')
+
+            banner.query_selector('.o_mailpro_connect_close').click()
+            page.wait_for_timeout(400)
+            if page.query_selector('.o_mailpro_connect_banner'):
+                self.fail('dismissing the connect banner does not hide it')
+        finally:
+            page.context.close()
+
+    def form_text(self, url):
+        self.page.goto(url, wait_until='domcontentloaded')
+        self.page.wait_for_selector('.o_form_view', timeout=30000)
+        self.page.wait_for_timeout(1200)
+        return self.page.inner_text('.o_form_view')
+
+    def error_free(self, where):
+        dialog = self.page.query_selector('.o_error_dialog, .o_dialog_error')
+        if dialog:
+            self.fail(f'{where} opened an error dialog: {dialog.inner_text()[:200]}')
+        if not self.page.query_selector('.o_content'):
+            self.fail(f'{where} rendered no view')
+
+
+def rpc_for(url, db):
+    """A `call(model, method, *args, **kw)` against the preview database."""
+    uid = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/common').authenticate(
+        db, 'admin', 'admin', {})
+    proxy = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/object')
+
+    def call(model, method, *args, **kw):
+        return proxy.execute_kw(db, uid, 'admin', model, method, list(args), kw)
+    return call
+
+
+def module_menu_actions(call):
+    """(name, action id) for every menu `pan_mail_pro` declares, from the server."""
+    declared = call('ir.model.data', 'search_read',
+                    [('module', '=', 'pan_mail_pro'), ('model', '=', 'ir.ui.menu')],
+                    fields=['res_id'])
+    menus = call('ir.ui.menu', 'read', [d['res_id'] for d in declared],
+                 fields=['name', 'action'])
+    found = []
+    for menu in menus:
+        # "ir.actions.act_window,232" — a menu without one is a section header.
+        if not menu['action']:
+            continue
+        found.append((menu['name'], menu['action'].split(',')[1]))
+    return found
+
+
+def slug(name):
+    return name.lower().replace(' ', '-')
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--url', default='http://localhost:8069')
+    ap.add_argument('--out', default='', help='directory for screenshots')
+    ap.add_argument('--db', default='ui_db', help='the database tools/ui_preview.sh made')
+    args = ap.parse_args()
+    if args.out:
+        os.makedirs(args.out, exist_ok=True)
+
+    with sync_playwright() as p:
+        launch = {'executable_path': CHROME} if os.path.exists(CHROME) else {}
+        browser = p.chromium.launch(**launch)
+        page = browser.new_page(viewport={'width': WIDE, 'height': 1100})
+        page.goto(f'{args.url}/web/login', wait_until='domcontentloaded')
+        page.fill('input[name=login]', 'admin')
+        page.fill('input[name=password]', 'admin')
+        page.click('button[type=submit]')
+        page.wait_for_url('**/odoo**', timeout=60000)
+        page.wait_for_timeout(1500)
+
+        checks = Checks(page, args.out, browser)
+        checks.base = args.url
+        checks.db = args.db
+        checks.call = rpc_for(args.url, args.db)
+        checks.settings()
+        checks.menus()
+        checks.provider_form()
+        checks.connect_banner()
+        browser.close()
+
+    if checks.failures:
+        print('UI check failed:')
+        for failure in checks.failures:
+            print(f'  - {failure}')
+        sys.exit(1)
+    print('UI check passed.')
+
+
+if __name__ == '__main__':
+    main()

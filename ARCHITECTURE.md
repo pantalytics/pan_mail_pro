@@ -122,7 +122,7 @@ Providers disagree about sending as somebody else, which is why
 |-------|---------|
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
-| `pan.mail.provider` | One row per provider's application registration, `in_use` naming the one in use. Has its own list under Settings → Technical → Email |
+| `pan.mail.provider` | The application registration of the provider this database runs on. One row; has its own list under Settings → Technical → Email |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email |
 | `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
 | `res.config.settings` | The setup checklist — three lines, each a link to the table that answers it. Holds no credentials of its own |
@@ -1089,34 +1089,31 @@ not a trade worth keeping.
 Application credentials — the Azure app registration, the Google Cloud OAuth
 client — were five loose `ir.config_parameter` entries plus a sixth naming
 which provider was "the" one (`pan_mail_pro.setup_provider`). Since
-19.0.6.5.0 they are `pan.mail.provider` rows, `in_use` doing the sixth
-parameter's job.
+19.0.6.5.0 they are a `pan.mail.provider` row.
 
-Not called `active`: Odoo silently excludes `active = False` records from
-every plain `search()`, which is the state most rows are in most of the time
-here — only one provider is ever in use. `_get_config_params()` on the Graph
-and Gmail clients found this the hard way in review: a provider row that
-existed but was not the chosen one was invisible to its own client's lookup,
-so switching away and back would have found no credentials at all the moment
-anything tried to refresh a token. `in_use` carries the meaning without the
-collision.
+**One row.** 19.0.6.5.0 shipped a row per provider with an `in_use` toggle
+naming the chosen one, so that an admin who tried Microsoft, tested Google
+and went back to Microsoft would not have to retype the Azure client secret.
+19.0.7.2.0 dropped the toggle: nobody makes that round trip, and the table
+was asking every reader a second question ("which of these is it?") that only
+ever had one answer. A second row is refused, `current()` is the row, and
+switching provider means editing it. The old client secret is gone at that
+point; the provider's console issues a new one, and that is cheaper than a
+toggle on every screen and in every domain that reads this table.
 
-The property this buys, and the reason it is worth a model rather than a
-settings-page field per provider: **switching providers keeps the one you
-switch away from.** An admin who tries Microsoft, decides to test Google
-instead, and later goes back to Microsoft used to retype the Azure client
-secret, because there was exactly one `x_microsoft_client_secret` and nothing
-kept the old value once the picker moved on. A row per provider means the
-Microsoft row is still sitting there, complete, the whole time — untick its
-`in_use`, tick Google's, and nothing about either registration was touched.
+The field is not called `active` either, for a reason worth keeping written
+down: Odoo silently excludes `active = False` records from every plain
+`search()`. `_get_config_params()` on the Graph and Gmail clients found that
+the hard way in review, back when there were several rows — a row that
+existed but was not the chosen one was invisible to its own client's lookup.
 
 IMAP gets a row too, with no credential fields — its "configured" already
 meant "at least one account exists" before this model existed, and that
 question moved onto `pan.mail.provider.credentials_set` unchanged rather than
 staying a special case scattered across `pan_mail_setup.py` and the settings
 page. The one behavioural change: choosing IMAP is now the same action as
-choosing any other provider — add a row and tick it in use — rather than an
-implicit fallback with no record of the choice at all.
+choosing any other provider — add the row — rather than an implicit fallback
+with no record of the choice at all.
 
 `credentials_set` / `connected` / `status` are the other trap the same
 collision points at: for IMAP they read `pan.mail.account`, a different

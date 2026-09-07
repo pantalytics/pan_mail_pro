@@ -55,7 +55,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |
 | `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
 | `models/pan_mail_domain.py` | Internal domain list + the fail-closed gate on incoming sync |
-| `models/pan_mail_provider.py` | One row per provider's application registration + which one is `in_use` |
+| `models/pan_mail_provider.py` | The application registration of the provider this database runs on. One row, no toggle |
 | `models/pan_mail_setup.py` | The three mandatory setup steps and the phase (`setup` / `syncing`) they add up to |
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
@@ -266,7 +266,7 @@ Three workflows in `.github/workflows/`:
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release) |
+| `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release), and the UI checks in a real browser |
 | `gitleaks.yml` | every push + PR | secret scan |
 | `release.yml` | push to `19.0` | tags the merge commit `v<manifest version>` if that tag does not exist yet |
 
@@ -331,6 +331,10 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh` or `--mode=upgrade` |
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
+| `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens |
+| `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
+| `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 
 **Fresh install vs. upgraded database.** The `test` job installs fresh; the
 `upgrade` job installs the newest `v<series>.*` tag that is not HEAD and then
@@ -357,6 +361,38 @@ that last gap: it restores a customer backup into the throwaway database
 path, and prints real row counts and a masked parameter report. Customer data
 means it can never run in CI; it is part of the rollout runbook
 (`docs/migration-mail-pro.md`).
+
+## Looking at the UI
+
+The suite asserts that a view *renders*. Nobody was asserting that it *reads*:
+the setup checklist ran the full width of the window, so on a wide monitor the
+arrow sat a screen away from the step it belonged to, and the provider line
+showed `outlook` where its own form says "Microsoft 365". Both were plainly
+visible and invisible to 456 passing tests.
+
+`tools/ci_ui.sh` is now a CI job. It boots a seeded Odoo, walks every menu the
+module declares and asserts the shapes that broke before — the checklist's width at a
+2000px window, one status dot per step, no selection code where a label
+belongs, the version and the licence line in About, and that every menu entry
+opens without a traceback. The screenshots it takes are uploaded as the
+`ui-screenshots` artifact, so a layout change is reviewable from the PR.
+
+```bash
+pip install playwright           # once — the browser is already on the image
+tools/ci.sh ui                   # the CI job, locally
+
+tools/ui_preview.sh              # or boot it yourself: localhost:8069, admin/admin
+tools/ui_shot.py before.png --width=2000
+# ... edit a view or the scss ...
+tools/ui_preview.sh --update     # re-apply views and assets
+tools/ui_shot.py after.png --width=2000
+tools/ui_preview.sh --stop
+```
+
+Same Docker-only requirement as the rest of `tools/ci.sh`, so it works in a
+cloud session where there is no browser and no laptop. Take screenshots at
+2000px as well as 1440: a layout bug that only a wide monitor shows is still a
+layout bug, and that is the width the complaint arrives from.
 
 ## Working from Claude Code (mobile, web, cloud sessions)
 

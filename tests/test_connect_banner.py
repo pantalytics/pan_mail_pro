@@ -25,7 +25,7 @@ class TestConnectBanner(TransactionCase):
 
     def _set_up_provider(self, provider='gmail', **overrides):
         vals = {
-            'provider': provider, 'in_use': True,
+            'provider': provider,
             'client_id': 'id', 'client_secret': 'secret',
         }
         vals.update(overrides)
@@ -100,7 +100,7 @@ class TestConnectBannerSession(HttpCase):
     def test_the_session_carries_the_answer(self):
         self.env['pan.mail.domain'].set_domains(['company.test'])
         self.env['pan.mail.provider'].create({
-            'provider': 'gmail', 'in_use': True,
+            'provider': 'gmail',
             'client_id': 'id', 'client_secret': 'secret',
         })
         self.env['res.users'].create({
