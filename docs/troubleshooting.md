@@ -34,7 +34,7 @@
 ### Emails not syncing
 
 **Checklist:**
-1. Mailbox has **Sync Mode** set (not "Send only")
+1. If the missing mail is not a reply, **Sync other email** is on
 2. Mailbox **Owner** is set
 3. Owner has **Microsoft connected**
 4. **Notification mailbox** exists (required for incoming sync)
