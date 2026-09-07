@@ -68,6 +68,22 @@ def migrate(cr, version):
         Provider.create({'provider': 'imap', 'in_use': True})
         created.append('imap')
 
+    # `setup_provider` only exists in databases that went through the setup
+    # flow. One that predates it carries its credentials and nothing that says
+    # which provider they belong to, so the loop above leaves every row with
+    # in_use False -- and `mail_provider_client` looks the provider up by that
+    # flag, so sending and syncing stop without an error to explain it. One row
+    # is not ambiguous: it is the provider this database is set up for.
+    if not Provider.search_count([('in_use', '=', True)]):
+        rows = Provider.search([])
+        if len(rows) == 1:
+            rows.in_use = True
+            _logger.info(
+                "[Mail Pro] No provider was marked as in use -- this database "
+                "predates that setting. Marked the only one it has: %s.",
+                rows.provider,
+            )
+
     if created:
         _logger.info(
             "[Mail Pro] Provider credentials moved into their own table: %s. "
