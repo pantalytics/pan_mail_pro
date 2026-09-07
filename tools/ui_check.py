@@ -10,6 +10,8 @@ seeds it. Every assertion here is a bug this module has actually shipped:
   * a mailbox that had stopped drew two status dots at once
   * every menu the module declares opens; a broken view is a traceback, not
     a red test
+  * a brand new provider opened carrying IMAP's explanation, because "has no
+    OAuth" and "nothing chosen yet" were one condition
 
     tools/ui_check.py                     # assert, and write screenshots
     tools/ui_check.py --out=ui-screenshots
@@ -111,12 +113,62 @@ class Checks:
         which a browser walk would have to switch on first; their action URL
         opens regardless.
         """
-        for name, action_id in module_menu_actions(self.base, self.db):
+        for name, action_id in module_menu_actions(self.call):
             self.page.goto(f'{self.base}/odoo/action-{action_id}',
                            wait_until='domcontentloaded')
             self.page.wait_for_timeout(2000)
             self.error_free(name)
             self.shot(f'view-{slug(name)}.png')
+
+    # -- The provider form ----------------------------------------------------
+
+    # What each provider's registration asks for. Microsoft is the only one
+    # with a tenant; IMAP has no registration at all, and says so.
+    PROVIDER_FIELDS = {
+        'outlook': {'shows': ('Client ID', 'Client Secret', 'Tenant ID', 'Callback URL'),
+                    'hides': ('has no application registration',)},
+        'gmail': {'shows': ('Client ID', 'Client Secret', 'Callback URL'),
+                  'hides': ('Tenant ID', 'has no application registration')},
+        'imap': {'shows': ('has no application registration',),
+                 'hides': ('Client ID', 'Client Secret', 'Tenant ID', 'Callback URL')},
+    }
+
+    def provider_form(self):
+        """Each provider asks for its own credentials, and only for those.
+
+        An empty new record used to open carrying IMAP's explanation, because
+        "has no OAuth" and "nothing chosen yet" were the same condition.
+        """
+        action = dict((name, aid) for name, aid in module_menu_actions(self.call)).get('Providers')
+        if not action:
+            self.fail('there is no Providers menu')
+            return
+        rows = self.call('pan.mail.provider', 'search_read', [], fields=['provider'])
+
+        for row in rows:
+            expected = self.PROVIDER_FIELDS.get(row['provider'])
+            if not expected:
+                continue
+            text = self.form_text(f'{self.base}/odoo/action-{action}/{row["id"]}')
+            self.shot(f'provider-{row["provider"]}.png')
+            for shown in expected['shows']:
+                if shown not in text:
+                    self.fail(f'the {row["provider"]} form does not show "{shown}"')
+            for hidden in expected['hides']:
+                if hidden in text:
+                    self.fail(f'the {row["provider"]} form shows "{hidden}", which is not its')
+
+        text = self.form_text(f'{self.base}/odoo/action-{action}/new')
+        self.shot('provider-new.png')
+        for hidden in ('has no application registration', 'Client ID', 'Tenant ID'):
+            if hidden in text:
+                self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
+
+    def form_text(self, url):
+        self.page.goto(url, wait_until='domcontentloaded')
+        self.page.wait_for_selector('.o_form_view', timeout=30000)
+        self.page.wait_for_timeout(1200)
+        return self.page.inner_text('.o_form_view')
 
     def error_free(self, where):
         dialog = self.page.query_selector('.o_error_dialog, .o_dialog_error')
@@ -126,15 +178,19 @@ class Checks:
             self.fail(f'{where} rendered no view')
 
 
-def module_menu_actions(url, db):
-    """(name, action id) for every menu `pan_mail_pro` declares, from the server."""
+def rpc_for(url, db):
+    """A `call(model, method, *args, **kw)` against the preview database."""
     uid = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/common').authenticate(
         db, 'admin', 'admin', {})
-    rpc = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/object')
+    proxy = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/object')
 
     def call(model, method, *args, **kw):
-        return rpc.execute_kw(db, uid, 'admin', model, method, list(args), kw)
+        return proxy.execute_kw(db, uid, 'admin', model, method, list(args), kw)
+    return call
 
+
+def module_menu_actions(call):
+    """(name, action id) for every menu `pan_mail_pro` declares, from the server."""
     declared = call('ir.model.data', 'search_read',
                     [('module', '=', 'pan_mail_pro'), ('model', '=', 'ir.ui.menu')],
                     fields=['res_id'])
@@ -176,8 +232,10 @@ def main():
         checks = Checks(page, args.out)
         checks.base = args.url
         checks.db = args.db
+        checks.call = rpc_for(args.url, args.db)
         checks.settings()
         checks.menus()
+        checks.provider_form()
         browser.close()
 
     if checks.failures:

@@ -34,8 +34,11 @@
                                    decoration-warning="status == 'not_connected'"
                                    decoration-danger="status == 'not_configured'"/>
                             <label for="in_use"/>
-                            <div>
-                                <field name="in_use" widget="boolean_toggle" nolabel="1" class="d-inline-block"/>
+                            <!-- One row: the toggle is a block element, so the
+                                 icon beside it wrapped onto a line of its own
+                                 and read as a stray dot under the switch. -->
+                            <div class="d-inline-flex align-items-center">
+                                <field name="in_use" widget="boolean_toggle" nolabel="1"/>
                                 <i class="fa fa-info-circle text-muted ms-1"
                                    title="The provider Mail Pro is set up for right now. Only one can be in use; switching keeps the credentials on the one you switch away from."/>
                             </div>
@@ -59,7 +62,12 @@
                         </group>
                     </group>
 
-                    <div class="alert alert-info" role="alert" invisible="uses_oauth">
+                    <!-- `not uses_oauth` is also true before a provider is
+                         chosen, so a brand new record opened with IMAP's
+                         explanation on it. Say it about IMAP, not about the
+                         empty form. -->
+                    <div class="alert alert-info" role="alert"
+                         invisible="uses_oauth or not provider">
                         <i class="fa fa-info-circle me-2" title="Info"/>
                         IMAP/SMTP has no application registration — a server, login and
                         password are per address. "Configured" means at least one account

@@ -75,9 +75,14 @@ uid = xmlrpc.client.ServerProxy('http://localhost:8069/xmlrpc/2/common').authent
 rpc = xmlrpc.client.ServerProxy('http://localhost:8069/xmlrpc/2/object')
 def call(model, method, *args, **kw):
     return rpc.execute_kw(db, uid, pwd, model, method, list(args), kw)
+# All three providers, so the form's per-provider fields are on screen: only
+# Microsoft asks for a tenant, only IMAP has no registration at all.
 call('pan.mail.provider', 'create', {
     'provider': 'outlook', 'client_id': 'demo-client', 'client_secret': 'demo-secret',
     'tenant_id': 'demo-tenant', 'in_use': True})
+call('pan.mail.provider', 'create', {
+    'provider': 'gmail', 'client_id': 'demo-client', 'client_secret': 'demo-secret'})
+call('pan.mail.provider', 'create', {'provider': 'imap'})
 for name in ('example.com', 'example.odoo.com'):
     call('pan.mail.domain', 'create', {'name': name})
 call('pan.mail.account', 'create', {
