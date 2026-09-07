@@ -136,7 +136,9 @@ class Checks:
     def provider_form(self):
         """Each provider asks for its own credentials, and only for those.
 
-        An empty new record used to open carrying IMAP's explanation, because
+        There is one provider row, so the three shapes are walked by switching
+        it — which is also how an admin moves to another provider now. An
+        empty new record used to open carrying IMAP's explanation, because
         "has no OAuth" and "nothing chosen yet" were the same condition.
         """
         action = dict((name, aid) for name, aid in module_menu_actions(self.call)).get('Providers')
@@ -144,19 +146,24 @@ class Checks:
             self.fail('there is no Providers menu')
             return
         rows = self.call('pan.mail.provider', 'search_read', [], fields=['provider'])
+        if len(rows) != 1:
+            self.fail(f'there are {len(rows)} provider rows, expected exactly 1')
+            return
+        row_id, was = rows[0]['id'], rows[0]['provider']
 
-        for row in rows:
-            expected = self.PROVIDER_FIELDS.get(row['provider'])
-            if not expected:
-                continue
-            text = self.form_text(f'{self.base}/odoo/action-{action}/{row["id"]}')
-            self.shot(f'provider-{row["provider"]}.png')
-            for shown in expected['shows']:
-                if shown not in text:
-                    self.fail(f'the {row["provider"]} form does not show "{shown}"')
-            for hidden in expected['hides']:
-                if hidden in text:
-                    self.fail(f'the {row["provider"]} form shows "{hidden}", which is not its')
+        try:
+            for code, expected in self.PROVIDER_FIELDS.items():
+                self.call('pan.mail.provider', 'write', [row_id], {'provider': code})
+                text = self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
+                self.shot(f'provider-{code}.png')
+                for shown in expected['shows']:
+                    if shown not in text:
+                        self.fail(f'the {code} form does not show "{shown}"')
+                for hidden in expected['hides']:
+                    if hidden in text:
+                        self.fail(f'the {code} form shows "{hidden}", which is not its')
+        finally:
+            self.call('pan.mail.provider', 'write', [row_id], {'provider': was})
 
         text = self.form_text(f'{self.base}/odoo/action-{action}/new')
         self.shot('provider-new.png')

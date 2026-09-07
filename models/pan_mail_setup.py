@@ -71,13 +71,12 @@ class PanMailSetup(models.AbstractModel):
         """The three answers as the database has them.
 
         `provider` overrides which provider is judged, for a caller that wants
-        to ask about one before it is the in-use row (a test, mainly — the
-        settings page no longer edits credentials in place, so it never needs
-        this any more than the other two steps do).
+        to ask about one before it is the row (a test, mainly — the settings
+        page no longer edits credentials in place, so it never needs this any
+        more than the other two steps do).
         """
         if provider is None:
-            row = self.env['pan.mail.provider'].sudo().search([('in_use', '=', True)], limit=1)
-            provider = row.provider if row else False
+            provider = self.env['pan.mail.provider'].current().provider or False
         return {
             'provider': bool(provider) and self.credentials_set(provider),
             'domains': self.env['pan.mail.domain'].is_configured(),

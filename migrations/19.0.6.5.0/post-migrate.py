@@ -1,21 +1,25 @@
 # -*- coding: utf-8 -*-
-"""The application credentials become rows, one per provider.
+"""The application credentials become a row.
 
 Five loose config parameters — `microsoft_client_id`, `microsoft_tenant_id`,
 `microsoft_client_secret_encrypted`, `google_client_id`,
 `google_client_secret_encrypted` — and the `setup_provider` parameter that
-named which one was chosen become `pan.mail.provider` rows, `in_use` standing
-in for `setup_provider`. See `models/pan_mail_provider.py` for why: a row per
-provider is what lets switching providers keep the one you switch away from.
+named which one was chosen become one `pan.mail.provider` row: the provider
+this database is set up for.
+
+It created a row per provider when it shipped, with `in_use` naming the
+chosen one. 19.0.7.2.0 dropped that toggle — a database runs on one provider
+— so this script now creates only the chosen provider's row, and a second
+provider's registration is dropped with its parameters. It is recoverable
+from that provider's console, which is where the secret came from.
 
 The secret is copied as the Fernet ciphertext it already is, never decrypted
 and re-encrypted — same key, same database, so the ciphertext is portable as
 a string and a decrypt/re-encrypt round trip only risks turning it into
 garbage for no reason.
 
-Idempotent: a provider with a row already skips creation (so a re-run, or a
-database that somehow already has one, is left alone), and deleting a
-parameter that is already gone is a no-op.
+Idempotent: a database that already has a provider row is left alone, and
+deleting a parameter that is already gone is a no-op.
 """
 import logging
 
@@ -50,44 +54,40 @@ def migrate(cr, version):
     Provider = env['pan.mail.provider'].sudo()
 
     active_code = ICP.get_param(PARAM_SETUP_PROVIDER) or False
-    created = []
 
-    for code, params in CREDENTIAL_PARAMS.items():
-        if Provider.search_count([('provider', '=', code)]):
-            continue
-        values = {name: ICP.get_param(key) or False for name, key in params.items()}
-        if not any(values.values()) and code != active_code:
-            continue  # nothing to move, and it was never the chosen one
-        Provider.create(dict(values, provider=code, in_use=(code == active_code)))
-        created.append(code)
+    def credentials_for(code):
+        params = CREDENTIAL_PARAMS.get(code, {})
+        return {name: ICP.get_param(key) or False for name, key in params.items()}
 
-    # IMAP has no credential parameters of its own — the only trace of it
-    # having been chosen is `setup_provider`. Without a row here, that choice
-    # is lost and the database silently drops back into setup.
-    if active_code == 'imap' and not Provider.search_count([('provider', '=', 'imap')]):
-        Provider.create({'provider': 'imap', 'in_use': True})
-        created.append('imap')
+    def has_credentials(code):
+        return any(credentials_for(code).values())
 
     # `setup_provider` only exists in databases that went through the setup
-    # flow. One that predates it carries its credentials and nothing that says
-    # which provider they belong to, so the loop above leaves every row with
-    # in_use False -- and `mail_provider_client` looks the provider up by that
-    # flag, so sending and syncing stop without an error to explain it. One row
-    # is not ambiguous: it is the provider this database is set up for.
-    if not Provider.search_count([('in_use', '=', True)]):
-        rows = Provider.search([])
-        if len(rows) == 1:
-            rows.in_use = True
-            _logger.info(
-                "[Mail Pro] No provider was marked as in use -- this database "
-                "predates that setting. Marked the only one it has: %s.",
-                rows.provider,
-            )
+    # flow. One that predates it carries its credentials and nothing saying
+    # which provider they belong to — but one set of credentials is not
+    # ambiguous: it is the provider this database is set up for.
+    code = active_code
+    if not code:
+        configured = [c for c in CREDENTIAL_PARAMS if has_credentials(c)]
+        code = configured[0] if len(configured) == 1 else False
 
-    if created:
+    dropped = [c for c in CREDENTIAL_PARAMS if c != code and has_credentials(c)]
+
+    if code and not Provider.search_count([]):
+        # IMAP has no credential parameters of its own — the only trace of it
+        # having been chosen is `setup_provider`. Without a row here, that
+        # choice is lost and the database silently drops back into setup.
+        Provider.create(dict(credentials_for(code), provider=code))
         _logger.info(
-            "[Mail Pro] Provider credentials moved into their own table: %s. "
-            "Active provider: %s.", ', '.join(created), active_code or 'none',
+            "[Mail Pro] Application credentials moved into their own table. "
+            "Provider: %s.", code,
+        )
+
+    if dropped:
+        _logger.info(
+            "[Mail Pro] Registration dropped for %s: Mail Pro runs on one "
+            "provider (%s). Re-enter it from that provider's console if you "
+            "switch.", ', '.join(dropped), code or 'none',
         )
 
     all_params = [key for params in CREDENTIAL_PARAMS.values() for key in params.values()]
