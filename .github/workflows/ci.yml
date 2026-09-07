@@ -121,9 +121,10 @@ jobs:
   # The pages, in a browser. The suite asserts that a view renders; nothing was
   # asserting that it reads. The setup checklist ran the full width of the
   # window and the provider line showed a selection code, both invisible to 456
-  # passing tests. This job boots a seeded Odoo, walks every menu of the app and
-  # checks the shapes that broke before; the screenshots are kept as an artifact
-  # so a layout change is reviewable without checking the branch out.
+  # passing tests. This job boots a seeded Odoo, walks every menu the module
+  # declares and checks the shapes that broke before; the screenshots are kept
+  # as an artifact, so a layout change is reviewable without checking the
+  # branch out.
   #
   # Local equivalent: pip install playwright && tools/ci.sh ui
   # ---------------------------------------------------------------------------

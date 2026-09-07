@@ -8,7 +8,8 @@ seeds it. Every assertion here is a bug this module has actually shipped:
     the arrow sat a screen away from the step it belongs to
   * the provider line read `outlook` where its own form says "Microsoft 365"
   * a mailbox that had stopped drew two status dots at once
-  * every menu of the app opens; a broken view is a traceback, not a red test
+  * every menu the module declares opens; a broken view is a traceback, not
+    a red test
 
     tools/ui_check.py                     # assert, and write screenshots
     tools/ui_check.py --out=ui-screenshots
@@ -19,6 +20,7 @@ import argparse
 import ast
 import os
 import sys
+import xmlrpc.client
 
 try:
     from playwright.sync_api import sync_playwright
@@ -97,50 +99,22 @@ class Checks:
         if 'Pantalytics B.V.' not in text:
             self.fail('About does not carry the copyright line')
 
-    # -- The app's own menus --------------------------------------------------
+    # -- Every menu this module adds -----------------------------------------
 
     def menus(self):
-        """Open every entry of the app menu and prove it renders.
+        """Open every menu the module declares and prove it renders.
 
-        A section carries no href and holds the entries; an entry carries one.
-        Walking the hrefs rather than clicking through keeps this immune to a
-        tour pointer or a dropdown that closes itself.
+        The menus are read from the server rather than clicked out of the
+        navbar: they moved from an app of their own to Settings → Technical in
+        19.0.7.0.0, and a check that walks the navbar only ever tests where
+        they happen to live today. Half of them are behind developer mode,
+        which a browser walk would have to switch on first; their action URL
+        opens regardless.
         """
-        page = self.page
-        page.click('.o_navbar_apps_menu button, .o_menu_toggle', force=True)
-        page.wait_for_timeout(600)
-        href = page.get_attribute(
-            "a[data-menu-xmlid='pan_mail_pro.menu_communication_root']", 'href')
-        if not href:
-            self.fail('the Communication app has no menu entry')
-            return
-        page.goto(self.base + href, wait_until='domcontentloaded')
-        page.wait_for_timeout(2000)
-
-        entries = []
-        for section in page.query_selector_all('.o_menu_sections > *'):
-            name = section.inner_text().strip()
-            target = section.get_attribute('href')
-            if target:
-                entries.append((name, target))
-                continue
-            section.click(force=True)
-            page.wait_for_timeout(900)
-            items = page.query_selector_all(
-                '.o-dropdown--menu .dropdown-item, .dropdown-menu .dropdown-item')
-            self.shot(f'menu-{slug(name)}.png')
-            entries += [(i.inner_text().strip(), i.get_attribute('href')) for i in items]
-            page.keyboard.press('Escape')
-            page.wait_for_timeout(300)
-
-        if not entries:
-            self.fail('the Communication app shows no menu entries')
-        for name, target in entries:
-            if not target:
-                self.fail(f'menu entry "{name}" opens nothing')
-                continue
-            page.goto(self.base + target, wait_until='domcontentloaded')
-            page.wait_for_timeout(2000)
+        for name, action_id in module_menu_actions(self.base, self.db):
+            self.page.goto(f'{self.base}/odoo/action-{action_id}',
+                           wait_until='domcontentloaded')
+            self.page.wait_for_timeout(2000)
             self.error_free(name)
             self.shot(f'view-{slug(name)}.png')
 
@@ -152,6 +126,29 @@ class Checks:
             self.fail(f'{where} rendered no view')
 
 
+def module_menu_actions(url, db):
+    """(name, action id) for every menu `pan_mail_pro` declares, from the server."""
+    uid = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/common').authenticate(
+        db, 'admin', 'admin', {})
+    rpc = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/object')
+
+    def call(model, method, *args, **kw):
+        return rpc.execute_kw(db, uid, 'admin', model, method, list(args), kw)
+
+    declared = call('ir.model.data', 'search_read',
+                    [('module', '=', 'pan_mail_pro'), ('model', '=', 'ir.ui.menu')],
+                    fields=['res_id'])
+    menus = call('ir.ui.menu', 'read', [d['res_id'] for d in declared],
+                 fields=['name', 'action'])
+    found = []
+    for menu in menus:
+        # "ir.actions.act_window,232" — a menu without one is a section header.
+        if not menu['action']:
+            continue
+        found.append((menu['name'], menu['action'].split(',')[1]))
+    return found
+
+
 def slug(name):
     return name.lower().replace(' ', '-')
 
@@ -160,6 +157,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--url', default='http://localhost:8069')
     ap.add_argument('--out', default='', help='directory for screenshots')
+    ap.add_argument('--db', default='ui_db', help='the database tools/ui_preview.sh made')
     args = ap.parse_args()
     if args.out:
         os.makedirs(args.out, exist_ok=True)
@@ -177,6 +175,7 @@ def main():
 
         checks = Checks(page, args.out)
         checks.base = args.url
+        checks.db = args.db
         checks.settings()
         checks.menus()
         browser.close()
