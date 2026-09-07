@@ -129,31 +129,16 @@
         </field>
     </record>
 
-    <!-- Root menu. The module declares application: True but shipped no menu
-         of its own; everything lived under Settings → Technical, which is the
-         wrong altitude for data people look at daily. -->
-    <menuitem id="menu_communication_root"
-              name="Communication"
-              web_icon="pan_mail_pro,static/description/icon.png"
-              sequence="45"/>
-
+    <!-- Settings → Technical → Email, next to every other Mail Pro screen.
+         19.0.4.0.0 gave the module a "Communication" app of its own on the
+         home screen; 19.0.7.0.0 took it back. It carried one read-only lens
+         and a triage queue that no longer exists, which is not an app - and a
+         tile on the home screen invites daily use of a diagnostic view. -->
     <menuitem id="menu_communication_all"
               name="All Communication"
-              parent="menu_communication_root"
+              parent="base.menu_email"
               action="action_mail_message_lens"
-              sequence="10"/>
-
-    <menuitem id="menu_communication_config"
-              name="Configuration"
-              parent="menu_communication_root"
-              sequence="90"
-              groups="pan_mail_pro.group_mail_mailbox_manager"/>
-
-    <menuitem id="menu_communication_mailboxes"
-              name="Mailboxes"
-              parent="menu_communication_config"
-              action="action_pan_mail_mailbox"
-              sequence="10"
-              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+              sequence="7"
+              groups="base.group_system"/>
 
 </odoo>

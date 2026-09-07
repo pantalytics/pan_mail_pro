@@ -107,22 +107,6 @@
                         </group>
                         <group/>
                     </group>
-                    <!-- The interlock that keeps AI auto-routing off. See models/ai/. -->
-                    <field name="routing_smart" invisible="1"/>
-
-                    <!-- SECTION 4: REVIEW QUEUE (only when unknown senders are synced) -->
-                    <group string="Review Queue" invisible="is_notification_mailbox or sync_mode != 'all'">
-                        <group>
-                            <label for="queue_unknown_contacts" string="Hold for review"/>
-                            <div>
-                                <field name="queue_unknown_contacts" widget="boolean_toggle"
-                                       nolabel="1" class="d-inline-block"/>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Mail from unknown senders waits in Communication → Triage instead of creating a contact automatically."/>
-                            </div>
-                        </group>
-                        <group/>
-                    </group>
 
                     <!-- SYNC BUTTON -->
                     <group invisible="is_notification_mailbox or sync_mode == 'none'">

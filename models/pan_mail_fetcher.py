@@ -48,10 +48,11 @@ _logger = logging.getLogger(__name__)
 class Skip(NamedTuple):
     """Why a message may not enter Odoo.
 
-    `record` is the part worth having in the type: whether a refusal leaves a
-    row in `pan.mail.item` is a property of the gate that refused, declared
-    next to it, rather than a pattern to reconstruct from every call site. It
-    used to be three ad-hoc `_record_skip()` calls among seven bare returns.
+    Every refusal leaves the same trace and no more: one line in the log
+    carrying the mailbox, the Message-ID, the gate and the reason. There is no
+    queue a refused mail can be pulled back out of -- 19.0.7.0.0 removed it --
+    so a mail a customer wants after all is re-imported by widening the
+    mailbox's sync mode, not by working a backlog.
 
     `quiet` drops the refusal to DEBUG. Only the duplicate gate sets it: an
     overlapping fetch window is normal and deliberate on IMAP, so a refusal
@@ -59,7 +60,6 @@ class Skip(NamedTuple):
     """
     reason: str
     detail: str = ''
-    record: bool = False
     quiet: bool = False
 
 
@@ -242,13 +242,9 @@ class PanMailFetcher(models.AbstractModel):
                 # transaction in `aborted` state and every later message in
                 # this batch would fail with "cursor already closed".
                 _logger.exception(
-                    f"[Incoming Mail] Error processing message {message.get('provider_message_id')}"
-                )
-                # Recorded *after* the savepoint has exited and rolled back.
-                # Inside it, the write would be undone by the very failure it
-                # is meant to report.
-                self.env['pan.mail.item']._record_skip(
-                    mailbox, message, folder, 'error', detail=str(error)[:200],
+                    "[Incoming Mail] Error processing message %s in %s: %s",
+                    message.get('provider_message_id'), mailbox.email_address,
+                    error,
                 )
 
         return processed, latest_datetime
@@ -284,9 +280,9 @@ class PanMailFetcher(models.AbstractModel):
     def _refuse(self, ctx):
         """Run the ladder. Returns the `Skip` that refused, or None to proceed.
 
-        Recording is done here rather than inside the gates, so a gate declares
-        whether its refusal deserves a row in `pan.mail.item` and never has to
-        know how one is written.
+        A refusal is logged and nothing else. The log line names the gate, so
+        "why is this mail not in Odoo" is answerable without keeping a copy of
+        a mail we decided not to read.
         """
         for name in self._gate_rules():
             skip = getattr(self, name)(ctx)
@@ -297,12 +293,6 @@ class PanMailFetcher(models.AbstractModel):
                 "[Incoming Mail] Refused %s at %s: %s",
                 ctx['internet_message_id'], name, skip.reason,
             )
-            if skip.record:
-                self.env['pan.mail.item']._record_skip(
-                    ctx['mailbox'], self._full_message(ctx), ctx['folder'],
-                    skip.reason, detail=skip.detail,
-                    direction='outgoing' if ctx['is_outgoing'] else 'incoming',
-                )
             return skip
         return None
 
@@ -398,12 +388,12 @@ class PanMailFetcher(models.AbstractModel):
         mail is logged on it. Only when every recipient is ours is it internal
         traffic, and then nothing enters.
 
-        No trace, on purpose. `pan.mail.item` is the queue of skips a person can
-        reverse, and internal mail is the one refusal that must never be
-        reversible — an Import button here would be a button for leaking. The
-        refusal `_refuse()` logs carries the mailbox, the Message-ID, the reason
-        and the time, which is what answering "why is this mail not in Odoo"
-        needs and is as much as may be kept about a mail we declined to read.
+        No trace beyond the log line, on purpose. Internal mail is the one
+        refusal that must never be reversible — an Import button here would be
+        a button for leaking. The refusal `_refuse()` logs carries the mailbox,
+        the Message-ID, the reason and the time, which is what answering "why is
+        this mail not in Odoo" needs and is as much as may be kept about a mail
+        we declined to read.
         """
         if ctx['force_import']:
             return None
@@ -442,9 +432,10 @@ class PanMailFetcher(models.AbstractModel):
     def _gate_sync_mode(self, ctx):
         """What the mailbox was told to accept.
 
-        The only gate whose refusals are worth recording: an unknown contact is
-        a decision a person may want to reverse, and the triage queue is where
-        they reverse it. The gates above refuse things nobody would want back.
+        A mailbox on `known_partners` takes mail from contacts it already has.
+        Mail from anybody else is refused here and left where it is, in the
+        mailbox. Widening the mode to `all` is how a customer changes that
+        answer; there is no backlog to work through.
         """
         mailbox = ctx['mailbox']
         if ctx['partner'] or ctx['force_import']:
@@ -453,13 +444,6 @@ class PanMailFetcher(models.AbstractModel):
             return Skip(
                 'unknown_contact',
                 _('Sync mode only accepts mail from existing contacts.'),
-                record=True,
-            )
-        if mailbox.sync_mode == 'all' and mailbox.queue_unknown_contacts:
-            return Skip(
-                'queued_for_review',
-                _('This mailbox holds mail from unknown senders for review.'),
-                record=True,
             )
         return None
 

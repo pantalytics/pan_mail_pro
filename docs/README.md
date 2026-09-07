@@ -35,7 +35,6 @@ One database can serve mailboxes on several providers at once.
 | Internal domain filter | Your own internal email is never synced |
 | Block list | Exclude specific contacts from sync |
 | Mail Routing log | See where every email landed, and why |
-| Triage queue | Review mail from senders who are not contacts yet |
 | Link Coverage | Measure how much of your mail actually lands on a document |
 
 ## Security

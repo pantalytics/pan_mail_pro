@@ -61,12 +61,8 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/res_partner.py` | Contact block list field |
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
-| `models/pan_mail_item.py` | Triage queue for mail that lands nowhere |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
-| `models/ai/pan_mail_ai.py` | AI contract + registry (null backend is the default) |
-| `models/ai/claude/claude_backend.py` | Claude implementation; only file that may import `anthropic` |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
-| `tests/test_ai_contract.py` | Guards the AI seam the same way |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
 | `tests/test_mail_matcher.py` | Unit tests for the matching ladder |
 | `tests/test_imap_provider.py` | IMAP/SMTP client (fake imaplib/smtplib, no sockets) |
@@ -74,7 +70,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 ## Provider Architecture
 
 The design — the contract, the model map, thread matching, outgoing threading,
-the routing log, the triage queue and the AI seam — lives in
+the routing log and the coverage report — lives in
 **[ARCHITECTURE.md](ARCHITECTURE.md)**. It is not repeated here; two copies of a
 design drift, and the one in the file you did not open is the one you believe.
 
@@ -93,10 +89,11 @@ pan.mail.account                          ← credentials, one per address+provi
 **The rule:** nothing outside a provider implementation may build provider URLs,
 import provider SDKs, or reason about provider-specific payload shapes.
 Everything crossing the boundary uses the normalized message / attachment /
-send-result shapes documented in `models/mail_provider_client.py`. The same rule
-applies to `models/ai/`: only a backend there may import an AI SDK. Both
-boundaries are enforced by greps in CI, so breaking one fails the build rather
-than review.
+send-result shapes documented in `models/mail_provider_client.py`. The
+boundary is enforced by a grep in CI, so breaking it fails the build rather
+than review. A second grep keeps `anthropic` out of the module entirely:
+19.0.7.0.0 removed the AI seam, and the cheapest way to keep it removed is a
+check that fails the moment the import comes back.
 
 Provider implementations live under `models/providers/<vendor>/`, so the
 boundary is a directory you can grep rather than a convention you have to
@@ -137,13 +134,6 @@ the seam; a new provider must satisfy the same assertions.
 Nowhere else. A `return False` inside `_process_message` is the thing this
 ladder exists to stop; the last one hid a filter that guarded one folder and
 not the other for months.
-
-### Adding an AI backend
-
-Same shape: register it in `AI_BACKENDS` in `models/ai/pan_mail_ai.py`, put the
-implementation in `models/ai/<vendor>/`, satisfy `tests/test_ai_contract.py`.
-The three properties that must hold — opt-in by data, cannot block mail, may
-rank but never invent — are in ARCHITECTURE.md §8 and are asserted by tests.
 
 ## Development
 
@@ -586,16 +576,25 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **A rename plus an edit on the same file is the merge's real trap.** `microsoft_incoming_mail.py -> pan_mail_fetcher.py` on one side, savepoint isolation added on the other. Git resolves the rename but the content conflicts read as pure noise; take the edited side's content wholesale at the renamed path instead of hand-merging hunk by hunk.
 - **Unify selection *values* across models that name the same thing.** The mailbox shipped `x_provider='outlook'` while the branch used `provider='microsoft'`. Both now read `PROVIDER_SELECTION` from the registry, so an account and its mailbox cannot disagree - and no data migration was needed, because the shipped value won.
 
-### AI
-- **A seam is cheaper than a feature flag.** AI got the same shape as the
-  provider seam — one contract, a registry, a null backend that is a real
-  implementation. The payoff is that "no AI" and "some AI" are the same code
-  path, so the off case cannot rot. The three load-bearing properties (opt-in by
-  data, cannot block mail, may rank but never invent) are in ARCHITECTURE.md §8
-  and each is asserted by a test.
-- **Put the boundary where a grep can see it.** `anthropic` may only be imported
-  under `models/ai/`, and CI greps for it. A convention nobody can check is a
-  convention that is already broken somewhere.
+### Removing a feature (19.0.7.0.0)
+- **A well-shaped seam with no caller is still dead code.** The AI seam was
+  built right: a contract, a registry, a null backend that is a real
+  implementation, a CI grep on the vendor import. It had exactly one caller,
+  the triage queue's classification cron. Removing the queue removed the
+  feature; the seam just took a release to notice. Count the callers before
+  admiring the shape.
+- **A queue nobody works is a copy of the data with none of the protection.**
+  `pan.mail.item` held somebody's correspondence outside every document ACL, so
+  it needed a rule of its own and could only ever be shown to mailbox managers.
+  The refusal it existed to make reversible is reversible anyway, by widening
+  the mailbox's sync mode, which re-reads the mail from the provider.
+- **An app tile is a promise about how often a screen is opened.** The module
+  had a "Communication" application on the home screen holding one read-only
+  lens and a queue. Both are diagnostics. They are back under Settings →
+  Technical → Email, next to the rest of the module.
+- **Keep the grep after you delete the thing it guarded.** `anthropic` is now
+  banned from the whole module rather than confined to `models/ai/`. A removal
+  that leaves no check behind is a removal that comes back.
 
 ### Boundaries (19.0.6.3.0)
 - **A passthrough is a decision nobody made.** The contract documented `headers`
@@ -625,7 +624,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 
 ### Simplification (19.0.5.0.0)
 - **Five fields computed from one field are five things that can disagree with it.** The mailbox had `x_sync_mode` plus `x_incoming_sync`, `x_sync_unknown_contacts`, `x_sync_inbox`, `x_sync_sent` and `x_incoming_enabled` — one three-way choice wearing six hats, each with its own compute, inverse and depends. The mode alone says everything; the rest was UI convenience that outlived the UI it was built for.
-- **Check what mainline did with a field before deleting it as dead.** `x_routing_smart` and `x_queue_unknown_contacts` both looked like the same thing: a boolean whose only behaviour was a `ValidationError` refusing to let it be switched on. Both were deleted on the first pass. In between, 19.0.4.0.0 gave `x_queue_unknown_contacts` a triage queue to feed and named `x_routing_smart` as the explicit interlock the AI seam may not open yet. A field with no behaviour today is not automatically a field with no decision behind it — read the code that documents it, not just the code that uses it.
+- **Check what mainline did with a field before deleting it as dead.** `x_routing_smart` and `x_queue_unknown_contacts` both looked like the same thing: a boolean whose only behaviour was a `ValidationError` refusing to let it be switched on. Both were deleted on the first pass. In between, 19.0.4.0.0 gave `x_queue_unknown_contacts` a triage queue to feed and named `x_routing_smart` as the explicit interlock the AI seam may not open yet. A field with no behaviour today is not automatically a field with no decision behind it — read the code that documents it, not just the code that uses it. (19.0.7.0.0 deleted both again, this time with the features behind them.)
 - **A compatibility shim outlives its callers silently.** The five `res.users.x_microsoft_*` token proxies existed so pre-account callers kept working. Every one of those callers had since been rewritten; nothing but tests read them. Nothing fails when a shim goes stale, so nothing tells you — grep the callers before assuming a shim is still load-bearing.
 - **Two controllers doing the same thing drift in ways one cannot.** The Microsoft and Google OAuth callbacks were 90 near-identical lines each. Only Microsoft logged the connected identity; only Google preserved a missing refresh token. Neither difference was a decision.
 - **Reconstructing "why did this fail" after the fact is a second implementation of the decision.** `_get_missing_mailbox_error()` re-walked the whole routing tree to explain a failure the router had already diagnosed, and the two could disagree. Resolve once, raise with the reason.
