@@ -33,6 +33,22 @@ def _already_configured(env):
     return bool(env['pan.mail.domain'].sudo().search_count([]))
 
 
+def _configured_domains(env):
+    """The internal domains this database has, from whichever home holds them.
+
+    19.0.6.4.0 moved the list from the config parameter into rows, and this
+    script runs against that newer code. A database crossing several releases
+    in one upgrade still keeps its list in the parameter here, because the
+    script that moves it runs after this one -- so read both homes.
+    """
+    Domains = env['pan.mail.domain']
+    rows = Domains.get_domains()
+    if rows:
+        return rows
+    raw = env['ir.config_parameter'].sudo().get_param('pan_mail_pro.internal_domains')
+    return Domains._parse(raw or '')
+
+
 def migrate(cr, version):
     if not version:
         return
@@ -45,7 +61,11 @@ def migrate(cr, version):
     Domains = env['pan.mail.domain']
 
     if _already_configured(env):
-        missing = Domains.uncovered_domains()
+        # 19.0.6.4.0 removed `uncovered_domains()` along with the parameter it
+        # read, so derive the gap here rather than calling a helper that this
+        # script's own code base no longer has.
+        configured = _configured_domains(env)
+        missing = [d for d in Domains.suggest_domains() if d not in configured]
         if missing:
             _logger.warning(
                 "[Mail Pro] Internal domains are configured but incomplete. "
