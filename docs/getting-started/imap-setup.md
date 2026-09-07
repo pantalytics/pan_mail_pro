@@ -9,7 +9,7 @@ password once.
 
 ## Step 1: Create the account
 
-1. Go to **Settings → Technical → Email → Email Accounts**
+1. Go to **Settings → Technical → Email → Mail Pro → Email Accounts**
 2. Create a new account
 3. Set **Provider** to *IMAP / SMTP*
 4. Fill in the email address
@@ -53,7 +53,7 @@ mailbox: only that user sees it in the composer.
 
 ## Step 5: Create the mailbox
 
-1. Go to **Settings → Technical → Email → Mailboxes**
+1. Go to **Settings → Technical → Email → Mail Pro → Mailboxes**
 2. Create a mailbox with the same address
 3. Set **Provider** to *IMAP / SMTP*
 4. Configure sending and incoming sync as described in

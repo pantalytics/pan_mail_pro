@@ -86,7 +86,7 @@ resets wait in the queue until step 5 is done rather than being dropped.
 
 An IMAP mailbox has no consent screen, so its credentials are typed in once:
 
-1. Go to **Settings → Technical → Email → Email Accounts** and create an account.
+1. Go to **Settings → Technical → Email → Mail Pro → Email Accounts** and create an account.
 2. Set **Provider** to *IMAP / SMTP* and fill in the address. Known hosters
    (Soverin) fill in their own servers; anything else is typed in.
 3. Enter the IMAP and SMTP servers, the login (defaults to the address) and the
@@ -94,7 +94,7 @@ An IMAP mailbox has no consent screen, so its credentials are typed in once:
    mailbox that reads but cannot send is broken.
 4. Leave **Odoo User** empty for a shared address such as `info@`; set it for a
    person's own mailbox.
-5. Create the mailbox under **Settings → Technical → Email → Mailboxes**
+5. Create the mailbox under **Settings → Technical → Email → Mail Pro → Mailboxes**
    with the same address and provider *IMAP / SMTP*.
 
 The Sent folder is detected from the server (`\Sent`), and can be overridden on
@@ -236,8 +236,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
 
 ## Where mail lands
 
-Once mail is flowing, three screens under **Settings → Technical → Email**
-tell you whether it is going where you expect:
+Once mail is flowing, three screens under **Settings → Technical → Email →
+Mail Pro** tell you whether it is going where you expect:
 
 | Screen | Question it answers |
 |--------|--------------------|

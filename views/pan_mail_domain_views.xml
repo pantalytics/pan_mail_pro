@@ -31,8 +31,8 @@
 
     <menuitem id="menu_communication_domains"
               name="Internal Domains"
-              parent="base.menu_email"
+              parent="pan_mail_pro.menu_pan_mail_root"
               action="action_pan_mail_domain"
-              sequence="20"
+              sequence="40"
               groups="pan_mail_pro.group_mail_mailbox_manager"/>
 </odoo>

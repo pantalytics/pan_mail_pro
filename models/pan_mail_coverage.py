@@ -2,9 +2,10 @@
 """Link coverage: how much of the mail we carry actually lands on a document.
 
 This is the number that says whether the "two separate worlds" problem is
-being solved, and it is the gate on building a triage queue: if almost
-everything files itself correctly, a queue solves nothing and the effort
-belongs elsewhere.
+being solved. It is also what decided the triage queue's fate: 19.0.4.0.0
+built one, this measurement said almost everything files itself correctly,
+and 19.0.7.0.0 removed it. The same question will be asked of the next
+feature that proposes to catch what the matcher misses.
 
 Deliberately measured inside Odoo and nowhere else. Sending usage telemetry
 out would contradict the module's own data disclosure ("No data is sent to the

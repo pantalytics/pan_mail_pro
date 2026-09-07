@@ -220,9 +220,9 @@
     <!-- Menu: Settings → Technical → Email → Mailboxes -->
     <menuitem id="menu_pan_mail_mailbox"
               name="Mailboxes"
-              parent="base.menu_email"
+              parent="pan_mail_pro.menu_pan_mail_root"
               action="action_pan_mail_mailbox"
-              sequence="5"
+              sequence="20"
               groups="base.group_system"/>
 
 </odoo>
