@@ -288,7 +288,7 @@ class TestIncomingGates(MailProTestCase):
 class TestEachDirectionIsItsOwnSwitch(MailProTestCase):
     """Receiving and sending are two questions, not one.
 
-    They shared `sync_mode` until 19.0.7.5.0, so a customer who asked to receive
+    They shared `sync_mode` until 19.0.7.6.0, so a customer who asked to receive
     mail in Odoo also got a copy of everything their people wrote in Outlook.
     That is a different promise to the mailbox's owner, and nobody was asked to
     make it. These assertions pin the split: which folders a mailbox reads, and

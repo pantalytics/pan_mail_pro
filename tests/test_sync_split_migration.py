@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""The 19.0.7.5.0 mapping from `sync_mode` to the two switches.
+"""The 19.0.7.6.0 mapping from `sync_mode` to the two switches.
 
 CI upgrades from a release tag into a database with no mailboxes, so the
 migration runs and reports "0 rows" every time. That proves it does not crash.
@@ -48,8 +48,8 @@ class TestSyncSplitMigration(MailProTestCase):
 
     def setUp(self):
         super().setUp()
-        self.pre_migrate = _load('19.0.7.5.0', 'pre-migrate', 'pan_sync_split_pre')
-        self.post_migrate = _load('19.0.7.5.0', 'post-migrate', 'pan_sync_split_post')
+        self.pre_migrate = _load('19.0.7.6.0', 'pre-migrate', 'pan_sync_split_pre')
+        self.post_migrate = _load('19.0.7.6.0', 'post-migrate', 'pan_sync_split_post')
         self.cr = self.env.cr
         self.cr.execute(
             'ALTER TABLE pan_mail_mailbox ADD COLUMN IF NOT EXISTS sync_mode varchar'

@@ -45,7 +45,7 @@ def migrate(cr, version):
          WHERE table_name = 'pan_mail_mailbox' AND column_name = 'sync_mode'
     """)
     if not cr.fetchone():
-        _logger.info('[Mail Pro] 19.0.7.5.0: no sync_mode column, nothing to split.')
+        _logger.info('[Mail Pro] 19.0.7.6.0: no sync_mode column, nothing to split.')
         return
 
     for name, sql_type in COLUMNS:
@@ -67,7 +67,7 @@ def migrate(cr, version):
             OR sync_received_scope IS NULL
     """)
     _logger.info(
-        '[Mail Pro] 19.0.7.5.0: split sync_mode into sync_received / '
+        '[Mail Pro] 19.0.7.6.0: split sync_mode into sync_received / '
         'sync_received_scope / sync_sent on %s mailbox(es).',
         cr.rowcount,
     )

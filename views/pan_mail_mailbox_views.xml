@@ -168,11 +168,22 @@
                         <group/>
                     </group>
 
-                    <!-- SYNC BUTTON -->
-                    <group invisible="is_notification_mailbox">
+                    <!-- BUTTONS -->
+                    <group>
                         <group>
+                            <!-- Every mailbox syncs something since 19.0.7.6.0:
+                                 replies land on their record with no setting at
+                                 all, so there is no configuration under which
+                                 this button has nothing to do. -->
                             <button name="action_sync_now" string="Sync Now"
-                                    type="object" class="btn-primary" icon="fa-refresh"/>
+                                    type="object" class="btn-primary" icon="fa-refresh"
+                                    invisible="is_notification_mailbox"/>
+                            <!-- Every mailbox, including the notification one:
+                                 sending is the one thing the consent screen
+                                 does not prove. The mail goes to the user who
+                                 presses it, never to this address. -->
+                            <button name="action_test_send" string="Send Test Email"
+                                    type="object" class="btn-secondary" icon="fa-paper-plane"/>
                         </group>
                         <group/>
                     </group>

@@ -16,4 +16,4 @@ def migrate(cr, version):
     if not version:
         return
     cr.execute('ALTER TABLE pan_mail_mailbox DROP COLUMN IF EXISTS sync_mode')
-    _logger.info('[Mail Pro] 19.0.7.5.0: sync_mode column removed.')
+    _logger.info('[Mail Pro] 19.0.7.6.0: sync_mode column removed.')

@@ -6,7 +6,7 @@ from the chatter of a lead, the customer replies in their own mail client, and
 the reply has to appear under the question. If that does not work, nothing else
 being configurable matters.
 
-It is also the one path that must need no configuration. Since 19.0.7.5.0 a
+It is also the one path that must need no configuration. Since 19.0.7.6.0 a
 reply threads onto its record whatever the mailbox's sync switches say: the
 switches govern email that starts a *new* conversation, and a reply to something
 Odoo sent is not that. These tests pin the behaviour with every switch off,

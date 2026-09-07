@@ -37,3 +37,4 @@ from . import test_incoming_gates
 from . import test_field_labels
 from . import test_connect_banner
 from . import test_imap_live
+from . import test_mailbox_test_send

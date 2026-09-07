@@ -183,7 +183,7 @@ class PanMailFetcher(models.AbstractModel):
                 return  # Skip this run, start fetching from next cron run
 
         # One folder per direction, and each direction is its own answer. They
-        # shared one switch until 19.0.7.5.0, so turning on receiving silently
+        # shared one switch until 19.0.7.6.0, so turning on receiving silently
         # turned on copying everything the owner wrote in Outlook as well.
         processed_count = 0
         folder_cursors = []
