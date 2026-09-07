@@ -85,6 +85,21 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# An info icon whose `title` is the only place a setting is explained hides the
+# explanation from the person who needs it: `title` never appears on touch, is
+# unreliable for keyboard and screen-reader users, and NN/G's rule is that an
+# info tip may not be a crutch for a label that does not carry its own meaning.
+# So the sentence goes on the screen, in a `text-muted` line under the control.
+# A decorative icon on an alert that is already visible is fine, which is why
+# this looks for the pairing rather than for the icon.
+step "UI — no setting explained only inside a tooltip"
+if grep -rn -A 2 'fa-info-circle' --include='*.xml' views/ | grep -E 'title="[^"]{40,}'; then
+    fail "Put the sentence on the screen as a text-muted line, not in a title attribute."
+else
+    echo "OK: no setting hidden in a tooltip."
+fi
+
+# ---------------------------------------------------------------------------
 # 19.0.7.0.0 removed the AI seam: its only caller was the triage queue, which
 # went in the same release. The check outlived the code on purpose — a removal
 # with no check behind it is a removal that comes back, and the way it would

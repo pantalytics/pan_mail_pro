@@ -52,8 +52,10 @@
                             <label for="mailbox_type" string="Type"/>
                             <div>
                                 <field name="mailbox_type" widget="radio" nolabel="1" class="d-inline-block"/>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Personal: only the owner sends from it. Shared: everyone sends from this address — on Microsoft 365 with their own account, on Gmail and IMAP with the address's own credentials, so it needs no owner."/>
+                                <div class="text-muted mt-1">
+                                    Personal: only the owner sends from it.
+                                    Shared: everyone can send from this address.
+                                </div>
                             </div>
                             <field name="owner_user_id"
                                    required="mailbox_type == 'personal' or is_notification_mailbox"/>
@@ -61,8 +63,10 @@
                             <div>
                                 <field name="is_notification_mailbox" widget="boolean_toggle"
                                        nolabel="1" class="d-inline-block"/>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="System emails — user invitations, password resets, activity reminders — go out from this mailbox. Exactly one mailbox has it ticked."/>
+                                <div class="text-muted mt-1">
+                                    Odoo's own email leaves from here: invitations,
+                                    password resets, reminders. Exactly one mailbox.
+                                </div>
                             </div>
                         </group>
                         <group>
@@ -70,8 +74,10 @@
                                 <button name="action_open_account" type="object"
                                         string="Server Credentials" class="btn-link ps-0"
                                         icon="fa-key"/>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="IMAP/SMTP mailboxes are reached with a server, a login and a password rather than a consent screen."/>
+                                <div class="text-muted mt-1">
+                                    This address is reached with a server, a login and a
+                                    password rather than a consent screen.
+                                </div>
                             </div>
                         </group>
                     </group>
@@ -156,8 +162,10 @@
                             <label for="route_to_team"/>
                             <div>
                                 <field name="route_to_team" widget="boolean_toggle" nolabel="1" class="d-inline-block"/>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Off: mail is posted on the sender's contact record. On: mail goes to the team behind the alias you pick."/>
+                                <div class="text-muted mt-1">
+                                    Off: email lands on the sender's contact.
+                                    On: it goes to the team behind the alias you pick.
+                                </div>
                             </div>
                             <field name="alias_id" string="Team"
                                    invisible="not route_to_team"
