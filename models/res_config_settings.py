@@ -11,13 +11,18 @@ All three steps are tables now — providers, internal domains, mailboxes —
 so this page only shows the answer and a way to reach the table where it is
 actually edited. Nothing is typed here any more.
 
-Nothing else lives here. Inviting colleagues to connect is a real job but not a
-setup step, and its button is on the user list, next to the column that says who
-is still missing.
+Inviting colleagues to connect is a real job but not a setup step, and its
+button stays on the user list, next to the column that says who is still
+missing. What this page adds is the *answer* -- how many have connected -- in
+the same shape as the three steps: the number, and the way to the list where
+something is done about it. Without it, setup finished on a page that never
+mentioned the people the product is for.
 """
 import logging
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
+
+from .mail_provider_client import get_provider_client, get_setup_provider
 
 _logger = logging.getLogger(__name__)
 
@@ -68,6 +73,23 @@ class ResConfigSettings(models.TransientModel):
     x_mailboxes_alert = fields.Char(compute='_compute_setup_status')
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
+
+    # -------------------------------------------------------------------------
+    # After the three steps — the people
+    #
+    # Not a fourth step: the phase is answered without it, and mail flows for
+    # whoever has connected. But a database where only the administrator ever
+    # signed in is the most common way Mail Pro looks broken to everybody else,
+    # and until now this page never said so.
+    # -------------------------------------------------------------------------
+    x_users_summary = fields.Char(compute='_compute_users_status')
+    x_users_pending = fields.Integer(compute='_compute_users_status')
+    x_users_relevant = fields.Boolean(
+        compute='_compute_users_status',
+        help='Whether users connect themselves at all. On a provider without a '
+             'consent screen an administrator types the credentials, so there '
+             'is nothing to ask them.',
+    )
 
     # -------------------------------------------------------------------------
     # About
@@ -165,3 +187,39 @@ class ResConfigSettings(models.TransientModel):
             record.x_setup_notification_done = answers['mailboxes']
             record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()
             record.x_mailboxes_alert = alert
+
+    # -------------------------------------------------------------------------
+    # Who has connected
+    # -------------------------------------------------------------------------
+
+    def _compute_users_status(self):
+        """How many of the people who need an account have one.
+
+        Counted with the stored `x_pan_mail_connected` rather than by asking
+        every user the banner's question, which is a per-user provider lookup
+        this page has no reason to pay for. The population is the one the
+        invitation reaches: internal, active, and with an address to mail.
+        """
+        provider = get_setup_provider(self.env)
+        relevant = bool(provider) and get_provider_client(
+            self.env, provider).uses_oauth
+
+        total = connected = 0
+        if relevant:
+            Users = self.env['res.users'].sudo()
+            domain = [
+                ('share', '=', False),
+                ('active', '=', True),
+                ('id', '!=', self.env.ref('base.user_root').id),
+                ('partner_id.email', '!=', False),
+            ]
+            total = Users.search_count(domain)
+            connected = Users.search_count(
+                domain + [('x_pan_mail_connected', '=', True)])
+
+        summary = _('%(connected)s of %(total)s connected',
+                    connected=connected, total=total) if total else ''
+        for record in self:
+            record.x_users_relevant = relevant and bool(total)
+            record.x_users_summary = summary
+            record.x_users_pending = total - connected

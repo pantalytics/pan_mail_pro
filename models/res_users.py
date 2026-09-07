@@ -260,12 +260,18 @@ class ResUsers(models.Model):
             raise AccessError(_(
                 'Only a mailbox manager can ask users to connect their mailbox.'))
         sent = self._send_connect_invites()
+        skipped = len(self) - sent
+        message = _('Asked %d user(s) to connect their mailbox.') % sent
+        if skipped:
+            message += ' ' + _(
+                '%d were skipped: already connected, or nothing to connect.'
+            ) % skipped
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': _('Invitations Sent'),
-                'message': _('Asked %d user(s) to connect their mailbox.') % sent,
+                'message': message,
                 'type': 'success' if sent else 'warning',
                 'sticky': False,
             },
@@ -273,6 +279,14 @@ class ResUsers(models.Model):
 
     def _send_connect_invites(self):
         """Email these users a one-click link to connect their mailbox.
+
+        Only the users the link would actually help. Selecting everyone in the
+        user list is the normal way to reach this, so the filter is here rather
+        than in the admin's head: the same predicate that decides whether to
+        show somebody the connect banner decides whether to mail them about it.
+        Asking somebody who is already connected -- or who is on a provider with
+        no consent screen, where an administrator types the password -- is a
+        mail that can only confuse them.
 
         Queued rather than force-sent: during onboarding the notification
         mailbox may not be usable yet, and a queued invitation goes out by
@@ -292,6 +306,11 @@ class ResUsers(models.Model):
         for user in self:
             if not user.partner_id.email:
                 _logger.info(f'[Mail Pro] Skipping connect invite for {user.name}: no email address')
+                continue
+            if not user._pan_mail_should_prompt_connect():
+                _logger.info(
+                    f'[Mail Pro] Skipping connect invite for {user.name}: '
+                    'nothing for them to connect')
                 continue
             template.send_mail(user.id, force_send=False)
             sent += 1
