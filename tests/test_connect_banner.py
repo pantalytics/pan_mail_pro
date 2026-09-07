@@ -115,3 +115,56 @@ class TestConnectBannerSession(HttpCase):
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
 
         self.assertTrue(info['pan_mail_connect_prompt'])
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestConnectInvites(TransactionCase):
+    """Who receives the invitation, and who is spared it.
+
+    The button is reached by selecting rows in the user list, and the natural
+    gesture there is "select all". So the filter has to be in the code: an
+    invitation to somebody who has already connected, or who is on a provider
+    where an administrator types the password, is a mail that can only confuse
+    the reader.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['pan.mail.domain'].set_domains(['company.test'])
+        cls.env['pan.mail.provider'].create({
+            'provider': 'gmail', 'client_id': 'id', 'client_secret': 'secret',
+        })
+        cls.employee = cls.env['res.users'].create({
+            'name': 'Nora Employee',
+            'login': 'nora@company.test',
+            'email': 'nora@company.test',
+            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+        })
+        cls.connected = cls.env['res.users'].create({
+            'name': 'Sam Connected',
+            'login': 'sam@company.test',
+            'email': 'sam@company.test',
+            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+        })
+        cls.env['pan.mail.account'].create({
+            'provider': 'gmail',
+            'user_id': cls.connected.id,
+            'email': 'sam@company.test',
+            'refresh_token': 'token',
+        })
+
+    def test_an_unconnected_user_is_invited(self):
+        self.assertEqual(self.employee._send_connect_invites(), 1)
+
+    def test_a_connected_user_is_not_invited(self):
+        self.assertTrue(self.connected.x_pan_mail_connected)
+        self.assertEqual(self.connected._send_connect_invites(), 0)
+
+    def test_selecting_everybody_only_mails_who_needs_it(self):
+        both = self.employee | self.connected
+        self.assertEqual(both._send_connect_invites(), 1)
+
+    def test_a_user_without_an_address_is_not_invited(self):
+        self.employee.partner_id.email = False
+        self.assertEqual(self.employee._send_connect_invites(), 0)

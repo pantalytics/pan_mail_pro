@@ -13,6 +13,8 @@
                     <field name="x_setup_domains_done" invisible="1"/>
                     <field name="x_setup_notification_done" invisible="1"/>
                     <field name="x_internal_domain_ids" invisible="1" widget="many2many_tags"/>
+                    <field name="x_users_relevant" invisible="1"/>
+                    <field name="x_users_pending" invisible="1"/>
 
                     <!-- The checklist sits in Odoo's own settings container so
                          it is capped and indented like every other block on this
@@ -113,6 +115,42 @@
                     </div>
                     </div>
 
+                    <!-- Not a fourth step, and deliberately not a fourth dot:
+                         setup is finished without it. It is the answer to the
+                         question the three steps leave open — whether anybody
+                         but the administrator can send from their own address —
+                         in the same shape as the steps: the answer, and the way
+                         to the list where something is done about it. The
+                         invite button stays on that list.
+
+                         Hidden entirely on a provider with no consent screen,
+                         where an administrator types the credentials and there
+                         is nothing to ask a user for. -->
+                    <div invisible="not x_users_relevant">
+                        <h2>Users</h2>
+                        <div class="row mt-3 o_settings_container">
+                            <div class="col-12 o_setting_box o_mailpro_steps">
+                                <div class="o_mailpro_team">
+                                    <div class="o_mailpro_step_body">
+                                        <div class="o_mailpro_step_head">
+                                            <span class="o_mailpro_step_name">Connected mailboxes</span>
+                                            <span class="o_mailpro_step_value">
+                                                <field name="x_users_summary" nolabel="1" readonly="1"/>
+                                            </span>
+                                        </div>
+                                        <div class="o_mailpro_step_msg" invisible="not x_users_pending">
+                                            The rest still send as the database, not as themselves.
+                                            Select them in Users and press "Send Mail Pro Invite".
+                                        </div>
+                                    </div>
+                                    <button type="action" name="%(base.action_res_users)d"
+                                            icon="oi-arrow-right" title="Users"
+                                            class="oe_link o_mailpro_step_edit"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <h2>About</h2>
                     <!-- No left/right pane: an empty left pane draws a divider
                          beside a single link, which reads as a missing field.
@@ -157,7 +195,7 @@
                     <i class="fa fa-info-circle me-2" title="Info"/>
                     <strong>Mail Pro is installed.</strong>
                     Outgoing and incoming email is handled by Mail Pro.
-                    <a href="#" class="alert-link ms-1">Configure in Settings → Mail Pro</a>
+                    <a href="/odoo/settings#pan_mail_pro" class="alert-link ms-1">Configure in Settings → Mail Pro</a>
                 </div>
             </xpath>
         </field>

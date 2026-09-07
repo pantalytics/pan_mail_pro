@@ -128,3 +128,52 @@ class TestSetupPhase(TransactionCase):
         with patch.object(type(self.Setup), 'is_ready', return_value=False):
             with self.assertRaises(UserError):
                 mailbox.action_sync_now()
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestUsersLine(TransactionCase):
+    """The line under the checklist: how many people have connected.
+
+    Not a fourth step — the phase is answered without it — but the question the
+    three steps leave open. A database where only the administrator ever signed
+    in works, and looks broken to everybody else.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['pan.mail.domain'].set_domains(['company.test'])
+        cls.Settings = cls.env['res.config.settings']
+
+    def _employee(self, name, login):
+        return self.env['res.users'].create({
+            'name': name, 'login': login, 'email': login,
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+
+    def test_hidden_without_a_provider(self):
+        """Nothing to connect to, so nothing to report."""
+        self.assertFalse(self.Settings.create({}).x_users_relevant)
+
+    def test_hidden_on_a_provider_with_no_consent_screen(self):
+        """An IMAP password is typed in by an administrator. Asking a user to
+        connect would be asking them for something they cannot give."""
+        self.env['pan.mail.provider'].create({'provider': 'imap'})
+        self.assertFalse(self.Settings.create({}).x_users_relevant)
+
+    def test_counts_who_still_has_to_connect(self):
+        self.env['pan.mail.provider'].create({
+            'provider': 'gmail', 'client_id': 'id', 'client_secret': 'secret',
+        })
+        user = self._employee('Nora Employee', 'nora@company.test')
+        before = self.Settings.create({}).x_users_pending
+
+        self.env['pan.mail.account'].create({
+            'provider': 'gmail', 'user_id': user.id,
+            'email': user.email, 'refresh_token': 'token',
+        })
+        settings = self.Settings.create({})
+
+        self.assertTrue(settings.x_users_relevant)
+        self.assertEqual(settings.x_users_pending, before - 1)
+        self.assertIn(' of ', settings.x_users_summary)
