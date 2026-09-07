@@ -139,8 +139,8 @@
     <!-- Menu: Settings → Technical → Email → Email Accounts -->
     <menuitem id="menu_pan_mail_account"
               name="Email Accounts"
-              parent="base.menu_email"
+              parent="pan_mail_pro.menu_pan_mail_root"
               action="action_pan_mail_account"
-              sequence="6"
+              sequence="30"
               groups="base.group_system"/>
 </odoo>

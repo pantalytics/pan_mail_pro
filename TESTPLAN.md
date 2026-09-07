@@ -183,7 +183,7 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
 ### Triage en AI zijn weg (19.0.7.0.0)
 - [ ] Na de upgrade bestaat de tegel **Communication** op het beginscherm niet
       meer; All Communication, Link Coverage, Internal Domains en Mail Routing
-      staan onder Settings → Technical → Email
+      staan onder Settings → Technical → Email → Mail Pro
 - [ ] Een mail van een onbekende afzender op een mailbox met sync-modus
       "alleen bestaande contacten" wordt geweigerd. In het log staat één regel
       met de mailbox, de Message-ID en `unknown_contact`; er wordt niets

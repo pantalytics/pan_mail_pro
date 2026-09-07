@@ -4,11 +4,11 @@ Syncing email into Odoo is only half the job. The other half is being able to
 answer "where did that email go?" — and to notice when the answer is wrong.
 
 Mail Pro gives you three screens for this, all under
-**Settings → Technical → Email**.
+**Settings → Technical → Email → Mail Pro**.
 
 ## All Communication
 
-**Settings → Technical → Email → All Communication**
+**Settings → Technical → Email → Mail Pro → All Communication**
 
 Every email Mail Pro has sent or received, in one list, with the thing standard
 Odoo cannot show you: which document each message ended up on, and which mailbox
@@ -25,7 +25,7 @@ correspondence.
 
 ## Link Coverage
 
-**Settings → Technical → Email → Link Coverage**
+**Settings → Technical → Email → Mail Pro → Link Coverage**
 
 The single number that says whether any of this is working: of all the mail that
 came through, how much actually landed on a document rather than just on a
@@ -50,7 +50,7 @@ cannot go stale.
 
 ## Mail Routing log
 
-**Settings → Technical → Email → Mail Routing**
+**Settings → Technical → Email → Mail Pro → Mail Routing**
 
 One row per delivered email, recording which rule placed it, how confident that
 rule was, and every candidate it considered and rejected.
