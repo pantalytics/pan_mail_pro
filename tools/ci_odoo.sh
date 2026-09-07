@@ -37,10 +37,17 @@ echo "Testing against Odoo ${SERIES} (mode: ${MODE})"
 
 NET=pan_ci_net
 DB=pan_ci_db
+MAIL=pan_ci_mail
+# GreenMail speaks real IMAP4 and SMTP, so tests/test_imap_live.py exercises the
+# protocols instead of a fake imaplib. The test users are declared here because
+# GreenMail takes them on the command line; login is the local part.
+MAIL_IMAGE=greenmail/standalone:2.1.8
+MAIL_USERS='alice:secret@company.test,bob:secret@company.test'
 
 cleanup() {
     if [ -z "${KEEP_DB:-}" ]; then
         docker rm -f "$DB" >/dev/null 2>&1 || true
+        docker rm -f "$MAIL" >/dev/null 2>&1 || true
         docker network rm "$NET" >/dev/null 2>&1 || true
     fi
 }
@@ -71,6 +78,27 @@ for _ in $(seq 1 60); do
 done
 docker exec "$DB" pg_isready -h localhost -U odoo >/dev/null
 
+# ---------------------------------------------------------------------------
+# GreenMail. Same network as Odoo, so the test reaches it by container name.
+# ---------------------------------------------------------------------------
+docker rm -f "$MAIL" >/dev/null 2>&1 || true
+docker run -d --name "$MAIL" --network "$NET" \
+    -e GREENMAIL_OPTS="-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.users=${MAIL_USERS}" \
+    "$MAIL_IMAGE" >/dev/null
+
+# The JVM needs a few seconds. Waiting on the IMAP greeting rather than on the
+# log line: a port that accepts a connection is the thing the test needs.
+echo -n "Waiting for GreenMail"
+for _ in $(seq 1 60); do
+    if docker run --rm --network "$NET" postgres:15 \
+        timeout 2 bash -c "</dev/tcp/${MAIL}/3143" >/dev/null 2>&1; then
+        echo " ready."
+        break
+    fi
+    echo -n "."
+    sleep 1
+done
+
 odoo_run() {
     # $1 = the module directory on the host, $2 = database, rest = odoo arguments
     local module=$1 db=$2
@@ -80,6 +108,7 @@ odoo_run() {
     # mounted directly rather than a parent full of links.
     docker run --rm --network "$NET" \
         -v "${module}:/mnt/extra-addons/pan_mail_pro:ro" \
+        -e PAN_TEST_IMAP_HOST="$MAIL" \
         --entrypoint odoo "odoo:${SERIES}" \
         -d "$db" \
         --db_host="$DB" --db_port=5432 --db_user=odoo --db_password=odoo \
@@ -137,8 +166,12 @@ fi
 # the scripts in migrations/ and runs the suite against pre-existing rows.
 # ---------------------------------------------------------------------------
 HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
-TAG=""
+# FROM_TAG forces the baseline. The default picks the *previous* release, which
+# is the customer who upgrades every time; a customer who skipped six releases
+# crosses six migration folders in one -u and nothing here would try that.
+TAG="${FROM_TAG:-}"
 for t in $(git -C "$REPO" tag -l "v${SERIES}.*" --sort=-v:refname); do
+    [ -n "$TAG" ] && break
     if [ "$(git -C "$REPO" rev-parse "${t}^{commit}")" != "$HEAD_SHA" ]; then
         TAG=$t
         break
