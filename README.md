@@ -141,26 +141,30 @@ untick the current one first.
 
 **Prerequisite:** one mailbox must have **Notification Mailbox** ticked (required for handling emails from external authors).
 
-A mailbox is asked twice, once per direction, and the two answers are separate.
+Replies to email sent from Odoo always land on the record they answer. That
+needs no setting. The two switches below are about everything else.
 
 1. Open a mailbox
-2. Under **Incoming Email**, choose **Import**:
-   - **Do not import** - nothing arriving here enters Odoo
-   - **From existing contacts** - only mail from addresses that are already contacts
-   - **From anyone** - new senders become contacts
-3. Under **Outgoing Email**, decide about **Sent from your mail app**:
+2. Under **Sending**, decide about **Sync sent email**:
    - Off (the default) - only mail written in Odoo is logged
    - On - mail your people write in Outlook, Gmail or their mail client is read
      back from the Sent folder and posted on the contact it went to. Only on
      contacts that already exist: emailing a stranger from your mail app never
      creates one in Odoo.
 
-   Mail written in Odoo always goes out through the mailbox. That is what a
-   mailbox is for and there is no setting for it.
+   Mail written in Odoo always goes out through the mailbox. There is no setting
+   for it, because that is what a mailbox is.
+3. Under **Receiving**, decide about **Sync other email**:
+   - Off (the default) - only replies come in
+   - On - email that starts a new conversation comes in too, and a second
+     question appears: **Only from people who are already contacts**, or **From
+     anyone**. "From anyone" turns every sender into a contact, newsletters and
+     private email included, so pick it only for an address that exists to hear
+     from strangers.
 4. Optionally route to a **Team** (alias) so emails create tickets or leads
    instead of landing on the sender's contact
 5. Set the **Owner** (a user with a connected account)
-6. Optionally set **Import From** for historical email import
+6. Optionally set **Start from** for historical email import
 7. Save
 
 **Sync behavior:**
@@ -193,15 +197,14 @@ Check logs for "Threading reply to" entries. If replies go to the wrong record, 
 ### Emails not syncing
 
 1. Check **Settings** → **Technical** → **Scheduled Actions** → "Mail Pro: Fetch Incoming Mail"
-2. Verify the mailbox's **Import** is not "Do not import"
+2. Verify the mailbox has usable credentials, and that **Sync other email** is on if the mail you are missing is not a reply
 3. Verify the mailbox has usable credentials — its **Status** column says so
 4. Check logs for `[Incoming Mail]` entries
 
 ### "0 mailbox(es)" in logs
 
-No mailbox both syncs and has usable credentials: either **Import** is still
-"Do not import" with **Sent from your mail app** off, or the account behind it
-is not connected.
+No mailbox has usable credentials. The account behind each one is not
+connected.
 
 ### An email failed instead of being sent from another address
 

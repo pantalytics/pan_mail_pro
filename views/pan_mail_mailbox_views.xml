@@ -22,8 +22,8 @@
                 <field name="mailbox_type" string="Type" optional="hide"/>
                 <field name="provider" string="Provider" optional="hide"/>
                 <field name="owner_user_id" string="Owner" optional="hide"/>
-                <field name="sync_mode" string="Incoming" optional="hide"/>
-                <field name="capture_sent" string="Logs Sent" optional="hide"/>
+                <field name="sync_received" string="Receiving" optional="hide"/>
+                <field name="sync_sent" string="Sending" optional="hide"/>
                 <field name="last_sync_date" string="Last Synced" optional="hide"/>
                 <field name="error_message" string="Error" optional="hide"/>
             </list>
@@ -76,60 +76,82 @@
                         </group>
                     </group>
 
-                    <!-- SECTION 2: INCOMING EMAIL (not for notification) -->
-                    <!-- Mail arriving in this mailbox. One question, three
-                         answers, and the answer is no until somebody says
-                         otherwise. -->
-                    <group string="Incoming Email" invisible="is_notification_mailbox">
-                        <group>
-                            <label for="sync_mode"/>
-                            <div>
-                                <field name="sync_mode" widget="radio" nolabel="1" class="d-inline-block"/>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Mail is imported oldest first, up to 200 per minute. From anyone: senders who are not contacts yet are created automatically."/>
-                            </div>
-                        </group>
-                        <group/>
-                    </group>
-
-                    <!-- SECTION 3: OUTGOING EMAIL (not for notification) -->
+                    <!-- SECTION 2: SENDING (not for notification) -->
                     <!-- Two ways out of this address, and only the second one
                          is a choice. Sending from Odoo is what the mailbox is
                          for; a toggle there would be a way to break sending
-                         from a settings page. Reading back what the owner wrote
-                         in their own mail app is a copy of correspondence Odoo
-                         was never part of, so it is asked separately and
-                         starts at off. -->
-                    <group string="Outgoing Email" invisible="is_notification_mailbox">
+                         from a settings page, so it is stated and not asked.
+                         Reading back what the owner wrote in their own mail app
+                         is a copy of correspondence Odoo was never part of, so
+                         it is asked separately and starts at off. -->
+                    <group string="Sending" invisible="is_notification_mailbox">
                         <group>
-                            <div class="o_form_label">Sent from Odoo</div>
-                            <div class="text-muted">
-                                Always. Chatter and notifications leave through this
-                                mailbox and land in its Sent folder.
+                            <div colspan="2" class="text-muted mb-3">
+                                Messages you write in Odoo are always sent from this address.
                             </div>
-                            <label for="capture_sent"/>
+                            <label for="sync_sent"/>
                             <div>
-                                <field name="capture_sent" widget="boolean_toggle"
+                                <field name="sync_sent" widget="boolean_toggle"
                                        nolabel="1" class="d-inline-block"/>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Reads this mailbox's Sent folder and posts mail written in Outlook, Gmail or your mail client onto the contact it went to. Only onto contacts that already exist: emailing a stranger from your mail app does not create one in Odoo."/>
+                                <div class="text-muted mt-1">
+                                    Email you send from your own mail app appears
+                                    on the contact in Odoo.
+                                </div>
+                                <div class="text-muted mt-1" invisible="not sync_sent">
+                                    Only email to people who are already contacts.
+                                </div>
                             </div>
                         </group>
                         <group/>
                     </group>
 
-                    <!-- SECTION 4: SYNC (only when something is actually read) -->
-                    <group string="Sync" invisible="is_notification_mailbox or (sync_mode == 'none' and not capture_sent)">
+                    <!-- SECTION 3: RECEIVING (not for notification) -->
+                    <!-- Three steps, each a level deeper than the last: what
+                         happens with no setting at all, then one switch, then
+                         the question that switch opens. The answer that turns
+                         every sender into a contact is two deliberate clicks
+                         away and says out loud what it does. -->
+                    <group string="Receiving" invisible="is_notification_mailbox">
                         <group>
-                            <field name="sync_start_date"/>
-                            <field name="last_sync_date" readonly="1"
+                            <div colspan="2" class="text-muted mb-3">
+                                Replies to email sent from Odoo always appear on the
+                                record they belong to.
+                            </div>
+                            <label for="sync_received"/>
+                            <div>
+                                <field name="sync_received" widget="boolean_toggle"
+                                       nolabel="1" class="d-inline-block"/>
+                                <div class="text-muted mt-1">
+                                    Also sync email that starts a new conversation.
+                                </div>
+                            </div>
+                            <div colspan="2" class="mt-3" invisible="not sync_received">
+                                <span class="o_form_label">Which email should be synced?</span>
+                                <field name="sync_received_scope" widget="radio"
+                                       nolabel="1" class="mt-1"/>
+                                <div class="alert alert-warning mt-2 mb-0" role="alert"
+                                     invisible="sync_received_scope != 'all'">
+                                    Every sender becomes a contact in Odoo, newsletters
+                                    and private email included. Pick this only for an
+                                    address that exists to hear from strangers.
+                                </div>
+                            </div>
+                        </group>
+                        <group/>
+                    </group>
+
+                    <!-- SECTION 4: SYNC -->
+                    <group string="Sync" invisible="is_notification_mailbox">
+                        <group>
+                            <field name="sync_start_date" string="Start from"/>
+                            <field name="last_sync_date" string="Last synced" readonly="1"
                                    invisible="not last_sync_date"/>
                         </group>
                         <group/>
                     </group>
 
-                    <!-- SECTION 5: ROUTING (only for mail arriving here) -->
-                    <group string="Routing" invisible="is_notification_mailbox or sync_mode == 'none'">
+                    <!-- SECTION 5: ROUTING -->
+                    <group string="Routing" invisible="is_notification_mailbox">
                         <group>
                             <label for="route_to_team"/>
                             <div>
@@ -147,7 +169,7 @@
                     </group>
 
                     <!-- SYNC BUTTON -->
-                    <group invisible="is_notification_mailbox or (sync_mode == 'none' and not capture_sent)">
+                    <group invisible="is_notification_mailbox">
                         <group>
                             <button name="action_sync_now" string="Sync Now"
                                     type="object" class="btn-primary" icon="fa-refresh"/>
@@ -162,7 +184,6 @@
 
                     <!-- Hidden fields -->
                     <field name="state" invisible="1"/>
-                    <field name="sync_mode" invisible="1"/>
                     <field name="active" invisible="1"/>
                 </sheet>
             </form>
