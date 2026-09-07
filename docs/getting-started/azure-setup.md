@@ -31,7 +31,10 @@ After registration, copy these values (you'll need them in Odoo):
 3. Add description: `Odoo`
 4. Select expiration (recommend 24 months)
 5. Click **Add**
-6. **Copy the secret value immediately** (it won't be shown again)
+6. **Copy the Value immediately** (it won't be shown again)
+
+Azure shows two columns here: **Value** and **Secret ID**. Odoo needs the
+**Value**. The Secret ID is a different string and is never used.
 
 ## Step 4: Configure API Permissions
 
@@ -57,11 +60,16 @@ After registration, copy these values (you'll need them in Odoo):
 
 1. Go to **Settings → Mail Pro**
 2. Set **Email provider** to *Microsoft 365*
-3. Enter:
-   - **Client ID:** Your Application (client) ID
-   - **Tenant ID:** Your Directory (tenant) ID
-   - **Client Secret:** The secret value you copied
+3. Enter the three values under the same names Azure gives them:
+   - **Application (client) ID**
+   - **Client Secret Value** (the Value from Step 3, not the Secret ID)
+   - **Directory (tenant) ID**
 4. Save
+5. Click **Test Credentials**. Azure answers whether these three are the ones
+   it issued. Nothing is sent and no mailbox is read.
+6. Click **Sign In Myself**. This walks the real consent screen, which is the
+   only check that also covers the Callback URL, the permissions from Step 4
+   and whether your tenant lets users consent at all.
 
 ## Next Steps
 
