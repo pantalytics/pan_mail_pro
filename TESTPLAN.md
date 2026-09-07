@@ -5,9 +5,16 @@ refresh token dat na een uur nog werkt, en of een provider de mail werkelijk
 aflevert. Alles wat wél te automatiseren is, hoort in `tests/` — zie
 ARCHITECTURE.md §12 voor wat daar al staat.
 
-**Huidige versie:** 19.0.5.0.1
+**Huidige versie:** 19.0.6.5.5
 **Ringen:** lokaal → testinstance → dogfood → klanten
 
+> **IMAP/SMTP is sinds 19.0.6.5.5 geautomatiseerd.** `tools/ci_odoo.sh` start
+> een GreenMail-container -- een echte IMAP4- en SMTP-server -- en
+> `tests/test_imap_live.py` stuurt daar een mail doorheen: inloggen, versturen,
+> ophalen, de kopie in Verzonden. Fase A'3 hieronder is daarmee grotendeels
+> afgedekt; wat overblijft is aflevering aan de buitenwereld, want GreenMail
+> stuurt niets door.
+>
 > **Wat CI inmiddels afdekt** (en hier dus niet meer handmatig hoeft):
 > de tests, het providercontract, de volledige inkomende pijplijn op
 > Graph- én Gmail-data, en sinds #18 het **upgradepad vanaf de vorige release**
@@ -33,7 +40,9 @@ in de cloud: Azure Portal en Google Cloud Console zijn handwerk.
       `https://mailpro-dev.cloudpepper.site/google_oauth/callback` toe en vul
       client ID + secret in op de settings-pagina. Zo niet: nieuwe client.
 - [ ] **IMAP/SMTP-credentials** voor een Soverin-testadres (of ander adres met
-      IMAP+SMTP) in Bitwarden zetten.
+      IMAP+SMTP) in Bitwarden zetten. Sinds GreenMail alleen nog nodig voor de
+      ene vraag die een echte hoster moet beantwoorden: komt de mail werkelijk
+      aan bij een externe ontvanger. Het protocolwerk staat in CI.
 
 Beide callback-paden zijn geverifieerd tegen `controllers/main.py`, dus de URI's
 hierboven kunnen letterlijk worden overgenomen.
@@ -109,6 +118,13 @@ klanten draaien. Wat hier niet kan: unit tests en alles wat Helpdesk raakt (A3).
       dat het refresh token echt werkt; CI kan dit per definitie niet
 
 ### A′3. IMAP/SMTP (Soverin)
+
+> Geautomatiseerd in `tests/test_imap_live.py` tegen GreenMail: inloggen op
+> beide helften, versturen, ophalen, de UID-referentie heen en terug, de kopie
+> in Verzonden, en een send die blijft slagen als de Verzonden-map ontbreekt.
+> Wat hieronder aangevinkt moet worden is alleen nog wat een echte hoster
+> anders doet: aflevering naar buiten, TLS, en een afwijkende mapnaam.
+
 - [ ] Account aanmaken (Instellingen → Technisch → E-mail → E-mailaccounts),
       provider *IMAP / SMTP*, adres op `soverin.net` → servers voorgevuld
 - [ ] **Test Connection**: IMAP én SMTP groen; verkeerd wachtwoord zegt wélke

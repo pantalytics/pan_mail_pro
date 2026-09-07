@@ -107,7 +107,10 @@ fi
 # ---------------------------------------------------------------------------
 step "Every model is named in ARCHITECTURE.md"
 MISSING=0
-for model in $(grep -rhoP "^\s+_name = '\K[^']+" models/ | sort -u); do
+# sed, not `grep -oP`: -P is GNU-only, and on macOS BSD grep rejects it and
+# matches nothing -- which made this loop run zero times and report OK.
+for model in $(find models -name '*.py' -exec \
+        sed -n "s/^[[:space:]]*_name = '\([^']*\)'.*/\1/p" {} + | sort -u); do
     if ! grep -qF "\`$model\`" ARCHITECTURE.md; then
         echo "::error file=ARCHITECTURE.md::Model '$model' is not documented in ARCHITECTURE.md"
         MISSING=1

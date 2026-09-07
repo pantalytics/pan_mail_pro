@@ -66,6 +66,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
 | `tests/test_mail_matcher.py` | Unit tests for the matching ladder |
 | `tests/test_imap_provider.py` | IMAP/SMTP client (fake imaplib/smtplib, no sockets) |
+| `tests/test_imap_live.py` | The same client against a real IMAP/SMTP server (GreenMail in a container). Skips itself when `PAN_TEST_IMAP_HOST` is unset |
 
 ## Provider Architecture
 
@@ -281,6 +282,15 @@ not show up in the summary — so those paths were passing by not running. A
 follow-up step asserts both are actually installed, because a skip that comes
 back is otherwise invisible. `helpdesk` is Enterprise, so
 `test_route_to_helpdesk` remains a real CI gap covered only by `TESTPLAN.md`.
+
+**A real mail server, not only a fake.** `tools/ci_odoo.sh` also starts a
+GreenMail container on the same Docker network and passes its hostname to Odoo
+as `PAN_TEST_IMAP_HOST`. `tests/test_imap_live.py` then sends a message over
+SMTP and reads it back over IMAP, which is the one thing a faked `imaplib`
+cannot prove: that a server accepts what the client says. Without the variable
+the class skips itself, so a bare `--test-enable` outside this script stays
+green. GreenMail forwards nothing to the outside world, so "does the mail reach
+a real recipient" is still a question only a real hoster answers.
 
 Both test jobs end in `tools/ci_assert_tests.sh`, which fails the build when
 Odoo reports no summary, any failure, **or zero tests** — the last one because
@@ -558,6 +568,21 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **A passing suite is not the same as a suite that ran.** `0 failed, 0 error(s) of 0 tests` is green. So is a run where nine tests skipped themselves because an optional module was absent. Both mean "we verified nothing" and both looked identical to "everything passed" until the assert step started reading the count and printing the skips.
 - **What CI never runs is where the bugs live.** `migrations/` was excluded from ruff *and* never executed by CI, because CI only ever installed fresh. Two blind spots stacked on the one directory that only ever runs on a customer's database, unattended.
 - **Test the provider you ship, not just the one you just wrote.** The Gmail client had 36 tests including the whole token lifecycle; the Graph client — 1100 lines, in production at every customer — had none for refresh, rotation or revocation. New code attracts tests; the code that already works quietly stops earning them.
+
+### Testing against a real server
+- **A fake proves the call, not the protocol.** `test_imap_provider.py` fakes
+  imaplib and smtplib, which proves the client makes the right calls and cannot
+  prove a server accepts them. GreenMail caught three things the fake never
+  would: the login is the local part rather than the address, the server
+  advertises no `\Sent` special-use flag so the fallback is what actually runs,
+  and `Sent` does not exist until something creates it.
+- **A test that polls beats a test that sleeps.** SMTP delivery is asynchronous
+  on every server. A bare fetch after the send is the classic test that passes
+  on a laptop and fails on a loaded runner.
+- **Skip on a missing environment, do not fail.** The live class is gated on
+  `PAN_TEST_IMAP_HOST`, so it runs where the container exists and is invisible
+  where it does not — and `tools/ci_assert_tests.sh` still prints the skip, so
+  it cannot go quiet unnoticed.
 
 ### Fail-open configuration
 - **An empty setting must not mean "no restriction" when the restriction is the safety.** `_is_internal_domain` returned False when no domain was configured, so the databases that never set it up were exactly the ones that filtered nothing. The bug is invisible from the code — it reads like a normal guard clause — and only shows up as confidential mail appearing in Odoo. Ask what an unanswered question resolves to.
