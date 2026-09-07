@@ -21,6 +21,33 @@ _logger = logging.getLogger(__name__)
 AUTH_URL = 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize'
 TOKEN_URL = 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token'
 
+# What Azure's AADSTS codes mean in terms of the three fields on the provider
+# form. Azure's own error_description is accurate and unreadable ("AADSTS7000215:
+# Invalid client secret provided. Ensure the secret being sent in the request is
+# the client secret value..."), and it names no field an admin can see. The raw
+# text is still shown underneath; this is the line that says which box to fix.
+AADSTS_HINTS = {
+    'AADSTS7000215': 'The Client Secret Value is wrong. In Azure, under '
+                     'Certificates & secrets, copy the Value column -- it is '
+                     'shown once, right after you create the secret. The '
+                     'Secret ID is a different string and is not used here.',
+    'AADSTS7000222': 'The Client Secret Value has expired. Create a new secret '
+                     'in Azure under Certificates & secrets and paste its '
+                     'Value here.',
+    'AADSTS700016': 'Azure does not know this Application (client) ID in this '
+                    'directory. Check it and the Directory (tenant) ID against '
+                    "the app registration's Overview page.",
+    'AADSTS90002': 'Azure does not know this Directory (tenant) ID. Copy it '
+                   "from the app registration's Overview page -- it is a GUID, "
+                   'not the client secret.',
+    'AADSTS900023': 'That is not a Directory (tenant) ID. Copy it from the app '
+                    "registration's Overview page -- it is a GUID, not the "
+                    'client secret.',
+    'AADSTS50011': 'The Callback URL on this form is not one of the redirect '
+                   'URIs of the app registration. Paste it into Azure exactly '
+                   'as it is shown here.',
+}
+
 # Rate limiting configuration
 MAX_RETRIES = 3
 INITIAL_BACKOFF_SECONDS = 2
@@ -47,6 +74,9 @@ class MicrosoftGraphClient(models.AbstractModel):
     supports_shared_mailbox = True
     supports_delegation = False
     supported_mailbox_types = ('personal', 'shared')
+    # Azure answers "are these three fields the ones I issued?" on its own
+    # token endpoint, with no user and no consent — see `test_credentials`.
+    supports_credential_test = True
 
     # Odoo's folder vocabulary -> Graph's well-known folder names.
     _FOLDER_MAP = {
@@ -334,6 +364,94 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'success': False,
                 'error': str(e),
             }
+
+    @api.model
+    def test_credentials(self):
+        """Ask Azure whether the client id, secret and tenant are its own.
+
+        The client-credentials grant is the one call that needs no user: Azure
+        validates the three fields and hands back a token for the app itself.
+        The token is thrown away — nothing here is authorized to read mail with
+        it, and it is not meant to be. What is being tested is the registration,
+        which is exactly what fails at the consent screen otherwise, an hour
+        after the admin has emailed everybody to go and sign in.
+
+        A tenant that grants the app no application permissions still issues
+        this token, so a pass means "these three fields are right", not "every
+        Graph permission is granted". Permissions are what `test_connection`
+        finds out, once somebody has signed in.
+        """
+        self._refuse_when_neutralized()
+        config = self._get_config_params()
+        missing = [
+            label for key, label in (
+                ('client_id', _('Application (client) ID')),
+                ('client_secret', _('Client Secret Value')),
+                ('tenant_id', _('Directory (tenant) ID')),
+            ) if not config[key]
+        ]
+        if missing:
+            return {
+                'success': False,
+                'message': _('Fill in %s first.') % ', '.join(missing),
+            }
+
+        try:
+            response = requests.post(
+                TOKEN_URL.format(tenant=config['tenant_id']),
+                data={
+                    'client_id': config['client_id'],
+                    'client_secret': config['client_secret'],
+                    'scope': 'https://graph.microsoft.com/.default',
+                    'grant_type': 'client_credentials',
+                },
+                timeout=10,
+            )
+        except requests.exceptions.RequestException as e:
+            _logger.warning("[Graph API] Credential test could not reach Azure: %s", e)
+            return {
+                'success': False,
+                'message': _('Could not reach Microsoft: %s') % e,
+            }
+
+        if response.status_code == 200 and response.json().get('access_token'):
+            return {
+                'success': True,
+                'message': _(
+                    'Azure accepted the Application (client) ID, Client Secret '
+                    'Value and Directory (tenant) ID. '
+                    'Users can now sign in; that is when their own mailbox '
+                    'permissions are checked.'
+                ),
+            }
+        return {'success': False, 'message': self._explain_credential_error(response)}
+
+    @api.model
+    def _explain_credential_error(self, response):
+        """Turn Azure's token-endpoint refusal into a sentence about a field."""
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+        description = (payload.get('error_description') or '').strip()
+        # Azure appends a trace id, a correlation id and a timestamp to every
+        # description. They matter to a support ticket and to nobody reading a
+        # toast, and they push the sentence that does matter off the screen.
+        headline = description.split('\r\n')[0].split('\n')[0].strip()
+
+        code = re.search(r'AADSTS\d+', description)
+        hint = AADSTS_HINTS.get(code.group(0)) if code else None
+        if not hint and payload.get('error') == 'invalid_client':
+            hint = ('Azure rejected the Application (client) ID or the '
+                    'Client Secret Value.')
+        _logger.warning(
+            "[Graph API] Credential test rejected: %s",
+            headline or response.status_code,
+        )
+        if hint and headline:
+            return '%s\n\n%s' % (hint, headline)
+        return hint or headline or (
+            _('Microsoft returned HTTP %s.') % response.status_code)
 
     @api.model
     def _prepare_inline_images(self, body_html):

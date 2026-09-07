@@ -284,3 +284,113 @@ class TestGraphAuthorizationScopes(TransactionCase):
             with self.subTest(scope=scope):
                 self.assertIn(scope, described)
                 self.assertIn(scope, url)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestGraphCredentialTest(TransactionCase):
+    """The provider form's Test Credentials button.
+
+    Before it, the only feedback an Azure registration got was `status`, which
+    reads "Not Connected" both for three correct fields nobody has signed in
+    to yet and for three wrong ones. The difference surfaced at the consent
+    screen, after the admin had emailed everybody to go and sign in.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.client = get_provider_client(cls.env, 'outlook')
+        cls.provider = cls.env['pan.mail.provider'].create({
+            'provider': 'outlook',
+            'client_id': 'test-client-id',
+            'client_secret': 'test-secret',
+            'tenant_id': 'test-tenant-id',
+        })
+
+    def _response(self, status_code, payload):
+        resp = MagicMock()
+        resp.status_code = status_code
+        resp.json.return_value = payload
+        return resp
+
+    def test_azure_is_asked_for_an_app_token_not_a_user_one(self):
+        """The client-credentials grant is the only check that needs no user —
+        which is the whole point, since there is nobody signed in yet."""
+        with patch(GRAPH_POST) as post:
+            post.return_value = self._response(200, {'access_token': 'app-token'})
+            result = self.client.test_credentials()
+
+        self.assertTrue(result['success'])
+        url, kwargs = post.call_args[0][0], post.call_args[1]
+        self.assertIn('test-tenant-id', url)
+        self.assertEqual(kwargs['data']['grant_type'], 'client_credentials')
+        self.assertEqual(kwargs['data']['client_secret'], 'test-secret')
+
+    def test_a_rejected_secret_names_the_field_to_fix(self):
+        """AADSTS7000215 is accurate and unreadable, and names no field an
+        admin can see on this form."""
+        with patch(GRAPH_POST) as post:
+            post.return_value = self._response(401, {
+                'error': 'invalid_client',
+                'error_description':
+                    'AADSTS7000215: Invalid client secret provided.\r\n'
+                    'Trace ID: abc\r\nCorrelation ID: def',
+            })
+            result = self.client.test_credentials()
+
+        self.assertFalse(result['success'])
+        self.assertIn('Client Secret Value', result['message'])
+        # Azure's own sentence is kept, its trace ids are not.
+        self.assertIn('AADSTS7000215', result['message'])
+        self.assertNotIn('Trace ID', result['message'])
+
+    def test_an_unknown_tenant_points_at_the_tenant_field(self):
+        """The mistake this button exists for: the Client Secret pasted into
+        the Tenant ID box. Azure answers about a tenant it cannot find."""
+        with patch(GRAPH_POST) as post:
+            post.return_value = self._response(400, {
+                'error': 'invalid_request',
+                'error_description': 'AADSTS90002: Tenant not found.',
+            })
+            result = self.client.test_credentials()
+
+        self.assertFalse(result['success'])
+        self.assertIn('Directory (tenant) ID', result['message'])
+
+    def test_empty_fields_are_answered_without_calling_azure(self):
+        self.provider.tenant_id = False
+        with patch(GRAPH_POST) as post:
+            result = self.client.test_credentials()
+
+        post.assert_not_called()
+        self.assertFalse(result['success'])
+        self.assertIn('Directory (tenant) ID', result['message'])
+
+    def test_the_button_reports_the_verdict(self):
+        with patch(GRAPH_POST) as post:
+            post.return_value = self._response(200, {'access_token': 'app-token'})
+            action = self.provider.action_test_credentials()
+        self.assertEqual(action['params']['type'], 'success')
+
+        with patch(GRAPH_POST) as post:
+            post.return_value = self._response(401, {'error': 'invalid_client'})
+            action = self.provider.action_test_credentials()
+        self.assertEqual(action['params']['type'], 'danger')
+        # A failure stays on screen: it is a sentence about what to change.
+        self.assertTrue(action['params']['sticky'])
+
+    def test_signing_in_from_the_provider_form_is_the_consent_screen(self):
+        """The credential test cannot check the Callback URL or the granted
+        permissions. Only a real sign-in does, so the form offers one."""
+        action = self.provider.action_connect_myself()
+        self.assertEqual(action['type'], 'ir.actions.act_url')
+        self.assertIn('login.microsoftonline.com', action['url'])
+        self.assertIn('test-tenant-id', action['url'])
+
+    def test_a_provider_without_a_registration_offers_no_button(self):
+        """IMAP has nothing to test, so the form hides it rather than
+        offering a test that cannot run."""
+        self.provider.provider = 'imap'
+        self.assertFalse(self.provider.credentials_testable)
+        with self.assertRaises(UserError):
+            self.provider.action_test_credentials()

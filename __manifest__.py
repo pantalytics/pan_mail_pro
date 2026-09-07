@@ -124,8 +124,11 @@
     'assets': {
         'web.assets_backend': [
             'pan_mail_pro/static/src/scss/setup_status.scss',
+            'pan_mail_pro/static/src/scss/connect_banner.scss',
             'pan_mail_pro/static/src/js/mailbox_list_controller.js',
+            'pan_mail_pro/static/src/js/connect_banner.js',
             'pan_mail_pro/static/src/xml/mailbox_list_view.xml',
+            'pan_mail_pro/static/src/xml/connect_banner.xml',
         ],
     },
     'images': [

@@ -12,6 +12,8 @@ seeds it. Every assertion here is a bug this module has actually shipped:
     a red test
   * a brand new provider opened carrying IMAP's explanation, because "has no
     OAuth" and "nothing chosen yet" were one condition
+  * the connect banner is drawn by patching Odoo's own webclient template, so
+    a wrong xpath breaks every screen and nothing server-side can see it
 
     tools/ui_check.py                     # assert, and write screenshots
     tools/ui_check.py --out=ui-screenshots
@@ -49,9 +51,10 @@ def manifest_version():
 
 
 class Checks:
-    def __init__(self, page, out):
+    def __init__(self, page, out, browser=None):
         self.page = page
         self.out = out
+        self.browser = browser
         self.failures = []
 
     def fail(self, message):
@@ -122,15 +125,25 @@ class Checks:
 
     # -- The provider form ----------------------------------------------------
 
-    # What each provider's registration asks for. Microsoft is the only one
-    # with a tenant; IMAP has no registration at all, and says so.
+    # What each provider's registration asks for, under the name its own
+    # console uses -- Azure's three fields are labelled the way Azure labels
+    # them, Google's the way Google does. Microsoft is the only one with a
+    # tenant; IMAP has no registration at all, and says so.
+    MICROSOFT_FIELDS = ('Application (client) ID', 'Client Secret Value',
+                        'Directory (tenant) ID')
+    GOOGLE_FIELDS = ('Client ID', 'Client Secret')
+    # These are substring checks, and Google's two labels are both prefixes of
+    # nothing on the Microsoft form except "Client Secret", which is a prefix
+    # of "Client Secret Value". So a form is proved to be Google's by the label
+    # that cannot appear on Microsoft's.
+    GOOGLE_ONLY = ('Client ID',)
     PROVIDER_FIELDS = {
-        'outlook': {'shows': ('Client ID', 'Client Secret', 'Tenant ID', 'Callback URL'),
-                    'hides': ('has no application registration',)},
-        'gmail': {'shows': ('Client ID', 'Client Secret', 'Callback URL'),
-                  'hides': ('Tenant ID', 'has no application registration')},
+        'outlook': {'shows': MICROSOFT_FIELDS + ('Callback URL',),
+                    'hides': GOOGLE_ONLY + ('has no application registration',)},
+        'gmail': {'shows': GOOGLE_FIELDS + ('Callback URL',),
+                  'hides': MICROSOFT_FIELDS + ('has no application registration',)},
         'imap': {'shows': ('has no application registration',),
-                 'hides': ('Client ID', 'Client Secret', 'Tenant ID', 'Callback URL')},
+                 'hides': MICROSOFT_FIELDS + GOOGLE_ONLY + ('Callback URL',)},
     }
 
     def provider_form(self):
@@ -167,9 +180,70 @@ class Checks:
 
         text = self.form_text(f'{self.base}/odoo/action-{action}/new')
         self.shot('provider-new.png')
-        for hidden in ('has no application registration', 'Client ID', 'Tenant ID'):
+        for hidden in (('has no application registration',)
+                       + self.MICROSOFT_FIELDS + self.GOOGLE_ONLY):
             if hidden in text:
                 self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
+
+    # -- The connect banner ---------------------------------------------------
+
+    def connect_banner(self):
+        """It reaches the people who have to act, and nobody else.
+
+        Both halves are the check. The banner lives inside `web.WebClient`
+        rather than in an action, so a wrong xpath takes the whole client down
+        and no server-side check can see it -- and one shown to somebody who is
+        already connected is a bar on every screen that teaches people to stop
+        reading bars. The seed connects admin, so admin must not see it; a
+        colleague who has not signed in must.
+        """
+        self.page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+        self.page.wait_for_selector('.o_main_navbar', timeout=60000)
+        self.page.wait_for_timeout(1200)
+        self.error_free('the webclient')
+        if self.page.query_selector('.o_mailpro_connect_banner'):
+            self.fail('the connect banner is shown to a user who is already connected')
+
+        login = 'ui-unconnected@example.com'
+        found = self.call('res.users', 'search', [('login', '=', login)])
+        if not found:
+            self.call('res.users', 'create', {
+                'name': 'Not Connected Yet', 'login': login, 'password': login,
+                'group_ids': [(6, 0, self.call(
+                    'ir.model.data', 'check_object_reference', 'base', 'group_user')[1:])],
+            })
+
+        page = self.browser.new_context(
+            viewport={'width': WIDE, 'height': 1100}).new_page()
+        try:
+            page.goto(f'{self.base}/web/login', wait_until='domcontentloaded')
+            page.fill('input[name=login]', login)
+            page.fill('input[name=password]', login)
+            page.click('button[type=submit]')
+            page.wait_for_selector('.o_main_navbar', timeout=60000)
+            page.wait_for_timeout(1500)
+            banner = page.query_selector('.o_mailpro_connect_banner')
+            if not banner:
+                self.fail('a user who has not connected a mailbox is never asked to')
+                return
+            if self.out:
+                page.screenshot(path=os.path.join(self.out, 'connect-banner.png'))
+            box = banner.bounding_box()
+            navbar = page.query_selector('.o_main_navbar').bounding_box()
+            if box['y'] < navbar['y'] + navbar['height'] - 1:
+                self.fail('the connect banner covers the navbar instead of sitting under it')
+            content = page.query_selector('.o_action_manager, .o_content').bounding_box()
+            if content['y'] < box['y'] + box['height'] - 1:
+                self.fail('the connect banner floats over the page instead of pushing it down')
+            if not banner.query_selector('a[href="/mail_pro/connect"]'):
+                self.fail('the connect banner has no way into the consent screen')
+
+            banner.query_selector('.o_mailpro_connect_close').click()
+            page.wait_for_timeout(400)
+            if page.query_selector('.o_mailpro_connect_banner'):
+                self.fail('dismissing the connect banner does not hide it')
+        finally:
+            page.context.close()
 
     def form_text(self, url):
         self.page.goto(url, wait_until='domcontentloaded')
@@ -236,13 +310,14 @@ def main():
         page.wait_for_url('**/odoo**', timeout=60000)
         page.wait_for_timeout(1500)
 
-        checks = Checks(page, args.out)
+        checks = Checks(page, args.out, browser)
         checks.base = args.url
         checks.db = args.db
         checks.call = rpc_for(args.url, args.db)
         checks.settings()
         checks.menus()
         checks.provider_form()
+        checks.connect_banner()
         browser.close()
 
     if checks.failures:

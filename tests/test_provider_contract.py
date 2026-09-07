@@ -63,6 +63,21 @@ class TestProviderRegistry(TransactionCase):
                     f"'{code}' does not implement {name}()",
                 )
 
+    def test_a_declared_credential_test_is_an_implemented_one(self):
+        """`supports_credential_test` is what the provider form reads to show
+        the button. A client that declares it and inherits the contract's
+        stub would raise NotImplementedError at the admin, on click."""
+        contract = self.env['mail.provider.client']
+        for code in PROVIDER_CLIENTS:
+            client = get_provider_client(self.env, code)
+            if not client.supports_credential_test:
+                continue
+            self.assertIsNot(
+                getattr(type(client), 'test_credentials', None),
+                type(contract).test_credentials,
+                f"'{code}' declares supports_credential_test but does not implement it",
+            )
+
     def test_unknown_provider_raises(self):
         with self.assertRaises(UserError):
             get_provider_client(self.env, 'carrier-pigeon')

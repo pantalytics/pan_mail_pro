@@ -9,6 +9,7 @@ from . import pan_mail_setup
 from . import res_config_settings
 from . import pan_mail_account
 from . import res_users
+from . import ir_http
 from . import pan_mail_mailbox
 from . import pan_mail_thread_index
 from . import pan_mail_matcher

@@ -1141,6 +1141,34 @@ page. The one behavioural change: choosing IMAP is now the same action as
 choosing any other provider — add the row — rather than an implicit fallback
 with no record of the choice at all.
 
+**Two buttons, in the order the mistakes happen.** `status` reads "Not
+Connected" for a correct registration nobody has signed in to yet and for
+three fields of nonsense alike, so the form had no feedback at all until the
+consent screen -- which is where an admin arrives after emailing their users
+to go and sign in. *Test Credentials* asks the provider whether the client id,
+secret and tenant are the ones it issued (Microsoft's client-credentials grant:
+no user, no consent, and the token is thrown away), and translates the AADSTS
+code into the field to fix. *Sign In Myself* is the same consent screen the
+user form offers, on the page where the provider is being configured, and it
+is the only check that also covers the Callback URL, the granted permissions
+and whether the tenant allows users to consent at all. The first is cheap and
+narrow, the second is the real thing.
+
+**The fields carry the console's own names.** Azure's Overview page says
+Application (client) ID and Directory (tenant) ID, and Certificates & secrets
+shows a Value next to a Secret ID; Google's console says Client ID and Client
+secret and has no tenant at all. The form used one neutral set of names for
+both, so an admin translated while copying -- which is how a client secret ends
+up in the tenant box, silently, because every one of these is an opaque string.
+The two OAuth providers therefore render the same two fields under different
+labels, and `tools/ui_check.py` walks all three provider shapes.
+
+`supports_credential_test` gates the first: Microsoft implements it, IMAP has
+no registration to test, and Google offers no call that validates a client id
+and secret without a grant to go with them. The button is hidden rather than
+offering a test that cannot run, and `test_provider_contract.py` fails a client
+that declares the capability without implementing it.
+
 `credentials_set` / `connected` / `status` are the other trap the same
 collision points at: for IMAP they read `pan.mail.account`, a different
 model, so nothing tells Odoo to invalidate them when an account changes.
@@ -1158,6 +1186,45 @@ it into garbage.
 
 Note the asymmetry that makes this cheap: a mail with *any* outside recipient
 is correspondence and is still logged. "Internal" means every party is ours.
+
+### 9.14 One banner, and only where the button works
+
+Connecting a mailbox is self-service: the user clicks, the provider asks for
+consent, and `/microsoft_oauth/callback` creates their personal mailbox from
+the address the provider just named (§2). Nothing about that flow tells a user
+it exists. The invitation email does, but only for the people an administrator
+remembers to invite.
+
+So the client itself asks, once, above every screen, until the user connects.
+Two decisions hold it in place.
+
+**The server decides who sees it, and says so in `session_info`.**
+`res.users._pan_mail_should_prompt_connect()` is the whole rule and
+`models/ir_http.py` is four lines putting its answer in the session payload the
+webclient already fetches. An RPC of the banner's own would draw it a beat
+after the screen settled, which turns a nudge into a flicker; a client-side
+rule would be a second copy of "can this person connect", drifting from the one
+`action_connect_mailbox` enforces.
+
+The rule refuses in every case where the button would fail: no provider chosen,
+an incomplete application registration, a provider with no consent screen at
+all (IMAP, whose password an administrator types in), a user who is not
+internal or is already connected, and a neutralized copy, where connecting
+would hand a staging database real credentials. It deliberately does *not* wait
+for setup to finish — the first person to connect is usually the administrator
+standing on step 3, who needs a connected owner before a notification mailbox
+can send.
+
+**Dismissal is per browser session, and is not stored.** A field for "not now"
+is a preference nobody asked to express, and a banner dismissed forever is a
+banner that stopped working for everyone who clicked the cross by reflex.
+`sessionStorage` forgets at the next sign-in, which is the next moment the
+question is worth asking again.
+
+It renders inside `web.WebClient`, between the navbar and the action, rather
+than through the `main_components` registry: that container is the client's
+last child, so anything in it floats over the action instead of pushing the
+page down.
 
 ## 10. Security and permissions
 
