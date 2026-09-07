@@ -35,3 +35,4 @@ from . import test_rename_migration
 from . import test_sync_sends_nothing
 from . import test_incoming_gates
 from . import test_field_labels
+from . import test_imap_live
