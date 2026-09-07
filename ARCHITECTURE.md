@@ -32,7 +32,7 @@ code, the views and the documentation use the same one.
 | **Provider** | Where the mail lives: `outlook`, `gmail` or `imap` | `mail.provider.client`, `PROVIDER_SELECTION` |
 | **Outgoing** | Chatter → email. Odoo composes, the provider sends | `mail.mail` (`_resolve_route`, `send_message`) |
 | **Incoming** | Email → chatter. The provider is read, the matcher decides, Odoo posts | `pan.mail.fetcher`, `pan.mail.matcher` |
-| **Sync** | The user's word for the incoming flow and its settings | `sync_mode`, `last_sync_date`, "Sync Now" |
+| **Sync** | The user's word for reading a mailbox and its settings | `sync_received`, `sync_sent`, `last_sync_date`, "Sync Now" |
 | **Send From** | The mailbox a mail leaves through | `x_send_from_mailbox_id`, `x_default_mailbox_id` |
 | **Direction** | Which way an *email* went for its mailbox, whichever flow carried it | `mail.message.x_direction` |
 
@@ -304,28 +304,62 @@ out from somewhere.
 > [#38](https://github.com/pantalytics/pan_mail_pro/issues/38).
 
 
-### One control, not six
+### Replies need no setting; everything else is asked
 
-`sync_mode` is a single three-way choice, and every question the mailbox form
-used to ask separately is an answer to it:
+The mailbox form asks two questions, one per direction, and neither of them is
+"should this mailbox be read". Every mailbox that can be read is read, because a
+reply to something Odoo sent belongs on the record it continues. A chatter
+thread showing the question and not the answer is the failure this module
+exists to prevent, so it is not a preference.
 
-| `sync_mode` | Meaning |
-|---------------|---------|
-| `none` | Send only. Nothing is imported. |
-| `known_partners` | Import mail from addresses that are already contacts. |
-| `all` | Import mail from anyone. |
+| | Always | Asked |
+|---|---|---|
+| **Sending** | Mail written in Odoo leaves through this mailbox | `sync_sent` — read the Sent folder back, for mail the owner wrote in their own client |
+| **Receiving** | Replies to conversations Odoo already has land on their record | `sync_received` — email that starts a *new* conversation, and `sync_received_scope` for how wide |
 
-`x_incoming_sync`, `x_sync_unknown_contacts`, `x_sync_inbox`, `x_sync_sent` and
-`x_incoming_enabled` were computes over exactly this choice — five things that
-could disagree with the one field that decided. Code asks
-`mailbox._syncs_incoming()`, which reads the mode through the `SYNCING_MODES`
-allow-list, so an unset value means "do not import" rather than "import
-everything".
+`sync_received_scope` only matters while `sync_received` is on, which is why the
+form shows it a level deeper:
 
-Nothing qualifies it any more. `routing_smart` (the interlock that kept AI
-auto-routing off) and `queue_unknown_contacts` (hold unknown senders in the
-triage queue) went with the features they guarded in 19.0.7.0.0, so the mode
-is now the whole answer to "what does this mailbox import?".
+| `sync_received_scope` | Meaning |
+|---|---|
+| `known_partners` | Only from addresses that are already contacts |
+| `all` | From anyone. Every sender becomes a contact |
+
+**Why the split.** These were one three-way `sync_mode` until 19.0.7.6.0, where
+"send and receive" read the Inbox *and* the Sent folder. A customer who asked to
+receive mail in Odoo also got a copy of everything their people wrote in
+Outlook, without being asked. It also bundled "should this sync at all" with
+"how wide should it cast", so the widest answer sat one click from the off
+position. `_folders_to_sync()` is now the only place that maps a setting to a
+folder, and `_gate_wanted` the only place that decides what may enter.
+
+This is not a walk back on 19.0.5.0.0, which deleted five *computes* over one
+choice — five things that could disagree with the field that decided. These are
+independent stored answers to independent questions, and none of them is derived
+from another.
+
+**Sent capture is not offered the scope question.** It behaves as
+`known_partners` whatever receiving says: a sent item is logged onto a contact
+Odoo already has, or not at all. Emailing a stranger from a mail client is not a
+statement that they belong in the database, and a customer who switches this on
+wants their correspondence with known contacts, not a contact list built from
+their outbox. One combination dropped on purpose.
+
+**The Sent folder is opt-in and the Inbox is not**, because nothing in Sent is
+ever waiting for Odoo: every sent item is either mail Odoo itself sent (dropped
+by the loop guard) or a copy of correspondence Odoo was never part of. The Inbox
+holds replies, which are.
+
+`mailbox._syncs_more_than_replies()` is the question the health status, the
+credentials check and the constraints ask — did somebody switch on more than the
+baseline? A Microsoft shared mailbox that only sends has no credentials of its
+own, and reply sync being best-effort on top is what keeps it from turning red.
+Both switches are booleans, so a NULL falls to False and the unanswered question
+falls the safe way.
+
+`routing_smart` (the interlock that kept AI auto-routing off) and
+`queue_unknown_contacts` (hold unknown senders in the triage queue) went with
+the features they guarded in 19.0.7.0.0.
 
 ### Internal domains are a gate, not a preference
 
@@ -382,7 +416,7 @@ resolved in the context for the ones after it.
 | 4 | `_gate_internal_domain` | every party to the mail is ours | no |
 | 5 | `_gate_blocked_contact` | `x_email_sync_blocked` | no, deliberately |
 | 6 | `_gate_internal_user` | the address has an Odoo user | no |
-| 7 | `_gate_sync_mode` | what the mailbox was told to accept | **yes** |
+| 7 | `_gate_wanted` | not a reply, and not what the mailbox asked for | **yes** |
 
 Gate 3 is where direction lives: the inbox reads the `From`, Sent Items reads
 the `To`. It collects the candidates and gate 4 chooses among them, so the whole
@@ -460,7 +494,7 @@ an *ingestion* control, so it governs two of them.
 
 | | Sending | Receiving |
 |---|---|---|
-| **Mailbox** | user writes in Outlook; sync reads Sent Items. **Filter on the To.** | mail lands in the inbox; sync reads it. **Filter on the From.** |
+| **Mailbox** | user writes in Outlook; sync reads Sent Items *when `sync_sent` is on*. **Filter on the To**, existing contacts only. | mail lands in the inbox; sync always reads it. Replies pass; anything else is **filtered on the From**. |
 | **Odoo** | chatter or notification; `mail.mail.send()` routes it out. **No filter.** | nothing. A Mail Pro database does not receive through `mail.alias`. |
 
 **Sending from Odoo is never filtered.** A person clicked send, or a colleague
