@@ -243,7 +243,7 @@ class PanMailFetcher(models.AbstractModel):
                 # this batch would fail with "cursor already closed".
                 _logger.exception(
                     "[Incoming Mail] Error processing message %s in %s: %s",
-                    message.get('provider_message_id'), mailbox.email_address,
+                    message.get('provider_message_id'), mailbox.email,
                     error,
                 )
 
