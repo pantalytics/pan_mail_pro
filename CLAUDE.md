@@ -659,6 +659,11 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   banned from the whole module rather than confined to `models/ai/`. A removal
   that leaves no check behind is a removal that comes back.
 
+### Enterprise vs community (19.0.7.5.1)
+- **A `components` dict is a snapshot, and the edition you do not run takes it first.** `patch(WebClient, {components: ...})` works on community and white-screens Enterprise: `WebClientEnterprise` spreads `WebClient.components` in its class body, `web_enterprise` is bundled before this module, so the patch lands after the copy and Owl cannot resolve the tag. Bind the class to an instance attribute in a patched `setup()` and use `t-component`, which is read at render time.
+- **A white screen with an empty server log is a frontend resolution failure.** Nothing on the Python side can see it, and it is invisible to a suite that only asserts views render.
+- **CI runs the community image, so every Enterprise-only path is untested by construction.** The cheapest cover is a static check on the shape that breaks (a component tag in a borrowed template), not a test that needs an edition CI does not have.
+
 ### Boundaries (19.0.6.3.0)
 - **A passthrough is a decision nobody made.** The contract documented `headers`
   as a faithful copy of the message's headers, so all three clients handed over

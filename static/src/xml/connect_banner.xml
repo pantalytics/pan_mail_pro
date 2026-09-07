@@ -16,10 +16,15 @@
     </t>
 
     <!-- Above the action, below the navbar: the banner moves the page down
-         rather than covering the top of it. -->
+         rather than covering the top of it.
+
+         `t-component` on an attribute the webclient sets in `setup()`, never a
+         `<MailProConnectBanner/>` tag: the tag resolves against the mounted
+         class's `components`, which Enterprise snapshots before this module is
+         loaded. See connect_banner.js. -->
     <t t-name="pan_mail_pro.WebClient" t-inherit="web.WebClient" t-inherit-mode="extension">
         <xpath expr="//ActionContainer" position="before">
-            <MailProConnectBanner/>
+            <t t-component="MailProConnectBanner"/>
         </xpath>
     </t>
 
