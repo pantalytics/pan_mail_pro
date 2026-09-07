@@ -89,10 +89,10 @@ class TestSetupPhase(TransactionCase):
         self.assertFalse(self.Setup.answers(provider='outlook')['provider'])
 
     def test_a_provider_row_answers_the_step(self):
-        """Once `pan.mail.provider` has a complete, in-use row, step 1 reads
-        as answered — this is the seam `res.config.settings` reads too."""
+        """Once `pan.mail.provider` has a complete row, step 1 reads as
+        answered — this is the seam `res.config.settings` reads too."""
         self.env['pan.mail.provider'].create({
-            'provider': 'gmail', 'in_use': True,
+            'provider': 'gmail',
             'client_id': 'id', 'client_secret': 'secret',
         })
         self.assertTrue(self.Setup.answers()['provider'])

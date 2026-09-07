@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""One row per provider registration, and which one is in use.
+"""The provider this database sends and receives on.
 
 This is the application credential — the Azure app registration or the Google
 Cloud OAuth client — not a person's login. A person's login is a
@@ -7,21 +7,18 @@ Cloud OAuth client — not a person's login. A person's login is a
 provider shares this one registration, because that is what the provider's
 console actually asks for: one app, many users consenting to it.
 
-`in_use` is the answer to "which provider is this database set up for?" —
-what `pan_mail_pro.setup_provider` used to be as a bare config parameter.
-Making it a field on a record rather than a global switch is what gives
-switching providers back its old credentials for free: untick `in_use` here,
-tick it on another row, and the first row's `client_id`/`client_secret` are
-still sitting on it, unread rather than deleted. Retyping a Google client
-secret because an admin tried Microsoft first and switched is not a cost
-this module asks anyone to pay.
+**There is one row.** It used to be a row per provider with an `in_use`
+toggle naming the chosen one, so that switching kept the credentials of the
+provider you switched away from. Nobody switches back and forth: a database
+runs on one provider, and the toggle was a second question ("which of these
+is it?") on a table that only ever had one meaningful answer. Creating a
+second row is refused, so "which provider is this database set up for" is
+`current()` — the row, if there is one.
 
-Not called `active`: Odoo treats a field with that exact name as its archive
-convention and silently excludes `active=False` records from every plain
-`search()` — which is precisely the state most rows are in most of the time
-here, since only one provider is ever the chosen one. A search anybody forgot
-to pass `active_test=False` to would quietly stop seeing every provider but
-the active one, which is the opposite of what "switch back" needs.
+Switching providers now means changing `provider` on that row, or deleting it
+and adding the other. The old registration's client secret is gone at that
+point; the provider's console can issue a new one, and that is cheaper than a
+toggle every reader has to reason about.
 
 IMAP has no application registration — a server, a login and a password are
 per-address by nature, so its row carries no credential fields at all.
@@ -50,20 +47,14 @@ SECRET_PLACEHOLDER = '********'
 class PanMailProvider(models.Model):
     _name = 'pan.mail.provider'
     _description = 'Provider Registration'
-    _order = 'in_use desc, provider'
+    _order = 'provider'
     _rec_name = 'provider'
 
     provider = fields.Selection(
         PROVIDER_SELECTION,
         required=True,
-        help='Which provider this registration is for. One row per provider — '
-             'switching does not lose the one you switch away from.',
-    )
-    in_use = fields.Boolean(
-        string='In Use',
-        default=False,
-        help='The provider Mail Pro is set up for right now. Only one row can '
-             'be in use; the rest keep their credentials for when you switch back.',
+        help='Where your company\'s email lives. Mail Pro sends and receives '
+             'through this provider; change it here to move to another one.',
     )
 
     client_id = fields.Char(string='Client ID')
@@ -213,18 +204,29 @@ class PanMailProvider(models.Model):
             [('provider', '=', 'imap')])
 
     # -------------------------------------------------------------------------
-    # Only one provider in use
+    # One row
     # -------------------------------------------------------------------------
 
-    @api.constrains('in_use')
-    def _check_single_provider_in_use(self):
-        for record in self:
-            if not record.in_use:
-                continue
-            existing = self.search([
-                ('in_use', '=', True), ('id', '!=', record.id),
-            ], limit=1)
-            if existing:
-                raise ValidationError(_(
-                    'Only one provider can be in use at a time. Untick "%s" first.'
-                ) % dict(PROVIDER_SELECTION).get(existing.provider))
+    @api.model
+    def current(self):
+        """The provider this database is set up for, or an empty recordset.
+
+        Every caller that used to search for the in-use row asks this instead,
+        so "which provider" is answered in one place rather than by a domain
+        repeated across the module.
+        """
+        return self.sudo().search([], limit=1)
+
+    @api.constrains('provider')
+    def _check_single_row(self):
+        """A second provider is refused rather than silently ignored.
+
+        Without this the table would hold rows nothing reads: `current()`
+        takes the first, and the second would sit there looking configured.
+        """
+        if self.search_count([]) > 1:
+            existing = self.search([('id', 'not in', self.ids)], limit=1)
+            raise ValidationError(_(
+                'Mail Pro runs on one provider. Change the existing "%s" row, '
+                'or delete it first.'
+            ) % dict(PROVIDER_SELECTION).get(existing.provider, existing.provider))

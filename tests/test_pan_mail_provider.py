@@ -59,26 +59,26 @@ class TestProviderCredentials(TransactionCase):
         row.invalidate_recordset()
         self.assertTrue(row.connected)
 
-    def test_only_one_provider_in_use(self):
-        self.Provider.create({'provider': 'outlook', 'in_use': True})
+    def test_a_second_provider_is_refused(self):
+        """Mail Pro runs on one provider. A second row would sit there
+        looking configured while `current()` reads the first."""
+        self.Provider.create({'provider': 'outlook'})
         with self.assertRaises(ValidationError):
-            self.Provider.create({'provider': 'gmail', 'in_use': True})
+            self.Provider.create({'provider': 'gmail'})
 
-    def test_switching_in_use_keeps_the_old_credentials(self):
-        """Switching providers must not lose the one you switch away from —
-        the whole point of a row per provider instead of one global choice."""
-        outlook = self.Provider.create({
-            'provider': 'outlook', 'in_use': True,
+    def test_current_is_the_row(self):
+        """The one question the table answers, asked in one place."""
+        self.assertFalse(self.Provider.current())
+        row = self.Provider.create({'provider': 'gmail'})
+        self.assertEqual(self.Provider.current(), row)
+
+    def test_switching_provider_is_editing_the_row(self):
+        row = self.Provider.create({
+            'provider': 'outlook',
             'client_id': 'id', 'client_secret': 'secret', 'tenant_id': 'tenant',
         })
-        gmail = self.Provider.create({
-            'provider': 'gmail', 'client_id': 'gid', 'client_secret': 'gsecret',
-        })
-        outlook.in_use = False
-        gmail.in_use = True
-
-        self.assertEqual(outlook.client_id, 'id')
-        self.assertTrue(outlook.credentials_set)
+        row.provider = 'gmail'
+        self.assertEqual(self.Provider.current().provider, 'gmail')
 
     def test_the_secret_is_never_handed_back(self):
         row = self.Provider.create({
@@ -119,12 +119,16 @@ class TestProviderCredentials(TransactionCase):
         self.assertIn('/microsoft_oauth/callback', row.redirect_uri)
 
     @mute_logger('odoo.sql_db')
-    def test_a_provider_can_only_be_registered_once(self):
+    def test_the_database_refuses_a_duplicate_too(self):
         """The uniqueness was declared with `_sql_constraints`, which Odoo 19
-        ignores with nothing but a warning — so the database accepted two rows
-        for one provider and `in_use` could point at either."""
+        ignores with nothing but a warning — so the table accepted two rows for
+        one provider. The Python check above refuses a second row of any kind;
+        this asserts the database would too, since that is the one an import
+        or a raw INSERT still meets."""
         self.Provider.create({'provider': 'outlook', 'client_id': 'first'})
 
         with self.assertRaises(IntegrityError):
-            self.Provider.create({'provider': 'outlook', 'client_id': 'second'})
-            self.env.cr.flush()
+            self.env.cr.execute("""
+                INSERT INTO pan_mail_provider (provider, client_id)
+                VALUES ('outlook', 'second')
+            """)

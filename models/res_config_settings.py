@@ -156,8 +156,7 @@ class ResConfigSettings(models.TransientModel):
         Setup = self.env['pan.mail.setup']
         alert = Setup.mailbox_alert()
         answers = Setup.answers()
-        active_provider = self.env['pan.mail.provider'].sudo().search(
-            [('in_use', '=', True)], limit=1)
+        active_provider = self.env['pan.mail.provider'].current()
 
         for record in self:
             record.x_active_provider_id = active_provider

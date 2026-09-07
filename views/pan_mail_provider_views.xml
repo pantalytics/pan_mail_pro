@@ -1,19 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- One row per provider. Credentials and status live here, not on the
-         settings page — the settings page only links to this table, the same
-         way it links to Internal Domains and Mailboxes. -->
+    <!-- One row: the provider this database runs on. Credentials and status
+         live here, not on the settings page — the settings page only links to
+         this table, the same way it links to Internal Domains and Mailboxes. -->
     <record id="view_pan_mail_provider_list" model="ir.ui.view">
         <field name="name">pan.mail.provider.list</field>
         <field name="model">pan.mail.provider</field>
         <field name="arch" type="xml">
-            <list string="Providers" decoration-muted="not in_use">
+            <list string="Providers">
                 <field name="provider"/>
                 <field name="status" widget="badge"
                        decoration-success="status == 'connected'"
                        decoration-warning="status == 'not_connected'"
                        decoration-danger="status == 'not_configured'"/>
-                <field name="in_use" widget="boolean_toggle"/>
                 <field name="client_id" optional="hide"/>
             </list>
         </field>
@@ -33,15 +32,6 @@
                                    decoration-success="status == 'connected'"
                                    decoration-warning="status == 'not_connected'"
                                    decoration-danger="status == 'not_configured'"/>
-                            <label for="in_use"/>
-                            <!-- One row: the toggle is a block element, so the
-                                 icon beside it wrapped onto a line of its own
-                                 and read as a stray dot under the switch. -->
-                            <div class="d-inline-flex align-items-center">
-                                <field name="in_use" widget="boolean_toggle" nolabel="1"/>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="The provider Mail Pro is set up for right now. Only one can be in use; switching keeps the credentials on the one you switch away from."/>
-                            </div>
                         </group>
                     </group>
 
@@ -88,8 +78,8 @@
             </p>
             <p>
                 Microsoft 365 and Gmail need an application registration here first;
-                IMAP/SMTP needs none — just add an account. Exactly one provider is
-                in use at a time, and switching keeps every provider's own credentials.
+                IMAP/SMTP needs none — just add an account. Mail Pro runs on one
+                provider: change this row to move to another one.
             </p>
         </field>
     </record>
