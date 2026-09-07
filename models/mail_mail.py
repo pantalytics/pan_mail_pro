@@ -337,11 +337,12 @@ class MailMail(models.Model):
 
         try:
             mailbox, account = self._resolve_route()
+            reply_context = self._build_reply_context(mailbox)
             result = mailbox._get_client().send_message(
                 mail_record=self,
                 mailbox=mailbox,
                 account=account,
-                reply_context=self._build_reply_context(mailbox),
+                reply_context=reply_context,
             )
         except RoutingError as e:
             return self._fail(str(e))
@@ -353,7 +354,7 @@ class MailMail(models.Model):
             return reason
 
         if result['success']:
-            self._record_sent(result, mailbox, account)
+            self._record_sent(result, mailbox, account, reply_context)
             if post_send_callback:
                 post_send_callback(self)
             return None
@@ -415,7 +416,7 @@ class MailMail(models.Model):
         _logger.error(f"[Outgoing Mail] Mail {self.id} not sent: {reason}")
         return reason
 
-    def _record_sent(self, result, mailbox, account):
+    def _record_sent(self, result, mailbox, account, reply_context=None):
         """Store the provider's ids so replies thread onto this message."""
         self.ensure_one()
         message_id = result.get('message_id')
@@ -453,7 +454,7 @@ class MailMail(models.Model):
                 'x_account_id': account.id,
             })
 
-        self._index_sent_message(mailbox, message_id, thread_id)
+        self._index_sent_message(mailbox, message_id, thread_id, reply_context)
         _logger.info(f"[Outgoing Mail] Mail {self.id} sent from {mailbox.email} "
                      f"(message {message_id}, thread {thread_id})")
 
@@ -558,7 +559,8 @@ class MailMail(models.Model):
         ], limit=1)
         return ref.message_id or message.message_id
 
-    def _index_sent_message(self, mailbox, provider_message_id, provider_thread_id):
+    def _index_sent_message(self, mailbox, provider_message_id, provider_thread_id,
+                            reply_context=None):
         """Make this outgoing mail findable when the recipient replies.
 
         The wire Message-ID is rarely the one Odoo generated. Microsoft Graph
@@ -569,7 +571,13 @@ class MailMail(models.Model):
 
         The thread link is written here too so the *first* reply already has a
         scoped (mailbox, thread) entry to match on, rather than having to wait
-        until the incoming sync has seen the conversation once.
+        until the incoming sync has seen the conversation once. One row per
+        thread key: what the provider called the thread, and the root of the
+        References chain this mail went out with. The provider's own handle is
+        the one it will accept back on the next send; the RFC root is the one
+        that still matches when the provider's has moved, which on Microsoft is
+        the normal case rather than the exception — Graph reports the *draft's*
+        conversationId, and the reply arrives under another.
         """
         self.ensure_one()
         message = self.mail_message_id
@@ -582,14 +590,36 @@ class MailMail(models.Model):
         if provider_message_id:
             Ref.record(message, provider_message_id, source='provider')
 
-        if provider_thread_id and self.model and self.res_id:
-            self.env['pan.mail.thread.link'].record(
+        if self.model and self.res_id:
+            self.env['pan.mail.thread.link'].record_all(
                 mailbox=mailbox,
-                thread_id=provider_thread_id,
+                thread_ids=self._sent_thread_keys(
+                    provider_thread_id, provider_message_id, reply_context),
                 model=self.model,
                 res_id=self.res_id,
                 message=message,
             )
+
+    def _sent_thread_keys(self, provider_thread_id, provider_message_id,
+                          reply_context=None):
+        """The handles this outgoing mail's conversation is keyed under.
+
+        Mirrors `pan.mail.matcher.thread_keys` from the sending side, where
+        there is no normalized message to read: the provider's thread handle
+        first, then the root of the References chain we actually emitted — or
+        this mail's own wire Message-ID when it starts the thread.
+        """
+        self.ensure_one()
+        keys = []
+        if provider_thread_id:
+            keys.append(provider_thread_id)
+        references = (reply_context or {}).get('references') or []
+        # `references` is ordered root first, as the header wants it.
+        rfc_key = references[0] if references else (
+            provider_message_id or self.mail_message_id.message_id)
+        if rfc_key and rfc_key not in keys:
+            keys.append(rfc_key)
+        return keys
 
     def _is_internal_user_notification(self):
         """Is this mail addressed to one of our own employees?

@@ -12,17 +12,24 @@ mints its own `internetMessageId` and gives no way to override it), and any id
 a forwarding client re-used. A single Char field holds one of those; a
 `References` chain has to resolve all of them.
 
-`pan.mail.thread.link` maps a provider thread handle onto the Odoo record it
-belongs to, *scoped to the mailbox that saw it*. Provider thread ids are not
-global: Microsoft's `conversationId` is mailbox-local and derived from the
-conversation topic, Gmail's `threadId` is account-local, and two mailboxes
-syncing the same exchange see two different ids for it. Storing the id without
-the mailbox — which is what `mail.message.x_provider_thread_id` does —
-means a lookup can match a thread from an entirely different mailbox.
+`pan.mail.thread.link` maps a thread handle onto the Odoo record it belongs to,
+*scoped to the mailbox that saw it*. Provider thread ids are not global:
+Microsoft's `conversationId` is mailbox-local and derived from the conversation
+topic, Gmail's `threadId` is account-local, and two mailboxes syncing the same
+exchange see two different ids for it. Storing the id without the mailbox —
+which is what `mail.message.x_provider_thread_id` does — means a lookup can
+match a thread from an entirely different mailbox.
 
-Neither model is provider-specific. IMAP has no thread handle at all; the
-matcher synthesises one from the root of the `References` chain and stores it
-here like any other.
+One conversation gets a row per handle it carries, not one row: the provider's
+own, and the root of the `References` chain (`key_type` says which). The second
+one is not redundancy for its own sake. Microsoft reports the *draft's*
+conversationId on send and the reply can arrive under a different one, at which
+point the provider-keyed row never matches again; the RFC root is the same for
+every participant in the thread and cannot be reassigned. IMAP has no provider
+handle at all, so there the root is the only key and the two collapse into one
+row.
+
+Neither model is provider-specific.
 """
 import logging
 
@@ -155,6 +162,16 @@ class PanMailThreadLink(models.Model):
         help="Provider's own thread handle (Graph conversationId, Gmail "
              "threadId), or the root Message-ID for providers that have none.",
     )
+    key_type = fields.Selection(
+        [('provider', "Provider's thread handle"), ('rfc', 'References root')],
+        string='Key',
+        default='provider',
+        required=True,
+        help="Which of the two handles this row is keyed on. A conversation "
+             "gets a row for each (see `record_all`), and only the provider's "
+             "own handle can be handed back to that provider when sending — "
+             "Gmail rejects a threadId it did not mint.",
+    )
     model = fields.Char(string='Model', required=True, index=True)
     res_id = fields.Many2oneReference(
         string='Record',
@@ -199,16 +216,61 @@ class PanMailThreadLink(models.Model):
         """
         if not mailbox or not model or not res_id:
             return self.browse()
-        return self.sudo().search([
+        domain = [
             ('provider', '=', mailbox.provider),
             ('mailbox_id', '=', mailbox.id),
             ('model', '=', model),
             ('res_id', '=', res_id),
-        ], order='last_seen desc, id desc', limit=1)
+        ]
+        # The provider's own handle first, and only it if there is one: this
+        # value is handed straight back to the provider on send, and Gmail
+        # refuses a threadId it did not mint. The References-root row is a
+        # matching key, not a sending one.
+        link = self.sudo().search(
+            domain + [('key_type', '=', 'provider')],
+            order='last_seen desc, id desc', limit=1)
+        if link:
+            return link
+        return self.sudo().search(domain, order='last_seen desc, id desc', limit=1)
+
+    @api.model
+    def record_all(self, mailbox, thread_ids, model, res_id, message=None,
+                   provider_message_id=None):
+        """Link this record under every handle the conversation carries.
+
+        One row per key from `pan.mail.matcher.thread_keys()` — the provider's
+        thread handle and the root of the References chain. Two rows for one
+        conversation looks redundant until the provider's handle drifts, which
+        on Microsoft it does: the conversationId Graph reports for a draft is
+        not always the one the reply arrives under. The RFC root is the same
+        for every participant and cannot be reassigned, so it is the key that
+        still matches when the other one has moved.
+
+        Same never-raises contract as `record`, which does the writing.
+        """
+        links = self.browse()
+        seen = set()
+        for position, thread_id in enumerate(thread_ids or []):
+            if not thread_id or thread_id in seen:
+                continue
+            seen.add(thread_id)
+            links |= self.record(
+                mailbox=mailbox,
+                thread_id=thread_id,
+                model=model,
+                res_id=res_id,
+                message=message,
+                provider_message_id=provider_message_id,
+                # `thread_keys()` yields the provider's handle first, and a
+                # provider without one (IMAP) yields the References root in
+                # its place — which is that provider's handle.
+                key_type='provider' if position == 0 else 'rfc',
+            )
+        return links
 
     @api.model
     def record(self, mailbox, thread_id, model, res_id, message=None,
-               provider_message_id=None):
+               provider_message_id=None, key_type='provider'):
         """Create or refresh the link for (mailbox, thread_id).
 
         Like the ref index, this never raises — a mail that was delivered must
@@ -229,7 +291,7 @@ class PanMailThreadLink(models.Model):
             # See PanMailMessageRef.record: without the savepoint, a failed
             # write here aborts the transaction the caller is still using.
             with self.env.cr.savepoint():
-                return self._record(mailbox, thread_id, model, res_id, vals)
+                return self._record(mailbox, thread_id, model, res_id, vals, key_type)
         except Exception:
             _logger.exception(
                 "[Mail Matcher] Could not link thread %s on mailbox %s to %s/%s",
@@ -237,7 +299,7 @@ class PanMailThreadLink(models.Model):
             )
             return self.browse()
 
-    def _record(self, mailbox, thread_id, model, res_id, vals):
+    def _record(self, mailbox, thread_id, model, res_id, vals, key_type='provider'):
         """Upsert body of `record()`, split out so it runs inside a savepoint."""
         link = self.sudo().search([
             ('provider', '=', mailbox.provider),
@@ -261,6 +323,7 @@ class PanMailThreadLink(models.Model):
             'provider': mailbox.provider,
             'mailbox_id': mailbox.id,
             'thread_id': thread_id,
+            'key_type': key_type,
             'model': model,
             'res_id': res_id,
         })

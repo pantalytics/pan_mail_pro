@@ -57,6 +57,22 @@ INITIAL_BACKOFF_SECONDS = 2
 DIRECT_ATTACHMENT_LIMIT = 3 * 1024 * 1024  # 3MB in bytes
 
 
+# The threading headers as MAPI properties, for when Graph does not hand back
+# `internetMessageHeaders` at all. That happens — the property is optional, it
+# only ever appears under an explicit `$select`, and Exchange drops it on some
+# items — and when it does, In-Reply-To and References go missing, the matcher
+# has nothing to resolve, and a reply to our own mail lands on a subject guess.
+# These three properties are on the item itself and are always there.
+HEADER_EXTENDED_PROPERTIES = {
+    'String 0x1035': 'message-id',    # PidTagInternetMessageId
+    'String 0x1039': 'references',    # PidTagInternetReferences
+    'String 0x1042': 'in-reply-to',   # PidTagInReplyToId
+}
+HEADER_EXTENDED_PROPERTIES_FILTER = ' or '.join(
+    "id eq '%s'" % prop_id for prop_id in HEADER_EXTENDED_PROPERTIES
+)
+
+
 class MicrosoftGraphClient(models.AbstractModel):
     """Microsoft 365 implementation of the `mail.provider.client` contract.
 
@@ -976,8 +992,19 @@ class MicrosoftGraphClient(models.AbstractModel):
         headers = {
             h['name'].lower(): h['value']
             for h in raw.get('internetMessageHeaders') or []
-            if h.get('name')
+            if h.get('name') and h.get('value')
         }
+        # Fill the gaps from the MAPI properties. Graph's header collection is
+        # optional and sometimes simply absent; without In-Reply-To and
+        # References the matcher has no chain to walk and falls back to a
+        # subject guess, which is the bug this closes.
+        extended = {
+            HEADER_EXTENDED_PROPERTIES[prop['id']]: prop['value']
+            for prop in raw.get('singleValueExtendedProperties') or []
+            if prop.get('id') in HEADER_EXTENDED_PROPERTIES and prop.get('value')
+        }
+        for name, value in extended.items():
+            headers.setdefault(name, value)
 
         body = raw.get('body') or {}
         body_html = body.get('content')
@@ -987,7 +1014,7 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         return {
             'provider_message_id': raw.get('id'),
-            'message_id': raw.get('internetMessageId'),
+            'message_id': raw.get('internetMessageId') or extended.get('message-id'),
             'thread_id': raw.get('conversationId'),
             'subject': raw.get('subject') or '',
             'from': sender[0] if sender else {'email': '', 'name': ''},
@@ -1084,6 +1111,10 @@ class MicrosoftGraphClient(models.AbstractModel):
         params = {
             '$select': 'id,internetMessageId,internetMessageHeaders,conversationId,subject,from,'
                        'toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,isRead',
+            # Belt and braces on the threading headers; see
+            # HEADER_EXTENDED_PROPERTIES.
+            '$expand': 'singleValueExtendedProperties($filter=%s)'
+                       % HEADER_EXTENDED_PROPERTIES_FILTER,
         }
 
         try:

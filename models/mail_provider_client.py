@@ -134,6 +134,7 @@ HEADER_ALLOWLIST = frozenset({
     'in-reply-to',
     'references',
     'x-odoo-mail-id',
+    'x-odoo-message-id',
     'x-odoo-model',
     'x-odoo-record-id',
 })
