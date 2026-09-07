@@ -59,10 +59,12 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_setup.py` | The three mandatory setup steps and the phase (`setup` / `syncing`) they add up to |
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
-| `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect |
+| `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, and whether to nudge them |
+| `models/ir_http.py` | One session flag: does this user still have to connect a mailbox |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
+| `tests/test_connect_banner.py` | Who is asked to connect a mailbox, and who is left alone |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
 | `tests/test_mail_matcher.py` | Unit tests for the matching ladder |
 | `tests/test_imap_provider.py` | IMAP/SMTP client (fake imaplib/smtplib, no sockets) |
