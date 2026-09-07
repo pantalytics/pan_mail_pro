@@ -71,6 +71,20 @@ Both can be renamed later as isolated changes with their own migrations.
    final query must return exactly one row for `pan_mail_pro` in state
    `installed`. If anything else comes back, stop and restore the backup.
 
+   One of those counts, `ir_module_module.terp`, is about what the admin sees
+   rather than what works. `shortdesc`, `summary` and `description` are the copy
+   the Apps screen shows, and Odoo only re-reads them from the manifest when it
+   runs `update_list()` — an "Update Apps List", or a start with `-i`/`-u`. A
+   host that starts Odoo without either (odoo.sh does exactly that when the
+   module is not installed in that database) leaves the Apps screen advertising
+   "Outlook Pro" under the technical name `pan_mail_pro`, indefinitely. The
+   script now sets those columns itself.
+
+   **Already renamed and still seeing "Outlook Pro"?** Re-run the script. Every
+   statement is idempotent and the metadata one is keyed on the new name, so it
+   repairs a database that took an earlier version. Apps → Update Apps List with
+   developer mode on does the same thing from the UI.
+
 5. **Deploy the new code**, either through the suite (see
    `odoo-pantalytics-suite`) or by updating the module source directly.
 

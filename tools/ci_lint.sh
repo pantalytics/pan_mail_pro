@@ -85,18 +85,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-step "Boundary — anthropic imported only inside models/ai/"
-if grep -rn 'import anthropic\|from anthropic' --include='*.py' . | grep -v '^./models/ai/'; then
-    fail "The AI vendor SDK may only be imported inside models/ai/."
+# 19.0.7.0.0 removed the AI seam: its only caller was the triage queue, which
+# went in the same release. The check outlived the code on purpose — a removal
+# with no check behind it is a removal that comes back, and the way it would
+# come back is an import in whichever file happens to need a suggestion.
+step "Boundary — no AI vendor SDK anywhere in the module"
+if grep -rn 'import anthropic\|from anthropic' --include='*.py' .; then
+    fail "The module ships no AI feature; an AI vendor SDK may not be imported."
 else
-    echo "OK: AI vendor boundary intact."
-fi
-
-step "Boundary — no AI call inside the mail path"
-if grep -n 'get_ai_backend\|pan\.mail\.ai' models/pan_mail_fetcher.py models/mail_mail.py; then
-    fail "AI must never be called from the fetcher or the send path; a slow model call there stalls a mailbox."
-else
-    echo "OK: AI cannot block mail."
+    echo "OK: no AI vendor SDK."
 fi
 
 step "Boundary — provider SDKs stay inside models/providers/"
@@ -176,6 +173,26 @@ if missing:
     print("\n".join(f"  - {m}" for m in missing))
     sys.exit(1)
 print("All manifest data/asset files exist.")
+PY
+
+# ---------------------------------------------------------------------------
+step "Rename SQL advertises the manifest's own name"
+python3 - <<'PY' || fail "tools/rename_to_mail_pro.sql disagrees with __manifest__.py."
+import ast, re, sys
+# The rename script runs with Odoo stopped and cannot read the manifest, so it
+# carries the two Apps-screen strings as literals. This is the check that keeps
+# that copy honest: without it the rename would eventually advertise a name the
+# module has already dropped, which is the bug it exists to fix.
+manifest = ast.literal_eval(open('__manifest__.py').read())
+sql = open('tools/rename_to_mail_pro.sql').read()
+wrong = [f"{col} = {manifest[key]!r}"
+         for col, key in (('shortdesc', 'name'), ('summary', 'summary'))
+         if not re.search(rf"{col}\s*=\s*'{re.escape(manifest[key])}'", sql)]
+if wrong:
+    print("tools/rename_to_mail_pro.sql must set:")
+    print("\n".join(f"  - {w}" for w in wrong))
+    sys.exit(1)
+print("Rename SQL matches the manifest name and summary.")
 PY
 
 # ---------------------------------------------------------------------------

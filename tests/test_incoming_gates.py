@@ -12,10 +12,10 @@ silently:
    this list is what tells the two apart.
 2. **What each gate may assume.** A gate that resolves something for the ones
    after it -- the counterpart, the partner -- has to run before them.
-3. **Which refusals leave a trace.** Whether a refusal reaches
-   `pan.mail.item` is declared by the gate. Nothing else asserts that a gate
-   saying `record=True` actually records, or that the ones saying nothing stay
-   silent.
+3. **That a refusal is a refusal.** No gate may import the mail it turned
+   away, and none may leave a copy of it behind. 19.0.7.0.0 removed the triage
+   queue that made this a per-gate choice; the property it protected is the
+   same one, so the assertions stayed.
 
 Deliberately no provider anywhere: the ladder is fed a pre-seeded context, the
 way `_full_message()`'s cache allows. Gate behaviour is not a Graph question.
@@ -42,6 +42,13 @@ class TestIncomingGates(MailProTestCase):
         self.mailbox = self.personal_mailbox
         self.mailbox.write({'sync_mode': 'all'})
 
+    def _messages_on(self, partner):
+        """Chatter on a contact. A refused mail must not add to it, and must
+        not leave a copy of itself anywhere else either."""
+        return self.env['mail.message'].search_count([
+            ('model', '=', 'res.partner'), ('res_id', '=', partner.id),
+        ])
+
     def _ctx(self, folder=FOLDER_INBOX, **full):
         """A context with the full message pre-seeded, so no gate reaches out.
 
@@ -49,9 +56,8 @@ class TestIncomingGates(MailProTestCase):
         costing a provider round-trip; here it keeps the tests off the network.
         """
         full_message = {
-            # The normalized shape always carries this; `pan.mail.item` needs
-            # it and the column is NOT NULL, so a fixture without it tests a
-            # message no provider could produce.
+            # The normalized shape always carries this, so a fixture without
+            # it tests a message no provider could produce.
             'provider_message_id': 'X1',
             'message_id': INTERNET_ID,
             'date': '2026-02-01 10:30:00',
@@ -203,60 +209,55 @@ class TestIncomingGates(MailProTestCase):
 
         self.assertEqual(skip.reason, 'internal_domain')
 
-    def test_internal_mail_leaves_no_row_in_the_triage_queue(self):
+    def test_internal_mail_leaves_nothing_but_a_log_line(self):
         """The one refusal that must never be reversible: an Import button
         here would be a button for leaking. The log line carries the mailbox,
         the Message-ID and the reason, which is all that may be kept about a
         mail we declined to read."""
         ctx = self._ctx(FOLDER_SENT, to=[{'email': INTERNAL, 'name': 'Planning'}])
-        before = self.env['pan.mail.item'].search_count([])
+        before = self._messages_on(self.external_partner)
 
         skip = self.processor._refuse(ctx)
 
-        self.assertFalse(skip.record)
-        self.assertEqual(self.env['pan.mail.item'].search_count([]), before)
+        self.assertEqual(skip.reason, 'internal_domain')
+        self.assertEqual(self._messages_on(self.external_partner), before)
 
     def test_a_forced_import_still_lifts_the_internal_filter(self):
-        """An operator re-importing a held item lifts the filters. Unchanged
-        by this rule, and deliberately not extended to the guards that are not
-        filters: duplicates, Odoo's own mail, a blocked contact."""
+        """`force_import` lifts the filters. Deliberately not extended to the
+        guards that are not filters: duplicates, Odoo's own mail, a blocked
+        contact."""
         ctx = self._ctx(FOLDER_SENT, to=[{'email': INTERNAL, 'name': 'Planning'}])
         ctx['force_import'] = True
 
         self.assertIsNone(self.processor._gate_internal_domain(ctx))
 
     # ------------------------------------------------------------------ #
-    # Which refusals leave a trace
+    # A refusal is a refusal
     # ------------------------------------------------------------------ #
-    def test_a_recording_refusal_reaches_the_triage_queue(self):
-        """An unknown contact is a decision a person may want to reverse."""
+    def test_an_unknown_sender_is_refused_not_held(self):
+        """A mailbox on `known_partners` leaves the mail where it is. There is
+        no queue it waits in; widening the sync mode is how that answer
+        changes."""
         self.mailbox.write({'sync_mode': 'known_partners'})
         ctx = self._ctx()
         ctx['full_message']['from'] = {'email': 'stranger@nowhere.test', 'name': ''}
-        before = self.env['pan.mail.item'].search_count([])
 
         skip = self.processor._refuse(ctx)
 
         self.assertEqual(skip.reason, 'unknown_contact')
-        self.assertTrue(skip.record)
-        self.assertEqual(
-            self.env['pan.mail.item'].search_count([]), before + 1,
-            "a refusal declaring record=True must actually record",
-        )
 
-    def test_a_silent_refusal_leaves_nothing_behind(self):
-        """The block list is an objection to processing, so a queue row naming
-        the person would itself be processing."""
+    def test_a_blocked_contact_leaves_nothing_behind(self):
+        """The block list is an objection to processing, so any row naming the
+        person would itself be processing."""
         self.external_partner.x_email_sync_blocked = True
         ctx = self._ctx()
-        before = self.env['pan.mail.item'].search_count([])
+        before = self._messages_on(self.external_partner)
 
         skip = self.processor._refuse(ctx)
 
         self.assertEqual(skip.reason, 'blocked_contact')
-        self.assertFalse(skip.record)
         self.assertEqual(
-            self.env['pan.mail.item'].search_count([]), before,
+            self._messages_on(self.external_partner), before,
             "a blocked contact must leave no trace at all",
         )
 
@@ -275,8 +276,9 @@ class TestIncomingGates(MailProTestCase):
     def test_a_clean_message_passes_the_whole_ladder(self):
         self.assertIsNone(self.processor._refuse(self._ctx()))
 
-    def test_skip_defaults_to_leaving_no_trace(self):
-        """The safe default: a new gate records only if it says so."""
+    def test_skip_defaults_to_a_visible_refusal(self):
+        """The safe default: a new gate is logged at INFO unless it says
+        otherwise. Only the duplicate gate is allowed to be quiet."""
         skip = Skip('some_reason')
-        self.assertFalse(skip.record)
+        self.assertEqual(skip.detail, '')
         self.assertFalse(skip.quiet)

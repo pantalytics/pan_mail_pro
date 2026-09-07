@@ -16,7 +16,7 @@ ARCHITECTURE.md §12 voor wat daar al staat.
 > stuurt niets door.
 >
 > **Wat CI inmiddels afdekt** (en hier dus niet meer handmatig hoeft):
-> 440 tests, de provider- en AI-contracten, de volledige inkomende pijplijn op
+> de tests, het providercontract, de volledige inkomende pijplijn op
 > Graph- én Gmail-data, en sinds #18 het **upgradepad vanaf de vorige release**
 > — een echte install van de vorige tag, dan `-u` met de migratiescripts en de
 > suite eroverheen. Wat hieronder staat is bewust alleen het restant dat een
@@ -178,19 +178,20 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
       `fallback`, `sent_item`
 - [ ] `needs_review` staat aan bij `fallback` en bij `created` mét kandidaten —
       en **niet** bij een gewoon gethreade mail of een sent item
-- [ ] **Triage**: een mail van een onbekende afzender op een mailbox met
-      "hou onbekende afzenders vast" belandt in de wachtrij, mét onderwerp maar
-      **zonder** body in de database; de body wordt pas bij openen opgehaald
-- [ ] Een geblokkeerd contact (`x_email_sync_blocked`) komt **niet** in de
-      triage-wachtrij terecht — ook de metadata niet
 - [ ] **Link Coverage** geeft plausibele aantallen over 30/90/365 dagen
 
-### AI staat uit (19.0.4.0.0)
-- [ ] Zonder API-key: geen enkele AI-aanroep, geen fouten, module gedraagt zich
-      alsof de functie er niet is
-- [ ] Met key: een suggestie verschijnt op een triage-item, maar routeert niets
-      automatisch (`routing_smart` blijft dicht)
-- [ ] Uitgaande mail en de inkomende cron worden nooit vertraagd door AI
+### Triage en AI zijn weg (19.0.7.0.0)
+- [ ] Na de upgrade bestaat de tegel **Communication** op het beginscherm niet
+      meer; All Communication, Link Coverage, Internal Domains en Mail Routing
+      staan onder Settings → Technical → Email
+- [ ] Een mail van een onbekende afzender op een mailbox met sync-modus
+      "alleen bestaande contacten" wordt geweigerd. In het log staat één regel
+      met de mailbox, de Message-ID en `unknown_contact`; er wordt niets
+      opgeslagen
+- [ ] Zet de mailbox op "van iedereen" en sync opnieuw: dezelfde mail komt
+      alsnog binnen. Dit is de vervanger van de triage-wachtrij
+- [ ] `pan_mail_item` bestaat niet meer als tabel, en er zijn geen
+      AI-cronjobs of AI-modellen over
 
 ### Originele maildatum (19.0.5.0.1, issue #1)
 - [ ] Zet **Import From** op een datum ver terug en laat historische mail

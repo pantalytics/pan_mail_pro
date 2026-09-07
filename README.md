@@ -30,8 +30,6 @@ Odoo - send and receive with full control.
 - "All" sync mode with per-contact routing rules
 - Per-contact block list to exclude specific senders
 - New emails create CRM Leads with activity for mailbox owner
-- Triage queue for mail that could not be filed anywhere, with an optional
-  AI suggestion (off by default, your own API key, envelope only)
 
 **Security:**
 - OAuth 2.0 with delegated permissions only (least privilege)
@@ -223,15 +221,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
 
 ## Where mail lands
 
-Once mail is flowing, four screens tell you whether it is going where you
-expect:
+Once mail is flowing, three screens under **Settings → Technical → Email**
+tell you whether it is going where you expect:
 
 | Screen | Question it answers |
 |--------|--------------------|
-| **Communication → All Communication** | Every mail, with the document it landed on |
-| **Communication → Link Coverage** | How much of it lands on a document at all |
-| **Communication → Triage** | What reached Odoo but was filed nowhere |
-| **Settings → Technical → Email → Mail Routing** | Which rule placed each mail, and what it rejected |
+| **All Communication** | Every mail, with the document it landed on |
+| **Link Coverage** | How much of it lands on a document at all |
+| **Mail Routing** | Which rule placed each mail, and what it rejected |
 
 The Mail Routing log flags two cases for review: mail that fell back to a
 contact's chatter (delivered, but nobody is looking there), and mail that
@@ -260,6 +257,6 @@ docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
 docker-compose start odoo
 ```
 
-28 test files cover four areas: the provider and AI contracts, each provider's
+34 test files cover four areas: the provider contract, each provider's
 wire behaviour, the incoming pipeline (fetch → filter → match → post), and
 sending, threading, the composer and onboarding. See ARCHITECTURE.md §12.

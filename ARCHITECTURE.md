@@ -59,7 +59,7 @@ Naming rules that follow:
   rows since 19.0.6.5.0, keyed by the `provider` field instead of the key name.
 - Log tags name the flow or the vendor, never both: `[Outgoing Mail]`,
   `[Incoming Mail]`, `[Mail Matcher]`, `[OAuth]`, `[Graph API]`,
-  `[Gmail API]`, `[IMAP]`, `[SMTP]`, `[Mail AI]`, `[Encryption]`, and
+  `[Gmail API]`, `[IMAP]`, `[SMTP]`, `[Encryption]`, and
   `[Mail Pro]` for setup and housekeeping.
 
 The names read `microsoft.*` and `x_microsoft_*` until 19.0.6.0.0, from the
@@ -123,7 +123,7 @@ Providers disagree about sending as somebody else, which is why
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
 | `pan.mail.provider` | One row per provider's application registration, `in_use` naming the one in use. Has its own list under Settings → Technical → Email |
-| `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Communication → Configuration |
+| `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email |
 | `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
 | `res.config.settings` | The setup checklist — three lines, each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
@@ -152,16 +152,13 @@ Providers disagree about sending as somebody else, which is why
 | Model | Purpose |
 |-------|---------|
 | `pan.mail.routing.log` | One row per delivered mail: rule, confidence, rejected candidates |
-| `pan.mail.item` | Triage queue for mail that reached Odoo but landed nowhere |
 | `pan.mail.coverage` | Transient report: how much mail actually lands on a document |
 
-**AI (opt-in, off by default)**
-
-| Model | Purpose |
-|-------|---------|
-| `pan.mail.ai` | The AI contract (abstract) + backend registry |
-| `pan.mail.ai.null` | The default. A real backend that returns nothing |
-| `pan.mail.ai.claude` | Claude backend — the only place an AI SDK may be imported |
+Every screen the module ships lives under Settings → Technical → Email.
+19.0.4.0.0 gave it a "Communication" application of its own on the home
+screen; 19.0.7.0.0 took it back. What it held was one read-only lens and a
+queue, which is not an application, and a tile on the home screen invites
+daily use of a diagnostic view.
 
 `pan.mail.account` holds the credentials that used to live on `res.users`. An
 account with a `user_id` is a person's own connection; an account with none is a
@@ -179,9 +176,6 @@ pan_mail_pro/
 │   │   ├── google/gmail_client.py
 │   │   ├── imap_smtp/imap_client.py
 │   │   └── mime_utils.py          # Outgoing MIME, shared by the two MIME senders
-│   ├── ai/                        # The only place an AI SDK may be imported
-│   │   ├── pan_mail_ai.py         # Contract + registry + null backend
-│   │   └── claude/claude_backend.py
 │   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
 │   ├── pan_mail_account.py        # Per-address credentials
 │   ├── pan_mail_provider.py       # Per-provider application registration + in-use flag
@@ -191,7 +185,6 @@ pan_mail_pro/
 │   ├── pan_mail_matcher.py        # Thread matching rule ladder
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
 │   ├── pan_mail_routing_log.py
-│   ├── pan_mail_item.py           # Triage queue
 │   ├── pan_mail_coverage.py       # Coverage report (TransientModel)
 │   ├── mail_mail.py               # Outgoing override + route resolution
 │   ├── mail_message.py            # Threading keys + communication lens
@@ -329,12 +322,10 @@ could disagree with the one field that decided. Code asks
 allow-list, so an unset value means "do not import" rather than "import
 everything".
 
-Two booleans remain, and neither is a mode:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `routing_smart` | Boolean | Interlock keeping AI auto-routing off. See §8 |
-| `queue_unknown_contacts` | Boolean | Hold unknown senders in the triage queue |
+Nothing qualifies it any more. `routing_smart` (the interlock that kept AI
+auto-routing off) and `queue_unknown_contacts` (hold unknown senders in the
+triage queue) went with the features they guarded in 19.0.7.0.0, so the mode
+is now the whole answer to "what does this mailbox import?".
 
 ### Internal domains are a gate, not a preference
 
@@ -398,12 +389,13 @@ the `To`. It collects the candidates and gate 4 chooses among them, so the whole
 internal decision sits in one place rather than being split by direction — which
 is how gate 4 came to guard one folder and not the other.
 
-Whether a refusal reaches `pan.mail.item` is declared by the gate, because it
-is a property of the refusal. Gate 7 records: an unknown contact is a decision
-a person may want to reverse, and the queue is where they reverse it. The
-others refuse things nobody wants back — and gate 5 must leave no trace at all,
-since a block list is an objection to processing and a queue row naming the
-person would be processing.
+A refusal leaves a log line and nothing else. 19.0.7.0.0 removed the queue a
+gate could file into, which had made "does this refusal leave a trace?" a
+per-gate choice; the property that choice protected is unconditional now.
+Gate 5 in particular must leave no trace at all, since a block list is an
+objection to processing and any row naming the person would be processing.
+A mail refused for its sender comes in later by widening the mailbox's sync
+mode, which re-reads it from the provider.
 
 Adding a rule means adding a method and a line to `_gate_rules()`. Before this
 existed the seven decisions were bare `return False` statements strewn through
@@ -454,12 +446,12 @@ is not logged, so a real customer mail goes missing. That is a completeness
 loss; the reverse error, logging internal mail, is a confidentiality loss. A
 rule this blunt errs somewhere, and it errs toward silence.
 
-**A mail with no external counterpart leaves a log line, not a queue row.**
-`pan.mail.item` is the queue of skips a person can reverse, and internal mail is
-the one refusal that must never be reversible: an Import button there would be a
-button for leaking. The refusal the ladder logs carries the mailbox, the
-Message-ID, the reason and the time — enough to answer why a mail is missing
-from Odoo, and as much as may be kept about a mail we declined to read.
+**A mail with no external counterpart leaves a log line and nothing else.**
+Internal mail is the one refusal that must never be reversible: an Import
+button for it would be a button for leaking. The refusal the ladder logs
+carries the mailbox, the Message-ID, the reason and the time — enough to answer
+why a mail is missing from Odoo, and as much as may be kept about a mail we
+declined to read.
 
 ### The four paths
 
@@ -532,7 +524,7 @@ copy sends from Outlook.
 
 `res.partner.x_email_sync_blocked` excludes a contact from all mailbox sync,
 regardless of routing settings. It is treated as an objection to processing:
-blocked mail is skipped and **not** recorded in the triage queue.
+blocked mail is skipped and leaves no record anywhere.
 
 ---
 
@@ -675,7 +667,7 @@ client.fetch_messages(folder, since_datetime, limit)
       │
       ▼
 Pre-filters: duplicate, Odoo-originated, internal domain, block list, sync mode
-  (skips that a customer might want to reverse → pan.mail.item; see §7)
+  (a refusal is one log line naming the gate; nothing is stored — see §3)
       │
       ▼
 pan.mail.matcher.match(message, mailbox, partner)
@@ -772,23 +764,25 @@ Delivery is unchanged. A log that is wrong costs a confusing row; a queue that
 is wrong costs a customer an answer. A daily cron drops rows past
 `pan_mail_pro.routing_log_retention_days` (default 90) unless still flagged.
 
-### `pan.mail.item` — what reached Odoo but landed nowhere?
+### No queue for what landed nowhere
 
-`_process_message()` used to drop mail in five places with nothing but a log
-line. Three of those are correct and final; two are a decision the customer
-would want to see and possibly reverse. Two rules shape the model:
+19.0.4.0.0 answered "what reached Odoo but landed nowhere?" with
+`pan.mail.item`, a queue of refused mail a person could review and import.
+19.0.7.0.0 removed it. Two things it could not get past:
 
-**Nothing is queued that was filtered on purpose.** A blocked contact is an
-objection to processing, and storing that mail in a new table inverts what the
-flag means. Mail between internal users has no document context and no document
-ACL to inherit. Internal-domain mail was excluded by configuration. None of
-these become records here — not even their metadata.
+**It was a copy of somebody's correspondence outside every document ACL.** A
+triage row inherits no document's access rules, because it has no document —
+so the table needed a rule of its own, and the only arrangement that could not
+leak was mailbox managers and nobody else. That is not a queue a team works.
 
-**No body, no attachments.** The provider stays the source of truth; the body is
-re-fetched when someone opens the item. That keeps the table small, keeps a
-second copy of every email out of the database, and keeps the erasure surface to
-metadata that expires on its own. Above `MAX_PENDING_PER_MAILBOX` (50 000)
-pending items recording stops — a queue nobody works is a disk-space bug.
+**Nobody worked it.** The refusals worth reversing are the ones a mailbox on
+`known_partners` turned away, and the fix a customer actually wants there is
+"import from anyone", which is one field on the mailbox and re-reads the mail
+from the provider. A backlog is the long way round to the same answer.
+
+What remains is the log line the gate ladder writes, which carries the mailbox,
+the Message-ID, the gate and the reason (§3). That answers "why is this mail
+not in Odoo" without keeping a copy of a mail we declined to read.
 
 ### `pan.mail.coverage` — is any of this working?
 
@@ -811,45 +805,35 @@ indexes so the index stays off the note and log rows that are the vast majority.
 
 ---
 
-## 8. The AI seam
+## 8. No AI seam
 
-AI is a second seam shaped exactly like the provider seam, for the same reason:
-one abstract contract (`pan.mail.ai`), a registry, and a rule that only an
-implementation knows what a vendor's API looks like. Three properties are
-enforced by tests and by CI greps, not by convention:
+19.0.4.0.0 shipped a second seam shaped like the provider seam: an abstract
+`pan.mail.ai` contract, a registry, a null backend, and a Claude implementation
+behind a CI grep that kept the vendor SDK inside `models/ai/`. It was good
+shape. It had one caller, the triage queue's classification cron, and when that
+queue went in 19.0.7.0.0 the seam had none.
 
-- **Opt-in by data.** `none` is a real backend that returns nothing. An
-  unconfigured database behaves as though the feature were absent.
-- **AI cannot block mail.** It is never called from `mail.mail.send()` or
-  `_process_message()` — those run in a one-minute cron inside a savepoint,
-  where a twenty-second model call would stall a mailbox and a failure would
-  roll the message back. A separate cron enriches records that already exist.
-- **AI may rank, never invent.** The candidate shortlist is built by
-  deterministic matching; a suggestion naming anything else is discarded.
+A seam with no caller is not an extension point, it is code that compiles. It
+carried four models, an API key in the database, a data-disclosure paragraph in
+the manifest and a boolean on every mailbox whose only job was to stay False.
+That is a standing cost against a feature nobody had asked to switch on.
 
-Bring-your-own-key: the call goes from the customer's Odoo straight to the
-provider. Pantalytics never proxies it, which is what keeps the manifest's
-data-disclosure statement true and keeps Pantalytics out of every customer's
-processor chain. Only an envelope is sent — subject, sender, recipient, date and
-a shortlist of candidate record names — never a body or an attachment.
+**Where it would go back.** In the matcher, as one more rule at the bottom of
+`_match_rules()` — never in rules 1 to 3, where a `References` chain is exact,
+free and reproducible and a language model would make a solved problem
+probabilistic. The ambiguous residue is where it earns its place: a customer
+who starts a fresh mail instead of replying, a known contact with three open
+tickets. Running last means it is only ever asked about mail the deterministic
+rules could not place, which is what would keep it affordable on a one-minute
+cron.
 
-**Why AI is absent from matcher rules 1–3.** A `References` chain is exact, free
-and reproducible, and a language model would make a solved problem
-probabilistic. The ambiguous residue — a customer who starts a fresh mail
-instead of replying, a known contact with three open tickets — is where it earns
-its place, and it plugs in as one more rule by overriding `_match_rules()`.
-Running last means it is only ever asked about mail the deterministic rules
-could not place, which is what keeps it affordable on a one-minute cron.
-
-Auto-routing stays shut behind the `routing_smart` constraint until there is
-evidence from real suggestions that it should open.
-
-**Not shipped yet.** The seam exists; the feature does not. The settings page
-has no AI section, so `pan_mail_pro.ai_backend` stays at `none` unless somebody
-writes the config parameter by hand, and the enrichment cron ships inactive.
-That is deliberate: setup is the thing to get right first, and a configurable
-half-feature is a support burden with no user. Putting the section back is a
-view change, not a rewrite.
+Three properties any return has to keep, because they are why the seam was
+shaped that way in the first place: an unconfigured database must behave as
+though the feature were absent; AI must never be reachable from
+`mail.mail.send()` or `_process_message()`, which run in a one-minute cron
+inside a savepoint where a slow call stalls a mailbox and a failure rolls the
+message back; and a suggestion naming anything outside a deterministically
+built shortlist is discarded. Bring-your-own-key, envelope only, never a body.
 
 ---
 
@@ -1190,7 +1174,6 @@ For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 | Token storage | Encrypted at rest (Fernet) |
 | Token refresh | Automatic |
 | Data egress | Provider APIs only. Nothing goes to Pantalytics |
-| AI | Off by default; customer's own key; envelope only, never bodies |
 
 ---
 
@@ -1241,7 +1224,6 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 | `[Mail Matcher]` | Thread matching and the two indexes |
 | `[OAuth]` | Authentication callbacks |
 | `[Graph API]` / `[Gmail API]` / `[IMAP]` / `[SMTP]` | Inside one provider client only |
-| `[Mail AI]` | The AI seam |
 | `[Encryption]` | Credential encryption |
 | `[Mail Pro]` | Setup, migrations, housekeeping |
 
@@ -1253,9 +1235,9 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 
 | Group | Files | What they hold |
 |-------|-------|----------------|
-| Contracts | `test_provider_contract.py`, `test_ai_contract.py` | Every provider/backend answers the contract identically |
+| Contracts | `test_provider_contract.py` | Every provider answers the contract identically |
 | Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_pan_mail_provider.py` | Wire-level behaviour per vendor, and the credential rows behind them |
-| Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_mail_matcher.py`, `test_routing_log.py`, `test_mail_item.py` | Fetch → filter → match → post |
+| Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_mail_matcher.py`, `test_routing_log.py` | Fetch → filter → match → post |
 | Sending & UI | `test_outgoing_*.py`, `test_compose_*.py`, `test_mailbox_*.py`, `test_setup_flow.py`, `test_onboarding.py` | Routing, threading, composer, permissions, onboarding |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py` | The scripts in `migrations/`, run against real rows |
 

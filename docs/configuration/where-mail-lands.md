@@ -3,12 +3,12 @@
 Syncing email into Odoo is only half the job. The other half is being able to
 answer "where did that email go?" — and to notice when the answer is wrong.
 
-Mail Pro gives you four screens for this. Three of them live under the
-**Communication** menu; the fourth is in the technical settings.
+Mail Pro gives you three screens for this, all under
+**Settings → Technical → Email**.
 
 ## All Communication
 
-**Communication → All Communication**
+**Settings → Technical → Email → All Communication**
 
 Every email Mail Pro has sent or received, in one list, with the thing standard
 Odoo cannot show you: which document each message ended up on, and which mailbox
@@ -25,7 +25,7 @@ correspondence.
 
 ## Link Coverage
 
-**Communication → Link Coverage**
+**Settings → Technical → Email → Link Coverage**
 
 The single number that says whether any of this is working: of all the mail that
 came through, how much actually landed on a document rather than just on a
@@ -47,30 +47,6 @@ team.
 This report is calculated inside your own database and nothing about it is sent
 anywhere. It is a question you ask, not a history that is stored, so the numbers
 cannot go stale.
-
-## Triage
-
-**Communication → Triage**
-
-Mail that reached Odoo but was not filed anywhere — most often an email from a
-sender who is not yet a contact, on a mailbox configured to hold those for
-review.
-
-From an item you can create the contact, file the mail where it belongs, or
-discard it.
-
-**What is deliberately *not* here.** Mail that was filtered on purpose never
-becomes a triage item — not even its metadata:
-
-- A contact you blocked. Blocking is an objection to processing that mail;
-  storing it in a new table would invert what the setting means.
-- Mail between colleagues. It has no document context and no document
-  permissions to inherit.
-- Mail from your own internal domains. You excluded it by configuration.
-
-The queue also stores no bodies and no attachments. The item is metadata; the
-body is fetched from your mail provider when you open it. That keeps a second
-copy of your email out of the database.
 
 ## Mail Routing log
 
