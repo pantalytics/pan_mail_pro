@@ -69,6 +69,29 @@ class ResConfigSettings(models.TransientModel):
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
 
+    # -------------------------------------------------------------------------
+    # About
+    # -------------------------------------------------------------------------
+    x_module_version = fields.Char(
+        string='Version',
+        compute='_compute_module_version',
+        help='The version of Mail Pro this database is running.',
+    )
+
+    def _compute_module_version(self):
+        """The version the database is actually on, not the one in the source.
+
+        `installed_version` is what `ir.module.module` recorded at the last
+        upgrade. On an instance that pulled new code without a version bump the
+        two differ, and the one that explains the behaviour on screen is this
+        one. It is also the first thing to ask for in a support mail, which is
+        why it is on the page rather than three clicks into Apps.
+        """
+        version = self.env['ir.module.module'].sudo().search(
+            [('name', '=', 'pan_mail_pro')], limit=1).installed_version
+        for record in self:
+            record.x_module_version = version or ''
+
     def get_values(self):
         """Seed the domains tag field from the stored rows.
 

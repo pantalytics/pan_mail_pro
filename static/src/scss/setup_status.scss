@@ -103,3 +103,9 @@
         margin-left: auto;
     }
 }
+
+// About. The licence claim is a paragraph, not a field value: capped so it
+// wraps at a readable length instead of running the width of the window.
+.o_mailpro_about {
+    max-width: 46rem;
+}

@@ -115,14 +115,29 @@
 
                     <h2>About</h2>
                     <!-- No left/right pane: an empty left pane draws a divider
-                         beside a single link, which reads as a missing field. -->
+                         beside a single link, which reads as a missing field.
+
+                         The version is the first thing a support mail has to
+                         answer, and the licence claim belongs where anyone
+                         using the module can read it — not in the tooltip it
+                         used to hide in. -->
                     <div class="row mt-3 o_settings_container">
-                        <div class="col-12 o_setting_box">
-                            <a href="https://pantalytics.gitbook.io/pantalytics-docs/" target="_blank">
-                                <i class="fa fa-external-link me-1" title="Documentation"/>Documentation
-                            </a>
-                            <i class="fa fa-info-circle text-muted ms-1"
-                               title="© Pantalytics B.V. All rights reserved. This software is proprietary and confidential. Unauthorized copying, modification, distribution, or use of this module, in whole or in part, is strictly prohibited and may result in legal action. Protected under international copyright and trade secret law."/>
+                        <div class="col-12 o_setting_box o_mailpro_about">
+                            <div>
+                                <span class="o_form_label">Mail Pro</span>
+                                <field name="x_module_version" nolabel="1" readonly="1" class="ms-1"/>
+                            </div>
+                            <div class="text-muted">
+                                © Pantalytics B.V. All rights reserved. Proprietary and
+                                confidential software, licensed and not sold. Copying,
+                                modification or distribution outside the terms of your
+                                licence agreement is prohibited.
+                            </div>
+                            <div class="mt-2">
+                                <a href="https://pantalytics.gitbook.io/pantalytics-docs/" target="_blank">
+                                    <i class="fa fa-external-link me-1" title="Documentation"/>Documentation
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </app>
