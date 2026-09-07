@@ -219,6 +219,31 @@ class ResUsers(models.Model):
             },
         }
 
+    def action_test_send_mailbox(self):
+        """Send a test email from this user's own sending address, to themselves.
+
+        The one moment this answers is the moment after a user comes back from
+        the consent screen: the grant proves Odoo may act on their behalf, and
+        proves nothing about whether mail leaves. Sending from their own
+        mailbox is the only thing that does.
+
+        Only ever your own. An administrator pressing this on somebody else's
+        user form would be asking to send from that person's personal mailbox,
+        which `_is_sendable_by` refuses anyway — better to say so here than to
+        offer a button that always fails.
+        """
+        self.ensure_one()
+        if self != self.env.user:
+            raise UserError(_(
+                'A test email can only be sent from your own mailbox. Ask '
+                '%s to press this on their own profile.'
+            ) % self.name)
+        if not self.x_default_mailbox_id:
+            raise UserError(_(
+                'Pick the address you send from first, then send the test.'
+            ))
+        return self.x_default_mailbox_id.action_test_send()
+
     # -------------------------------------------------------------------------
     # Asking users to connect
     # -------------------------------------------------------------------------

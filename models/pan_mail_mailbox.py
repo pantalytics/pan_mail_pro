@@ -327,17 +327,12 @@ class PanMailMailbox(models.Model):
                 'error_message': False,
             })
 
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Connection Successful'),
-                    'message': _('Successfully connected to mailbox %s. Found %d message(s) in test.') % (
-                        self.email, len(messages)),
-                    'type': 'success',
-                    'sticky': False,
-                }
-            }
+            return self._test_notification(
+                _('Connection Successful'),
+                _('Successfully connected to mailbox %s. Found %d message(s) in test.') % (
+                    self.email, len(messages)),
+                'success',
+            )
 
         except Exception as e:
             self.write({
@@ -345,16 +340,103 @@ class PanMailMailbox(models.Model):
                 'error_message': str(e),
             })
 
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Connection Failed'),
-                    'message': str(e),
-                    'type': 'danger',
-                    'sticky': True,
-                }
-            }
+            return self._test_notification(
+                _('Connection Failed'), str(e), 'danger', sticky=True)
+
+    def action_test_send(self):
+        """Prove that mail actually leaves this mailbox, by sending one.
+
+        The two tests next to this one read: `action_test_connection` asks the
+        provider whether the credentials still work, `action_test_incoming`
+        fetches a message. Neither says anything about *sending*, and sending
+        is where a mailbox fails silently — a missing send scope, a SendAs
+        permission that was never granted, an SPF or DMARC record that rejects
+        the address. A consent screen the user just came back from proves none
+        of those.
+
+        **It always goes to whoever pressed the button, never to the mailbox's
+        own address.** A mail addressed to the mailbox comes straight back in
+        through the sync, which is a routing log entry and possibly a record
+        created by a test. Sending it to the person instead also makes the
+        result a thing a human can judge: it arrived, or it did not.
+
+        On a personal mailbox that person *is* the owner, because
+        `_is_sendable_by` lets nobody else send from one. So there is no
+        per-type rule here: one recipient, and the sender boundary decides who
+        may ask.
+
+        The whole attempt is one savepoint. A failed test must not leave a
+        `mail.mail` behind in the queue, where the cron would retry it and
+        deliver a test email minutes later out of nowhere.
+        """
+        self.ensure_one()
+
+        # "You may not do this" is raised; "it did not work" is reported below.
+        # A refusal is something the reader can act on, and it is the same rule
+        # `_mailbox_route` enforces again at send time — asked here so the
+        # button says so instead of failing through the provider.
+        if not self._is_sendable_by(self.env.user):
+            raise UserError(_(
+                'You cannot send from %s. A personal mailbox can only be used '
+                'by its owner.'
+            ) % self.email)
+
+        recipient = self.env.user.email
+        if not recipient:
+            raise UserError(_(
+                'Your user has no email address, so there is nowhere to send '
+                'the test. Add one under My Profile and try again.'
+            ))
+
+        try:
+            with self.env.cr.savepoint():
+                # sudo: an ordinary internal user has no create access on
+                # `mail.mail` (the composer creates theirs through
+                # `message_post`). The sender boundary is the check above and
+                # `_mailbox_route`'s, not this ACL.
+                mail = self.env['mail.mail'].sudo().create({
+                    'subject': _('Mail Pro test email'),
+                    'body_html': _(
+                        '<p>This is a test email from Odoo, sent through '
+                        '<strong>%(mailbox)s</strong>.</p>'
+                        '<p>You are reading it, so this mailbox can send.</p>',
+                        mailbox=self.email,
+                    ),
+                    'email_from': self.email,
+                    'email_to': recipient,
+                    'author_id': self.env.user.partner_id.id,
+                    'x_send_from_mailbox_id': self.id,
+                })
+                # raise_exception, so the reason arrives here rather than being
+                # written to a row this savepoint is about to roll back.
+                mail.send(raise_exception=True)
+        except Exception as e:
+            _logger.warning(
+                "[Outgoing Mail] Test send from %s failed: %s", self.email, e)
+            return self._test_notification(
+                _('Test Email Failed'), str(e), 'danger', sticky=True)
+
+        return self._test_notification(
+            _('Test Email Sent'),
+            _('Sent from %(mailbox)s to %(recipient)s. If it does not arrive, '
+              'the problem is delivery rather than Odoo.',
+              mailbox=self.email, recipient=recipient),
+            'success',
+        )
+
+    @staticmethod
+    def _test_notification(title, message, kind, sticky=False):
+        """The display_notification the test buttons hand back."""
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': title,
+                'message': message,
+                'type': kind,
+                'sticky': sticky,
+            },
+        }
 
     def action_sync_now(self):
         """Manually trigger email sync for this mailbox."""

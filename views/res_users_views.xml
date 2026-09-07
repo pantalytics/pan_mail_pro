@@ -93,9 +93,13 @@
                                options="{'no_create': True, 'no_open': True}"/>
                         <div colspan="2">
                             <button type="object"
+                                    name="action_test_send_mailbox"
+                                    string="Send Test Email"
+                                    class="btn-secondary" icon="fa-paper-plane"/>
+                            <button type="object"
                                     name="action_disconnect_mailbox"
                                     string="Disconnect"
-                                    class="oe_link text-danger"
+                                    class="oe_link text-danger ms-3"
                                     confirm="Odoo will stop sending and receiving mail for this account until you connect it again."/>
                         </div>
                     </group>
