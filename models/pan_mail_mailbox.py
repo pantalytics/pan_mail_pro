@@ -4,7 +4,6 @@ import re
 from odoo import fields, models, api, _
 from odoo.exceptions import ValidationError, UserError
 from .mail_provider_client import (
-    DEFAULT_PROVIDER,
     FOLDER_INBOX,
     PROVIDER_SELECTION,
     get_provider_client,
@@ -33,11 +32,14 @@ class PanMailMailbox(models.Model):
     _rec_name = 'email'
 
     # Every mailbox is serviced by exactly one provider client, resolved
-    # through the registry in mail_provider_client.py.
+    # through the registry in mail_provider_client.py. It is inherited from
+    # `pan.mail.provider`, not asked: the database runs on one provider, so a
+    # picker on the mailbox form was a question whose answer was already known
+    # and whose only other answers were wrong.
     provider = fields.Selection(
         PROVIDER_SELECTION,
         string='Provider',
-        default=DEFAULT_PROVIDER,
+        default=lambda self: self.env['pan.mail.provider'].current_code(),
         required=True,
         help='Email provider that services this mailbox.',
     )

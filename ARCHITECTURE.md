@@ -120,9 +120,9 @@ Providers disagree about sending as somebody else, which is why
 
 | Model | Purpose |
 |-------|---------|
-| `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider`) |
+| `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider` — inherited from `pan.mail.provider.current_code()`, never asked on the form) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
-| `pan.mail.provider` | The application registration of the provider this database runs on. One row; has its own list under Settings → Technical → Email |
+| `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email |
 | `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
 | `res.config.settings` | The setup checklist — three lines, each a link to the table that answers it. Holds no credentials of its own |

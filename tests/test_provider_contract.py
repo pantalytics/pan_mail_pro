@@ -90,6 +90,29 @@ class TestProviderRegistry(TransactionCase):
         self.assertEqual(mailbox.provider, DEFAULT_PROVIDER)
         self.assertEqual(mailbox._get_client().provider_code(), DEFAULT_PROVIDER)
 
+    def test_new_records_inherit_the_database_provider(self):
+        """Nobody picks a provider per mailbox: the database has one.
+
+        Before this, a mailbox created on a Gmail database defaulted to
+        Microsoft 365 unless the admin noticed the dropdown and changed it —
+        a wrong answer to a question that was already answered in Settings.
+        """
+        self.env['pan.mail.provider'].search([]).unlink()
+        self.env['pan.mail.provider'].create({'provider': 'gmail'})
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'inherits@company.test',
+            'mailbox_type': 'shared',
+        })
+        self.assertEqual(mailbox.provider, 'gmail')
+        account = self.env['pan.mail.account'].create({'email': 'inherits@company.test'})
+        self.assertEqual(account.provider, 'gmail')
+
+    def test_provider_falls_back_before_setup(self):
+        """No provider row yet is the install-day state, not an error."""
+        self.env['pan.mail.provider'].search([]).unlink()
+        self.assertEqual(
+            self.env['pan.mail.provider'].current_code(), DEFAULT_PROVIDER)
+
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')
 class TestProviderCapabilities(TransactionCase):

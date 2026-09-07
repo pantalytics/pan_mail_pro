@@ -35,6 +35,7 @@ from odoo.exceptions import UserError, ValidationError
 
 from . import encryption_utils
 from .mail_provider_client import (
+    DEFAULT_PROVIDER,
     OAUTH_CALLBACK_PATHS,
     PROVIDER_SELECTION,
     get_provider_client,
@@ -268,6 +269,16 @@ class PanMailProvider(models.Model):
         repeated across the module.
         """
         return self.sudo().search([], limit=1)
+
+    @api.model
+    def current_code(self):
+        """The provider code a new mailbox or account belongs to.
+
+        A database runs on one provider, so asking again on every mailbox is a
+        question with one possible answer. `DEFAULT_PROVIDER` is the fallback
+        for the window before setup, where nothing has said yet.
+        """
+        return self.current().provider or DEFAULT_PROVIDER
 
     @api.constrains('provider')
     def _check_single_row(self):
