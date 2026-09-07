@@ -14,13 +14,22 @@
                     <field name="x_setup_notification_done" invisible="1"/>
                     <field name="x_internal_domain_ids" invisible="1" widget="many2many_tags"/>
 
-                    <!-- The three steps, in one shape: a coloured dot on the
+                    <!-- The checklist sits in Odoo's own settings container so
+                         it is capped and indented like every other block on this
+                         page. Without it the rows ran the full width of the
+                         window and the arrow ended up a screen away from the
+                         name it belongs to.
+
+                         The three steps, in one shape: a coloured dot on the
                          left, the name, the answer, and the way to the place you
                          change it. All three are tables now, so that way is
                          always a link to the table — nothing is typed on this
                          page. Anything longer than an answer — a warning, a fix
                          — goes on its own line under the name, never beside it,
                          so the column of dots and names stays a column. -->
+                    <h2>Setup</h2>
+                    <div class="row mt-3 o_settings_container">
+                    <div class="col-12 o_setting_box o_mailpro_steps">
                     <div class="o_mailpro_step">
                         <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
                               invisible="not x_setup_provider_done"/>
@@ -31,7 +40,7 @@
                                 <span class="o_mailpro_step_name">1. Email Provider</span>
                                 <i class="fa fa-info-circle text-muted" title="Where your company's email lives, and the application registration it sends mail through. Only one provider is in use at a time; switching keeps every provider's own credentials."/>
                                 <span class="o_mailpro_step_value" invisible="not x_setup_provider_done">
-                                    <field name="x_active_provider_id" nolabel="1" readonly="1"/>
+                                    <field name="x_active_provider_id" nolabel="1" readonly="1" options="{'no_open': True}"/>
                                 </span>
                                 <span class="o_mailpro_step_value" invisible="x_setup_provider_done">Not set up yet</span>
                             </div>
@@ -64,7 +73,7 @@
                             <div class="o_mailpro_step_msg"
                                  invisible="x_setup_domains_done or not x_internal_domains_suggested">
                                 <button name="action_apply_suggested_internal_domains" type="object"
-                                        class="btn-link btn-sm p-0" string="Add"/>
+                                        class="btn-link btn-sm p-0 me-1" string="Add"/>
                                 <field name="x_internal_domains_suggested" class="d-inline" readonly="1" nolabel="1"/>
                             </div>
                         </div>
@@ -78,14 +87,17 @@
                               invisible="not x_setup_notification_done or x_mailboxes_alert"/>
                         <span class="o_mailpro_dot o_mailpro_dot_warn" title="Attention needed"
                               invisible="not x_mailboxes_alert"/>
+                        <!-- A step that has stopped is one dot, not two: the
+                             warning wins, and "still to do" is not additional
+                             information next to it. -->
                         <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
-                              invisible="x_setup_notification_done"/>
+                              invisible="x_setup_notification_done or x_mailboxes_alert"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">3. Mailboxes</span>
                                 <i class="fa fa-info-circle text-muted" title="The addresses Mail Pro sends and receives on. One needs 'Notification Mailbox' ticked: user invitations, password resets and activity reminders go out from it, using its owner's connected account."/>
                                 <span class="o_mailpro_step_value" invisible="not x_setup_notification_done">
-                                    <field name="x_notification_mailbox_id" nolabel="1" readonly="1"/>
+                                    <field name="x_notification_mailbox_id" nolabel="1" readonly="1" options="{'no_open': True}"/>
                                 </span>
                                 <span class="o_mailpro_step_value" invisible="x_setup_notification_done">No notification mailbox</span>
                             </div>
@@ -98,16 +110,33 @@
                                 class="oe_link o_mailpro_step_edit"/>
                     </div>
 
+                    </div>
+                    </div>
+
                     <h2>About</h2>
+                    <!-- No left/right pane: an empty left pane draws a divider
+                         beside a single link, which reads as a missing field.
+
+                         The version is the first thing a support mail has to
+                         answer, and the licence claim belongs where anyone
+                         using the module can read it — not in the tooltip it
+                         used to hide in. -->
                     <div class="row mt-3 o_settings_container">
-                        <div class="col-12 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
+                        <div class="col-12 o_setting_box o_mailpro_about">
+                            <div>
+                                <span class="o_form_label">Mail Pro</span>
+                                <field name="x_module_version" nolabel="1" readonly="1" class="ms-1"/>
+                            </div>
+                            <div class="text-muted">
+                                © Pantalytics B.V. All rights reserved. Proprietary and
+                                confidential software, licensed and not sold. Copying,
+                                modification or distribution outside the terms of your
+                                licence agreement is prohibited.
+                            </div>
+                            <div class="mt-2">
                                 <a href="https://pantalytics.gitbook.io/pantalytics-docs/" target="_blank">
                                     <i class="fa fa-external-link me-1" title="Documentation"/>Documentation
                                 </a>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="© Pantalytics B.V. All rights reserved. This software is proprietary and confidential. Unauthorized copying, modification, distribution, or use of this module, in whole or in part, is strictly prohibited and may result in legal action. Protected under international copyright and trade secret law."/>
                             </div>
                         </div>
                     </div>

@@ -115,6 +115,23 @@ class PanMailProvider(models.Model):
     )
 
     # -------------------------------------------------------------------------
+    # Name
+    # -------------------------------------------------------------------------
+
+    @api.depends('provider')
+    def _compute_display_name(self):
+        """The provider's label, never its code.
+
+        `_rec_name = 'provider'` hands the raw selection value to every place a
+        record shows its name — a dropdown, a breadcrumb, the setup checklist —
+        so the settings page read "outlook" where the provider's own form says
+        "Microsoft 365". One compute fixes all of them at once.
+        """
+        labels = dict(PROVIDER_SELECTION)
+        for record in self:
+            record.display_name = labels.get(record.provider) or _('New Provider')
+
+    # -------------------------------------------------------------------------
     # Application credentials
     # -------------------------------------------------------------------------
 

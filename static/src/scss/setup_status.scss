@@ -13,6 +13,14 @@
     &:hover { opacity: 0.9; }
 }
 
+// The checklist's own box. `o_setting_box` gives it the indent and the width
+// cap of a standard settings block; what is left is the row it contains, which
+// must not stretch to a 2000px window — a name on the left and an arrow on the
+// far right is two things, not one line.
+.o_mailpro_steps {
+    max-width: 46rem;
+}
+
 // One step, one line. Baymard's accordion-checkout finding applies here too:
 // a collapsed step must show the answer, not only its heading, or the reader
 // has to reopen it to see what they picked.
@@ -26,6 +34,10 @@
     gap: 0.7rem;
     padding: 0.6rem 0;
     border-bottom: 1px solid rgba(0, 29, 33, 0.06);
+
+    // The rules separate the steps; one under the last of them separates it
+    // from nothing.
+    &:last-of-type { border-bottom: 0; }
 
     .o_mailpro_dot {
         flex: 0 0 auto;
@@ -59,9 +71,13 @@
         flex-wrap: wrap;
     }
 
+    // Fixed column so the three answers start at the same x. Three names of
+    // different lengths put three values in three places, and a ragged column
+    // is the thing that made this page look unfinished.
     .o_mailpro_step_name {
         font-weight: 600;
         color: #001d21;
+        min-width: 9.5rem;
     }
 
     .o_mailpro_step_value {
@@ -86,4 +102,10 @@
         flex: 0 0 auto;
         margin-left: auto;
     }
+}
+
+// About. The licence claim is a paragraph, not a field value: capped so it
+// wraps at a readable length instead of running the width of the window.
+.o_mailpro_about {
+    max-width: 46rem;
 }
