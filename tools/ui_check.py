@@ -122,15 +122,25 @@ class Checks:
 
     # -- The provider form ----------------------------------------------------
 
-    # What each provider's registration asks for. Microsoft is the only one
-    # with a tenant; IMAP has no registration at all, and says so.
+    # What each provider's registration asks for, under the name its own
+    # console uses -- Azure's three fields are labelled the way Azure labels
+    # them, Google's the way Google does. Microsoft is the only one with a
+    # tenant; IMAP has no registration at all, and says so.
+    MICROSOFT_FIELDS = ('Application (client) ID', 'Client Secret Value',
+                        'Directory (tenant) ID')
+    GOOGLE_FIELDS = ('Client ID', 'Client Secret')
+    # These are substring checks, and Google's two labels are both prefixes of
+    # nothing on the Microsoft form except "Client Secret", which is a prefix
+    # of "Client Secret Value". So a form is proved to be Google's by the label
+    # that cannot appear on Microsoft's.
+    GOOGLE_ONLY = ('Client ID',)
     PROVIDER_FIELDS = {
-        'outlook': {'shows': ('Client ID', 'Client Secret', 'Tenant ID', 'Callback URL'),
-                    'hides': ('has no application registration',)},
-        'gmail': {'shows': ('Client ID', 'Client Secret', 'Callback URL'),
-                  'hides': ('Tenant ID', 'has no application registration')},
+        'outlook': {'shows': MICROSOFT_FIELDS + ('Callback URL',),
+                    'hides': GOOGLE_ONLY + ('has no application registration',)},
+        'gmail': {'shows': GOOGLE_FIELDS + ('Callback URL',),
+                  'hides': MICROSOFT_FIELDS + ('has no application registration',)},
         'imap': {'shows': ('has no application registration',),
-                 'hides': ('Client ID', 'Client Secret', 'Tenant ID', 'Callback URL')},
+                 'hides': MICROSOFT_FIELDS + GOOGLE_ONLY + ('Callback URL',)},
     }
 
     def provider_form(self):
@@ -167,7 +177,8 @@ class Checks:
 
         text = self.form_text(f'{self.base}/odoo/action-{action}/new')
         self.shot('provider-new.png')
-        for hidden in ('has no application registration', 'Client ID', 'Tenant ID'):
+        for hidden in (('has no application registration',)
+                       + self.MICROSOFT_FIELDS + self.GOOGLE_ONLY):
             if hidden in text:
                 self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
 

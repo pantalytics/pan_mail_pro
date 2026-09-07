@@ -339,7 +339,7 @@ class TestGraphCredentialTest(TransactionCase):
             result = self.client.test_credentials()
 
         self.assertFalse(result['success'])
-        self.assertIn('Client Secret', result['message'])
+        self.assertIn('Client Secret Value', result['message'])
         # Azure's own sentence is kept, its trace ids are not.
         self.assertIn('AADSTS7000215', result['message'])
         self.assertNotIn('Trace ID', result['message'])
@@ -364,7 +364,7 @@ class TestGraphCredentialTest(TransactionCase):
 
         post.assert_not_called()
         self.assertFalse(result['success'])
-        self.assertIn('Tenant ID', result['message'])
+        self.assertIn('Directory (tenant) ID', result['message'])
 
     def test_the_button_reports_the_verdict(self):
         with patch(GRAPH_POST) as post:

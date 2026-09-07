@@ -1128,6 +1128,15 @@ is the only check that also covers the Callback URL, the granted permissions
 and whether the tenant allows users to consent at all. The first is cheap and
 narrow, the second is the real thing.
 
+**The fields carry the console's own names.** Azure's Overview page says
+Application (client) ID and Directory (tenant) ID, and Certificates & secrets
+shows a Value next to a Secret ID; Google's console says Client ID and Client
+secret and has no tenant at all. The form used one neutral set of names for
+both, so an admin translated while copying -- which is how a client secret ends
+up in the tenant box, silently, because every one of these is an opaque string.
+The two OAuth providers therefore render the same two fields under different
+labels, and `tools/ui_check.py` walks all three provider shapes.
+
 `supports_credential_test` gates the first: Microsoft implements it, IMAP has
 no registration to test, and Google offers no call that validates a client id
 and secret without a grant to go with them. The button is hidden rather than

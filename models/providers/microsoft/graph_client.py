@@ -27,18 +27,22 @@ TOKEN_URL = 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token'
 # the client secret value..."), and it names no field an admin can see. The raw
 # text is still shown underneath; this is the line that says which box to fix.
 AADSTS_HINTS = {
-    'AADSTS7000215': 'The Client Secret is wrong. In Azure, copy the secret '
-                     'Value (shown once, right after you create it), not the '
-                     'Secret ID.',
-    'AADSTS7000222': 'The Client Secret has expired. Create a new one in Azure '
-                     'under Certificates & secrets and paste it here.',
-    'AADSTS700016': 'Azure does not know this Client ID in this tenant. Check '
-                    'the Application (client) ID and the Tenant ID against the '
-                    "app registration's Overview page.",
-    'AADSTS90002': 'Azure does not know this Tenant ID. Copy the Directory '
-                   "(tenant) ID from the app registration's Overview page.",
-    'AADSTS900023': 'That Tenant ID is not a tenant. Copy the Directory '
-                    "(tenant) ID from the app registration's Overview page.",
+    'AADSTS7000215': 'The Client Secret Value is wrong. In Azure, under '
+                     'Certificates & secrets, copy the Value column -- it is '
+                     'shown once, right after you create the secret. The '
+                     'Secret ID is a different string and is not used here.',
+    'AADSTS7000222': 'The Client Secret Value has expired. Create a new secret '
+                     'in Azure under Certificates & secrets and paste its '
+                     'Value here.',
+    'AADSTS700016': 'Azure does not know this Application (client) ID in this '
+                    'directory. Check it and the Directory (tenant) ID against '
+                    "the app registration's Overview page.",
+    'AADSTS90002': 'Azure does not know this Directory (tenant) ID. Copy it '
+                   "from the app registration's Overview page -- it is a GUID, "
+                   'not the client secret.',
+    'AADSTS900023': 'That is not a Directory (tenant) ID. Copy it from the app '
+                    "registration's Overview page -- it is a GUID, not the "
+                    'client secret.',
     'AADSTS50011': 'The Callback URL on this form is not one of the redirect '
                    'URIs of the app registration. Paste it into Azure exactly '
                    'as it is shown here.',
@@ -381,9 +385,9 @@ class MicrosoftGraphClient(models.AbstractModel):
         config = self._get_config_params()
         missing = [
             label for key, label in (
-                ('client_id', _('Client ID')),
-                ('client_secret', _('Client Secret')),
-                ('tenant_id', _('Tenant ID')),
+                ('client_id', _('Application (client) ID')),
+                ('client_secret', _('Client Secret Value')),
+                ('tenant_id', _('Directory (tenant) ID')),
             ) if not config[key]
         ]
         if missing:
@@ -414,7 +418,8 @@ class MicrosoftGraphClient(models.AbstractModel):
             return {
                 'success': True,
                 'message': _(
-                    'Azure accepted the Client ID, Client Secret and Tenant ID. '
+                    'Azure accepted the Application (client) ID, Client Secret '
+                    'Value and Directory (tenant) ID. '
                     'Users can now sign in; that is when their own mailbox '
                     'permissions are checked.'
                 ),
@@ -437,7 +442,8 @@ class MicrosoftGraphClient(models.AbstractModel):
         code = re.search(r'AADSTS\d+', description)
         hint = AADSTS_HINTS.get(code.group(0)) if code else None
         if not hint and payload.get('error') == 'invalid_client':
-            hint = 'Azure rejected the Client ID or the Client Secret.'
+            hint = ('Azure rejected the Application (client) ID or the '
+                    'Client Secret Value.')
         _logger.warning(
             "[Graph API] Credential test rejected: %s",
             headline or response.status_code,
