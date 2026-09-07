@@ -122,8 +122,8 @@ Providers disagree about sending as somebody else, which is why
 |-------|---------|
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider` — inherited from `pan.mail.provider.current_code()`, never asked on the form) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
-| `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email |
-| `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email |
+| `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro |
+| `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
 | `res.config.settings` | The setup checklist — three lines, each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
@@ -154,11 +154,19 @@ Providers disagree about sending as somebody else, which is why
 | `pan.mail.routing.log` | One row per delivered mail: rule, confidence, rejected candidates |
 | `pan.mail.coverage` | Transient report: how much mail actually lands on a document |
 
-Every screen the module ships lives under Settings → Technical → Email.
-19.0.4.0.0 gave it a "Communication" application of its own on the home
-screen; 19.0.7.0.0 took it back. What it held was one read-only lens and a
-queue, which is not an application, and a tile on the home screen invites
+Every screen the module ships lives under Settings → Technical → Email →
+**Mail Pro**. 19.0.4.0.0 gave it a "Communication" application of its own on
+the home screen; 19.0.7.0.0 took it back. What it held was one read-only lens
+and a queue, which is not an application, and a tile on the home screen invites
 daily use of a diagnostic view.
+
+19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
+`base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
+Aliases entries they read as seven unrelated features rather than one module,
+and two of them shared a sequence, so their order was whatever the loader
+happened to do. The section header is declared once in `views/pan_mail_menus.xml`
+— listed first in the manifest, because every other view file hangs a menu off
+it — and `tests/test_menus.py` fails if a new screen goes back to the old habit.
 
 `pan.mail.account` holds the credentials that used to live on `res.users`. An
 account with a `user_id` is a person's own connection; an account with none is a
@@ -779,7 +787,7 @@ answer right more often. Three models answer three different questions.
 
 ### `pan.mail.routing.log` — where did this mail go?
 
-One row per delivered mail (Settings → Technical → Email → Mail Routing) with
+One row per delivered mail (Settings → Technical → Email → Mail Pro → Mail Routing) with
 the rule, the confidence, and every candidate the ladder rejected.
 
 `outcome` separates three things that look identical from inside Odoo:

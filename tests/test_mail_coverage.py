@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Link coverage.
 
-The ratio this reports is the gate on building a triage queue, so it has to be
+The ratio this reports is what retired the triage queue, so it has to be
 right in the one way that matters: it must count what the lens would show, and
 the drill-down must land on exactly the rows the number claims.
 """

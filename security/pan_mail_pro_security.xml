@@ -11,8 +11,9 @@
             administrators keep every right they had before this module version.
         -->
         <!--
-            What it grants: configuring mailboxes and email accounts, and
-            working the incoming mail triage queue.
+            What it grants: configuring mailboxes, email accounts and the
+            internal domain list. (It also gated the incoming mail triage
+            queue, which 19.0.7.0.0 removed.)
 
             Only `name` is set. Odoo 19 reworked res.groups and `category_id`
             no longer exists on it — setting it does not warn, it fails the

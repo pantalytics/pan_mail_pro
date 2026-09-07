@@ -45,7 +45,7 @@ Every mailbox names the provider that services it:
 
 There is no consent screen, so the credentials are entered once per address:
 
-1. Go to **Settings → Technical → Email → Email Accounts** and create an account.
+1. Go to **Settings → Technical → Email → Mail Pro → Email Accounts** and create an account.
 2. Set **Provider** to *IMAP / SMTP* and fill in the email address. Known
    hosters (Soverin) fill in their own servers automatically.
 3. Enter the IMAP server, the SMTP server, the login (defaults to the address)

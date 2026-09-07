@@ -280,12 +280,3 @@ class MailProTestCase(TransactionCase):
             'datas': base64.b64encode(raw),
             'mimetype': mimetype,
         })
-
-    def get_pending_mails(self, model=None, res_id=None):
-        """Fetch outbound mails created during the test, newest first."""
-        domain = []
-        if model:
-            domain.append(('model', '=', model))
-        if res_id:
-            domain.append(('res_id', '=', res_id))
-        return self.env['mail.mail'].search(domain, order='id desc')

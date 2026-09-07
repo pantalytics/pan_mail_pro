@@ -114,8 +114,8 @@
     <!-- Menu: Settings → Technical → Email → Providers -->
     <menuitem id="menu_pan_mail_provider"
               name="Providers"
-              parent="base.menu_email"
+              parent="pan_mail_pro.menu_pan_mail_root"
               action="action_pan_mail_provider"
-              sequence="4"
+              sequence="10"
               groups="base.group_system"/>
 </odoo>

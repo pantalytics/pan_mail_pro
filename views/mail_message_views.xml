@@ -136,9 +136,9 @@
          tile on the home screen invites daily use of a diagnostic view. -->
     <menuitem id="menu_communication_all"
               name="All Communication"
-              parent="base.menu_email"
+              parent="pan_mail_pro.menu_pan_mail_root"
               action="action_mail_message_lens"
-              sequence="7"
+              sequence="60"
               groups="base.group_system"/>
 
 </odoo>
