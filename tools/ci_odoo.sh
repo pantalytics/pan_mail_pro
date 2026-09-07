@@ -166,8 +166,12 @@ fi
 # the scripts in migrations/ and runs the suite against pre-existing rows.
 # ---------------------------------------------------------------------------
 HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
-TAG=""
+# FROM_TAG forces the baseline. The default picks the *previous* release, which
+# is the customer who upgrades every time; a customer who skipped six releases
+# crosses six migration folders in one -u and nothing here would try that.
+TAG="${FROM_TAG:-}"
 for t in $(git -C "$REPO" tag -l "v${SERIES}.*" --sort=-v:refname); do
+    [ -n "$TAG" ] && break
     if [ "$(git -C "$REPO" rev-parse "${t}^{commit}")" != "$HEAD_SHA" ]; then
         TAG=$t
         break
