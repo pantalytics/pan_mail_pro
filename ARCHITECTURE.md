@@ -1032,13 +1032,26 @@ database at all, and re-authorizing in staging cannot write live credentials
 back in. `tests/test_provider_contract.py` holds a new provider to the same
 rule.
 
-**Where a sentence is owed.** Routing an outgoing mail, the sync cron and
-"Sync Now" each ask directly, so the refusal says *neutralized* instead of
-"account not connected". Only a caller that knows what it was attempting can
-say why it stopped.
+**Where a sentence is owed.** The outgoing send, the sync cron and "Sync Now"
+each ask directly, so the refusal says *neutralized* instead of "account not
+connected". Only a caller that knows what it was attempting can say why it
+stopped.
 
-Outgoing mail is *refused*, not dropped: the reason lands on the mail and it
-stays queued, so nothing is lost if the database turns out to be the real one.
+Incoming sync refuses outright: there is nothing to preserve, and reading a
+customer's live mailbox from a test copy is the thing being prevented.
+
+Outgoing mail is different, because staging is where the *flow* gets tested.
+`mail.mail.send()` marks the batch `sent` without routing it (`_deliver_nowhere`)
+— the chatter entry stays, the recipient rows read `sent`, and `failure_reason`
+on the mail is the one place that says it never left the database. The sender is
+told by a bus notification rather than a `UserError`, because the raise would
+unwind the `message_post` that produced the mail and take the tester's chatter
+entry with it. That is the whole reason the refusal moved out of `_resolve_route`.
+
+Nothing is at risk in doing so. `_deliver_nowhere` asks no mailbox, no
+credential and no client, and the three layers underneath still refuse
+independently. The mail queue takes the same path minus the notification: its
+run belongs to a cron, not to whoever is logged in.
 
 ---
 

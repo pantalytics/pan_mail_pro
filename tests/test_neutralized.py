@@ -24,8 +24,14 @@ class TestNeutralizedDatabase(MailProTestCase):
         super().setUp()
         self.env['ir.config_parameter'].sudo().set_param('database.is_neutralized', 'True')
 
-    def test_outgoing_mail_is_not_sent(self):
-        """The mail is refused with a readable reason, not delivered."""
+    def test_outgoing_mail_is_recorded_but_never_routed(self):
+        """It reads as sent, and no mailbox or provider was asked anything.
+
+        Staging is where the *flow* is tested, so the mail has to land on the
+        record like any other. It must still not reach a provider -- which is
+        why the assertion is on `_send_one` not being called at all, rather
+        than on a client that would have refused one layer further down.
+        """
         mail = self.env['mail.mail'].create({
             'subject': 'Staging must not send this',
             'body_html': '<p>Hi</p>',
@@ -33,11 +39,67 @@ class TestNeutralizedDatabase(MailProTestCase):
             'author_id': self.salesperson.partner_id.id,
         })
 
-        error = send_and_capture(mail)
+        with patch.object(type(mail), '_send_one', autospec=True) as send_one:
+            error = send_and_capture(mail)
 
-        self.assertIsNotNone(error, 'A neutralized database sent an email')
-        self.assertIn('neutralized', str(error))
-        self.assertNotEqual(mail.state, 'sent')
+        self.assertIsNone(error, 'Staging must not interrupt the sender')
+        send_one.assert_not_called()
+        self.assertEqual(mail.state, 'sent')
+        self.assertIn('neutralized', mail.failure_reason)
+
+    def test_the_chatter_keeps_the_message(self):
+        """The whole point: the email is on the record as if it had gone out.
+
+        Refusing with a `UserError` used to unwind the `message_post` that
+        created it, so the tester got a dialog where the test was supposed to
+        be. The recipient row has to read `sent` too -- it outlives the
+        `mail.mail` and is what the chatter renders.
+        """
+        message = self.external_partner.with_user(self.salesperson).sudo().message_post(
+            body='<p>Testing the flow</p>',
+            subject='Staging',
+            partner_ids=[self.external_partner.id],
+            message_type='comment',
+            subtype_xmlid='mail.mt_comment',
+        )
+
+        self.assertTrue(message.exists(), 'The chatter entry was rolled back')
+        notification = self.env['mail.notification'].search([
+            ('mail_message_id', '=', message.id),
+            ('res_partner_id', '=', self.external_partner.id),
+        ])
+        self.assertEqual(notification.notification_status, 'sent')
+
+    def test_the_sender_is_told(self):
+        """A toast, because the usual way of saying it would roll back the post."""
+        mail = self.env['mail.mail'].create({
+            'subject': 'Staging must not send this',
+            'body_html': '<p>Hi</p>',
+            'email_to': 'customer@example.com',
+            'author_id': self.salesperson.partner_id.id,
+        })
+
+        with patch.object(type(self.env['res.partner']), '_bus_send') as bus_send:
+            mail.send()
+
+        bus_send.assert_called_once()
+        self.assertEqual(bus_send.call_args[0][0], 'simple_notification')
+        self.assertIn('neutralized', bus_send.call_args[0][1]['message'])
+
+    def test_the_mail_queue_tells_nobody(self):
+        """The cron sends on nobody's behalf, so it raises no toast."""
+        mail = self.env['mail.mail'].create({
+            'subject': 'Queued before the restore',
+            'body_html': '<p>Hi</p>',
+            'email_to': 'customer@example.com',
+            'author_id': self.salesperson.partner_id.id,
+        })
+
+        with patch.object(type(self.env['res.partner']), '_bus_send') as bus_send:
+            mail.send(auto_commit=True)
+
+        bus_send.assert_not_called()
+        self.assertEqual(mail.state, 'sent')
 
     def test_incoming_sync_cron_does_nothing(self):
         """The cron returns before it touches a mailbox."""

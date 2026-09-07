@@ -25,6 +25,13 @@ NOTIFICATION_PENDING_REASON = (
     'Waiting for the Notification mailbox to be configured '
     '(Settings → Mail Pro). This email will be sent automatically once it is.'
 )
+# Marker written on a mail a staging copy pretended to send. The mail reads as
+# sent everywhere a person looks -- chatter included -- and this is the one
+# place that says it never left the database.
+STAGING_NOT_SENT_REASON = (
+    'Not sent: this database is neutralized (a staging or test copy). '
+    'It was recorded in the chatter as if it had gone out.'
+)
 
 
 class RoutingError(Exception):
@@ -139,6 +146,8 @@ class MailMail(models.Model):
           fresh install working before anyone has been to Azure.
         - Internal notifications during the setup window are left queued. See
           `_is_awaiting_notification_mailbox`.
+        - A neutralized database records the mail as sent without sending it.
+          See `_deliver_nowhere`.
 
         Everything else is sent by a mailbox or fails saying which one it
         wanted. It is never quietly rerouted.
@@ -206,6 +215,12 @@ class MailMail(models.Model):
                 post_send_callback=post_send_callback,
             )
 
+        if database_is_neutralized(self.env):
+            # The queue runs as a cron: its toast would land on whoever
+            # happens to be logged in, about mail they did not send.
+            mails._deliver_nowhere(notify=not auto_commit)
+            return True
+
         awaiting = mails.filtered(lambda m: m._is_awaiting_notification_mailbox())
         if awaiting:
             _logger.warning(
@@ -254,6 +269,60 @@ class MailMail(models.Model):
             reason=failures[0], others=len(failures) - 1,
         )
 
+    def _deliver_nowhere(self, notify=True):
+        """Record this batch as sent without sending it. Staging only.
+
+        A neutralized database must not mail customers, but the person testing
+        on it is testing the *flow*: press Send, see the email on the record,
+        answer it, watch the follow-up. Refusing the send used to raise, which
+        unwound the whole `message_post` with it — no chatter entry, no trace,
+        and a dialog where the test was supposed to be.
+
+        So the refusal moved: nothing leaves the database, and everything Odoo
+        writes about a sent mail is written anyway. The chatter shows the
+        message, the recipient rows read `sent`, and `failure_reason` on the
+        mail is the one place that says it never went out.
+
+        Nothing here can reach a provider by accident. `data/neutralize.sql`
+        has already dropped the credentials, `decrypt_value` refuses to read
+        one, and every client refuses before its transport — this method simply
+        never asks. It is the readable half of a refusal three layers below it.
+        """
+        _logger.info(
+            "[Outgoing Mail] Database is neutralized — recording %s email(s) as "
+            "sent without sending them", len(self)
+        )
+        self.write({'state': 'sent', 'failure_reason': STAGING_NOT_SENT_REASON})
+        for mail in self:
+            mail._sync_notifications()
+        if notify:
+            self._notify_staging_not_sent()
+
+    def _notify_staging_not_sent(self):
+        """Tell the sender, without the rollback a raise would cost.
+
+        A `UserError` is the module's usual way of saying "this did not go
+        out", and it is exactly wrong here: it would take the chatter entry
+        with it. A bus notification survives the commit instead, so the tester
+        gets both halves — the warning, and the record they were testing.
+
+        Not called from the mail queue: see `_deliver_nowhere`'s caller.
+        """
+        partner = self.env.user.partner_id
+        if not partner:
+            return
+        partner._bus_send('simple_notification', {
+            'type': 'warning',
+            'sticky': True,
+            'title': _('Not sent (staging)'),
+            'message': _(
+                '%(count)s email(s) were recorded on the record as if sent. '
+                'This database is neutralized (a staging or test copy), so '
+                'nothing left it.',
+                count=len(self),
+            ),
+        })
+
     def _send_one(self, raise_exception=False, post_send_callback=None):
         """Send one mail. Returns the failure reason, or None when it went out.
 
@@ -296,15 +365,15 @@ class MailMail(models.Model):
             # anybody can act on, so it must not surface as one.
             _logger.info(f"[Outgoing Mail] Mail {self.id} has no deliverable recipient — cancelling")
             self.write({'state': 'cancel'})
-            self._cancel_notifications()
+            self._sync_notifications()
             return None
 
         return self._fail(result.get('error') or _('Failed to send email.'))
 
-    def _cancel_notifications(self):
-        """Bring the `mail.notification` rows in line with a cancelled mail.
+    def _sync_notifications(self):
+        """Bring the `mail.notification` rows in line with the mail's state.
 
-        Cancelling only the `mail.mail` leaves those rows at `ready`, which
+        Writing only the `mail.mail` leaves those rows at `ready`, which
         means "queued, not sent yet". The chatter renders that as pending, and
         it is the row that outlives the mail: `mail.mail` is garbage-collected
         and `mail.notification` is not, so the table still standing is the one
@@ -560,17 +629,9 @@ class MailMail(models.Model):
         """Return (mailbox, account) for this mail, or raise RoutingError."""
         self.ensure_one()
 
-        # A staging copy must not mail real customers. Odoo's own neutralization
-        # only reaches SMTP, which Mail Pro does not use, so the refusal lives
-        # here instead. Raising rather than dropping the mail keeps the reason
-        # on the record and leaves it queued, so nothing is lost if the database
-        # turns out to be the real one after all.
-        if database_is_neutralized(self.env):
-            raise RoutingError(_(
-                'This database is neutralized (a staging or test copy), so Mail '
-                'Pro will not send. The email stays queued.'
-            ))
-
+        # A staging copy never gets this far: `send()` marks the batch sent
+        # without routing it at all. Routing here would fail for the wrong
+        # reason anyway -- `data/neutralize.sql` deactivates every mailbox.
         author_user = self._author_user()
 
         # An explicit "Send From" choice comes first, because it is the only

@@ -55,8 +55,13 @@ Both can be renamed later as isolated changes with their own migrations.
    that logs 0 rows against this baseline did not do its job.
 
    Then restore the same backup into the staging instance and run steps 3 to 6
-   there. Confirm sending, inbound sync and the OAuth flow all still work
-   before touching production.
+   there. Confirm the views load, the mailboxes are intact and the OAuth flow
+   still works before touching production.
+
+   A neutralized copy proves nothing about delivery. Sending there records the
+   mail as sent without sending it, and inbound sync refuses to run at all, so
+   "sending works in staging" is not evidence. Delivery is confirmed on
+   production, after step 6.
 
 3. **Stop Odoo** on the target instance. The script must not race the registry
    loading.
