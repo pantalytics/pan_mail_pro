@@ -31,7 +31,7 @@ back a placeholder, and re-saving the placeholder is a no-op rather than
 encrypting the placeholder itself.
 """
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from . import encryption_utils
 from .mail_provider_client import (
@@ -80,6 +80,11 @@ class PanMailProvider(models.Model):
         help='Paste this into the provider console. Sign-in fails until it matches exactly.',
     )
     uses_oauth = fields.Boolean(compute='_compute_uses_oauth')
+    credentials_testable = fields.Boolean(
+        compute='_compute_uses_oauth',
+        help='Can this registration be checked against the provider before '
+             'anybody signs in?',
+    )
     # For IMAP these three read `pan.mail.account`, a different model, so
     # nothing declares that dependency to Odoo and nothing invalidates the
     # cache when an account changes. Fine for a view badge, which reads fresh
@@ -155,8 +160,55 @@ class PanMailProvider(models.Model):
     @api.depends('provider')
     def _compute_uses_oauth(self):
         for record in self:
-            record.uses_oauth = bool(record.provider) and get_provider_client(
-                self.env, record.provider).uses_oauth
+            # An AbstractModel is an empty recordset, so the client itself is
+            # falsy — `provider` is what says whether there is one to ask.
+            client = get_provider_client(
+                self.env, record.provider) if record.provider else None
+            record.uses_oauth = bool(client is not None and client.uses_oauth)
+            record.credentials_testable = bool(
+                client is not None and client.supports_credential_test)
+
+    def action_test_credentials(self):
+        """Ask the provider whether the registration on this form is real.
+
+        The only feedback this form had was `status`, which reads "Not
+        Connected" for a correct registration nobody has signed in to yet and
+        for three fields of nonsense alike. An admin discovers the difference
+        at the consent screen -- after mailing their users to go and sign in.
+        """
+        self.ensure_one()
+        client = get_provider_client(self.env, self.provider)
+        if not client.supports_credential_test:
+            raise UserError(_(
+                '%s has no application registration to test.'
+            ) % client.provider_label())
+        result = client.test_credentials()
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Credentials Accepted') if result.get('success')
+                         else _('Credentials Rejected'),
+                'message': result.get('message') or _('Unknown error'),
+                'type': 'success' if result.get('success') else 'danger',
+                'sticky': not result.get('success'),
+            },
+        }
+
+    def action_connect_myself(self):
+        """Walk the consent screen as the admin who is filling this form in.
+
+        The credential test proves the provider knows the registration. Only a
+        real sign-in proves the rest of it: that the Callback URL above matches
+        the one in the provider console, that the permissions were granted, and
+        that this tenant allows users to consent at all. It is also the first
+        connected account, which is what the mailbox setup needs next.
+
+        The button existed on the user form, where nobody configuring a
+        provider is looking.
+        """
+        self.ensure_one()
+        return self.env.user.action_connect_mailbox(provider=self.provider)
 
     # -------------------------------------------------------------------------
     # Status

@@ -231,6 +231,9 @@ class MailProviderClient(models.AbstractModel):
     # Is there a consent screen to send somebody to? False means the credentials
     # are typed in (IMAP/SMTP), which changes what "connect" means in the UI.
     uses_oauth = True
+    # Can the application registration be checked on its own, before anybody
+    # has signed in? See `test_credentials()`.
+    supports_credential_test = False
 
     @api.model
     def provider_code(self):
@@ -403,6 +406,27 @@ class MailProviderClient(models.AbstractModel):
 
         Returns:
             dict: {'success': bool, 'error': str, 'email': str, ...}
+        """
+        raise NotImplementedError
+
+    @api.model
+    def test_credentials(self):
+        """Verify the *application registration*, before anybody signs in.
+
+        `test_connection` asks whether one person's tokens still work, which
+        nobody has yet while the registration is being typed in. This asks the
+        provider whether the client id, secret and tenant it was given are the
+        ones it issued -- the only question an admin can answer wrong on the
+        provider form, and the one they otherwise discover at the consent
+        screen with an AADSTS code and no idea which field it blames.
+
+        Only providers with `supports_credential_test` implement it: IMAP has
+        no registration to test, and Google offers no call that checks a client
+        id and secret without a grant to go with them. The provider form hides
+        the button for the rest rather than offering a test that cannot run.
+
+        Returns:
+            dict: {'success': bool, 'message': str}
         """
         raise NotImplementedError
 

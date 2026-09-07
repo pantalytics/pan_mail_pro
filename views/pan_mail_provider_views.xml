@@ -23,8 +23,20 @@
         <field name="model">pan.mail.provider</field>
         <field name="arch" type="xml">
             <form string="Provider">
+                <header>
+                    <button name="action_test_credentials" type="object"
+                            string="Test Credentials" class="btn-primary" icon="fa-plug"
+                            invisible="not credentials_testable"
+                            help="Ask the provider whether these fields are the ones it issued. Nothing is sent and no mailbox is read."/>
+                    <button name="action_connect_myself" type="object"
+                            string="Sign In Myself" icon="fa-sign-in"
+                            invisible="not uses_oauth or not credentials_set"
+                            help="Walk the consent screen yourself. The only check that also covers the Callback URL and the granted permissions."/>
+                </header>
                 <sheet>
                     <field name="uses_oauth" invisible="1"/>
+                    <field name="credentials_testable" invisible="1"/>
+                    <field name="credentials_set" invisible="1"/>
                     <group>
                         <group>
                             <field name="provider"/>
@@ -37,10 +49,25 @@
 
                     <group string="Application Registration" invisible="not uses_oauth">
                         <group>
-                            <field name="client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
-                            <field name="client_secret" password="True"/>
-                            <field name="tenant_id" invisible="provider != 'outlook'"
+                            <!-- Microsoft's own words, copied from the app
+                                 registration's Overview page. A field labelled
+                                 anything else is a field the admin has to
+                                 translate while copying, which is how a client
+                                 secret ends up in the tenant box. -->
+                            <field name="client_id" string="Application (client) ID"
+                                   invisible="provider != 'outlook'"
                                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                            <field name="client_secret" string="Client Secret Value"
+                                   password="True" invisible="provider != 'outlook'"
+                                   help="Certificates &amp; secrets in Azure shows a Value and a Secret ID. Paste the Value — it is shown once, right after you create the secret. The Secret ID is not used."/>
+                            <field name="tenant_id" string="Directory (tenant) ID"
+                                   invisible="provider != 'outlook'"
+                                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                            <!-- Google's console says "Client ID" and "Client
+                                 secret", and has no tenant at all. -->
+                            <field name="client_id" invisible="provider == 'outlook'"/>
+                            <field name="client_secret" password="True"
+                                   invisible="provider == 'outlook'"/>
                         </group>
                         <group>
                             <label for="redirect_uri"/>
