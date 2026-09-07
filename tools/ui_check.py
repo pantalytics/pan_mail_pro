@@ -14,6 +14,8 @@ seeds it. Every assertion here is a bug this module has actually shipped:
     OAuth" and "nothing chosen yet" were one condition
   * the connect banner is drawn by patching Odoo's own webclient template, so
     a wrong xpath breaks every screen and nothing server-side can see it
+  * the same banner was registered in `WebClient.components`, which Enterprise
+    has already copied by then -- every Enterprise screen went white
 
     tools/ui_check.py                     # assert, and write screenshots
     tools/ui_check.py --out=ui-screenshots
@@ -237,6 +239,7 @@ class Checks:
                 self.fail('the connect banner floats over the page instead of pushing it down')
             if not banner.query_selector('a[href="/mail_pro/connect"]'):
                 self.fail('the connect banner has no way into the consent screen')
+            self.banner_survives_enterprise(page)
 
             banner.query_selector('.o_mailpro_connect_close').click()
             page.wait_for_timeout(400)
@@ -244,6 +247,29 @@ class Checks:
                 self.fail('dismissing the connect banner does not hide it')
         finally:
             page.context.close()
+
+    def banner_survives_enterprise(self, page):
+        """The banner must not be reachable only through `WebClient.components`.
+
+        Enterprise mounts `WebClientEnterprise`, whose class body copies
+        `WebClient.components` at definition time -- before this module is
+        loaded. A component this module adds to that dict is therefore absent
+        from the class that is actually mounted, Owl cannot resolve the tag,
+        and the webclient does not mount at all: a white screen on every
+        Enterprise database, with nothing in the server log (#85).
+
+        CI runs the community image, so the banner above is drawn either way.
+        What tells the two apart is where it came from, and that is readable
+        here: the banner rendered *and* nothing of ours is in that snapshot.
+        """
+        keys = page.evaluate(
+            "() => { const m = odoo.loader.modules.get('@web/webclient/webclient');"
+            " return m ? Object.keys(m.WebClient.components) : null; }")
+        if keys is None:
+            self.fail('cannot read WebClient.components — the check below proves nothing')
+        elif any(key.startswith('MailPro') for key in keys):
+            self.fail('the connect banner is registered in WebClient.components, '
+                      'which Enterprise has already snapshotted — it will white-screen there')
 
     def form_text(self, url):
         self.page.goto(url, wait_until='domcontentloaded')

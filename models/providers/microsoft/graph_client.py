@@ -1228,40 +1228,6 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise last_exception
         raise requests.exceptions.RequestException("Max retries exceeded")
 
-    @api.model
-    def _get_token_identity(self, token):
-        """
-        Get the Microsoft identity associated with an OAuth token.
-
-        This calls /me to determine which Microsoft account is actually
-        associated with the token. Useful for debugging when emails are
-        being sent from unexpected accounts.
-
-        Args:
-            token: Valid OAuth access token
-
-        Returns:
-            str: Description of the identity (email and display name)
-        """
-        try:
-            headers = {
-                'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json',
-            }
-
-            response = requests.get('https://graph.microsoft.com/v1.0/me', headers=headers, timeout=10)
-            response.raise_for_status()
-            user_info = response.json()
-
-            email = user_info.get('mail') or user_info.get('userPrincipalName') or 'NO_EMAIL'
-            display_name = user_info.get('displayName') or 'NO_NAME'
-
-            return f"{display_name} <{email}>"
-
-        except Exception as e:
-            _logger.warning(f"[Graph API] Could not fetch token identity: {e}")
-            return "UNKNOWN (failed to fetch /me)"
-
     def get_user_email(self, token):
         """
         Get the email address of the authenticated Microsoft user.

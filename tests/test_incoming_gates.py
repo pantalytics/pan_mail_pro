@@ -40,7 +40,7 @@ class TestIncomingGates(MailProTestCase):
         super().setUp()
         self.processor = self.env['pan.mail.fetcher']
         self.mailbox = self.personal_mailbox
-        self.mailbox.write({'sync_mode': 'all'})
+        self.mailbox.write({'sync_received': True, 'sync_received_scope': 'all'})
 
     def _messages_on(self, partner):
         """Chatter on a contact. A refused mail must not add to it, and must
@@ -94,7 +94,7 @@ class TestIncomingGates(MailProTestCase):
                 '_gate_internal_domain',
                 '_gate_blocked_contact',
                 '_gate_internal_user',
-                '_gate_sync_mode',
+                '_gate_wanted',
             ],
             "the ladder order is the contract; change it deliberately or not at all",
         )
@@ -113,7 +113,7 @@ class TestIncomingGates(MailProTestCase):
         order = self.processor._gate_rules()
         counterpart = order.index('_gate_counterpart')
         for reader in ('_gate_internal_domain', '_gate_blocked_contact',
-                       '_gate_internal_user', '_gate_sync_mode'):
+                       '_gate_internal_user', '_gate_wanted'):
             self.assertGreater(
                 order.index(reader), counterpart,
                 "%s reads the counterpart, so it must run after it" % reader,
@@ -126,8 +126,8 @@ class TestIncomingGates(MailProTestCase):
             "_gate_blocked_contact resolves the partner the internal-user gate reads",
         )
         self.assertGreater(
-            order.index('_gate_sync_mode'), order.index('_gate_blocked_contact'),
-            "_gate_sync_mode reads the partner the blocked-contact gate resolved",
+            order.index('_gate_wanted'), order.index('_gate_blocked_contact'),
+            "_gate_wanted reads the partner the blocked-contact gate resolved",
         )
 
     # ------------------------------------------------------------------ #
@@ -238,7 +238,7 @@ class TestIncomingGates(MailProTestCase):
         """A mailbox on `known_partners` leaves the mail where it is. There is
         no queue it waits in; widening the sync mode is how that answer
         changes."""
-        self.mailbox.write({'sync_mode': 'known_partners'})
+        self.mailbox.write({'sync_received_scope': 'known_partners'})
         ctx = self._ctx()
         ctx['full_message']['from'] = {'email': 'stranger@nowhere.test', 'name': ''}
 
@@ -282,3 +282,123 @@ class TestIncomingGates(MailProTestCase):
         skip = Skip('some_reason')
         self.assertEqual(skip.detail, '')
         self.assertFalse(skip.quiet)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestEachDirectionIsItsOwnSwitch(MailProTestCase):
+    """Receiving and sending are two questions, not one.
+
+    They shared `sync_mode` until 19.0.7.6.0, so a customer who asked to receive
+    mail in Odoo also got a copy of everything their people wrote in Outlook.
+    That is a different promise to the mailbox's owner, and nobody was asked to
+    make it. These assertions pin the split: which folders a mailbox reads, and
+    that the Sent folder never creates a contact whatever the receiving scope
+    says.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.processor = self.env['pan.mail.fetcher']
+        self.mailbox = self.personal_mailbox
+
+    def _folders(self):
+        return self.processor._folders_to_sync(self.mailbox)
+
+    def test_the_inbox_is_read_even_with_every_switch_off(self):
+        """Replies need no setting, so the folder they arrive in is never
+        skipped. What may enter is the gate ladder's decision, not this."""
+        self.mailbox.write({'sync_received': False, 'sync_sent': False})
+        self.assertEqual(self._folders(), [FOLDER_INBOX])
+        self.assertFalse(self.mailbox._syncs_more_than_replies())
+
+    def test_receiving_alone_does_not_read_the_sent_folder(self):
+        """The regression this split exists to prevent."""
+        self.mailbox.write({'sync_received': True, 'sync_sent': False})
+        self.assertEqual(self._folders(), [FOLDER_INBOX])
+
+    def test_the_sent_folder_is_opt_in(self):
+        self.mailbox.write({'sync_received': False, 'sync_sent': True})
+        self.assertEqual(self._folders(), [FOLDER_INBOX, FOLDER_SENT])
+        self.assertTrue(self.mailbox._syncs_more_than_replies())
+
+    def test_both_switches_read_both_folders(self):
+        self.mailbox.write({'sync_received': True, 'sync_sent': True})
+        self.assertEqual(self._folders(), [FOLDER_INBOX, FOLDER_SENT])
+
+    def test_a_new_mailbox_syncs_nothing_it_was_not_asked_to(self):
+        """Both switches start at off, and the scope question starts at the
+        narrow answer. Nobody lands on "create contacts from anyone" by
+        accepting defaults."""
+        defaults = self.env['pan.mail.mailbox'].default_get(
+            ['sync_received', 'sync_sent', 'sync_received_scope']
+        )
+        self.assertFalse(defaults.get('sync_received'))
+        self.assertFalse(defaults.get('sync_sent'))
+        self.assertEqual(defaults.get('sync_received_scope'), 'known_partners')
+
+    def test_the_sent_folder_alone_still_owes_credentials(self):
+        """Reading the Sent folder is reading, so the mailbox has to be able to
+        reach the provider even with receiving switched off."""
+        self.mailbox.write({'sync_received': False, 'sync_sent': True})
+        self.assertTrue(self.mailbox._needs_credentials())
+
+    def test_a_shared_send_only_mailbox_still_owes_nothing(self):
+        """Reply sync is best-effort on top, never a new obligation. A Microsoft
+        shared mailbox sends with the author's own token and has no credentials
+        of its own; making it owe some would turn a working configuration red.
+        """
+        mailbox = self.shared_mailbox
+        mailbox.write({'sync_received': False, 'sync_sent': False})
+        self.assertFalse(mailbox._needs_credentials())
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestSentEmailNeverCreatesAContact(MailProTestCase):
+    """Sent email is logged onto a contact that already exists, or not at all.
+
+    Deliberately not offered the scope question that receiving gets. Mailing a
+    stranger from Outlook is not a statement that they belong in the database,
+    and a customer who switches sending on wants their correspondence with known
+    contacts, not a contact list built from their outbox.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.processor = self.env['pan.mail.fetcher']
+        self.mailbox = self.personal_mailbox
+        self.mailbox.write({
+            'sync_received': True,
+            'sync_received_scope': 'all',
+            'sync_sent': True,
+        })
+
+    def _ctx(self, folder, partner=None, headers=None):
+        return {
+            'mailbox': self.mailbox,
+            'folder': folder,
+            'is_outgoing': folder == FOLDER_SENT,
+            'partner': partner,
+            'force_import': False,
+            'internet_message_id': INTERNET_ID,
+            # Pre-seeded so the reply check reads the headers without a provider
+            # round-trip, the same cache `_full_message()` fills.
+            'full_message': {'headers': headers or {}},
+        }
+
+    def test_an_unknown_recipient_is_refused_even_on_the_widest_scope(self):
+        skip = self.processor._gate_wanted(self._ctx(FOLDER_SENT))
+
+        self.assertIsNotNone(
+            skip, "a receiving scope of 'all' must not widen the Sent folder")
+        self.assertEqual(skip.reason, 'unknown_contact')
+
+    def test_the_same_message_would_be_accepted_from_the_inbox(self):
+        """Same mailbox, same unknown address, opposite direction. The
+        asymmetry is the decision, so it is asserted rather than implied."""
+        self.assertIsNone(self.processor._gate_wanted(self._ctx(FOLDER_INBOX)))
+
+    def test_a_known_contact_passes(self):
+        skip = self.processor._gate_wanted(
+            self._ctx(FOLDER_SENT, partner=self.external_partner)
+        )
+        self.assertIsNone(skip)

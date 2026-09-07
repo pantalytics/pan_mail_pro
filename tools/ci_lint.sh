@@ -105,6 +105,33 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# A `<SomeComponent/>` tag resolves against the `components` of the class that
+# is *mounted*, not the class whose template we inherited. On Enterprise that
+# is a subclass which snapshotted `components` before this module was loaded,
+# so a patch adding ours arrives too late, Owl cannot resolve the tag and the
+# webclient never mounts -- a white screen, nothing in the log, and CI runs on
+# community so it never sees it. Bind the class to an instance attribute and
+# use `t-component`.
+step "No component tag inside a template borrowed from another module"
+python3 - <<'PY' && echo "OK: no borrowed template names a component tag." || fail "Use <t t-component=\"attribute\"/> instead; see static/src/js/connect_banner.js."
+import glob, sys
+from xml.etree import ElementTree
+
+bad = []
+for path in glob.glob('static/src/xml/*.xml'):
+    for template in ElementTree.parse(path).getroot():
+        inherited = template.get('t-inherit')
+        if not inherited or inherited.startswith('pan_mail_pro.'):
+            continue
+        for element in template.iter():
+            if element.tag[:1].isupper():
+                bad.append(f'{path}: <{element.tag}/> added to {inherited}')
+for line in bad:
+    print(f'::error::{line}')
+sys.exit(1 if bad else 0)
+PY
+
+# ---------------------------------------------------------------------------
 step "Every model is named in ARCHITECTURE.md"
 MISSING=0
 # sed, not `grep -oP`: -P is GNU-only, and on macOS BSD grep rejects it and

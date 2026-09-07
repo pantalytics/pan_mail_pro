@@ -96,7 +96,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.7.6.0',
+    'version': '19.0.7.8.0',
     'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -108,6 +108,7 @@
         'data/ir_cron_data.xml',
         'data/mail_server_data.xml',
         'data/mail_template_data.xml',
+        'views/pan_mail_menus.xml',
         'views/pan_mail_mailbox_views.xml',
         'views/pan_mail_routing_log_views.xml',
         'views/pan_mail_provider_views.xml',

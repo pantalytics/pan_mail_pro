@@ -89,7 +89,8 @@ class TestInternalDomainGate(TransactionCase):
             'email': 'support@gate.test',
             'mailbox_type': 'personal',
             'owner_user_id': self.user.id,
-            'sync_mode': 'all',
+            'sync_received': True,
+            'sync_received_scope': 'all',
         }
         base.update(vals)
         return self.Mailbox.create(base)
@@ -101,7 +102,7 @@ class TestInternalDomainGate(TransactionCase):
     def test_enabling_sync_with_domains_is_allowed(self):
         self.Domains.set_domains(['gate.test'])
         mailbox = self._sync_mailbox()
-        self.assertEqual(mailbox.sync_mode, 'all')
+        self.assertEqual(mailbox.sync_received_scope, 'all')
 
     def test_a_send_only_mailbox_is_blocked_too(self):
         """The gate moved from the sync switch to the mailbox.
@@ -113,12 +114,12 @@ class TestInternalDomainGate(TransactionCase):
         over the company's mail, so it is where the question gets asked.
         """
         with self.assertRaises(ValidationError):
-            self._sync_mailbox(sync_mode='none')
+            self._sync_mailbox(sync_received=False)
 
     def test_domains_let_a_send_only_mailbox_through(self):
         self.Domains.set_domains(['gate.test'])
-        mailbox = self._sync_mailbox(sync_mode='none')
-        self.assertEqual(mailbox.sync_mode, 'none')
+        mailbox = self._sync_mailbox(sync_received=False)
+        self.assertFalse(mailbox.sync_received)
 
     def test_sync_run_refuses_when_domains_removed_later(self):
         """The constraint guards configuration; this guards the list being emptied."""

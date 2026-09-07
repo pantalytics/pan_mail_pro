@@ -111,15 +111,6 @@ class MailMail(models.Model):
             mailbox=mailbox.email,
         ))
 
-    def _is_mail_pro_configured(self):
-        """
-        Check if Mail Pro module is minimally configured.
-
-        Returns True if at least one active mailbox exists.
-        This allows the system to work before setup is complete.
-        """
-        return bool(self.env['pan.mail.mailbox'].sudo().search_count([('active', '=', True)]))
-
     def _is_awaiting_notification_mailbox(self):
         """Is this an internal notification that Mail Pro cannot route *yet*?
 

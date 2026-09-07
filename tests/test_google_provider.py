@@ -629,8 +629,8 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         self.assertEqual(mailbox.health_status, 'error')
 
     def test_gmail_mailbox_is_picked_up_by_the_sync_cron(self):
-        mailbox = self._gmail_mailbox(sync_mode='all')
-        self.assertTrue(mailbox._syncs_incoming())
+        mailbox = self._gmail_mailbox(sync_received=True, sync_received_scope='all')
+        self.assertTrue(mailbox.sync_received)
         self.assertTrue(mailbox._has_working_credentials())
 
     def test_connecting_later_makes_the_mailbox_syncable(self):
@@ -642,7 +642,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         which is always right and needs no invalidation at all.
         """
         self.account.write({'refresh_token_encrypted': False})
-        mailbox = self._gmail_mailbox(sync_mode='all')
+        mailbox = self._gmail_mailbox(sync_received=True, sync_received_scope='all')
         self.assertFalse(mailbox._has_working_credentials())
 
         self.account.write({'refresh_token': 'reconnected'})
@@ -656,11 +656,11 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         })
         mailbox = self.Mailbox.create({
             'email': 'sales@test.local', 'provider': 'gmail',
-            'mailbox_type': 'shared', 'sync_mode': 'all',
+            'mailbox_type': 'shared', 'sync_received': True,
         })
         self.assertFalse(mailbox.owner_user_id)
         self.assertTrue(mailbox._has_working_credentials())
-        self.assertTrue(mailbox._syncs_incoming())
+        self.assertTrue(mailbox.sync_received)
 
     def test_shared_gmail_mailbox_is_configurable_before_it_is_authorized(self):
         """Creation must not be blocked on credentials that do not exist yet.
@@ -675,7 +675,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         """
         mailbox = self.Mailbox.create({
             'email': 'unauthorized@test.local', 'provider': 'gmail',
-            'mailbox_type': 'shared', 'sync_mode': 'all',
+            'mailbox_type': 'shared', 'sync_received': True,
         })
         self.assertFalse(mailbox.owner_user_id)
         self.assertFalse(mailbox._has_working_credentials())
@@ -686,7 +686,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         with self.assertRaises(UserError):
             self.Mailbox.create({
                 'email': 'shared_ms@test.local', 'provider': 'outlook',
-                'mailbox_type': 'shared', 'sync_mode': 'all',
+                'mailbox_type': 'shared', 'sync_received': True,
             })
 
     # ------------------------------------------------------------------ #
