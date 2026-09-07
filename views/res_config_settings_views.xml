@@ -38,11 +38,17 @@
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">1. Email Provider</span>
-                                <i class="fa fa-info-circle text-muted" title="Where your company's email lives, and the application registration it sends mail through. Only one provider is in use at a time; switching keeps every provider's own credentials."/>
                                 <span class="o_mailpro_step_value" invisible="not x_setup_provider_done">
                                     <field name="x_active_provider_id" nolabel="1" readonly="1" options="{'no_open': True}"/>
                                 </span>
                                 <span class="o_mailpro_step_value" invisible="x_setup_provider_done">Not set up yet</span>
+                            </div>
+                            <!-- Only while the step is open. Once it is answered
+                                 the answer beside the name explains the step
+                                 better than any sentence could, and a hint that
+                                 stays is the one people learn to skip. -->
+                            <div class="o_mailpro_step_msg" invisible="x_setup_provider_done">
+                                Where your company's email lives. Mail Pro sends and receives through it.
                             </div>
                         </div>
                         <button type="action" name="%(action_pan_mail_provider)d"
@@ -58,11 +64,13 @@
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">2. Internal Domains</span>
-                                <i class="fa fa-info-circle text-muted" title="One row per domain your company owns, e.g. company.com. Mail between them is never synced into Odoo, and no mailbox can be created until at least one is listed."/>
                                 <span class="o_mailpro_step_value" invisible="not x_setup_domains_done">
                                     <field name="x_internal_domains_summary" nolabel="1" readonly="1"/>
                                 </span>
                                 <span class="o_mailpro_step_value" invisible="x_setup_domains_done">Not set yet</span>
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="x_setup_domains_done">
+                                The domains your company owns. Email between them is never copied into Odoo.
                             </div>
                             <!-- Only while the list is empty: the domains can be
                                  read off the addresses already in the database,
@@ -95,11 +103,20 @@
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">3. Mailboxes</span>
-                                <i class="fa fa-info-circle text-muted" title="The addresses Mail Pro sends and receives on. One needs 'Notification Mailbox' ticked: user invitations, password resets and activity reminders go out from it, using its owner's connected account."/>
+                                <!-- The address alone does not say why one of
+                                     several is the one on this line. The value
+                                     answers the step, so it has to say which
+                                     question it answered. -->
                                 <span class="o_mailpro_step_value" invisible="not x_setup_notification_done">
-                                    <field name="x_notification_mailbox_id" nolabel="1" readonly="1" options="{'no_open': True}"/>
+                                    Notifications from
+                                    <field name="x_notification_mailbox_id" class="d-inline"
+                                           nolabel="1" readonly="1" options="{'no_open': True}"/>
                                 </span>
                                 <span class="o_mailpro_step_value" invisible="x_setup_notification_done">No notification mailbox</span>
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="x_setup_notification_done">
+                                The addresses Mail Pro sends and receives on. One of them
+                                sends Odoo's own email.
                             </div>
                             <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_mailboxes_alert">
                                 <field name="x_mailboxes_alert" nolabel="1" readonly="1"/>
