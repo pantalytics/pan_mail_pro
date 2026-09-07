@@ -3,6 +3,7 @@ import logging
 
 from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, UserError
+from .neutralization import database_is_neutralized
 from .mail_provider_client import (
     get_provider_client,
     get_setup_provider,
@@ -137,6 +138,38 @@ class ResUsers(models.Model):
                 oauth_redirect_uri(self.env, provider), state=state),
             'target': 'new',
         }
+
+    def _pan_mail_should_prompt_connect(self):
+        """Should this user be shown the "connect your mailbox" banner?
+
+        Only where the button behind it would work. Four things have to be
+        true, and each one is a way the nudge would otherwise be a lie:
+
+        - the user is internal and not connected yet -- the question itself
+        - a provider is chosen *and* its application registration is complete,
+          because `action_connect_mailbox` refuses without one and the consent
+          screen cannot be built
+        - that provider has a consent screen at all: an IMAP/SMTP password is
+          typed in by an administrator, so there is nothing for the user to click
+        - the database is not a neutralized copy, where connecting would hand a
+          staging database real credentials
+
+        Deliberately not asked: whether setup is finished. The first person to
+        connect is usually the administrator who is on step 3 and needs an
+        owner for the notification mailbox, so a banner that waits for setup to
+        be done waits for the thing it is meant to unblock.
+        """
+        self.ensure_one()
+        if not self._is_internal() or self.x_pan_mail_connected:
+            return False
+        if database_is_neutralized(self.env):
+            return False
+        provider = get_setup_provider(self.env)
+        if not provider:
+            return False
+        if not get_provider_client(self.env, provider).uses_oauth:
+            return False
+        return self.env['pan.mail.setup'].credentials_set(provider)
 
     def action_disconnect_mailbox(self, provider=None):
         """Forget this user's stored credentials.

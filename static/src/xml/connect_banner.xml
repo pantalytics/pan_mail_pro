@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="pan_mail_pro.ConnectBanner">
+        <div t-if="state.visible" class="o_mailpro_connect_banner" role="status">
+            <span class="o_mailpro_connect_text">
+                Your mailbox is not connected yet. Sign in once and Odoo sends
+                and receives mail from your own address.
+            </span>
+            <a class="btn btn-primary btn-sm" href="/mail_pro/connect">Connect my mailbox</a>
+            <button type="button" class="btn btn-link btn-sm o_mailpro_connect_close"
+                    title="Hide until next sign-in" t-on-click="() => this.onDismiss()">
+                <i class="fa fa-times"/>
+            </button>
+        </div>
+    </t>
+
+    <!-- Above the action, below the navbar: the banner moves the page down
+         rather than covering the top of it. -->
+    <t t-name="pan_mail_pro.WebClient" t-inherit="web.WebClient" t-inherit-mode="extension">
+        <xpath expr="//ActionContainer" position="before">
+            <MailProConnectBanner/>
+        </xpath>
+    </t>
+
+</templates>

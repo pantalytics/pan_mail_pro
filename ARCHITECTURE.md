@@ -1133,6 +1133,45 @@ it into garbage.
 Note the asymmetry that makes this cheap: a mail with *any* outside recipient
 is correspondence and is still logged. "Internal" means every party is ours.
 
+### 9.14 One banner, and only where the button works
+
+Connecting a mailbox is self-service: the user clicks, the provider asks for
+consent, and `/microsoft_oauth/callback` creates their personal mailbox from
+the address the provider just named (§2). Nothing about that flow tells a user
+it exists. The invitation email does, but only for the people an administrator
+remembers to invite.
+
+So the client itself asks, once, above every screen, until the user connects.
+Two decisions hold it in place.
+
+**The server decides who sees it, and says so in `session_info`.**
+`res.users._pan_mail_should_prompt_connect()` is the whole rule and
+`models/ir_http.py` is four lines putting its answer in the session payload the
+webclient already fetches. An RPC of the banner's own would draw it a beat
+after the screen settled, which turns a nudge into a flicker; a client-side
+rule would be a second copy of "can this person connect", drifting from the one
+`action_connect_mailbox` enforces.
+
+The rule refuses in every case where the button would fail: no provider chosen,
+an incomplete application registration, a provider with no consent screen at
+all (IMAP, whose password an administrator types in), a user who is not
+internal or is already connected, and a neutralized copy, where connecting
+would hand a staging database real credentials. It deliberately does *not* wait
+for setup to finish — the first person to connect is usually the administrator
+standing on step 3, who needs a connected owner before a notification mailbox
+can send.
+
+**Dismissal is per browser session, and is not stored.** A field for "not now"
+is a preference nobody asked to express, and a banner dismissed forever is a
+banner that stopped working for everyone who clicked the cross by reflex.
+`sessionStorage` forgets at the next sign-in, which is the next moment the
+question is worth asking again.
+
+It renders inside `web.WebClient`, between the navbar and the action, rather
+than through the `main_components` registry: that container is the client's
+last child, so anything in it floats over the action instead of pushing the
+page down.
+
 ## 10. Security and permissions
 
 All Microsoft permissions are **delegated** (user context, never application) —
