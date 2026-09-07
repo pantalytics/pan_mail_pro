@@ -89,21 +89,14 @@
         - OAuth tokens and mailbox passwords are stored encrypted in your Odoo
           database.
         - No data is sent to Pantalytics, the module author.
-        - AI triage is OFF by default and OFF per mailbox. If you enable it,
-          you supply your own AI provider API key and your Odoo talks to that
-          provider directly; Pantalytics does not proxy, see, or store any of
-          it. Only an email's envelope is sent - subject, sender, recipient,
-          date, and a shortlist of candidate record names. Message bodies and
-          attachments are never sent to an AI provider.
-        - You are the data controller for anything you send to an AI provider,
-          and that provider is your processor. Check your agreement with them
-          before enabling this.
+        - No AI provider is contacted. The module has no AI feature and ships
+          no AI vendor SDK.
     """,
     'author': "Pantalytics B.V. by Rutger Hofste",
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.6.5.4',
+    'version': '19.0.7.0.0',
     'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -122,7 +115,6 @@
         'views/mail_message_views.xml',
         'views/pan_mail_domain_views.xml',
         'views/pan_mail_coverage_views.xml',
-        'views/pan_mail_item_views.xml',
         'views/templates/oauth_templates.xml',
         'views/res_config_settings_views.xml',
         'views/res_users_views.xml',

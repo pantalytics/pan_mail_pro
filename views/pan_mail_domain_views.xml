@@ -31,7 +31,7 @@
 
     <menuitem id="menu_communication_domains"
               name="Internal Domains"
-              parent="menu_communication_config"
+              parent="base.menu_email"
               action="action_pan_mail_domain"
               sequence="20"
               groups="pan_mail_pro.group_mail_mailbox_manager"/>

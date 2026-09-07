@@ -173,27 +173,10 @@ class PanMailMailbox(models.Model):
         help='Whether email arriving in this mailbox is imported into Odoo, '
              'and whether senders who are not contacts yet are imported too.')
 
-    # The interlock that keeps AI auto-routing off. It has no behaviour beyond
-    # the constraint below refusing to let it be switched on, which normally
-    # makes a field a comment with a database column - but 19.0.4.0.0 made it
-    # the explicit gate the AI seam is not allowed to open until real
-    # suggestions have earned it. See models/ai/pan_mail_ai.py.
-    routing_smart = fields.Boolean(
-        string='AI Routing',
-        default=False,
-        help='Let AI decide where to route (CRM, Helpdesk, etc.)'
-    )
-
     route_to_team = fields.Boolean(
         string='To Team',
         default=False,
         help='Route to a team instead of contact chatter'
-    )
-
-    queue_unknown_contacts = fields.Boolean(
-        string='Queue for Review',
-        default=False,
-        help='Hold for manual review instead of auto-creating contacts'
     )
 
     # Keep for backwards compatibility / internal use
@@ -631,13 +614,4 @@ class PanMailMailbox(models.Model):
             if record.route_to_team and not record.alias_id:
                 raise ValidationError(_(
                     'A Team must be selected when "Route to Team" is enabled.'
-                ))
-
-    @api.constrains('routing_smart')
-    def _check_smart_routing_not_implemented(self):
-        """Prevent enabling smart routing until AI routing is implemented."""
-        for record in self:
-            if record.routing_smart:
-                raise ValidationError(_(
-                    'Smart AI Routing is not yet implemented. This feature will be available in a future release.'
                 ))

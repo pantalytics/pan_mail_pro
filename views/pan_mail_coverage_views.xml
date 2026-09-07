@@ -60,8 +60,9 @@
 
     <menuitem id="menu_communication_coverage"
               name="Link Coverage"
-              parent="menu_communication_root"
+              parent="base.menu_email"
               action="action_pan_mail_coverage"
-              sequence="20"/>
+              sequence="8"
+              groups="base.group_system"/>
 
 </odoo>
