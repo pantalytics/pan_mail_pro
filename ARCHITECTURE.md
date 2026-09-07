@@ -1115,6 +1115,25 @@ page. The one behavioural change: choosing IMAP is now the same action as
 choosing any other provider — add the row — rather than an implicit fallback
 with no record of the choice at all.
 
+**Two buttons, in the order the mistakes happen.** `status` reads "Not
+Connected" for a correct registration nobody has signed in to yet and for
+three fields of nonsense alike, so the form had no feedback at all until the
+consent screen -- which is where an admin arrives after emailing their users
+to go and sign in. *Test Credentials* asks the provider whether the client id,
+secret and tenant are the ones it issued (Microsoft's client-credentials grant:
+no user, no consent, and the token is thrown away), and translates the AADSTS
+code into the field to fix. *Sign In Myself* is the same consent screen the
+user form offers, on the page where the provider is being configured, and it
+is the only check that also covers the Callback URL, the granted permissions
+and whether the tenant allows users to consent at all. The first is cheap and
+narrow, the second is the real thing.
+
+`supports_credential_test` gates the first: Microsoft implements it, IMAP has
+no registration to test, and Google offers no call that validates a client id
+and secret without a grant to go with them. The button is hidden rather than
+offering a test that cannot run, and `test_provider_contract.py` fails a client
+that declares the capability without implementing it.
+
 `credentials_set` / `connected` / `status` are the other trap the same
 collision points at: for IMAP they read `pan.mail.account`, a different
 model, so nothing tells Odoo to invalidate them when an account changes.

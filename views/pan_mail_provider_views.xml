@@ -23,8 +23,20 @@
         <field name="model">pan.mail.provider</field>
         <field name="arch" type="xml">
             <form string="Provider">
+                <header>
+                    <button name="action_test_credentials" type="object"
+                            string="Test Credentials" class="btn-primary" icon="fa-plug"
+                            invisible="not credentials_testable"
+                            help="Ask the provider whether these fields are the ones it issued. Nothing is sent and no mailbox is read."/>
+                    <button name="action_connect_myself" type="object"
+                            string="Sign In Myself" icon="fa-sign-in"
+                            invisible="not uses_oauth or not credentials_set"
+                            help="Walk the consent screen yourself. The only check that also covers the Callback URL and the granted permissions."/>
+                </header>
                 <sheet>
                     <field name="uses_oauth" invisible="1"/>
+                    <field name="credentials_testable" invisible="1"/>
+                    <field name="credentials_set" invisible="1"/>
                     <group>
                         <group>
                             <field name="provider"/>
