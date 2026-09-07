@@ -5,6 +5,7 @@ from odoo import http, _
 from odoo.http import request
 
 from ..models.mail_provider_client import (
+    PROVIDER_CLIENTS,
     get_provider_client,
     get_setup_provider,
     oauth_redirect_uri,
@@ -31,9 +32,15 @@ class MailProConnectController(http.Controller):
 
     @http.route('/mail_pro/connect', type='http', auth='user', website=True)
     def connect_mailbox(self, provider=None, **kwargs):
+        # `get_provider_client` hands back a *recordset*, and an empty one is
+        # falsy — so `if not client` was true for every provider that exists and
+        # this route redirected everybody to the settings page instead of to the
+        # consent screen. Ask the registry whether the code is known, and the
+        # client only what it knows: does it have a sign-in screen.
         provider = provider or get_setup_provider(request.env)
-        client = provider and get_provider_client(request.env, provider)
-        if not client or not client.uses_oauth:
+        if provider not in PROVIDER_CLIENTS:
+            return request.redirect('/odoo/settings#mail_pro')
+        if not get_provider_client(request.env, provider).uses_oauth:
             return request.redirect('/odoo/settings#mail_pro')
 
         action = request.env.user.action_connect_mailbox(provider)

@@ -115,3 +115,60 @@ class TestConnectBannerSession(HttpCase):
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
 
         self.assertTrue(info['pan_mail_connect_prompt'])
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestConnectRoute(HttpCase):
+    """The button behind the banner, followed.
+
+    Everything above asks whether the banner is *shown*. Nothing asked where
+    it goes, and it went nowhere: `get_provider_client` returns a recordset,
+    an empty recordset is falsy, and `if not client` was therefore true for
+    every provider that exists. Every click landed on the settings page --
+    which for the employee the banner is aimed at is a page they cannot open,
+    so the button read as dead.
+    """
+
+    def _connect(self):
+        return self.url_open('/mail_pro/connect', allow_redirects=False)
+
+    def setUp(self):
+        super().setUp()
+        self.env['pan.mail.domain'].set_domains(['company.test'])
+        self.env['res.users'].create({
+            'name': 'Nora Employee',
+            'login': 'nora@company.test',
+            'password': 'nora@company.test',
+            'email': 'nora@company.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        self.authenticate('nora@company.test', 'nora@company.test')
+
+    def test_the_button_reaches_the_consent_screen(self):
+        self.env['pan.mail.provider'].create({
+            'provider': 'gmail', 'client_id': 'id', 'client_secret': 'secret',
+        })
+
+        response = self._connect()
+
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(
+            response.headers['Location'].startswith(
+                'https://accounts.google.com/o/oauth2/v2/auth'),
+            'the connect button does not reach the provider: %s'
+            % response.headers['Location'])
+
+    def test_a_password_provider_goes_to_the_settings_page(self):
+        """IMAP has no consent screen, so there is nowhere else to send."""
+        self.env['pan.mail.provider'].create({'provider': 'imap'})
+
+        response = self._connect()
+
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers['Location'].endswith('/odoo/settings#mail_pro'))
+
+    def test_no_provider_goes_to_the_settings_page(self):
+        response = self._connect()
+
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers['Location'].endswith('/odoo/settings#mail_pro'))
