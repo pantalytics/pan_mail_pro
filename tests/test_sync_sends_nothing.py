@@ -170,6 +170,7 @@ class TestGraphSyncSendsNothing(MailProTestCase, QuietSyncMixin):
         self.mailbox = self.personal_mailbox
         self.mailbox.write({
             'sync_mode': 'all',
+            'capture_sent': True,
             'last_sync_date': '2026-01-01 00:00:00',
         })
 
@@ -277,6 +278,7 @@ class TestGmailSyncSendsNothing(MailProTestCase, QuietSyncMixin):
             'mailbox_type': 'personal',
             'owner_user_id': user.id,
             'sync_mode': 'all',
+            'capture_sent': True,
             'last_sync_date': '2026-01-01 00:00:00',
         })
 
@@ -363,6 +365,7 @@ class TestImapSyncSendsNothing(MailProTestCase, QuietSyncMixin):
             'provider': 'imap',
             'mailbox_type': 'shared',
             'sync_mode': 'all',
+            'capture_sent': True,
             'last_sync_date': '2026-01-01 00:00:00',
         })
 

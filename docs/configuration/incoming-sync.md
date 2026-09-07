@@ -13,10 +13,13 @@ Before enabling incoming sync:
 
 1. Go to **Settings → Mail Pro → Manage Mailbox List**
 2. Open a mailbox
-3. Set **Sync Mode**:
-   - **Send messages only** - No incoming sync
-   - **Send and receive from existing contacts** - Only sync from known partners
-   - **All** - Sync all emails with routing rules
+3. Under **Incoming Email**, set **Import**:
+   - **Do not import** - No incoming sync
+   - **From existing contacts** - Only sync from known partners
+   - **From anyone** - Sync all emails with routing rules
+   Under **Outgoing Email**, **Sent from your mail app** is a separate switch.
+   Leave it off and only mail written in Odoo is logged; switch it on to read
+   the Sent folder back as well, onto contacts that already exist.
 4. Set the **Owner** (must have Microsoft connected)
 5. Configure routing (see below)
 6. Save

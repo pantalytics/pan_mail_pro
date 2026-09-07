@@ -59,6 +59,7 @@ class TestGmailIncomingSync(MailProTestCase):
             'mailbox_type': 'personal',
             'owner_user_id': self.gmail_user.id,
             'sync_mode': 'all',
+            'capture_sent': True,
             'last_sync_date': '2026-01-01 00:00:00',
         })
         self.requested_urls = []

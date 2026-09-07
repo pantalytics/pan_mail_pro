@@ -90,6 +90,18 @@ class PanMailMailbox(models.Model):
         self.ensure_one()
         return self.sync_mode in SYNCING_MODES
 
+    def _syncs_mail(self):
+        """Whether the sync touches this mailbox at all, in either direction.
+
+        Incoming and sent-item capture are separate answers (see `capture_sent`)
+        but they share one mechanism: the same cron, the same credentials, the
+        same gate ladder. Everything that asks "is this mailbox in the sync"
+        asks here, so switching on either half is enough to be included and
+        switching off both is enough to be left alone.
+        """
+        self.ensure_one()
+        return self._syncs_incoming() or self.capture_sent
+
     def _needs_credentials(self):
         """Whether this mailbox needs credentials of its own to do its job.
 
@@ -98,7 +110,7 @@ class PanMailMailbox(models.Model):
         somebody else's behalf without being told whose token to use.
         """
         self.ensure_one()
-        return self.mailbox_type == 'personal' or self.is_notification_mailbox or self._syncs_incoming()
+        return self.mailbox_type == 'personal' or self.is_notification_mailbox or self._syncs_mail()
 
     def _has_working_credentials(self):
         """Whether this mailbox can actually reach its provider right now.
@@ -168,12 +180,32 @@ class PanMailMailbox(models.Model):
     # computed from it (enabled, enable, include-unknown, inbox, sent), which is
     # six ways to describe one choice and five things that can disagree with it.
     sync_mode = fields.Selection([
-        ('none', 'Send only'),
-        ('known_partners', 'Send and receive, from existing contacts'),
-        ('all', 'Send and receive, from anyone'),
-    ], string='Incoming Mail', default='none', required=True,
+        ('none', 'Do not import'),
+        ('known_partners', 'From existing contacts'),
+        ('all', 'From anyone'),
+    ], string='Import', default='none', required=True,
         help='Whether email arriving in this mailbox is imported into Odoo, '
              'and whether senders who are not contacts yet are imported too.')
+
+    # -------------------------------------------------------------------------
+    # Outgoing Mail Configuration
+    # -------------------------------------------------------------------------
+    # Mail *leaving* Odoo needs no switch. A mailbox exists to send, so a toggle
+    # for it would only be a way to break sending from a settings page.
+    #
+    # The other half of outgoing is not the same thing at all: mail the person
+    # wrote in Outlook, Gmail or their mail client, which Odoo learns about only
+    # by reading the Sent folder back afterwards. That is a copy of
+    # correspondence Odoo was never part of, so it is its own question and the
+    # answer starts at no. It used to ride along with `sync_mode`, where
+    # "send and receive" quietly meant "and copy everything you send elsewhere".
+    capture_sent = fields.Boolean(
+        string='Sent from your mail app',
+        default=False,
+        help='Read this mailbox\'s Sent folder and post mail sent from the mail '
+             'app onto the contact it went to. Only onto contacts that already '
+             'exist: emailing a stranger from Outlook does not create one here.',
+    )
 
     route_to_team = fields.Boolean(
         string='To Team',
@@ -218,7 +250,7 @@ class PanMailMailbox(models.Model):
         ('error', 'Error'),
     ], string='Status', compute='_compute_health_status', store=False)
 
-    @api.depends('state', 'sync_mode', 'mailbox_type', 'provider', 'owner_user_id',
+    @api.depends('state', 'sync_mode', 'capture_sent', 'mailbox_type', 'provider', 'owner_user_id',
                  'owner_user_id.x_pan_mail_account_ids.connected')
     def _compute_health_status(self):
         for record in self:
@@ -226,7 +258,7 @@ class PanMailMailbox(models.Model):
                 record.health_status = 'error'
             elif record._needs_credentials() and not record._has_working_credentials():
                 record.health_status = 'error'
-            elif record._syncs_incoming() and record.state == 'draft':
+            elif record._syncs_mail() and record.state == 'draft':
                 record.health_status = 'warning'
             else:
                 record.health_status = 'healthy'
@@ -371,8 +403,11 @@ class PanMailMailbox(models.Model):
         if not setup.is_ready():
             raise UserError(setup.not_ready_error())
 
-        if not self._syncs_incoming():
-            raise UserError(_('Sync mode is set to "No sync". Change it to enable syncing.'))
+        if not self._syncs_mail():
+            raise UserError(_(
+                'This mailbox syncs nothing: incoming mail is off and mail sent '
+                'outside Odoo is not logged. Switch on one of them first.'
+            ))
 
         if not self._has_working_credentials():
             raise UserError(self._no_credentials_error())
@@ -455,10 +490,10 @@ class PanMailMailbox(models.Model):
                     vals['last_sync_date'] = new_start
         return super().write(vals)
 
-    @api.onchange('sync_mode')
+    @api.onchange('sync_mode', 'capture_sent')
     def _onchange_sync_mode(self):
-        """Reset state when switching to no sync."""
-        if not self._syncs_incoming():
+        """Reset state when the mailbox stops syncing in either direction."""
+        if not self._syncs_mail():
             self.state = 'draft'
             self.error_message = False
 
@@ -482,7 +517,7 @@ class PanMailMailbox(models.Model):
                 if existing:
                     raise ValidationError(_('This email address is already registered!'))
 
-    @api.constrains('mailbox_type', 'is_notification_mailbox', 'owner_user_id', 'sync_mode', 'provider')
+    @api.constrains('mailbox_type', 'is_notification_mailbox', 'owner_user_id', 'sync_mode', 'capture_sent', 'provider')
     def _check_owner_required(self):
         """Ensure an owner is set where the provider actually needs one."""
         for record in self:
@@ -501,7 +536,7 @@ class PanMailMailbox(models.Model):
             # is its own Workspace account, so there is nobody to borrow from and
             # demanding an owner would make the mailbox unconfigurable.
             if (record.mailbox_type == 'shared' and
-                    record._syncs_incoming() and
+                    record._syncs_mail() and
                     not record.owner_user_id and
                     record._get_client().supports_shared_mailbox):
                 raise ValidationError(_(
@@ -593,18 +628,18 @@ class PanMailMailbox(models.Model):
         if gate:
             raise ValidationError(gate)
 
-    @api.constrains('sync_mode')
+    @api.constrains('sync_mode', 'capture_sent')
     def _check_notification_mailbox_for_sync(self):
-        """Ensure notification mailbox exists when enabling incoming sync."""
+        """Ensure notification mailbox exists before any sync is switched on."""
         for record in self:
-            if record._syncs_incoming() and not record.is_notification_mailbox:
+            if record._syncs_mail() and not record.is_notification_mailbox:
                 notification_mailbox = self.search([
                     ('is_notification_mailbox', '=', True),
                     ('active', '=', True),
                 ], limit=1)
                 if not notification_mailbox:
                     raise ValidationError(_(
-                        'A Notification mailbox is required for incoming email sync. '
+                        'A Notification mailbox is required before a mailbox can sync. '
                         'Tick "Notification Mailbox" on the mailbox that should send '
                         'system email first.'
                     ))

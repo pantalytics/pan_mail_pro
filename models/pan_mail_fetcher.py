@@ -101,7 +101,9 @@ class PanMailFetcher(models.AbstractModel):
         # skipped exactly those mailboxes. What matters is usable credentials,
         # which is what the mailbox asks its client.
         mailboxes = self.env['pan.mail.mailbox'].search([
+            '|',
             ('sync_mode', 'in', SYNCING_MODES),
+            ('capture_sent', '=', True),
             ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
         ]).filtered(lambda m: m._has_working_credentials())
 
@@ -179,12 +181,14 @@ class PanMailFetcher(models.AbstractModel):
                 mailbox.write({'last_sync_date': fields.Datetime.now()})
                 return  # Skip this run, start fetching from next cron run
 
-        # Both folders, always: syncing a mailbox means both sides of its
-        # correspondence. Two booleans used to say so and were computed from the
-        # sync mode, so they could never disagree with it.
+        # One folder per direction, and each direction is its own answer.
+        # Reading the inbox is "mail arrives here, put it in Odoo"; reading Sent
+        # is "copy what this person wrote in Outlook", which is a different
+        # promise to make to the mailbox's owner. They shared one switch until
+        # 19.0.7.4.0, so turning on incoming mail silently turned on the second.
         processed_count = 0
         folder_cursors = []
-        for folder in (FOLDER_INBOX, FOLDER_SENT):
+        for folder in self._folders_to_sync(mailbox):
             count, latest_dt = self._fetch_folder(mailbox, folder)
             processed_count += count
             if latest_dt:
@@ -199,6 +203,22 @@ class PanMailFetcher(models.AbstractModel):
             mailbox.write({'last_sync_date': fields.Datetime.now()})
 
         _logger.info(f"[Incoming Mail] Processed {processed_count} message(s) from {mailbox.email}")
+
+    @staticmethod
+    def _folders_to_sync(mailbox):
+        """The folders this mailbox's settings ask for, in reading order.
+
+        The cursor is the reason this returns a list rather than being decided
+        inside the loop: `last_sync_date` advances to the *minimum* of the
+        folders that were read, so a folder that is not synced must be absent
+        here rather than fetched and discarded.
+        """
+        folders = []
+        if mailbox._syncs_incoming():
+            folders.append(FOLDER_INBOX)
+        if mailbox.capture_sent:
+            folders.append(FOLDER_SENT)
+        return folders
 
     def _fetch_folder(self, mailbox, folder):
         """
@@ -430,16 +450,29 @@ class PanMailFetcher(models.AbstractModel):
         return None
 
     def _gate_sync_mode(self, ctx):
-        """What the mailbox was told to accept.
+        """What the mailbox was told to accept, which differs by direction.
 
-        A mailbox on `known_partners` takes mail from contacts it already has.
-        Mail from anybody else is refused here and left where it is, in the
-        mailbox. Widening the mode to `all` is how a customer changes that
-        answer; there is no backlog to work through.
+        Incoming, a mailbox on `known_partners` takes mail from contacts it
+        already has and refuses the rest, leaving it where it is. Widening the
+        mode to `all` is how a customer changes that answer; there is no backlog
+        to work through.
+
+        Sent items are not offered that choice. Mail the owner wrote in Outlook
+        is logged only onto a contact Odoo already has: emailing a stranger from
+        a mail client is not a statement that they belong in the database, and
+        the customer who switches this on wants their correspondence with known
+        contacts, not a contact list built from their outbox. So the Sent folder
+        is `known_partners` whatever the incoming mode says, and there is one
+        fewer combination to explain.
         """
         mailbox = ctx['mailbox']
         if ctx['partner'] or ctx['force_import']:
             return None
+        if ctx['is_outgoing']:
+            return Skip(
+                'unknown_contact',
+                _('Mail sent outside Odoo is only logged on existing contacts.'),
+            )
         if mailbox.sync_mode == 'known_partners':
             return Skip(
                 'unknown_contact',

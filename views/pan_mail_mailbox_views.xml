@@ -23,6 +23,7 @@
                 <field name="provider" string="Provider" optional="hide"/>
                 <field name="owner_user_id" string="Owner" optional="hide"/>
                 <field name="sync_mode" string="Incoming" optional="hide"/>
+                <field name="capture_sent" string="Logs Sent" optional="hide"/>
                 <field name="last_sync_date" string="Last Synced" optional="hide"/>
                 <field name="error_message" string="Error" optional="hide"/>
             </list>
@@ -76,23 +77,58 @@
                     </group>
 
                     <!-- SECTION 2: INCOMING EMAIL (not for notification) -->
+                    <!-- Mail arriving in this mailbox. One question, three
+                         answers, and the answer is no until somebody says
+                         otherwise. -->
                     <group string="Incoming Email" invisible="is_notification_mailbox">
                         <group>
                             <label for="sync_mode"/>
                             <div>
                                 <field name="sync_mode" widget="radio" nolabel="1" class="d-inline-block"/>
                                 <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Mail is imported oldest first, up to 200 per minute. From anyone: senders who are not contacts yet are created automatically, unless you hold them for review below."/>
+                                   title="Mail is imported oldest first, up to 200 per minute. From anyone: senders who are not contacts yet are created automatically."/>
                             </div>
-                            <field name="sync_start_date"
-                                   invisible="sync_mode == 'none'"/>
-                            <field name="last_sync_date" readonly="1"
-                                   invisible="sync_mode == 'none' or not last_sync_date"/>
                         </group>
                         <group/>
                     </group>
 
-                    <!-- SECTION 3: ROUTING (only when sync enabled) -->
+                    <!-- SECTION 3: OUTGOING EMAIL (not for notification) -->
+                    <!-- Two ways out of this address, and only the second one
+                         is a choice. Sending from Odoo is what the mailbox is
+                         for; a toggle there would be a way to break sending
+                         from a settings page. Reading back what the owner wrote
+                         in their own mail app is a copy of correspondence Odoo
+                         was never part of, so it is asked separately and
+                         starts at off. -->
+                    <group string="Outgoing Email" invisible="is_notification_mailbox">
+                        <group>
+                            <div class="o_form_label">Sent from Odoo</div>
+                            <div class="text-muted">
+                                Always. Chatter and notifications leave through this
+                                mailbox and land in its Sent folder.
+                            </div>
+                            <label for="capture_sent"/>
+                            <div>
+                                <field name="capture_sent" widget="boolean_toggle"
+                                       nolabel="1" class="d-inline-block"/>
+                                <i class="fa fa-info-circle text-muted ms-1"
+                                   title="Reads this mailbox's Sent folder and posts mail written in Outlook, Gmail or your mail client onto the contact it went to. Only onto contacts that already exist: emailing a stranger from your mail app does not create one in Odoo."/>
+                            </div>
+                        </group>
+                        <group/>
+                    </group>
+
+                    <!-- SECTION 4: SYNC (only when something is actually read) -->
+                    <group string="Sync" invisible="is_notification_mailbox or (sync_mode == 'none' and not capture_sent)">
+                        <group>
+                            <field name="sync_start_date"/>
+                            <field name="last_sync_date" readonly="1"
+                                   invisible="not last_sync_date"/>
+                        </group>
+                        <group/>
+                    </group>
+
+                    <!-- SECTION 5: ROUTING (only for mail arriving here) -->
                     <group string="Routing" invisible="is_notification_mailbox or sync_mode == 'none'">
                         <group>
                             <label for="route_to_team"/>
@@ -111,7 +147,7 @@
                     </group>
 
                     <!-- SYNC BUTTON -->
-                    <group invisible="is_notification_mailbox or sync_mode == 'none'">
+                    <group invisible="is_notification_mailbox or (sync_mode == 'none' and not capture_sent)">
                         <group>
                             <button name="action_sync_now" string="Sync Now"
                                     type="object" class="btn-primary" icon="fa-refresh"/>

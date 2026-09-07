@@ -24,6 +24,7 @@ from odoo.tests import tagged
 
 from ..models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 from ..models.pan_mail_fetcher import Skip
+from ..models.pan_mail_mailbox import SYNCING_MODES
 from .common import MailProTestCase
 
 CUSTOMER = 'customer@example.com'
@@ -282,3 +283,118 @@ class TestIncomingGates(MailProTestCase):
         skip = Skip('some_reason')
         self.assertEqual(skip.detail, '')
         self.assertFalse(skip.quiet)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestOutgoingCaptureIsItsOwnSwitch(MailProTestCase):
+    """Incoming mail and mail sent outside Odoo are two questions, not one.
+
+    They shared `sync_mode` until 19.0.7.4.0, so a customer who asked for
+    incoming mail also got a copy of everything their people wrote in Outlook.
+    That is a different promise to the mailbox's owner, and nobody was asked to
+    make it. These assertions pin the split: which folders a mailbox reads, and
+    that the Sent folder never creates a contact whatever the incoming mode
+    says.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.processor = self.env['pan.mail.fetcher']
+        self.mailbox = self.personal_mailbox
+
+    def _folders(self):
+        return self.processor._folders_to_sync(self.mailbox)
+
+    def test_a_send_only_mailbox_reads_nothing(self):
+        self.mailbox.write({'sync_mode': 'none', 'capture_sent': False})
+        self.assertEqual(self._folders(), [])
+        self.assertFalse(self.mailbox._syncs_mail())
+
+    def test_incoming_alone_does_not_read_the_sent_folder(self):
+        """The regression this split exists to prevent."""
+        self.mailbox.write({'sync_mode': 'all', 'capture_sent': False})
+        self.assertEqual(self._folders(), [FOLDER_INBOX])
+
+    def test_sent_capture_alone_does_not_read_the_inbox(self):
+        """The other half has to work on its own too, or it is not a split."""
+        self.mailbox.write({'sync_mode': 'none', 'capture_sent': True})
+        self.assertEqual(self._folders(), [FOLDER_SENT])
+        self.assertTrue(self.mailbox._syncs_mail())
+
+    def test_both_switches_read_both_folders(self):
+        self.mailbox.write({'sync_mode': 'all', 'capture_sent': True})
+        self.assertEqual(self._folders(), [FOLDER_INBOX, FOLDER_SENT])
+
+    def test_a_new_mailbox_captures_nothing_it_was_not_asked_to(self):
+        """The default is the careful answer. A mailbox created today does not
+        start copying its owner's outbox because somebody switched on incoming
+        mail."""
+        self.assertFalse(
+            self.env['pan.mail.mailbox'].default_get(['capture_sent'])
+            .get('capture_sent'),
+            "capture_sent must default to off",
+        )
+
+    def test_a_capture_only_mailbox_is_picked_up_by_the_cron(self):
+        """The cron used to filter on the sync mode alone, which would have
+        skipped every mailbox that only logs what it sends."""
+        self.mailbox.write({'sync_mode': 'none', 'capture_sent': True})
+        domain = [
+            '|',
+            ('sync_mode', 'in', SYNCING_MODES),
+            ('capture_sent', '=', True),
+        ]
+        self.assertIn(
+            self.mailbox,
+            self.env['pan.mail.mailbox'].search(domain),
+        )
+
+    def test_a_capture_only_mailbox_needs_credentials(self):
+        """Reading the Sent folder is reading, so the mailbox has to be able to
+        reach the provider even with incoming mail switched off."""
+        self.mailbox.write({'sync_mode': 'none', 'capture_sent': True})
+        self.assertTrue(self.mailbox._needs_credentials())
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestSentItemsNeverCreateAContact(MailProTestCase):
+    """A sent item is logged onto a contact that already exists, or not at all.
+
+    Deliberately not the three-way choice the inbox gets. Mailing a stranger
+    from Outlook is not a statement that they belong in the database, and a
+    customer who switches Sent capture on wants their correspondence with known
+    contacts, not a contact list built from their outbox.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.processor = self.env['pan.mail.fetcher']
+        self.mailbox = self.personal_mailbox
+        self.mailbox.write({'sync_mode': 'all', 'capture_sent': True})
+
+    def _ctx(self, folder, partner=None):
+        return {
+            'mailbox': self.mailbox,
+            'folder': folder,
+            'is_outgoing': folder == FOLDER_SENT,
+            'partner': partner,
+            'force_import': False,
+            'internet_message_id': INTERNET_ID,
+        }
+
+    def test_an_unknown_recipient_is_refused_even_on_the_widest_mode(self):
+        skip = self.processor._gate_sync_mode(self._ctx(FOLDER_SENT))
+
+        self.assertIsNotNone(skip, "sync_mode='all' must not widen the Sent folder")
+        self.assertEqual(skip.reason, 'unknown_contact')
+
+    def test_the_same_message_would_be_accepted_from_the_inbox(self):
+        """Same mailbox, same unknown address, opposite direction. The
+        asymmetry is the decision, so it is asserted rather than implied."""
+        self.assertIsNone(self.processor._gate_sync_mode(self._ctx(FOLDER_INBOX)))
+
+    def test_a_known_contact_passes(self):
+        skip = self.processor._gate_sync_mode(
+            self._ctx(FOLDER_SENT, partner=self.external_partner)
+        )
+        self.assertIsNone(skip)
