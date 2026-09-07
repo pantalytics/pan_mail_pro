@@ -1172,6 +1172,37 @@ than through the `main_components` registry: that container is the client's
 last child, so anything in it floats over the action instead of pushing the
 page down.
 
+### 9.15 The test email goes to the person, never to the mailbox
+
+Three things can be tested about a mailbox and only two of them were:
+`pan.mail.account.action_test_connection` asks the provider whether the
+credentials still work, `pan.mail.mailbox.action_test_incoming` fetches a
+message. Sending was untested, and sending is where a mailbox fails silently —
+a send scope that was never granted, a SendAs that Exchange does not have, a
+DMARC record that rejects the address. Coming back from a consent screen proves
+none of those; only a message that arrives does.
+
+**No confirmation mail is sent when a mailbox is connected.** The provider has
+just told the user the grant succeeded, and a mail addressed *to* the mailbox
+is worse than redundant: the sync reads it straight back in, which is a routing
+log entry and possibly a record created by a self-test. `action_test_send` is a
+button somebody presses, and it sends to `env.user.email` — the person who
+pressed it, who can judge whether it arrived.
+
+That one rule covers all three mailbox types without a branch. On a personal
+mailbox the presser *is* the owner, because `_is_sendable_by` lets nobody else
+send from one; on a shared or notification mailbox it is whoever is testing.
+The same method backs the button on My Profile (`res.users
+.action_test_send_mailbox`), which is the moment after a consent screen where
+the question actually gets asked.
+
+Two smaller decisions hold it together. The mail is routed with
+`x_send_from_mailbox_id` rather than left to `_resolve_route`, because a test
+that silently leaves from a *different* mailbox tests nothing (§9.5). And the
+whole attempt runs in one savepoint: a failed test that left a `mail.mail`
+behind would be delivered by the queue cron minutes later, which is a test
+email arriving out of nowhere long after the reader concluded it had failed.
+
 ## 10. Security and permissions
 
 All Microsoft permissions are **delegated** (user context, never application) —
