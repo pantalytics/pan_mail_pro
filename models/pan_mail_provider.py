@@ -109,10 +109,10 @@ class PanMailProvider(models.Model):
         ('connected', 'Connected'),
     ], compute='_compute_status')
 
-    _sql_constraints = [
-        ('provider_uniq', 'unique(provider)',
-         'Each provider can only be registered once — edit the existing row.'),
-    ]
+    _provider_uniq = models.Constraint(
+        'UNIQUE(provider)',
+        'Each provider can only be registered once — edit the existing row.',
+    )
 
     # -------------------------------------------------------------------------
     # Application credentials

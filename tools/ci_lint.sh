@@ -77,6 +77,13 @@ else
     echo "OK: no numbercall found."
 fi
 
+step "Odoo 19 — no _sql_constraints assignment"
+if grep -rn '^\s*_sql_constraints\s*=' --include='*.py' .; then
+    fail "Odoo 19 ignores _sql_constraints and only warns, so the constraint is silently absent. Use models.Constraint."
+else
+    echo "OK: no _sql_constraints assignment found."
+fi
+
 # ---------------------------------------------------------------------------
 step "Boundary — anthropic imported only inside models/ai/"
 if grep -rn 'import anthropic\|from anthropic' --include='*.py' . | grep -v '^./models/ai/'; then
