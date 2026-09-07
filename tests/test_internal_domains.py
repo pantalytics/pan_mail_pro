@@ -14,8 +14,11 @@ So what is under test here is mostly the absence of configuration:
 - the block must be reachable from both directions (saving a mailbox, and a
   list emptied after the fact)
 """
+from psycopg2 import IntegrityError
+
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
+from odoo.tools import mute_logger
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -317,3 +320,22 @@ class TestInternalDomainSuggestion(TransactionCase):
             self.Domains.create({'name': 'jan@voorbeeld.test'}).name, 'voorbeeld.test')
         with self.assertRaises(ValidationError):
             self.Domains.create({'name': 'not a domain'})
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestDomainUniqueness(TransactionCase):
+    """One domain, one row. Declared with `_sql_constraints` until 19.0.6.5.4,
+    which Odoo 19 ignores, so the list happily held the same domain twice."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Domains = cls.env['pan.mail.domain']
+
+    @mute_logger('odoo.sql_db')
+    def test_the_same_domain_cannot_be_listed_twice(self):
+        self.Domains.create({'name': 'company.com'})
+
+        with self.assertRaises(IntegrityError):
+            self.Domains.create({'name': 'company.com'})
+            self.env.cr.flush()

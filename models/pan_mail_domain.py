@@ -68,9 +68,10 @@ class PanMailDomain(models.Model):
              'domains is never synced into Odoo.',
     )
 
-    _sql_constraints = [
-        ('name_unique', 'unique(name)', 'That domain is already on the list.'),
-    ]
+    _name_unique = models.Constraint(
+        'UNIQUE(name)',
+        'That domain is already on the list.',
+    )
 
     @api.model_create_multi
     def create(self, vals_list):

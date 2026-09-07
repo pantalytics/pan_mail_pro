@@ -3,8 +3,11 @@
 provider, that switching keeps what you switch away from, and that a secret
 is never handed back once it is saved.
 """
+from psycopg2 import IntegrityError
+
 from odoo.exceptions import ValidationError
 from odoo.tests import TransactionCase, tagged
+from odoo.tools import mute_logger
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -106,3 +109,14 @@ class TestProviderCredentials(TransactionCase):
         self.assertTrue(row.uses_oauth)
         self.assertTrue(row.redirect_uri)
         self.assertIn('/microsoft_oauth/callback', row.redirect_uri)
+
+    @mute_logger('odoo.sql_db')
+    def test_a_provider_can_only_be_registered_once(self):
+        """The uniqueness was declared with `_sql_constraints`, which Odoo 19
+        ignores with nothing but a warning — so the database accepted two rows
+        for one provider and `in_use` could point at either."""
+        self.Provider.create({'provider': 'outlook', 'client_id': 'first'})
+
+        with self.assertRaises(IntegrityError):
+            self.Provider.create({'provider': 'outlook', 'client_id': 'second'})
+            self.env.cr.flush()
