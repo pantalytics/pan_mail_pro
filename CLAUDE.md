@@ -260,6 +260,11 @@ records. Python, view and asset changes land on the restart regardless; new fiel
 and data migrations need the version bump the Odoo 19 checklist already asks for.
 Forget it and the instance quietly serves the old schema.
 
+**Odoo core and addons are two separate update tracks, and neither migrates the
+database on its own.** Core first, addons second, `-u` third -- the order and the
+white screens it prevents are in
+[docs/cloudpepper-deploy.md](docs/cloudpepper-deploy.md).
+
 ## CI/CD (GitHub Actions)
 
 Three workflows in `.github/workflows/`:
@@ -707,6 +712,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 | [README.md](README.md) | Setup and usage for the person installing the module |
 | [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) | UI conventions. Read before adding a field to a settings or mailbox screen |
 | [TESTPLAN.md](TESTPLAN.md) | Manual test plan for what CI cannot reach |
+| [docs/cloudpepper-deploy.md](docs/cloudpepper-deploy.md) | Deploying on Cloudpepper: the two update tracks, the order, and the white screens |
 | `docs/` | The published GitBook — end-user documentation, per provider |
 | CLAUDE.md (this file) | Workflow: environments, commands, CI, Odoo traps |
 
