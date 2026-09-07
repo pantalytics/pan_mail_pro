@@ -73,8 +73,10 @@
                             <label for="redirect_uri"/>
                             <div>
                                 <field name="redirect_uri" nolabel="1" readonly="1" widget="CopyClipboardChar"/>
-                                <i class="fa fa-info-circle text-muted ms-1"
-                                   title="Paste this into the provider console's redirect URIs. Sign-in fails until it matches exactly."/>
+                                <div class="text-muted mt-1">
+                                    Paste this into the provider console's redirect URIs.
+                                    Sign-in fails until it matches exactly.
+                                </div>
                             </div>
                         </group>
                     </group>
