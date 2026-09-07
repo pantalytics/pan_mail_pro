@@ -329,6 +329,8 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh` or `--mode=upgrade` |
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
+| `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
+| `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 
 **Fresh install vs. upgraded database.** The `test` job installs fresh; the
 `upgrade` job installs the newest `v<series>.*` tag that is not HEAD and then
@@ -355,6 +357,29 @@ that last gap: it restores a customer backup into the throwaway database
 path, and prints real row counts and a masked parameter report. Customer data
 means it can never run in CI; it is part of the rollout runbook
 (`docs/migration-mail-pro.md`).
+
+## Looking at the UI
+
+The suite asserts that a view *renders*. Nobody was asserting that it *reads*:
+the setup checklist ran the full width of the window, so on a wide monitor the
+arrow sat a screen away from the step it belonged to, and the provider line
+showed `outlook` where its own form says "Microsoft 365". Both were plainly
+visible and invisible to 456 passing tests.
+
+```bash
+tools/ui_preview.sh              # boot, seeded: http://localhost:8069, admin/admin
+pip install playwright           # once — the browser is already on the image
+tools/ui_shot.py before.png --width=2000
+# ... edit a view or the scss ...
+tools/ui_preview.sh --update     # re-apply views and assets
+tools/ui_shot.py after.png --width=2000
+tools/ui_preview.sh --stop
+```
+
+Same Docker-only requirement as `tools/ci.sh`, so it works in a cloud session
+where there is no browser and no laptop. Take the screenshot at 2000px as well
+as 1440: a layout bug that only a wide monitor shows is still a layout bug, and
+that is the width the complaint arrives from.
 
 ## Working from Claude Code (mobile, web, cloud sessions)
 

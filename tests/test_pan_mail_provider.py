@@ -104,6 +104,14 @@ class TestProviderCredentials(TransactionCase):
         self.assertFalse(row.uses_oauth)
         self.assertFalse(row.redirect_uri)
 
+    def test_the_name_is_the_label_not_the_code(self):
+        """`_rec_name = 'provider'` showed the raw selection value everywhere a
+        record shows its name — the setup checklist read "outlook"."""
+        row = self.Provider.create({'provider': 'outlook'})
+        self.assertEqual(row.display_name, 'Microsoft 365')
+        row.provider = 'imap'
+        self.assertEqual(row.display_name, 'IMAP / SMTP')
+
     def test_oauth_providers_get_a_redirect_uri(self):
         row = self.Provider.create({'provider': 'outlook'})
         self.assertTrue(row.uses_oauth)
