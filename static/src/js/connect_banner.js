@@ -37,9 +37,20 @@ export class MailProConnectBanner extends Component {
     }
 }
 
-// Into the webclient itself rather than the `main_components` registry: that
-// container is the last child of the client, so anything in it floats over the
-// action instead of sitting above it. The banner has to push the page down.
-patch(WebClient, {
-    components: { ...WebClient.components, MailProConnectBanner },
+// Not `patch(WebClient, { components: ... })`. On Enterprise the class that is
+// actually mounted is `WebClientEnterprise`, whose body does
+// `static components = { ...WebClient.components, NavBar: EnterpriseNavBar }`.
+// That spread runs when the class is defined, and `web_enterprise` sits before
+// this module in the bundle -- so the patch lands after the snapshot, Owl
+// cannot resolve the tag, and the whole webclient fails to mount: a white
+// screen on every Enterprise database (#85).
+//
+// An instance attribute has no such ordering: `WebClientEnterprise.setup()`
+// calls `super.setup()`, and the template reads the attribute at render time
+// through `t-component`. Community and Enterprise take the same path.
+patch(WebClient.prototype, {
+    setup() {
+        super.setup();
+        this.MailProConnectBanner = MailProConnectBanner;
+    },
 });

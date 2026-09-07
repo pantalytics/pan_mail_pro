@@ -1242,6 +1242,17 @@ than through the `main_components` registry: that container is the client's
 last child, so anything in it floats over the action instead of pushing the
 page down.
 
+**It is hung on the template, not on the component list.** The inherited block
+is `<t t-component="MailProConnectBanner"/>` and the webclient carries that
+class as an instance attribute, set in a patched `setup()`. A plain
+`<MailProConnectBanner/>` tag would resolve against the `components` of the
+class that is *mounted*, and on Enterprise that is `WebClientEnterprise`, which
+copies `WebClient.components` in its own class body -- earlier in the bundle
+than this module, so the copy never contains ours. Owl then cannot resolve the
+tag and nothing mounts at all: a white screen on every screen, and no server
+log to explain it. `tools/ci_lint.sh` refuses a component tag in any template
+borrowed from another module, because CI runs community and cannot see this.
+
 ### 9.15 The test email goes to the person, never to the mailbox
 
 Three things can be tested about a mailbox and only two of them were:
