@@ -18,7 +18,6 @@ from odoo.exceptions import UserError
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 from .neutralization import database_is_neutralized
-from .pan_mail_mailbox import SYNCING_MODES
 
 _logger = logging.getLogger(__name__)
 
@@ -100,8 +99,12 @@ class PanMailFetcher(models.AbstractModel):
         # account with nobody behind it, and requiring an owner here silently
         # skipped exactly those mailboxes. What matters is usable credentials,
         # which is what the mailbox asks its client.
+        # Not filtered on the sync switches. Every mailbox that can be read is
+        # read, because a reply to something Odoo sent belongs on the record it
+        # continues whatever the mailbox was configured for; the gate ladder is
+        # what decides how much of the rest may enter. A mailbox nobody wants
+        # touched at all is archived, which is the one switch that means it.
         mailboxes = self.env['pan.mail.mailbox'].search([
-            ('sync_mode', 'in', SYNCING_MODES),
             ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
         ]).filtered(lambda m: m._has_working_credentials())
 
@@ -179,12 +182,12 @@ class PanMailFetcher(models.AbstractModel):
                 mailbox.write({'last_sync_date': fields.Datetime.now()})
                 return  # Skip this run, start fetching from next cron run
 
-        # Both folders, always: syncing a mailbox means both sides of its
-        # correspondence. Two booleans used to say so and were computed from the
-        # sync mode, so they could never disagree with it.
+        # One folder per direction, and each direction is its own answer. They
+        # shared one switch until 19.0.7.6.0, so turning on receiving silently
+        # turned on copying everything the owner wrote in Outlook as well.
         processed_count = 0
         folder_cursors = []
-        for folder in (FOLDER_INBOX, FOLDER_SENT):
+        for folder in self._folders_to_sync(mailbox):
             count, latest_dt = self._fetch_folder(mailbox, folder)
             processed_count += count
             if latest_dt:
@@ -199,6 +202,31 @@ class PanMailFetcher(models.AbstractModel):
             mailbox.write({'last_sync_date': fields.Datetime.now()})
 
         _logger.info(f"[Incoming Mail] Processed {processed_count} message(s) from {mailbox.email}")
+
+    @staticmethod
+    def _folders_to_sync(mailbox):
+        """The folders this mailbox's settings ask for, in reading order.
+
+        The inbox is always in the list. Replies arrive there and belong on the
+        record they continue, so the question the mailbox's settings answer is
+        not "read this folder" but "how much of what is in it may enter", which
+        is the gate ladder's job. Reading is cheap and refusing is free; a
+        message that no gate wants leaves nothing behind but a log line.
+
+        The Sent folder is different, because nothing in it is ever waiting for
+        Odoo: every sent item is either mail Odoo itself sent (dropped by the
+        loop guard) or a copy of correspondence Odoo was never part of. That is
+        opt-in.
+
+        The cursor is the reason this returns a list rather than being decided
+        inside the loop: `last_sync_date` advances to the *minimum* of the
+        folders that were read, so a folder that is not synced must be absent
+        here rather than fetched and discarded.
+        """
+        folders = [FOLDER_INBOX]
+        if mailbox.sync_sent:
+            folders.append(FOLDER_SENT)
+        return folders
 
     def _fetch_folder(self, mailbox, folder):
         """
@@ -274,7 +302,7 @@ class PanMailFetcher(models.AbstractModel):
             '_gate_internal_domain',
             '_gate_blocked_contact',
             '_gate_internal_user',
-            '_gate_sync_mode',
+            '_gate_wanted',
         ]
 
     def _refuse(self, ctx):
@@ -429,23 +457,80 @@ class PanMailFetcher(models.AbstractModel):
             return Skip('internal_user', _('This address belongs to an Odoo user.'))
         return None
 
-    def _gate_sync_mode(self, ctx):
-        """What the mailbox was told to accept.
+    def _gate_wanted(self, ctx):
+        """Does this mailbox want this email at all?
 
-        A mailbox on `known_partners` takes mail from contacts it already has.
-        Mail from anybody else is refused here and left where it is, in the
-        mailbox. Widening the mode to `all` is how a customer changes that
-        answer; there is no backlog to work through.
+        The first clause needs no setting. A reply to something Odoo already
+        has belongs on the record it continues -- a chatter thread showing the
+        question and not the answer is the failure this module exists to
+        prevent -- so it passes here whatever the switches say. It still had to
+        get past every gate above: internal mail, a blocked contact and an Odoo
+        user's own address are refusals no threading overrides.
+
+        Everything else is the mailbox's decision. `sync_received` says whether
+        email that starts a *new* conversation enters, and
+        `sync_received_scope` says how wide: `known_partners` takes mail from
+        contacts that already exist and refuses the rest, leaving it where it
+        is. Widening to `all` is how a customer changes that answer; there is no
+        backlog to work through.
+
+        Sending is not offered the scope question. Mail the owner wrote in
+        Outlook is logged only onto a contact Odoo already has: emailing a
+        stranger from a mail client is not a statement that they belong in the
+        database, and the customer who switches this on wants their
+        correspondence with known contacts, not a contact list built from their
+        outbox.
         """
         mailbox = ctx['mailbox']
-        if ctx['partner'] or ctx['force_import']:
+        if ctx['force_import']:
             return None
-        if mailbox.sync_mode == 'known_partners':
+        if self._is_reply_to_odoo(ctx):
+            return None
+        if ctx['is_outgoing']:
+            if ctx['partner']:
+                return None
             return Skip(
                 'unknown_contact',
-                _('Sync mode only accepts mail from existing contacts.'),
+                _('Sent email is only logged on people who are already contacts.'),
+            )
+        if not mailbox.sync_received:
+            return Skip(
+                'not_a_reply',
+                _('This mailbox only syncs replies to conversations Odoo already has.'),
+            )
+        if ctx['partner']:
+            return None
+        if mailbox.sync_received_scope == 'known_partners':
+            return Skip(
+                'unknown_contact',
+                _('This mailbox only syncs email from existing contacts.'),
             )
         return None
+
+    def _is_reply_to_odoo(self, ctx):
+        """Does this email continue a conversation Odoo already holds?
+
+        The References chain resolved against the ref index, which carries every
+        Message-ID a message was ever seen under -- the one the provider minted
+        when Odoo sent it included. So "a reply to mail we sent" and "a reply to
+        mail we imported" are one lookup, and both belong on the record they
+        continue.
+
+        Deliberately not the full matcher. The matcher decides *where* a mail
+        goes and is allowed to reach a weaker answer from a subject line and a
+        participant list. The question here is whether the mail may enter at
+        all, and only an exact chain is allowed to say yes to that.
+        """
+        matcher = self.env['pan.mail.matcher']
+        headers = {
+            k.lower(): v
+            for k, v in (self._full_message(ctx).get('headers') or {}).items()
+        }
+        for message_id in matcher._reference_ids(headers):
+            parent = matcher._resolve_message_id(message_id)
+            if parent and parent.model and parent.res_id:
+                return True
+        return False
 
     def _process_message(self, mailbox, message, folder):
         """

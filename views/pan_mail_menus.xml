@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        One entry instead of seven.
+
+        Every Mail Pro screen is a configuration or a diagnostic, so they belong
+        under Settings → Technical → Email (19.0.4.0.0 gave the module an app
+        tile on the home screen; 19.0.7.0.0 took it back). But seven flat
+        entries interleaved with Odoo's own Emails / Templates / Aliases read as
+        seven unrelated features, and two of them even shared a sequence. They
+        are one module, so they get one submenu and the module's own name.
+
+        Declared before every view file that hangs a menu off it — the manifest
+        lists this file first for exactly that reason.
+
+        The parent asks for the weaker of the two groups its children use, so a
+        Mailbox Manager who is not a system administrator still sees the section
+        holding the screens they may open. The children keep their own groups.
+    -->
+    <menuitem id="menu_pan_mail_root"
+              name="Mail Pro"
+              parent="base.menu_email"
+              sequence="4"
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+
+</odoo>

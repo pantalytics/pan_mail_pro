@@ -134,9 +134,9 @@
     <!-- Menu: Settings → Technical → Email → Mail Routing -->
     <menuitem id="menu_pan_mail_routing_log"
               name="Mail Routing"
-              parent="base.menu_email"
+              parent="pan_mail_pro.menu_pan_mail_root"
               action="action_pan_mail_routing_log"
-              sequence="6"
+              sequence="50"
               groups="base.group_system"/>
 
 </odoo>

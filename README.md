@@ -86,7 +86,7 @@ resets wait in the queue until step 5 is done rather than being dropped.
 
 An IMAP mailbox has no consent screen, so its credentials are typed in once:
 
-1. Go to **Settings → Technical → Email → Email Accounts** and create an account.
+1. Go to **Settings → Technical → Email → Mail Pro → Email Accounts** and create an account.
 2. Set **Provider** to *IMAP / SMTP* and fill in the address. Known hosters
    (Soverin) fill in their own servers; anything else is typed in.
 3. Enter the IMAP and SMTP servers, the login (defaults to the address) and the
@@ -94,7 +94,7 @@ An IMAP mailbox has no consent screen, so its credentials are typed in once:
    mailbox that reads but cannot send is broken.
 4. Leave **Odoo User** empty for a shared address such as `info@`; set it for a
    person's own mailbox.
-5. Create the mailbox under **Settings → Technical → Email → Mailboxes**
+5. Create the mailbox under **Settings → Technical → Email → Mail Pro → Mailboxes**
    with the same address and provider *IMAP / SMTP*.
 
 The Sent folder is detected from the server (`\Sent`), and can be overridden on
@@ -141,16 +141,31 @@ untick the current one first.
 
 **Prerequisite:** one mailbox must have **Notification Mailbox** ticked (required for handling emails from external authors).
 
+Replies to email sent from Odoo always land on the record they answer. That
+needs no setting. The two switches below are about everything else.
+
 1. Open a mailbox
-2. Choose **Incoming Mail**:
-   - **Send only** - nothing is imported
-   - **Send and receive, from existing contacts** - 2-way sync, known contacts only
-   - **Send and receive, from anyone** - 2-way sync, new senders become contacts
-3. Optionally route to a **Team** (alias) so emails create tickets or leads
+2. Under **Sending**, decide about **Sync sent email**:
+   - Off (the default) - only mail written in Odoo is logged
+   - On - mail your people write in Outlook, Gmail or their mail client is read
+     back from the Sent folder and posted on the contact it went to. Only on
+     contacts that already exist: emailing a stranger from your mail app never
+     creates one in Odoo.
+
+   Mail written in Odoo always goes out through the mailbox. There is no setting
+   for it, because that is what a mailbox is.
+3. Under **Receiving**, decide about **Sync other email**:
+   - Off (the default) - only replies come in
+   - On - email that starts a new conversation comes in too, and a second
+     question appears: **Only from people who are already contacts**, or **From
+     anyone**. "From anyone" turns every sender into a contact, newsletters and
+     private email included, so pick it only for an address that exists to hear
+     from strangers.
+4. Optionally route to a **Team** (alias) so emails create tickets or leads
    instead of landing on the sender's contact
-4. Set the **Owner** (a user with a connected account)
-5. Optionally set **Import From** for historical email import
-6. Save
+5. Set the **Owner** (a user with a connected account)
+6. Optionally set **Start from** for historical email import
+7. Save
 
 **Sync behavior:**
 - Internal domains must be configured in Settings → Mail Pro before any mailbox
@@ -182,14 +197,14 @@ Check logs for "Threading reply to" entries. If replies go to the wrong record, 
 ### Emails not syncing
 
 1. Check **Settings** → **Technical** → **Scheduled Actions** → "Mail Pro: Fetch Incoming Mail"
-2. Verify the mailbox's **Incoming Mail** is not "Send only"
+2. Verify the mailbox has usable credentials, and that **Sync other email** is on if the mail you are missing is not a reply
 3. Verify the mailbox has usable credentials — its **Status** column says so
 4. Check logs for `[Incoming Mail]` entries
 
 ### "0 mailbox(es)" in logs
 
-No mailbox both syncs and has usable credentials: either Incoming Mail is still
-"Send only", or the account behind it is not connected.
+No mailbox has usable credentials. The account behind each one is not
+connected.
 
 ### An email failed instead of being sent from another address
 
@@ -221,8 +236,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
 
 ## Where mail lands
 
-Once mail is flowing, three screens under **Settings → Technical → Email**
-tell you whether it is going where you expect:
+Once mail is flowing, three screens under **Settings → Technical → Email →
+Mail Pro** tell you whether it is going where you expect:
 
 | Screen | Question it answers |
 |--------|--------------------|

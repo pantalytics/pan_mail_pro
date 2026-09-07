@@ -3,6 +3,7 @@ from . import test_mail_account
 from . import test_account_migration
 from . import test_google_provider
 from . import test_imap_provider
+from . import test_menus
 from . import test_microsoft_provider
 from . import test_incoming_mail
 from . import test_internal_domains
@@ -22,6 +23,7 @@ from . import test_no_mailbox_fallback
 from . import test_provider_contract
 from . import test_mail_matcher
 from . import test_outgoing_threading
+from . import test_reply_sync
 from . import test_routing_log
 from . import test_setup_flow
 from . import test_mailbox_permission
@@ -31,6 +33,7 @@ from . import test_mail_coverage
 from . import test_neutralized
 from . import test_rename_migration
 from . import test_sync_sends_nothing
+from . import test_sync_split_migration
 from . import test_incoming_gates
 from . import test_field_labels
 from . import test_connect_banner
