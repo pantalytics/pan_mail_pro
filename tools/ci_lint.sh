@@ -176,6 +176,26 @@ print("All manifest data/asset files exist.")
 PY
 
 # ---------------------------------------------------------------------------
+step "Rename SQL advertises the manifest's own name"
+python3 - <<'PY' || fail "tools/rename_to_mail_pro.sql disagrees with __manifest__.py."
+import ast, re, sys
+# The rename script runs with Odoo stopped and cannot read the manifest, so it
+# carries the two Apps-screen strings as literals. This is the check that keeps
+# that copy honest: without it the rename would eventually advertise a name the
+# module has already dropped, which is the bug it exists to fix.
+manifest = ast.literal_eval(open('__manifest__.py').read())
+sql = open('tools/rename_to_mail_pro.sql').read()
+wrong = [f"{col} = {manifest[key]!r}"
+         for col, key in (('shortdesc', 'name'), ('summary', 'summary'))
+         if not re.search(rf"{col}\s*=\s*'{re.escape(manifest[key])}'", sql)]
+if wrong:
+    print("tools/rename_to_mail_pro.sql must set:")
+    print("\n".join(f"  - {w}" for w in wrong))
+    sys.exit(1)
+print("Rename SQL matches the manifest name and summary.")
+PY
+
+# ---------------------------------------------------------------------------
 # The two checks that need something to compare against. On a GitHub runner
 # BASE_REF is the PR base; in a cloud session, export it yourself.
 # ---------------------------------------------------------------------------

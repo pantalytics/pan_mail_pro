@@ -165,6 +165,21 @@ if [ "$OLD_NAME" = "pan_outlook_pro" ]; then
     docker run --rm --network "$NET" -v "$REPO/tools:/sql:ro" "$PG_IMAGE" \
         psql "postgresql://odoo:odoo@${DB}:5432/${DBNAME}" \
         -v ON_ERROR_STOP=1 -f /sql/rename_to_mail_pro.sql
+
+    # Before the upgrade, because the upgrade is what hides this: `-u` runs
+    # update_list() and refreshes the Apps copy from the manifest. A host that
+    # starts Odoo without -i/-u never does, so the SQL has to leave the module
+    # already renamed in the Apps screen, not merely renamable.
+    STALE=$(pg -tA -c "SELECT count(*) FROM ir_module_module
+                        WHERE name = 'pan_mail_pro'
+                          AND (coalesce(shortdesc, '')   LIKE '%Outlook Pro%'
+                            OR coalesce(summary, '')     LIKE '%Outlook Pro%'
+                            OR coalesce(description, '') LIKE '%Outlook Pro%')")
+    if [ "$STALE" != "0" ]; then
+        echo "::error::The rename SQL left 'Outlook Pro' in ir_module_module. The Apps screen would still advertise the old module."
+        exit 1
+    fi
+    pg -c "SELECT name, shortdesc FROM ir_module_module WHERE name = 'pan_mail_pro'"
 fi
 
 echo "=== Upgrade to HEAD, running every migration in between"

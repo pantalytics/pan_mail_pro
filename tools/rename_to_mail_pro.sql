@@ -1,7 +1,10 @@
 -- Rename pan_outlook_pro -> pan_mail_pro in an existing database.
 --
 -- Run this ONCE per database, with Odoo STOPPED, BEFORE deploying the renamed
--- code. See docs/migration-mail-pro.md for the full runbook.
+-- code. See docs/migration-mail-pro.md for the full runbook. Every statement is
+-- idempotent, so re-running it on a database that already took the rename is
+-- safe -- and is the repair for one that took an earlier version of this script,
+-- which renamed the module but left the Apps screen saying "Outlook Pro".
 --
 --   psql -d <database> -v ON_ERROR_STOP=1 -f tools/rename_to_mail_pro.sql
 --
@@ -25,6 +28,29 @@ BEGIN;
 UPDATE ir_module_module
    SET name = 'pan_mail_pro'
  WHERE name = 'pan_outlook_pro';
+
+-- The copy the Apps screen shows. `shortdesc`, `summary` and `description` are
+-- read from `__manifest__.py`, but only when Odoo runs `update_list()` — an
+-- "Update Apps List", or a start with `-i`/`-u`. A host that starts Odoo without
+-- either (odoo.sh does exactly that when the module is not installed in that
+-- database) never refreshes them, so renaming `name` alone leaves the Apps
+-- screen advertising "Outlook Pro" under the technical name `pan_mail_pro`,
+-- indefinitely.
+--
+-- Keyed on the *new* name and guarded on stale content, so this also repairs a
+-- database that already ran an earlier version of this script, and is a no-op
+-- on one Odoo has since refreshed. `description` is cleared rather than copied:
+-- 90 lines of manifest prose inlined here would be a second copy that goes
+-- stale. Odoo refills all three at the next apps-list refresh, which for an
+-- installed module is step 6 of the runbook.
+UPDATE ir_module_module
+   SET shortdesc   = 'Mail Pro - Email Integration',
+       summary     = 'Microsoft 365, Gmail or IMAP/SMTP: send from any mailbox, sync incoming mail into the chatter, thread replies properly',
+       description = NULL
+ WHERE name = 'pan_mail_pro'
+   AND (coalesce(shortdesc, '')   LIKE '%Outlook Pro%'
+     OR coalesce(summary, '')     LIKE '%Outlook Pro%'
+     OR coalesce(description, '') LIKE '%Outlook Pro%');
 
 -- Every XML id the module owns (views, menus, actions, access rules, crons).
 UPDATE ir_model_data
@@ -60,7 +86,13 @@ SELECT 'ir_module_module_dependency', count(*)
   FROM ir_module_module_dependency WHERE name = 'pan_outlook_pro'
 UNION ALL
 SELECT 'ir_ui_view.key',             count(*)
-  FROM ir_ui_view                  WHERE key LIKE 'pan_outlook_pro.%';
+  FROM ir_ui_view                  WHERE key LIKE 'pan_outlook_pro.%'
+UNION ALL
+SELECT 'ir_module_module.terp',    count(*)
+  FROM ir_module_module            WHERE name = 'pan_mail_pro'
+                                     AND (coalesce(shortdesc, '')   LIKE '%Outlook Pro%'
+                                       OR coalesce(summary, '')     LIKE '%Outlook Pro%'
+                                       OR coalesce(description, '') LIKE '%Outlook Pro%');
 
 -- And this one must return exactly one row, state 'installed'.
 SELECT name, state, latest_version
