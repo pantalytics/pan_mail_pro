@@ -68,7 +68,6 @@ class TestSyncSplitMigration(MailProTestCase):
         """A mailbox as 19.0.7.4.0 left it: the old column set, the new ones NULL."""
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': email,
-            'mailbox_type': 'shared',
         })
         self.cr.execute(
             """

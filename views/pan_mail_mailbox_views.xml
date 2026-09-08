@@ -44,16 +44,16 @@
                             <!-- Inherited from the one provider this database
                                  runs on; only the IMAP button below reads it. -->
                             <field name="provider" invisible="1"/>
+                            <field name="owner_user_id" required="is_notification_mailbox"/>
                             <label for="mailbox_type" string="Type"/>
                             <div>
-                                <field name="mailbox_type" widget="radio" nolabel="1" class="d-inline-block"/>
+                                <field name="mailbox_type" nolabel="1" class="d-inline-block"/>
                                 <div class="text-muted mt-1">
-                                    Personal: only the owner sends from it.
-                                    Shared: everyone can send from this address.
+                                    Follows from the owner. Their own address is
+                                    personal: only they send from it. Any other
+                                    address is shared: everyone can send from it.
                                 </div>
                             </div>
-                            <field name="owner_user_id"
-                                   required="mailbox_type == 'personal' or is_notification_mailbox"/>
                             <label for="is_notification_mailbox"/>
                             <div>
                                 <field name="is_notification_mailbox" widget="boolean_toggle"

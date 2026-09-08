@@ -48,7 +48,7 @@ class TestSmtpTakeover(TransactionCase):
         self.assertFalse(self.placeholder.active)
 
     def test_first_mailbox_takes_over_smtp(self):
-        self.Mailbox.create({'email': 'info@takeover.test', 'mailbox_type': 'shared'})
+        self.Mailbox.create({'email': 'info@takeover.test'})
 
         self.assertFalse(self.customer_smtp.active,
                          "customer SMTP must be disabled once routing is live")
@@ -56,10 +56,10 @@ class TestSmtpTakeover(TransactionCase):
 
     def test_takeover_runs_once(self):
         """A second mailbox must not re-disable a server an admin re-enabled."""
-        self.Mailbox.create({'email': 'info@takeover.test', 'mailbox_type': 'shared'})
+        self.Mailbox.create({'email': 'info@takeover.test'})
         self.customer_smtp.active = True
 
-        self.Mailbox.create({'email': 'sales@takeover.test', 'mailbox_type': 'shared'})
+        self.Mailbox.create({'email': 'sales@takeover.test'})
 
         self.assertTrue(self.customer_smtp.active)
 
@@ -83,7 +83,7 @@ class TestNotificationGapQueuesMail(TransactionCase):
         # Mail Pro is switched on (a mailbox exists) but notifications@ is not
         # configured yet — exactly the state an admin is in halfway through.
         cls.env['pan.mail.mailbox'].create({
-            'email': 'info@gap.test', 'mailbox_type': 'shared',
+            'email': 'info@gap.test',
         })
 
     def _notification_to_colleague(self):
@@ -177,7 +177,6 @@ class TestSetupChecklist(TransactionCase):
 
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'notifications@checklist.test',
-            'mailbox_type': 'personal',
             'is_notification_mailbox': True,
             'provider': 'outlook',
             'owner_user_id': self.admin.id,
@@ -195,7 +194,6 @@ class TestSetupChecklist(TransactionCase):
         with self.assertRaises(ValidationError):
             self.env['pan.mail.mailbox'].create({
                 'email': 'notifications@checklist.test',
-                'mailbox_type': 'personal',
                 'is_notification_mailbox': True,
                 'provider': 'outlook',
                 'owner_user_id': stranger.id,
@@ -204,14 +202,12 @@ class TestSetupChecklist(TransactionCase):
     def test_moving_it_is_untick_here_tick_there(self):
         first = self.env['pan.mail.mailbox'].create({
             'email': 'notifications@checklist.test',
-            'mailbox_type': 'personal',
             'is_notification_mailbox': True,
             'provider': 'outlook',
             'owner_user_id': self.admin.id,
         })
         second = self.env['pan.mail.mailbox'].create({
             'email': 'system@checklist.test',
-            'mailbox_type': 'personal',
             'provider': 'outlook',
             'owner_user_id': self.admin.id,
         })
@@ -232,7 +228,7 @@ class TestSetupChecklist(TransactionCase):
 
     def test_suggestion_button_fills_the_domain_field(self):
         self.env['pan.mail.mailbox'].create({
-            'email': 'info@suggestme.test', 'mailbox_type': 'shared',
+            'email': 'info@suggestme.test',
         })
         settings = self._settings()
 

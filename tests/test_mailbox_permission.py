@@ -60,7 +60,7 @@ class TestMailboxPermission(MailProTestCase):
         self.shared_mailbox.active = False
         with self.assertRaises(ValidationError):
             self.env['pan.mail.mailbox'].create({
-                'email': self.shared_mailbox.email.upper(), 'mailbox_type': 'shared',
+                'email': self.shared_mailbox.email.upper(),
             })
 
     def test_syncing_a_mailbox_is_a_managers_act(self):

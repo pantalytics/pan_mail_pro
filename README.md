@@ -126,10 +126,15 @@ Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow
 
 ### Mailbox Types
 
+The type is not a setting. It follows from the owner:
+
 | Type | Description |
 |------|-------------|
-| **Personal** | User's own mailbox. Auto-created on connect. Only visible to owner. |
-| **Shared** | Team mailbox (sales@, support@). Visible to all users. Each user sends with own OAuth. |
+| **Personal** | The owner's own address. Created when they connect. Only visible to the owner. |
+| **Shared** | Any address that is not its owner's own, or has no owner (sales@, support@). Visible to all users. On Microsoft 365 each user sends with their own OAuth grant; on Gmail and IMAP the address has credentials of its own. |
+
+On Microsoft 365 a shared mailbox that reads mail still names an **Owner**: the
+person whose grant reads it. That does not make it theirs.
 
 Exactly one mailbox also has **Notification Mailbox** ticked: system emails —
 user invitations, password resets, activity reminders — go out from it, using

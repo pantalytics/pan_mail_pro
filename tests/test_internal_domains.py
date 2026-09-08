@@ -78,7 +78,6 @@ class TestInternalDomainGate(TransactionCase):
         cls.Domains.set_domains(['gate.test'])
         cls.notification_mailbox = cls.Mailbox.create({
             'email': 'notifications@gate.test',
-            'mailbox_type': 'personal',
             'is_notification_mailbox': True,
             'owner_user_id': cls.user.id,
         })
@@ -87,7 +86,6 @@ class TestInternalDomainGate(TransactionCase):
     def _sync_mailbox(self, **vals):
         base = {
             'email': 'support@gate.test',
-            'mailbox_type': 'personal',
             'owner_user_id': self.user.id,
             'sync_received': True,
             'sync_received_scope': 'all',
@@ -158,7 +156,7 @@ class TestInternalDomainFiltering(TransactionCase):
         cls.Domains = cls.env['pan.mail.domain']
         cls.Domains.set_domains(['company.com'])
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
-            'email': 'info@company.com', 'mailbox_type': 'shared',
+            'email': 'info@company.com',
         })
 
     def test_internal_sender_is_skipped(self):
@@ -202,7 +200,7 @@ class TestInternalDomainSuggestions(TransactionCase):
         cls.Domains = cls.env['pan.mail.domain']
         cls.Domains.set_domains(['scaffolding.test'])
         cls.env['pan.mail.mailbox'].create({
-            'email': 'info@suggested.test', 'mailbox_type': 'shared',
+            'email': 'info@suggested.test',
         })
 
     def test_mailbox_domains_are_suggested(self):
@@ -239,7 +237,7 @@ class TestInternalDomainSuggestion(TransactionCase):
         cls.Domains.set_domains(['scaffolding.test'])
         cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.Mailbox.create({
-            'email': 'info@first.test', 'mailbox_type': 'shared',
+            'email': 'info@first.test',
         })
         # `no_reset_password` because creating a user with an email otherwise
         # sends the signup mail, and by this point the mailbox above has already

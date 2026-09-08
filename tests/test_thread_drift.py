@@ -45,7 +45,6 @@ class TestThreadKeys(TransactionCase):
         cls.matcher = cls.env['pan.mail.matcher']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'support@company.test',
-            'mailbox_type': 'shared',
         })
         cls.lead = cls.env['crm.lead'].create({'name': 'Existing opportunity'})
 
@@ -167,7 +166,6 @@ class TestRoutingLogEvidence(TransactionCase):
         cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'support@company.test',
-            'mailbox_type': 'shared',
         })
 
     def _log(self, message):
@@ -293,7 +291,6 @@ class TestSentCopyReindexes(TransactionCase):
         cls.fetcher = cls.env['pan.mail.fetcher']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'support@company.test',
-            'mailbox_type': 'shared',
         })
         cls.partner = cls.env['res.partner'].create({
             'name': 'External Customer', 'email': 'customer@example.com',
@@ -419,7 +416,6 @@ class TestSentCopyReachesTheReindex(TransactionCase):
         cls.fetcher = cls.env['pan.mail.fetcher']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'support@company.test',
-            'mailbox_type': 'shared',
         })
         cls.partner = cls.env['res.partner'].create({
             'name': 'External Customer', 'email': 'customer@example.com',

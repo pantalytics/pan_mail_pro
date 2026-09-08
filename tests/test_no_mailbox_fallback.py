@@ -84,7 +84,6 @@ class TestMailboxesExistButUnusable(TransactionCase):
             active_test=False).search([]).unlink()
         cls.inactive_mailbox = cls.env['pan.mail.mailbox'].sudo().create({
             'email': 'inactive@company.test',
-            'mailbox_type': 'shared',
             'active': False,
         })
 
