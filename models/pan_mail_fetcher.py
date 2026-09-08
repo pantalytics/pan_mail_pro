@@ -359,11 +359,84 @@ class PanMailFetcher(models.AbstractModel):
 
         The loop guard. Our own `X-Odoo-*` headers survive the round trip, and
         a re-import would post Odoo's own message onto the record it came from.
+
+        It refuses the mail, but not before reading it: this copy is the
+        message *as it left*, and the send path only ever saw what the draft
+        promised. See `_reindex_own_message`.
         """
         headers = self._full_message(ctx).get('headers', {})
-        if headers.get('x-odoo-model') or headers.get('x-odoo-mail-id'):
-            return Skip('odoo_originated', _('Odoo sent this message itself.'))
-        return None
+        if not (headers.get('x-odoo-model')
+                or headers.get('x-odoo-mail-id')
+                or headers.get('x-odoo-message-id')):
+            return None
+        self._reindex_own_message(ctx, headers)
+        return Skip('odoo_originated', _('Odoo sent this message itself.'))
+
+    def _reindex_own_message(self, ctx, headers):
+        """Correct the indexes from the copy the provider actually sent.
+
+        The send path indexes what the draft promised, and Microsoft does not
+        promise much: the `conversationId` Graph reports for a draft is not
+        always the one under which the reply lands in the same mailbox. A
+        thread keyed on that alone goes silent on the commonest case there is,
+        someone answering mail we sent — which is how a reply ends up placed by
+        subject at confidence 0.50 and flagged for review.
+
+        The copy in Sent Items carries the handles the provider really used, so
+        this is the first moment they are knowable. Both indexes are refreshed
+        from it: every Message-ID the mail went out under, and the record under
+        each of its thread keys.
+
+        Best effort by construction. It runs inside a gate that is about to
+        refuse this mail anyway, and both `record` methods swallow their own
+        failures, so the worst case is a weaker match later rather than a lost
+        mail.
+        """
+        full_message = self._full_message(ctx)
+        message, model, res_id = self._own_message(headers)
+        if not message and not (model and res_id):
+            return
+
+        if message and full_message.get('message_id'):
+            self.env['pan.mail.message.ref'].record(
+                message, full_message['message_id'], source='provider')
+
+        if model and res_id:
+            self.env['pan.mail.thread.link'].record_all(
+                mailbox=ctx['mailbox'],
+                thread_ids=self.env['pan.mail.matcher'].thread_keys(full_message),
+                model=model,
+                res_id=res_id,
+                message=message or None,
+                provider_message_id=full_message.get('provider_message_id'),
+            )
+
+    def _own_message(self, headers):
+        """(mail.message, model, res_id) for a copy of mail Odoo sent.
+
+        `X-Odoo-Message-Id` names the `mail.message` directly and is the only
+        one of the three that survives the mail being sent — `mail.mail` is
+        deleted once it goes out. The model and record headers are the fallback
+        when the message has since been deleted, because the thread link only
+        needs the record.
+        """
+        Message = self.env['mail.message'].sudo()
+        message = Message.browse()
+        raw_message_id = headers.get('x-odoo-message-id')
+        if raw_message_id:
+            try:
+                message = Message.browse(int(raw_message_id)).exists()
+            except (TypeError, ValueError):
+                message = Message.browse()
+
+        model = message.model or headers.get('x-odoo-model') or False
+        res_id = message.res_id or False
+        if not res_id:
+            try:
+                res_id = int(headers.get('x-odoo-record-id') or 0) or False
+            except (TypeError, ValueError):
+                res_id = False
+        return message, model, res_id
 
     def _gate_counterpart(self, ctx):
         """Collect the other party, and refuse a sent item that has none.
@@ -616,9 +689,11 @@ class PanMailFetcher(models.AbstractModel):
             # on the contact's own chatter.
             exclude_models=('res.partner',) if mailbox.route_to_team else (),
         )
-        # Effective thread id: what the provider said, or — for providers with
-        # no thread concept — the root of the References chain.
-        conversation_id = match['thread_id']
+        # Every handle this conversation carries: what the provider said, and
+        # the root of the References chain. Both are indexed, because the
+        # provider's own can drift between the mail we send and the reply that
+        # comes back (see `pan.mail.matcher.thread_keys`).
+        thread_keys = match['thread_keys']
 
         # Build email body - mark as safe HTML to preserve formatting
         body_content = full_message.get('body_html') or ''
@@ -758,7 +833,7 @@ class PanMailFetcher(models.AbstractModel):
                 message=message,
                 target_record=target_record,
                 internet_message_id=internet_message_id,
-                conversation_id=conversation_id,
+                thread_keys=thread_keys,
                 provider_message_id=provider_message_id,
             )
 
@@ -786,7 +861,7 @@ class PanMailFetcher(models.AbstractModel):
             raise
 
     def _index_message(self, mailbox, message, target_record, internet_message_id,
-                       conversation_id, provider_message_id=None):
+                       thread_keys, provider_message_id=None):
         """Record what we just learned, so the next reply in this thread matches.
 
         Two writes, one per index the matching ladder reads:
@@ -794,7 +869,8 @@ class PanMailFetcher(models.AbstractModel):
         - the Message-ID under which this mail can be referenced, but only when
           it differs from what `message_post` already stored on `mail.message`.
           On import those are normally identical, so this usually writes nothing.
-        - the (mailbox, thread id) → record link, which is the scoped lookup.
+        - the (mailbox, thread key) → record link, one row per key, which is
+          the scoped lookup.
         """
         if not message:
             return
@@ -803,10 +879,10 @@ class PanMailFetcher(models.AbstractModel):
             self.env['pan.mail.message.ref'].record(
                 message, internet_message_id, source='provider')
 
-        if conversation_id and target_record:
-            self.env['pan.mail.thread.link'].record(
+        if thread_keys and target_record:
+            self.env['pan.mail.thread.link'].record_all(
                 mailbox=mailbox,
-                thread_id=conversation_id,
+                thread_ids=thread_keys,
                 model=target_record._name,
                 res_id=target_record.id,
                 message=message,

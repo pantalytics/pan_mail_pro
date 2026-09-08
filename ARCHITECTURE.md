@@ -100,7 +100,7 @@ Providers disagree about sending as somebody else, which is why
 | Shared mailbox | Yes (SendAs + author's own token) | Its own Workspace account (`user_id` null) | Its own login (`user_id` null) |
 | Delegation | — | Delegated account / Google Group | — |
 | Folders | `Inbox` / `SentItems` | `INBOX` / `SENT` labels | `INBOX` / `\Sent` special-use |
-| Thread key | `conversationId` | `threadId` | root of the `References` chain |
+| Thread key | `conversationId` (drifts on send) | `threadId` | root of the `References` chain |
 | Message id | Graph id | Gmail id | `folder:uidvalidity:uid` |
 | Send flow | draft → send | RFC822 MIME | SMTP + IMAP APPEND to Sent |
 | Message-ID | returned by the API | set by us on the MIME | set by us on the MIME |
@@ -145,7 +145,7 @@ Providers disagree about sending as somebody else, which is why
 |-------|---------|
 | `pan.mail.matcher` | The thread-matching rule ladder. No provider, no HTTP, no mailbox needed |
 | `pan.mail.message.ref` | Every Message-ID under which one `mail.message` may be referenced |
-| `pan.mail.thread.link` | Provider thread handle → Odoo record, **scoped to the mailbox** |
+| `pan.mail.thread.link` | Thread handle → Odoo record, **scoped to the mailbox**. One row per key |
 
 **Seeing what happened**
 
@@ -583,7 +583,7 @@ Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
 |---|------|-------|-------|
 | 1 | `odoo_headers` | 1.0 | `X-Odoo-Model` / `X-Odoo-Record-Id` |
 | 2 | `references` | 1.0 | `In-Reply-To` + the full `References` chain |
-| 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread id) |
+| 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread key) — every key from `thread_keys()` |
 |   | `thread_link_legacy` | 0.85 | unscoped `mail.message.x_provider_thread_id`, read-only since 19.0.6.0.0 |
 | 4 | `subject_participants` | 0.5 | normalised subject + same partner — proposal only |
 
@@ -593,7 +593,13 @@ valid only inside one mailbox* — which is what a `conversationId` or `threadId
 actually is. Below the threshold `match()` returns candidates but leaves `model`
 empty, so a caller can branch on `model` alone and never route on a guess.
 
-Three things this changed, each a silent misroute before:
+No rung is trusted alone. Rule 2 resolves a Message-ID through the ref index
+*and* through Odoo's own `message_id`; rule 3 tries every key the conversation
+carries. Threading is the feature that fails silently — the mail still arrives,
+just on a 0.50 guess in a review queue — so a second lookup is cheaper
+insurance than a better single one.
+
+Four things this changed, each a silent misroute before:
 
 - **The chain, not one hop.** Only `In-Reply-To` was read; a client that sets
   just `References` fell through to the conversation-id lookup.
@@ -601,6 +607,46 @@ Three things this changed, each a silent misroute before:
   threaded onto whatever record *first* touched the conversation — usually an
   old contact chatter post rather than the open ticket.
 - **Scoped, not global.** A thread id was matched across every mailbox at once.
+- **Two keys, not one.** 19.0.7.11.0. Microsoft reports the *draft's*
+  `conversationId` on send, and the reply arrives under a different one, so a
+  thread keyed on the provider's handle alone was silent on the commonest case
+  there is — someone answering mail we sent. See `thread_keys()` below.
+
+### Two thread keys, because neither one holds
+
+`pan.mail.matcher.thread_keys()` returns the handles a conversation may be
+keyed under, strongest first, and both the writers and the lookup use all of
+them:
+
+1. **The provider's own handle** — Graph's `conversationId`, Gmail's `threadId`.
+   Exact where it holds, and on Microsoft it does not always hold: the send path
+   only ever sees what the draft reported.
+2. **The root of the `References` chain.** RFC 5322 rather than a vendor
+   concept, identical for every participant in the thread, and it cannot be
+   reassigned. It is the only handle IMAP has, and the one that still matches
+   when the provider's has moved. A message that starts a thread is its own root.
+
+`pan.mail.thread.link.key_type` records which of the two a row is. It is not
+cosmetic: `find_for_record()` hands the stored value straight back to the
+provider on the next send, and Gmail rejects a `threadId` it did not mint, so
+only a `provider` row may be used for sending. On IMAP the two keys are the same
+value and collapse into one row.
+
+Three more places back this up, all provider-neutral except the last:
+
+- **The sent copy re-indexes the send.** The loop guard
+  (`_gate_odoo_originated`) reads the Sent Items copy before refusing it: that
+  is the message *as it left*, so its real Message-ID and real thread handle
+  replace whatever the draft promised. `X-Odoo-Message-Id` is what links it
+  back, which is why that header is on `HEADER_ALLOWLIST`.
+- **The routing log says what the matcher had.** `reference_count` and
+  `thread_id` on every row, so "the headers arrived empty" is distinguishable
+  from "no rule matched". Those two used to look identical and telling them
+  apart took four other tables.
+- **Graph's threading headers have a second source.** `internetMessageHeaders`
+  is optional and sometimes simply absent; the MAPI properties
+  `PidTagInReplyToId`, `PidTagInternetReferences` and `PidTagInternetMessageId`
+  are on the item itself, are requested alongside it, and fill the gaps.
 
 ### One conversation, one thread
 
@@ -630,15 +676,14 @@ Odoo generated, the one the provider assigned on the wire (Graph mints its own
 client re-used. A single Char holds one of those; a `References` chain has to
 resolve all of them.
 
-`pan.mail.thread.link` maps a provider thread handle onto an Odoo record,
-*scoped to the mailbox that saw it*. Provider thread ids are not global:
-Microsoft's `conversationId` is mailbox-local and derived from the conversation
-topic, Gmail's `threadId` is account-local, and two mailboxes syncing the same
-exchange see two different ids for it.
+`pan.mail.thread.link` maps a thread handle onto an Odoo record, *scoped to the
+mailbox that saw it*. Provider thread ids are not global: Microsoft's
+`conversationId` is mailbox-local and derived from the conversation topic,
+Gmail's `threadId` is account-local, and two mailboxes syncing the same exchange
+see two different ids for it. One conversation gets a row per key it carries
+(see "Two thread keys" above), tagged by `key_type`.
 
-Neither model is provider-specific. IMAP has no thread handle at all; the
-matcher synthesises one from the root of the `References` chain and stores it
-here like any other.
+Neither model is provider-specific.
 
 These two are the *only* places a wire id is stored. `mail.mail` used to keep
 the provider's Message-ID and thread handle as well, and `mail.message` the
@@ -788,7 +833,9 @@ answer right more often. Three models answer three different questions.
 ### `pan.mail.routing.log` — where did this mail go?
 
 One row per delivered mail (Settings → Technical → Email → Mail Pro → Mail Routing) with
-the rule, the confidence, and every candidate the ladder rejected.
+the rule, the confidence, every candidate the ladder rejected, and what the
+matcher had to work with — `reference_count`, `reference_ids` and the
+`thread_id` it keyed on.
 
 `outcome` separates three things that look identical from inside Odoo:
 `threaded` onto something that existed, `created` something new, `fallback` to

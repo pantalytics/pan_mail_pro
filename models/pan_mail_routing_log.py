@@ -19,6 +19,9 @@ had to say. Two of those columns matter more than the rest:
   had nowhere to put it. A *created* record that had candidates means we may
   have just opened a duplicate ticket for a conversation that was already
   running — the expensive mistake, and the silent one.
+- `reference_count` and `thread_id` say what the matcher had to work with. A
+  fallback used to be indistinguishable from "the headers arrived empty", and
+  telling those two apart took four other tables and a day.
 
 Deliberately a record of what happened, not a queue that holds mail back.
 Delivery is unchanged; nothing waits for approval. A log that is wrong costs a
@@ -97,6 +100,25 @@ class PanMailRoutingLog(models.Model):
              'is renamed or deleted.',
     )
 
+    thread_id = fields.Char(
+        string='Thread Key',
+        help="The handle the matcher keyed this conversation on: the "
+             "provider's own thread id, or the root of the References chain "
+             "for providers that have none.",
+    )
+    reference_count = fields.Integer(
+        string='References Read',
+        default=0,
+        help='How many Message-IDs the In-Reply-To and References headers '
+             'yielded. Zero on a reply means the headers were empty by the '
+             'time the matcher saw them, which is a different failure from '
+             '"no rule matched" and used to be indistinguishable from it.',
+    )
+    reference_ids = fields.Char(
+        string='References',
+        help='The chain as read off the mail, nearest ancestor first.',
+    )
+
     candidate_count = fields.Integer(string='Candidates', default=0)
     candidates = fields.Text(
         string='Candidates Considered',
@@ -163,6 +185,7 @@ class PanMailRoutingLog(models.Model):
         fail would roll back a message the customer is waiting on.
         """
         candidates = match.get('candidates') or []
+        references = match.get('reference_ids') or []
         vals = {
             'mailbox_id': mailbox.id,
             'mail_message_id': message.id if message else False,
@@ -175,6 +198,9 @@ class PanMailRoutingLog(models.Model):
             'reason': match.get('reason'),
             'candidate_count': len(candidates),
             'candidates': self._format_candidates(candidates),
+            'thread_id': match.get('thread_id') or False,
+            'reference_count': len(references),
+            'reference_ids': ' '.join(references)[:512] or False,
         }
         if target_record:
             vals.update({

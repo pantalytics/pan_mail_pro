@@ -17,7 +17,7 @@ every candidate found along the way is still returned — as a *proposal*, with
 
     1. odoo_headers          X-Odoo-Model / X-Odoo-Record-Id      1.0
     2. references            In-Reply-To + the References chain   1.0
-    3. thread_link           (provider, mailbox, thread id)       0.9
+    3. thread_link           (provider, mailbox, thread key)      0.9
        thread_link_legacy    unscoped mail.message conversation   0.85
     4. subject_participants  normalised subject + same partner    0.5   proposal
 
@@ -26,6 +26,13 @@ plain IMAP, and anything else that speaks email. Rule 3 is the only one that
 touches a provider concept, and it treats that concept as a *hint that is only
 valid inside one mailbox* — which is what it actually is. Rule 4 never routes
 on its own; it exists to hand a candidate set to whatever decides the residue.
+
+No rung is trusted alone. Every rung that can go quiet has a second way in:
+rule 2 resolves a Message-ID through the ref index *and* through Odoo's own
+`message_id`, and rule 3 looks a thread up under both handles a conversation
+carries (see `thread_keys`). Threading is the feature that fails silently --
+the mail still arrives, just on a 0.50 guess in a review queue -- so the
+cheapest insurance is a second lookup, not a better single one.
 
 Adding an AI tier
 -----------------
@@ -135,6 +142,8 @@ class PanMailMatcher(models.AbstractModel):
                 confidence:        0.0 - 1.0
                 reason:            one line, safe to log or show
                 thread_id:         effective thread id (may be synthesised)
+                thread_keys:       every handle this thread may be keyed under
+                reference_ids:     the References chain as read off the mail
                 candidates:        everything considered, best first
 
             `model` is only ever set when confidence >= AUTO_ROUTE_CONFIDENCE.
@@ -150,7 +159,8 @@ class PanMailMatcher(models.AbstractModel):
             'reference_ids': self._reference_ids(headers),
             'candidates': [],
         }
-        ctx['thread_id'] = self._effective_thread_id(message, ctx['reference_ids'])
+        ctx['thread_keys'] = self.thread_keys(message, ctx['reference_ids'])
+        ctx['thread_id'] = ctx['thread_keys'][0] if ctx['thread_keys'] else False
 
         for rule_method in self._match_rules():
             try:
@@ -171,7 +181,7 @@ class PanMailMatcher(models.AbstractModel):
         best = candidates[0] if candidates else None
 
         if best and best['confidence'] >= AUTO_ROUTE_CONFIDENCE:
-            decision = dict(best, thread_id=ctx['thread_id'], candidates=candidates)
+            decision = dict(best, candidates=candidates)
         else:
             decision = {
                 'model': False,
@@ -183,9 +193,17 @@ class PanMailMatcher(models.AbstractModel):
                     'No rule reached the routing threshold (%d proposal(s))'
                     % len(candidates)
                 ),
-                'thread_id': ctx['thread_id'],
                 'candidates': candidates,
             }
+        # The evidence, on every decision including the ones that failed. A
+        # fallback used to be indistinguishable from "the headers were empty",
+        # which is the single most useful thing to know about a mail that did
+        # not thread — and it took four tables to reconstruct after the fact.
+        decision.update({
+            'thread_id': ctx['thread_id'],
+            'thread_keys': ctx['thread_keys'],
+            'reference_ids': ctx['reference_ids'],
+        })
 
         _logger.info("[Mail Matcher] %s", self.describe(decision))
         return decision
@@ -277,24 +295,27 @@ class PanMailMatcher(models.AbstractModel):
         return candidates
 
     def _rule_thread_link(self, ctx):
-        """The provider's own thread handle, scoped to the mailbox that saw it.
+        """The thread handles this conversation carries, scoped to the mailbox.
 
-        Two lookups, in order:
+        Every key from `thread_keys()` is tried, strongest first, because the
+        provider handle alone is not dependable: Microsoft hands back the
+        *draft's* conversationId on send, and the reply can arrive under a
+        different one, at which point a link keyed only on the first is silent
+        on the one case threading exists for. The References root is tried
+        after it and cannot drift — every participant carries the same root.
 
-        1. `pan.mail.thread.link`, keyed on (provider, mailbox, thread id).
-           This is the correct one and the only one new mail writes.
-        2. The legacy `mail.message.x_provider_thread_id` column, written until
-           19.0.6.0.0 and never since. It carries no mailbox, so it can in
-           principle match another mailbox's thread — it is kept because
-           dropping it would break threading on conversations that predate the
-           link index, and it is bounded three ways the original lookup was
-           not: newest match instead of oldest, an age limit, and the caller's
-           excluded models. It scores below the scoped lookup and stops
-           matching by itself as those conversations pass the age limit.
+        Then the legacy `mail.message.x_provider_thread_id` column, written
+        until 19.0.6.0.0 and never since. It carries no mailbox, so it can in
+        principle match another mailbox's thread — it is kept because dropping
+        it would break threading on conversations that predate the link index,
+        and it is bounded three ways the original lookup was not: newest match
+        instead of oldest, an age limit, and the caller's excluded models. It
+        scores below the scoped lookup and stops matching by itself as those
+        conversations pass the age limit.
         """
-        thread_id = ctx['thread_id']
+        thread_keys = ctx['thread_keys']
         mailbox = ctx['mailbox']
-        if not thread_id or not mailbox:
+        if not thread_keys or not mailbox:
             return []
 
         cutoff = fields.Datetime.now() - timedelta(
@@ -302,22 +323,24 @@ class PanMailMatcher(models.AbstractModel):
         )
         candidates = []
 
-        link = self.env['pan.mail.thread.link'].sudo().search([
-            ('provider', '=', mailbox.provider),
-            ('mailbox_id', '=', mailbox.id),
-            ('thread_id', '=', thread_id),
-            ('last_seen', '>=', cutoff),
-        ], limit=1)
-        if link and self._is_routable(link.model, link.res_id, ctx['exclude_models']):
-            candidates.append(self._candidate(
-                link.model, link.res_id, RULE_THREAD_LINK, 0.9,
-                'Thread %s is already linked for mailbox %s' % (thread_id, mailbox.email),
-                parent_message=link.last_message_id,
-            ))
-            return candidates
+        Link = self.env['pan.mail.thread.link'].sudo()
+        for thread_id in thread_keys:
+            link = Link.search([
+                ('provider', '=', mailbox.provider),
+                ('mailbox_id', '=', mailbox.id),
+                ('thread_id', '=', thread_id),
+                ('last_seen', '>=', cutoff),
+            ], limit=1)
+            if link and self._is_routable(link.model, link.res_id, ctx['exclude_models']):
+                candidates.append(self._candidate(
+                    link.model, link.res_id, RULE_THREAD_LINK, 0.9,
+                    'Thread %s is already linked for mailbox %s' % (thread_id, mailbox.email),
+                    parent_message=link.last_message_id,
+                ))
+                return candidates
 
         legacy = self.env['mail.message'].sudo().search([
-            ('x_provider_thread_id', '=', thread_id),
+            ('x_provider_thread_id', 'in', list(thread_keys)),
             ('model', '!=', False),
             ('res_id', '!=', False),
             ('date', '>=', cutoff),
@@ -329,7 +352,8 @@ class PanMailMatcher(models.AbstractModel):
         if legacy and self._is_routable(legacy.model, legacy.res_id, ctx['exclude_models']):
             candidates.append(self._candidate(
                 legacy.model, legacy.res_id, RULE_THREAD_LINK_LEGACY, 0.85,
-                'Legacy conversation id %s, most recent message' % thread_id,
+                'Legacy conversation id %s, most recent message'
+                % legacy.x_provider_thread_id,
                 parent_message=legacy,
             ))
         return candidates
@@ -390,23 +414,45 @@ class PanMailMatcher(models.AbstractModel):
     # ------------------------------------------------------------------ #
 
     @api.model
-    def _effective_thread_id(self, message, reference_ids=None):
-        """The thread handle to key on, synthesised when the provider has none.
+    def thread_keys(self, message, reference_ids=None):
+        """Every handle this conversation may be keyed under, strongest first.
 
-        Microsoft supplies conversationId and Gmail supplies threadId, so for
-        those this is just what the provider said. IMAP and SMTP have no such
-        concept at all — there the root of the References chain is the closest
-        stable equivalent, and it has the useful property of being identical
-        for every participant in the thread.
+        Two of them, deliberately, because neither is dependable alone:
+
+        1. The provider's own thread handle — Graph's conversationId, Gmail's
+           threadId. Exact where it holds, and on Microsoft it does not always
+           hold: the id Graph reports for a *draft* is the one the send path
+           indexes, and the reply can arrive in the same mailbox under a
+           different one. A conversation keyed only on that goes quiet on the
+           commonest case there is, someone answering mail we sent.
+        2. The root of the References chain. RFC 5322 rather than a vendor
+           concept, identical for every participant in the thread, and it
+           cannot be reassigned. It is the only handle IMAP has at all, and
+           the one that survives when the provider's drifts. A message that
+           starts a thread is its own root.
+
+        Links are written under every key and looked up under every key, so a
+        thread that loses one still matches on the other.
         """
-        thread_id = message.get('thread_id')
-        if thread_id:
-            return thread_id
         if reference_ids is None:
             headers = {k.lower(): v for k, v in (message.get('headers') or {}).items()}
             reference_ids = self._reference_ids(headers)
+
+        keys = []
+        provider_key = message.get('thread_id')
+        if provider_key:
+            keys.append(provider_key)
         # reference_ids is nearest-first; the root is the last entry.
-        return reference_ids[-1] if reference_ids else False
+        rfc_key = reference_ids[-1] if reference_ids else message.get('message_id')
+        if rfc_key and rfc_key not in keys:
+            keys.append(rfc_key)
+        return keys
+
+    @api.model
+    def _effective_thread_id(self, message, reference_ids=None):
+        """The single handle to report as *the* thread id. See `thread_keys`."""
+        keys = self.thread_keys(message, reference_ids)
+        return keys[0] if keys else False
 
     @api.model
     def _reference_ids(self, headers):
