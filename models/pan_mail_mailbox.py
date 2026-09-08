@@ -182,7 +182,7 @@ class PanMailMailbox(models.Model):
     # failure this module exists to prevent. This switch is only about email
     # that starts a *new* conversation.
     sync_received = fields.Boolean(
-        string='Sync other email',
+        string='Sync Other Email',
         default=False,
         help='Email that arrives here without continuing a conversation Odoo '
              'already has. Replies are always synced.',
@@ -200,17 +200,19 @@ class PanMailMailbox(models.Model):
              '"From anyone" turns every sender into a contact, newsletters and '
              'private email included.')
 
-    # No matching scope question, on purpose. Mail sent from a mail client is
-    # logged onto a contact Odoo already has or not at all: emailing a stranger
-    # from Outlook is not a statement that they belong in the database, and the
-    # customer who switches this on wants their correspondence with known
-    # contacts, not a contact list built from their outbox. `_gate_wanted`
-    # is where that is refused.
+    # No matching scope question, and for a different reason than receiving's.
+    # Receiving has a second answer worth offering; sending has exactly one
+    # case it can place with confidence, and that is a reply to a conversation
+    # Odoo already holds. Mail that starts something new from a mail client has
+    # no obvious home -- the contact, a lead, an opportunity -- and the module
+    # is not in a position to guess. `_gate_wanted` refuses it.
     sync_sent = fields.Boolean(
-        string='Sync sent email',
+        string='Sync Sent Items',
         default=False,
-        help='Email you send from your own mail app appears on the contact in '
-             'Odoo. Only email to people who are already contacts.',
+        help='Reads back the Sent Items folder of your own mail app (Outlook, '
+             'Gmail or another client). Only replies to emails that are '
+             'already in Odoo are synced; they land on the record they '
+             'continue. Mail that starts a new conversation stays out.',
     )
 
     route_to_team = fields.Boolean(

@@ -88,14 +88,25 @@ class TestIncomingGates(MailProTestCase):
         self.assertEqual(
             self.processor._gate_rules(),
             [
-                '_gate_duplicate',
                 '_gate_odoo_originated',
+                '_gate_duplicate',
                 '_gate_counterpart',
                 '_gate_internal_domain',
                 '_gate_blocked_contact',
                 '_gate_wanted',
             ],
             "the ladder order is the contract; change it deliberately or not at all",
+        )
+
+    def test_the_loop_guard_runs_before_the_duplicate_gate(self):
+        """Issue #107: a gate that reads the mail before refusing it cannot sit
+        behind a gate that refuses it earlier. The sent copy always matches the
+        duplicate gate, because the send path indexed its Message-ID."""
+        order = self.processor._gate_rules()
+        self.assertLess(
+            order.index('_gate_odoo_originated'), order.index('_gate_duplicate'),
+            "the loop guard re-indexes the sent copy; behind the duplicate "
+            "gate it never runs",
         )
 
     def test_every_named_gate_exists(self):
@@ -171,15 +182,25 @@ class TestIncomingGates(MailProTestCase):
 
         self.assertEqual(skip.reason, 'internal_domain')
 
+    def _refused_by(self, ctx):
+        """The gate that refused, or None. Named rather than asserted on
+        `_refuse` directly because a sent item that continues nothing is
+        refused for a reason these tests are not about: they ask which address
+        the ladder picked as the counterpart, not whether the mail may enter.
+        """
+        skip = self.processor._refuse(ctx)
+        return skip.reason if skip else None
+
     def test_one_external_recipient_makes_it_correspondence(self):
         """Any external party means the content already left the building, so
-        the mail is logged — on the external party, not on the colleague."""
+        the internal-domain gate stands aside and the external party is the
+        counterpart, not the colleague."""
         ctx = self._ctx(FOLDER_SENT, to=[
             {'email': INTERNAL, 'name': 'Planning'},
             {'email': CUSTOMER, 'name': 'External Customer'},
         ])
 
-        self.assertIsNone(self.processor._refuse(ctx))
+        self.assertNotEqual(self._refused_by(ctx), 'internal_domain')
         self.assertEqual(
             ctx['contact_email'], CUSTOMER,
             "the counterpart is the external party, whatever order they were in",
@@ -191,7 +212,7 @@ class TestIncomingGates(MailProTestCase):
             {'email': 'second@elsewhere.test', 'name': 'Someone Else'},
         ])
 
-        self.assertIsNone(self.processor._refuse(ctx))
+        self.assertNotEqual(self._refused_by(ctx), 'internal_domain')
         self.assertEqual(ctx['contact_email'], CUSTOMER)
 
     def test_every_recipient_ours_means_nothing_enters(self):
@@ -359,13 +380,13 @@ class TestEachDirectionIsItsOwnSwitch(MailProTestCase):
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestSentEmailNeverCreatesAContact(MailProTestCase):
-    """Sent email is logged onto a contact that already exists, or not at all.
+class TestSentEmailOnlyEntersAsAReply(MailProTestCase):
+    """A sent item enters on one door: it answers something Odoo already holds.
 
-    Deliberately not offered the scope question that receiving gets. Mailing a
-    stranger from Outlook is not a statement that they belong in the database,
-    and a customer who switches sending on wants their correspondence with known
-    contacts, not a contact list built from their outbox.
+    Deliberately not offered the scope question that receiving gets, and
+    deliberately narrower than "the recipient is a contact". Where a mail that
+    starts a new conversation belongs -- the contact, a lead, an opportunity --
+    is a question this module cannot answer yet, so it does not guess.
     """
 
     def setUp(self):
@@ -396,15 +417,42 @@ class TestSentEmailNeverCreatesAContact(MailProTestCase):
 
         self.assertIsNotNone(
             skip, "a receiving scope of 'all' must not widen the Sent folder")
-        self.assertEqual(skip.reason, 'unknown_contact')
+        self.assertEqual(skip.reason, 'not_a_reply')
 
     def test_the_same_message_would_be_accepted_from_the_inbox(self):
         """Same mailbox, same unknown address, opposite direction. The
         asymmetry is the decision, so it is asserted rather than implied."""
         self.assertIsNone(self.processor._gate_wanted(self._ctx(FOLDER_INBOX)))
 
-    def test_a_known_contact_passes(self):
+    def test_a_known_contact_is_not_enough_on_its_own(self):
+        """The narrowing decision, asserted rather than implied.
+
+        A mail to an existing contact that continues nothing Odoo has is still
+        a new conversation, and a new conversation has no home to land on yet.
+        """
         skip = self.processor._gate_wanted(
             self._ctx(FOLDER_SENT, partner=self.external_partner)
         )
+
+        self.assertIsNotNone(skip)
+        self.assertEqual(skip.reason, 'not_a_reply')
+
+    def test_a_reply_to_a_conversation_odoo_has_passes_without_a_contact(self):
+        """The one case the mailbox form promises.
+
+        The answer to a question that is already on a record belongs under it,
+        whoever it went to -- a known contact is not required, and on its own
+        is not enough.
+        """
+        parent = self.external_partner.message_post(
+            body='The question Odoo already holds',
+            message_type='email',
+        )
+        parent.message_id = '<parent@odoo.example.com>'
+
+        skip = self.processor._gate_wanted(self._ctx(
+            FOLDER_SENT,
+            headers={'References': '<parent@odoo.example.com>'},
+        ))
+
         self.assertIsNone(skip)

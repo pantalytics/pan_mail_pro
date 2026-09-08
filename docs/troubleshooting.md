@@ -57,7 +57,7 @@ this only affects the copy in your own mail client.
 ### Emails not syncing
 
 **Checklist:**
-1. If the missing mail is not a reply, **Sync other email** is on
+1. If the missing mail is not a reply, **Sync Other Email** is on
 2. Mailbox **Owner** is set
 3. On Microsoft 365: the owner has connected; on Gmail and IMAP/SMTP: the address has its own account with **Test Connection** green
 4. **Notification mailbox** exists (required for incoming sync)
@@ -68,7 +68,7 @@ this only affects the copy in your own mail client.
 
 **Cause:** Mailbox configuration incomplete.
 
-**Solution:** Switch on **Sync other email** or **Sync sent email**. On
+**Solution:** Switch on **Sync Other Email** or **Sync Sent Items**. On
 Microsoft 365 also set the Owner; on Gmail and IMAP/SMTP the address has its own
 account and needs no owner.
 

@@ -152,16 +152,17 @@ Replies to email sent from Odoo always land on the record they answer. That
 needs no setting. The two switches below are about everything else.
 
 1. Open a mailbox
-2. Under **Sending**, decide about **Sync sent email**:
+2. Under **Sending**, decide about **Sync Sent Items**:
    - Off (the default) - only mail written in Odoo is logged
-   - On - mail your people write in Outlook, Gmail or their mail client is read
-     back from the Sent folder and posted on the contact it went to. Only on
-     contacts that already exist: emailing a stranger from your mail app never
-     creates one in Odoo.
+   - On - the Sent Items folder of your people's own mail app (Outlook, Gmail or
+     another client) is read back into Odoo. Only replies to emails that are
+     already in Odoo: the answer lands on the record it continues. Mail that
+     starts a new conversation stays out, contact or not, because where it
+     belongs is not a question Odoo can answer for you.
 
    Mail written in Odoo always goes out through the mailbox. There is no setting
    for it, because that is what a mailbox is.
-3. Under **Receiving**, decide about **Sync other email**:
+3. Under **Receiving**, decide about **Sync Other Email**:
    - Off (the default) - only replies come in
    - On - email that starts a new conversation comes in too, and a second
      question appears: **Only from people who are already contacts**, or **From
@@ -170,7 +171,8 @@ needs no setting. The two switches below are about everything else.
      from strangers.
 4. Optionally route to a **Team** (alias) so emails create tickets or leads
    instead of landing on the sender's contact
-5. Set the **Owner** (a user with a connected account)
+5. On Microsoft 365, set the **Owner** whose sign-in reads the mailbox. On
+   Gmail and IMAP/SMTP the address has its own account and needs no owner
 6. Optionally set **Start from** for historical email import
 7. Save
 
@@ -207,7 +209,7 @@ nothing to thread onto — set an earlier **Start from** on the mailbox.
 ### Emails not syncing
 
 1. Check **Settings** → **Technical** → **Scheduled Actions** → "Mail Pro: Fetch Incoming Mail"
-2. Verify the mailbox has usable credentials, and that **Sync other email** is on if the mail you are missing is not a reply
+2. Verify the mailbox has usable credentials, and that **Sync Other Email** is on if the mail you are missing is not a reply
 3. Verify the mailbox has usable credentials — its **Status** column says so
 4. Check logs for `[Incoming Mail]` entries
 

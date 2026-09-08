@@ -298,8 +298,8 @@ class PanMailFetcher(models.AbstractModel):
         guarding one folder and not the other.
         """
         return [
-            '_gate_duplicate',
             '_gate_odoo_originated',
+            '_gate_duplicate',
             '_gate_counterpart',
             '_gate_internal_domain',
             '_gate_blocked_contact',
@@ -328,10 +328,11 @@ class PanMailFetcher(models.AbstractModel):
     def _full_message(self, ctx):
         """The full message, fetched once and cached on `ctx`.
 
-        Lazy rather than fetched up front because the first gate is the
-        duplicate check, and on a mailbox the sync has already seen that is
-        most of every run. Paying a provider round-trip to discover we already
-        have the mail would be the most expensive way to do nothing.
+        Lazy rather than fetched up front because most of every run is mail
+        the sync has already seen, and the duplicate gate refuses it from the
+        index alone. Paying a provider round-trip to discover we already have
+        the mail would be the most expensive way to do nothing — which is why
+        the gate above the duplicate check asks `_may_be_own_copy` first.
         """
         if 'full_message' not in ctx:
             mailbox = ctx['mailbox']
@@ -347,13 +348,61 @@ class PanMailFetcher(models.AbstractModel):
         return ctx['full_message']
 
     def _gate_duplicate(self, ctx):
-        """Already imported. Cheapest question, so it is asked first and
-        before anything reaches out to the provider."""
-        if self._is_duplicate(ctx['internet_message_id']):
+        """Already imported. The cheap refusal that ends most of every run.
+
+        Second rather than first: mail Odoo sent is a duplicate *by
+        construction* — the send path indexes the Message-ID the provider
+        minted, and on Microsoft the draft keeps that id all the way out — so
+        refusing it here first made the loop guard's re-index unreachable in
+        exactly the case it was written for. The gate above pays no provider
+        round-trip for the messages this one refuses; see `_may_be_own_copy`.
+        """
+        if self._duplicate_of(ctx):
             return Skip(
                 'duplicate', _('This message is already in Odoo.'), quiet=True,
             )
         return None
+
+    def _duplicate_of(self, ctx):
+        """The `mail.message` this Message-ID already belongs to, resolved once.
+
+        Two gates ask the same question, so it is answered once and cached on
+        `ctx` rather than resolved twice through the index.
+        """
+        if 'duplicate_of' not in ctx:
+            message_id = ctx['internet_message_id']
+            ctx['duplicate_of'] = (
+                self.env['pan.mail.matcher']._resolve_message_id(message_id)
+                if message_id else self.env['mail.message'].browse()
+            )
+        return ctx['duplicate_of']
+
+    def _may_be_own_copy(self, ctx):
+        """Could this be mail Odoo sent, coming back? Asked without the provider.
+
+        Reading the `X-Odoo-*` headers costs a `get_message`, and this gate runs
+        first, so it must not pay one for every message the duplicate gate is
+        about to refuse for free. Two answers are free and cover both cases
+        that matter:
+
+        - A Message-ID Odoo has never seen. `_gate_counterpart` fetches the
+          full message anyway, and `_full_message` caches it, so reading the
+          headers here costs nothing extra.
+        - A Message-ID that resolves to a message Odoo *sent*. Only
+          `mail.mail._index_sent_message` writes an `odoo`-sourced ref, so this
+          is precisely the Sent Items copy the loop guard exists to read.
+
+        Anything else is a message we imported coming round again on an
+        overlapping sync window. It carries no headers of ours and there is
+        nothing left to learn from it.
+        """
+        message = self._duplicate_of(ctx)
+        if not message:
+            return True
+        return bool(self.env['pan.mail.message.ref'].sudo().search_count([
+            ('mail_message_id', '=', message.id),
+            ('source', '=', 'odoo'),
+        ]))
 
     def _gate_odoo_originated(self, ctx):
         """Mail Odoo itself sent, coming back through the mailbox it left from.
@@ -364,7 +413,16 @@ class PanMailFetcher(models.AbstractModel):
         It refuses the mail, but not before reading it: this copy is the
         message *as it left*, and the send path only ever saw what the draft
         promised. See `_reindex_own_message`.
+
+        First in the ladder, and that ordering is the whole point. Our own
+        headers are a stronger signal than a Message-ID match, and the sent
+        copy always matches the duplicate gate below — the send path put that
+        very Message-ID in the index. Behind it, the re-index could only ever
+        run when the provider changed the id between draft and send, which
+        Microsoft does not do.
         """
+        if not self._may_be_own_copy(ctx):
+            return None
         headers = self._full_message(ctx).get('headers', {})
         if not (headers.get('x-odoo-model')
                 or headers.get('x-odoo-mail-id')
@@ -535,12 +593,14 @@ class PanMailFetcher(models.AbstractModel):
         is. Widening to `all` is how a customer changes that answer; there is no
         backlog to work through.
 
-        Sending is not offered the scope question. Mail the owner wrote in
-        Outlook is logged only onto a contact Odoo already has: emailing a
-        stranger from a mail client is not a statement that they belong in the
-        database, and the customer who switches this on wants their
-        correspondence with known contacts, not a contact list built from their
-        outbox.
+        Sending gets no scope question, because it has nothing left to widen:
+        the reply clause above is the whole of what it accepts. Mail the owner
+        wrote in their own client that starts something new stays out, even to
+        a contact Odoo already has -- where such a mail belongs is a question
+        the module cannot answer yet (the contact? a lead? an opportunity?),
+        and guessing it wrong scatters chatter across records nobody asked for.
+        Answering something Odoo already holds has one obvious home, so that is
+        the case that syncs.
         """
         mailbox = ctx['mailbox']
         if ctx['force_import']:
@@ -548,11 +608,10 @@ class PanMailFetcher(models.AbstractModel):
         if self._is_reply_to_odoo(ctx):
             return None
         if ctx['is_outgoing']:
-            if ctx['partner']:
-                return None
             return Skip(
-                'unknown_contact',
-                _('Sent email is only logged on people who are already contacts.'),
+                'not_a_reply',
+                _('Sent email is only synced when it replies to a conversation '
+                  'Odoo already has.'),
             )
         if not mailbox.sync_received:
             return Skip(
@@ -879,6 +938,9 @@ class PanMailFetcher(models.AbstractModel):
 
     def _is_duplicate(self, internet_message_id):
         """Is this Message-ID already in Odoo, imported or sent from here?
+
+        The ladder uses `_duplicate_of`, which caches the same lookup on `ctx`
+        because two gates need the message itself and not only the boolean.
 
         The same lookup the matcher uses to resolve a `References` chain: the
         ref index (every id a message was ever seen under, including the one

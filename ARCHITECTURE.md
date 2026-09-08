@@ -322,7 +322,7 @@ exists to prevent, so it is not a preference.
 
 | | Always | Asked |
 |---|---|---|
-| **Sending** | Mail written in Odoo leaves through this mailbox | `sync_sent` — read the Sent folder back, for mail the owner wrote in their own client |
+| **Sending** | Mail written in Odoo leaves through this mailbox | `sync_sent` — read the Sent folder back, for replies the owner wrote in their own client |
 | **Receiving** | Replies to conversations Odoo already has land on their record | `sync_received` — email that starts a *new* conversation, and `sync_received_scope` for how wide |
 
 `sync_received_scope` only matters while `sync_received` is on, which is why the
@@ -346,12 +346,14 @@ choice — five things that could disagree with the field that decided. These ar
 independent stored answers to independent questions, and none of them is derived
 from another.
 
-**Sent capture is not offered the scope question.** It behaves as
-`known_partners` whatever receiving says: a sent item is logged onto a contact
-Odoo already has, or not at all. Emailing a stranger from a mail client is not a
-statement that they belong in the database, and a customer who switches this on
-wants their correspondence with known contacts, not a contact list built from
-their outbox. One combination dropped on purpose.
+**Sent capture is not offered the scope question**, because there is nothing
+left to widen. A sent item enters on one door: it replies to a conversation Odoo
+already holds, and lands on the record it continues. Mail that starts something
+new from a mail client stays out even when its recipient is a contact, because
+where it belongs is a question the module cannot answer -- the contact, a lead,
+an opportunity -- and a wrong guess scatters chatter across records nobody asked
+for. Widening this is a design decision waiting on that answer, not a setting
+somebody forgot to add.
 
 **The Sent folder is opt-in and the Inbox is not**, because nothing in Sent is
 ever waiting for Odoo: every sent item is either mail Odoo itself sent (dropped
@@ -418,8 +420,8 @@ resolved in the context for the ones after it.
 
 | # | Gate | Refuses | Leaves a trace |
 |---|------|---------|----------------|
-| 1 | `_gate_duplicate` | Message-ID already in `mail.message` | no |
-| 2 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back | no |
+| 1 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back | no |
+| 2 | `_gate_duplicate` | Message-ID already in `mail.message` | no |
 | 3 | `_gate_counterpart` | a sent item with no recipient | no |
 | 4 | `_gate_internal_domain` | every party to the mail is ours | no |
 | 5 | `_gate_blocked_contact` | `x_email_sync_blocked` | no, deliberately |
@@ -504,7 +506,7 @@ an *ingestion* control, so it governs two of them.
 
 | | Sending | Receiving |
 |---|---|---|
-| **Mailbox** | user writes in Outlook; sync reads Sent Items *when `sync_sent` is on*. **Filter on the To**, existing contacts only. | mail lands in the inbox; sync always reads it. Replies pass; anything else is **filtered on the From**. |
+| **Mailbox** | user writes in Outlook; sync reads Sent Items *when `sync_sent` is on*. **Replies to conversations Odoo already holds only**; a new conversation stays out. | mail lands in the inbox; sync always reads it. Replies pass; anything else is **filtered on the From**. |
 | **Odoo** | chatter or notification; `mail.mail.send()` routes it out. **No filter.** | nothing. A Mail Pro database does not receive through `mail.alias`. |
 
 **Sending from Odoo is never filtered.** A person clicked send, or a colleague
@@ -640,7 +642,12 @@ Three more places back this up, all provider-neutral except the last:
   (`_gate_odoo_originated`) reads the Sent Items copy before refusing it: that
   is the message *as it left*, so its real Message-ID and real thread handle
   replace whatever the draft promised. `X-Odoo-Message-Id` is what links it
-  back, which is why that header is on `HEADER_ALLOWLIST`.
+  back, which is why that header is on `HEADER_ALLOWLIST`. It is the *first*
+  gate for that reason: the sent copy is a duplicate by construction, because
+  the send path indexed the Message-ID Graph minted for the draft and the sent
+  mail keeps it, so behind the duplicate gate this correction never ran. It
+  still pays no round-trip for the mail that gate refuses — `_may_be_own_copy`
+  answers from the index.
 - **The routing log says what the matcher had.** `reference_count` and
   `thread_id` on every row, so "the headers arrived empty" is distinguishable
   from "no rule matched". Those two used to look identical and telling them
