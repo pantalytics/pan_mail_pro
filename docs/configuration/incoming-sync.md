@@ -27,37 +27,35 @@ Before enabling incoming sync:
 
 ## Routing Configuration
 
-### Team Selection
+By default, mail that starts a new conversation lands on the sender's contact
+chatter. Tick **To Team** on the mailbox and pick a **Route to Team** alias to
+have it create a record instead:
 
-Select a **Team** (alias) to route emails to:
+| Alias belongs to | What is created |
+|------------------|-----------------|
+| CRM team | A lead or opportunity |
+| Helpdesk team (Enterprise) | A ticket |
+| Any model with an alias | That model's record, through Odoo's own alias |
 
-- **CRM Team** → Creates Leads
-- **Helpdesk Team** → Creates Tickets
-- **Sales Team** → Creates Opportunities
-
-### Contact Type Routing (from anyone)
-
-When **Sync Other Email** accepts mail from anyone, configure routing per contact type:
-
-| Contact Type | Example | Routing |
-|--------------|---------|---------|
-| Known Partner | Existing customer | Follow partner settings |
-| Unknown External | New inquiry | Create Lead |
-| Internal | Employee | Skip (not synced) |
+The alias is configured on the team itself, in that app's settings. Mail Pro
+only points the mailbox at it. When no alias is set, mail falls back to the
+contact's chatter, and the Mail Routing log flags that row for review.
 
 ## Sync Behavior
 
 ### What Gets Synced
 
 - **Inbox:** Incoming emails
-- **Sent Items:** Outgoing emails (for threading)
+- **Sent Items:** replies to conversations Odoo already has, so mail
+  written in your own mail app lands on the record it continues
 
 ### Filtering
 
 - **Internal domains:** Required, set once in Settings → Mail Pro. Odoo
   suggests them from your mailboxes and company email; nothing syncs until the
-  list has at least one entry
-- **Internal users:** Employees with Odoo accounts are excluded
+  list has at least one entry. Mail where *every* party is one of your own
+  domains is never synced. A mail with any outside recipient is
+  correspondence and is still logged
 - **Block list:** Per-contact exclusion
 
 ### Timing

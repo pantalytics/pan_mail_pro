@@ -42,6 +42,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/mail_provider_client.py` | Provider-agnostic client contract + registry |
 | `models/mail_mail.py` | Outgoing override. `_resolve_route()` decides the sender once, and raises `RoutingError` rather than picking a different one |
 | `models/mail_message.py` | The communication lens fields |
+| `models/mail_thread.py` | The boundary: a message the sync imported notifies nobody |
 | `models/mail_compose_message.py` | Composer "Send From" dropdown + setup warning |
 | `models/mail_alias.py` | Cleaner alias display (name only, no domain) |
 | `models/pan_mail_mailbox.py` | Mailbox configuration + routing rules |
@@ -60,6 +61,8 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, and whether to nudge them |
+| `models/res_config_settings.py` | The Settings page: the three checklist steps and the users block |
+| `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
 | `models/ir_http.py` | One session flag: does this user still have to connect a mailbox |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |

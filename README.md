@@ -24,12 +24,14 @@ Odoo - send and receive with full control.
 **Incoming Email:**
 - Automatic sync from every configured mailbox (1 min interval)
 - 2-way sync: Inbox and Sent Items
-- Reply threading via In-Reply-To headers + Microsoft conversationId fallback
+- Reply threading: our own headers, then the References chain, then the
+  provider's thread id, then subject and participants as a suggestion
 - Historical email sync with configurable start date
-- Known partners filter: only sync emails from existing contacts
-- "All" sync mode with per-contact routing rules
+- Known partners filter: only sync email from existing contacts, or from
+  anyone, creating contacts as needed
 - Per-contact block list to exclude specific senders
-- New emails create CRM Leads with activity for mailbox owner
+- Route a mailbox to a team alias so new email creates a lead or a ticket
+  instead of landing on the sender's contact
 
 **Security:**
 - OAuth 2.0 with delegated permissions only (least privilege)
@@ -115,6 +117,12 @@ An admin can also send everybody the invitation with **Send Mail Pro Invite**
 on the Users list (Settings → Mail Pro → Users); the link in it drops each user
 straight on the consent screen.
 
+Until you connect, a banner sits above every screen with a button that goes
+straight to the consent screen. It is only shown where that button would work:
+an internal user, a provider that has a consent screen, and not on a staging
+copy. Once connected, **Send Test Email** on **My Profile → Mail Pro** proves
+the address really sends. Every mailbox form has the same button.
+
 **Note:** until your account is connected and a Send from mailbox is set, the
 email composer shows a warning banner saying so.
 
@@ -129,7 +137,7 @@ Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow
 | Type | Description |
 |------|-------------|
 | **Personal** | User's own mailbox. Auto-created on connect. Only visible to owner. |
-| **Shared** | Team mailbox (sales@, support@). Visible to all users. Each user sends with own OAuth. |
+| **Shared** | Team mailbox (sales@, support@). Visible to all users. On Microsoft 365 each user sends with their own token and needs SendAs; on Gmail and IMAP/SMTP the address has credentials of its own and no owner. |
 
 Exactly one mailbox also has **Notification Mailbox** ticked: system emails —
 user invitations, password resets, activity reminders — go out from it, using
@@ -163,7 +171,8 @@ needs no setting. The two switches below are about everything else.
      from strangers.
 4. Optionally route to a **Team** (alias) so emails create tickets or leads
    instead of landing on the sender's contact
-5. Set the **Owner** (a user with a connected account)
+5. On Microsoft 365, set the **Owner** whose sign-in reads the mailbox. On
+   Gmail and IMAP/SMTP the address has its own account and needs no owner
 6. Optionally set **Start from** for historical email import
 7. Save
 
@@ -174,7 +183,6 @@ needs no setting. The two switches below are about everything else.
 - There is no way to switch this off, globally or per mailbox. A mail with any
   outside recipient is correspondence and is still logged, so "internal" means
   every party is one of your own domains
-- Internal users (employees with Odoo accounts) are always excluded
 - Emails sync automatically every minute
 - Set a sync start date to import historical emails (default: sync from now)
 
@@ -188,11 +196,15 @@ needs no setting. The two switches below are about everything else.
 
 ### Reply threading not working
 
-Threading uses two methods:
-1. **In-Reply-To header** - Standard email threading (works for Inbox)
-2. **Microsoft conversationId** - Fallback when headers unavailable (works for Sent Items)
+Four rules run strongest-first and stop at the first confident answer: our own
+`X-Odoo-*` headers, the `References` chain, the provider's thread id
+(`conversationId`, `threadId`, or the root of the References chain on IMAP), and
+finally subject plus participants, which never acts alone.
 
-Check logs for "Threading reply to" entries. If replies go to the wrong record, ensure the original email was synced first (conversationId must be stored).
+Open the mail's row under **Settings → Technical → Email → Mail Pro → Mail
+Routing**: it records the rule that placed it and every candidate it rejected.
+The usual cause is that the original message was never synced, so there was
+nothing to thread onto — set an earlier **Start from** on the mailbox.
 
 ### Emails not syncing
 
@@ -221,14 +233,17 @@ User lacks SendAs permission on the mailbox in Microsoft 365. Configure this in 
 
 ## Security
 
-This module uses **Delegated Permissions only** - the app acts on behalf of the signed-in user, not as an administrator.
+On Microsoft 365 and Google Workspace the module uses **delegated permissions
+only** - the app acts on behalf of the signed-in user, never as an
+administrator. IMAP/SMTP has no such concept: the account is a login and a
+password, entered by an administrator.
 
 | Aspect | Implementation |
 |--------|----------------|
-| Authentication | OAuth 2.0 with Microsoft Entra ID |
-| Permissions | Delegated only (no admin access) |
-| Token storage | Encrypted at rest (Fernet) |
-| Shared mailbox | User needs M365 SendAs permission |
+| Authentication | OAuth 2.0 with Microsoft Entra ID or Google; server login and password on IMAP/SMTP |
+| Permissions | Delegated only, where the provider offers it (no admin access) |
+| Credential storage | Encrypted at rest (Fernet) — tokens, passwords and the client secret |
+| Shared mailbox | Microsoft 365: SendAs on the address. Gmail and IMAP/SMTP: its own credentials |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
 
