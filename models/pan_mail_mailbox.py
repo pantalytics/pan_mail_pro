@@ -85,12 +85,29 @@ class PanMailMailbox(models.Model):
         shared mailbox that only sends has no credentials of its own and must
         not go red for it.
 
-        Both halves are booleans, so a NULL — a row predating the field, a
-        default that never ran — is False, and the unanswered question falls the
-        safe way.
+        A NULL level — a row predating the field, a default that never ran —
+        counts as the baseline, so the unanswered question falls the safe way.
         """
         self.ensure_one()
-        return self.sync_received or self.sync_sent
+        return bool(self.sync_level) and self.sync_level != 'replies'
+
+    # The rungs, as questions the fetcher asks. Each is a superset of the one
+    # before it, which is the property the ladder promises and the reason
+    # these are three names for one field rather than three fields.
+    def _reads_sent_folder(self):
+        """From `both` on: the owner's own replies are read back from Sent."""
+        self.ensure_one()
+        return self.sync_level in ('both', 'contacts', 'everyone')
+
+    def _syncs_new_conversations(self):
+        """From `contacts` on: mail that starts a conversation may enter."""
+        self.ensure_one()
+        return self.sync_level in ('contacts', 'everyone')
+
+    def _syncs_strangers(self):
+        """Only `everyone`: a sender Odoo has never seen becomes a contact."""
+        self.ensure_one()
+        return self.sync_level == 'everyone'
 
     def _needs_credentials(self):
         """Whether this mailbox needs credentials of its own to do its job.
@@ -210,54 +227,36 @@ class PanMailMailbox(models.Model):
     # -------------------------------------------------------------------------
     # Sync Configuration
     # -------------------------------------------------------------------------
-    # One switch per direction, and each is asked in the words of the person
-    # answering. "Received" is mail that arrived at this address; "sent" is mail
-    # this address sent that Odoo did not write, which reaches us only by
-    # reading the Sent folder back afterwards. Both used to be one three-way
-    # `sync_mode`, where saying yes to receiving quietly said yes to copying
-    # everything the owner wrote in Outlook as well.
+    # One question, four answers, and each answer keeps strictly more of the
+    # mailbox than the one above it. It used to be two switches and a scope
+    # (19.0.7.6.0), which made eight combinations of which two were nonsense:
+    # reading Sent Items without reading the inbox, and syncing new mail while
+    # your own answers stayed out. Both leave half a conversation on the record,
+    # which is the failure the reply rule exists to prevent. A ladder has no
+    # such rungs.
     #
-    # These are field names, not flow names. The *incoming flow* carries both of
-    # them: reading Sent Items is a fetch, whatever direction the mail went.
-    # ARCHITECTURE.md §1 keeps that distinction.
-    # Not "should this mailbox be read". A reply to something Odoo already has
-    # belongs on the record it continues, and nobody should have to switch that
-    # on: a chatter thread showing the question and not the answer is the
-    # failure this module exists to prevent. This switch is only about email
-    # that starts a *new* conversation.
-    sync_received = fields.Boolean(
-        string='Sync Other Email',
-        default=False,
-        help='Email that arrives here without continuing a conversation Odoo '
-             'already has. Replies are always synced.',
-    )
-    # Only meaningful while `sync_received` is on, which is why the form shows it
-    # a level deeper. Kept as a plain stored field rather than folded back into
-    # one three-way selection: on/off and how-wide are two questions, and the
-    # second is the one nobody should have to answer to get started.
-    sync_received_scope = fields.Selection([
-        ('known_partners', 'Only from people who are already contacts'),
-        ('all', 'From anyone, creating contacts as needed'),
-    ], string='Which email should be synced?',
-        default='known_partners', required=True,
-        help='Whether senders who are not contacts yet are imported too. '
-             '"From anyone" turns every sender into a contact, newsletters and '
-             'private email included.')
-
-    # No matching scope question, and for a different reason than receiving's.
-    # Receiving has a second answer worth offering; sending has exactly one
-    # case it can place with confidence, and that is a reply to a conversation
-    # Odoo already holds. Mail that starts something new from a mail client has
-    # no obvious home -- the contact, a lead, an opportunity -- and the module
-    # is not in a position to guess. `_gate_wanted` refuses it.
-    sync_sent = fields.Boolean(
-        string='Sync Sent Items',
-        default=False,
-        help='Reads back the Sent Items folder of your own mail app (Outlook, '
-             'Gmail or another client). Only replies to emails that are '
-             'already in Odoo are synced; they land on the record they '
-             'continue. Mail that starts a new conversation stays out.',
-    )
+    # Replies to mail Odoo already holds are not on the ladder at all: a chatter
+    # thread showing the question and not the answer is the one thing this
+    # module must never do, so they enter at every level and need no setting.
+    #
+    #   replies    inbox only; nothing of the owner's own mail app is read
+    #   both       + the Sent folder, for the owner's replies to threads Odoo has
+    #   contacts   + new conversations started by existing contacts
+    #   everyone   + new conversations from strangers, who become contacts
+    #
+    # The Sent folder contributes replies and nothing else, whatever the rung.
+    # Mail that starts something new from a mail client has no obvious home
+    # (the contact? a lead? an opportunity?) and the module is not in a position
+    # to guess. `_gate_wanted` is where each rung is enforced.
+    sync_level = fields.Selection([
+        ('replies', 'Replies, in Odoo only'),
+        ('both', 'Replies, in Odoo and your mail app'),
+        ('contacts', 'Replies and new email, existing contacts only'),
+        ('everyone', 'Replies and new email, everyone'),
+    ], string='Sync level', default='replies', required=True,
+        help='How much of this mailbox Odoo reads back. Replies to mail Odoo '
+             'sent always land on their record; each level adds one more kind '
+             'of mail on top of that.')
 
     route_to_team = fields.Boolean(
         string='To Team',
@@ -315,7 +314,7 @@ class PanMailMailbox(models.Model):
         ('error', 'Error'),
     ], string='Status', compute='_compute_health_status', store=False)
 
-    @api.depends('state', 'sync_received', 'sync_sent', 'mailbox_type', 'provider', 'owner_user_id',
+    @api.depends('state', 'sync_level', 'mailbox_type', 'provider', 'owner_user_id',
                  'owner_user_id.x_pan_mail_account_ids.connected')
     def _compute_health_status(self):
         for record in self:
@@ -327,6 +326,51 @@ class PanMailMailbox(models.Model):
                 record.health_status = 'warning'
             else:
                 record.health_status = 'healthy'
+
+    # -------------------------------------------------------------------------
+    # The inspection surface: two counters on the form, no fields to fill in
+    # -------------------------------------------------------------------------
+    routing_log_count = fields.Integer(
+        string='Routed here', compute='_compute_routing_log_count')
+    subtitle = fields.Char(compute='_compute_subtitle')
+
+    def _compute_routing_log_count(self):
+        """How much mail this mailbox has delivered, for the smart button.
+
+        The answer to "is it working" that the form never had: the routing log
+        already knows, and one count next to the address says it before anyone
+        opens a log.
+        """
+        counts = {}
+        if self.ids:
+            for mailbox, count in self.env['pan.mail.routing.log']._read_group(
+                    [('mailbox_id', 'in', self.ids)], ['mailbox_id'], ['__count']):
+                counts[mailbox.id] = count
+        for record in self:
+            record.routing_log_count = counts.get(record.id, 0)
+
+    @api.depends('mailbox_type', 'owner_user_id', 'is_notification_mailbox')
+    def _compute_subtitle(self):
+        """The identity in one grey line under the address: read, not filled in."""
+        for record in self:
+            parts = [
+                _('Shared mailbox') if record.mailbox_type == 'shared'
+                else _('Personal mailbox'),
+            ]
+            if record.owner_user_id:
+                parts.append(record.owner_user_id.name)
+            if record.is_notification_mailbox:
+                parts.append(_('carries the system email'))
+            record.subtitle = '  \u00b7  '.join(parts)
+
+    def action_open_routing_log(self):
+        """The routing log, filtered on this mailbox."""
+        self.ensure_one()
+        action = self.env['ir.actions.act_window']._for_xml_id(
+            'pan_mail_pro.action_pan_mail_routing_log')
+        action['domain'] = [('mailbox_id', '=', self.id)]
+        action['context'] = {}
+        return action
 
     def _no_credentials_error(self, sender=None):
         """Why this mailbox has no usable credentials, in the provider's terms.
@@ -650,11 +694,15 @@ class PanMailMailbox(models.Model):
             rewind = self.filtered(
                 lambda r: (r.last_sync_date and new_start < r.last_sync_date)
                 or (r.last_sent_sync_date and new_start < r.last_sent_sync_date))
-        if vals.get('sync_sent'):
-            # Turning Sent syncing back on resumes from the inbox cursor, not
-            # from wherever the Sent scan stood when it was switched off --
-            # otherwise the switch imports months of old sent mail.
-            vals = dict(vals, last_sent_sync_date=False)
+        if vals.get('sync_level') in ('both', 'contacts', 'everyone'):
+            # Climbing onto a rung that reads Sent resumes from the inbox
+            # cursor, not from wherever the Sent scan stood when the mailbox
+            # last dropped to replies only -- otherwise the climb imports
+            # months of old sent mail. A mailbox already reading Sent keeps
+            # its cursor: moving between the upper rungs is not a restart.
+            starting = self.filtered(lambda r: not r._reads_sent_folder())
+            if starting:
+                super(PanMailMailbox, starting).write({'last_sent_sync_date': False})
         result = super().write(vals)
         for mailbox in rewind:
             # Per cursor: a Sent cursor already behind `new_start` must not be
@@ -667,9 +715,9 @@ class PanMailMailbox(models.Model):
             mailbox.write(moved)
         return result
 
-    @api.onchange('sync_received', 'sync_sent')
-    def _onchange_sync_switches(self):
-        """Reset state when the mailbox stops syncing in either direction."""
+    @api.onchange('sync_level')
+    def _onchange_sync_level(self):
+        """Reset state when the mailbox drops back to replies only."""
         if not self._syncs_more_than_replies():
             self.state = 'draft'
             self.error_message = False
@@ -699,7 +747,7 @@ class PanMailMailbox(models.Model):
                 if existing:
                     raise ValidationError(_('This email address is already registered!'))
 
-    @api.constrains('mailbox_type', 'is_notification_mailbox', 'owner_user_id', 'sync_received', 'sync_sent', 'provider')
+    @api.constrains('mailbox_type', 'is_notification_mailbox', 'owner_user_id', 'sync_level', 'provider')
     def _check_owner_required(self):
         """Ensure an owner is set where the provider actually needs one.
 
@@ -790,7 +838,7 @@ class PanMailMailbox(models.Model):
                         'Existing notification mailbox: %s'
                     ) % existing.email)
 
-    @api.constrains('email', 'sync_received', 'sync_sent')
+    @api.constrains('email', 'sync_level')
     def _check_internal_domains_configured(self):
         """No mailbox at all before the internal domains exist.
 
@@ -812,7 +860,7 @@ class PanMailMailbox(models.Model):
         if gate:
             raise ValidationError(gate)
 
-    @api.constrains('sync_received', 'sync_sent')
+    @api.constrains('sync_level')
     def _check_notification_mailbox_for_sync(self):
         """Ensure notification mailbox exists before any sync is switched on."""
         for record in self:

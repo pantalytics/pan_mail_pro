@@ -169,9 +169,7 @@ class TestGraphSyncSendsNothing(MailProTestCase, QuietSyncMixin):
         super().setUp()
         self.mailbox = self.personal_mailbox
         self.mailbox.write({
-            'sync_received': True,
-            'sync_received_scope': 'all',
-            'sync_sent': True,
+            'sync_level': 'everyone',
             'last_sync_date': '2026-01-01 00:00:00',
         })
 
@@ -277,9 +275,7 @@ class TestGmailSyncSendsNothing(MailProTestCase, QuietSyncMixin):
             'email': 'gmail_quiet@test.local',
             'provider': 'gmail',
             'owner_user_id': user.id,
-            'sync_received': True,
-            'sync_received_scope': 'all',
-            'sync_sent': True,
+            'sync_level': 'everyone',
             'last_sync_date': '2026-01-01 00:00:00',
         })
 
@@ -364,9 +360,7 @@ class TestImapSyncSendsNothing(MailProTestCase, QuietSyncMixin):
         self.mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'imap_quiet@company.test',
             'provider': 'imap',
-            'sync_received': True,
-            'sync_received_scope': 'all',
-            'sync_sent': True,
+            'sync_level': 'everyone',
             'last_sync_date': '2026-01-01 00:00:00',
         })
 
