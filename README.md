@@ -286,7 +286,7 @@ same licence as Odoo MCP Pro. In short: read the code, run it, modify it for
 your own use. You may not offer it to third parties as a hosted or managed
 service, and you may not remove or circumvent its licensing notices.
 
-Releases up to and including `v19.0.7.13.0` were published under LGPL-3 and
+Releases up to and including `v19.0.7.13.1` were published under LGPL-3 and
 stay under LGPL-3. The relicence applies from `19.0.7.14.0` onwards.
 
 Commercial terms and support: <support@pantalytics.com>.
