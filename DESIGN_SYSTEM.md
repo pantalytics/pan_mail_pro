@@ -239,9 +239,9 @@ name, the answer itself, and the way to the place it is changed.
 
 ```xml
 <div class="o_mailpro_step">
-    <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
+    <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
           invisible="not x_setup_domains_done"/>
-    <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
+    <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
           invisible="x_setup_domains_done"/>
     <div class="o_mailpro_step_body">
         <div class="o_mailpro_step_head">

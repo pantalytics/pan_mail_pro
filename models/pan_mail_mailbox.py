@@ -578,14 +578,17 @@ class PanMailMailbox(models.Model):
 
     def write(self, vals):
         """Reset last_sync_date when sync_start_date is moved to an earlier date."""
+        rewind = self.browse()
         if 'sync_start_date' in vals and vals['sync_start_date']:
             new_start = fields.Datetime.to_datetime(vals['sync_start_date'])
-            # Per record, not on the shared `vals`: one mailbox that qualifies
-            # must not move every other mailbox's cursor forward to `new_start`.
-            for record in self:
-                if record.last_sync_date and new_start < record.last_sync_date:
-                    super(PanMailMailbox, record).write({'last_sync_date': new_start})
-        return super().write(vals)
+            # Only the records that qualify, not the shared `vals`: one mailbox
+            # that does must not move every other mailbox's cursor to `new_start`.
+            rewind = self.filtered(
+                lambda r: r.last_sync_date and new_start < r.last_sync_date)
+        result = super().write(vals)
+        if rewind:
+            rewind.write({'last_sync_date': new_start})
+        return result
 
     @api.onchange('sync_received', 'sync_sent')
     def _onchange_sync_switches(self):

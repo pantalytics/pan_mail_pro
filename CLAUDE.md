@@ -315,6 +315,7 @@ scripts:
 tools/ci.sh lint                  # ruff, XML, the Odoo 19 checklist, boundaries (seconds)
 tools/ci.sh test                  # fresh install + full suite in a real Odoo (~4 min)
 tools/ci.sh upgrade               # install last release, upgrade, run the suite
+tools/ci.sh ui                    # the browser checks against a seeded instance
 tools/ci.sh                       # all four, in CI's order
 
 BASE_REF=origin/19.0 tools/ci_lint.sh   # + the diff-shape and version-bump checks

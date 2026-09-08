@@ -35,7 +35,7 @@ class PanMailCoverage(models.TransientModel):
     linked_count = fields.Integer(string='Filed on a document', compute='_compute_coverage')
     contact_only_count = fields.Integer(string='Filed on a contact only', compute='_compute_coverage')
     unlinked_count = fields.Integer(string='Not filed anywhere', compute='_compute_coverage')
-    unlinked_ratio = fields.Float(string='Unfiled %', compute='_compute_coverage')
+    unlinked_ratio = fields.Float(string='Unfiled', compute='_compute_coverage')
 
     def _period_domain(self):
         self.ensure_one()

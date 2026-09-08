@@ -254,7 +254,6 @@ class PanMailFetcher(models.AbstractModel):
         )
 
         processed = 0
-        latest_datetime = None
 
         # Messages sorted ascending — the last *dated* item carries the latest
         # date. A message whose date could not be parsed must not empty the

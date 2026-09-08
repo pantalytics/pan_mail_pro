@@ -64,7 +64,7 @@
                         <!-- No timed redirect: the provider's reason is the
                              one thing on this page worth reading, and three
                              seconds is not enough to read or copy it. -->
-                        <div class="hint"><a href="/web">Back to Odoo</a></div>
+                        <div class="hint"><a href="/odoo">Back to Odoo</a></div>
                     </t>
                 </div>
             </body>

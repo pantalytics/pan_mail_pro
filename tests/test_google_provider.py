@@ -11,6 +11,8 @@ The HTTP is mocked at the requests boundary, the same way common.py mocks Graph.
 No real network, no real Google client.
 """
 from datetime import datetime, timedelta
+
+from odoo import fields
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -139,7 +141,7 @@ class TestGoogleProvider(TransactionCase):
         Account = self.Account
         acc = Account._store_tokens(
             'gmail', self.user, 'gmail_user@test.local', 'AT1', 'RT1',
-            datetime.now() + timedelta(hours=1))
+            fields.Datetime.now() + timedelta(hours=1))
         self.assertEqual(acc.provider, 'gmail')
         self.assertEqual(acc.refresh_token, 'RT1')
 
@@ -147,7 +149,7 @@ class TestGoogleProvider(TransactionCase):
         # must be reused, not duplicated.
         again = Account._store_tokens(
             'gmail', self.user, 'gmail_user@test.local', 'AT2', None,
-            datetime.now() + timedelta(hours=1))
+            fields.Datetime.now() + timedelta(hours=1))
         self.assertEqual(again, acc)
         again.invalidate_recordset()
         self.assertEqual(again.access_token, 'AT2')
@@ -182,7 +184,7 @@ class TestGoogleProvider(TransactionCase):
         account = self.Account.create({
             'email': 'sales@test.local', 'provider': 'gmail', 'user_id': False,
             'access_token': 'live-token', 'refresh_token': 'r',
-            'token_expiry': datetime.now() + timedelta(hours=1),
+            'token_expiry': fields.Datetime.now() + timedelta(hours=1),
         })
         return mailbox, account
 
@@ -369,7 +371,7 @@ class TestGoogleProvider(TransactionCase):
             'mailbox_type': 'personal', 'owner_user_id': self.user.id,
         })
         account = self._google_account(refresh_token='r', access_token='a',
-                                       token_expiry=datetime.now() + timedelta(hours=1))
+                                       token_expiry=fields.Datetime.now() + timedelta(hours=1))
 
         # Gmail returns newest-first; ids 'new' then 'old'.
         listed = [{'id': 'new'}, {'id': 'old'}]
@@ -403,7 +405,7 @@ class TestGoogleProvider(TransactionCase):
         """
         account = self._google_account(
             refresh_token='r', access_token='a',
-            token_expiry=datetime.now() + timedelta(hours=1))
+            token_expiry=fields.Datetime.now() + timedelta(hours=1))
         pages = [
             {'messages': [{'id': 'newest'}, {'id': 'newer'}], 'nextPageToken': 'p2'},
             {'messages': [{'id': 'older'}, {'id': 'oldest'}]},
@@ -420,7 +422,7 @@ class TestGoogleProvider(TransactionCase):
     def test_list_stops_when_gmail_runs_out_of_pages(self):
         account = self._google_account(
             refresh_token='r', access_token='a',
-            token_expiry=datetime.now() + timedelta(hours=1))
+            token_expiry=fields.Datetime.now() + timedelta(hours=1))
         pages = [{'messages': [{'id': 'a'}], 'nextPageToken': 'p2'},
                  {'messages': [{'id': 'b'}]}]
         Client = type(self.env['google.gmail.client'])
@@ -438,7 +440,7 @@ class TestGoogleProvider(TransactionCase):
         """
         account = self._google_account(
             refresh_token='r', access_token='a',
-            token_expiry=datetime.now() + timedelta(hours=1))
+            token_expiry=fields.Datetime.now() + timedelta(hours=1))
         Client = type(self.env['google.gmail.client'])
         with patch.object(
                 Client, '_api_get',
@@ -457,7 +459,7 @@ class TestGoogleProvider(TransactionCase):
             'mailbox_type': 'personal', 'owner_user_id': self.user.id,
         })
         account = self._google_account(refresh_token='r', access_token='a',
-                                       token_expiry=datetime.now() + timedelta(hours=1))
+                                       token_expiry=fields.Datetime.now() + timedelta(hours=1))
 
         raw = self._gmail_message(
             {'Message-Id': '<a@x>', 'From': 'a@b.com', 'To': 'c@d.com'},
@@ -510,12 +512,12 @@ class TestGoogleProvider(TransactionCase):
 
         self.assertEqual(tokens['access_token'], 'AT')
         self.assertEqual(tokens['refresh_token'], 'RT')
-        self.assertGreater(tokens['token_expiry'], datetime.now())
+        self.assertGreater(tokens['token_expiry'], fields.Datetime.now())
 
     def test_get_valid_token_returns_live_token_without_refresh(self):
         account = self._google_account(
             access_token='still-good', refresh_token='r',
-            token_expiry=datetime.now() + timedelta(hours=1))
+            token_expiry=fields.Datetime.now() + timedelta(hours=1))
         with patch(GMAIL_POST) as post:
             token = self.client.get_valid_token(account)
             post.assert_not_called()
@@ -524,7 +526,7 @@ class TestGoogleProvider(TransactionCase):
     def test_get_valid_token_refreshes_when_expired(self):
         account = self._google_account(
             access_token='stale', refresh_token='the-refresh',
-            token_expiry=datetime.now() - timedelta(minutes=1))
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         # Google omits refresh_token on refresh — the old one must survive.
         with patch(GMAIL_POST, return_value=self._ok_response(
                 {'access_token': 'fresh', 'expires_in': 3600})):
@@ -547,7 +549,7 @@ class TestGoogleProvider(TransactionCase):
         """
         account = self._google_account(
             access_token='stale', refresh_token='revoked',
-            token_expiry=datetime.now() - timedelta(minutes=1))
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         with patch(GMAIL_POST, side_effect=self._http_error({'error': 'invalid_grant'})):
             with self.assertRaises(UserError) as ctx:
                 self.client.get_valid_token(account)
@@ -558,7 +560,7 @@ class TestGoogleProvider(TransactionCase):
         """A network blip must NOT tell the user their connection is revoked."""
         account = self._google_account(
             access_token='stale', refresh_token='still-valid',
-            token_expiry=datetime.now() - timedelta(minutes=1))
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         with patch(GMAIL_POST, side_effect=self._http_error({'error': 'temporarily_unavailable'})):
             with self.assertRaises(UserError) as ctx:
                 self.client.get_valid_token(account)

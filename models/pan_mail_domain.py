@@ -220,10 +220,7 @@ class PanMailDomain(models.Model):
             address for address in mailboxes.mapped('email') + users.mapped('email')
             if address
         ]
-        return [
-            address for address in addresses
-            if self._parse(address) and self._parse(address)[0] not in PUBLIC_MAIL_DOMAINS
-        ]
+        return [address for address in addresses if self._parse(address)]
 
     @api.model
     def suggest_domains(self):

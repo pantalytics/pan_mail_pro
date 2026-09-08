@@ -113,6 +113,7 @@ class TestNeutralizedDatabase(MailProTestCase):
             [('refresh_token_encrypted', '!=', False)], limit=1)
         self.assertTrue(account, "fixture must hold a connected account")
 
+        self.env.flush_all()
         with open(os.path.join(os.path.dirname(__file__), '..', 'data', 'neutralize.sql')) as f:
             self.env.cr.execute(f.read())
         provider.invalidate_recordset()
