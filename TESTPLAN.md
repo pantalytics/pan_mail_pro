@@ -5,7 +5,7 @@ refresh token dat na een uur nog werkt, en of een provider de mail werkelijk
 aflevert. Alles wat wél te automatiseren is, hoort in `tests/` — zie
 ARCHITECTURE.md §12 voor wat daar al staat.
 
-**Huidige versie:** 19.0.6.5.5
+**Huidige versie:** 19.0.7.12.0
 **Ringen:** lokaal → testinstance → dogfood → klanten
 
 > **IMAP/SMTP is sinds 19.0.6.5.5 geautomatiseerd.** `tools/ci_odoo.sh` start

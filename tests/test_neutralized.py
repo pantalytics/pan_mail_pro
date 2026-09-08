@@ -8,6 +8,7 @@ protection misses it entirely and a restored dump mails real customers with the
 real credentials. `data/neutralize.sql` takes those credentials away; these
 tests cover the runtime half, which holds even when a mailbox is put back.
 """
+import os
 from unittest.mock import patch
 
 from odoo.exceptions import UserError
@@ -100,6 +101,29 @@ class TestNeutralizedDatabase(MailProTestCase):
 
         bus_send.assert_not_called()
         self.assertEqual(mail.state, 'sent')
+
+    def test_neutralize_sql_takes_every_credential_away(self):
+        """The at-rest half. The SQL names columns by hand and is found by
+        path, so nothing but this notices a rename or a column it forgot."""
+        provider = self.env['pan.mail.provider'].sudo().search([], limit=1) \
+            or self.env['pan.mail.provider'].sudo().create({'provider': 'outlook'})
+        provider.client_secret = 'app-secret'
+        self.assertTrue(provider.client_secret_encrypted)
+        account = self.env['pan.mail.account'].sudo().search(
+            [('refresh_token_encrypted', '!=', False)], limit=1)
+        self.assertTrue(account, "fixture must hold a connected account")
+
+        self.env.flush_all()
+        with open(os.path.join(os.path.dirname(__file__), '..', 'data', 'neutralize.sql')) as f:
+            self.env.cr.execute(f.read())
+        provider.invalidate_recordset()
+        account.invalidate_recordset()
+
+        self.assertFalse(provider.client_secret_encrypted)
+        self.assertFalse(account.refresh_token_encrypted)
+        self.assertFalse(account.access_token_encrypted)
+        self.assertFalse(account.password_encrypted)
+        self.assertFalse(account.connected)
 
     def test_incoming_sync_cron_does_nothing(self):
         """The cron returns before it touches a mailbox."""

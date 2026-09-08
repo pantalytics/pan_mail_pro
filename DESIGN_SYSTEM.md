@@ -225,10 +225,10 @@ A list of steps, each showing a check and its answer, says it in one look.
 - **A banner repeats what the list already says.** Setup / Syncing was a
   headline above three lines that carried the same information.
 - **A failure belongs on the line it happened to**, not in a summary at the
-  top: a stopped mailbox is a red triangle on the mailboxes line, where the
-  reader is already looking for it.
-- **Two states per line, not four.** Answered, or open. Anything else is a
-  sentence on the line.
+  top: a stopped mailbox is a red dot on the mailboxes line, where the reader
+  is already looking for it.
+- **Three states per line, one shape.** Answered, broken, or open. Anything
+  else is a sentence on the line.
 - **Never a colour that means nothing.** Green for done, red for broken. There
   is no third.
 
@@ -239,14 +239,13 @@ name, the answer itself, and the way to the place it is changed.
 
 ```xml
 <div class="o_mailpro_step">
-    <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
+    <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
           invisible="not x_setup_domains_done"/>
-    <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
+    <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
           invisible="x_setup_domains_done"/>
     <div class="o_mailpro_step_body">
         <div class="o_mailpro_step_head">
             <span class="o_mailpro_step_name">2. Internal Domains</span>
-            <i class="fa fa-info-circle text-muted" title="One row per domain your company owns..."/>
             <span class="o_mailpro_step_value" invisible="not x_setup_domains_done">
                 <field name="x_internal_domains_summary" nolabel="1" readonly="1"/>
             </span>
@@ -294,23 +293,18 @@ name, the answer itself, and the way to the place it is changed.
   list with something in it is the admin's, and offering additions to it
   forever would read as a complaint about a deliberate choice.
 
-### Explanation belongs behind an info icon
+### Explanation is one muted line, never a tooltip
 
-A paragraph of help text under every field turns a settings page into a manual.
-Put the label on the screen and the reason one hover away:
+A `title` attribute never shows on touch and is unreliable for keyboard and
+screen-reader users, so a setting explained only there is explained to nobody
+(`tools/ci_lint.sh` refuses the pairing). One short sentence under the control,
+in `text-muted`, while the step is open; once it is answered the answer beside
+the name explains it better than any sentence, and the line goes away.
 
-```xml
-<span class="o_form_label">Your domains</span>
-<i class="fa fa-info-circle text-muted ms-1"
-   title="Comma separated. Email between these domains is not synced into Odoo."/>
-```
-
-- **On screen**: the label, the field, the button. Nothing else.
-- **Behind the icon**: why it exists, what the wrong answer costs, what format to
-  type.
-- **Still on screen**: a consequence somebody is about to walk into — a
-  confidential-mail warning, a step that is blocking. Those are one short line
-  in `text-warning`, not an `alert` box.
+- **On screen**: the label, the field, the button, and that one line.
+- **Still on screen, in `text-warning`**: a consequence somebody is about to
+  walk into — a confidential-mail warning, a step that is blocking. One short
+  line, not an `alert` box.
 
 ---
 

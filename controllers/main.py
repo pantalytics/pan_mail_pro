@@ -146,7 +146,10 @@ class MailProOAuthController(http.Controller):
             return
 
         Mailbox = request.env['pan.mail.mailbox'].sudo()
-        existing = Mailbox.search([('email', '=ilike', email)], limit=1)
+        # Archived rows included: the address is unique across them, so an
+        # archived mailbox would make the create below fail on its constraint.
+        existing = Mailbox.with_context(active_test=False).search(
+            [('email', '=ilike', email)], limit=1)
         if not existing:
             mailbox = Mailbox.create({
                 'email': email,
@@ -156,6 +159,9 @@ class MailProOAuthController(http.Controller):
             })
             user.sudo().write({'x_default_mailbox_id': mailbox.id})
             _logger.info('[OAuth] Created personal mailbox %s for %s', email, user.login)
-        elif existing.mailbox_type == 'personal' and not existing.owner_user_id:
-            existing.write({'owner_user_id': user.id})
+        elif existing.mailbox_type == 'personal' and (
+                not existing.owner_user_id or existing.owner_user_id == user):
+            # Unowned, or this user's own archived one: the consent that just
+            # happened is the reason it exists, so it comes back.
+            existing.write({'owner_user_id': user.id, 'active': True})
             _logger.info('[OAuth] Assigned existing mailbox %s to %s', email, user.login)

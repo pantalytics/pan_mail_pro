@@ -47,13 +47,12 @@
         **Sending:**
         1. For quick messages: Use the inline Chatter composer (uses your default mailbox)
         2. To select a specific mailbox: Click the full screen icon in Chatter
-        3. Set your default mailbox in: Settings → Users → Your User → Email tab
+        3. Set your default mailbox in: Settings → Users → Your User → Mail Pro tab
 
         **Receiving:**
-        1. Go to Settings → Mail Pro → Manage Mailbox List
-        2. Open a mailbox and go to the "Incoming Sync" tab
-        3. Enable sync and select the user whose account reads the mailbox
-        4. Emails will appear in the partner's chatter automatically
+        1. Go to Settings → Technical → Email → Mail Pro → Mailboxes
+        2. Open a mailbox and switch on Receiving
+        3. Emails will appear in the partner's chatter automatically
 
         Why this module?
         ----------------
@@ -100,7 +99,7 @@
     'license': 'LGPL-3',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
-        'python': ['cryptography'],
+        'python': ['cryptography', 'requests'],
     },
     'data': [
         'security/pan_mail_pro_security.xml',

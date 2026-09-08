@@ -4,16 +4,25 @@ Mail Pro is designed with security as a priority, following the principle of lea
 
 ## Authentication
 
+Three providers, two kinds of credential:
+
+| Provider | Credential | Who holds it |
+|----------|------------|--------------|
+| Microsoft 365 | OAuth 2.0, delegated permissions only | Each user signs in; a shared address is sent *as* with the user's own token |
+| Google Workspace | OAuth 2.0, delegated permissions only | Each user signs in; a shared address is its own Workspace account, authorized once |
+| IMAP/SMTP | Server, login and password | Entered by an administrator, per address |
+
 ### OAuth 2.0 with Delegated Permissions
 
-Mail Pro uses **delegated permissions only** - the app acts on behalf of the signed-in user, never as an administrator.
+On Microsoft 365 and Google Workspace the app acts on behalf of the signed-in
+user, never as an administrator.
 
 | Aspect | Implementation |
 |--------|----------------|
 | Protocol | OAuth 2.0 Authorization Code Flow |
-| Identity Provider | Microsoft Entra ID (Azure AD) |
+| Identity Provider | Microsoft Entra ID (Azure AD) or Google |
 | Permission Type | Delegated only |
-| Token Lifetime | Access: 1 hour, Refresh: 90 days |
+| Token Lifetime | Access: 1 hour, Refresh: provider policy (Microsoft: 90 days of inactivity) |
 
 ### Required Permissions
 
@@ -39,7 +48,8 @@ Mail Pro uses **delegated permissions only** - the app acts on behalf of the sig
 
 ### Encryption at Rest
 
-All OAuth tokens are encrypted before storage:
+Every credential the module holds — OAuth access and refresh tokens, IMAP/SMTP
+passwords, and the provider's own client secret — is encrypted before storage:
 
 - **Algorithm:** Fernet (AES-128-CBC with HMAC)
 - **Key:** A random 32-byte key generated on first use and stored in
@@ -65,33 +75,39 @@ over the stored parameter and nothing is written to `ir.config_parameter`.
 
 ### Token Handling
 
-- Access tokens are short-lived (1 hour)
-- Refresh tokens are automatically rotated
+- Access tokens are short-lived (1 hour) and refreshed automatically
+- A refresh token is replaced when the provider issues a new one; Google
+  usually does not, so the stored one is kept
 - Tokens are never logged or exposed in error messages
-- Tokens are cleared on disconnect
+- Tokens are cleared on disconnect, and removed altogether when the database
+  is neutralized (a staging or test copy)
 
 ## Shared Mailbox Access
 
-For shared mailboxes:
-
-- Each user authenticates with **their own** Microsoft account
-- Users need **SendAs permission** granted in Microsoft 365
-- No shared credentials or service accounts
+- **Microsoft 365:** each user authenticates with their own account and needs
+  **SendAs permission** on the shared address. No shared credentials.
+- **Google Workspace:** the shared address is its own Workspace account,
+  authorized once by an administrator. Its refresh token is stored like any
+  other, with no Odoo user attached.
+- **IMAP/SMTP:** the address's login and password, entered by an administrator
+  and stored encrypted.
 
 ## Data Flow
 
 ```
-User → Odoo → Microsoft Graph API → Microsoft 365
+User → Odoo → Microsoft Graph API / Gmail API / IMAP+SMTP host
          ↑
-    OAuth Token
+   credential
    (encrypted)
 ```
 
 1. User initiates action in Odoo
-2. Odoo retrieves encrypted token
-3. Token decrypted in memory
-4. API call made to Microsoft Graph
+2. Odoo retrieves the encrypted credential
+3. Credential decrypted in memory
+4. Call made to the provider
 5. Response processed in Odoo
+
+Nothing goes to Pantalytics.
 
 ## Audit Trail
 
@@ -103,6 +119,6 @@ All email operations are logged:
 
 ## Compliance
 
-- **GDPR:** User data processed per Microsoft's data processing terms
-- **Data residency:** Determined by Microsoft 365 tenant configuration
+- **GDPR:** User data processed per the provider's data processing terms
+- **Data residency:** Determined by the provider's tenant configuration
 - **Odoo data:** Stored in your Odoo database location

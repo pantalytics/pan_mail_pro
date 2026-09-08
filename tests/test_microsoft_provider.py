@@ -15,7 +15,9 @@ Google usually omits it) are asserted rather than assumed.
 
 HTTP is mocked at the requests boundary. No real network, no Azure app.
 """
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from odoo import fields
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -81,7 +83,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
 
         self.assertEqual(tokens['access_token'], 'AT')
         self.assertEqual(tokens['refresh_token'], 'RT')
-        self.assertGreater(tokens['token_expiry'], datetime.now())
+        self.assertGreater(tokens['token_expiry'], fields.Datetime.now())
 
     def test_exchange_code_failure_raises_user_error(self):
         """A failed exchange must surface as a UserError, not a raw HTTP error:
@@ -97,7 +99,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
     def test_get_valid_token_returns_live_token_without_refresh(self):
         account = self._account(
             access_token='still-good', refresh_token='r',
-            token_expiry=datetime.now() + timedelta(hours=1))
+            token_expiry=fields.Datetime.now() + timedelta(hours=1))
         with patch(GRAPH_POST) as post:
             token = self.client.get_valid_token(account)
             post.assert_not_called()
@@ -112,7 +114,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         """
         account = self._account(
             access_token='nearly-stale', refresh_token='the-refresh',
-            token_expiry=datetime.now() + timedelta(minutes=2))
+            token_expiry=fields.Datetime.now() + timedelta(minutes=2))
         with patch(GRAPH_POST, return_value=self._ok_response(
                 {'access_token': 'fresh', 'refresh_token': 'rotated', 'expires_in': 3600})) as post:
             token = self.client.get_valid_token(account)
@@ -124,7 +126,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         """The other side of the buffer boundary — six minutes is not urgent."""
         account = self._account(
             access_token='fine', refresh_token='r',
-            token_expiry=datetime.now() + timedelta(minutes=6))
+            token_expiry=fields.Datetime.now() + timedelta(minutes=6))
         with patch(GRAPH_POST) as post:
             self.assertEqual(self.client.get_valid_token(account), 'fine')
             post.assert_not_called()
@@ -132,7 +134,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
     def test_get_valid_token_refreshes_when_expired(self):
         account = self._account(
             access_token='stale', refresh_token='old-refresh',
-            token_expiry=datetime.now() - timedelta(minutes=1))
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         with patch(GRAPH_POST, return_value=self._ok_response(
                 {'access_token': 'fresh', 'refresh_token': 'rotated', 'expires_in': 3600})):
             token = self.client.get_valid_token(account)
@@ -143,7 +145,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         # Microsoft rotates the refresh token on every refresh; the new one must
         # be stored or the next refresh replays a spent token.
         self.assertEqual(account.refresh_token, 'rotated')
-        self.assertGreater(account.token_expiry, datetime.now())
+        self.assertGreater(account.token_expiry, fields.Datetime.now())
 
     def test_refresh_without_a_new_refresh_token_keeps_the_old_one(self):
         """Rotation is Microsoft's norm, not its contract. When the response
@@ -151,7 +153,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         silently disconnect the account an hour later."""
         account = self._account(
             access_token='stale', refresh_token='still-mine',
-            token_expiry=datetime.now() - timedelta(minutes=1))
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         with patch(GRAPH_POST, return_value=self._ok_response(
                 {'access_token': 'fresh', 'expires_in': 3600})):
             self.client.get_valid_token(account)
@@ -188,7 +190,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         """
         account = self._account(
             access_token='stale', refresh_token='revoked',
-            token_expiry=datetime.now() - timedelta(minutes=1))
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         with patch(GRAPH_POST, side_effect=self._http_error({'error': 'invalid_grant'})):
             with self.assertRaises(UserError) as ctx:
                 self.client.get_valid_token(account)
@@ -200,7 +202,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         is still what unblocks them once the admin fixes the registration."""
         account = self._account(
             access_token='stale', refresh_token='r',
-            token_expiry=datetime.now() - timedelta(minutes=1))
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         with patch(GRAPH_POST, side_effect=self._http_error({'error': 'invalid_client'})):
             with self.assertRaises(UserError) as ctx:
                 self.client.get_valid_token(account)
@@ -212,7 +214,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         and must not clear tokens that are still perfectly good."""
         account = self._account(
             access_token='stale', refresh_token='still-valid',
-            token_expiry=datetime.now() - timedelta(minutes=1))
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         with patch(GRAPH_POST, side_effect=self._http_error(
                 {'error': 'temporarily_unavailable',
                  'error_description': 'Service is temporarily unavailable'})):
@@ -232,7 +234,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         exc.response = resp
         account = self._account(
             access_token='stale', refresh_token='r',
-            token_expiry=datetime.now() - timedelta(minutes=1))
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         with patch(GRAPH_POST, side_effect=exc):
             with self.assertRaises(UserError):
                 self.client.get_valid_token(account)

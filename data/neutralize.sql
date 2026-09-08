@@ -25,3 +25,7 @@ UPDATE pan_mail_account
        refresh_token_encrypted = NULL,
        token_expiry = NULL,
        password_encrypted = NULL;
+
+-- The application secret is a credential too, and it outlives every token.
+UPDATE pan_mail_provider
+   SET client_secret_encrypted = NULL;

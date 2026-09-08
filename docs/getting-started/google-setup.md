@@ -65,14 +65,13 @@ screen.
 
 ## Step 6: Configure in Odoo
 
-1. Go to **Settings → Mail Pro**
-2. Set **Email provider** to *Google Workspace*
+1. Go to **Settings → Mail Pro** and press the arrow on step 1, *Email Provider*
+2. Create the provider row and set **Provider** to *Google Workspace*
 3. Enter the **Client ID** and **Client Secret**
 4. Save
 
-Each provider keeps its own credentials, so switching the provider dropdown
-later loses nothing — and one database can serve mailboxes on several providers
-at once.
+A database runs on one provider. Switching later means editing this row, and
+Google issues a new client secret for it.
 
 ## Shared addresses on Gmail
 

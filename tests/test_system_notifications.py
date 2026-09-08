@@ -31,8 +31,7 @@ class TestSystemNotifications(MailProTestCase):
                 subtype_xmlid='mail.mt_comment',
             )
         # The follower's mail (other_user) must route via notification mailbox
-        if calls.get('draft') is None:
-            self.skipTest('No follower mail produced — Odoo flow changed?')
+        self.assertIsNotNone(calls.get('draft'), 'No follower mail produced')
         self.assertEqual(
             calls['draft']['from']['emailAddress']['address'],
             self.notification_mailbox.email,
@@ -50,8 +49,7 @@ class TestSystemNotifications(MailProTestCase):
                 'summary': 'Please follow up',
             })
 
-        if calls.get('draft') is None:
-            self.skipTest('Activity did not trigger a mail.mail in this Odoo build')
+        self.assertIsNotNone(calls.get('draft'), 'Activity assignment produced no mail')
         self.assertEqual(
             calls['draft']['from']['emailAddress']['address'],
             self.notification_mailbox.email,

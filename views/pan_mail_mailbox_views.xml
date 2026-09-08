@@ -24,7 +24,7 @@
                 <field name="owner_user_id" string="Owner" optional="hide"/>
                 <field name="sync_received" string="Sync Other Email" optional="hide"/>
                 <field name="sync_sent" string="Sync Sent Items" optional="hide"/>
-                <field name="last_sync_date" string="Last Synced" optional="hide"/>
+                <field name="last_sync_date" optional="hide"/>
                 <field name="error_message" string="Error" optional="hide"/>
             </list>
         </field>
@@ -150,8 +150,8 @@
                     <!-- SECTION 4: SYNC -->
                     <group string="Sync" invisible="is_notification_mailbox">
                         <group>
-                            <field name="sync_start_date" string="Start from"/>
-                            <field name="last_sync_date" string="Last synced" readonly="1"
+                            <field name="sync_start_date"/>
+                            <field name="last_sync_date" readonly="1"
                                    invisible="not last_sync_date"/>
                         </group>
                         <group/>

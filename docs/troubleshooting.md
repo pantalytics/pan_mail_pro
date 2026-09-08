@@ -18,7 +18,7 @@
 
 **Solution:**
 1. Go to **My Profile → Mail Pro** tab
-2. Click **Connect Microsoft 365**
+2. Click **Connect Mailbox**
 3. Complete the OAuth flow
 
 ### Email stuck in outbox
@@ -36,14 +36,14 @@
 **Checklist:**
 1. If the missing mail is not a reply, **Sync Other Email** is on
 2. Mailbox **Owner** is set
-3. Owner has **Microsoft connected**
+3. On Microsoft 365: the owner has connected; on Gmail and IMAP/SMTP: the address has its own account with **Test Connection** green
 4. **Notification mailbox** exists (required for incoming sync)
 
 ### "0 mailbox(es)" in logs
 
 **Cause:** Mailbox configuration incomplete.
 
-**Solution:** Ensure Sync Mode and Owner are both configured.
+**Solution:** Switch on **Sync Other Email** or **Sync Sent Items**, and on Microsoft 365 set the Owner.
 
 ### Reply threading not working
 
