@@ -225,11 +225,20 @@ import ast, re, sys
 # carries the two Apps-screen strings as literals. This is the check that keeps
 # that copy honest: without it the rename would eventually advertise a name the
 # module has already dropped, which is the bug it exists to fix.
+#
+# The `jsonb_build_object` wrapper is part of what is asserted, not incidental
+# syntax. These columns are translated, so they are jsonb, and assigning the
+# bare literal this check used to demand raises `invalid input syntax for type
+# json` — which is exactly how the statement shipped unable to run at all. Only
+# `tests/test_rename_migration.py` proves it executes; this one proves it says
+# the right thing when it does.
 manifest = ast.literal_eval(open('__manifest__.py').read())
 sql = open('tools/rename_to_mail_pro.sql').read()
-wrong = [f"{col} = {manifest[key]!r}"
+wrong = [f"{col} = jsonb_build_object('en_US', {manifest[key]!r})"
          for col, key in (('shortdesc', 'name'), ('summary', 'summary'))
-         if not re.search(rf"{col}\s*=\s*'{re.escape(manifest[key])}'", sql)]
+         if not re.search(
+             rf"{col}\s*=\s*jsonb_build_object\(\s*'en_US'\s*,\s*'{re.escape(manifest[key])}'\s*\)",
+             sql)]
 if wrong:
     print("tools/rename_to_mail_pro.sql must set:")
     print("\n".join(f"  - {w}" for w in wrong))

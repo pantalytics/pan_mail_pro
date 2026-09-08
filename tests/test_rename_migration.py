@@ -12,8 +12,10 @@ The legacy column has to be recreated first: CI installs fresh and never had
 it. The fixture adds it with raw SQL, the way an upgraded database still
 carries it before the post-migrate drops it.
 """
+import ast
 import importlib.util
 import os
+import re
 
 from odoo.tests import TransactionCase, tagged
 
@@ -21,6 +23,9 @@ from odoo.addons.pan_mail_pro.models import encryption_utils
 
 _MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 _MIGRATION = os.path.join(_MODULE, 'migrations', '19.0.6.0.0')
+_RENAME_SQL = os.path.join(_MODULE, 'tools', 'rename_to_mail_pro.sql')
+
+_STALE = 'Outlook Pro - Microsoft 365 Email Integration'
 
 
 def _load(script):
@@ -168,3 +173,104 @@ class TestRenameMigration(TransactionCase):
             self.ICP.set_param(encryption_utils.LEGACY_KEY_PARAM, False)
             self.ICP.set_param(encryption_utils.AUTO_KEY_PARAM, False)
         self.assertEqual(key, b'legacy-key-bytes')
+
+    # -- tools/rename_to_mail_pro.sql --------------------------------------- #
+    #
+    # The Python migrations above had tests; the SQL script had none, and that
+    # is precisely where it broke. Its metadata statement assigned a bare string
+    # to `shortdesc` — `jsonb` since Odoo 17 — so it raised `invalid input
+    # syntax for type json` and, under the `ON_ERROR_STOP=1` the runbook
+    # prescribes, aborted the whole rename. The repair it documents had never
+    # once run. These tests execute the real file.
+
+    def _run_rename_sql(self):
+        """Execute the shipped script inside the test transaction.
+
+        `BEGIN;`/`COMMIT;` are dropped rather than the statements rewritten:
+        committing here would escape the rollback every other test relies on.
+        Everything that touches a row still runs exactly as shipped.
+        """
+        with open(_RENAME_SQL) as handle:
+            script = handle.read()
+        script = re.sub(r'(?im)^\s*(BEGIN|COMMIT)\s*;\s*$', '', script)
+        self.env.cr.execute(script)
+
+    def _shortdesc(self):
+        self.env.cr.execute(
+            "SELECT shortdesc, summary FROM ir_module_module WHERE name = 'pan_mail_pro'")
+        return self.env.cr.fetchone()
+
+    def _make_stale(self):
+        """A database that took the rename while its users read en_GB.
+
+        Exactly the shape production was found in: the source language already
+        refreshed from the manifest, a second language still on the old name.
+        """
+        self.env.cr.execute("""
+            UPDATE ir_module_module
+               SET shortdesc = jsonb_build_object('en_US', 'Mail Pro - Email Integration',
+                                                  'en_GB', %s),
+                   summary   = jsonb_build_object('en_US', 'whatever the manifest says',
+                                                  'en_GB', 'Outlook Pro, via Graph API')
+             WHERE name = 'pan_mail_pro'
+        """, (_STALE,))
+
+    def test_rename_sql_runs_against_jsonb_columns(self):
+        """The script must not raise. It did, on every Odoo 17+ database."""
+        self._make_stale()
+        self._run_rename_sql()  # must not raise
+
+    def test_rename_sql_clears_a_stale_translation(self):
+        """An apps-list refresh cannot fix this, so the script has to.
+
+        `update_list()` rewrites the source language and leaves other keys
+        alone, so en_GB kept advertising "Outlook Pro" indefinitely. Asserting
+        on the raw json rather than through a language context keeps the test
+        independent of which languages CI happens to have active.
+        """
+        self._make_stale()
+
+        self._run_rename_sql()
+
+        shortdesc, summary = self._shortdesc()
+        self.assertNotIn('Outlook Pro', str(shortdesc))
+        self.assertNotIn('Outlook Pro', str(summary))
+        self.assertEqual(shortdesc.get('en_US'), 'Mail Pro - Email Integration')
+        self.assertNotIn(
+            'en_GB', shortdesc,
+            "the stale key must be dropped so en_GB falls back to the source term")
+
+    def test_rename_sql_matches_the_manifest(self):
+        """The copy the script writes is the copy the manifest declares.
+
+        Without this the two drift the moment somebody edits `__manifest__.py`,
+        and the script starts restoring a name that is itself out of date.
+        """
+        with open(os.path.join(_MODULE, '__manifest__.py')) as handle:
+            manifest = ast.literal_eval(handle.read())
+        self._make_stale()
+
+        self._run_rename_sql()
+
+        shortdesc, summary = self._shortdesc()
+        self.assertEqual(shortdesc.get('en_US'), manifest['name'])
+        self.assertEqual(summary.get('en_US'), manifest['summary'])
+
+    def test_rename_sql_leaves_a_clean_row_alone(self):
+        """Guarded on stale content, so a repeat run is a no-op.
+
+        The runbook tells the reader to re-run the script when in doubt, which
+        is only safe advice while this holds.
+        """
+        self.env.cr.execute("""
+            UPDATE ir_module_module
+               SET shortdesc = jsonb_build_object('en_US', 'Mail Pro - Email Integration',
+                                                  'nl_NL', 'Mail Pro - E-mailkoppeling')
+             WHERE name = 'pan_mail_pro'
+        """)
+
+        self._run_rename_sql()
+
+        shortdesc, _summary = self._shortdesc()
+        self.assertEqual(shortdesc.get('nl_NL'), 'Mail Pro - E-mailkoppeling',
+                         'a real translation must survive a re-run')
