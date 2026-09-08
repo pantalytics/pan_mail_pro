@@ -197,6 +197,9 @@ class ResUsers(models.Model):
                 'access_token_encrypted': False,
                 'refresh_token_encrypted': False,
                 'token_expiry': False,
+                # IMAP's credential is a password, and "disconnected" has to
+                # mean the same thing whichever provider issued the credential.
+                'password_encrypted': False,
             })
 
         vals = {'x_pan_mail_oauth_state': False}

@@ -607,11 +607,16 @@ class PanMailMailbox(models.Model):
 
     @api.constrains('email')
     def _check_email_unique(self):
-        """Ensure email is unique"""
+        """One row per address, archived rows and letter case included.
+
+        Two rows for one inbox is the failure: the clients resolve credentials
+        by address with `limit=1`, so sends and the sync cursor would straddle
+        whichever row the search happened to return.
+        """
         for record in self:
             if record.email:
-                existing = self.search([
-                    ('email', '=', record.email),
+                existing = self.with_context(active_test=False).search([
+                    ('email', '=ilike', record.email),
                     ('id', '!=', record.id)
                 ], limit=1)
                 if existing:
