@@ -1369,6 +1369,36 @@ whole attempt runs in one savepoint: a failed test that left a `mail.mail`
 behind would be delivered by the queue cron minutes later, which is a test
 email arriving out of nowhere long after the reader concluded it had failed.
 
+### 9.16 Source-available, sold direct, not through the Odoo Apps store
+
+The licence is the Elastic License 2.0 (`LICENSE`), the same one Odoo MCP Pro
+uses. It protects the thing being sold — offering Mail Pro to third parties as
+a hosted or managed service — and leaves customers free to read the code and
+modify it for their own use. That is the right trade for a module whose buyers
+are Odoo integrators and IT departments who will read it either way.
+
+Odoo's manifest has no value for a source-available licence, so
+`__manifest__.py` reads `'license': 'Other proprietary'` and `LICENSE` carries
+the real terms.
+
+**That value is only legal outside the Odoo Apps store, and that is the
+decision.** apps.odoo.com requires `OPL-1` for a paid app, which is a stricter
+licence than we want: it also forbids a customer from redistributing a
+modified copy, which the Elastic License permits and which costs us nothing.
+Mail Pro is sold direct from pantalytics.com, so the store's constraint does
+not apply.
+
+The consequence for anyone changing this: **do not set the manifest licence to
+`OPL-1` to "fix" a store listing.** If distributing through the Odoo Apps store
+is ever wanted, that is a licence change and a business decision, not a
+manifest edit — take it deliberately, and re-check `LICENSE`, the About block
+in `views/res_config_settings_views.xml` and the licence section of
+`README.md` together, because all three state the terms and only one of them is
+the terms.
+
+Releases up to and including `v19.0.7.13.1` were published under LGPL-3 and
+stay there; the relicence applies from `19.0.7.14.0` onwards.
+
 ## 10. Security and permissions
 
 All Microsoft permissions are **delegated** (user context, never application) —

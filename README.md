@@ -289,4 +289,7 @@ service, and you may not remove or circumvent its licensing notices.
 Releases up to and including `v19.0.7.13.1` were published under LGPL-3 and
 stay under LGPL-3. The relicence applies from `19.0.7.14.0` onwards.
 
+Mail Pro is sold direct, not through the Odoo Apps store, which requires
+`OPL-1` for paid apps. See ARCHITECTURE.md §9.16 for why.
+
 Commercial terms and support: <support@pantalytics.com>.
