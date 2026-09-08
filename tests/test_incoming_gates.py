@@ -276,17 +276,11 @@ class TestIncomingGates(MailProTestCase):
         customer given portal access lost the mail they sent from that same
         address -- replies to our own threads included. Who is a colleague is
         the domain list's question, and it is asked one gate earlier."""
-        partner = self.env['res.partner'].create({
-            'name': 'External Customer', 'email': CUSTOMER,
-        })
-        self.env['res.users'].create({
-            'name': 'External Customer',
-            'login': CUSTOMER,
-            'partner_id': partner.id,
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
-        })
+        ctx = self._ctx(**{'from': {
+            'email': self.portal_user.email, 'name': self.portal_user.name,
+        }})
 
-        self.assertIsNone(self.processor._refuse(self._ctx()))
+        self.assertIsNone(self.processor._refuse(ctx))
 
     def test_skip_defaults_to_a_visible_refusal(self):
         """The safe default: a new gate is logged at INFO unless it says
