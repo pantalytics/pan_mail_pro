@@ -787,13 +787,27 @@ Ascending sort plus an incremental cursor, the pattern Odoo fetchmail and
 Stripe webhooks use:
 
 1. Fetch up to 200 messages per folder, oldest first, since `last_sync_date`
-2. Advance `last_sync_date` to the **minimum** of the two folders' latest
-   message, so nothing is skipped in the slower folder
-3. If nothing came back at all, the cursor jumps to `now()` — caught up
+2. Advance `last_sync_date` to the **minimum** of the two folders' progress,
+   so nothing is skipped in the slower folder
+3. A folder's progress is the last message that was actually **processed**,
+   and it stops at the first one that raised — the rest of the batch is still
+   read, but the cursor does not pass the failure
+4. If nothing came back at all, the cursor jumps to `now()` — caught up. Not
+   when a folder stalled: that jump is exactly the skip the stall prevents
 
 `sync_start_date` is user-configurable (default: now). Moving it earlier
 resets the cursor, which is how a historical import is started. Duplicates are
 skipped on Message-ID, so a re-run is safe.
+
+**A message that fails to process stalls its mailbox** rather than being
+stepped over. The two answers conflict and only one of them is recoverable:
+skipping keeps the mail flowing and loses that mail silently, forever;
+stalling blocks everything behind it until somebody looks. Dedup on
+Message-ID makes the retry free, so the stall is the one that costs nothing
+if the failure was transient — and it is loud on purpose. `_process_mailbox`
+returns the reason instead of raising it (a raise would roll back the mail
+that *did* land in that run) and the caller puts the mailbox in `error` with
+the subject and provider id of the message that blocked it.
 
 ---
 
