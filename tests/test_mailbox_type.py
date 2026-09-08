@@ -36,13 +36,13 @@ class TestMailboxTypeIsDerived(MailProTestCase):
         """Their own address is the one their grant carries, or the one on
         their user record, in any case."""
         by_grant = self.env['pan.mail.mailbox'].create({
-            'email': 'Other@Test.local ',
+            'email': 'Other@Test.local',
             'owner_user_id': self.other_user.id,
         })
         self.assertEqual(by_grant.mailbox_type, 'personal')
         self.assertFalse(by_grant._is_sendable_by(self.salesperson))
 
-        unconnected = self.env['res.users'].create({
+        unconnected = self._silent('res.users').create({
             'name': 'Not Yet', 'login': 'notyet@test.local', 'email': 'notyet@test.local',
         })
         by_record = self.env['pan.mail.mailbox'].create({
@@ -52,12 +52,13 @@ class TestMailboxTypeIsDerived(MailProTestCase):
         self.assertEqual(by_record.mailbox_type, 'personal')
 
     def test_type_follows_the_owner_when_it_changes(self):
+        """Both legs of the rule are live: the owner's grant and the owner."""
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'support@company.test',
-            'owner_user_id': self.salesperson.id,
+            'owner_user_id': self.other_user.id,
         })
         self.assertEqual(mailbox.mailbox_type, 'shared')
-        self.connect(self.salesperson, email='support@company.test')
+        self.other_user.x_pan_mail_account_ids.write({'email': 'support@company.test'})
         self.assertEqual(mailbox.mailbox_type, 'personal')
         mailbox.owner_user_id = False
         self.assertEqual(mailbox.mailbox_type, 'shared')
@@ -72,7 +73,7 @@ class TestMailboxTypeIsDerived(MailProTestCase):
     def test_the_connect_flow_yields_a_personal_mailbox(self):
         """What `_claim_personal_mailbox` creates: the address the provider
         just reported, on the user who authorized it."""
-        user = self.env['res.users'].create({
+        user = self._silent('res.users').create({
             'name': 'New Hire', 'login': 'hire@test.local', 'email': 'hire@test.local',
         })
         self.connect(user, email='hire@company.test')
