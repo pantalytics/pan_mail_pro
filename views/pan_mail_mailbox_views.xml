@@ -22,8 +22,8 @@
                 <field name="mailbox_type" string="Type" optional="hide"/>
                 <field name="provider" string="Provider" optional="hide"/>
                 <field name="owner_user_id" string="Owner" optional="hide"/>
-                <field name="sync_received" string="Receiving" optional="hide"/>
-                <field name="sync_sent" string="Sending" optional="hide"/>
+                <field name="sync_received" string="Sync Other Email" optional="hide"/>
+                <field name="sync_sent" string="Sync Sent Items" optional="hide"/>
                 <field name="last_sync_date" optional="hide"/>
                 <field name="error_message" string="Error" optional="hide"/>
             </list>
@@ -100,11 +100,12 @@
                                 <field name="sync_sent" widget="boolean_toggle"
                                        nolabel="1" class="d-inline-block"/>
                                 <div class="text-muted mt-1">
-                                    Email you send from your own mail app appears
-                                    on the contact in Odoo.
+                                    Sync Sent Items from your email program to Odoo.
                                 </div>
                                 <div class="text-muted mt-1" invisible="not sync_sent">
-                                    Only email to people who are already contacts.
+                                    Only replies to emails that are already in Odoo.
+                                    They land on the record they continue. Mail that
+                                    starts a new conversation stays out.
                                 </div>
                             </div>
                         </group>
