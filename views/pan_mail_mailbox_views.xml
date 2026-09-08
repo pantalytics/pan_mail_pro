@@ -22,207 +22,231 @@
                 <field name="mailbox_type" string="Type" optional="hide"/>
                 <field name="provider" string="Provider" optional="hide"/>
                 <field name="owner_user_id" string="Owner" optional="hide"/>
-                <field name="sync_received" string="Sync Other Email" optional="hide"/>
-                <field name="sync_sent" string="Sync Sent Items" optional="hide"/>
-                <field name="last_sync_date" optional="hide"/>
+                <field name="sync_level" string="Sync" optional="hide"/>
+                <field name="last_sync_date" string="Last Synced" optional="hide"/>
                 <field name="error_message" string="Error" optional="hide"/>
             </list>
         </field>
     </record>
 
-    <!-- Form View -->
+    <!-- Form View.
+
+         Three speeds, three places. The identity (address, type, owner) is set
+         once and read many times, so it is the title. The state (status, last
+         sync, how much landed) is looked at when something is wrong, so it is
+         the header and two counters, with no field to fill in. The sync
+         settings are adjusted now and then, so they are the first tab; the
+         things set once are the second. Nothing on the screen scrolls. -->
     <record id="view_pan_mail_mailbox_form" model="ir.ui.view">
         <field name="name">pan.mail.mailbox.form</field>
         <field name="model">pan.mail.mailbox</field>
         <field name="arch" type="xml">
             <form string="Mailbox">
+                <header>
+                    <!-- Every mailbox syncs something since 19.0.7.6.0: replies
+                         land on their record with no setting at all, so there
+                         is no configuration under which this button has
+                         nothing to do. -->
+                    <button name="action_sync_now" string="Sync Now"
+                            type="object" class="btn-primary" icon="fa-refresh"
+                            invisible="is_notification_mailbox"/>
+                    <!-- Every mailbox, including the notification one: sending
+                         is the one thing the consent screen does not prove. The
+                         mail goes to the user who presses it, never to this
+                         address. -->
+                    <button name="action_test_send" string="Send Test Email"
+                            type="object" class="btn-secondary" icon="fa-paper-plane"/>
+                </header>
                 <sheet>
-                    <!-- SECTION 1: MAILBOX -->
-                    <group string="Mailbox">
-                        <group>
-                            <field name="email" placeholder="support@company.com"/>
-                            <!-- Inherited from the one provider this database
-                                 runs on; only the IMAP button below reads it. -->
-                            <field name="provider" invisible="1"/>
-                            <field name="owner_user_id" required="is_notification_mailbox"/>
-                            <label for="mailbox_type" string="Type"/>
-                            <div>
-                                <field name="mailbox_type" nolabel="1" class="d-inline-block"/>
-                                <div class="text-muted mt-1">
-                                    Follows from the owner. Their own address is
-                                    personal: only they send from it. Any other
-                                    address is shared: everyone can send from it.
-                                </div>
-                            </div>
-                            <label for="is_notification_mailbox"/>
-                            <div>
-                                <field name="is_notification_mailbox" widget="boolean_toggle"
-                                       nolabel="1" class="d-inline-block"/>
-                                <div class="text-muted mt-1">
-                                    Odoo's own email leaves from here: invitations,
-                                    password resets, reminders. Exactly one mailbox.
-                                </div>
-                            </div>
-                        </group>
-                        <group>
-                            <div invisible="provider != 'imap'">
-                                <button name="action_open_account" type="object"
-                                        string="Server Credentials" class="btn-link ps-0"
-                                        icon="fa-key"/>
-                                <div class="text-muted mt-1">
-                                    This address is reached with a server, a login and a
-                                    password rather than a consent screen.
-                                </div>
-                            </div>
-                        </group>
-                    </group>
+                    <!-- Inherited from the one provider this database runs on;
+                         only the IMAP button below reads it. -->
+                    <field name="provider" invisible="1"/>
+                    <field name="state" invisible="1"/>
+                    <field name="active" invisible="1"/>
 
-                    <!-- BUTTONS -->
-                    <group>
-                        <group>
-                            <!-- Every mailbox syncs something since 19.0.7.6.0:
-                                 replies land on their record with no setting at
-                                 all, so there is no configuration under which
-                                 this button has nothing to do. -->
-                            <button name="action_sync_now" string="Sync Now"
-                                    type="object" class="btn-primary" icon="fa-refresh"
-                                    invisible="is_notification_mailbox"/>
-                            <!-- Every mailbox, including the notification one:
-                                 sending is the one thing the consent screen
-                                 does not prove. The mail goes to the user who
-                                 presses it, never to this address. -->
-                            <button name="action_test_send" string="Send Test Email"
-                                    type="object" class="btn-secondary" icon="fa-paper-plane"/>
-                        </group>
-                        <group/>
-                    </group>
+                    <!-- The inspection surface: is it working, and since when. -->
+                    <div name="button_box" class="oe_button_box">
+                        <button class="oe_stat_button" icon="fa-clock-o"
+                                invisible="not last_sync_date or is_notification_mailbox">
+                            <div class="o_stat_info">
+                                <span class="o_stat_value">
+                                    <field name="last_sync_date" readonly="1"/>
+                                </span>
+                                <span class="o_stat_text">Last synced</span>
+                                <span class="o_stat_text" invisible="not last_sent_sync_date">
+                                    Sent: <field name="last_sent_sync_date" readonly="1"/>
+                                </span>
+                            </div>
+                        </button>
+                        <button name="action_open_routing_log" type="object"
+                                class="oe_stat_button" icon="fa-random"
+                                invisible="is_notification_mailbox">
+                            <field name="routing_log_count" widget="statinfo" string="Routed here"/>
+                        </button>
+                    </div>
+
+                    <!-- The identity: read, not filled in. -->
+                    <div class="oe_title">
+                        <h1 class="d-flex align-items-center gap-3">
+                            <field name="email" placeholder="support@company.com"
+                                   class="flex-grow-1"/>
+                            <field name="health_status" string="Status" widget="badge"
+                                   decoration-success="health_status == 'healthy'"
+                                   decoration-warning="health_status == 'warning'"
+                                   decoration-danger="health_status == 'error'"
+                                   readonly="1"/>
+                        </h1>
+                        <div class="text-muted">
+                            <field name="subtitle" readonly="1" nolabel="1"/>
+                        </div>
+                    </div>
 
                     <notebook>
-                        <!-- Everything a person decides. The notification
-                             mailbox decides nothing here, so it has no tab. -->
-                        <page string="Sync Settings" name="sync_settings"
+                        <!-- Hidden for the notification mailbox: it carries the
+                             system email and syncs nothing itself. -->
+                        <page string="Sync Settings" name="sync"
                               invisible="is_notification_mailbox">
-                            <!-- SECTION 2: SENDING (not for notification) -->
-                            <!-- Two ways out of this address, and only the second one
-                                 is a choice. Sending from Odoo is what the mailbox is
-                                 for; a toggle there would be a way to break sending
-                                 from a settings page, so it is stated and not asked.
-                                 Reading back what the owner wrote in their own mail app
-                                 is a copy of correspondence Odoo was never part of, so
-                                 it is asked separately and starts at off. -->
-                            <group string="Sending">
-                                <group>
-                                    <div colspan="2" class="text-muted mb-3">
-                                        Messages you write in Odoo are always sent from this address.
-                                    </div>
-                                    <label for="sync_sent"/>
-                                    <div>
-                                        <field name="sync_sent" widget="boolean_toggle"
-                                               nolabel="1" class="d-inline-block"/>
-                                        <div class="text-muted mt-1">
-                                            Sync Sent Items from your email program to Odoo.
-                                        </div>
-                                        <div class="text-muted mt-1" invisible="not sync_sent">
-                                            Only replies to emails that are already in Odoo.
-                                            They land on the record they continue. Mail that
-                                            starts a new conversation stays out.
-                                        </div>
-                                    </div>
-                                </group>
-                                <group/>
-                            </group>
+                            <!-- Sending is stated, not asked. Whether this
+                                 address is used is decided per message, in the
+                                 composer's Send From. -->
+                            <div class="text-muted mb-3">
+                                Emails you send from Odoo with this mailbox picked under
+                                Send From go out from this address. They show up in the
+                                Sent Items of your mail app like any other mail. A note
+                                sends nothing.
+                            </div>
 
-                            <!-- SECTION 3: RECEIVING (not for notification) -->
-                            <!-- Three steps, each a level deeper than the last: what
-                                 happens with no setting at all, then one switch, then
-                                 the question that switch opens. The answer that turns
-                                 every sender into a contact is two deliberate clicks
-                                 away and says out loud what it does. -->
-                            <group string="Receiving">
-                                <group>
-                                    <div colspan="2" class="text-muted mb-3">
-                                        Replies to email sent from Odoo always appear on the
-                                        record they belong to.
-                                    </div>
-                                    <label for="sync_received"/>
-                                    <div>
-                                        <field name="sync_received" widget="boolean_toggle"
-                                               nolabel="1" class="d-inline-block"/>
-                                        <div class="text-muted mt-1">
-                                            Also sync email that starts a new conversation.
-                                        </div>
-                                    </div>
-                                    <div colspan="2" class="mt-3" invisible="not sync_received">
-                                        <span class="o_form_label">Which email should be synced?</span>
-                                        <field name="sync_received_scope" widget="radio"
-                                               nolabel="1" class="mt-1"/>
-                                        <div class="alert alert-warning mt-2 mb-0" role="alert"
-                                             invisible="sync_received_scope != 'all'">
-                                            Every sender becomes a contact in Odoo, newsletters
-                                            and private email included. Pick this only for an
-                                            address that exists to hear from strangers.
-                                        </div>
-                                    </div>
-                                </group>
-                                <group/>
-                            </group>
+                            <!-- One ladder. Each answer keeps strictly more of
+                                 the mailbox than the one above it, so the widest
+                                 answer is three deliberate clicks from the
+                                 default and says out loud what it does. -->
+                            <span class="o_form_label">Sync level</span>
+                            <field name="sync_level" widget="radio" nolabel="1" class="mt-1"/>
+                            <div class="alert alert-warning mt-2 mb-0" role="alert"
+                                 invisible="sync_level != 'everyone'">
+                                Every sender becomes a contact in Odoo, newsletters
+                                and private email included. Pick this only for an
+                                address that exists to hear from strangers.
+                            </div>
 
-                            <!-- SECTION 4: SYNC -->
-                            <group string="Sync">
-                                <group>
-                                    <field name="sync_start_date"/>
-                                </group>
-                                <group/>
-                            </group>
+                            <!-- The consequence, not help text: split by the
+                                 situation the reader recognises, and only the
+                                 right-hand column changes with the level.
+                                 Exactly one rung separates any two neighbouring
+                                 answers, which is what makes it a ladder. -->
+                            <table class="table table-sm o_mailpro_sync_table mt-4">
+                                <thead>
+                                    <tr>
+                                        <th class="text-muted fw-normal">What</th>
+                                        <th class="text-muted fw-normal">What happens in Odoo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>A reply from your contact</td>
+                                        <td>Synced</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Your reply from your mail app</td>
+                                        <td>
+                                            <span invisible="sync_level == 'replies'">Synced</span>
+                                            <span class="text-muted" invisible="sync_level != 'replies'">Not synced</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>New mail from your contact</td>
+                                        <td>
+                                            <span invisible="sync_level not in ('contacts', 'everyone')">Synced</span>
+                                            <span class="text-muted" invisible="sync_level in ('contacts', 'everyone')">Not synced</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>New mail from your mail app</td>
+                                        <td>
+                                            <span invisible="sync_level not in ('contacts', 'everyone')">Synced</span>
+                                            <span class="text-muted" invisible="sync_level in ('contacts', 'everyone')">Not synced</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>New mail from a stranger</td>
+                                        <td>
+                                            <span invisible="sync_level != 'everyone'">Synced</span>
+                                            <span class="text-muted" invisible="sync_level == 'everyone'">Not synced</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
 
-                            <!-- SECTION 5: ROUTING -->
-                            <group string="Routing">
-                                <group>
-                                    <label for="route_to_team"/>
-                                    <div>
-                                        <field name="route_to_team" widget="boolean_toggle" nolabel="1" class="d-inline-block"/>
-                                        <div class="text-muted mt-1">
-                                            Off: email lands on the sender's contact.
-                                            On: it goes to the team behind the alias you pick.
-                                        </div>
-                                    </div>
-                                    <field name="alias_id" string="Team"
-                                           invisible="not route_to_team"
+                            <!-- Where a new conversation lands is the end of one
+                                 of those lines, so it lives here and appears
+                                 with the rung that lets new conversations in. -->
+                            <div class="mt-3" invisible="sync_level not in ('contacts', 'everyone')">
+                                <label for="route_to_team" string="Route new conversations to a team"
+                                       class="o_form_label me-2"/>
+                                <field name="route_to_team" widget="boolean_toggle" nolabel="1"
+                                       class="d-inline-block"/>
+                                <div class="text-muted mt-1">
+                                    Off: email lands on the sender's contact.
+                                    On: it goes to the team behind the alias you pick.
+                                </div>
+                                <div class="mt-2" invisible="not route_to_team">
+                                    <label for="alias_id" string="Team" class="o_form_label me-2"/>
+                                    <field name="alias_id" nolabel="1"
                                            required="route_to_team"
                                            options="{'no_create': True, 'no_create_edit': True}"
-                                           placeholder="Select team..."/>
-                                </group>
-                                <group/>
-                            </group>
+                                           placeholder="Select team..."
+                                           class="d-inline-block"/>
+                                </div>
+                            </div>
                         </page>
 
-                        <!-- Everything the mailbox reports back. One place,
-                             instead of a badge in the corner and an alert
-                             at the bottom the corner did not explain. -->
-                        <page string="Status" name="status">
+                        <!-- The things you set once. One click away rather than
+                             one screen away. -->
+                        <page string="Setup" name="setup">
                             <group>
                                 <group>
-                                    <field name="health_status" widget="badge"
-                                           decoration-success="health_status == 'healthy'"
-                                           decoration-warning="health_status == 'warning'"
-                                           decoration-danger="health_status == 'error'"
-                                           readonly="1"/>
-                                    <field name="state" readonly="1"/>
-                                    <field name="last_sync_date" readonly="1"
-                                           invisible="not last_sync_date"/>
-                                    <field name="last_sent_sync_date" readonly="1"
-                                           invisible="not sync_sent or not last_sent_sync_date"/>
+                                    <field name="owner_user_id" required="is_notification_mailbox"/>
+                                    <!-- Derived, not asked: see _compute_mailbox_type. -->
+                                    <label for="mailbox_type" string="Type"/>
+                                    <div>
+                                        <field name="mailbox_type" nolabel="1" class="d-inline-block"/>
+                                        <div class="text-muted mt-1">
+                                            Follows from the owner. Their own address is
+                                            personal: only they send from it. Any other
+                                            address is shared: everyone can send from it.
+                                        </div>
+                                    </div>
+                                    <label for="is_notification_mailbox"/>
+                                    <div>
+                                        <field name="is_notification_mailbox" widget="boolean_toggle"
+                                               nolabel="1" class="d-inline-block"/>
+                                        <div class="text-muted mt-1">
+                                            Odoo's own email leaves from here: invitations,
+                                            password resets, reminders. Exactly one mailbox.
+                                        </div>
+                                    </div>
+                                    <field name="sync_start_date" string="Import from"
+                                           invisible="is_notification_mailbox"/>
                                 </group>
-                                <group/>
+                                <group>
+                                    <div invisible="provider != 'imap'">
+                                        <button name="action_open_account" type="object"
+                                                string="Server Credentials" class="btn-link ps-0"
+                                                icon="fa-key"/>
+                                        <div class="text-muted mt-1">
+                                            This address is reached with a server, a login and a
+                                            password rather than a consent screen.
+                                        </div>
+                                    </div>
+                                </group>
                             </group>
-                            <div class="alert alert-danger" role="alert" invisible="state != 'error'">
-                                <strong>Sync failed:</strong> <field name="error_message" nolabel="1" readonly="1"/>
-                            </div>
                         </page>
                     </notebook>
 
-                    <!-- Hidden fields -->
-                    <field name="active" invisible="1"/>
+                    <!-- Error alert -->
+                    <div class="alert alert-danger mt-3" role="alert" invisible="state != 'error'">
+                        <strong>Sync failed:</strong> <field name="error_message" nolabel="1" readonly="1"/>
+                    </div>
                 </sheet>
             </form>
         </field>

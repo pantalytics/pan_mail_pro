@@ -38,8 +38,7 @@ class TestReplySync(MailProTestCase):
         # on. The reply still has to arrive, so every assertion below runs
         # against the out-of-the-box configuration.
         self.mailbox.write({
-            'sync_received': False,
-            'sync_sent': False,
+            'sync_level': 'replies',
             'last_sync_date': '2026-01-01 00:00:00',
         })
         self.lead = self.env['crm.lead'].with_context(**self.SILENT_CTX).create({
@@ -161,8 +160,7 @@ class TestReplySync(MailProTestCase):
         "Replies to email sent from Odoo always appear on the record they belong
         to." A test that only passes with sync switched on would let that
         sentence become false without anything failing."""
-        self.assertFalse(self.mailbox.sync_received)
-        self.assertFalse(self.mailbox.sync_sent)
+        self.assertEqual(self.mailbox.sync_level, 'replies')
         self.assertFalse(self.mailbox._syncs_more_than_replies())
 
         sent = self._send_from_chatter()
@@ -208,7 +206,7 @@ class TestReplySync(MailProTestCase):
     def test_the_same_unrelated_email_comes_in_once_asked_for(self):
         """And the switch has to actually do something, or the test above is
         passing for the wrong reason."""
-        self.mailbox.write({'sync_received': True, 'sync_received_scope': 'all'})
+        self.mailbox.write({'sync_level': 'everyone'})
         before = self.env['mail.message'].search_count([])
 
         self._sync(self._inbox_message(

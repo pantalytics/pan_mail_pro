@@ -481,7 +481,7 @@ class TestPerFolderCursor(MailProTestCase):
         cls.processor = cls.env['pan.mail.fetcher']
         cls.mailbox = cls.personal_mailbox
         cls.mailbox.write({
-            'sync_sent': True,
+            'sync_level': 'both',
             'last_sync_date': datetime(2026, 5, 12, 9, 0, 0),
         })
 
@@ -585,13 +585,24 @@ class TestPerFolderCursor(MailProTestCase):
         self.assertEqual(self.mailbox.last_sync_date, datetime(2026, 1, 1))
         self.assertEqual(self.mailbox.last_sent_sync_date, datetime(2026, 1, 1))
 
-    def test_turning_sent_sync_back_on_resumes_from_the_inbox_cursor(self):
-        """Otherwise the switch imports months of old sent mail."""
+    def test_climbing_back_onto_sent_reading_resumes_from_the_inbox_cursor(self):
+        """Otherwise the climb imports months of old sent mail."""
         self.mailbox.write({
-            'sync_sent': False,
+            'sync_level': 'replies',
             'last_sent_sync_date': datetime(2026, 1, 1, 0, 0, 0),
         })
 
-        self.mailbox.write({'sync_sent': True})
+        self.mailbox.write({'sync_level': 'both'})
 
         self.assertFalse(self.mailbox.last_sent_sync_date)
+
+    def test_moving_between_the_upper_rungs_keeps_the_sent_cursor(self):
+        """A mailbox already reading Sent is not restarting; its cursor stays."""
+        self.mailbox.write({
+            'sync_level': 'both',
+            'last_sent_sync_date': datetime(2026, 1, 1, 0, 0, 0),
+        })
+
+        self.mailbox.write({'sync_level': 'contacts'})
+
+        self.assertEqual(self.mailbox.last_sent_sync_date, datetime(2026, 1, 1))

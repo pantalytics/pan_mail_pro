@@ -191,7 +191,7 @@ class TestImapProvider(TransactionCase):
             'is_notification_mailbox': True, 'provider': 'imap',
             'owner_user_id': self.user.id,
         })
-        mailbox = self._mailbox(sync_received=True, sync_received_scope='known_partners')
+        mailbox = self._mailbox(sync_level='contacts')
         self.assertFalse(mailbox.owner_user_id)
 
     # ------------------------------------------------------------------ #
@@ -255,7 +255,7 @@ class TestImapProvider(TransactionCase):
             'is_notification_mailbox': True, 'provider': 'imap',
             'owner_user_id': self.user.id,
         })
-        mailbox = self._mailbox(sync_received=True, sync_received_scope='all')
+        mailbox = self._mailbox(sync_level='everyone')
         self.assertFalse(mailbox._has_working_credentials())
 
         self._imap_account()

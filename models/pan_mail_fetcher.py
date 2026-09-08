@@ -294,7 +294,7 @@ class PanMailFetcher(models.AbstractModel):
         rather than fetched and discarded.
         """
         folders = [FOLDER_INBOX]
-        if mailbox.sync_sent:
+        if mailbox._reads_sent_folder():
             folders.append(FOLDER_SENT)
         return folders
 
@@ -689,14 +689,14 @@ class PanMailFetcher(models.AbstractModel):
         get past every gate above: internal mail and a blocked contact are
         refusals no threading overrides.
 
-        Everything else is the mailbox's decision. `sync_received` says whether
-        email that starts a *new* conversation enters, and
-        `sync_received_scope` says how wide: `known_partners` takes mail from
-        contacts that already exist and refuses the rest, leaving it where it
-        is. Widening to `all` is how a customer changes that answer; there is no
-        backlog to work through.
+        Everything else is the mailbox's `sync_level`, one rung at a time:
 
-        Sending gets no scope question, because it has nothing left to widen:
+            replies    nothing else enters
+            both       + the owner's own replies, read back from the Sent folder
+            contacts   + new conversations started by existing contacts
+            everyone   + new conversations from strangers, who become contacts
+
+        Sending gets no rung of its own, because it has nothing left to widen:
         the reply clause above is the whole of what it accepts. Mail the owner
         wrote in their own client that starts something new stays out, even to
         a contact Odoo already has -- where such a mail belongs is a question
@@ -716,14 +716,14 @@ class PanMailFetcher(models.AbstractModel):
                 _('Sent email is only synced when it replies to a conversation '
                   'Odoo already has.'),
             )
-        if not mailbox.sync_received:
+        if not mailbox._syncs_new_conversations():
             return Skip(
                 'not_a_reply',
                 _('This mailbox only syncs replies to conversations Odoo already has.'),
             )
         if ctx['partner']:
             return None
-        if mailbox.sync_received_scope == 'known_partners':
+        if not mailbox._syncs_strangers():
             return Skip(
                 'unknown_contact',
                 _('This mailbox only syncs email from existing contacts.'),
