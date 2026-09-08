@@ -115,7 +115,8 @@ class TestNeutralizedDatabase(MailProTestCase):
 
         with open(os.path.join(os.path.dirname(__file__), '..', 'data', 'neutralize.sql')) as f:
             self.env.cr.execute(f.read())
-        (provider | account).invalidate_recordset()
+        provider.invalidate_recordset()
+        account.invalidate_recordset()
 
         self.assertFalse(provider.client_secret_encrypted)
         self.assertFalse(account.refresh_token_encrypted)
