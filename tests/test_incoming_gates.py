@@ -176,15 +176,25 @@ class TestIncomingGates(MailProTestCase):
 
         self.assertEqual(skip.reason, 'internal_domain')
 
+    def _refused_by(self, ctx):
+        """The gate that refused, or None. Named rather than asserted on
+        `_refuse` directly because a sent item that continues nothing is
+        refused for a reason these tests are not about: they ask which address
+        the ladder picked as the counterpart, not whether the mail may enter.
+        """
+        skip = self.processor._refuse(ctx)
+        return skip.reason if skip else None
+
     def test_one_external_recipient_makes_it_correspondence(self):
         """Any external party means the content already left the building, so
-        the mail is logged — on the external party, not on the colleague."""
+        the internal-domain gate stands aside and the external party is the
+        counterpart, not the colleague."""
         ctx = self._ctx(FOLDER_SENT, to=[
             {'email': INTERNAL, 'name': 'Planning'},
             {'email': CUSTOMER, 'name': 'External Customer'},
         ])
 
-        self.assertIsNone(self.processor._refuse(ctx))
+        self.assertNotEqual(self._refused_by(ctx), 'internal_domain')
         self.assertEqual(
             ctx['contact_email'], CUSTOMER,
             "the counterpart is the external party, whatever order they were in",
@@ -196,7 +206,7 @@ class TestIncomingGates(MailProTestCase):
             {'email': 'second@elsewhere.test', 'name': 'Someone Else'},
         ])
 
-        self.assertIsNone(self.processor._refuse(ctx))
+        self.assertNotEqual(self._refused_by(ctx), 'internal_domain')
         self.assertEqual(ctx['contact_email'], CUSTOMER)
 
     def test_every_recipient_ours_means_nothing_enters(self):
