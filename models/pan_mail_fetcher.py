@@ -125,10 +125,14 @@ class PanMailFetcher(models.AbstractModel):
         for mailbox in mailboxes:
             try:
                 with self.env.cr.savepoint():
-                    self._process_mailbox(mailbox)
-                    # Mark as active if successful
-                    if mailbox.state != 'active':
-                        mailbox.write({'state': 'active', 'error_message': False})
+                    stall = self._process_mailbox(mailbox)
+                if stall:
+                    # Written outside the savepoint's success path but with no
+                    # exception, so the mail that did land this run is kept and
+                    # the reason it stopped there is on the mailbox.
+                    mailbox.write({'state': 'error', 'error_message': stall})
+                elif mailbox.state != 'active':
+                    mailbox.write({'state': 'active', 'error_message': False})
             except Exception as e:
                 # Savepoint rolled back: the cursor is usable again, so the
                 # error write below won't hit "current transaction is aborted".
@@ -146,6 +150,12 @@ class PanMailFetcher(models.AbstractModel):
 
         Args:
             mailbox: pan.mail.mailbox record
+
+        Returns:
+            str: why the cursor is held, when a message failed to process, so
+                the caller can put the mailbox in `error`. Returned rather than
+                raised: the raise would roll back the mail that *did* land in
+                this run along with it.
 
         Raises:
             UserError: when internal domains are not configured. Deliberately
@@ -187,21 +197,49 @@ class PanMailFetcher(models.AbstractModel):
         # turned on copying everything the owner wrote in Outlook as well.
         processed_count = 0
         folder_cursors = []
+        stalls = []
         for folder in self._folders_to_sync(mailbox):
-            count, latest_dt = self._fetch_folder(mailbox, folder)
+            count, cursor, stalled_on = self._fetch_folder(mailbox, folder)
             processed_count += count
-            if latest_dt:
-                folder_cursors.append(latest_dt)
+            if cursor:
+                folder_cursors.append(cursor)
+            if stalled_on is not None:
+                stalls.append((folder, stalled_on))
 
         # Advance sync cursor incrementally:
         # Use min of folder progress (safe: won't skip messages in slower folder)
-        # If no messages found, advance to now() (fully caught up)
+        # If no messages found, advance to now() (fully caught up) -- but only
+        # when nothing failed. A folder that stalled on its first message has
+        # no progress to report and jumping to now() is exactly the skip the
+        # stall exists to prevent.
         if folder_cursors:
             mailbox.write({'last_sync_date': min(folder_cursors)})
-        else:
+        elif not stalls:
             mailbox.write({'last_sync_date': fields.Datetime.now()})
 
         _logger.info(f"[Incoming Mail] Processed {processed_count} message(s) from {mailbox.email}")
+
+        return self._stall_error(stalls) if stalls else None
+
+    @staticmethod
+    def _stall_error(stalls):
+        """The message shown on a mailbox whose cursor is held by a failure.
+
+        A stalled mailbox stops receiving anything behind the failed message,
+        so it has to say so where somebody looks, which is the mailbox rather
+        than the server log.
+        """
+        folder, message = stalls[0]
+        subject = message.get('subject') or _('(no subject)')
+        return _(
+            'Sync stopped in %(folder)s at a message that could not be '
+            'processed: "%(subject)s" (%(message_id)s). Mail behind it is not '
+            'fetched until this one succeeds; the server log has the '
+            'traceback. Nothing has been skipped.',
+            folder=folder,
+            subject=subject,
+            message_id=message.get('provider_message_id') or _('unknown id'),
+        )
 
     @staticmethod
     def _folders_to_sync(mailbox):
@@ -233,15 +271,23 @@ class PanMailFetcher(models.AbstractModel):
         Fetch messages from a specific folder.
 
         Messages are sorted ascending (oldest first) so we process
-        incrementally. The cursor advances to the last fetched message's
-        date, ensuring no messages are skipped across runs.
+        incrementally. The cursor advances only over messages that were
+        processed, and stops at the first one that raised: stepping over it
+        would lose that mail for good, and the sync dedups on Message-ID, so
+        retrying it next run costs a lookup. A poison message therefore stalls
+        this folder, loudly -- the caller puts the mailbox in `error` with the
+        message that blocked it.
 
         Args:
             mailbox: mailbox record
             folder: FOLDER_INBOX or FOLDER_SENT
 
         Returns:
-            tuple: (processed_count, latest_received_datetime or None)
+            tuple: (processed_count, cursor_datetime or None, stalled_message
+                or None). The cursor is None only when the folder held nothing
+                to read; a batch whose very first message failed returns the
+                mailbox's current cursor, so the caller holds instead of
+                jumping to now().
         """
         # Fetch messages since last sync (sorted ascending for incremental cursor)
         client = mailbox._get_client()
@@ -254,13 +300,15 @@ class PanMailFetcher(models.AbstractModel):
         )
 
         processed = 0
-
-        # Messages sorted ascending — the last *dated* item carries the latest
-        # date. A message whose date could not be parsed must not empty the
-        # cursor: with no cursor the caller jumps to now() and skips the batch.
-        latest_datetime = next(
-            (m['date'] for m in reversed(messages) if m.get('date')), None
-        )
+        # Messages are sorted ascending, so the cursor may only advance over
+        # messages that actually landed. It stops at the first one that raised
+        # and never passes it again in this batch: a message whose date is
+        # already behind the cursor is a message nobody will ever fetch again.
+        # A message whose date could not be parsed must not empty the cursor
+        # either -- with no cursor the caller jumps to now() and skips the
+        # whole batch.
+        cursor = None
+        stalled_on = None
 
         for message in messages:
             try:
@@ -276,8 +324,22 @@ class PanMailFetcher(models.AbstractModel):
                     message.get('provider_message_id'), mailbox.email,
                     error,
                 )
+                if stalled_on is None:
+                    stalled_on = message
+                continue
 
-        return processed, latest_datetime
+            # The rest of the batch is still processed -- refusing to read the
+            # mail behind a poison message helps nobody, and the processor
+            # dedups on Message-ID, so re-reading them next run costs a lookup.
+            if stalled_on is None and message.get('date'):
+                cursor = message['date']
+
+        if stalled_on is not None and cursor is None:
+            # The first message of the batch failed: hold the cursor exactly
+            # where it was rather than reporting "nothing found".
+            cursor = mailbox.last_sync_date
+
+        return processed, cursor, stalled_on
 
     # ------------------------------------------------------------------ #
     # Gates — may this message enter Odoo at all?

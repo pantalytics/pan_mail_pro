@@ -328,7 +328,8 @@ class TestSavepointIsolation(TransactionCase):
                           return_value=fake_messages, autospec=True), \
              patch.object(IncomingProcessor, '_process_message',
                           fake_process_message):
-            processed, _ = self.processor._fetch_folder(self.mailbox, FOLDER_INBOX)
+            processed, _, stalled_on = self.processor._fetch_folder(
+                self.mailbox, FOLDER_INBOX)
 
         # All three messages were attempted in order — the failure didn't
         # short-circuit the loop.
@@ -343,3 +344,125 @@ class TestSavepointIsolation(TransactionCase):
         self.assertFalse(Partner.search([('email', '=', 'sender-2@example.com')]))
         # Processed count reflects only the successful messages.
         self.assertEqual(processed, 2)
+        # And the cursor stopped at the message that failed, so the next run
+        # meets it again instead of stepping over it forever.
+        self.assertEqual(stalled_on['message_id'], '<msg-2@test>')
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestCursorHoldsOnFailure(TransactionCase):
+    """Issue #97: a message that raised must not be stepped over.
+
+    The cursor used to advance to the last message of the batch whatever
+    happened inside it, so a mail that failed to process was skipped for good
+    and nothing said so. Processing dedups on Message-ID, so holding the
+    cursor costs a lookup on the retry and loses nothing.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.processor = cls.env['pan.mail.fetcher']
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'inbox@company.test',
+            'mailbox_type': 'shared',
+        })
+        cls.mailbox.last_sync_date = datetime(2026, 5, 12, 9, 0, 0)
+
+    def _fetch(self, messages, failing_ids):
+        """Run one folder fetch where `failing_ids` raise inside processing."""
+        IncomingProcessor = type(self.processor)
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        def fake_process_message(self_, mailbox, message, folder):
+            if message['message_id'] in failing_ids:
+                raise ValueError('boom')
+            return True
+
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=messages, autospec=True), \
+             patch.object(IncomingProcessor, '_process_message',
+                          fake_process_message):
+            return self.processor._fetch_folder(self.mailbox, FOLDER_INBOX)
+
+    @staticmethod
+    def _msg(n, minute):
+        return {
+            'provider_message_id': f'g{n}',
+            'message_id': f'<msg-{n}@test>',
+            'subject': f'Message {n}',
+            'date': datetime(2026, 5, 12, 10, minute, 0),
+        }
+
+    def test_cursor_stops_before_the_failed_message(self):
+        messages = [self._msg(1, 0), self._msg(2, 1), self._msg(3, 2)]
+
+        processed, cursor, stalled_on = self._fetch(messages, {'<msg-2@test>'})
+
+        self.assertEqual(processed, 2)
+        # Not 10:02: that would put msg-2 behind the cursor forever.
+        self.assertEqual(cursor, datetime(2026, 5, 12, 10, 0, 0))
+        self.assertEqual(stalled_on['message_id'], '<msg-2@test>')
+
+    def test_first_message_failing_holds_the_cursor_where_it_was(self):
+        messages = [self._msg(1, 0), self._msg(2, 1)]
+
+        processed, cursor, stalled_on = self._fetch(messages, {'<msg-1@test>'})
+
+        self.assertEqual(processed, 1)
+        # No progress to report, but reporting None would let the caller
+        # decide the folder was empty and jump to now().
+        self.assertEqual(cursor, self.mailbox.last_sync_date)
+        self.assertEqual(stalled_on['message_id'], '<msg-1@test>')
+
+    def test_clean_batch_still_advances_to_the_last_message(self):
+        messages = [self._msg(1, 0), self._msg(2, 1), self._msg(3, 2)]
+
+        processed, cursor, stalled_on = self._fetch(messages, set())
+
+        self.assertEqual(processed, 3)
+        self.assertEqual(cursor, datetime(2026, 5, 12, 10, 2, 0))
+        self.assertIsNone(stalled_on)
+
+    def test_mailbox_cursor_does_not_move_past_a_stall(self):
+        """The whole point, seen from `_process_mailbox`."""
+        before = self.mailbox.last_sync_date
+        messages = [self._msg(1, 0), self._msg(2, 1)]
+        IncomingProcessor = type(self.processor)
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        def fake_process_message(self_, mailbox, message, folder):
+            raise ValueError('boom')
+
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=messages, autospec=True), \
+             patch.object(IncomingProcessor, '_process_message',
+                          fake_process_message):
+            stall = self.processor._process_mailbox(self.mailbox)
+
+        self.assertEqual(self.mailbox.last_sync_date, before)
+        # And it says so where somebody looks.
+        self.assertIn('Message 1', stall)
+        self.assertIn('g1', stall)
+
+    def test_a_stall_puts_the_mailbox_in_error(self):
+        messages = [self._msg(1, 0)]
+        IncomingProcessor = type(self.processor)
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        def fake_process_message(self_, mailbox, message, folder):
+            raise ValueError('boom')
+
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=messages, autospec=True), \
+             patch.object(IncomingProcessor, '_process_message',
+                          fake_process_message), \
+             patch.object(type(self.mailbox), '_has_working_credentials',
+                          return_value=True, autospec=True), \
+             patch.object(type(self.env['pan.mail.setup']), 'is_ready',
+                          return_value=True, autospec=True):
+            self.processor._cron_fetch_incoming_mail()
+
+        self.assertEqual(self.mailbox.state, 'error')
+        self.assertIn('Message 1', self.mailbox.error_message)

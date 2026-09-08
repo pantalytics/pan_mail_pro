@@ -511,10 +511,15 @@ class PanMailMailbox(models.Model):
 
         # Trigger the processor for this mailbox
         processor = self.env['pan.mail.fetcher']
-        processor._process_mailbox(self)
+        stall = processor._process_mailbox(self)
 
-        # Mark as active on success (clear any previous error)
-        if self.state != 'active':
+        if stall:
+            # Not raised: a UserError rolls the whole click back, including the
+            # mail that did land before the failure. The form reloads onto the
+            # mailbox, which is where the reason now is.
+            self.write({'state': 'error', 'error_message': stall})
+        elif self.state != 'active':
+            # Mark as active on success (clear any previous error)
             self.write({'state': 'active', 'error_message': False})
 
         # Reload the form to show updated status
