@@ -547,12 +547,14 @@ class PanMailFetcher(models.AbstractModel):
         is. Widening to `all` is how a customer changes that answer; there is no
         backlog to work through.
 
-        Sending is not offered the scope question. Mail the owner wrote in
-        Outlook is logged only onto a contact Odoo already has: emailing a
-        stranger from a mail client is not a statement that they belong in the
-        database, and the customer who switches this on wants their
-        correspondence with known contacts, not a contact list built from their
-        outbox.
+        Sending gets no scope question, because it has nothing left to widen:
+        the reply clause above is the whole of what it accepts. Mail the owner
+        wrote in their own client that starts something new stays out, even to
+        a contact Odoo already has -- where such a mail belongs is a question
+        the module cannot answer yet (the contact? a lead? an opportunity?),
+        and guessing it wrong scatters chatter across records nobody asked for.
+        Answering something Odoo already holds has one obvious home, so that is
+        the case that syncs.
         """
         mailbox = ctx['mailbox']
         if ctx['force_import']:
@@ -560,11 +562,10 @@ class PanMailFetcher(models.AbstractModel):
         if self._is_reply_to_odoo(ctx):
             return None
         if ctx['is_outgoing']:
-            if ctx['partner']:
-                return None
             return Skip(
-                'unknown_contact',
-                _('Sent email is only logged on people who are already contacts.'),
+                'not_a_reply',
+                _('Sent email is only synced when it replies to a conversation '
+                  'Odoo already has.'),
             )
         if not mailbox.sync_received:
             return Skip(

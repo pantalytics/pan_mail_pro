@@ -19,8 +19,8 @@ Before enabling incoming sync:
      When it is on, a second question appears: only from existing contacts, or
      from anyone (which turns every sender into a contact).
    - **Sending → Sync Sent Items** - read the Sent Items folder of the user's own
-     mail app back into Odoo: replies to conversations Odoo already has, and mail
-     to people who are already contacts. Nothing else.
+     mail app back into Odoo. Only replies to emails Odoo already has; mail that
+     starts a new conversation stays out.
 4. Set the **Owner** (must have Microsoft connected)
 5. Configure routing (see below)
 6. Save

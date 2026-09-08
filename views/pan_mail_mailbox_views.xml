@@ -100,14 +100,12 @@
                                 <field name="sync_sent" widget="boolean_toggle"
                                        nolabel="1" class="d-inline-block"/>
                                 <div class="text-muted mt-1">
-                                    Also copy the Sent Items folder of your own mail app
-                                    (Outlook, Gmail or another client) into Odoo.
+                                    Sync Sent Items from your email program to Odoo.
                                 </div>
                                 <div class="text-muted mt-1" invisible="not sync_sent">
-                                    Two kinds of mail qualify: a reply to a conversation
-                                    Odoo already has, and mail to someone who is already
-                                    a contact. Mail to an unknown address is never synced
-                                    and never creates a contact.
+                                    Only replies to emails that are already in Odoo.
+                                    They land on the record they continue. Mail that
+                                    starts a new conversation stays out.
                                 </div>
                             </div>
                         </group>

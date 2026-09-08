@@ -353,13 +353,13 @@ class TestEachDirectionIsItsOwnSwitch(MailProTestCase):
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestSentEmailNeverCreatesAContact(MailProTestCase):
-    """Sent email is logged onto a contact that already exists, or not at all.
+class TestSentEmailOnlyEntersAsAReply(MailProTestCase):
+    """A sent item enters on one door: it answers something Odoo already holds.
 
-    Deliberately not offered the scope question that receiving gets. Mailing a
-    stranger from Outlook is not a statement that they belong in the database,
-    and a customer who switches sending on wants their correspondence with known
-    contacts, not a contact list built from their outbox.
+    Deliberately not offered the scope question that receiving gets, and
+    deliberately narrower than "the recipient is a contact". Where a mail that
+    starts a new conversation belongs -- the contact, a lead, an opportunity --
+    is a question this module cannot answer yet, so it does not guess.
     """
 
     def setUp(self):
@@ -390,27 +390,32 @@ class TestSentEmailNeverCreatesAContact(MailProTestCase):
 
         self.assertIsNotNone(
             skip, "a receiving scope of 'all' must not widen the Sent folder")
-        self.assertEqual(skip.reason, 'unknown_contact')
+        self.assertEqual(skip.reason, 'not_a_reply')
 
     def test_the_same_message_would_be_accepted_from_the_inbox(self):
         """Same mailbox, same unknown address, opposite direction. The
         asymmetry is the decision, so it is asserted rather than implied."""
         self.assertIsNone(self.processor._gate_wanted(self._ctx(FOLDER_INBOX)))
 
-    def test_a_known_contact_passes(self):
+    def test_a_known_contact_is_not_enough_on_its_own(self):
+        """The narrowing decision, asserted rather than implied.
+
+        A mail to an existing contact that continues nothing Odoo has is still
+        a new conversation, and a new conversation has no home to land on yet.
+        """
         skip = self.processor._gate_wanted(
             self._ctx(FOLDER_SENT, partner=self.external_partner)
         )
-        self.assertIsNone(skip)
+
+        self.assertIsNotNone(skip)
+        self.assertEqual(skip.reason, 'not_a_reply')
 
     def test_a_reply_to_a_conversation_odoo_has_passes_without_a_contact(self):
-        """The second of the two cases the mailbox form names.
+        """The one case the mailbox form promises.
 
-        An unknown recipient is refused on its own, and a reply to a
-        conversation Odoo already holds is not: the answer to a question that
-        is already on a record belongs under it, whoever it went to. Asserted
-        because the form promises exactly these two doors and nothing else,
-        and the reply half was implied by `_gate_wanted` and tested nowhere.
+        The answer to a question that is already on a record belongs under it,
+        whoever it went to -- a known contact is not required, and on its own
+        is not enough.
         """
         parent = self.external_partner.message_post(
             body='The question Odoo already holds',

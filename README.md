@@ -148,10 +148,10 @@ needs no setting. The two switches below are about everything else.
 2. Under **Sending**, decide about **Sync Sent Items**:
    - Off (the default) - only mail written in Odoo is logged
    - On - the Sent Items folder of your people's own mail app (Outlook, Gmail or
-     another client) is read back into Odoo. Two kinds of mail qualify: a reply
-     to a conversation Odoo already has, and mail to a person who is already a
-     contact. Mail to an unknown address is never synced and never creates a
-     contact.
+     another client) is read back into Odoo. Only replies to emails that are
+     already in Odoo: the answer lands on the record it continues. Mail that
+     starts a new conversation stays out, contact or not, because where it
+     belongs is not a question Odoo can answer for you.
 
    Mail written in Odoo always goes out through the mailbox. There is no setting
    for it, because that is what a mailbox is.
