@@ -95,8 +95,8 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.7.13.0',
-    'license': 'LGPL-3',
+    'version': '19.0.7.14.0',
+    'license': 'OPL-1',
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
         'python': ['cryptography', 'requests'],

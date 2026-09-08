@@ -276,3 +276,9 @@ docker-compose start odoo
 wire behaviour, the incoming pipeline (fetch → filter → match → post),
 sending, threading, the composer and onboarding, and the migration scripts.
 See ARCHITECTURE.md §12.
+
+## Licence
+
+Odoo Proprietary License v1.0 (see [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT)).
+A valid licence is required to use this module. Publishing, distributing,
+sublicensing or selling copies of it is prohibited.
