@@ -232,6 +232,19 @@ class PanMailMailbox(models.Model):
         readonly=True,
         help='Timestamp of last successful sync'
     )
+    # One cursor per folder. A single cursor across both had to be the minimum
+    # of the two so the quieter folder was never skipped, which meant a mailbox
+    # that receives but never sends stood still at its last sent item and
+    # re-read months of inbox every minute. Empty means "no cursor of its own
+    # yet": the Sent scan then resumes from `last_sync_date`, which is where
+    # the shared cursor left it.
+    last_sent_sync_date = fields.Datetime(
+        string='Sent folder synced',
+        readonly=True,
+        help="Timestamp of the last message read from the Sent folder. Kept "
+             "apart from 'Last synced' so a quiet folder cannot hold the "
+             "other one back."
+    )
     alias_id = fields.Many2one(
         'mail.alias',
         string='Route to Team',
@@ -584,17 +597,30 @@ class PanMailMailbox(models.Model):
         _logger.info('[Mail Pro] SMTP takeover active — all email routes through the provider API')
 
     def write(self, vals):
-        """Reset last_sync_date when sync_start_date is moved to an earlier date."""
+        """Reset both folder cursors when sync_start_date moves earlier."""
         rewind = self.browse()
         if 'sync_start_date' in vals and vals['sync_start_date']:
             new_start = fields.Datetime.to_datetime(vals['sync_start_date'])
             # Only the records that qualify, not the shared `vals`: one mailbox
             # that does must not move every other mailbox's cursor to `new_start`.
             rewind = self.filtered(
-                lambda r: r.last_sync_date and new_start < r.last_sync_date)
+                lambda r: (r.last_sync_date and new_start < r.last_sync_date)
+                or (r.last_sent_sync_date and new_start < r.last_sent_sync_date))
+        if vals.get('sync_sent'):
+            # Turning Sent syncing back on resumes from the inbox cursor, not
+            # from wherever the Sent scan stood when it was switched off --
+            # otherwise the switch imports months of old sent mail.
+            vals = dict(vals, last_sent_sync_date=False)
         result = super().write(vals)
-        if rewind:
-            rewind.write({'last_sync_date': new_start})
+        for mailbox in rewind:
+            # Per cursor: a Sent cursor already behind `new_start` must not be
+            # dragged forward by a rewind of the inbox.
+            moved = {
+                name: new_start
+                for name in ('last_sync_date', 'last_sent_sync_date')
+                if mailbox[name] and new_start < mailbox[name]
+            }
+            mailbox.write(moved)
         return result
 
     @api.onchange('sync_received', 'sync_sent')

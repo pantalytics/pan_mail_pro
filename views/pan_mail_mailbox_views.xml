@@ -153,6 +153,8 @@
                             <field name="sync_start_date"/>
                             <field name="last_sync_date" readonly="1"
                                    invisible="not last_sync_date"/>
+                            <field name="last_sent_sync_date" readonly="1"
+                                   invisible="not sync_sent or not last_sent_sync_date"/>
                         </group>
                         <group/>
                     </group>

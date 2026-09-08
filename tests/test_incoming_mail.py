@@ -9,7 +9,8 @@ from unittest.mock import patch
 from odoo.tests import TransactionCase, tagged
 import unittest
 
-from odoo.addons.pan_mail_pro.models.mail_provider_client import FOLDER_INBOX
+from odoo.addons.pan_mail_pro.models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from odoo.addons.pan_mail_pro.tests.common import MailProTestCase
 
 
 
@@ -466,3 +467,136 @@ class TestCursorHoldsOnFailure(TransactionCase):
 
         self.assertEqual(self.mailbox.state, 'error')
         self.assertIn('Message 1', self.mailbox.error_message)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestPerFolderCursor(MailProTestCase):
+    """Issue #116: one folder must not hold the other one back.
+
+    The cursor was the minimum of both folders' progress, so a mailbox that
+    receives mail but sends none through that account never advanced past its
+    last sent item: every run re-fetched everything since then and discarded it
+    at the duplicate gate, and once more than one batch sat in that gap the
+    newest mail was never reached at all.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.processor = cls.env['pan.mail.fetcher']
+        cls.mailbox = cls.personal_mailbox
+        cls.mailbox.write({
+            'sync_sent': True,
+            'last_sync_date': datetime(2026, 5, 12, 9, 0, 0),
+        })
+
+    @staticmethod
+    def _msg(n, when):
+        return {
+            'provider_message_id': f'g{n}',
+            'message_id': f'<msg-{n}@test>',
+            'subject': f'Message {n}',
+            'date': when,
+        }
+
+    def _sync(self, per_folder, failing_ids=frozenset()):
+        """Run one mailbox sync where each folder returns its own messages."""
+        IncomingProcessor = type(self.processor)
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        def fake_fetch(self_, account, mailbox, folder, **kwargs):
+            self.since[folder] = kwargs.get('since_datetime')
+            return per_folder.get(folder, [])
+
+        def fake_process_message(self_, mailbox, message, folder):
+            if message['message_id'] in failing_ids:
+                raise ValueError('boom')
+            return True
+
+        self.since = {}
+        with patch.object(GraphClient, 'fetch_messages', fake_fetch), \
+             patch.object(IncomingProcessor, '_process_message',
+                          fake_process_message):
+            return self.processor._process_mailbox(self.mailbox)
+
+    def test_a_quiet_sent_folder_does_not_pin_the_inbox(self):
+        """The bug, exactly as reported."""
+        inbox_last = datetime(2026, 9, 8, 8, 44, 6)
+        self._sync({
+            FOLDER_INBOX: [self._msg(1, inbox_last)],
+            FOLDER_SENT: [self._msg(2, datetime(2026, 7, 10, 23, 11, 40))],
+        })
+
+        self.assertEqual(self.mailbox.last_sync_date, inbox_last)
+        self.assertEqual(self.mailbox.last_sent_sync_date,
+                         datetime(2026, 7, 10, 23, 11, 40))
+
+    def test_each_folder_is_fetched_from_its_own_cursor(self):
+        self.mailbox.write({
+            'last_sync_date': datetime(2026, 9, 8, 8, 0, 0),
+            'last_sent_sync_date': datetime(2026, 7, 10, 23, 11, 40),
+        })
+
+        self._sync({})
+
+        self.assertEqual(self.since[FOLDER_INBOX], datetime(2026, 9, 8, 8, 0, 0))
+        self.assertEqual(self.since[FOLDER_SENT],
+                         datetime(2026, 7, 10, 23, 11, 40))
+
+    def test_a_folder_without_its_own_cursor_resumes_from_the_shared_one(self):
+        """Upgrade path: the Sent cursor is empty on every existing mailbox."""
+        self.mailbox.write({'last_sent_sync_date': False})
+        shared = self.mailbox.last_sync_date
+
+        self._sync({})
+
+        self.assertEqual(self.since[FOLDER_SENT], shared)
+
+    def test_a_stall_in_one_folder_leaves_the_other_free(self):
+        before = self.mailbox.last_sync_date
+        stall = self._sync(
+            {
+                FOLDER_INBOX: [self._msg(1, datetime(2026, 5, 12, 10, 0, 0))],
+                FOLDER_SENT: [self._msg(2, datetime(2026, 5, 12, 10, 5, 0))],
+            },
+            failing_ids={'<msg-1@test>'},
+        )
+
+        self.assertIn('Message 1', stall)
+        self.assertEqual(self.mailbox.last_sync_date, before)
+        self.assertEqual(self.mailbox.last_sent_sync_date,
+                         datetime(2026, 5, 12, 10, 5, 0))
+
+    def test_an_empty_folder_catches_up_on_its_own(self):
+        self.mailbox.write({
+            'last_sent_sync_date': datetime(2026, 7, 10, 23, 11, 40)})
+
+        self._sync({FOLDER_INBOX: [self._msg(1, datetime(2026, 5, 12, 10, 0))]})
+
+        # Nothing in Sent means Sent is caught up, whatever the inbox did.
+        self.assertGreater(self.mailbox.last_sent_sync_date,
+                           datetime(2026, 9, 1))
+        self.assertEqual(self.mailbox.last_sync_date,
+                         datetime(2026, 5, 12, 10, 0))
+
+    def test_rewinding_the_start_date_rewinds_both_cursors(self):
+        self.mailbox.write({
+            'last_sync_date': datetime(2026, 9, 8, 8, 0, 0),
+            'last_sent_sync_date': datetime(2026, 9, 8, 9, 0, 0),
+        })
+
+        self.mailbox.write({'sync_start_date': datetime(2026, 1, 1, 0, 0, 0)})
+
+        self.assertEqual(self.mailbox.last_sync_date, datetime(2026, 1, 1))
+        self.assertEqual(self.mailbox.last_sent_sync_date, datetime(2026, 1, 1))
+
+    def test_turning_sent_sync_back_on_resumes_from_the_inbox_cursor(self):
+        """Otherwise the switch imports months of old sent mail."""
+        self.mailbox.write({
+            'sync_sent': False,
+            'last_sent_sync_date': datetime(2026, 1, 1, 0, 0, 0),
+        })
+
+        self.mailbox.write({'sync_sent': True})
+
+        self.assertFalse(self.mailbox.last_sent_sync_date)

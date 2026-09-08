@@ -21,6 +21,20 @@ from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 
+# Which field on the mailbox holds each folder's cursor. One per folder, and
+# the reason is issue #116: a single cursor had to be the minimum of both
+# folders so the quieter one was never skipped, so a mailbox that received mail
+# but sent none through that account never advanced past its last sent item and
+# re-fetched months of inbox on every cron run.
+FOLDER_CURSOR_FIELDS = {
+    FOLDER_INBOX: 'last_sync_date',
+    FOLDER_SENT: 'last_sent_sync_date',
+}
+
+# Messages read per folder per run. Ascending, so a backlog is worked oldest
+# first over several runs; the cursor is what makes that terminate.
+FETCH_BATCH_SIZE = 200
+
 # Every post the sync makes carries this context, and `pan_mail_imported` is
 # the whole of the boundary in ARCHITECTURE.md §9.10: it means "this post is an
 # import", which no field on the message does. `x_mailbox_id` was the obvious
@@ -196,30 +210,49 @@ class PanMailFetcher(models.AbstractModel):
         # shared one switch until 19.0.7.6.0, so turning on receiving silently
         # turned on copying everything the owner wrote in Outlook as well.
         processed_count = 0
-        folder_cursors = []
+        cursors = {}
         stalls = []
         for folder in self._folders_to_sync(mailbox):
             count, cursor, stalled_on = self._fetch_folder(mailbox, folder)
             processed_count += count
-            if cursor:
-                folder_cursors.append(cursor)
             if stalled_on is not None:
                 stalls.append((folder, stalled_on))
+            # Each folder advances on its own progress only. An empty folder is
+            # caught up, so it jumps to now() -- but not when it stalled on its
+            # first message: that jump is exactly the skip the stall prevents,
+            # and `_fetch_folder` hands back the cursor it was holding instead.
+            cursors[folder] = cursor or (
+                None if stalled_on is not None else fields.Datetime.now()
+            )
 
-        # Advance sync cursor incrementally:
-        # Use min of folder progress (safe: won't skip messages in slower folder)
-        # If no messages found, advance to now() (fully caught up) -- but only
-        # when nothing failed. A folder that stalled on its first message has
-        # no progress to report and jumping to now() is exactly the skip the
-        # stall exists to prevent.
-        if folder_cursors:
-            mailbox.write({'last_sync_date': min(folder_cursors)})
-        elif not stalls:
-            mailbox.write({'last_sync_date': fields.Datetime.now()})
+        self._write_folder_cursors(mailbox, cursors)
 
         _logger.info(f"[Incoming Mail] Processed {processed_count} message(s) from {mailbox.email}")
 
         return self._stall_error(stalls) if stalls else None
+
+    @staticmethod
+    def _folder_cursor(mailbox, folder):
+        """Where this folder's own scan got to.
+
+        Falls back to `last_sync_date` when the folder has no cursor of its
+        own: that is a mailbox synced before per-folder cursors existed (the
+        shared cursor was the minimum of both folders, so resuming from it
+        re-reads at worst a little and skips nothing) or a mailbox whose first
+        sync only set the shared one. Dedup on Message-ID makes the overlap
+        free.
+        """
+        return mailbox[FOLDER_CURSOR_FIELDS[folder]] or mailbox.last_sync_date
+
+    @staticmethod
+    def _write_folder_cursors(mailbox, cursors):
+        """Store each folder's progress. A `None` holds that folder where it is."""
+        moved = {
+            FOLDER_CURSOR_FIELDS[folder]: cursor
+            for folder, cursor in cursors.items() if cursor
+        }
+        if moved:
+            mailbox.write(moved)
 
     @staticmethod
     def _stall_error(stalls):
@@ -256,10 +289,9 @@ class PanMailFetcher(models.AbstractModel):
         loop guard) or a copy of correspondence Odoo was never part of. That is
         opt-in.
 
-        The cursor is the reason this returns a list rather than being decided
-        inside the loop: `last_sync_date` advances to the *minimum* of the
-        folders that were read, so a folder that is not synced must be absent
-        here rather than fetched and discarded.
+        The list decides what is read, not what is kept: each folder carries
+        its own cursor, so a folder that is not synced belongs absent here
+        rather than fetched and discarded.
         """
         folders = [FOLDER_INBOX]
         if mailbox.sync_sent:
@@ -295,9 +327,18 @@ class PanMailFetcher(models.AbstractModel):
             account=client.resolve_receiving_account(mailbox),
             mailbox=mailbox,
             folder=folder,
-            since_datetime=mailbox.last_sync_date,
-            limit=200,
+            since_datetime=self._folder_cursor(mailbox, folder),
+            limit=FETCH_BATCH_SIZE,
         )
+        if len(messages) == FETCH_BATCH_SIZE:
+            # The batch is full, so there is more waiting behind it. Worth a
+            # line: this is what a mailbox catching up on a backlog looks like,
+            # and the next run continues from the cursor this one leaves.
+            _logger.info(
+                "[Incoming Mail] Full batch of %s from %s in %s; more mail is "
+                "waiting and the next run continues from the cursor",
+                FETCH_BATCH_SIZE, mailbox.email, folder,
+            )
 
         processed = 0
         # Messages are sorted ascending, so the cursor may only advance over
@@ -337,7 +378,7 @@ class PanMailFetcher(models.AbstractModel):
         if stalled_on is not None and cursor is None:
             # The first message of the batch failed: hold the cursor exactly
             # where it was rather than reporting "nothing found".
-            cursor = mailbox.last_sync_date
+            cursor = self._folder_cursor(mailbox, folder)
 
         return processed, cursor, stalled_on
 

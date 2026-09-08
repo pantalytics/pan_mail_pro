@@ -786,14 +786,27 @@ keeps the timeline instead of collapsing onto the day the import ran.
 Ascending sort plus an incremental cursor, the pattern Odoo fetchmail and
 Stripe webhooks use:
 
-1. Fetch up to 200 messages per folder, oldest first, since `last_sync_date`
-2. Advance `last_sync_date` to the **minimum** of the two folders' progress,
-   so nothing is skipped in the slower folder
+1. **One cursor per folder**: `last_sync_date` for the inbox,
+   `last_sent_sync_date` for Sent. Empty means "no cursor of its own yet" and
+   resumes from `last_sync_date`, which covers both the upgrade and a mailbox
+   that has only ever synced its inbox
+2. Fetch up to 200 messages per folder, oldest first, since that folder's cursor
 3. A folder's progress is the last message that was actually **processed**,
    and it stops at the first one that raised — the rest of the batch is still
    read, but the cursor does not pass the failure
-4. If nothing came back at all, the cursor jumps to `now()` — caught up. Not
-   when a folder stalled: that jump is exactly the skip the stall prevents
+4. If a folder came back empty, *its* cursor jumps to `now()` — caught up. Not
+   when it stalled: that jump is exactly the skip the stall prevents
+
+The two cursors used to be one, advanced to the **minimum** of both folders so
+the quieter folder could never be skipped. That made the quietest folder the
+pace of the whole mailbox: an address that received mail but sent none through
+that account stood still at its last sent item, re-read every message since
+then on every run, and — once more than one batch had accumulated in the gap —
+stopped reaching the newest mail at all (issue #116). A cursor per folder gives
+the same guarantee without the coupling.
+
+Turning Sent syncing off and on again clears its cursor rather than resuming
+where it stood, so the switch cannot import months of old sent mail.
 
 `sync_start_date` is user-configurable (default: now). Moving it earlier
 resets the cursor, which is how a historical import is started. Duplicates are
