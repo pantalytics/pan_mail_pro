@@ -291,9 +291,9 @@ class PanMailFetcher(models.AbstractModel):
         The same shape as `pan.mail.matcher._match_rules()` on purpose. That
         ladder decides *where* a mail goes; this one decides *whether* it may
         come in. Two halves of one question deserve one pattern, and these
-        seven decisions used to be seven bare `return False` statements strewn
-        through a two-hundred-line method — which is how the internal check
-        ended up guarding one folder and not the other.
+        decisions used to be bare `return False` statements strewn through a
+        two-hundred-line method — which is how the internal check ended up
+        guarding one folder and not the other.
         """
         return [
             '_gate_duplicate',
@@ -301,7 +301,6 @@ class PanMailFetcher(models.AbstractModel):
             '_gate_counterpart',
             '_gate_internal_domain',
             '_gate_blocked_contact',
-            '_gate_internal_user',
             '_gate_wanted',
         ]
 
@@ -517,19 +516,6 @@ class PanMailFetcher(models.AbstractModel):
             return Skip('blocked_contact', _('This contact is blocked from sync.'))
         return None
 
-    def _gate_internal_user(self, ctx):
-        """A colleague, who has the mail in their own inbox already.
-
-        Recognises only addresses with an Odoo user behind them, so a shared or
-        functional address like planning@ passes as an outside correspondent.
-        That gap is the other half of #37 phase 2, and the reason this reads
-        `partner.user_ids` rather than asking the domain.
-        """
-        partner = ctx['partner']
-        if partner and partner.user_ids:
-            return Skip('internal_user', _('This address belongs to an Odoo user.'))
-        return None
-
     def _gate_wanted(self, ctx):
         """Does this mailbox want this email at all?
 
@@ -537,8 +523,8 @@ class PanMailFetcher(models.AbstractModel):
         has belongs on the record it continues -- a chatter thread showing the
         question and not the answer is the failure this module exists to
         prevent -- so it passes here whatever the switches say. It still had to
-        get past every gate above: internal mail, a blocked contact and an Odoo
-        user's own address are refusals no threading overrides.
+        get past every gate above: internal mail and a blocked contact are
+        refusals no threading overrides.
 
         Everything else is the mailbox's decision. `sync_received` says whether
         email that starts a *new* conversation enters, and
