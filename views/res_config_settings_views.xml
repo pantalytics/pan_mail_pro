@@ -183,10 +183,10 @@
                                 <field name="x_module_version" nolabel="1" readonly="1" class="ms-1"/>
                             </div>
                             <div class="text-muted">
-                                © Pantalytics B.V. All rights reserved. Proprietary and
-                                confidential software, licensed and not sold. Copying,
-                                modification or distribution outside the terms of your
-                                licence agreement is prohibited.
+                                © Pantalytics B.V. Licensed under the Elastic License 2.0.
+                                You may use, copy and modify this software. You may not
+                                offer it to third parties as a hosted or managed service,
+                                and you may not remove or circumvent its licensing notices.
                             </div>
                             <div class="mt-2">
                                 <a href="https://pantalytics.gitbook.io/pantalytics-docs/" target="_blank">
