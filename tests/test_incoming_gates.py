@@ -402,3 +402,25 @@ class TestSentEmailNeverCreatesAContact(MailProTestCase):
             self._ctx(FOLDER_SENT, partner=self.external_partner)
         )
         self.assertIsNone(skip)
+
+    def test_a_reply_to_a_conversation_odoo_has_passes_without_a_contact(self):
+        """The second of the two cases the mailbox form names.
+
+        An unknown recipient is refused on its own, and a reply to a
+        conversation Odoo already holds is not: the answer to a question that
+        is already on a record belongs under it, whoever it went to. Asserted
+        because the form promises exactly these two doors and nothing else,
+        and the reply half was implied by `_gate_wanted` and tested nowhere.
+        """
+        parent = self.external_partner.message_post(
+            body='The question Odoo already holds',
+            message_type='email',
+        )
+        parent.message_id = '<parent@odoo.example.com>'
+
+        skip = self.processor._gate_wanted(self._ctx(
+            FOLDER_SENT,
+            headers={'References': '<parent@odoo.example.com>'},
+        ))
+
+        self.assertIsNone(skip)
