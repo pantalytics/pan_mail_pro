@@ -53,7 +53,9 @@ When using "All" sync mode, configure routing per contact type:
 
 ### Filtering
 
-- **Internal domain:** Auto-detected from company email
+- **Internal domains:** Required, set once in Settings → Mail Pro. Odoo
+  suggests them from your mailboxes and company email; nothing syncs until the
+  list has at least one entry
 - **Internal users:** Employees with Odoo accounts are excluded
 - **Block list:** Per-contact exclusion
 
@@ -79,4 +81,4 @@ Check sync status:
 
 1. **Mailbox health status** - Green/Yellow/Red indicator
 2. **Logs** - Search for `[Incoming Mail]` in system logs
-3. **Scheduled Actions** - Check "Microsoft Graph: Fetch Incoming Mail"
+3. **Scheduled Actions** - Check "Mail Pro: Fetch Incoming Mail"

@@ -208,6 +208,13 @@ class TestInternalDomainSuggestions(TransactionCase):
     def test_mailbox_domains_are_suggested(self):
         self.assertIn('suggested.test', self.Domains.suggest_domains())
 
+    def test_a_public_mail_domain_is_never_suggested(self):
+        """A company running on a gmail.com address does not own gmail.com.
+        Three migrations apply the suggestion unattended, so the filter has to
+        hold for every source, not only for user addresses."""
+        self.env.company.email = 'owner@gmail.com'
+        self.assertNotIn('gmail.com', self.Domains.suggest_domains())
+
     def test_a_mailbox_domain_is_suggested_whatever_is_configured(self):
         """The suggestion describes the database, not the current list: an
         admin who typed one domain still gets offered the rest."""

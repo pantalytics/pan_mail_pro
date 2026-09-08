@@ -444,6 +444,19 @@ class TestOutgoingCarriesNoBcc(TransactionCase):
             'email_cc': 'colleague@company.test',
         })
 
+    def test_a_pasted_image_leaves_as_an_absolute_url(self):
+        """`/web/image/...` is unresolvable outside this database. Odoo's own
+        SMTP path makes it absolute before sending; the MIME path must too."""
+        mail = self._mail()
+        mail.body_html = '<p>See <img src="/web/image/1"/></p>'
+        msg = mime_utils.build_message(
+            mail, 'sales@company.test', ['customer@client.test'], [],
+            '<out-2@company.test>',
+        )
+        html = msg.get_body(preferencelist=('html',)).get_content()
+        self.assertNotIn('src="/web/image/', html)
+        self.assertIn('/web/image/1', html)
+
     def test_the_built_mime_has_no_bcc_header(self):
         msg = mime_utils.build_message(
             self._mail(), 'sales@company.test',

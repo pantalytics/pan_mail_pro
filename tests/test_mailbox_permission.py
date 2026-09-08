@@ -53,6 +53,12 @@ class TestMailboxPermission(MailProTestCase):
 
     # -- the rule itself --------------------------------------------------- #
 
+    def test_syncing_a_mailbox_is_a_managers_act(self):
+        """Every internal user may see the shared mailbox; none but a manager
+        may make it read live mail."""
+        with self.assertRaises(AccessError):
+            self.shared_mailbox.with_user(self.salesperson).action_sync_now()
+
     def test_personal_mailbox_belongs_to_its_owner(self):
         self.assertTrue(self.personal_mailbox._is_sendable_by(self.salesperson))
         self.assertFalse(self.personal_mailbox._is_sendable_by(self.other_user))

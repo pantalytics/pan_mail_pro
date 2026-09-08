@@ -18,7 +18,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 from email.utils import getaddresses, parseaddr
 
-from odoo import models, api, _
+from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from ... import encryption_utils
 from ...mail_provider_client import ERROR_NO_RECIPIENTS, FOLDER_INBOX, FOLDER_SENT
@@ -195,7 +195,7 @@ class GoogleGmailClient(models.AbstractModel):
             return {
                 'access_token': token_data.get('access_token'),
                 'refresh_token': token_data.get('refresh_token'),
-                'token_expiry': datetime.now() + timedelta(seconds=expires_in),
+                'token_expiry': fields.Datetime.now() + timedelta(seconds=expires_in),
             }
         except requests.exceptions.RequestException as e:
             raise UserError(_('Failed to authenticate with Google: %s') % self._error_detail(e))
@@ -226,7 +226,7 @@ class GoogleGmailClient(models.AbstractModel):
             account.sudo().write({
                 'access_token': token_data.get('access_token'),
                 'refresh_token': token_data.get('refresh_token') or account.refresh_token,
-                'token_expiry': datetime.now() + timedelta(seconds=expires_in),
+                'token_expiry': fields.Datetime.now() + timedelta(seconds=expires_in),
             })
             return token_data.get('access_token')
         except requests.exceptions.RequestException as e:
@@ -250,7 +250,7 @@ class GoogleGmailClient(models.AbstractModel):
         """Return a live access token for `account`, refreshing if near expiry."""
         self._refuse_when_neutralized()
         if account.token_expiry:
-            if account.token_expiry <= datetime.now() + timedelta(minutes=5):
+            if account.token_expiry <= fields.Datetime.now() + timedelta(minutes=5):
                 _logger.info('[Gmail API] Token expired for %s, refreshing...', account.email)
                 return self.refresh_access_token(account)
 

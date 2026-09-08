@@ -9,7 +9,7 @@ it".
 ## Module Overview
 
 **pan_mail_pro** - Microsoft 365, Google Workspace and IMAP/SMTP email
-integration for Odoo 19.0 Enterprise Edition.
+integration for Odoo 19.0, Community or Enterprise.
 
 Send and receive emails via the Microsoft Graph API, the Gmail API (both OAuth
 2.0 delegated) or plain IMAP/SMTP with a server, login and password.
@@ -315,7 +315,7 @@ scripts:
 tools/ci.sh lint                  # ruff, XML, the Odoo 19 checklist, boundaries (seconds)
 tools/ci.sh test                  # fresh install + full suite in a real Odoo (~4 min)
 tools/ci.sh upgrade               # install last release, upgrade, run the suite
-tools/ci.sh                       # all three, in CI's order
+tools/ci.sh                       # all four, in CI's order
 
 BASE_REF=origin/19.0 tools/ci_lint.sh   # + the diff-shape and version-bump checks
 ```

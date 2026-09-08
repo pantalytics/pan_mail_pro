@@ -32,13 +32,13 @@
                         margin-bottom: 12px;
                     }
                     .message {
-                        color: #6c757d;
+                        color: #5a6169;
                         font-size: 15px;
                         margin-bottom: 24px;
                         max-width: 400px;
                     }
                     .hint {
-                        color: #adb5bd;
+                        color: #5c6570;
                         font-size: 14px;
                     }
                 </style>
@@ -61,12 +61,10 @@
                         </script>
                     </t>
                     <t t-else="">
-                        <div class="hint">Redirecting to Odoo...</div>
-                        <script>
-                            setTimeout(function() {
-                                window.location.href = '/web';
-                            }, 3000);
-                        </script>
+                        <!-- No timed redirect: the provider's reason is the
+                             one thing on this page worth reading, and three
+                             seconds is not enough to read or copy it. -->
+                        <div class="hint"><a href="/web">Back to Odoo</a></div>
                     </t>
                 </div>
             </body>

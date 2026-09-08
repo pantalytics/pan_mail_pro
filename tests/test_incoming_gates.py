@@ -261,6 +261,19 @@ class TestIncomingGates(MailProTestCase):
             "a blocked contact must leave no trace at all",
         )
 
+    def test_a_customer_with_a_portal_login_is_not_a_colleague(self):
+        """A portal user has a `res.users` row too. Treating it as internal
+        silently refused every mail from a customer who could log in."""
+        self.env['res.users'].with_context(no_reset_password=True).create({
+            'name': 'External Customer',
+            'login': CUSTOMER,
+            'email': CUSTOMER,
+            'partner_id': self.external_partner.id,
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+        })
+
+        self.assertIsNone(self.processor._refuse(self._ctx()))
+
     def test_the_ladder_stops_at_the_first_refusal(self):
         """Gate 2 refuses, so gate 3 never resolves a counterpart."""
         ctx = self._ctx(headers={'x-odoo-model': 'crm.lead'})

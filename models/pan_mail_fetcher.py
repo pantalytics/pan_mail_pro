@@ -256,9 +256,12 @@ class PanMailFetcher(models.AbstractModel):
         processed = 0
         latest_datetime = None
 
-        # Messages sorted ascending — the last item carries the latest date
-        if messages:
-            latest_datetime = messages[-1].get('date')
+        # Messages sorted ascending — the last *dated* item carries the latest
+        # date. A message whose date could not be parsed must not empty the
+        # cursor: with no cursor the caller jumps to now() and skips the batch.
+        latest_datetime = next(
+            (m['date'] for m in reversed(messages) if m.get('date')), None
+        )
 
         for message in messages:
             try:
@@ -524,9 +527,12 @@ class PanMailFetcher(models.AbstractModel):
         functional address like planning@ passes as an outside correspondent.
         That gap is the other half of #37 phase 2, and the reason this reads
         `partner.user_ids` rather than asking the domain.
+
+        A portal login is not a colleague: a customer with portal access has a
+        `res.users` row too, and their mail is exactly what should enter.
         """
         partner = ctx['partner']
-        if partner and partner.user_ids:
+        if partner and partner.user_ids.filtered(lambda u: not u.share):
             return Skip('internal_user', _('This address belongs to an Odoo user.'))
         return None
 

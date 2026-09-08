@@ -240,5 +240,11 @@ class PanMailDomain(models.Model):
         alias_domains = self.env['mail.alias.domain'].sudo().search([])
         candidates += [d.name for d in alias_domains if d.name]
 
-        return self._parse(', '.join(filter(None, candidates)))
+        # Filtered once, at the end, so every source passes through it: a
+        # company whose own address is on gmail.com must not have every Gmail
+        # user's mail marked internal and dropped.
+        return [
+            domain for domain in self._parse(', '.join(filter(None, candidates)))
+            if domain not in PUBLIC_MAIL_DOMAINS
+        ]
 

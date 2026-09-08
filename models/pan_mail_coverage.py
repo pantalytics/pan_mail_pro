@@ -64,7 +64,8 @@ class PanMailCoverage(models.TransientModel):
             record.unlinked_count = unlinked
             record.contact_only_count = contact_only
             record.linked_count = total - unlinked
-            record.unlinked_ratio = (unlinked / total * 100) if total else 0.0
+            # A fraction: the `percentage` widget multiplies by 100 itself.
+            record.unlinked_ratio = (unlinked / total) if total else 0.0
 
     # -- drill-down -------------------------------------------------------- #
 

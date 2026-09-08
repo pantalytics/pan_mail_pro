@@ -59,24 +59,22 @@ git push
 
 After installing the module, go to **Settings** → scroll to **Mail Pro**.
 
-The page walks through setup in six steps, and the first one decides the rest:
+The page is a checklist of three steps; the arrow on each line opens the
+table where it is answered:
 
-1. **Email provider** - pick where your mail is hosted (Microsoft 365, Google
-   Workspace or IMAP/SMTP) from the searchable dropdown. Only that provider's
-   steps are shown from here on.
-2. **Credentials** - copy them from your Azure app registration or your Google
-   Cloud OAuth client. The redirect URI to paste back into the provider's
-   console is shown here. IMAP/SMTP has no global credential; see below.
-3. **Connect your account** - sign in and grant consent.
-4. **Internal domains** - your own email domains. Required: no mailbox can sync
+1. **Email provider** - where your mail is hosted (Microsoft 365, Google
+   Workspace or IMAP/SMTP), with the app registration or OAuth client that
+   goes with it. The redirect URI to paste back into the provider's console
+   is shown on that form. IMAP/SMTP has no global credential; see below.
+2. **Internal domains** - your own email domains. Required: no mailbox can sync
    until this is answered. Odoo suggests them from your mailboxes, company
    email and alias domains.
-5. **Mailboxes** - create the notification mailbox (one button, owned by you)
+3. **Mailboxes** - create the notification mailbox (one button, owned by you)
    and configure sending and incoming sync.
-6. **Your team** - invite colleagues to connect their own mailbox.
 
-Each provider keeps its own credentials, so switching the dropdown loses
-nothing and one database can serve mailboxes on several providers.
+Below the checklist, **Users** shows who has connected a mailbox and invites
+the rest. A database runs on one provider; switching means editing that row,
+and the provider's console issues a new client secret for it.
 
 You can invite users before any of this is finished. Mail Pro leaves SMTP alone
 until the first mailbox exists, and once it does, invitations and password
@@ -272,6 +270,6 @@ docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
 docker-compose start odoo
 ```
 
-34 test files cover four areas: the provider contract, each provider's
+41 test files cover five areas: the provider contract, each provider's
 wire behaviour, the incoming pipeline (fetch → filter → match → post), and
 sending, threading, the composer and onboarding. See ARCHITECTURE.md §12.

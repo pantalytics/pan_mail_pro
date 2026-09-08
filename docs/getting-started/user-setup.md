@@ -40,8 +40,7 @@ You'll see mailboxes based on your permissions:
 | Type | Visibility |
 |------|------------|
 | Personal | Only you |
-| Shared | All users (requires M365 SendAs permission) |
-| Notification | All users |
+| Shared | All users (on Microsoft 365: requires SendAs permission) |
 
 ## Disconnecting
 

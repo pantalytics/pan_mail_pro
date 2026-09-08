@@ -6,7 +6,7 @@ import re
 import requests
 import time
 from datetime import datetime, timedelta
-from odoo import models, api, _
+from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from ... import encryption_utils
 from ...mail_provider_client import FOLDER_INBOX, FOLDER_SENT
@@ -250,7 +250,7 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             # Calculate token expiry time
             expires_in = token_data.get('expires_in', 3600)
-            expiry = datetime.now() + timedelta(seconds=expires_in)
+            expiry = fields.Datetime.now() + timedelta(seconds=expires_in)
 
             return {
                 'access_token': token_data.get('access_token'),
@@ -293,12 +293,12 @@ class MicrosoftGraphClient(models.AbstractModel):
             token_data = response.json()
 
             expires_in = token_data.get('expires_in', 3600)
-            expiry = datetime.now() + timedelta(seconds=expires_in)
+            expiry = fields.Datetime.now() + timedelta(seconds=expires_in)
 
             # sudo(): the token fields have groups='base.group_system'
             account.sudo().write({
                 'access_token': token_data.get('access_token'),
-                'refresh_token': token_data.get('refresh_token', account.refresh_token),
+                'refresh_token': token_data.get('refresh_token') or account.refresh_token,
                 'token_expiry': expiry,
             })
 
@@ -343,7 +343,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         self._refuse_when_neutralized()
         # Check if token is expired or about to expire (5 min buffer)
         if account.token_expiry:
-            buffer_time = datetime.now() + timedelta(minutes=5)
+            buffer_time = fields.Datetime.now() + timedelta(minutes=5)
             if account.token_expiry <= buffer_time:
                 _logger.info(f"Token expired for {account.email}, refreshing...")
                 return self.refresh_access_token(account)

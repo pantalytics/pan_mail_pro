@@ -20,7 +20,7 @@ Mail Pro connects your Odoo instance to your real mailboxes, so that:
 | **Google Workspace** | Gmail API, OAuth 2.0 | The address is its own Workspace account |
 | **IMAP/SMTP** | Server, login and password | The address is its own login |
 
-One database can serve mailboxes on several providers at once.
+A database runs on one provider.
 
 ## Key Features
 
@@ -43,8 +43,6 @@ One database can serve mailboxes on several providers at once.
 - Tokens encrypted at rest
 - No admin permissions required
 - Internal domains must be configured before any mailbox may sync
-- AI features are off by default, use your own API key, and never see message
-  bodies or attachments
 
 See [Security](security.md) for the full picture.
 
