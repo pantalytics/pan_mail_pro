@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Odoo 19.0 Enterprise Edition
+- Odoo 19.0, Community or Enterprise (routing to Helpdesk teams needs Enterprise)
 - The `cryptography` Python package (for encrypted credential storage)
 - A mailbox on one of the supported providers:
 
@@ -47,8 +47,8 @@ git push
 
 ## Next Steps
 
-After installation, go to **Settings → Mail Pro** and pick your email provider.
-Only that provider's setup steps are shown from then on:
+After installation, go to **Settings → Mail Pro**. Step 1 of the checklist
+opens the provider form; pick yours and follow its guide:
 
 - [Microsoft 365 Setup](azure-setup.md)
 - [Google Workspace Setup](google-setup.md)

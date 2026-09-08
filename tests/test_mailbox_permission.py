@@ -53,6 +53,22 @@ class TestMailboxPermission(MailProTestCase):
 
     # -- the rule itself --------------------------------------------------- #
 
+    def test_an_address_has_one_mailbox_archived_or_not(self):
+        """The clients resolve credentials by address with limit=1, so a
+        second row for one inbox, archived or differently cased, would have
+        sends and the sync cursor straddle two rows."""
+        self.shared_mailbox.active = False
+        with self.assertRaises(ValidationError):
+            self.env['pan.mail.mailbox'].create({
+                'email': self.shared_mailbox.email.upper(), 'mailbox_type': 'shared',
+            })
+
+    def test_syncing_a_mailbox_is_a_managers_act(self):
+        """Every internal user may see the shared mailbox; none but a manager
+        may make it read live mail."""
+        with self.assertRaises(AccessError):
+            self.shared_mailbox.with_user(self.salesperson).action_sync_now()
+
     def test_personal_mailbox_belongs_to_its_owner(self):
         self.assertTrue(self.personal_mailbox._is_sendable_by(self.salesperson))
         self.assertFalse(self.personal_mailbox._is_sendable_by(self.other_user))

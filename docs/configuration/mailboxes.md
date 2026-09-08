@@ -4,7 +4,7 @@ Mailboxes define which email addresses can be used to send and receive emails in
 
 ## Accessing Mailbox Configuration
 
-Go to **Settings → Mail Pro → Manage Mailbox List**
+Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow on step 3 of the checklist)
 
 ## Mailbox Types
 
@@ -24,12 +24,12 @@ Go to **Settings → Mail Pro → Manage Mailbox List**
 - **Credentials (Gmail, IMAP/SMTP):** the address has its own account, so the
   mailbox needs no owner - give the address credentials of its own
 
-### Notification Mailbox
+### The notification mailbox
 
-- **Purpose:** System notifications, auto-replies
-- **Visibility:** All users
-- **OAuth:** Uses designated owner's token
-- **Required for:** Incoming email sync (handles emails from unknown senders)
+Not a third type: a tick box, **Notification Mailbox**, on the one mailbox
+that sends the system email (user invitations, password resets, activity
+reminders). It sends with its owner's credentials and is required before any
+mailbox may sync.
 
 ## Providers
 
@@ -64,21 +64,23 @@ account.
 
 1. Click **Create**
 2. Fill in:
-   - **Email Address:** The Microsoft 365 email address
+   - **Email Address:** The address, as the provider knows it
    - **Display Name:** Shown in the Send From dropdown
-   - **Type:** Personal, Shared, or Notification
-   - **Owner:** User whose OAuth is used (Personal/Notification only)
+   - **Type:** Personal or Shared
+   - **Owner:** The user whose credentials the mailbox sends with (Personal,
+     and Shared on Microsoft 365)
 3. Save
 
 ## Mailbox Settings
 
 | Field | Description |
 |-------|-------------|
-| Email Address | The Microsoft 365 email to send from |
+| Email Address | The address to send from |
 | Display Name | Friendly name shown in dropdowns |
-| Type | Personal, Shared, or Notification |
-| Owner | User whose OAuth token is used |
-| Sync Mode | Controls incoming email sync |
+| Type | Personal or Shared |
+| Notification Mailbox | Ticked on the one mailbox that sends the system email |
+| Owner | The user whose credentials are used |
+| Receiving / Sending | Which folders are synced; replies always are |
 | Team | Alias for routing incoming emails |
 
 ## Next Steps

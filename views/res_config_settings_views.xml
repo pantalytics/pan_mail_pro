@@ -33,9 +33,9 @@
                     <div class="row mt-3 o_settings_container">
                     <div class="col-12 o_setting_box o_mailpro_steps">
                     <div class="o_mailpro_step">
-                        <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
+                        <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
                               invisible="not x_setup_provider_done"/>
-                        <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
+                        <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
                               invisible="x_setup_provider_done"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
@@ -59,9 +59,9 @@
                     </div>
 
                     <div class="o_mailpro_step">
-                        <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
+                        <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
                               invisible="not x_setup_domains_done"/>
-                        <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
+                        <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
                               invisible="x_setup_domains_done"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
@@ -93,14 +93,14 @@
                     </div>
 
                     <div class="o_mailpro_step">
-                        <span class="o_mailpro_dot o_mailpro_dot_ok" title="Done"
+                        <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
                               invisible="not x_setup_notification_done or x_mailboxes_alert"/>
-                        <span class="o_mailpro_dot o_mailpro_dot_warn" title="Attention needed"
+                        <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
                               invisible="not x_mailboxes_alert"/>
                         <!-- A step that has stopped is one dot, not two: the
                              warning wins, and "still to do" is not additional
                              information next to it. -->
-                        <span class="o_mailpro_dot o_mailpro_dot_todo" title="To do"
+                        <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
                               invisible="x_setup_notification_done or x_mailboxes_alert"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">

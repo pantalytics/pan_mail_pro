@@ -2,7 +2,7 @@
 import logging
 import re
 from odoo import fields, models, api, _
-from odoo.exceptions import ValidationError, UserError
+from odoo.exceptions import AccessError, ValidationError, UserError
 from .mail_provider_client import (
     FOLDER_INBOX,
     PROVIDER_SELECTION,
@@ -221,12 +221,12 @@ class PanMailMailbox(models.Model):
 
     # Keep for backwards compatibility / internal use
     sync_start_date = fields.Datetime(
-        string='Import From',
+        string='Start from',
         default=fields.Datetime.now,
         help='Import emails starting from this date. Default is today.'
     )
     last_sync_date = fields.Datetime(
-        string='Last Synced',
+        string='Last synced',
         readonly=True,
         help='Timestamp of last successful sync'
     )
@@ -342,9 +342,21 @@ class PanMailMailbox(models.Model):
             }
         return action
 
+    def _check_manager(self):
+        """Reading a live mailbox is a manager's act, whoever pressed the button.
+
+        The model is readable by every internal user because shared and
+        notification mailboxes are meant to be seen; that must not make
+        `action_sync_now` a way for anyone to poll the company's mail.
+        """
+        if not self.env.su and not self.env.user.has_group(
+                'pan_mail_pro.group_mail_mailbox_manager'):
+            raise AccessError(_('Only a mailbox manager may sync a mailbox.'))
+
     def action_test_incoming(self):
         """Test incoming mail configuration by fetching a few messages."""
         self.ensure_one()
+        self._check_manager()
 
         client = self._get_client()
 
@@ -479,6 +491,7 @@ class PanMailMailbox(models.Model):
     def action_sync_now(self):
         """Manually trigger email sync for this mailbox."""
         self.ensure_one()
+        self._check_manager()
 
         if database_is_neutralized(self.env):
             raise UserError(_(
@@ -565,12 +578,17 @@ class PanMailMailbox(models.Model):
 
     def write(self, vals):
         """Reset last_sync_date when sync_start_date is moved to an earlier date."""
+        rewind = self.browse()
         if 'sync_start_date' in vals and vals['sync_start_date']:
             new_start = fields.Datetime.to_datetime(vals['sync_start_date'])
-            for record in self:
-                if record.last_sync_date and new_start < record.last_sync_date:
-                    vals['last_sync_date'] = new_start
-        return super().write(vals)
+            # Only the records that qualify, not the shared `vals`: one mailbox
+            # that does must not move every other mailbox's cursor to `new_start`.
+            rewind = self.filtered(
+                lambda r: r.last_sync_date and new_start < r.last_sync_date)
+        result = super().write(vals)
+        if rewind:
+            rewind.write({'last_sync_date': new_start})
+        return result
 
     @api.onchange('sync_received', 'sync_sent')
     def _onchange_sync_switches(self):
@@ -589,11 +607,16 @@ class PanMailMailbox(models.Model):
 
     @api.constrains('email')
     def _check_email_unique(self):
-        """Ensure email is unique"""
+        """One row per address, archived rows and letter case included.
+
+        Two rows for one inbox is the failure: the clients resolve credentials
+        by address with `limit=1`, so sends and the sync cursor would straddle
+        whichever row the search happened to return.
+        """
         for record in self:
             if record.email:
-                existing = self.search([
-                    ('email', '=', record.email),
+                existing = self.with_context(active_test=False).search([
+                    ('email', '=ilike', record.email),
                     ('id', '!=', record.id)
                 ], limit=1)
                 if existing:

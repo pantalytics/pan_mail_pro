@@ -40,7 +40,7 @@ class TestMailCoverage(MailProTestCase):
         self.assertEqual(self.coverage.contact_only_count, 1)
 
     def test_ratio(self):
-        self.assertAlmostEqual(self.coverage.unlinked_ratio, 40.0, places=4)
+        self.assertAlmostEqual(self.coverage.unlinked_ratio, 0.4, places=4)
 
     def test_ratio_is_zero_on_an_empty_database(self):
         """No mail is not 100% unfiled; a division by zero here would be a

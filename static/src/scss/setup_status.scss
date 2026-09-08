@@ -4,15 +4,6 @@
 // shape — a coloured dot saying where the step stands, its name, the answer,
 // and the way to the place it is changed. Palette from brand.pantalytics.com.
 
-// Info icons. The explanation is one hover away, not printed under every
-// field: a settings page people read once should not read like a manual.
-.fa-info-circle[title] {
-    cursor: help;
-    opacity: 0.45;
-
-    &:hover { opacity: 0.9; }
-}
-
 // The checklist's own box. `o_setting_box` gives it the indent and the width
 // cap of a standard settings block; what is left is the row it contains, which
 // must not stretch to a 2000px window — a name on the left and an arrow on the
@@ -60,7 +51,8 @@
     // reads as broken. An outline, not a fill.
     .o_mailpro_dot_todo {
         background: transparent;
-        box-shadow: inset 0 0 0 1px rgba(0, 29, 33, 0.3);
+        // Dark enough to be seen (3:1 on the page), still an outline.
+        box-shadow: inset 0 0 0 1px rgba(0, 29, 33, 0.65);
     }
 
     .o_mailpro_step_body {

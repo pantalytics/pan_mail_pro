@@ -254,11 +254,13 @@ class PanMailFetcher(models.AbstractModel):
         )
 
         processed = 0
-        latest_datetime = None
 
-        # Messages sorted ascending — the last item carries the latest date
-        if messages:
-            latest_datetime = messages[-1].get('date')
+        # Messages sorted ascending — the last *dated* item carries the latest
+        # date. A message whose date could not be parsed must not empty the
+        # cursor: with no cursor the caller jumps to now() and skips the batch.
+        latest_datetime = next(
+            (m['date'] for m in reversed(messages) if m.get('date')), None
+        )
 
         for message in messages:
             try:

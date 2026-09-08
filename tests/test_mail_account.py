@@ -138,6 +138,20 @@ class TestMailAccount(TransactionCase):
         self.assertFalse(account.access_token_encrypted)
         self.assertFalse(self.user.x_pan_mail_connected)
 
+    def test_disconnect_clears_an_imap_password_too(self):
+        """IMAP has no token; its credential is the password, and a button
+        that says "disconnected" while the password stays is lying."""
+        self.Account.create({
+            'email': 'imap@test.local', 'provider': 'imap', 'user_id': self.user.id,
+            'password': 'secret',
+        })
+
+        self.user.action_disconnect_mailbox('imap')
+
+        account = self.Account.search([('user_id', '=', self.user.id)])
+        self.assertFalse(account.password_encrypted)
+        self.assertFalse(self.user.x_pan_mail_connected)
+
     def test_disconnecting_one_provider_keeps_the_other(self):
         """Two providers, one user: revoking one is not revoking both."""
         self.Account.create({

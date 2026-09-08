@@ -96,6 +96,11 @@ def build_message(mail_record, from_email, to_addrs, cc_addrs, message_id,
         msg['X-Odoo-Message-Id'] = str(mail_record.mail_message_id.id)
 
     body_html = mail_record.body_html or mail_record.body or ''
+    # What Odoo's own SMTP path does before sending: a pasted image is
+    # `src="/web/image/..."`, which no recipient can resolve. Graph turns those
+    # into inline attachments; MIME takes Odoo's answer, an absolute URL.
+    if body_html:
+        body_html = mail_record.env['mail.render.mixin']._replace_local_links(body_html)
     # Plain-text part first so set_content makes this the multipart/alternative
     # root; the HTML is the alternative clients actually render.
     msg.set_content('This email requires an HTML-capable client.')

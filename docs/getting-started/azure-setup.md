@@ -14,7 +14,7 @@ Workspace see [Google Workspace Setup](google-setup.md); for any other host see
 3. Configure:
    - **Name:** `Odoo Mail Pro` (or your preference)
    - **Supported account types:** Accounts in this organizational directory only
-   - **Redirect URI:** Web → copy the Callback URL from Odoo (Settings → Mail Pro → Setup Guide). The URL format is `https://your-odoo-domain.com/microsoft_oauth/callback`
+   - **Redirect URI:** Web → copy the Callback URL from Odoo (Settings → Mail Pro, the arrow on step 1). The URL format is `https://your-odoo-domain.com/microsoft_oauth/callback`
 4. Click **Register**
 
 ## Step 2: Note Application IDs
@@ -58,8 +58,8 @@ Azure shows two columns here: **Value** and **Secret ID**. Odoo needs the
 
 ## Step 5: Configure in Odoo
 
-1. Go to **Settings → Mail Pro**
-2. Set **Email provider** to *Microsoft 365*
+1. Go to **Settings → Mail Pro** and press the arrow on step 1, *Email Provider*
+2. Create the provider row and set **Provider** to *Microsoft 365*
 3. Enter the three values under the same names Azure gives them:
    - **Application (client) ID**
    - **Client Secret Value** (the Value from Step 3, not the Secret ID)

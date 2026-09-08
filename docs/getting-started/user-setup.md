@@ -6,7 +6,7 @@ Each user who wants to send emails via Microsoft 365 needs to connect their acco
 
 1. Click your **profile picture** (top right) → **My Profile**
 2. Go to the **Mail Pro** tab
-3. Click **Connect Microsoft 365**
+3. Click **Connect Mailbox**
 4. Sign in with your Microsoft account
 5. Grant the requested permissions
 
@@ -40,15 +40,13 @@ You'll see mailboxes based on your permissions:
 | Type | Visibility |
 |------|------------|
 | Personal | Only you |
-| Shared | All users (requires M365 SendAs permission) |
-| Notification | All users |
+| Shared | All users (on Microsoft 365: requires SendAs permission) |
 
 ## Disconnecting
 
 To disconnect your Microsoft account:
 
 1. Go to **My Profile → Mail Pro** tab
-2. Toggle off the **Connected** switch
-3. Click **Save**
+2. Click **Disconnect** and confirm
 
 This removes your OAuth tokens. You'll need to reconnect to send emails via Microsoft again.

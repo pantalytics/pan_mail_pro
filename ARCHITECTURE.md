@@ -202,7 +202,7 @@ pan_mail_pro/
 ├── controllers/main.py            # OAuth callbacks (Microsoft + Google, one handler)
 ├── migrations/                    # One folder per schema-changing release — see migrations/
 ├── views/  data/  security/  static/
-├── tests/                         # 36 files; see §12
+├── tests/                         # 41 files; see §12
 └── tools/                         # CI helpers
 ```
 
@@ -229,10 +229,10 @@ of being cancelled. Nothing here has an opinion once the phase is `syncing`.
 Three properties are worth naming, because each was a bug first:
 
 - **The checklist is the status.** There is no banner at the top of the
-  settings page. Three lines, each either a green check with its answer beside
-  it or an open section, say in one look whether the module is in service — and
-  a mailbox that stopped shows as a red triangle on the mailboxes line rather
-  than as a fourth thing to read. A separate status block repeated what the
+  settings page. Three lines, each a dot (green: answered, red: answered but
+  broken, outlined: not yet) with its answer beside it, say in one look whether
+  the module is in service — and a mailbox that stopped shows as a red dot on
+  the mailboxes line rather than as a fourth thing to read. A separate status block repeated what the
   lines already said.
 - **Half a provider is no provider.** Choosing one and filling in its
   application registration were two steps; a provider without its registration
@@ -932,11 +932,13 @@ built shortlist is discarded. Bring-your-own-key, envelope only, never a body.
 
 ### 9.1 Token encryption
 
-Fernet symmetric encryption with an auto-generated key in `ir.config_parameter`
-(`pan_mail_pro.encryption_key`), because Odoo.sh does not support custom
-environment variables and the database is already encrypted at rest. Zero
-configuration, and defense-in-depth against SQL injection and backup leaks. All
-encryption goes through `models/encryption_utils.py`.
+Fernet symmetric encryption, with the key in `ir.config_parameter`
+(`pan_mail_pro.encryption_key`) by default so that Odoo.sh, which has no
+custom environment variables, needs no configuration. That mode defends
+against a read of the credential columns alone, not against a stolen backup:
+key and ciphertext share the dump. `PAN_MAIL_ENCRYPTION_KEY` in the
+environment is the way out for hosts that offer one. `docs/security.md` says
+the same to customers; all encryption goes through `models/encryption_utils.py`.
 
 ### 9.2 Polling over webhooks
 
@@ -1156,7 +1158,7 @@ The cancel path used to write `state = 'cancel'` and stop there, leaving the
 notifications at `ready` — "queued, not sent yet" — permanently. At one
 customer, seventeen rows from one sync run still read `ready` eleven days
 after their mails were cancelled: the chatter showed mail as pending that no
-longer existed. `mail.mail._cancel_notifications()` closes that, taking the
+longer existed. `mail.mail._sync_notifications()` closes that, taking the
 value from Odoo's own `_get_notification_status()` so the two cannot drift.
 
 Failures already worked this way, through `_postprocess_sent_message`. Cancels
@@ -1441,7 +1443,7 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 
 ## 12. Tests
 
-36 files under `tests/`, roughly 7 500 lines. They fall into four groups:
+41 files under `tests/`, roughly 10 000 lines. They fall into five groups:
 
 | Group | Files | What they hold |
 |-------|-------|----------------|

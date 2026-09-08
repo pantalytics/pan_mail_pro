@@ -220,10 +220,7 @@ class PanMailDomain(models.Model):
             address for address in mailboxes.mapped('email') + users.mapped('email')
             if address
         ]
-        return [
-            address for address in addresses
-            if self._parse(address) and self._parse(address)[0] not in PUBLIC_MAIL_DOMAINS
-        ]
+        return [address for address in addresses if self._parse(address)]
 
     @api.model
     def suggest_domains(self):
@@ -240,5 +237,11 @@ class PanMailDomain(models.Model):
         alias_domains = self.env['mail.alias.domain'].sudo().search([])
         candidates += [d.name for d in alias_domains if d.name]
 
-        return self._parse(', '.join(filter(None, candidates)))
+        # Filtered once, at the end, so every source passes through it: a
+        # company whose own address is on gmail.com must not have every Gmail
+        # user's mail marked internal and dropped.
+        return [
+            domain for domain in self._parse(', '.join(filter(None, candidates)))
+            if domain not in PUBLIC_MAIL_DOMAINS
+        ]
 
