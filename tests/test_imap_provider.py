@@ -163,7 +163,7 @@ class TestImapProvider(TransactionCase):
         return self.Account.create(base)
 
     def _mailbox(self, email='info@company.test', **vals):
-        base = {'email': email, 'provider': 'imap', 'mailbox_type': 'shared'}
+        base = {'email': email, 'provider': 'imap'}
         base.update(vals)
         return self.env['pan.mail.mailbox'].create(base)
 
@@ -187,7 +187,7 @@ class TestImapProvider(TransactionCase):
         """The constraint that demands an owner is Microsoft's SendAs model.
         Requiring one here would make the mailbox unconfigurable."""
         self.env['pan.mail.mailbox'].create({
-            'email': 'notifications@company.test', 'mailbox_type': 'personal',
+            'email': 'notifications@company.test',
             'is_notification_mailbox': True, 'provider': 'imap',
             'owner_user_id': self.user.id,
         })
@@ -232,8 +232,7 @@ class TestImapProvider(TransactionCase):
     def test_personal_mailbox_falls_back_to_the_owners_account(self):
         account = self._imap_account(email='imap_user@test.local', user_id=self.user.id)
         mailbox = self._mailbox(
-            email='alias@company.test', mailbox_type='personal',
-            owner_user_id=self.user.id)
+            email='alias@company.test', owner_user_id=self.user.id)
         self.assertEqual(mailbox._get_client().resolve_receiving_account(mailbox), account)
 
     def test_a_connected_imap_account_makes_a_selectable_owner(self):
@@ -252,7 +251,7 @@ class TestImapProvider(TransactionCase):
         the answer instead, so there is nothing left to keep in sync.
         """
         self.env['pan.mail.mailbox'].create({
-            'email': 'notifications@company.test', 'mailbox_type': 'personal',
+            'email': 'notifications@company.test',
             'is_notification_mailbox': True, 'provider': 'imap',
             'owner_user_id': self.user.id,
         })
@@ -800,7 +799,7 @@ class TestImapOutgoingRouting(TransactionCase):
         })
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'sales@company.test', 'provider': 'imap',
-            'mailbox_type': 'personal', 'owner_user_id': cls.user.id,
+            'owner_user_id': cls.user.id,
         })
         cls.user.x_default_mailbox_id = cls.mailbox
 

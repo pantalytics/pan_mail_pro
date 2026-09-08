@@ -286,6 +286,18 @@ Which credentials a mailbox runs on is asked of the provider
 (`resolve_sending_account` / `resolve_receiving_account`), never assumed by the
 caller: only Microsoft 365 lets one person send as another with their own token.
 
+The type is derived, not asked (`_compute_mailbox_type`, stored). No provider
+answers "personal or shared?" well enough to build a form on: Graph exposes
+`mailboxSettings.userPurpose`, but only to a token that already has rights on
+the mailbox being created and a scope the module does not request; Gmail has no
+shared mailboxes, only accounts and delegation; IMAP has a login. What the
+module means by the word is a policy, who may send from here and with whose
+credentials, and that follows from the owner. An owner on their own address
+(one their grant or their user record carries) is personal. No owner, or an
+owner on some other address, is shared. The notification mailbox is personal
+whatever its address. 19.0.7.17.0 removed the radio button and recomputed the
+rows that predate the rule.
+
 **Personal** — auto-created when a user connects (if the admin setting allows).
 `owner_user_id` links it to its owner, and only the owner sees it in the
 composer dropdown.

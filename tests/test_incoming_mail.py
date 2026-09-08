@@ -53,7 +53,6 @@ class TestInternalDomain(TransactionCase):
         """There is no per-mailbox escape hatch left. Every mailbox filters."""
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'team@company.com',
-            'mailbox_type': 'shared',
         })
         self.assertTrue(self.processor._is_internal_domain('user@company.com', mailbox))
 
@@ -184,7 +183,6 @@ class TestAliasRouting(TransactionCase):
         """Without alias, email should be posted to partner chatter."""
         mailbox_no_alias = self.env['pan.mail.mailbox'].create({
             'email': 'noalias@company.com',
-            'mailbox_type': 'shared',
         })
 
         msg_dict = {
@@ -238,7 +236,6 @@ class TestHelpdeskRouting(TransactionCase):
         })
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'support@company.com',
-            'mailbox_type': 'shared',
             'route_to_team': True,  # Enable team routing
             'alias_id': cls.helpdesk_team.alias_id.id,
         })
@@ -290,7 +287,6 @@ class TestSavepointIsolation(TransactionCase):
         cls.processor = cls.env['pan.mail.fetcher']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'inbox@company.test',
-            'mailbox_type': 'shared',
         })
 
     def test_one_bad_message_does_not_poison_batch(self):
@@ -367,7 +363,6 @@ class TestCursorHoldsOnFailure(TransactionCase):
         cls.processor = cls.env['pan.mail.fetcher']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'inbox@company.test',
-            'mailbox_type': 'shared',
         })
         cls.mailbox.last_sync_date = datetime(2026, 5, 12, 9, 0, 0)
 

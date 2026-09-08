@@ -151,17 +151,17 @@ class MailProOAuthController(http.Controller):
         existing = Mailbox.with_context(active_test=False).search(
             [('email', '=ilike', email)], limit=1)
         if not existing:
+            # Personal by construction: the account created a moment ago
+            # carries this very address, which is what the type is derived from.
             mailbox = Mailbox.create({
                 'email': email,
                 'provider': provider,
-                'mailbox_type': 'personal',
                 'owner_user_id': user.id,
             })
             user.sudo().write({'x_default_mailbox_id': mailbox.id})
             _logger.info('[OAuth] Created personal mailbox %s for %s', email, user.login)
-        elif existing.mailbox_type == 'personal' and (
-                not existing.owner_user_id or existing.owner_user_id == user):
-            # Unowned, or this user's own archived one: the consent that just
-            # happened is the reason it exists, so it comes back.
+        elif existing.mailbox_type == 'personal' and existing.owner_user_id == user:
+            # This user's own archived one: the consent that just happened is
+            # the reason it exists, so it comes back.
             existing.write({'owner_user_id': user.id, 'active': True})
             _logger.info('[OAuth] Assigned existing mailbox %s to %s', email, user.login)

@@ -132,13 +132,23 @@ class PanMailMailbox(models.Model):
     # -------------------------------------------------------------------------
     # Mailbox Type Configuration
     # -------------------------------------------------------------------------
+    # Derived, not asked. No provider can answer "is this address personal or
+    # shared" reliably enough to build a form on: Graph needs a scope and a
+    # token with rights on the very mailbox being created, Gmail has no such
+    # thing as a shared mailbox, and IMAP has a login. What the module means by
+    # the word is a policy, who may send from here and with whose credentials,
+    # and that follows from how the mailbox came to be. A user's own address,
+    # created when they connect, is personal. Everything an admin types in by
+    # hand is the team's. Stored because every read path filters on it.
     mailbox_type = fields.Selection([
         ('personal', 'Personal'),
         ('shared', 'Shared'),
-    ], string='Type', default='personal', required=True,
-        help='Personal: Only the owner can send from this mailbox\n'
-             'Shared: All users send from this address; which credentials are used '
-             'depends on the provider')
+    ], string='Type', compute='_compute_mailbox_type', store=True, readonly=True,
+        help='Personal: the owner\'s own address, only they send from it.\n'
+             'Shared: everyone sends from this address; which credentials are '
+             'used depends on the provider.\n'
+             'Derived from the owner: personal when the address is one the '
+             'owner signed in with.')
 
     # Which mailbox sends the system email is a property of a mailbox, not a
     # third kind of mailbox. It used to be a Type value, which forced the
@@ -159,9 +169,43 @@ class PanMailMailbox(models.Model):
         'res.users',
         string='Owner',
         domain="[('x_pan_mail_connected', '=', True)]",
-        help='The user whose credentials this mailbox sends with.',
+        help='Their own address makes this their personal mailbox. On any '
+             'other address this is whose credentials read it, where the '
+             'provider needs a person\'s to do so.',
         index=True
     )
+
+    @api.depends('owner_user_id', 'owner_user_id.email', 'owner_user_id.login',
+                 'owner_user_id.x_pan_mail_account_ids.email', 'email',
+                 'is_notification_mailbox')
+    def _compute_mailbox_type(self):
+        """Personal when the address is the owner's own, shared otherwise.
+
+        "Own" is any address the owner has credentials for, or the one on
+        their user record: the connect flow creates the account with the
+        address the provider reported, so a mailbox created there always
+        matches. The notification mailbox counts as personal whatever its
+        address: it sends with its owner's credentials and is personal in
+        every respect but who may author through it (see
+        `_is_sendable_by`).
+
+        An address with no owner cannot be anybody's, so it is shared; an
+        owner on a *different* address is the person whose token reads it,
+        which is the Microsoft shared-mailbox shape.
+        """
+        for record in self:
+            owner = record.owner_user_id
+            if not owner:
+                record.mailbox_type = 'shared'
+                continue
+            if record.is_notification_mailbox:
+                record.mailbox_type = 'personal'
+                continue
+            own = {a.email for a in owner.x_pan_mail_account_ids if a.email}
+            own.update(filter(None, (owner.email, owner.login)))
+            address = (record.email or '').strip().lower()
+            record.mailbox_type = 'personal' if address and address in {
+                a.strip().lower() for a in own} else 'shared'
 
     # -------------------------------------------------------------------------
     # Sync Configuration
@@ -657,17 +701,19 @@ class PanMailMailbox(models.Model):
 
     @api.constrains('mailbox_type', 'is_notification_mailbox', 'owner_user_id', 'sync_received', 'sync_sent', 'provider')
     def _check_owner_required(self):
-        """Ensure an owner is set where the provider actually needs one."""
+        """Ensure an owner is set where the provider actually needs one.
+
+        A personal mailbox has one by construction (`_compute_mailbox_type`),
+        so only the notification mailbox and the reading shared mailbox can
+        lack one.
+        """
         for record in self:
             provider = record._get_client().provider_label()
-            if (record.mailbox_type == 'personal' or record.is_notification_mailbox) \
-                    and not record.owner_user_id:
+            if record.is_notification_mailbox and not record.owner_user_id:
                 raise ValidationError(_(
-                    '%(type)s mailbox requires an Owner. '
-                    'Please select a user with %(provider)s connected.',
-                    type=_('Notification') if record.is_notification_mailbox
-                    else record.mailbox_type.capitalize(),
-                    provider=provider,
+                    'Notification mailbox requires an Owner. '
+                    'Please select a user with %s connected.',
+                    provider,
                 ))
             # A shared mailbox needs an owner only where reading it means
             # borrowing a person's delegated token. On Gmail the shared address

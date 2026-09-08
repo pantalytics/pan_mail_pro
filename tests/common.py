@@ -119,8 +119,12 @@ class MailProTestCase(TransactionCase):
         )
         cls.portal_partner = cls.portal_user.partner_id
 
-        for user in (cls.notif_owner | cls.salesperson | cls.other_user):
+        for user in (cls.notif_owner | cls.other_user):
             cls.connect(user)
+        # The address a user signs in with is what makes a mailbox personal
+        # (`_compute_mailbox_type`), so the salesperson's grant carries the
+        # address of the personal mailbox below, as a real consent would.
+        cls.connect(cls.salesperson, email='sales@company.test')
 
         # Incoming sync is gated on internal domains being declared. A domain
         # nothing in this fixture uses, so the gate opens without turning any
@@ -128,19 +132,18 @@ class MailProTestCase(TransactionCase):
         cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
 
         # Mailboxes
+        # The type is derived: an owner on their own address is personal,
+        # no owner is shared. Nothing here sets it.
         cls.notification_mailbox = Mailbox.create({
             'email': 'notifications@company.test',
-            'mailbox_type': 'personal',
             'is_notification_mailbox': True,
             'owner_user_id': cls.notif_owner.id,
         })
         cls.shared_mailbox = Mailbox.create({
             'email': 'info@company.test',
-            'mailbox_type': 'shared',
         })
         cls.personal_mailbox = Mailbox.create({
             'email': 'sales@company.test',
-            'mailbox_type': 'personal',
             'owner_user_id': cls.salesperson.id,
         })
 
@@ -168,14 +171,15 @@ class MailProTestCase(TransactionCase):
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def connect(cls, user, provider='outlook'):
+    def connect(cls, user, provider='outlook', email=None):
         """Give `user` working credentials on `provider`.
 
         Written through the plain-text fields so the stored ciphertext is real
         Fernet - a hand-written encrypted value raises on the next read.
+        `email` is the address the grant is for; the user's own unless said.
         """
         return cls.env['pan.mail.account'].sudo().create({
-            'email': user.email or user.login,
+            'email': email or user.email or user.login,
             'provider': provider,
             'user_id': user.id,
             'refresh_token': 'fake-refresh',

@@ -276,7 +276,6 @@ class TestGmailSyncSendsNothing(MailProTestCase, QuietSyncMixin):
         self.mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'gmail_quiet@test.local',
             'provider': 'gmail',
-            'mailbox_type': 'personal',
             'owner_user_id': user.id,
             'sync_received': True,
             'sync_received_scope': 'all',
@@ -365,7 +364,6 @@ class TestImapSyncSendsNothing(MailProTestCase, QuietSyncMixin):
         self.mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'imap_quiet@company.test',
             'provider': 'imap',
-            'mailbox_type': 'shared',
             'sync_received': True,
             'sync_received_scope': 'all',
             'sync_sent': True,
