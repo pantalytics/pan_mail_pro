@@ -182,7 +182,7 @@ class PanMailMailbox(models.Model):
     # failure this module exists to prevent. This switch is only about email
     # that starts a *new* conversation.
     sync_received = fields.Boolean(
-        string='Sync other email',
+        string='Sync Other Email',
         default=False,
         help='Email that arrives here without continuing a conversation Odoo '
              'already has. Replies are always synced.',
@@ -207,10 +207,13 @@ class PanMailMailbox(models.Model):
     # contacts, not a contact list built from their outbox. `_gate_sync_scope`
     # is where that is refused.
     sync_sent = fields.Boolean(
-        string='Sync sent email',
+        string='Sync Sent Items',
         default=False,
-        help='Email you send from your own mail app appears on the contact in '
-             'Odoo. Only email to people who are already contacts.',
+        help='Reads back the Sent Items folder of your own mail app (Outlook, '
+             'Gmail or another client) and posts what it finds in Odoo. Two '
+             'kinds of mail qualify: a reply to a conversation Odoo already '
+             'has, and mail to a person who is already a contact. Mail to an '
+             'unknown address is never synced and never creates a contact.',
     )
 
     route_to_team = fields.Boolean(

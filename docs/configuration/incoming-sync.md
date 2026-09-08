@@ -15,11 +15,12 @@ Before enabling incoming sync:
 2. Open a mailbox
 3. Replies to email sent from Odoo always land on the record they answer, with
    no setting at all. The two switches are about the rest:
-   - **Receiving → Sync other email** - email that starts a new conversation.
+   - **Receiving → Sync Other Email** - email that starts a new conversation.
      When it is on, a second question appears: only from existing contacts, or
      from anyone (which turns every sender into a contact).
-   - **Sending → Sync sent email** - read the Sent folder back, so mail written
-     in Outlook lands on the contact it went to. Existing contacts only.
+   - **Sending → Sync Sent Items** - read the Sent Items folder of the user's own
+     mail app back into Odoo: replies to conversations Odoo already has, and mail
+     to people who are already contacts. Nothing else.
 4. Set the **Owner** (must have Microsoft connected)
 5. Configure routing (see below)
 6. Save

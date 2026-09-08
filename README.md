@@ -145,16 +145,17 @@ Replies to email sent from Odoo always land on the record they answer. That
 needs no setting. The two switches below are about everything else.
 
 1. Open a mailbox
-2. Under **Sending**, decide about **Sync sent email**:
+2. Under **Sending**, decide about **Sync Sent Items**:
    - Off (the default) - only mail written in Odoo is logged
-   - On - mail your people write in Outlook, Gmail or their mail client is read
-     back from the Sent folder and posted on the contact it went to. Only on
-     contacts that already exist: emailing a stranger from your mail app never
-     creates one in Odoo.
+   - On - the Sent Items folder of your people's own mail app (Outlook, Gmail or
+     another client) is read back into Odoo. Two kinds of mail qualify: a reply
+     to a conversation Odoo already has, and mail to a person who is already a
+     contact. Mail to an unknown address is never synced and never creates a
+     contact.
 
    Mail written in Odoo always goes out through the mailbox. There is no setting
    for it, because that is what a mailbox is.
-3. Under **Receiving**, decide about **Sync other email**:
+3. Under **Receiving**, decide about **Sync Other Email**:
    - Off (the default) - only replies come in
    - On - email that starts a new conversation comes in too, and a second
      question appears: **Only from people who are already contacts**, or **From
@@ -197,7 +198,7 @@ Check logs for "Threading reply to" entries. If replies go to the wrong record, 
 ### Emails not syncing
 
 1. Check **Settings** → **Technical** → **Scheduled Actions** → "Mail Pro: Fetch Incoming Mail"
-2. Verify the mailbox has usable credentials, and that **Sync other email** is on if the mail you are missing is not a reply
+2. Verify the mailbox has usable credentials, and that **Sync Other Email** is on if the mail you are missing is not a reply
 3. Verify the mailbox has usable credentials — its **Status** column says so
 4. Check logs for `[Incoming Mail]` entries
 
