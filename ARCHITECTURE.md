@@ -423,8 +423,7 @@ resolved in the context for the ones after it.
 | 3 | `_gate_counterpart` | a sent item with no recipient | no |
 | 4 | `_gate_internal_domain` | every party to the mail is ours | no |
 | 5 | `_gate_blocked_contact` | `x_email_sync_blocked` | no, deliberately |
-| 6 | `_gate_internal_user` | the address has an Odoo user | no |
-| 7 | `_gate_wanted` | not a reply, and not what the mailbox asked for | **yes** |
+| 6 | `_gate_wanted` | not a reply, and not what the mailbox asked for | **yes** |
 
 Gate 3 is where direction lives: the inbox reads the `From`, Sent Items reads
 the `To`. It collects the candidates and gate 4 chooses among them, so the whole
@@ -440,8 +439,8 @@ A mail refused for its sender comes in later by widening the mailbox's sync
 mode, which re-reads it from the provider.
 
 Adding a rule means adding a method and a line to `_gate_rules()`. Before this
-existed the seven decisions were bare `return False` statements strewn through
-a two-hundred-line method, which is how gate 4 came to guard one folder and not
+existed the decisions were bare `return False` statements strewn through a
+two-hundred-line method, which is how gate 4 came to guard one folder and not
 the other.
 
 Gate 1 is broader than its name: "already in Odoo" is answered by
@@ -480,8 +479,11 @@ colleague with an Odoo account and a bare `planning@company.com` with no user
 are both simply not-external. The domain gate is the one that settles it, which
 is what makes a shared or functional address behave like the colleague it
 belongs to; asking `partner.user_ids` is precisely what let `planning@` through
-for months. The `user_ids` gate stays as a narrower second net, for the
-colleague whose Odoo login is on a domain the list does not carry.
+for months. A second gate that asked `partner.user_ids` anyway shipped until
+19.0.7.11.2 and was deleted: a portal user is a customer, so it threw away the
+mail of exactly the contacts a customer had given portal access to. The case it
+covered -- a colleague writing from a private address -- is dropped on purpose.
+A colleague in the chatter is better than customer mail in nobody's inbox.
 
 **CC does not enter the decision.** A mail to `planning@` with a customer in Cc
 is not logged, so a real customer mail goes missing. That is a completeness

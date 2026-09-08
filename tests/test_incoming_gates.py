@@ -93,7 +93,6 @@ class TestIncomingGates(MailProTestCase):
                 '_gate_counterpart',
                 '_gate_internal_domain',
                 '_gate_blocked_contact',
-                '_gate_internal_user',
                 '_gate_wanted',
             ],
             "the ladder order is the contract; change it deliberately or not at all",
@@ -109,11 +108,11 @@ class TestIncomingGates(MailProTestCase):
             )
 
     def test_the_counterpart_gate_runs_before_everything_that_reads_it(self):
-        """Gates 4 to 7 ask about the address gate 3 resolved."""
+        """Gates 4 to 6 ask about the address gate 3 resolved."""
         order = self.processor._gate_rules()
         counterpart = order.index('_gate_counterpart')
         for reader in ('_gate_internal_domain', '_gate_blocked_contact',
-                       '_gate_internal_user', '_gate_wanted'):
+                       '_gate_wanted'):
             self.assertGreater(
                 order.index(reader), counterpart,
                 "%s reads the counterpart, so it must run after it" % reader,
@@ -121,10 +120,6 @@ class TestIncomingGates(MailProTestCase):
 
     def test_the_partner_gate_runs_before_the_gates_that_read_it(self):
         order = self.processor._gate_rules()
-        self.assertGreater(
-            order.index('_gate_internal_user'), order.index('_gate_blocked_contact'),
-            "_gate_blocked_contact resolves the partner the internal-user gate reads",
-        )
         self.assertGreater(
             order.index('_gate_wanted'), order.index('_gate_blocked_contact'),
             "_gate_wanted reads the partner the blocked-contact gate resolved",
@@ -274,6 +269,23 @@ class TestIncomingGates(MailProTestCase):
         )
 
     def test_a_clean_message_passes_the_whole_ladder(self):
+        self.assertIsNone(self.processor._refuse(self._ctx()))
+
+    def test_a_customer_with_a_portal_login_is_still_a_customer(self):
+        """#103. A gate refused every address whose partner had a user, so a
+        customer given portal access lost the mail they sent from that same
+        address -- replies to our own threads included. Who is a colleague is
+        the domain list's question, and it is asked one gate earlier."""
+        partner = self.env['res.partner'].create({
+            'name': 'External Customer', 'email': CUSTOMER,
+        })
+        self.env['res.users'].create({
+            'name': 'External Customer',
+            'login': CUSTOMER,
+            'partner_id': partner.id,
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+        })
+
         self.assertIsNone(self.processor._refuse(self._ctx()))
 
     def test_skip_defaults_to_a_visible_refusal(self):
