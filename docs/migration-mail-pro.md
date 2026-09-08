@@ -87,8 +87,23 @@ Both can be renamed later as isolated changes with their own migrations.
 
    **Already renamed and still seeing "Outlook Pro"?** Re-run the script. Every
    statement is idempotent and the metadata one is keyed on the new name, so it
-   repairs a database that took an earlier version. Apps → Update Apps List with
-   developer mode on does the same thing from the UI.
+   repairs a database that took an earlier version.
+
+   Note that **"Update Apps List" does not do the same thing from the UI**, and
+   believing it did is how a production database sat on the old name for weeks.
+   These three columns are translated, so they are `jsonb` rather than text.
+   `update_list()` writes the manifest term into the *source* language only and
+   never touches the other keys. A database whose users read `en_GB` therefore
+   keeps seeing whatever `en_GB` picked up while the module was still called
+   Outlook Pro, however often the list is refreshed. To see what a database
+   actually holds:
+
+   ```
+   SELECT jsonb_pretty(shortdesc) FROM ir_module_module WHERE name = 'pan_mail_pro';
+   ```
+
+   If any key other than the correct source term appears there, the script is
+   the fix, not the apps list.
 
 5. **Deploy the new code**, either through the suite (see
    `odoo-pantalytics-suite`) or by updating the module source directly.
