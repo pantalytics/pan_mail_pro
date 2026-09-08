@@ -88,14 +88,25 @@ class TestIncomingGates(MailProTestCase):
         self.assertEqual(
             self.processor._gate_rules(),
             [
-                '_gate_duplicate',
                 '_gate_odoo_originated',
+                '_gate_duplicate',
                 '_gate_counterpart',
                 '_gate_internal_domain',
                 '_gate_blocked_contact',
                 '_gate_wanted',
             ],
             "the ladder order is the contract; change it deliberately or not at all",
+        )
+
+    def test_the_loop_guard_runs_before_the_duplicate_gate(self):
+        """Issue #107: a gate that reads the mail before refusing it cannot sit
+        behind a gate that refuses it earlier. The sent copy always matches the
+        duplicate gate, because the send path indexed its Message-ID."""
+        order = self.processor._gate_rules()
+        self.assertLess(
+            order.index('_gate_odoo_originated'), order.index('_gate_duplicate'),
+            "the loop guard re-indexes the sent copy; behind the duplicate "
+            "gate it never runs",
         )
 
     def test_every_named_gate_exists(self):
