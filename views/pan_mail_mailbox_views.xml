@@ -44,11 +44,6 @@
                             <!-- Inherited from the one provider this database
                                  runs on; only the IMAP button below reads it. -->
                             <field name="provider" invisible="1"/>
-                            <field name="health_status" string="Status" widget="badge"
-                                   decoration-success="health_status == 'healthy'"
-                                   decoration-warning="health_status == 'warning'"
-                                   decoration-danger="health_status == 'error'"
-                                   readonly="1"/>
                             <label for="mailbox_type" string="Type"/>
                             <div>
                                 <field name="mailbox_type" widget="radio" nolabel="1" class="d-inline-block"/>
@@ -82,103 +77,6 @@
                         </group>
                     </group>
 
-                    <!-- SECTION 2: SENDING (not for notification) -->
-                    <!-- Two ways out of this address, and only the second one
-                         is a choice. Sending from Odoo is what the mailbox is
-                         for; a toggle there would be a way to break sending
-                         from a settings page, so it is stated and not asked.
-                         Reading back what the owner wrote in their own mail app
-                         is a copy of correspondence Odoo was never part of, so
-                         it is asked separately and starts at off. -->
-                    <group string="Sending" invisible="is_notification_mailbox">
-                        <group>
-                            <div colspan="2" class="text-muted mb-3">
-                                Messages you write in Odoo are always sent from this address.
-                            </div>
-                            <label for="sync_sent"/>
-                            <div>
-                                <field name="sync_sent" widget="boolean_toggle"
-                                       nolabel="1" class="d-inline-block"/>
-                                <div class="text-muted mt-1">
-                                    Sync Sent Items from your email program to Odoo.
-                                </div>
-                                <div class="text-muted mt-1" invisible="not sync_sent">
-                                    Only replies to emails that are already in Odoo.
-                                    They land on the record they continue. Mail that
-                                    starts a new conversation stays out.
-                                </div>
-                            </div>
-                        </group>
-                        <group/>
-                    </group>
-
-                    <!-- SECTION 3: RECEIVING (not for notification) -->
-                    <!-- Three steps, each a level deeper than the last: what
-                         happens with no setting at all, then one switch, then
-                         the question that switch opens. The answer that turns
-                         every sender into a contact is two deliberate clicks
-                         away and says out loud what it does. -->
-                    <group string="Receiving" invisible="is_notification_mailbox">
-                        <group>
-                            <div colspan="2" class="text-muted mb-3">
-                                Replies to email sent from Odoo always appear on the
-                                record they belong to.
-                            </div>
-                            <label for="sync_received"/>
-                            <div>
-                                <field name="sync_received" widget="boolean_toggle"
-                                       nolabel="1" class="d-inline-block"/>
-                                <div class="text-muted mt-1">
-                                    Also sync email that starts a new conversation.
-                                </div>
-                            </div>
-                            <div colspan="2" class="mt-3" invisible="not sync_received">
-                                <span class="o_form_label">Which email should be synced?</span>
-                                <field name="sync_received_scope" widget="radio"
-                                       nolabel="1" class="mt-1"/>
-                                <div class="alert alert-warning mt-2 mb-0" role="alert"
-                                     invisible="sync_received_scope != 'all'">
-                                    Every sender becomes a contact in Odoo, newsletters
-                                    and private email included. Pick this only for an
-                                    address that exists to hear from strangers.
-                                </div>
-                            </div>
-                        </group>
-                        <group/>
-                    </group>
-
-                    <!-- SECTION 4: SYNC -->
-                    <group string="Sync" invisible="is_notification_mailbox">
-                        <group>
-                            <field name="sync_start_date"/>
-                            <field name="last_sync_date" readonly="1"
-                                   invisible="not last_sync_date"/>
-                            <field name="last_sent_sync_date" readonly="1"
-                                   invisible="not sync_sent or not last_sent_sync_date"/>
-                        </group>
-                        <group/>
-                    </group>
-
-                    <!-- SECTION 5: ROUTING -->
-                    <group string="Routing" invisible="is_notification_mailbox">
-                        <group>
-                            <label for="route_to_team"/>
-                            <div>
-                                <field name="route_to_team" widget="boolean_toggle" nolabel="1" class="d-inline-block"/>
-                                <div class="text-muted mt-1">
-                                    Off: email lands on the sender's contact.
-                                    On: it goes to the team behind the alias you pick.
-                                </div>
-                            </div>
-                            <field name="alias_id" string="Team"
-                                   invisible="not route_to_team"
-                                   required="route_to_team"
-                                   options="{'no_create': True, 'no_create_edit': True}"
-                                   placeholder="Select team..."/>
-                        </group>
-                        <group/>
-                    </group>
-
                     <!-- BUTTONS -->
                     <group>
                         <group>
@@ -199,13 +97,131 @@
                         <group/>
                     </group>
 
-                    <!-- Error alert -->
-                    <div class="alert alert-danger" role="alert" invisible="state != 'error'">
-                        <strong>Sync failed:</strong> <field name="error_message" nolabel="1" readonly="1"/>
-                    </div>
+                    <notebook>
+                        <!-- Everything a person decides. The notification
+                             mailbox decides nothing here, so it has no tab. -->
+                        <page string="Sync Settings" name="sync_settings"
+                              invisible="is_notification_mailbox">
+                            <!-- SECTION 2: SENDING (not for notification) -->
+                            <!-- Two ways out of this address, and only the second one
+                                 is a choice. Sending from Odoo is what the mailbox is
+                                 for; a toggle there would be a way to break sending
+                                 from a settings page, so it is stated and not asked.
+                                 Reading back what the owner wrote in their own mail app
+                                 is a copy of correspondence Odoo was never part of, so
+                                 it is asked separately and starts at off. -->
+                            <group string="Sending">
+                                <group>
+                                    <div colspan="2" class="text-muted mb-3">
+                                        Messages you write in Odoo are always sent from this address.
+                                    </div>
+                                    <label for="sync_sent"/>
+                                    <div>
+                                        <field name="sync_sent" widget="boolean_toggle"
+                                               nolabel="1" class="d-inline-block"/>
+                                        <div class="text-muted mt-1">
+                                            Sync Sent Items from your email program to Odoo.
+                                        </div>
+                                        <div class="text-muted mt-1" invisible="not sync_sent">
+                                            Only replies to emails that are already in Odoo.
+                                            They land on the record they continue. Mail that
+                                            starts a new conversation stays out.
+                                        </div>
+                                    </div>
+                                </group>
+                                <group/>
+                            </group>
+
+                            <!-- SECTION 3: RECEIVING (not for notification) -->
+                            <!-- Three steps, each a level deeper than the last: what
+                                 happens with no setting at all, then one switch, then
+                                 the question that switch opens. The answer that turns
+                                 every sender into a contact is two deliberate clicks
+                                 away and says out loud what it does. -->
+                            <group string="Receiving">
+                                <group>
+                                    <div colspan="2" class="text-muted mb-3">
+                                        Replies to email sent from Odoo always appear on the
+                                        record they belong to.
+                                    </div>
+                                    <label for="sync_received"/>
+                                    <div>
+                                        <field name="sync_received" widget="boolean_toggle"
+                                               nolabel="1" class="d-inline-block"/>
+                                        <div class="text-muted mt-1">
+                                            Also sync email that starts a new conversation.
+                                        </div>
+                                    </div>
+                                    <div colspan="2" class="mt-3" invisible="not sync_received">
+                                        <span class="o_form_label">Which email should be synced?</span>
+                                        <field name="sync_received_scope" widget="radio"
+                                               nolabel="1" class="mt-1"/>
+                                        <div class="alert alert-warning mt-2 mb-0" role="alert"
+                                             invisible="sync_received_scope != 'all'">
+                                            Every sender becomes a contact in Odoo, newsletters
+                                            and private email included. Pick this only for an
+                                            address that exists to hear from strangers.
+                                        </div>
+                                    </div>
+                                </group>
+                                <group/>
+                            </group>
+
+                            <!-- SECTION 4: SYNC -->
+                            <group string="Sync">
+                                <group>
+                                    <field name="sync_start_date"/>
+                                </group>
+                                <group/>
+                            </group>
+
+                            <!-- SECTION 5: ROUTING -->
+                            <group string="Routing">
+                                <group>
+                                    <label for="route_to_team"/>
+                                    <div>
+                                        <field name="route_to_team" widget="boolean_toggle" nolabel="1" class="d-inline-block"/>
+                                        <div class="text-muted mt-1">
+                                            Off: email lands on the sender's contact.
+                                            On: it goes to the team behind the alias you pick.
+                                        </div>
+                                    </div>
+                                    <field name="alias_id" string="Team"
+                                           invisible="not route_to_team"
+                                           required="route_to_team"
+                                           options="{'no_create': True, 'no_create_edit': True}"
+                                           placeholder="Select team..."/>
+                                </group>
+                                <group/>
+                            </group>
+                        </page>
+
+                        <!-- Everything the mailbox reports back. One place,
+                             instead of a badge in the corner and an alert
+                             at the bottom the corner did not explain. -->
+                        <page string="Status" name="status">
+                            <group>
+                                <group>
+                                    <field name="health_status" widget="badge"
+                                           decoration-success="health_status == 'healthy'"
+                                           decoration-warning="health_status == 'warning'"
+                                           decoration-danger="health_status == 'error'"
+                                           readonly="1"/>
+                                    <field name="state" readonly="1"/>
+                                    <field name="last_sync_date" readonly="1"
+                                           invisible="not last_sync_date"/>
+                                    <field name="last_sent_sync_date" readonly="1"
+                                           invisible="not sync_sent or not last_sent_sync_date"/>
+                                </group>
+                                <group/>
+                            </group>
+                            <div class="alert alert-danger" role="alert" invisible="state != 'error'">
+                                <strong>Sync failed:</strong> <field name="error_message" nolabel="1" readonly="1"/>
+                            </div>
+                        </page>
+                    </notebook>
 
                     <!-- Hidden fields -->
-                    <field name="state" invisible="1"/>
                     <field name="active" invisible="1"/>
                 </sheet>
             </form>
