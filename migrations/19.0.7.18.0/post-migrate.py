@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Derive the mailbox type from the owner, once, for the rows that predate it.
 
-19.0.7.17.0 turns `mailbox_type` from a radio button into a stored compute:
+19.0.7.18.0 turns `mailbox_type` from a radio button into a stored compute:
 personal when the address is one the owner signed in with (or their user
 record carries), shared otherwise, and the notification mailbox personal
 whatever its address. Nothing a provider can say answers the question better
@@ -33,11 +33,11 @@ def migrate(cr, version):
     flipped = [m for m in mailboxes if m.mailbox_type != before[m.id]]
     for m in flipped:
         _logger.warning(
-            '[Mail Pro] 19.0.7.17.0: mailbox %s is now %s (was %s): owner %s.',
+            '[Mail Pro] 19.0.7.18.0: mailbox %s is now %s (was %s): owner %s.',
             m.email, m.mailbox_type, before[m.id],
             m.owner_user_id.login if m.owner_user_id else '-',
         )
     _logger.info(
-        '[Mail Pro] 19.0.7.17.0: mailbox type derived on %s mailbox(es), %s changed.',
+        '[Mail Pro] 19.0.7.18.0: mailbox type derived on %s mailbox(es), %s changed.',
         len(mailboxes), len(flipped),
     )

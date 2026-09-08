@@ -295,7 +295,7 @@ module means by the word is a policy, who may send from here and with whose
 credentials, and that follows from the owner. An owner on their own address
 (one their grant or their user record carries) is personal. No owner, or an
 owner on some other address, is shared. The notification mailbox is personal
-whatever its address. 19.0.7.17.0 removed the radio button and recomputed the
+whatever its address. 19.0.7.18.0 removed the radio button and recomputed the
 rows that predate the rule.
 
 **Personal** — auto-created when a user connects (if the admin setting allows).
