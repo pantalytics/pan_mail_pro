@@ -27,6 +27,7 @@ A database runs on one provider.
 | Feature | Description |
 |---------|-------------|
 | Send From dropdown | Choose which mailbox to send from in the composer |
+| Test send | One button on every mailbox and on My Profile, so a broken address is found before a customer finds it |
 | 2-way sync | Inbox and Sent Items sync automatically, every minute |
 | Reply threading | Replies attach to the correct record |
 | Personal mailboxes | Auto-created when users connect |

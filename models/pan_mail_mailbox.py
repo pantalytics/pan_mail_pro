@@ -204,7 +204,7 @@ class PanMailMailbox(models.Model):
     # logged onto a contact Odoo already has or not at all: emailing a stranger
     # from Outlook is not a statement that they belong in the database, and the
     # customer who switches this on wants their correspondence with known
-    # contacts, not a contact list built from their outbox. `_gate_sync_scope`
+    # contacts, not a contact list built from their outbox. `_gate_wanted`
     # is where that is refused.
     sync_sent = fields.Boolean(
         string='Sync sent email',

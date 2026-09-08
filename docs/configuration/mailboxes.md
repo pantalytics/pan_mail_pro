@@ -12,8 +12,9 @@ Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow
 
 - **Purpose:** Individual user's email
 - **Visibility:** Only the owner
-- **OAuth:** Uses owner's token
-- **Creation:** Auto-created when user connects Microsoft account
+- **Credentials:** the owner's own sign-in, or on IMAP/SMTP the account's login and password
+- **Creation:** Auto-created when the user connects their account
+  (IMAP/SMTP: created by an administrator, alongside the account)
 
 ### Shared Mailbox
 
@@ -64,19 +65,19 @@ account.
 
 1. Click **Create**
 2. Fill in:
-   - **Email Address:** The address, as the provider knows it
-   - **Display Name:** Shown in the Send From dropdown
+   - **Mailbox:** The address, as the provider knows it. It is also what the
+     Send From dropdown shows, so there is no separate display name
    - **Type:** Personal or Shared
    - **Owner:** The user whose credentials the mailbox sends with (Personal,
      and Shared on Microsoft 365)
 3. Save
+4. Press **Send Test Email** to prove the address can actually send
 
 ## Mailbox Settings
 
 | Field | Description |
 |-------|-------------|
-| Email Address | The address to send from |
-| Display Name | Friendly name shown in dropdowns |
+| Mailbox | The address to send from, and the label in every dropdown |
 | Type | Personal or Shared |
 | Notification Mailbox | Ticked on the one mailbox that sends the system email |
 | Owner | The user whose credentials are used |
