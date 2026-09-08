@@ -78,7 +78,7 @@ and the provider's console issues a new client secret for it.
 
 You can invite users before any of this is finished. Mail Pro leaves SMTP alone
 until the first mailbox exists, and once it does, invitations and password
-resets wait in the queue until step 5 is done rather than being dropped.
+resets wait in the queue until step 3 is done rather than being dropped.
 
 ### IMAP/SMTP mailboxes (Soverin and friends)
 
@@ -111,8 +111,9 @@ filed there, so it shows up in your own mail client too.
 4. A personal mailbox is created for the address you signed in with, and set as
    your **Send from**
 
-An admin can also send everybody the invitation from **Settings → Mail Pro →
-Your Team**; the link in it drops each user straight on the consent screen.
+An admin can also send everybody the invitation with **Send Mail Pro Invite**
+on the Users list (Settings → Mail Pro → Users); the link in it drops each user
+straight on the consent screen.
 
 **Note:** until your account is connected and a Send from mailbox is set, the
 email composer shows a warning banner saying so.
@@ -121,7 +122,7 @@ email composer shows a warning banner saying so.
 
 ## Mailbox Configuration
 
-Go to **Settings** → **Mail Pro** → **Manage Mailbox List**
+Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow on step 3 of the checklist)
 
 ### Mailbox Types
 
@@ -271,5 +272,6 @@ docker-compose start odoo
 ```
 
 41 test files cover five areas: the provider contract, each provider's
-wire behaviour, the incoming pipeline (fetch → filter → match → post), and
-sending, threading, the composer and onboarding. See ARCHITECTURE.md §12.
+wire behaviour, the incoming pipeline (fetch → filter → match → post),
+sending, threading, the composer and onboarding, and the migration scripts.
+See ARCHITECTURE.md §12.

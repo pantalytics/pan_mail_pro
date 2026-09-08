@@ -48,7 +48,7 @@
                     <div class="alert alert-info" role="alert" invisible="provider == 'imap'">
                         These credentials are granted through the provider's consent screen.
                         Connect the account from
-                        <b>My Profile → Mail Pro</b> (or Settings → Mail Pro for the admin flow).
+                        <b>My Profile → Mail Pro</b>, or with <b>Sign In Myself</b> on the provider form.
                     </div>
 
                     <notebook invisible="provider != 'imap'">

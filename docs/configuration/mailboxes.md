@@ -4,7 +4,7 @@ Mailboxes define which email addresses can be used to send and receive emails in
 
 ## Accessing Mailbox Configuration
 
-Go to **Settings → Mail Pro → Manage Mailbox List**
+Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow on step 3 of the checklist)
 
 ## Mailbox Types
 
