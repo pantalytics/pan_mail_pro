@@ -319,9 +319,21 @@ class TestSentCopyReindexes(TransactionCase):
         message.update(overrides)
         return message
 
+    def _ctx(self, full_message, **overrides):
+        ctx = {
+            'mailbox': self.mailbox,
+            'folder': 'sent',
+            'is_outgoing': True,
+            'message': full_message,
+            'internet_message_id': full_message.get('message_id'),
+            'force_import': False,
+            'full_message': full_message,
+        }
+        ctx.update(overrides)
+        return ctx
+
     def _gate(self, full_message):
-        ctx = {'mailbox': self.mailbox, 'full_message': full_message}
-        return self.fetcher._gate_odoo_originated(ctx)
+        return self.fetcher._gate_odoo_originated(self._ctx(full_message))
 
     def test_the_mail_is_still_refused(self):
         """Harvesting the ids must not turn the loop guard into an import."""
@@ -385,3 +397,137 @@ class TestSentCopyReindexes(TransactionCase):
         self.assertFalse(self.env['pan.mail.thread.link'].search_count([
             ('mailbox_id', '=', self.mailbox.id),
         ]))
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestSentCopyReachesTheReindex(TransactionCase):
+    """The ladder, not one gate. Issue #107.
+
+    `_gate_odoo_originated` was proven correct in isolation and unreachable in
+    place: it sat behind `_gate_duplicate`, and the sent copy is a duplicate by
+    construction because the send path indexes the Message-ID the provider
+    minted for the draft — which on Microsoft is the id the sent mail keeps.
+    Every test here goes through `_refuse`, seeded with the index state a send
+    actually leaves behind, because that is the only shape in which the bug is
+    visible.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.fetcher = cls.env['pan.mail.fetcher']
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'support@company.test',
+            'mailbox_type': 'shared',
+        })
+        cls.partner = cls.env['res.partner'].create({
+            'name': 'External Customer', 'email': 'customer@example.com',
+        })
+        cls.message = cls.partner.with_context(
+            mail_create_nosubscribe=True, mail_notrack=True,
+        ).message_post(body='<p>hi</p>', message_type='email',
+                       subtype_xmlid='mail.mt_comment')
+        cls.wire_id = '<DU0PR09MB8199@outlook.com>'
+
+    def _index_the_send(self):
+        """Exactly what `mail.mail._index_sent_message` leaves behind.
+
+        Odoo's own Message-ID under `odoo`, the one Graph minted for the draft
+        under `provider`, and a thread link on the draft's conversationId.
+        """
+        Ref = self.env['pan.mail.message.ref']
+        Ref.record(self.message, self.message.message_id, source='odoo')
+        Ref.record(self.message, self.wire_id, source='provider')
+        self.env['pan.mail.thread.link'].record_all(
+            mailbox=self.mailbox,
+            thread_ids=['CONV-DRAFT'],
+            model='res.partner',
+            res_id=self.partner.id,
+            message=self.message,
+        )
+
+    def _sent_copy(self):
+        """The Sent Items copy, carrying the handles the provider really used."""
+        return {
+            'provider_message_id': 'GRAPH-SENT-1',
+            'message_id': self.wire_id,
+            'thread_id': 'CONV-SENT',
+            'subject': 'Question',
+            'headers': {
+                'x-odoo-model': 'res.partner',
+                'x-odoo-record-id': str(self.partner.id),
+                'x-odoo-message-id': str(self.message.id),
+            },
+        }
+
+    def _ctx(self, full_message):
+        return {
+            'mailbox': self.mailbox,
+            'folder': 'sent',
+            'is_outgoing': True,
+            'message': full_message,
+            'internet_message_id': full_message.get('message_id'),
+            'force_import': False,
+            'full_message': full_message,
+        }
+
+    def test_the_loop_guard_refuses_the_sent_copy_not_the_duplicate_gate(self):
+        """The bug, stated as an assertion about which gate answers."""
+        self._index_the_send()
+
+        skip = self.fetcher._refuse(self._ctx(self._sent_copy()))
+
+        self.assertEqual(skip.reason, 'odoo_originated')
+
+    def test_the_real_thread_handle_is_linked_through_the_ladder(self):
+        """The re-index runs where it never could before."""
+        self._index_the_send()
+
+        self.fetcher._refuse(self._ctx(self._sent_copy()))
+
+        link = self.env['pan.mail.thread.link'].search([
+            ('mailbox_id', '=', self.mailbox.id),
+            ('thread_id', '=', 'CONV-SENT'),
+        ])
+        self.assertEqual(link.model, 'res.partner')
+        self.assertEqual(link.res_id, self.partner.id)
+
+    def test_the_mail_still_does_not_enter(self):
+        """Reachable is not the same as permitted."""
+        self._index_the_send()
+
+        self.assertTrue(self.fetcher._refuse(self._ctx(self._sent_copy())))
+
+    def test_a_message_we_merely_imported_costs_no_provider_call(self):
+        """The duplicate gate's cheapness is the reason it was first.
+
+        A mail already imported has no `odoo` ref, so the loop guard answers
+        from the index and never reaches for the message.
+        """
+        self.env['pan.mail.message.ref'].record(
+            self.message, '<imported@example.com>', source='provider')
+        ctx = {
+            'mailbox': self.mailbox,
+            'folder': 'inbox',
+            'is_outgoing': False,
+            'message': {'provider_message_id': 'GRAPH-IN-1'},
+            'internet_message_id': '<imported@example.com>',
+            'force_import': False,
+        }
+
+        with patch.object(type(self.fetcher), '_full_message', autospec=True,
+                          side_effect=AssertionError('fetched the message')):
+            skip = self.fetcher._refuse(ctx)
+
+        self.assertEqual(skip.reason, 'duplicate')
+
+    def test_an_unknown_message_is_read_by_the_loop_guard(self):
+        """No index entry means it gets fetched downstream anyway."""
+        copy = self._sent_copy()
+        copy['message_id'] = '<never-seen@outlook.com>'
+
+        skip = self.fetcher._refuse(self._ctx(copy))
+
+        self.assertEqual(skip.reason, 'odoo_originated')
+

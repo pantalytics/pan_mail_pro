@@ -418,8 +418,8 @@ resolved in the context for the ones after it.
 
 | # | Gate | Refuses | Leaves a trace |
 |---|------|---------|----------------|
-| 1 | `_gate_duplicate` | Message-ID already in `mail.message` | no |
-| 2 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back | no |
+| 1 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back | no |
+| 2 | `_gate_duplicate` | Message-ID already in `mail.message` | no |
 | 3 | `_gate_counterpart` | a sent item with no recipient | no |
 | 4 | `_gate_internal_domain` | every party to the mail is ours | no |
 | 5 | `_gate_blocked_contact` | `x_email_sync_blocked` | no, deliberately |
@@ -640,7 +640,12 @@ Three more places back this up, all provider-neutral except the last:
   (`_gate_odoo_originated`) reads the Sent Items copy before refusing it: that
   is the message *as it left*, so its real Message-ID and real thread handle
   replace whatever the draft promised. `X-Odoo-Message-Id` is what links it
-  back, which is why that header is on `HEADER_ALLOWLIST`.
+  back, which is why that header is on `HEADER_ALLOWLIST`. It is the *first*
+  gate for that reason: the sent copy is a duplicate by construction, because
+  the send path indexed the Message-ID Graph minted for the draft and the sent
+  mail keeps it, so behind the duplicate gate this correction never ran. It
+  still pays no round-trip for the mail that gate refuses — `_may_be_own_copy`
+  answers from the index.
 - **The routing log says what the matcher had.** `reference_count` and
   `thread_id` on every row, so "the headers arrived empty" is distinguishable
   from "no rule matched". Those two used to look identical and telling them
