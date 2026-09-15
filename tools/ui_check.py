@@ -106,6 +106,17 @@ class Checks:
         if 'Pantalytics B.V.' not in text:
             self.fail('About does not carry the copyright line')
 
+        # Pantalytics Account: on a database nobody has linked, one way in and
+        # nothing of the pending or connected states leaking onto the screen.
+        connect = [b for b in block.query_selector_all('button')
+                   if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
+        if len(connect) != 1:
+            self.fail(f'Pantalytics Account shows {len(connect)} Connect buttons, expected 1')
+        for leaked in ('Check Approval', 'Disconnect'):
+            if any(b.is_visible() and b.inner_text().strip() == leaked
+                   for b in block.query_selector_all('button')):
+                self.fail(f'an unlinked database shows "{leaked}"')
+
     # -- Every menu this module adds -----------------------------------------
 
     def menus(self):
