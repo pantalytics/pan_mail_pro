@@ -49,10 +49,12 @@ _logger = logging.getLogger(__name__)
 
 LICENSE_URL = 'https://app.mailpro.pantalytics.com'
 
-# The verifying half of the key our server signs entitlements with. Publishing
-# it is safe; it can only check a signature, never make one. Empty until the
-# signing key exists, and empty means no entitlement is ever trusted.
-PUBLIC_KEY = ''
+# The verifying half of the key app.mailpro.pantalytics.com signs entitlements
+# with (generated 2026-09-15 by mail-pro-admin's deploy/bootstrap.sh; the private
+# half lives only in that server's deploy/.env). Publishing it is safe: it can
+# only check a signature, never make one. Rotating the signing key means
+# shipping a module with the new value here.
+PUBLIC_KEY = 'ZWLGGpks2iRjFguGsGlhpDl64ekFiDCM7L/O/g3xK/8='
 
 # Deployment-level overrides for testing against a staging server, read from
 # the environment like PAN_MAIL_ENCRYPTION_KEY. Never a settings field: a wrong
