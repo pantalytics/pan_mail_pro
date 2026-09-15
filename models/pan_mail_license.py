@@ -47,7 +47,7 @@ from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 
-LICENSE_URL = 'https://mailpro.pantalytics.com'
+LICENSE_URL = 'https://app.mailpro.pantalytics.com'
 
 # The verifying half of the key our server signs entitlements with. Publishing
 # it is safe; it can only check a signature, never make one. Empty until the
