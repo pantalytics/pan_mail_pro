@@ -168,6 +168,56 @@
                         </div>
                     </div>
 
+                    <h2>Pantalytics Account</h2>
+                    <!-- Not a setup step: mail flows without it. One primary
+                         action per state, and the code is the biggest thing on
+                         screen while it is waiting, because it gets read off
+                         here and typed somewhere else. -->
+                    <div class="row mt-3 o_settings_container">
+                        <div class="col-12 o_setting_box o_mailpro_about">
+                            <div invisible="x_license_state != 'not_connected'">
+                                <div class="text-muted mb-2">
+                                    Link this database to your Pantalytics account. You sign in and
+                                    approve on our site; there is no key to copy.
+                                </div>
+                                <button name="action_license_connect" type="object"
+                                        string="Connect to Pantalytics" class="btn-primary"/>
+                            </div>
+                            <div invisible="x_license_state != 'pending'">
+                                <div class="mb-1">1. Open this page and sign in with your Pantalytics account:</div>
+                                <field name="x_license_verify_url" widget="url" nolabel="1" readonly="1"/>
+                                <div class="mt-2 mb-1">2. Enter this code and approve:</div>
+                                <div class="fs-3 fw-bold">
+                                    <field name="x_license_user_code" nolabel="1" readonly="1"/>
+                                </div>
+                                <div class="mt-2">
+                                    <button name="action_license_check" type="object"
+                                            string="Check Approval" class="btn-primary"/>
+                                    <button name="action_license_disconnect" type="object"
+                                            string="Cancel" class="btn-link"/>
+                                </div>
+                            </div>
+                            <div invisible="x_license_state != 'connected'">
+                                <div>
+                                    <span class="o_form_label">Status</span>
+                                    <field name="x_license_status" nolabel="1" readonly="1" class="ms-1"/>
+                                </div>
+                                <div class="text-muted" invisible="not x_license_message">
+                                    <field name="x_license_message" nolabel="1" readonly="1"/>
+                                </div>
+                                <div class="text-muted" invisible="not x_license_valid_until">
+                                    Valid until <field name="x_license_valid_until" nolabel="1" readonly="1"/>
+                                </div>
+                                <button name="action_license_disconnect" type="object"
+                                        string="Disconnect" class="btn-link text-danger ps-0"
+                                        confirm="This database forgets its Pantalytics key. You can connect again at any time."/>
+                            </div>
+                            <div class="text-warning mt-2" invisible="not x_license_last_error">
+                                <field name="x_license_last_error" nolabel="1" readonly="1"/>
+                            </div>
+                        </div>
+                    </div>
+
                     <h2>About</h2>
                     <!-- No left/right pane: an empty left pane draws a divider
                          beside a single link, which reads as a missing field.

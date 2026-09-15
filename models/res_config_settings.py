@@ -23,6 +23,7 @@ import logging
 from odoo import _, api, fields, models
 
 from .mail_provider_client import get_provider_client, get_setup_provider
+from .pan_mail_license import STATUS_SELECTION
 
 _logger = logging.getLogger(__name__)
 
@@ -92,6 +93,23 @@ class ResConfigSettings(models.TransientModel):
     )
 
     # -------------------------------------------------------------------------
+    # Pantalytics account -- see pan_mail_license.py. Not a setup step: mail
+    # flows without it, so it must not turn the checklist's dot red.
+    # -------------------------------------------------------------------------
+    x_license_state = fields.Selection([
+        ('not_connected', 'Not Connected'),
+        ('pending', 'Pending'),
+        ('connected', 'Connected'),
+    ], compute='_compute_license')
+    x_license_status = fields.Selection(
+        STATUS_SELECTION, string='Status', compute='_compute_license')
+    x_license_user_code = fields.Char(string='Code', compute='_compute_license')
+    x_license_verify_url = fields.Char(string='Approve at', compute='_compute_license')
+    x_license_message = fields.Char(compute='_compute_license')
+    x_license_valid_until = fields.Datetime(string='Valid Until', compute='_compute_license')
+    x_license_last_error = fields.Char(compute='_compute_license')
+
+    # -------------------------------------------------------------------------
     # About
     # -------------------------------------------------------------------------
     x_module_version = fields.Char(
@@ -125,6 +143,38 @@ class ResConfigSettings(models.TransientModel):
         res['x_internal_domain_ids'] = [
             (6, 0, self.env['pan.mail.domain'].sudo().search([]).ids)]
         return res
+
+    # -------------------------------------------------------------------------
+    # Pantalytics account
+    # -------------------------------------------------------------------------
+
+    def _compute_license(self):
+        link = self.env['pan.mail.license'].current()
+        if not link or link.status == 'not_connected':
+            state = 'not_connected'
+        elif link.status == 'pending':
+            state = 'pending'
+        else:
+            state = 'connected'
+        for record in self:
+            record.x_license_state = state
+            record.x_license_status = link.status or 'not_connected'
+            record.x_license_user_code = link.user_code
+            record.x_license_verify_url = link.verify_url
+            record.x_license_message = link.message
+            record.x_license_valid_until = link.valid_until
+            record.x_license_last_error = link.last_error
+
+    def action_license_connect(self):
+        self.env['pan.mail.license'].action_connect()
+
+    def action_license_check(self):
+        return self.env['pan.mail.license'].current().action_check_approval()
+
+    def action_license_disconnect(self):
+        link = self.env['pan.mail.license'].current()
+        if link:
+            link.action_disconnect()
 
     # -------------------------------------------------------------------------
     # Internal domains

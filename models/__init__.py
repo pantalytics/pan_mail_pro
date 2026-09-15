@@ -6,6 +6,7 @@ from . import providers
 from . import pan_mail_domain
 from . import pan_mail_provider
 from . import pan_mail_setup
+from . import pan_mail_license
 from . import res_config_settings
 from . import pan_mail_account
 from . import res_users

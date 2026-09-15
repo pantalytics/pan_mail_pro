@@ -57,6 +57,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_domain.py` | Internal domain list + the fail-closed gate on incoming sync |
 | `models/pan_mail_provider.py` | The application registration of the provider this database runs on. One row, no toggle |
 | `models/pan_mail_setup.py` | The three mandatory setup steps and the phase (`setup` / `syncing`) they add up to |
+| `models/pan_mail_license.py` | Link to a Pantalytics account: Connect, the signed entitlement, the daily heartbeat. Gates nothing yet |
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, and whether to nudge them |
@@ -435,7 +436,7 @@ typo; `tools/ci.sh` gives the same verdict locally in the same container.
 - `x_` prefix only on fields added to Odoo's own models (Odoo.sh requirement); a
   `pan.mail.*` model has plain field names
 - Log tags name the flow or the vendor: `[Outgoing Mail]`, `[Incoming Mail]`,
-  `[Mail Matcher]`, `[OAuth]`, and `[Graph API]` / `[Gmail API]` / `[IMAP]` /
+  `[Mail Matcher]`, `[OAuth]`, `[License]`, and `[Graph API]` / `[Gmail API]` / `[IMAP]` /
   `[SMTP]` inside the matching client only
 - Use `invisible` instead of `attrs` in views (Odoo 19)
 - Stored computed fields need `@api.depends` decorator

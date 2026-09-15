@@ -87,7 +87,11 @@
           a mailbox uses.
         - OAuth tokens and mailbox passwords are stored encrypted in your Odoo
           database.
-        - No data is sent to Pantalytics, the module author.
+        - Nothing is sent to Pantalytics unless an administrator links the
+          database under Settings -> Mail Pro -> Pantalytics Account. Once
+          linked, the database reports once a day: its database id, the
+          module and Odoo version, how many accounts are connected and
+          whether sync is healthy. Never an address, subject or body.
         - No AI provider is contacted. The module has no AI feature and ships
           no AI vendor SDK.
     """,
@@ -95,7 +99,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.8.0.0',
+    'version': '19.0.8.1.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
