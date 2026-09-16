@@ -14,6 +14,7 @@ import requests
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+from odoo import fields
 from odoo.exceptions import UserError
 from odoo.tests import HttpCase, TransactionCase, new_test_user, tagged
 
@@ -249,6 +250,91 @@ class TestLicense(TransactionCase):
             with self.assertRaises(UserError):
                 self.License.action_connect()
         self.assertEqual(self.calls, [])
+
+
+@tagged('post_install', '-at_install')
+class TestConnectedOnly(TransactionCase):
+    """Without a connection, and after the grace period: incoming sync and new
+    accounts stop, sending does not."""
+
+    def setUp(self):
+        super().setUp()
+        self.License = self.env['pan.mail.license']
+        self.params = self.env['ir.config_parameter'].sudo()
+        # A mailbox refuses to exist before the company's domains are known.
+        if not self.env['pan.mail.domain'].sudo().search_count([]):
+            self.env['pan.mail.domain'].sudo().create({'name': 'example.com'})
+
+    def grace_over(self):
+        self.params.set_param(
+            pan_mail_license.CONNECT_BY_PARAM,
+            fields.Datetime.to_string(fields.Datetime.now() - timedelta(minutes=1)))
+
+    def test_the_grace_starts_the_first_time_it_is_asked(self):
+        self.params.set_param(pan_mail_license.CONNECT_BY_PARAM, False)
+        required = self.License.connect_required_from()
+        self.assertGreater(required, fields.Datetime.now() + timedelta(days=29))
+        self.assertEqual(self.License.connect_required_from(), required)
+        self.assertTrue(self.License.sync_allowed())
+
+    def test_after_the_grace_an_unconnected_instance_may_not_sync(self):
+        self.grace_over()
+        self.assertFalse(self.License.sync_allowed())
+
+    def test_a_connected_instance_may_sync_after_the_grace(self):
+        self.grace_over()
+        self.License.sudo().create({
+            'status': 'active',
+            'valid_until': fields.Datetime.now() + timedelta(days=14),
+        })
+        self.assertTrue(self.License.sync_allowed())
+
+    def test_a_connection_that_lapsed_offline_counts_as_none(self):
+        self.grace_over()
+        self.License.sudo().create({
+            'status': 'active',
+            'valid_until': fields.Datetime.now() - timedelta(minutes=1),
+        })
+        self.assertFalse(self.License.sync_allowed())
+
+    def test_the_sync_cron_stops_and_says_why_on_the_mailboxes(self):
+        mailbox = self.env['pan.mail.mailbox'].sudo().create({
+            'email': 'gate@example.com', 'mailbox_type': 'shared'})
+        mailbox.state = 'active'
+        self.grace_over()
+        fetcher = self.env['pan.mail.fetcher']
+        with patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=True), \
+                patch.object(type(self.env['pan.mail.mailbox']), '_has_working_credentials',
+                             return_value=True), \
+                patch.object(type(fetcher), '_process_mailbox') as process:
+            fetcher._cron_fetch_incoming_mail()
+        self.assertEqual(mailbox.state, 'error')
+        self.assertIn('Connect this Odoo instance', mailbox.error_message)
+        process.assert_not_called()
+
+    def test_sync_now_says_why(self):
+        mailbox = self.env['pan.mail.mailbox'].sudo().create({
+            'email': 'gate-now@example.com', 'mailbox_type': 'shared'})
+        self.grace_over()
+        with patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=True), \
+                self.assertRaisesRegex(UserError, 'Connect this Odoo instance'):
+            mailbox.action_sync_now()
+
+    def test_a_new_account_is_refused_and_an_existing_one_can_reconnect(self):
+        account = self.env['pan.mail.account'].sudo().create({
+            'provider': 'imap', 'email': 'existing@example.com'})
+        self.grace_over()
+        with self.assertRaises(UserError):
+            self.env['pan.mail.account'].sudo().create({
+                'provider': 'imap', 'email': 'new@example.com'})
+        account.write({'email': 'existing@example.com'})
+
+    def test_settings_say_when_and_whether_it_stopped(self):
+        settings = self.env['res.config.settings'].create({})
+        self.assertTrue(settings.x_license_required_from)
+        self.assertFalse(settings.x_license_sync_blocked)
+        self.grace_over()
+        self.assertTrue(self.env['res.config.settings'].create({}).x_license_sync_blocked)
 
 
 @tagged('post_install', '-at_install')

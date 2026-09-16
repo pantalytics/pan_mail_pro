@@ -125,7 +125,7 @@ Providers disagree about sending as somebody else, which is why
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
-| `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key and the last signed entitlement. One row, created on the first Connect. Restricts nothing yet (§9.17) |
+| `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key and the last signed entitlement. One row, created on the first Connect. `sync_allowed()` gates incoming sync and new accounts (§9.17) |
 | `res.config.settings` | The setup checklist — three lines, each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
@@ -1427,7 +1427,7 @@ the terms.
 Releases up to and including `v19.0.7.13.1` were published under LGPL-3 and
 stay there; the relicence applies from `19.0.7.14.0` onwards.
 
-### 9.17 Connecting to Pantalytics: a code, not a key, and nothing gated yet
+### 9.17 Connecting to Pantalytics, and working only when connected
 
 Settings → Mail Pro → Pantalytics Account. The admin presses **Connect to
 Pantalytics**, gets a short code and a link, approves on our site with their
@@ -1447,10 +1447,19 @@ server half lives in `pantalytics/mail-pro-admin`.
   unreadable anyway because it goes through `decrypt_value`.
 - **Check Approval is a button, not a poll loop.** The admin knows when they
   approved. Dropped: the page does not refresh itself.
-- **Nothing is gated.** `is_entitled()` exists and nothing calls it. Every
-  database running Mail Pro today has no key, so a gate would switch off
-  incoming sync at every existing customer. It ships together with the legacy
-  keys those customers are sent first.
+- **Mail Pro works on a connected Odoo instance** (19.0.9.0.0, #126).
+  `sync_allowed()` gates incoming sync (the cron, which marks the mailboxes
+  with the reason, and Sync Now) and creating a **new** `pan.mail.account`.
+  Outgoing mail is never gated: the module took over Odoo's SMTP, so stopping
+  sends would hold all of the instance's email hostage. Reconnecting an
+  existing account is a `write` and stays allowed.
+- **30 days of grace** from the first time an instance asks, stored in
+  `pan_mail_pro.connect_required_from` on first use rather than by a
+  migration, so an instance that pulls the code without upgrading gets its
+  grace instead of an immediate stop. Existing customers are connected inside
+  that window, one session each (#126).
+- The server treats a connected installation on plan `free` as `active` until
+  billing exists.
 - `PAN_MAIL_PRO_LICENSE_URL` and `PAN_MAIL_PRO_LICENSE_PUBLIC_KEY` point a
   deployment at a staging server. Environment only, never a settings field.
 

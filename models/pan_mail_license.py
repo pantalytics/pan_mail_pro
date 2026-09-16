@@ -17,10 +17,19 @@ server side and the reasons behind it live in `pantalytics/mail-pro-admin`
 **There is one row**, created the first time somebody connects, the same shape
 as `pan.mail.provider`: `current()` is the answer.
 
-**Nothing here restricts anything yet.** `is_entitled()` exists for the gate,
-and the gate is deliberately not in this release: every database that runs Mail
-Pro today has no key, so a gate now would switch off incoming sync at every
-existing customer. It lands with the legacy keys they will be sent first.
+**Mail Pro works on a connected Odoo instance** (pan_mail_pro#126).
+`sync_allowed()` is the one answer: incoming sync and connecting a *new*
+mailbox account ask it. Outgoing mail never does, because the module took
+over Odoo's own SMTP and stopping sends would hold all of the instance's email
+hostage. Reconnecting an existing account is allowed too; it changes nothing
+about who pays.
+
+Every instance gets `GRACE` from the first time it asks (a fresh install, or
+the upgrade that brought this), so the existing customers can be connected
+in their own session rather than on the day the code lands. The start is
+stored in `ir.config_parameter`, set on first use rather than by a migration:
+an instance that pulls this code without running the upgrade still gets its
+grace instead of an immediate stop.
 
 **What leaves the database** is `_heartbeat_body()`, and the whole list is in
 that one method: the database id, two version strings, how many accounts are
@@ -37,7 +46,7 @@ import base64
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -65,6 +74,10 @@ ENV_URL = 'PAN_MAIL_PRO_LICENSE_URL'
 ENV_PUBLIC_KEY = 'PAN_MAIL_PRO_LICENSE_PUBLIC_KEY'
 
 TIMEOUT = 15
+
+# How long an Odoo instance works before it has to be connected.
+GRACE = timedelta(days=30)
+CONNECT_BY_PARAM = 'pan_mail_pro.connect_required_from'
 
 # Stripe's statuses that keep a customer entitled, as the server decides them.
 # past_due stays entitled while Stripe is still retrying the card.
@@ -166,15 +179,40 @@ class PanMailLicense(models.Model):
     def is_entitled(self):
         """Does the last verified answer still cover today?
 
-        Read by nothing yet; the gate arrives with the legacy keys. It reads the
-        stored answer rather than calling out, because the gate must keep
-        working while our server or the customer's firewall does not.
+        It reads the stored answer rather than calling out, because the gate
+        must keep working while our server or the customer's firewall does not.
         """
         self.ensure_one()
         return bool(
             self.status in ENTITLED_STATUSES
             and self.valid_until
             and self.valid_until > fields.Datetime.now()
+        )
+
+    @api.model
+    def connect_required_from(self):
+        """When this instance has to be connected by. Set on the first call."""
+        params = self.env['ir.config_parameter'].sudo()
+        value = params.get_param(CONNECT_BY_PARAM)
+        if not value:
+            value = fields.Datetime.to_string(fields.Datetime.now() + GRACE)
+            params.set_param(CONNECT_BY_PARAM, value)
+        return fields.Datetime.to_datetime(value)
+
+    @api.model
+    def sync_allowed(self):
+        """May this instance sync incoming mail and connect new accounts?"""
+        link = self.current()
+        if link and link.is_entitled():
+            return True
+        return fields.Datetime.now() < self.connect_required_from()
+
+    @api.model
+    def not_allowed_error(self):
+        return _(
+            'Connect this Odoo instance to Pantalytics to use Mail Pro: Settings, '
+            'Mail Pro, Connect to Pantalytics. Until then incoming mail is not '
+            'synced and no new mailbox can be connected. Sending keeps working.'
         )
 
     # -------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from odoo import fields, models, api, _
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from . import encryption_utils
 from .mail_provider_client import PROVIDER_SELECTION, get_provider_client
@@ -238,6 +238,19 @@ class PanMailAccount(models.Model):
             vals.update({'provider': provider, 'user_id': user.id, 'email': email})
             account = self.create(vals)
         return account
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """A new account needs a connected Odoo instance (pan_mail_pro#126).
+
+        Only new ones: reconnecting an account that exists is a `write`, and a
+        person whose token expired must be able to sign in again whatever the
+        instance's standing.
+        """
+        License = self.env['pan.mail.license']
+        if not License.sync_allowed():
+            raise UserError(License.not_allowed_error())
+        return super().create(vals_list)
 
     @api.model
     def _for_users(self, users, provider):
