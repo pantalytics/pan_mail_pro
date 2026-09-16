@@ -54,14 +54,22 @@ app adds no systray counter next to the two Odoo already has.
 
 ## Why this is not a second source of truth
 
-The screen is a projection. It stores nothing of its own, and every action it
-offers writes through a door Odoo already has, so the chatter, Discuss and the
-Activities clock cannot disagree with it.
+The screen is a projection. It stores no fact about the mail, the record or the
+work, and every action it offers writes through a door Odoo already has, so the
+chatter, Discuss and the Activities clock cannot disagree with it.
+
+"Stores nothing" would be the wrong rule, and it is worth being exact about
+why. The test is not whether a row exists, it is whether a row could ever
+contradict Odoo. Two things fail that test in opposite directions: a derived
+index cannot contradict anything because it is recomputable, and a per-person
+read pointer cannot contradict anything because it says where someone's eyes
+were, not what happened. Everything else stays out.
 
 | What the inbox shows | Where the truth lives | How the inbox writes to it |
 |---|---|---|
 | The messages | `mail.message`, on the record they were filed on | Never writes. The conversation is a grouping key, not a copy |
-| Unread | `mail.message.needaction`, the same row Discuss reads | Marking read calls `set_message_done()`, so Discuss un-bolds too |
+| Unread, where Odoo knows it | `mail.message.needaction`, the same row Discuss reads | Marking read calls `set_message_done()`, so Discuss un-bolds too |
+| Unread, everywhere else | A read pointer per person per conversation, ours. See below | Moves when you open the conversation |
 | Flagged | `starred_partner_ids` | `toggle_message_starred()`, which is Discuss's own star |
 | Waiting on us | Nowhere. Derived: the last message is inbound and nothing went back | Never writes. It cannot drift because it is recomputed from the messages every time |
 | A reply | `mail.message` again, through `message_post()` on the linked record | The chatter shows it, the followers get it, `mail.mail` sends it through the provider, the routing log records it |
@@ -76,6 +84,17 @@ be dropped and rebuilt from the messages at any time. That is the test it has to
 pass in CI: rebuild the index from scratch and assert the same grouping, the
 same order and the same waiting-on-us answers. An index that cannot be rebuilt
 has become a source of truth, and that failure is silent otherwise.
+
+**The read pointer is the one thing we store, because borrowing does not
+work.** `needaction` is a `mail.notification` row for your partner with
+`is_read = False`, so a message only counts as unread for the people who were
+notified about it. On a shared mailbox that nobody follows there are no such
+rows at all, which means that without a pointer of our own every conversation
+in `info@` reads as already read, forever. Odoo solves exactly this for its own
+conversations: `discuss.channel.member` carries `seen_message_id`,
+`new_message_separator` and `last_seen_dt`. We copy that shape, one row per
+person per conversation, holding the last message they saw and nothing else.
+It is a bookmark, so losing it costs a re-read and cannot make anything wrong.
 
 **The three fields we will be asked for and must refuse**: a per-user read flag
 of our own, a per-conversation status (open, closed, resolved), and an assignee.
@@ -112,5 +131,7 @@ opened all day. The diagnostics it removed stay where they are.
 
 - Whether a conversation may span two records (a quote and the ticket that came
   out of it) or whether that is two conversations sharing participants.
-- What the list shows for a shared mailbox that several people read, given there
-  is no read state: everyone's "needs reply" is currently the same list.
+- Whether "waiting on us" should also be personal on a shared mailbox, or stay
+  one list for the team. The read pointer makes unread personal; waiting-on-us
+  is derived from the messages and is therefore the same for everyone, which is
+  probably right for a team of three and probably wrong for a team of ten.
