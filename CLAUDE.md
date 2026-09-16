@@ -342,6 +342,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
+| `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
 
 **Fresh install vs. upgraded database.** The `test` job installs fresh; the
 `upgrade` job installs the newest `v<series>.*` tag that is not HEAD and then
@@ -715,7 +716,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 | [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) | UI conventions. Read before adding a field to a settings or mailbox screen |
 | [TESTPLAN.md](TESTPLAN.md) | Manual test plan for what CI cannot reach |
 | [docs/cloudpepper-deploy.md](docs/cloudpepper-deploy.md) | Deploying on Cloudpepper: the two update tracks, the order, and the white screens |
-| `docs/` | The published GitBook — end-user documentation, per provider |
+| `docs/` | End-user documentation, per provider. The source. Customers read the copy in the Pantalytics knowledge base (`pantalytics.odoo.com/knowledge/article/116`); `tools/docs_to_knowledge.py` renders these pages into it, so refresh the article when you change one |
 | CLAUDE.md (this file) | Workflow: environments, commands, CI, Odoo traps |
 
 The split is enforced, not just intended: CI fails if a model in `models/` is

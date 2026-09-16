@@ -48,8 +48,8 @@ user, never as an administrator.
 
 ### Encryption at Rest
 
-Every credential the module holds — OAuth access and refresh tokens, IMAP/SMTP
-passwords, and the provider's own client secret — is encrypted before storage:
+Every credential the module holds, OAuth access and refresh tokens, IMAP/SMTP
+passwords, and the provider's own client secret, is encrypted before storage:
 
 - **Algorithm:** Fernet (AES-128-CBC with HMAC)
 - **Key:** A random 32-byte key generated on first use and stored in

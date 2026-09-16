@@ -11,8 +11,7 @@ Two questions sent to the Odoo MCP Pro list on 15 September 2026 from
 
 **28 replies** by 16 September 2026 09:53 UTC. All of them are below, verbatim,
 signatures and quoted mail stripped. This is customer correspondence: keep it
-in this repo, do not publish it (it is not in `docs/SUMMARY.md`, so GitBook
-does not pick it up).
+in this repo, do not publish it to the knowledge base.
 
 ## Where mail is sent from
 
