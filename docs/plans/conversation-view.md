@@ -1,6 +1,10 @@
 # The conversation view
 
-Status: proposal. Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB
+Status: **agreed design**, 16 September 2026. Not built yet, so nothing here is
+in `ARCHITECTURE.md`: that file describes what exists. When this ships, the
+models and seams move there and this file becomes history.
+
+Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB
 
 The survey says two thirds of respondents already send from inside Odoo and
 that what they cannot do is see a customer's correspondence in one place.
