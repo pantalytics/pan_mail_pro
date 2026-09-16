@@ -29,7 +29,7 @@ NOTIFICATION_PENDING_REASON = (
 # sent everywhere a person looks -- chatter included -- and this is the one
 # place that says it never left the database.
 STAGING_NOT_SENT_REASON = (
-    'Not sent: this database is neutralized (a staging or test copy). '
+    'Not sent: this Odoo instance is neutralized (a staging or test copy). '
     'It was recorded in the chatter as if it had gone out.'
 )
 
@@ -317,7 +317,7 @@ class MailMail(models.Model):
             'title': _('Not sent (staging)'),
             'message': _(
                 '%(count)s email(s) were recorded on the record as if sent. '
-                'This database is neutralized (a staging or test copy), so '
+                'This Odoo instance is neutralized (a staging or test copy), so '
                 'nothing left it.',
                 count=len(self),
             ),

@@ -115,7 +115,7 @@ class ResConfigSettings(models.TransientModel):
     x_module_version = fields.Char(
         string='Version',
         compute='_compute_module_version',
-        help='The version of Mail Pro this database is running.',
+        help='The version of Mail Pro this Odoo instance is running.',
     )
 
     def _compute_module_version(self):

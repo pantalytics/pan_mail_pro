@@ -598,7 +598,7 @@ class PanMailMailbox(models.Model):
 
         if database_is_neutralized(self.env):
             raise UserError(_(
-                'This database is neutralized (a staging or test copy). Syncing '
+                'This Odoo instance is neutralized (a staging or test copy). Syncing '
                 'would read live mail and post notifications back out, so it is '
                 'refused here.'
             ))

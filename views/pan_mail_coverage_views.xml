@@ -41,7 +41,7 @@
                                 string="Show all" class="btn-secondary"/>
                     </footer>
                     <div class="alert alert-info mt-3" role="status">
-                        Counts are database-wide. The list you open from here is
+                        Counts cover the whole Odoo instance. The list you open from here is
                         filtered by your own access rights, so it can show fewer
                         messages than the number above.
                     </div>
