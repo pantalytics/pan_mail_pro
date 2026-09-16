@@ -80,47 +80,42 @@ experimental, which is the same separation arriving from the other side.
 
 ## Why this is not a second source of truth
 
-The screen is a projection. It stores no fact about the mail, the record or the
-work, and every action it offers writes through a door Odoo already has, so the
-chatter, Discuss and the Activities clock cannot disagree with it.
+**The inbox is a rollup of the chatter, grouped by conversation key.** It holds
+no fact of its own. Every action changes the record underneath, and the screen
+re-reads it. That is the whole design, and it is what keeps Odoo, Discuss, the
+Activities clock and the mailbox from disagreeing.
 
-"Stores nothing" would be the wrong rule, and it is worth being exact about
-why. The test is not whether a row exists, it is whether a row could ever
-contradict Odoo. Two things fail that test in opposite directions: a derived
-index cannot contradict anything because it is recomputable, and a per-person
-read pointer cannot contradict anything because it says where someone's eyes
-were, not what happened. Everything else stays out.
-
-| What the inbox shows | Where the truth lives | How the inbox writes to it |
+| What the inbox shows | Where it comes from | What the action writes |
 |---|---|---|
-| The messages | `mail.message`, on the record they were filed on | Never writes. The conversation is a grouping key, not a copy |
-| Unread, where Odoo knows it | `mail.message.needaction`, the same row Discuss reads | Marking read calls `set_message_done()`, so Discuss un-bolds too |
-| Unread, everywhere else | A read pointer per person per conversation, ours. See below | Moves when you open the conversation |
-| Flagged | `starred_partner_ids` | `toggle_message_starred()`, which is Discuss's own star |
-| Waiting on us | Nowhere. Derived: the last message is inbound and nothing went back | Never writes. It cannot drift because it is recomputed from the messages every time |
-| A reply | `mail.message` again, through `message_post()` on the linked record | The chatter shows it, the followers get it, `mail.mail` sends it through the provider, the routing log records it |
-| A follow-up with a date | `mail.activity` on the linked record | `activity_schedule()`. It then appears in the Activities clock and on the record, where the salesperson already looks |
-| Where a conversation is filed | `mail.message.model` and `res_id`, decided by the matcher | Re-filing writes the same fields and adds a routing-log row saying a person overrode it |
-| Participants | The authors and recipients of the messages | Display only. Who gets notified stays the record's followers |
+| The messages | `mail.message`, on the record they were filed on | Nothing. The conversation is a grouping, not a copy |
+| The grouping | `pan.mail.thread.link`, which this module already writes: the provider's thread handle or the References root, per mailbox, with `model`, `res_id` and `last_message_id` | Nothing new. It is already how the matcher finds a thread |
+| Unread | `mail.notification` with `notification_type = 'inbox'` and `is_read`, the same rows Discuss reads | Marking read calls `set_message_done()`, which clears it in both screens |
+| Flagged | `starred_partner_ids` | `toggle_message_starred()`, Discuss's own star |
+| Waiting on us | Nowhere. Derived: the last message is inbound and nothing went back | Nothing. Recomputed every time, so it cannot drift |
+| A reply | `mail.message`, through `message_post()` on the linked record | The chatter shows it, the followers get it, `mail.mail` sends it, the routing log records it |
+| A follow-up with a date | `mail.activity` on the linked record | `activity_schedule()`, so it lands in the Activities clock |
+| Where it is filed | `mail.message.model` and `res_id` | Re-filing writes those fields and a routing-log row saying a person overrode the matcher |
+| Participants | The authors and recipients of the messages | Display only |
 
-**The one new table is a derived index.** `pan.mail.conversation` holds the
-thread key, the participants and the last-message date so the list can sort and
-page in SQL. It holds no fact that is not already in `mail.message`, so it can
-be dropped and rebuilt from the messages at any time. That is the test it has to
-pass in CI: rebuild the index from scratch and assert the same grouping, the
-same order and the same waiting-on-us answers. An index that cannot be rebuilt
-has become a source of truth, and that failure is silent otherwise.
+**No new model.** An earlier draft of this document proposed a
+`pan.mail.conversation` table and then a private read pointer per person. Both
+were unnecessary. The conversation already has a home in
+`pan.mail.thread.link`, and read state already has one in `mail.notification`.
+The two indexes this module keeps, `pan.mail.message.ref` and
+`pan.mail.thread.link`, are derivations of the messages and can be rebuilt from
+them, which is the test they have to pass in CI: drop them, rebuild, same
+grouping and the same waiting-on-us answers.
 
-**The read pointer is the one thing we store, because borrowing does not
-work.** `needaction` is a `mail.notification` row for your partner with
-`is_read = False`, so a message only counts as unread for the people who were
-notified about it. On a shared mailbox that nobody follows there are no such
-rows at all, which means that without a pointer of our own every conversation
-in `info@` reads as already read, forever. Odoo solves exactly this for its own
-conversations: `discuss.channel.member` carries `seen_message_id`,
-`new_message_separator` and `last_seen_dt`. We copy that shape, one row per
-person per conversation, holding the last message they saw and nothing else.
-It is a bookmark, so losing it costs a re-read and cannot make anything wrong.
+**Unread on a shared mailbox is the one place that needs a decision.**
+`needaction` is a notification row for your partner, so a message is only
+unread for people who were notified about it, and nobody is notified about mail
+in a shared mailbox they merely have access to. The answer is still to write
+Odoo's row rather than one of our own: an inbox-type `mail.notification` for
+the people who read that mailbox. It costs one thing and it should be said out
+loud, because it is not free: those messages then also appear in their Discuss
+Inbox. For `sales@` with three readers that is correct. For an `info@` that
+takes two hundred mails a day it is a flood, so it is a setting on the mailbox
+rather than a rule, and it is off until someone turns it on.
 
 **The three fields we will be asked for and must refuse**: a per-user read flag
 of our own, a per-conversation status (open, closed, resolved), and an assignee.
