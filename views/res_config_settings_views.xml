@@ -177,7 +177,7 @@
                         <div class="col-12 o_setting_box o_mailpro_about">
                             <div invisible="x_license_state != 'not_connected'">
                                 <div class="text-muted mb-2">
-                                    Link this database to your Pantalytics account. You sign in and
+                                    Link this Odoo to your Pantalytics account. You sign in and
                                     approve on our site; there is no key to copy.
                                 </div>
                                 <button name="action_license_connect" type="object"
@@ -210,7 +210,7 @@
                                 </div>
                                 <button name="action_license_disconnect" type="object"
                                         string="Disconnect" class="btn-link text-danger ps-0"
-                                        confirm="This database forgets its Pantalytics key. You can connect again at any time."/>
+                                        confirm="This Odoo forgets its Pantalytics key. You can connect again at any time."/>
                             </div>
                             <div class="text-warning mt-2" invisible="not x_license_last_error">
                                 <field name="x_license_last_error" nolabel="1" readonly="1"/>

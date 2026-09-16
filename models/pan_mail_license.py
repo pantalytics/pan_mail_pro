@@ -159,7 +159,7 @@ class PanMailLicense(models.Model):
     @api.constrains('status')
     def _check_single_row(self):
         if self.search_count([]) > 1:
-            raise ValidationError(_('A database links to one Pantalytics account.'))
+            raise ValidationError(_('An Odoo links to one Pantalytics account.'))
 
     def is_entitled(self):
         """Does the last verified answer still cover today?
@@ -190,7 +190,7 @@ class PanMailLicense(models.Model):
             'module_version': self._module_version(),
         })
         if code == 429:
-            raise UserError(_('Too many connection attempts from this database. '
+            raise UserError(_('Too many connection attempts from this Odoo. '
                               'Try again in a few minutes.'))
         if code != 200 or body.get('status') != 'started':
             raise UserError(_('Pantalytics did not accept the request (HTTP %s). '
@@ -334,7 +334,7 @@ class PanMailLicense(models.Model):
         if not verify_signature(payload, signature, _public_key()):
             return _('The answer from Pantalytics was not signed with its key.')
         if payload.get('db_uuid') != self._db_uuid():
-            return _('The answer from Pantalytics was meant for another database.')
+            return _('The answer from Pantalytics was meant for another Odoo.')
         return None
 
     @api.model
