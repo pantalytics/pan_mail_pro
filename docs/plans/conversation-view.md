@@ -34,7 +34,11 @@ The screen is four panes:
    reply reaches the customer as a standalone mail.
 4. **The record.** The quote, ticket or invoice the thread is filed on, with its
    chatter. This is the pane a mail client cannot have, and the reason to read
-   mail here rather than in Outlook.
+   mail here rather than in Outlook. It is not, however, a pane nobody else
+   has: see [the competition](../research/competition.md), where a paid module
+   already advertises chatter sync with document links and a free one ships the
+   same three-pane shape. What is ours is the discipline below, and the
+   transport underneath.
 
 When nothing is linked, the fourth pane shows what the matcher considered and
 rejected, with a one-click way to file it. An unfiled conversation is the case
