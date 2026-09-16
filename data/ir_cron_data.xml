@@ -28,5 +28,18 @@
             <field name="active" eval="True"/>
             <field name="priority">200</field>
         </record>
+        <!-- Pantalytics account: one heartbeat a day. Does nothing until
+             somebody has connected, and nothing on a neutralized copy. -->
+        <record id="ir_cron_pan_mail_license_heartbeat" model="ir.cron">
+            <field name="name">Mail Pro: Pantalytics Heartbeat</field>
+            <field name="model_id" ref="model_pan_mail_license"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_heartbeat()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+            <field name="priority">200</field>
+        </record>
     </data>
 </odoo>

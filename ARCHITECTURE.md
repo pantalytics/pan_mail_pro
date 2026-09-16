@@ -125,6 +125,7 @@ Providers disagree about sending as somebody else, which is why
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
+| `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key and the last signed entitlement. One row, created on the first Connect. Restricts nothing yet (§9.17) |
 | `res.config.settings` | The setup checklist — three lines, each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
@@ -1425,6 +1426,33 @@ the terms.
 
 Releases up to and including `v19.0.7.13.1` were published under LGPL-3 and
 stay there; the relicence applies from `19.0.7.14.0` onwards.
+
+### 9.17 Connecting to Pantalytics: a code, not a key, and nothing gated yet
+
+Settings → Mail Pro → Pantalytics Account. The admin presses **Connect to
+Pantalytics**, gets a short code and a link, approves on our site with their
+Pantalytics account, and presses **Check Approval**; Odoo collects its key.
+That is the device flow's shape: no redirect URI per customer database, so it
+works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
+server half lives in `pantalytics/mail-pro-admin`.
+
+- **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
+  `_heartbeat_body()` and nothing else: database id, module and Odoo version,
+  connected accounts, whether sync is healthy. No address, subject or body. The
+  manifest's Data Disclosure says the same, and has to change with it.
+- **Only a signed answer is stored.** Ed25519 against `PUBLIC_KEY`, and its
+  `db_uuid` must be this database's. An unreachable server keeps the cached
+  answer until `valid_until` (14 days); a refused key drops it.
+- **Neutralized copies do nothing**: no Connect, no heartbeat, and the key is
+  unreadable anyway because it goes through `decrypt_value`.
+- **Check Approval is a button, not a poll loop.** The admin knows when they
+  approved. Dropped: the page does not refresh itself.
+- **Nothing is gated.** `is_entitled()` exists and nothing calls it. Every
+  database running Mail Pro today has no key, so a gate would switch off
+  incoming sync at every existing customer. It ships together with the legacy
+  keys those customers are sent first.
+- `PAN_MAIL_PRO_LICENSE_URL` and `PAN_MAIL_PRO_LICENSE_PUBLIC_KEY` point a
+  deployment at a staging server. Environment only, never a settings field.
 
 ## 10. Security and permissions
 

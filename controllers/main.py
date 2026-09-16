@@ -165,3 +165,20 @@ class MailProOAuthController(http.Controller):
             # the reason it exists, so it comes back.
             existing.write({'owner_user_id': user.id, 'active': True})
             _logger.info('[OAuth] Assigned existing mailbox %s to %s', email, user.login)
+
+
+class MailProPantalyticsController(http.Controller):
+    """Where the Pantalytics approval page sends the admin back to.
+
+    A plain link the admin clicks on our site after approving, so this is not an
+    OAuth callback and nothing about it is registered anywhere. It collects the
+    key and lands on the settings page, which shows the outcome.
+    """
+
+    @http.route('/mail_pro/pantalytics/return', type='http', auth='user')
+    def pantalytics_return(self, **kwargs):
+        if request.env.user.has_group('base.group_system'):
+            link = request.env['pan.mail.license'].current()
+            if link:
+                link.collect_on_return()
+        return request.redirect(SETTINGS_URL)
