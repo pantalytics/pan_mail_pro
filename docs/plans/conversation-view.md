@@ -52,6 +52,32 @@ answer. Two consequences are load-bearing here: a follow-up with a date on it
 is a `mail.activity` on the linked record, never a queue of our own, and this
 app adds no systray counter next to the two Odoo already has.
 
+## The interplay that does not work yet
+
+Companies run Odoo and a mailbox side by side, and the two do not agree about
+who is in a conversation. Odoo keeps followers, a list of people to notify
+internally. Email keeps To and Cc, a list the customer can see. Odoo treats
+them as one list, and both survey complaints follow from that:
+
+- **"The automatic adding of followers creates complications."** `message_post`
+  subscribes the recipients when `mail_post_autofollow` is in the context,
+  subscribes the customer when the model asks for it, and subscribes the author
+  besides. So being cc'd on one mail signs you up for everything that record
+  ever does.
+- **"Geen cc zichtbaarheid bij ontvanger, veroorzaakt veel verwarring."** The
+  other direction: the customer cannot see who else is on the thread, because
+  the people are followers rather than addressees.
+
+**Position: the reply's recipients come from the conversation, the followers
+stay the record's.** Who was on the last message decides the To and Cc; the
+follower list decides who gets an internal notification; the reply header shows
+both, separately, before you send. Nobody becomes a follower because they were
+cc'd once.
+
+This is not a fight with the framework. Odoo 19's `message_post` already takes
+`outgoing_email_to` alongside `partner_ids`, described in its own docstring as
+experimental, which is the same separation arriving from the other side.
+
 ## Why this is not a second source of truth
 
 The screen is a projection. It stores no fact about the mail, the record or the
