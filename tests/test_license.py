@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from odoo.exceptions import UserError
-from odoo.tests import TransactionCase, tagged
+from odoo.tests import HttpCase, TransactionCase, new_test_user, tagged
 
 from odoo.addons.pan_mail_pro.models import pan_mail_license
 from odoo.addons.pan_mail_pro.models.pan_mail_license import canonical_json
@@ -87,6 +87,7 @@ class TestLicense(TransactionCase):
                 return _response(200, {
                     'status': 'started', 'user_code': 'ABCD-EFGH',
                     'device_token': 'device-secret', 'verify_url': 'https://mailpro.test/link',
+                    'verify_url_complete': 'https://mailpro.test/link?code=ABCD-EFGH',
                     'expires_at': '2026-09-15T12:15:00+00:00', 'interval_seconds': 5,
                 })
             if url.endswith('/api/v1/link/poll'):
@@ -109,10 +110,41 @@ class TestLicense(TransactionCase):
             link = self.License.action_connect()
         self.assertEqual(link.status, 'pending')
         self.assertEqual(link.user_code, 'ABCD-EFGH')
-        self.assertEqual(link.verify_url, 'https://mailpro.test/link')
+        self.assertEqual(link.verify_url, 'https://mailpro.test/link?code=ABCD-EFGH')
         self.assertTrue(link.device_token_encrypted)
         self.assertNotIn('device-secret', link.device_token_encrypted)
         self.assertEqual(self.calls[0]['json']['db_uuid'], self.db_uuid)
+
+    def test_the_settings_button_opens_the_page_with_the_code_in_it(self):
+        with patch(POST, side_effect=self.server()):
+            action = self.env['res.config.settings'].create({}).action_license_connect()
+        self.assertEqual(action['type'], 'ir.actions.act_url')
+        self.assertEqual(action['target'], 'new')
+        self.assertEqual(action['url'], 'https://mailpro.test/link?code=ABCD-EFGH')
+
+    def test_an_older_server_without_the_complete_link_still_works(self):
+        def old_server(url, json=None, headers=None, timeout=None):
+            return _response(200, {
+                'status': 'started', 'user_code': 'ABCD-EFGH', 'device_token': 'x',
+                'verify_url': 'https://mailpro.test/link', 'expires_at': '',
+            })
+        with patch(POST, side_effect=old_server):
+            link = self.License.action_connect()
+        self.assertEqual(link.verify_url, 'https://mailpro.test/link')
+
+    def test_coming_back_from_the_approval_page_collects_the_key(self):
+        with patch(POST, side_effect=self.server()):
+            link = self.License.action_connect()
+            link.collect_on_return()
+        self.assertEqual(link.status, 'active')
+        self.assertTrue(link.is_entitled())
+
+    def test_coming_back_before_approving_changes_nothing(self):
+        with patch(POST, side_effect=self.server(
+                poll=_response(200, {'status': 'pending'}))):
+            link = self.License.action_connect()
+            link.collect_on_return()
+        self.assertEqual(link.status, 'pending')
 
     def test_approval_stores_the_key_encrypted_and_reports_in(self):
         link = self.connected()
@@ -217,3 +249,27 @@ class TestLicense(TransactionCase):
             with self.assertRaises(UserError):
                 self.License.action_connect()
         self.assertEqual(self.calls, [])
+
+
+@tagged('post_install', '-at_install')
+class TestLicenseReturnRoute(HttpCase):
+    """The link on the approval page lands here, in the admin's own session."""
+
+    def setUp(self):
+        super().setUp()
+        self.link = self.env['pan.mail.license'].sudo().create({'status': 'pending'})
+
+    def test_an_administrator_lands_on_the_settings_page_and_the_key_is_collected(self):
+        self.authenticate('admin', 'admin')
+        with patch.object(type(self.link), 'collect_on_return', autospec=True) as collect:
+            response = self.url_open('/mail_pro/pantalytics/return', allow_redirects=False)
+        self.assertIn(response.status_code, (302, 303))
+        self.assertIn('/odoo/settings#pan_mail_pro', response.headers['Location'])
+        self.assertEqual(collect.call_count, 1)
+
+    def test_somebody_who_is_not_an_administrator_collects_nothing(self):
+        new_test_user(self.env, login='plain', password='plain-password-123', groups='base.group_user')
+        self.authenticate('plain', 'plain-password-123')
+        with patch.object(type(self.link), 'collect_on_return', autospec=True) as collect:
+            self.url_open('/mail_pro/pantalytics/return', allow_redirects=False)
+        self.assertEqual(collect.call_count, 0)

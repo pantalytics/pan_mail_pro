@@ -2,11 +2,13 @@
 """This database's link to a Pantalytics account.
 
 The admin presses **Connect to Pantalytics** on the settings page. Odoo asks
-our server for a short code and shows it with a link. The admin opens the link,
-signs in with their Pantalytics account and approves; back in Odoo they press
-**Check approval**, and Odoo collects its key. Nobody copies a key off a screen,
-and there is no redirect URI to register per customer database, which is the
-setup pain Azure and Google already charge them.
+our server for a pairing and opens its page in a new tab, with the code already
+in the link. The admin signs in with their Pantalytics account, checks that the
+page names this Odoo, and approves; **Back to Odoo** lands on
+`/mail_pro/pantalytics/return`, which collects the key. Nobody types a code or
+copies a key, and there is still no redirect URI to register per customer:
+the way back is an ordinary link to this Odoo, not an OAuth redirect.
+**Check Approval** on the settings page does the same collection by hand.
 
 After that, one heartbeat a day: counts out, a signed entitlement back. The
 server side and the reasons behind it live in `pantalytics/mail-pro-admin`
@@ -198,7 +200,9 @@ class PanMailLicense(models.Model):
         link.write({
             'status': 'pending',
             'user_code': body['user_code'],
-            'verify_url': body['verify_url'],
+            # The link with the code in it, when the server offers one: the
+            # button opens it, so nobody types the code.
+            'verify_url': body.get('verify_url_complete') or body['verify_url'],
             'device_token_encrypted': encryption_utils.encrypt_value(
                 self.env, body['device_token']),
             'pairing_expires_at': _naive_utc(body.get('expires_at')),
@@ -240,6 +244,20 @@ class PanMailLicense(models.Model):
         self.status = 'not_connected' if not self.key_encrypted else self.status
         return self._notify(_('This code is no longer valid. Press Connect to '
                               'Pantalytics to get a new one.'), 'warning')
+
+    def collect_on_return(self):
+        """The admin came back from the Pantalytics tab: collect the key now.
+
+        Called by the return route the approval page links to. Whatever the
+        answer, the settings page they land on says where things stand, so
+        nothing here needs to be shown.
+        """
+        self.ensure_one()
+        if self.status == 'pending' and not database_is_neutralized(self.env):
+            try:
+                self.action_check_approval()
+            except UserError as error:
+                self.last_error = str(error)
 
     def action_disconnect(self):
         """Forget the key and the last answer on this database."""

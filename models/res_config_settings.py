@@ -166,7 +166,8 @@ class ResConfigSettings(models.TransientModel):
             record.x_license_last_error = link.last_error
 
     def action_license_connect(self):
-        self.env['pan.mail.license'].action_connect()
+        link = self.env['pan.mail.license'].action_connect()
+        return {'type': 'ir.actions.act_url', 'url': link.verify_url, 'target': 'new'}
 
     def action_license_check(self):
         return self.env['pan.mail.license'].current().action_check_approval()

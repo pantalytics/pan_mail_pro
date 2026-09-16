@@ -184,15 +184,18 @@
                                         string="Connect to Pantalytics" class="btn-primary"/>
                             </div>
                             <div invisible="x_license_state != 'pending'">
-                                <div class="mb-1">1. Open this page and sign in with your Pantalytics account:</div>
-                                <field name="x_license_verify_url" widget="url" nolabel="1" readonly="1"/>
-                                <div class="mt-2 mb-1">2. Enter this code and approve:</div>
-                                <div class="fs-3 fw-bold">
-                                    <field name="x_license_user_code" nolabel="1" readonly="1"/>
+                                <div class="mb-1">
+                                    Approve the connection in the Pantalytics tab that just opened.
+                                    It shows this code:
+                                    <field name="x_license_user_code" nolabel="1" readonly="1" class="fw-bold ms-1"/>
+                                </div>
+                                <div class="text-muted">
+                                    No tab? <field name="x_license_verify_url" widget="url" nolabel="1" readonly="1"
+                                                   options="{'website_path': False}" text="Open it again"/>
                                 </div>
                                 <div class="mt-2">
                                     <button name="action_license_check" type="object"
-                                            string="Check Approval" class="btn-primary"/>
+                                            string="Check Approval" class="btn-secondary"/>
                                     <button name="action_license_disconnect" type="object"
                                             string="Cancel" class="btn-link"/>
                                 </div>
