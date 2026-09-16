@@ -607,6 +607,10 @@ class PanMailMailbox(models.Model):
         if not setup.is_ready():
             raise UserError(setup.not_ready_error())
 
+        License = self.env['pan.mail.license']
+        if not License.sync_allowed():
+            raise UserError(License.not_allowed_error())
+
         if not self._has_working_credentials():
             raise UserError(self._no_credentials_error())
 

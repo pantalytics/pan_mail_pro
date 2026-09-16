@@ -17,10 +17,17 @@ server side and the reasons behind it live in `pantalytics/mail-pro-admin`
 **There is one row**, created the first time somebody connects, the same shape
 as `pan.mail.provider`: `current()` is the answer.
 
-**Nothing here restricts anything yet.** `is_entitled()` exists for the gate,
-and the gate is deliberately not in this release: every database that runs Mail
-Pro today has no key, so a gate now would switch off incoming sync at every
-existing customer. It lands with the legacy keys they will be sent first.
+**Mail Pro works on a connected Odoo instance** (pan_mail_pro#126).
+`sync_allowed()` is the one answer: incoming sync and connecting a *new*
+mailbox account ask it. Outgoing mail never does, because the module took
+over Odoo's own SMTP and stopping sends would hold all of the instance's email
+hostage. Reconnecting an existing account is allowed too; it changes nothing
+about who pays.
+
+There is no grace period: a trial is something the server hands out, so the
+module has one question and one answer. Existing customers are upgraded and
+connected in the same session; incoming sync pauses for those minutes and the
+per-folder cursor catches up afterwards, so no mail is lost.
 
 **What leaves the database** is `_heartbeat_body()`, and the whole list is in
 that one method: the database id, two version strings, how many accounts are
@@ -166,15 +173,28 @@ class PanMailLicense(models.Model):
     def is_entitled(self):
         """Does the last verified answer still cover today?
 
-        Read by nothing yet; the gate arrives with the legacy keys. It reads the
-        stored answer rather than calling out, because the gate must keep
-        working while our server or the customer's firewall does not.
+        It reads the stored answer rather than calling out, because the gate
+        must keep working while our server or the customer's firewall does not.
         """
         self.ensure_one()
         return bool(
             self.status in ENTITLED_STATUSES
             and self.valid_until
             and self.valid_until > fields.Datetime.now()
+        )
+
+    @api.model
+    def sync_allowed(self):
+        """May this instance sync incoming mail and connect new accounts?"""
+        link = self.current()
+        return bool(link) and link.is_entitled()
+
+    @api.model
+    def not_allowed_error(self):
+        return _(
+            'Connect this Odoo instance to Pantalytics to use Mail Pro: Settings, '
+            'Mail Pro, Connect to Pantalytics. Until then incoming mail is not '
+            'synced and no new mailbox can be connected. Sending keeps working.'
         )
 
     # -------------------------------------------------------------------------

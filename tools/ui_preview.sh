@@ -81,6 +81,12 @@ call('pan.mail.provider', 'create', {
     'tenant_id': 'demo-tenant'})
 for name in ('example.com', 'example.odoo.com'):
     call('pan.mail.domain', 'create', {'name': name})
+# Accounts are only created on a connected Odoo instance. Connect for the
+# seeding, then disconnect, so the page shows what a new customer sees.
+import datetime
+link = call('pan.mail.license', 'create', {
+    'status': 'active',
+    'valid_until': (datetime.datetime.utcnow() + datetime.timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')})
 call('pan.mail.account', 'create', {
     'user_id': uid, 'provider': 'outlook', 'email': 'notifications@example.com',
     'refresh_token': 'demo', 'access_token': 'demo'})
@@ -90,6 +96,7 @@ ids = [call('pan.mail.mailbox', 'create', vals) for vals in (
     {'email': 'support@example.com', 'provider': 'outlook', 'owner_user_id': uid},
     {'email': 'sales@example.com', 'provider': 'outlook', 'owner_user_id': uid})]
 call('pan.mail.mailbox', 'write', ids[1:], {'state': 'error'})
+call('pan.mail.license', 'unlink', [link])
 PY
 
 echo "http://localhost:8069 — admin / admin"

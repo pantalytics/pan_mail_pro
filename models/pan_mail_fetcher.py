@@ -134,6 +134,15 @@ class PanMailFetcher(models.AbstractModel):
             mailboxes.write({'state': 'error', 'error_message': reason})
             return
 
+        # Not connected to Pantalytics: the same
+        # shape as setup, so the stop is on the mailboxes where people look.
+        License = self.env['pan.mail.license']
+        if not License.sync_allowed():
+            reason = License.not_allowed_error()
+            _logger.info('[License] %s', reason)
+            mailboxes.write({'state': 'error', 'error_message': reason})
+            return
+
         _logger.info(f"[Incoming Mail] Starting sync for {len(mailboxes)} mailbox(es)")
 
         for mailbox in mailboxes:
