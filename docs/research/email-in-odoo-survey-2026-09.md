@@ -43,6 +43,42 @@ Everything in the top three rows is what Mail Pro already aims at. The "two
 thirds already send from Odoo, and the complaint is never delivery but
 conversation" reading is the one to check before the next roadmap call.
 
+## Does this add up to a market for Mail Pro?
+
+Yes, but for the plumbing half of the problem, and the survey says the other
+half is what makes people leave.
+
+Split the complaints by whether Mail Pro answers them today:
+
+| | People | What they said |
+|---|---|---|
+| **Mail Pro already fixes this** | 11 | Setup (catchall, bounce, M365 backend), mail arriving from `notification@` instead of a person, mail scattered between Outlook and Odoo, messages not delivered or landing in spam |
+| **Mail Pro does not fix this** | 9 | No CC/BCC, the recipient cannot see who else is on the thread, followers added behind the user's back, composer formatting and signatures, and the customer receiving each chatter reply without the conversation above it |
+
+Three people appear in both columns. Nobody described a problem that neither
+column covers.
+
+The first column is the wedge: it is the largest single cluster, it is what
+nobody solves in an afternoon, and it is the reason people who want to work in
+Odoo cannot. The second column is retention. It is the reason Missive, Chatwoot
+and plain Outlook are already in three of these companies, and a customer whose
+plumbing works but whose composer still mangles a reply goes back to Outlook
+anyway.
+
+**People already pay to solve this.** Finishing Tech spent developer time
+rewriting followers and the send buttons. Jobyfull wrote custom modules for the
+same three requests over years, per customer. One respondent added Brevo to get
+mail out at all, others run Missive or are installing Chatwoot alongside Odoo.
+Sana Swiss asked for the app by name and is blocked only by an Odoo 17 to 19
+migration. Three of the 28 are Odoo partners, so they are a channel rather than
+a single seat.
+
+**What this does not tell us.** 28 self-selected replies from a list of people
+who already use a Pantalytics tool, so they are more Odoo-committed and more
+technical than the market. Nobody was asked what they would pay, and nobody
+volunteered it. Read this as evidence that the pain is real and already funded,
+not as demand measurement.
+
 ## The replies
 
 ### Sent from inside Odoo
