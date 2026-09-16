@@ -52,6 +52,38 @@ answer. Two consequences are load-bearing here: a follow-up with a date on it
 is a `mail.activity` on the linked record, never a queue of our own, and this
 app adds no systray counter next to the two Odoo already has.
 
+## Why this is not a second source of truth
+
+The screen is a projection. It stores nothing of its own, and every action it
+offers writes through a door Odoo already has, so the chatter, Discuss and the
+Activities clock cannot disagree with it.
+
+| What the inbox shows | Where the truth lives | How the inbox writes to it |
+|---|---|---|
+| The messages | `mail.message`, on the record they were filed on | Never writes. The conversation is a grouping key, not a copy |
+| Unread | `mail.message.needaction`, the same row Discuss reads | Marking read calls `set_message_done()`, so Discuss un-bolds too |
+| Flagged | `starred_partner_ids` | `toggle_message_starred()`, which is Discuss's own star |
+| Waiting on us | Nowhere. Derived: the last message is inbound and nothing went back | Never writes. It cannot drift because it is recomputed from the messages every time |
+| A reply | `mail.message` again, through `message_post()` on the linked record | The chatter shows it, the followers get it, `mail.mail` sends it through the provider, the routing log records it |
+| A follow-up with a date | `mail.activity` on the linked record | `activity_schedule()`. It then appears in the Activities clock and on the record, where the salesperson already looks |
+| Where a conversation is filed | `mail.message.model` and `res_id`, decided by the matcher | Re-filing writes the same fields and adds a routing-log row saying a person overrode it |
+| Participants | The authors and recipients of the messages | Display only. Who gets notified stays the record's followers |
+
+**The one new table is a derived index.** `pan.mail.conversation` holds the
+thread key, the participants and the last-message date so the list can sort and
+page in SQL. It holds no fact that is not already in `mail.message`, so it can
+be dropped and rebuilt from the messages at any time. That is the test it has to
+pass in CI: rebuild the index from scratch and assert the same grouping, the
+same order and the same waiting-on-us answers. An index that cannot be rebuilt
+has become a source of truth, and that failure is silent otherwise.
+
+**The three fields we will be asked for and must refuse**: a per-user read flag
+of our own, a per-conversation status (open, closed, resolved), and an assignee.
+Every team-inbox product has them, each one is a fact the chatter cannot see,
+and together they are how the screen stops agreeing with Odoo. Read state is
+Odoo's needaction, status is derived, and the assignee of work is the activity's
+`user_id` on the record.
+
 ## What it reuses
 
 - `pan_mail_matcher` decides which record a message belongs to. Unchanged.
