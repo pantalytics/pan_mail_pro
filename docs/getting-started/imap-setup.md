@@ -1,6 +1,6 @@
 # IMAP/SMTP Setup
 
-Use this when your mail is not at Microsoft 365 or Google Workspace — Soverin,
+Use this when your mail is not at Microsoft 365 or Google Workspace: Soverin,
 Fastmail, your own mail server, or any host that offers IMAP and SMTP.
 
 An IMAP mailbox has no consent screen, so there is no app registration and no
@@ -14,7 +14,7 @@ password once.
 3. Set **Provider** to *IMAP / SMTP*
 4. Fill in the email address
 
-Known hosters fill in their own servers automatically — typing a `@soverin.net`
+Known hosters fill in their own servers automatically: typing a `@soverin.net`
 address sets the Soverin servers and ports for you. Anything else is typed in.
 
 ## Step 2: Enter the servers
@@ -38,7 +38,7 @@ password will simply be refused.
 
 Press **Test Connection**.
 
-Both halves are checked — reading and sending — because a mailbox that can read
+Both halves are checked, reading and sending, because a mailbox that can read
 but not send is broken in a way you would otherwise only discover the first time
 someone tries to reply to a customer.
 
@@ -77,7 +77,7 @@ delivered, so it is logged rather than treated as a send failure.
 
 **Threading.** IMAP gives no thread identifier, so Mail Pro threads on the
 `References` chain of the message itself. This is standard RFC 5322 behaviour
-and works across mail clients — it just means that a correspondent whose client
+and works across mail clients: it just means that a correspondent whose client
 strips those headers starts a new thread.
 
 **Sync granularity.** The IMAP `SEARCH SINCE` command only understands dates,

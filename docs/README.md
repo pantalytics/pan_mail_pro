@@ -1,6 +1,6 @@
 # Mail Pro
 
-Complete email integration for Odoo — send and receive with full control, on
+Complete email integration for Odoo, send and receive with full control, on
 Microsoft 365, Google Workspace or any IMAP/SMTP mailbox.
 
 ## What is Mail Pro?
@@ -48,12 +48,12 @@ See [Security](security.md) for the full picture.
 
 ## Getting Started
 
-1. [Installation](getting-started/installation.md) — add the module to your Odoo instance
-2. Set up your provider — [Microsoft 365](getting-started/azure-setup.md),
+1. [Installation](getting-started/installation.md), add the module to your Odoo instance
+2. Set up your provider: [Microsoft 365](getting-started/azure-setup.md),
    [Google Workspace](getting-started/google-setup.md) or
    [IMAP/SMTP](getting-started/imap-setup.md)
-3. [User Setup](getting-started/user-setup.md) — connect accounts
-4. [Mailboxes](configuration/mailboxes.md) — configure sending and sync
+3. [User Setup](getting-started/user-setup.md), connect accounts
+4. [Mailboxes](configuration/mailboxes.md), configure sending and sync
 
 Once mail is flowing, [Where Mail Lands](configuration/where-mail-lands.md)
 explains how to check it is going where you expect.
