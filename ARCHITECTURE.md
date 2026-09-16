@@ -733,10 +733,12 @@ mail.compose.message — x_send_from_mailbox_id = selected mailbox
       ▼
 mail.mail._resolve_route()
   One answer, in this order:
-    1. internal notification → notifications@
-    2. the composer's choice
-    3. the author's default mailbox
-    4. no author at all → notifications@
+    1. the composer's choice
+    2. system notification → notifications@
+       (account mail: a password reset, an invitation, a portal
+        access grant — or mail to one of our own employees)
+    3. no author at all → notifications@
+    4. the author's default mailbox
   Anything unanswerable raises RoutingError and the mail FAILS.
   It is never rerouted to a different sender.
       │
@@ -1082,9 +1084,10 @@ one thing an admin needs to send at that moment is user invitations, and those
 were exactly what died.
 
 One window survives by design: the first mailbox exists (routing on, SMTP off)
-but `notifications@` is not connected yet. Internal notifications are **queued**
-in that window rather than cancelled, and go out by themselves once the
-notification mailbox works. See `_is_awaiting_notification_mailbox`.
+but `notifications@` is not connected yet. System notifications -- invitations
+and password resets included -- are **queued** in that window rather than
+cancelled, and go out by themselves once the notification mailbox works. See
+`_is_awaiting_notification_mailbox`.
 
 ### 9.8 Configuration that is not configuration
 
