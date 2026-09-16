@@ -254,54 +254,41 @@ class TestLicense(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestConnectedOnly(TransactionCase):
-    """Without a connection, and after the grace period: incoming sync and new
-    accounts stop, sending does not."""
+    """Not connected: incoming sync and new accounts stop, sending does not."""
 
     def setUp(self):
         super().setUp()
+        # The real gate, not the yes every other test gets (tests/connected.py).
+        self.env = self.env(context=dict(self.env.context, pan_mail_pro_real_gate=True))
         self.License = self.env['pan.mail.license']
-        self.params = self.env['ir.config_parameter'].sudo()
         # A mailbox refuses to exist before the company's domains are known.
         if not self.env['pan.mail.domain'].sudo().search_count([]):
             self.env['pan.mail.domain'].sudo().create({'name': 'example.com'})
 
-    def grace_over(self):
-        self.params.set_param(
-            pan_mail_license.CONNECT_BY_PARAM,
-            fields.Datetime.to_string(fields.Datetime.now() - timedelta(minutes=1)))
+    def connect(self, valid_for=timedelta(days=14)):
+        return self.License.sudo().create({
+            'status': 'active', 'valid_until': fields.Datetime.now() + valid_for})
 
-    def test_the_grace_starts_the_first_time_it_is_asked(self):
-        self.params.set_param(pan_mail_license.CONNECT_BY_PARAM, False)
-        required = self.License.connect_required_from()
-        self.assertGreater(required, fields.Datetime.now() + timedelta(days=29))
-        self.assertEqual(self.License.connect_required_from(), required)
-        self.assertTrue(self.License.sync_allowed())
-
-    def test_after_the_grace_an_unconnected_instance_may_not_sync(self):
-        self.grace_over()
+    def test_an_unconnected_instance_may_not_sync(self):
         self.assertFalse(self.License.sync_allowed())
 
-    def test_a_connected_instance_may_sync_after_the_grace(self):
-        self.grace_over()
-        self.License.sudo().create({
-            'status': 'active',
-            'valid_until': fields.Datetime.now() + timedelta(days=14),
-        })
+    def test_a_connected_instance_may_sync(self):
+        self.connect()
         self.assertTrue(self.License.sync_allowed())
 
     def test_a_connection_that_lapsed_offline_counts_as_none(self):
-        self.grace_over()
-        self.License.sudo().create({
-            'status': 'active',
-            'valid_until': fields.Datetime.now() - timedelta(minutes=1),
-        })
+        self.connect(valid_for=timedelta(minutes=-1))
+        self.assertFalse(self.License.sync_allowed())
+
+    def test_a_revoked_connection_counts_as_none(self):
+        link = self.connect()
+        link.status = 'revoked'
         self.assertFalse(self.License.sync_allowed())
 
     def test_the_sync_cron_stops_and_says_why_on_the_mailboxes(self):
         mailbox = self.env['pan.mail.mailbox'].sudo().create({
             'email': 'gate@example.com', 'mailbox_type': 'shared'})
         mailbox.state = 'active'
-        self.grace_over()
         fetcher = self.env['pan.mail.fetcher']
         with patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=True), \
                 patch.object(type(self.env['pan.mail.mailbox']), '_has_working_credentials',
@@ -315,26 +302,24 @@ class TestConnectedOnly(TransactionCase):
     def test_sync_now_says_why(self):
         mailbox = self.env['pan.mail.mailbox'].sudo().create({
             'email': 'gate-now@example.com', 'mailbox_type': 'shared'})
-        self.grace_over()
         with patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=True), \
                 self.assertRaisesRegex(UserError, 'Connect this Odoo instance'):
             mailbox.action_sync_now()
 
     def test_a_new_account_is_refused_and_an_existing_one_can_reconnect(self):
+        link = self.connect()
         account = self.env['pan.mail.account'].sudo().create({
             'provider': 'imap', 'email': 'existing@example.com'})
-        self.grace_over()
+        link.status = 'canceled'
         with self.assertRaises(UserError):
             self.env['pan.mail.account'].sudo().create({
                 'provider': 'imap', 'email': 'new@example.com'})
         account.write({'email': 'existing@example.com'})
 
-    def test_settings_say_when_and_whether_it_stopped(self):
-        settings = self.env['res.config.settings'].create({})
-        self.assertTrue(settings.x_license_required_from)
-        self.assertFalse(settings.x_license_sync_blocked)
-        self.grace_over()
+    def test_settings_say_whether_it_stopped(self):
         self.assertTrue(self.env['res.config.settings'].create({}).x_license_sync_blocked)
+        self.connect()
+        self.assertFalse(self.env['res.config.settings'].create({}).x_license_sync_blocked)
 
 
 @tagged('post_install', '-at_install')

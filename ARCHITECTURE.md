@@ -1453,11 +1453,10 @@ server half lives in `pantalytics/mail-pro-admin`.
   Outgoing mail is never gated: the module took over Odoo's SMTP, so stopping
   sends would hold all of the instance's email hostage. Reconnecting an
   existing account is a `write` and stays allowed.
-- **30 days of grace** from the first time an instance asks, stored in
-  `pan_mail_pro.connect_required_from` on first use rather than by a
-  migration, so an instance that pulls the code without upgrading gets its
-  grace instead of an immediate stop. Existing customers are connected inside
-  that window, one session each (#126).
+- **No grace period.** A trial is the server's business (a plan or a Stripe
+  status), so the module asks one question. Existing customers are upgraded
+  and connected in one session; incoming sync pauses for those minutes and the
+  per-folder cursor catches up, so nothing is lost (#126).
 - The server treats a connected installation on plan `free` as `active` until
   billing exists.
 - `PAN_MAIL_PRO_LICENSE_URL` and `PAN_MAIL_PRO_LICENSE_PUBLIC_KEY` point a

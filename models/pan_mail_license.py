@@ -24,12 +24,10 @@ over Odoo's own SMTP and stopping sends would hold all of the instance's email
 hostage. Reconnecting an existing account is allowed too; it changes nothing
 about who pays.
 
-Every instance gets `GRACE` from the first time it asks (a fresh install, or
-the upgrade that brought this), so the existing customers can be connected
-in their own session rather than on the day the code lands. The start is
-stored in `ir.config_parameter`, set on first use rather than by a migration:
-an instance that pulls this code without running the upgrade still gets its
-grace instead of an immediate stop.
+There is no grace period: a trial is something the server hands out, so the
+module has one question and one answer. Existing customers are upgraded and
+connected in the same session; incoming sync pauses for those minutes and the
+per-folder cursor catches up afterwards, so no mail is lost.
 
 **What leaves the database** is `_heartbeat_body()`, and the whole list is in
 that one method: the database id, two version strings, how many accounts are
@@ -46,7 +44,7 @@ import base64
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import requests
 
@@ -74,10 +72,6 @@ ENV_URL = 'PAN_MAIL_PRO_LICENSE_URL'
 ENV_PUBLIC_KEY = 'PAN_MAIL_PRO_LICENSE_PUBLIC_KEY'
 
 TIMEOUT = 15
-
-# How long an Odoo instance works before it has to be connected.
-GRACE = timedelta(days=30)
-CONNECT_BY_PARAM = 'pan_mail_pro.connect_required_from'
 
 # Stripe's statuses that keep a customer entitled, as the server decides them.
 # past_due stays entitled while Stripe is still retrying the card.
@@ -190,22 +184,10 @@ class PanMailLicense(models.Model):
         )
 
     @api.model
-    def connect_required_from(self):
-        """When this instance has to be connected by. Set on the first call."""
-        params = self.env['ir.config_parameter'].sudo()
-        value = params.get_param(CONNECT_BY_PARAM)
-        if not value:
-            value = fields.Datetime.to_string(fields.Datetime.now() + GRACE)
-            params.set_param(CONNECT_BY_PARAM, value)
-        return fields.Datetime.to_datetime(value)
-
-    @api.model
     def sync_allowed(self):
         """May this instance sync incoming mail and connect new accounts?"""
         link = self.current()
-        if link and link.is_entitled():
-            return True
-        return fields.Datetime.now() < self.connect_required_from()
+        return bool(link) and link.is_entitled()
 
     @api.model
     def not_allowed_error(self):

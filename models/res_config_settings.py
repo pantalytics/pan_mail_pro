@@ -108,7 +108,6 @@ class ResConfigSettings(models.TransientModel):
     x_license_message = fields.Char(compute='_compute_license')
     x_license_valid_until = fields.Datetime(string='Valid Until', compute='_compute_license')
     x_license_last_error = fields.Char(compute='_compute_license')
-    x_license_required_from = fields.Datetime(compute='_compute_license')
     x_license_sync_blocked = fields.Boolean(compute='_compute_license')
 
     # -------------------------------------------------------------------------
@@ -158,11 +157,8 @@ class ResConfigSettings(models.TransientModel):
             state = 'pending'
         else:
             state = 'connected'
-        License = self.env['pan.mail.license']
-        required_from = License.connect_required_from()
-        blocked = not License.sync_allowed()
+        blocked = not self.env['pan.mail.license'].sync_allowed()
         for record in self:
-            record.x_license_required_from = required_from
             record.x_license_sync_blocked = blocked
             record.x_license_state = state
             record.x_license_status = link.status or 'not_connected'

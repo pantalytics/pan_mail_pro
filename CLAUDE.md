@@ -57,7 +57,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_domain.py` | Internal domain list + the fail-closed gate on incoming sync |
 | `models/pan_mail_provider.py` | The application registration of the provider this database runs on. One row, no toggle |
 | `models/pan_mail_setup.py` | The three mandatory setup steps and the phase (`setup` / `syncing`) they add up to |
-| `models/pan_mail_license.py` | Link to a Pantalytics account: Connect, the signed entitlement, the daily heartbeat, and `sync_allowed()`: incoming sync and new accounts need a connected instance after a 30-day grace |
+| `models/pan_mail_license.py` | Link to a Pantalytics account: Connect, the signed entitlement, the daily heartbeat, and `sync_allowed()`: incoming sync and new accounts need a connected instance |
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, and whether to nudge them |

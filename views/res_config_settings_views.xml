@@ -37,10 +37,8 @@
                     <div class="row mt-3 o_settings_container">
                         <div class="col-12 o_setting_box o_mailpro_about">
                             <div invisible="x_license_state != 'not_connected'">
-                                <div class="text-muted mb-2" invisible="x_license_sync_blocked">
-                                    Mail Pro works on a connected Odoo instance. Connect before
-                                    <field name="x_license_required_from" nolabel="1" readonly="1" class="fw-bold" options="{'show_time': false}"/>;
-                                    after that, incoming mail stops syncing until you do. Sending keeps working.
+                                <div class="text-muted mb-2">
+                                    Mail Pro works on an Odoo instance that is connected to a Pantalytics account.
                                 </div>
                                 <button name="action_license_connect" type="object"
                                         string="Connect to Pantalytics" class="btn-primary"/>

@@ -134,7 +134,7 @@ class PanMailFetcher(models.AbstractModel):
             mailboxes.write({'state': 'error', 'error_message': reason})
             return
 
-        # Not connected to Pantalytics, and the grace period is over: the same
+        # Not connected to Pantalytics: the same
         # shape as setup, so the stop is on the mailboxes where people look.
         License = self.env['pan.mail.license']
         if not License.sync_allowed():
