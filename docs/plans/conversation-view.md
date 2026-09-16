@@ -41,6 +41,17 @@ An earlier draft put this on a tab of the contact form. It was rejected in
 review for the right reason: nobody recognises that interface. The customer view
 is still reachable, as the same list filtered to one company.
 
+## What Odoo already has
+
+[docs/research/odoo-mail-surfaces.md](../research/odoo-mail-surfaces.md) reads
+Discuss, notifications and activities against the 19.0 source. In short: Odoo
+has a notification queue you empty, a chat client, and a to-do list a person
+fills in by hand. Nothing groups messages into a conversation, nothing shows a
+customer's correspondence, and nothing knows that a customer is waiting for an
+answer. Two consequences are load-bearing here: a follow-up with a date on it
+is a `mail.activity` on the linked record, never a queue of our own, and this
+app adds no systray counter next to the two Odoo already has.
+
 ## What it reuses
 
 - `pan_mail_matcher` decides which record a message belongs to. Unchanged.
