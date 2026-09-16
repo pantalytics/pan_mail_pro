@@ -125,7 +125,7 @@ class MailMail(models.Model):
         # Mirrors the order in `_resolve_route`: a mail somebody chose a sender
         # for does not take the notification route, so it is not waiting on the
         # notification mailbox either. It fails, or goes out, on its own merits.
-        if self.x_send_from_mailbox_id or not self._is_internal_user_notification():
+        if self.x_send_from_mailbox_id or not self._is_system_notification():
             return False
         try:
             self._notification_route()
@@ -621,6 +621,27 @@ class MailMail(models.Model):
             keys.append(rfc_key)
         return keys
 
+    def _is_system_notification(self):
+        """Is this the database talking, rather than a person?
+
+        Two shapes, and both belong to the notification mailbox:
+
+        - **Account mail.** A password reset, a user invitation, a portal
+          access grant. Odoo marks these `user_notification`, addresses them
+          with `email_to` alone and gives them no recipient partner at all, so
+          the employee test below cannot see them. They carry an author anyway:
+          nobody chose one, so `mail.message` resolves it from `email_from`,
+          which on these templates is the *company* address. Whichever partner
+          happens to own that address is not an author, and refusing to send
+          because they have no mailbox locks people out of their own login —
+          including the admin who has not configured Mail Pro yet.
+        - **Mail to our own employees**, whoever it names as author. See
+          `_is_internal_user_notification`.
+        """
+        self.ensure_one()
+        return (self.message_type == 'user_notification'
+                or self._is_internal_user_notification())
+
     def _is_internal_user_notification(self):
         """Is this mail addressed to one of our own employees?
 
@@ -677,9 +698,9 @@ class MailMail(models.Model):
         if self.x_send_from_mailbox_id:
             return self._mailbox_route(self.x_send_from_mailbox_id, author_user)
 
-        # Nobody chose, so the recipients decide: system mail to our own
-        # employees is what the notification mailbox is for.
-        if self._is_internal_user_notification():
+        # Nobody chose, so the mail itself decides: account mail, and system
+        # mail to our own employees, is what the notification mailbox is for.
+        if self._is_system_notification():
             return self._notification_route()
 
         # Mail generated on behalf of somebody outside Odoo — an auto-reply, an
