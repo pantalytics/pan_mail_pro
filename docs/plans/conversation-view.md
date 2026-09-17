@@ -14,6 +14,10 @@ that what they cannot do is see a customer's correspondence in one place.
 Odoo's chatter is record-centric; mail is conversation-centric. This is the
 smallest object that closes that gap, in the layout people already know.
 
+How it gets built -- the read API, the OWL components, and why this is not a
+separate frontend -- is in
+[conversation-view-build.md](conversation-view-build.md).
+
 ## The decision
 
 **The conversation is a new object, and it is read in an inbox.**

@@ -718,7 +718,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 | [TESTPLAN.md](TESTPLAN.md) | Manual test plan for what CI cannot reach |
 | [docs/cloudpepper-deploy.md](docs/cloudpepper-deploy.md) | Deploying on Cloudpepper: the two update tracks, the order, and the white screens |
 | `docs/` | End-user documentation, per provider. The source. Customers read the copy in the Pantalytics knowledge base (`pantalytics.odoo.com/knowledge/article/116`); `tools/docs_to_knowledge.py` renders these pages into it, so refresh the article when you change one |
-| `docs/plans/` | Designs that are agreed but not built. [conversation-view.md](docs/plans/conversation-view.md) is the current one. A file moves into ARCHITECTURE.md when it ships |
+| `docs/plans/` | Designs that are agreed but not built. [conversation-view.md](docs/plans/conversation-view.md) is the current one, with [how it gets built](docs/plans/conversation-view-build.md) beside it. A file moves into ARCHITECTURE.md when it ships |
 | `docs/research/` | The evidence behind those designs: customer surveys, what the platform already does, [the market](docs/research/competition.md), and [how other products show a customer](docs/research/customer-360.md) |
 | CLAUDE.md (this file) | Workflow: environments, commands, CI, Odoo traps |
 
