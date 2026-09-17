@@ -718,7 +718,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 | [docs/cloudpepper-deploy.md](docs/cloudpepper-deploy.md) | Deploying on Cloudpepper: the two update tracks, the order, and the white screens |
 | `docs/` | End-user documentation, per provider. The source. Customers read the copy in the Pantalytics knowledge base (`pantalytics.odoo.com/knowledge/article/116`); `tools/docs_to_knowledge.py` renders these pages into it, so refresh the article when you change one |
 | `docs/plans/` | Designs that are agreed but not built. [conversation-view.md](docs/plans/conversation-view.md) is the current one. A file moves into ARCHITECTURE.md when it ships |
-| `docs/research/` | The evidence behind those designs: customer surveys, and what the platform already does |
+| `docs/research/` | The evidence behind those designs: customer surveys, what the platform already does, and [the market](docs/research/competition.md) |
 | CLAUDE.md (this file) | Workflow: environments, commands, CI, Odoo traps |
 
 The split is enforced, not just intended: CI fails if a model in `models/` is

@@ -1,23 +1,38 @@
-# Who else puts an inbox in Odoo
+# The market for email in Odoo
 
-Odoo Apps Store and Odoo's own documentation, read 16 September 2026. The
-question: is [the conversation inbox](../plans/conversation-view.md) a category
-nobody serves, or a crowded one?
+Odoo Apps Store, the vendors' own pricing pages and Odoo's own documentation,
+read 16 and 17 September 2026. The question behind it: is
+[the conversation inbox](../plans/conversation-view.md) a category nobody
+serves, what do these buyers already pay for, and where is the money.
 
-Crowded, and two of them are free.
+Everything below is either measured (a figure on a page, quoted), claimed (a
+vendor says so on a listing and nobody checked), or reasoned (mine, marked as
+such). They are not the same thing and the difference matters more here than
+the conclusions.
 
-## In the Odoo Apps Store, 19.0
+## The two problems
 
-| Module | Vendor | Price | What it is |
-|---|---|---|---|
-| [Mail Client](https://apps.odoo.com/apps/modules/category/Client/browse?series=19.0) | Albirru Solutions | **Free**, open source | Three-pane inbox, two-way IMAP sync, shared team mailboxes, built for mailcow and Dovecot, also Gmail and Microsoft 365 |
-| [OW Mail](https://apps.odoo.com/apps/modules/category/Mail/browse?series=19.0) | Openworx | **Free** | Backend mail client, IMAP/SMTP, multi-account, tags |
-| [MailDesk Basic](https://apps.odoo.com/apps/modules/18.0/maildesk_mail_client) | Metzler IT GmbH | $449 | Unified inbox over Gmail, Outlook and IMAP with OAuth2, "Outlook-style conversation view", shared inboxes with permissions, HTML composer |
-| [Advance Team Mailbox](https://apps.odoo.com/apps/modules/19.0/wbl_team_mailbox) | Weblytic Labs | $98 | Shared inbox with assignment, workflow states, SLA policies, canned replies, automation |
-| Shared Inbox & Email CRM | Ranvals Software | $85 | Gmail, Outlook and IMAP shared inbox with CRM integration |
-| Microsoft Graph Mail | Nexevolve | $99 | Send and receive Microsoft 365 mail over Graph, no SMTP or IMAP |
+The store treats email in Odoo as one product. It is two.
 
-Two shapes, not one. **The mail client in Odoo** (Albirru, OW Mail, MailDesk)
+1. **Transport.** Send and receive as the real mailbox on Microsoft 365, Gmail
+   or IMAP, and have the mail land on the right Odoo record without the
+   catchall and alias contraption.
+2. **The mailbox.** A screen you can read and answer mail in.
+
+A module can do either without the other, and almost all of them do.
+
+## Inside the Odoo Apps Store, 19.0
+
+| Module | Vendor | Price | Downloads | What it is |
+|---|---|---|---|---|
+| [Mail Client](https://apps.odoo.com/apps/modules/19.0/mail_client) | Albirru Solutions | **Free**, open source | 66 | Three-pane inbox, two-way IMAP sync, shared team mailboxes, built for mailcow and Dovecot, also Gmail and Microsoft 365 |
+| [OW Mail](https://apps.odoo.com/apps/modules/19.0/ow_mail) | Openworx | **Free** | 137 | Backend mail client, IMAP/SMTP, multi-account, tags. OAuth through a beta companion module |
+| [MailDesk Basic](https://apps.odoo.com/apps/modules/18.0/maildesk_mail_client) | Metzler IT GmbH | $449 | not shown | Unified inbox over Gmail, Outlook and IMAP with OAuth2, "Outlook-style conversation view", shared inboxes with permissions |
+| [Advance Team Mailbox](https://apps.odoo.com/apps/modules/19.0/wbl_team_mailbox) | Weblytic Labs | $98 | not shown | Shared inbox with assignment, workflow states, SLA policies, canned replies |
+| [Shared Inbox & Email CRM](https://apps.odoo.com/apps/modules/19.0/mail_center_odoo17) | Ranvals Software | $85 | 1 | Gmail, Outlook and IMAP shared inbox with CRM integration |
+| [Microsoft Graph Mail](https://apps.odoo.com/apps/modules/category/Mail/browse?series=19.0) | Nexevolve | $99 | not shown | Send and receive Microsoft 365 mail over Graph, no SMTP or IMAP |
+
+Two shapes. **The mail client in Odoo** (Albirru, OW Mail, MailDesk)
 reproduces Outlook inside the backend. **The team inbox** (Weblytic, Ranvals)
 reproduces a helpdesk: assignment, statuses, SLA. Our design is the first shape
 and deliberately refuses the second.
@@ -31,27 +46,13 @@ lead. No install inside Odoo, no migration of habits. Eight of the 28 survey
 respondents said they work outside Odoo, and this is what that half is offered
 today.
 
-## What this does to our claim
-
-Three corrections we should make to ourselves rather than discover in a sales
-call:
-
-1. **"An inbox in Odoo" differentiates nothing.** There is a free one for 19.0
-   with the same three-pane shape and the same two-way sync.
-2. **The record beside the thread is not unique either.** MailDesk already
-   advertises chatter sync with document links and replying with record
-   context. What we can still claim is how: a rollup that stores no facts,
-   against their separate mail store.
-3. **The transport is where we are actually ahead.** Graph and the Gmail API
-   rather than IMAP, the matcher, the routing log, the internal-domain gate.
-   That is also exactly what the survey's largest cluster asked for, and what a
-   free IMAP client cannot do: send as the person from a shared address, prove
-   where a mail landed, refuse to sync what it should not.
-
-MailDesk's own page names the seam everyone else punts on: the basic version
-"does not synchronize flag changes, folder moves, or deletions back to mail
-servers". That is the read-state problem, and it is why our answer is Odoo's
-`mail.notification` rather than a state of our own.
+**The platform risk, stated plainly.** Odoo could ship this. `message_post` in
+19.0 already accepts `outgoing_email_to` next to `partner_ids`, described in
+its own docstring as experimental, which is the first sign of Odoo separating
+the addressee from the follower. If Odoo ever ships a real mailbox screen, the
+whole store category goes to zero in one release. Nothing suggests it is
+imminent, and no amount of reading the source tells you a roadmap. It is a risk
+to carry, not one to plan around.
 
 ## Who solves which of the two problems
 
@@ -83,6 +84,88 @@ So the two products in this market are not competing for the same thing. The
 mail clients are mail clients that happen to run inside Odoo; what makes mail
 worth having inside an ERP is the middle column, and that is where we already
 are.
+
+## What these buyers already pay for, outside Odoo
+
+This is the part the store listings hide. Three of the 28 respondents named a
+tool they already bought, and none of them was an Odoo module: Missive twice,
+Chatwoot once, Brevo once as a sending workaround.
+
+| Tool | Price (per user or agent, per month, billed annually) |
+|---|---|
+| [Missive](https://missiveapp.com) | $14 Starter (max 5 users), $24 Productive, $36 Business |
+| [Front](https://front.com) | $25 Starter (max 10 seats), $65 Professional, $105 Enterprise |
+| [Chatwoot](https://www.chatwoot.com/pricing) | $0 Hacker, $19 Startups, $39 Business, $99 Enterprise. Self-hosted community edition is free |
+
+Read that against the store table. A five-person sales team on Missive
+Productive is $120 a month, about $1,440 a year, every year. The most expensive
+module in the Odoo store is $449 once. **The people with this problem are
+already paying roughly three times the price of the most expensive Odoo module
+every single year, to a company that knows nothing about their quotes and
+tickets.**
+
+That is the number that matters, and it says the Odoo store is not where the
+money is. It is where the free-and-cheap end of the category lives, on a
+platform that takes 30% of a sale and prices per version.
+
+## Where the money would come from (reasoning, not research)
+
+Three ways to be paid for this, with what each implies:
+
+1. **A paid module in the store.** One-off, $85 to $449, Odoo keeps 30%, and
+   you re-sell it at every version. The observed download counts on this
+   category are 1, 66 and 137. Even generously, this is a few thousand euro a
+   year and a support burden. It is a distribution channel, not a business.
+2. **Per-seat subscription, priced against Missive rather than against the
+   store.** Mail Pro already has the machinery: a licence, a signed
+   entitlement, a daily heartbeat. At a fraction of Missive's $24 it is still an
+   order of magnitude more per customer than any module in that table, and the
+   pitch is the one thing Missive structurally cannot do: the quote and the
+   ticket next to the thread.
+3. **Consulting pulled through by the product.** Two of the 28 already paid
+   developers for their own CC and follower fixes; three are partners who would
+   resell. This is the shortest path to revenue and the one that does not scale.
+
+The honest reading of the survey is that (2) is the bet and (1) is the shop
+window.
+
+## Sizing, with the assumptions showing
+
+Odoo's own [About Us](https://www.odoo.com/page/about-us) page claims **28
+million users**, 21,000+ partners and 8,000+ employees. Secondary sources put
+the customer count around 170,000 and 2025 revenue near €650M; those are blog
+aggregations, not Odoo's own figures, and should be treated as such.
+
+Everything after that is multiplication with numbers nobody has measured: what
+share is on 19.0, what share runs Microsoft 365 or Google Workspace, what share
+has a team that lives in mail rather than one admin who sends invoices. Each
+guess moves the answer by a factor, so the product of four guesses is not an
+estimate, it is a decoration. What can be said without inventing anything:
+
+- The category is large enough that six vendors keep building for it and Odoo
+  itself ships two integrations for it.
+- The paying end of it is visibly not in the Odoo store, because the store's
+  own numbers are 1, 66 and 137 downloads.
+- Our own list is the only population we can actually measure, and 18 of 28 of
+  them already send from inside Odoo.
+
+Before anyone models revenue, ask the list what they pay today for email tools.
+That one question converts every guess above into an observation.
+
+## What we would have to believe
+
+Written as bets, so they can be checked rather than argued:
+
+1. **That the record beside the thread is worth switching for.** If it is not,
+   the inbox is a worse Outlook and the free module is the ceiling.
+2. **That people will pay per seat for something inside Odoo.** They already do
+   for Missive; nobody has shown they will inside an ERP.
+3. **That Odoo does not ship a mailbox screen in the next two releases.**
+4. **That the transport half stays hard.** It is hard today because Graph,
+   Gmail and IMAP each behave differently and the catchall is a trap. If Odoo
+   smooths that out, the wedge narrows.
+
+Bet 1 is the cheapest to test and nobody has tested it.
 
 ## So why does nobody seem to use them?
 
@@ -131,8 +214,19 @@ here, and they have already shown they reply.
 
 ## What this does not tell us
 
-Nothing about how many people run any of these. The store shows no download
-count on these listings, there are no public reviews to weigh, and none of it
-says whether a free three-pane inbox is any good once a real mailbox is behind
-it. Before pricing anything against this list, install the Albirru module on the
-dev instance and use it for a week.
+Three limits worth keeping in front of the conclusions.
+
+**The store numbers are thin.** Downloads are shown for the free modules (1, 66,
+137) and not for the paid ones, there are no public reviews to weigh, and a
+download is not an install and an install is not a user.
+
+**Nobody has used any of them.** Every line about what a paid module does comes
+from its own listing. Two claims in particular are unverified and load-bearing:
+MailDesk's chatter sync with document links, and Weblytic's routing. Installing
+the two free ones on the dev instance with a real mailbox behind them costs a
+week and would replace half of this page with facts.
+
+**The survey population is ours, not the market's.** 28 self-selected replies
+from people who already use a Pantalytics tool. They are more Odoo-committed and
+more technical than the average Odoo customer, and nobody asked them about
+price.
