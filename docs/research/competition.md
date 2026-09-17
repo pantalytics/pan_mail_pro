@@ -53,6 +53,37 @@ MailDesk's own page names the seam everyone else punts on: the basic version
 servers". That is the read-state problem, and it is why our answer is Odoo's
 `mail.notification` rather than a state of our own.
 
+## Who solves which of the two problems
+
+There are two problems, not one, and almost nobody does both.
+
+1. **Transport.** Send and receive as the real mailbox on Microsoft 365, Gmail
+   or IMAP, and have the mail land on the right Odoo record without the
+   catchall and alias contraption.
+2. **The mailbox.** A screen you can read mail in.
+
+| | Sends and receives as the mailbox itself | Lands on the right record automatically, without aliases | Inbox screen |
+|---|---|---|---|
+| **Odoo out of the box** (`microsoft_outlook`, `google_gmail`) | Partly. OAuth on the outgoing server, but incoming runs on catchall and aliases | Yes, through the aliases, which is the part people are complaining about | No. Discuss is a notification queue |
+| **Odoo Mail Plugin** (Outlook/Gmail side panel, free) | No, you are in Outlook | Manual, you press a button per mail | No, by design |
+| **Mail Client**, Albirru, free, 66 downloads | Per mailbox, over Odoo's own outgoing servers plus IMAP or OAuth | **No, refused on purpose**: "No Chatter bridge. Logging mail against Odoo records stays Odoo's own job, deliberately" | Yes, three panes |
+| **OW Mail**, Openworx, free, 137 downloads | IMAP/SMTP, with OAuth for Gmail and M365 through a beta companion module | Half. You create the record from a mail by hand; after that, replies post to its chatter automatically | Yes |
+| **MailDesk**, Metzler IT, $449 | OAuth for Gmail and Outlook, plus IMAP | Claims chatter sync with document links. Not verified beyond the listing | Yes, "Outlook-style conversation view" |
+| **Advance Team Mailbox**, Weblytic, $98 | Claims Gmail, Outlook, Zoho, M365, IMAP | Not stated on the page | Yes, plus assignment, statuses and SLA |
+| **Shared Inbox & Email CRM**, Ranvals, $85, 1 download | Claims Gmail, Outlook, IMAP | Claimed, not verified | Yes |
+| **Microsoft Graph Mail**, Nexevolve, $99 | Yes, Graph without SMTP or IMAP | Through Odoo's normal path, so still the aliases | No |
+| **Mail Pro today** | Yes, per mailbox over Graph, the Gmail API or IMAP | Yes, the matcher and the routing log, no aliases | **No** |
+
+Read down the middle column. It is the one nobody else really does: the free
+one refuses it in its release notes, OW Mail does half of it, and the two that
+claim it are claims on a listing page. Read the last column and it is the only
+one we do not have.
+
+So the two products in this market are not competing for the same thing. The
+mail clients are mail clients that happen to run inside Odoo; what makes mail
+worth having inside an ERP is the middle column, and that is where we already
+are.
+
 ## So why does nobody seem to use them?
 
 Worth asking, because the answer is a warning about the design we just agreed.
