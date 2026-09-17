@@ -78,7 +78,16 @@
                         <span class="visually-hidden" role="status">Loading conversations</span>
                     </t>
                     <t t-elif="!state.conversations.length">
-                        <div class="o_mailpro_empty">
+                        <!-- An empty search is not an empty folder: "new
+                             mail appears here" would say the mail does not
+                             exist, when it may be one mailbox over. -->
+                        <div t-if="state.search" class="o_mailpro_empty">
+                            <h3 class="o_mailpro_empty_title">Nothing matches "<t t-esc="state.search"/>" in <t t-esc="folderLabel(state.folder)"/>.</h3>
+                            <p class="o_mailpro_empty_text">
+                                The search covers this mailbox. Try another one, or clear it.
+                            </p>
+                        </div>
+                        <div t-else="" class="o_mailpro_empty">
                             <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel(state.folder)"/> yet.</h3>
                             <p class="o_mailpro_empty_text">
                                 New mail appears here as it arrives.

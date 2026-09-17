@@ -77,6 +77,21 @@ class TestConversationApi(TransactionCase):
         self.assertNotIn('<', row['preview'])
         self.assertIn('dank & groet', row['preview'])
 
+    def test_preview_stops_where_the_quote_starts(self):
+        """A one-line answer on top of the quoted thread previews as the
+        answer. With the quote in it, the list reads as if the customer wrote
+        what we wrote last week."""
+        self._mail(body='<p>Prima, akkoord.</p>'
+                        '<blockquote>Op 12 sep schreef sales@company.test: '
+                        'de levertijd is drie weken</blockquote>')
+        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
+        self.assertEqual(row['preview'], 'Prima, akkoord.')
+        # Outlook marks the history with a div, not a blockquote.
+        self._mail(body='<p>Dank!</p><div id="divRplyFwdMsg">From: sales</div>'
+                        '<div>de levertijd is drie weken</div>')
+        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
+        self.assertEqual(row['preview'], 'Dank!')
+
     def test_folder_counts_cover_every_folder(self):
         self._mail()
         counts = self.Conversation.folder_counts(mailbox_id=self.mailbox.id)

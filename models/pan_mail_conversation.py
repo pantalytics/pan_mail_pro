@@ -32,6 +32,7 @@ came out of it read as one conversation, which is what people open this screen
 to find.
 """
 import logging
+import re
 from datetime import datetime
 
 from odoo import models, api, _
@@ -57,6 +58,13 @@ COUNT_CAP = 99
 # signature, an inline stylesheet and the whole quoted history; the preview is
 # 140 characters.
 PREVIEW_SOURCE = 8000
+# Where the quoted history starts, as the mail clients people write to us
+# from mark it. The same list the thread pane folds, so the snippet and the
+# open message end "what they wrote" at the same place.
+QUOTE_START = re.compile(
+    r'<blockquote\b|class="[^"]*\b(?:gmail_quote|moz-cite-prefix|OutlookMessageHeader)\b'
+    r'|data-o-mail-quote|id="(?:divRplyFwdMsg|appendonsend)"',
+    re.IGNORECASE)
 
 # How many groups to over-fetch for the two folders whose answer depends on
 # which way the *newest* message went. Direction lives on the message, so that
@@ -732,4 +740,12 @@ class PanMailConversation(models.AbstractModel):
         hand-rolled tag stripping leaves behind as a line of CSS.
         """
         body = str(message.body or '')[:PREVIEW_SOURCE]
+        # A short answer on top of a long quote previews as the answer and
+        # then the quote's first line, which reads as if the customer wrote
+        # both. Cut at the first quote marker; the thread pane folds the same
+        # markers (QUOTE_MARKERS in conversation_view.js), so the line here
+        # and the open message agree on where "what they wrote" ends.
+        quote = QUOTE_START.search(body)
+        if quote:
+            body = body[:quote.start()]
         return ' '.join(html2plaintext(body).split())[:140]
