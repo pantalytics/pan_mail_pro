@@ -96,6 +96,26 @@ ids = [call('pan.mail.mailbox', 'create', vals) for vals in (
     {'email': 'support@example.com', 'provider': 'outlook', 'owner_user_id': uid},
     {'email': 'sales@example.com', 'provider': 'outlook', 'owner_user_id': uid})]
 call('pan.mail.mailbox', 'write', ids[1:], {'state': 'error'})
+# Mail, so the Inbox screen shows the thing it is for rather than its empty
+# state. Three messages on one lead: a question, our answer, their reply.
+customer = call('res.partner', 'create', {
+    'name': 'Vandermolen Techniek B.V.', 'email': 'bart@vandermolen.example'})
+lead = call('crm.lead', 'create', {
+    'name': 'Asafdichtingen, revisie', 'partner_id': customer,
+    'email_from': 'bart@vandermolen.example'})
+for subject, body, direction in (
+    ('Offerte revisie asafdichtingen',
+     '<p>Kunnen jullie de levertijd op regel 3 nog bevestigen?</p>', 'incoming'),
+    ('Re: Offerte revisie asafdichtingen',
+     '<p>Drie weken vanaf akkoord, dat leggen we vast.</p>', 'outgoing'),
+    ('Re: Offerte revisie asafdichtingen',
+     '<p>Prima. Dan graag opdracht bevestigen.</p>', 'incoming'),
+):
+    call('mail.message', 'create', {
+        'model': 'crm.lead', 'res_id': lead, 'message_type': 'email',
+        'subject': subject, 'body': body, 'author_id': customer,
+        'email_from': 'bart@vandermolen.example',
+        'x_direction': direction, 'x_mailbox_id': ids[2]})
 call('pan.mail.license', 'unlink', [link])
 PY
 

@@ -136,6 +136,86 @@ class Checks:
             self.error_free(name)
             self.shot(f'view-{slug(name)}.png')
 
+    # -- The Inbox ------------------------------------------------------------
+
+    # The six states that earn a line in the rail. More than six and the rail
+    # is a filter panel; fewer and people ask where their mail went.
+    FOLDERS = ('Inbox', 'Needs reply', 'Waiting on customer', 'Sent',
+               'On a contact only', 'Linked to nothing')
+
+    def conversation_view(self):
+        """The Inbox renders four panes with real mail in them.
+
+        A screen that renders is not a screen that reads, which is why this
+        asserts the panes are actually filled: the seed puts three messages on
+        one lead, so an empty list here means the read layer returned nothing
+        and the screen would ship as a convincing empty shell.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            self.fail('there is no Inbox menu')
+            return
+
+        page = self.page
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_conversation', timeout=30000)
+        except Exception:
+            self.fail('the Inbox did not render at all')
+            return
+        page.wait_for_timeout(2500)
+        self.error_free('Inbox')
+
+        rail = [el.inner_text().split('\n')[0].strip()
+                for el in page.query_selector_all('.o_mailpro_folder')]
+        if rail != list(self.FOLDERS):
+            self.fail(f'the folder rail reads {rail}, expected {list(self.FOLDERS)}')
+
+        items = page.query_selector_all('.o_mailpro_item')
+        if not items:
+            self.fail('the conversation list is empty with seeded mail on a lead')
+        else:
+            selected = page.query_selector_all('.o_mailpro_item_active')
+            if len(selected) != 1:
+                self.fail(f'{len(selected)} conversations look selected, expected 1')
+
+        messages = page.query_selector_all('.o_mailpro_message')
+        if not messages:
+            self.fail('the thread pane shows no messages')
+
+        # The fourth pane is the product. If the form view cannot mount, the
+        # pane falls back and this is the only place that would notice.
+        if page.query_selector('.o_mailpro_record .o_form_view') is None:
+            self.fail('the record pane did not mount the record form')
+
+        # The screen's one primary action. A reader-only inbox is half a
+        # product, and this is the click that proves it is not one.
+        reply = page.query_selector('.o_mailpro_thread_head button.btn-primary')
+        if not reply:
+            self.fail('the thread has no Reply button')
+        else:
+            reply.click()
+            try:
+                page.wait_for_selector('.modal .o_form_view', timeout=15000)
+            except Exception:
+                self.fail('Reply opened no composer')
+            else:
+                page.keyboard.press('Escape')
+                page.wait_for_timeout(800)
+
+        self.shot('inbox.png')
+
+        # A wide monitor is where the complaint arrives from, and a narrow one
+        # is where the fourth pane is meant to step aside rather than squeeze.
+        page.set_viewport_size({'width': 1280, 'height': 900})
+        page.wait_for_timeout(600)
+        record = page.query_selector('.o_mailpro_record')
+        if record and record.is_visible():
+            self.fail('the record pane still takes space at 1280px')
+        self.shot('inbox-narrow.png')
+        page.set_viewport_size({'width': WIDE, 'height': 1100})
+        page.wait_for_timeout(400)
+
     # -- The provider form ----------------------------------------------------
 
     # What each provider's registration asks for, under the name its own
@@ -353,6 +433,7 @@ def main():
         checks.call = rpc_for(args.url, args.db)
         checks.settings()
         checks.menus()
+        checks.conversation_view()
         checks.provider_form()
         checks.connect_banner()
         browser.close()

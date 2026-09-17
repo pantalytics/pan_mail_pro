@@ -23,3 +23,4 @@ from . import mail_message
 from . import mail_thread
 from . import pan_mail_coverage
 from . import res_partner
+from . import pan_mail_conversation
