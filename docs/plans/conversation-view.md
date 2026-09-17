@@ -1,15 +1,25 @@
 # The conversation view
 
-Status: **agreed design**, 16 September 2026. Not built yet, so nothing here is
-in `ARCHITECTURE.md`: that file describes what exists. When this ships, the
-models and seams move there and this file becomes history.
+Status: **partly built**, 19.0.10.0.0. The inbox itself ships: the folder rail,
+the conversation list, the thread and the record pane, reading through
+`pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
+Still on paper: the *screens* for door 1 (the chatter's own button and its
+more-messages-elsewhere line) and for the customer view and its timeline. Their
+read methods shipped and are tested, so what is left of each is markup.
 
-Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB
+Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
+the inbox, an unfiled conversation, the model, the chatter with its door to the
+mail, one customer's correspondence across records, and that customer's
+timeline with the open activities on top.
 
 The survey says two thirds of respondents already send from inside Odoo and
 that what they cannot do is see a customer's correspondence in one place.
 Odoo's chatter is record-centric; mail is conversation-centric. This is the
 smallest object that closes that gap, in the layout people already know.
+
+How it gets built -- the read API, the OWL components, and why this is not a
+separate frontend -- is in
+[conversation-view-build.md](conversation-view-build.md).
 
 ## The decision
 
@@ -132,6 +142,100 @@ and together they are how the screen stops agreeing with Odoo. Read state is
 Odoo's needaction, status is derived, and the assignee of work is the activity's
 `user_id` on the record.
 
+## The two doors, and the customer view
+
+The view is a visualisation layer, so its whole job is to put the same messages
+in front of you from whichever side you arrive. Three surfaces, one set of rows:
+
+```mermaid
+flowchart TD
+    MM["mail.message rows<br/>on quotes, tickets, invoices, contacts"]
+    TL["pan.mail.thread.link<br/>thread key -> model, res_id"]
+    MR["pan.mail.message.ref<br/>Message-ID -> message"]
+    MM --- MR
+    MR --- TL
+    TL --> A["Door 1: the chatter<br/>on one record"]
+    TL --> B["Door 2: the conversation view<br/>one thread, all its records"]
+    TL --> C["Door 3: the customer view<br/>every thread with one company"]
+    A <-->|"same thread key"| B
+    B <-->|"filter on partner"| C
+```
+
+None of the three stores anything. Each is a different `WHERE` over the rows
+that already exist, and each reads them as the user, so a message on a record
+somebody cannot open is simply not in their result.
+
+### Door 1: from the chatter to the mail
+
+The chatter shows the messages filed on **this** record. The conversation they
+belong to may be larger, and that difference is exactly what surprises people
+today.
+
+- **On the record**, next to the chatter's own controls, one button:
+  **Open in mail**. It opens the conversation view on this record's newest
+  thread. Always present on a record that has any emailed message, so it is a
+  place rather than a surprise.
+- **On a message**, a line appears *only* when the conversation holds messages
+  that are not on this record: "Part of a conversation with Acme BV, 3 more
+  messages elsewhere." That is the case worth an interruption. When everything
+  is already on the chatter, the line would be noise and is not drawn.
+
+### Door 2: from the mail to the chatter
+
+The fourth pane is the record and its chatter, live, not a summary: the same
+form Odoo renders, with its own buttons. Two things make it a door rather than
+a preview.
+
+- **A breadcrumb** that opens the record full screen, which is where you go to
+  actually change something.
+- **A record chip per record the conversation touched.** A thread that started
+  as a quote and continued on a ticket shows both, newest first, and clicking
+  one swaps the pane. Which answers the open question this document used to
+  carry: **a conversation may span records.** The thread is the conversation,
+  the filing is per message, and the pane follows the message you have
+  selected. Splitting it into two conversations would hide exactly the history
+  people open this screen to find.
+
+### Door 3: the customer view
+
+Every thread where one company is a participant, across records and across
+mailboxes, in the same three panes with the folder column replaced by the
+company. It is the inbox with one filter on it, not a second screen.
+
+**Two tabs, not five.** *Conversations* is the default, because mail is why the
+screen exists. *Timeline* is the 360: one axis, newest first, carrying the
+messages, the activities that were done and the record events a person would
+mention out loud, with three filter chips over it. Pinned above that axis,
+**Next**: the open activities with their deadline and their owner, because a
+history answers what happened and never answers what now. Those are
+`mail.activity` rows, unchanged, marked done through `activity_schedule()`'s own
+counterpart so the Activities clock agrees.
+
+Where each of those came from, and the four things it refuses (a health score,
+an AI summary of the relationship, bought enrichment, and a stored
+last-contacted field), is in
+[docs/research/customer-360.md](../research/customer-360.md).
+
+Reached from the contact form, from a button in the button box with the
+conversation count on it, so the path is the one Odoo users already know:
+open the customer, see their correspondence. Also reachable from any
+conversation, by clicking the company name.
+
+The company, not the person. A conversation with `jan@acme.com` and
+`inkoop@acme.com` is one company's correspondence, and the partner's
+`commercial_partner_id` is how Odoo already says that.
+
+### What none of the doors do
+
+- **They do not talk to the provider.** Every pane is a query on Odoo. The sync
+  is the only thing that touches Graph, Gmail or IMAP, on its own schedule.
+- **They do not widen access.** The messages a door shows are the ones the user
+  could already read on the record. There is no sudo anywhere in this layer,
+  which is also why there is no "conversations I cannot see" counter.
+- **They do not write a link.** The thread key is what the matcher already
+  stored when the mail arrived. A door that had to create a link would be a
+  second filing decision, and the routing log exists so there is only one.
+
 ## What it reuses
 
 - `pan_mail_matcher` decides which record a message belongs to. Unchanged.
@@ -158,8 +262,6 @@ opened all day. The diagnostics it removed stay where they are.
 
 ## Open questions
 
-- Whether a conversation may span two records (a quote and the ticket that came
-  out of it) or whether that is two conversations sharing participants.
 - Whether "waiting on us" should also be personal on a shared mailbox, or stay
   one list for the team. The read pointer makes unread personal; waiting-on-us
   is derived from the messages and is therefore the same for everyone, which is

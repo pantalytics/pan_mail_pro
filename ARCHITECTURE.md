@@ -155,11 +155,34 @@ Providers disagree about sending as somebody else, which is why
 | `pan.mail.routing.log` | One row per delivered mail: rule, confidence, rejected candidates |
 | `pan.mail.coverage` | Transient report: how much mail actually lands on a document |
 
-Every screen the module ships lives under Settings → Technical → Email →
-**Mail Pro**. 19.0.4.0.0 gave it a "Communication" application of its own on
-the home screen; 19.0.7.0.0 took it back. What it held was one read-only lens
-and a queue, which is not an application, and a tile on the home screen invites
-daily use of a diagnostic view.
+**Reading it**
+
+| Model | Purpose |
+|-------|---------|
+| `pan.mail.conversation` | AbstractModel, no table. The queries behind the Inbox screen: folders, conversations, one thread, a customer's timeline, and what the chatter's door needs |
+
+Every configuration and diagnostic screen lives under Settings → Technical →
+Email → **Mail Pro**. 19.0.4.0.0 gave the module a "Communication" application
+of its own on the home screen; 19.0.7.0.0 took it back, because what it held
+was one read-only lens and a queue, and a tile invites daily use of a
+diagnostic view. 19.0.10.0.0 gives the tile back to the Inbox, by that same
+test: a tile is a promise about how often a screen is opened, and this is where
+somebody answers customer mail all day. The diagnostics stayed where they were.
+
+`pan.mail.conversation` is for mailbox managers, and says so itself: the menu
+carries the group, Odoo 19's `ir.actions.actions` cannot, and every method
+checks before it answers. It also reaches two tables whose ACL is
+manager-only (`pan.mail.thread.link`, `pan.mail.routing.log`) with `sudo()`,
+after the message search that fences the result -- the sudo buys the lookup,
+never the answer.
+
+Beyond that it is a namespace, not storage. Two rules hold it together: every query starts at `mail.message` so the ORM applies the record
+rules before anything is grouped (the thread index is not access controlled, so
+reading it first would let a thread key betray a record somebody cannot open),
+and it reads only. Replying, marking read and scheduling a follow-up are Odoo's
+own methods called on the record itself, unwrapped, so the reply path cannot
+drift from the chatter. The screen it serves is designed in
+`docs/plans/conversation-view.md`.
 
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
@@ -195,6 +218,7 @@ pan_mail_pro/
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
 │   ├── pan_mail_routing_log.py
 │   ├── pan_mail_coverage.py       # Coverage report (TransientModel)
+│   ├── pan_mail_conversation.py   # Read side of the Inbox screen (AbstractModel)
 │   ├── mail_mail.py               # Outgoing override + route resolution
 │   ├── mail_message.py            # Threading keys + communication lens
 │   ├── mail_compose_message.py
@@ -1560,15 +1584,17 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 
 ## 12. Tests
 
-41 files under `tests/`, roughly 10 000 lines. They fall into five groups:
+45 files under `tests/`. They fall into seven groups:
 
 | Group | Files | What they hold |
 |-------|-------|----------------|
 | Contracts | `test_provider_contract.py` | Every provider answers the contract identically |
-| Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_pan_mail_provider.py` | Wire-level behaviour per vendor, and the credential rows behind them |
-| Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_mail_matcher.py`, `test_routing_log.py` | Fetch → filter → match → post |
-| Sending & UI | `test_outgoing_*.py`, `test_compose_*.py`, `test_mailbox_*.py`, `test_setup_flow.py`, `test_onboarding.py` | Routing, threading, composer, permissions, onboarding |
-| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py` | The scripts in `migrations/`, run against real rows |
+| Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_imap_live.py`, `test_pan_mail_provider.py` | Wire-level behaviour per vendor, and the credential rows behind them |
+| Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_mail_matcher.py`, `test_routing_log.py` | Fetch → filter → match → post |
+| Sending & UI | `test_outgoing_*.py`, `test_compose_*.py`, `test_mailbox_*.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py` | Routing, threading, composer, permissions, onboarding, and where the screens live |
+| Reading | `test_conversation_api.py` | What the Inbox may show, and to whom |
+| The outside | `test_oauth_routes.py`, `test_connect_banner.py`, `test_license.py` | Every route this module opens, who may call it, and what the OAuth callback stores |
+| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py` | The scripts in `migrations/`, run against real rows |
 
 `tests/common.py` provides the shared fixture — a notification mailbox, a shared
 mailbox, a personal mailbox, connected users, an external partner, and a
@@ -1581,6 +1607,25 @@ tests prove the refactor preserved behaviour rather than merely not crashing.
 New tests use `@tagged('pan_mail_pro', 'post_install', '-at_install')` and
 extend `TransactionCase`. See [CLAUDE.md](CLAUDE.md) for how to run them and
 what CI enforces.
+
+### The routes
+
+Four, and no more. `tests/test_oauth_routes.py` holds the same list and fails
+when a fifth arrives, because the question a new route raises is who may call
+it, and the answer belongs somewhere a reviewer reads.
+
+| Route | Auth | What it does |
+|-------|------|--------------|
+| `/mail_pro/connect` | `user` | The button in the invitation mail. Sends the user straight to their provider's consent screen, or to the settings page when the provider has none (IMAP) |
+| `/microsoft_oauth/callback` | `user` | Where Microsoft returns. Validates the nonce, exchanges the code, stores the account, claims the personal mailbox |
+| `/google_oauth/callback` | `user` | The same, for Google. One implementation, two routes |
+| `/mail_pro/pantalytics/return` | `user` | Where our own approval page sends an administrator back to. Not an OAuth callback: a plain link carrying the key |
+
+None of them is public. The callback writes credentials, the connect route
+reads the user's provider and the return route takes an approval key, so none
+of the three has an anonymous version. The nonce on the callback is good once:
+`x_pan_mail_oauth_state` is cleared the moment it matches, so a callback URL
+out of a browser history or a log is not a second grant.
 
 ---
 

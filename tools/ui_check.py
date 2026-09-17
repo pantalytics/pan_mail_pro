@@ -136,6 +136,115 @@ class Checks:
             self.error_free(name)
             self.shot(f'view-{slug(name)}.png')
 
+    # -- The Inbox ------------------------------------------------------------
+
+    # The five states that earn a line in the rail. More than five and the
+    # rail is a filter panel; fewer and people ask where their mail went.
+    # "Sent" is not one of them: it was the same query as "Waiting on
+    # customer", and the provider's own Sent folder already exists.
+    FOLDERS = ('Inbox', 'Needs reply', 'Waiting on customer',
+               'On a contact only', 'Linked to nothing')
+
+    def conversation_view(self):
+        """The Inbox renders four panes with real mail in them.
+
+        A screen that renders is not a screen that reads, which is why this
+        asserts the panes are actually filled: the seed puts three messages on
+        one lead, so an empty list here means the read layer returned nothing
+        and the screen would ship as a convincing empty shell.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            self.fail('there is no Inbox menu')
+            return
+
+        page = self.page
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_conversation', timeout=30000)
+        except Exception:
+            self.fail('the Inbox did not render at all')
+            return
+        page.wait_for_timeout(2500)
+        self.error_free('Inbox')
+
+        rail = [el.inner_text().split('\n')[0].strip()
+                for el in page.query_selector_all('.o_mailpro_folder')]
+        if rail != list(self.FOLDERS):
+            self.fail(f'the folder rail reads {rail}, expected {list(self.FOLDERS)}')
+
+        # Everything clickable is a real button, so a keyboard can reach it.
+        for selector, what in (('.o_mailpro_folder', 'folder'),
+                               ('.o_mailpro_item', 'conversation')):
+            divs = [el for el in page.query_selector_all(selector)
+                    if el.evaluate('el => el.tagName') != 'BUTTON']
+            if divs:
+                self.fail(f'{len(divs)} {what} rows are not buttons')
+
+        items = page.query_selector_all('.o_mailpro_item')
+        if not items:
+            self.fail('the conversation list is empty with seeded mail on a lead')
+        else:
+            selected = page.query_selector_all('.o_mailpro_item_active')
+            if len(selected) != 1:
+                self.fail(f'{len(selected)} conversations look selected, expected 1')
+
+        messages = page.query_selector_all('.o_mailpro_message')
+        if not messages:
+            self.fail('the thread pane shows no messages')
+
+        # The fourth pane is the product. If the form view cannot mount, the
+        # pane falls back and this is the only place that would notice.
+        if page.query_selector('.o_mailpro_record .o_form_view') is None:
+            self.fail('the record pane did not mount the record form')
+
+        # ...and the form's own statusbar buttons stay out of it. A filled
+        # "Convert to Opportunity" in the fourth pane is a louder button than
+        # Reply, on a screen whose one job is replying. The chatter's own
+        # composer stays: it is how you log an internal note, and it is the
+        # control people already know from every other Odoo screen.
+        loud = [b for b in page.query_selector_all(
+            '.o_mailpro_record .o_form_statusbar button') if b.is_visible()]
+        if loud:
+            self.fail('the record pane shows %d form buttons beside Reply'
+                      % len(loud))
+
+        # The screen's one primary action. A reader-only inbox is half a
+        # product, and this is the click that proves it is not one.
+        reply = page.query_selector('.o_mailpro_thread_head button.btn-primary')
+        if not reply:
+            self.fail('the thread has no Reply button')
+        else:
+            reply.click()
+            try:
+                page.wait_for_selector('.modal .o_form_view', timeout=15000)
+            except Exception:
+                self.fail('Reply opened no composer')
+            else:
+                # Discard rather than Escape: Escape leaves the composer open
+                # on a draft, and the screenshot below is what a reviewer
+                # looks at.
+                discard = page.query_selector('.modal button:has-text("Discard")')
+                if discard:
+                    discard.click()
+                else:
+                    page.keyboard.press('Escape')
+                page.wait_for_selector('.modal', state='detached', timeout=15000)
+                page.wait_for_timeout(600)
+
+        self.shot('inbox.png')
+
+        # A wide monitor is where the complaint arrives from, and a narrow one
+        # is where the fourth pane is meant to step aside rather than squeeze.
+        page.set_viewport_size({'width': 1280, 'height': 900})
+        page.wait_for_timeout(600)
+        record = page.query_selector('.o_mailpro_record')
+        if record and record.is_visible():
+            self.fail('the record pane still takes space at 1280px')
+        self.shot('inbox-narrow.png')
+        page.set_viewport_size({'width': WIDE, 'height': 1100})
+        page.wait_for_timeout(400)
+
     # -- The provider form ----------------------------------------------------
 
     # What each provider's registration asks for, under the name its own
@@ -353,6 +462,7 @@ def main():
         checks.call = rpc_for(args.url, args.db)
         checks.settings()
         checks.menus()
+        checks.conversation_view()
         checks.provider_form()
         checks.connect_banner()
         browser.close()
