@@ -69,6 +69,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_connect_banner.py` | Who is asked to connect a mailbox, and who is left alone |
+| `tests/test_oauth_routes.py` | Every route this module opens, who may call it, and what the OAuth callback stores when it works and when it refuses |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
 | `tests/test_mail_matcher.py` | Unit tests for the matching ladder |
 | `tests/test_imap_provider.py` | IMAP/SMTP client (fake imaplib/smtplib, no sockets) |
@@ -342,7 +343,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer, the record pane stepping aside at 1280px |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
@@ -728,7 +729,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 | [TESTPLAN.md](TESTPLAN.md) | Manual test plan for what CI cannot reach |
 | [docs/cloudpepper-deploy.md](docs/cloudpepper-deploy.md) | Deploying on Cloudpepper: the two update tracks, the order, and the white screens |
 | `docs/` | End-user documentation, per provider. The source. Customers read the copy in the Pantalytics knowledge base (`pantalytics.odoo.com/knowledge/article/116`); `tools/docs_to_knowledge.py` renders these pages into it, so refresh the article when you change one |
-| `docs/plans/` | Designs that are agreed but not built. [conversation-view.md](docs/plans/conversation-view.md) is the current one, with [how it gets built](docs/plans/conversation-view-build.md) beside it. A file moves into ARCHITECTURE.md when it ships |
+| `docs/plans/` | Designs that are agreed but not built, and the half-shipped ones. [conversation-view.md](docs/plans/conversation-view.md) is the current one, with [how it gets built](docs/plans/conversation-view-build.md) beside it. A plan carries a status line naming which parts ship; what has shipped moves into ARCHITECTURE.md, and the file leaves `docs/plans/` when the last step lands |
 | `docs/research/` | The evidence behind those designs: customer surveys, what the platform already does, [the market](docs/research/competition.md), and [how other products show a customer](docs/research/customer-360.md) |
 | CLAUDE.md (this file) | Workflow: environments, commands, CI, Odoo traps |
 

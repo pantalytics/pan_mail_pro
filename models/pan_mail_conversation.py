@@ -5,7 +5,8 @@ The read side of the conversation view.
 This model stores nothing. It is a namespace for the queries the inbox screen
 makes, and every one of them is a different `WHERE` over rows that already
 exist: `mail.message` for the mail, `mail.activity` for what is next, and the
-record's own tracked-field messages for the events. The design is in
+contact's own tracked-field messages for the events -- the contact's, not yet
+the quote's or the ticket's, which is a widening and not a bug fix. The design is in
 `docs/plans/conversation-view.md`; how it is built, in
 `docs/plans/conversation-view-build.md`.
 
