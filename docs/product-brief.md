@@ -49,7 +49,8 @@ with no conversation above it.
 
 Split by whether we answer it today: 11 people named something Mail Pro already
 fixes, 9 named something it does not, 3 are in both columns, and nobody named a
-problem outside those two columns. The plumbing is built. The screen is not.
+problem outside those two columns. The plumbing was built first; the screen
+followed in 19.0.10.0.0.
 
 ## What the detour costs
 
@@ -138,7 +139,7 @@ flowchart TD
     AC --> MB["Mailboxes: a shared or personal<br/>address, and its rules"]
     MB --> MT["The matcher:<br/>which record is this mail about"]
     MT --> OD["Odoo records and their chatter<br/>quotes, tickets, invoices, contacts"]
-    OD --> CV["The conversation view<br/>(designed, not built)"]
+    OD --> CV["The conversation view<br/>the inbox ships, the doors are next"]
     MT -.-> RL["Routing log:<br/>where it went and why"]
 ```
 
@@ -155,9 +156,9 @@ The screen, in the layout people already know:
 │ Inbox    │ Acme BV        2d   │ Re: quote SO0042     │ SO0042  Acme BV     │
 │ Needs    │ Re: quote SO0042    │                      │ €12,400  Sent       │
 │  reply   │ "can you split..."  │ ── Jan, Tuesday ──   │                     │
-│ Waiting  │                     │ Can you split the    │ Chatter             │
-│ Sent     │ Bakker & Zn    4d   │ delivery over two    │ · quote sent  2d    │
-│ Unfiled  │ Invoice question    │ weeks?               │ · note: check stock │
+│ Waiting  │ Bakker & Zn    4d   │ Can you split the    │ Chatter             │
+│ Unfiled  │ Invoice question    │ delivery over two    │ · quote sent  2d    │
+│          │                     │ weeks?               │ · note: check stock │
 │          │                     │                      │                     │
 │ sales@   │ Hendriks       1w   │ ── You, Tuesday ──   │ [Activity: call Jan]│
 │ support@ │ Ticket #318         │ Yes, I will...       │                     │
