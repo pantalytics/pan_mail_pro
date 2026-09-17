@@ -195,9 +195,16 @@ export class ConversationView extends Component {
         await this.refresh();
     }
 
-    async setMailbox(event) {
-        const value = parseInt(event.target.value, 10);
-        this.state.mailboxId = Number.isNaN(value) ? null : value;
+    /** Open another mailbox, from the rail. Folders are per mailbox. */
+    async setMailbox(mailboxId) {
+        if (mailboxId === this.state.mailboxId) {
+            return;
+        }
+        this.state.mailboxId = mailboxId;
+        // The folder you were in carries over. It is the same five states in
+        // every mailbox, and landing back in Inbox on every switch loses the
+        // one thing somebody switching mailboxes is usually doing: working
+        // one folder across all of them.
         this.state.limit = PAGE;
         await this.refresh();
     }

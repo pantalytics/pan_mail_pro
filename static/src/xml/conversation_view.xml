@@ -20,12 +20,6 @@
                 Inbox, and saying it twice is chrome competing with content.
             -->
             <div class="o_mailpro_topbar d-flex align-items-center justify-content-end gap-2">
-                <label class="o_mailpro_label mb-0" for="o_mailpro_mailbox">Mailbox</label>
-                <select id="o_mailpro_mailbox" class="o_mailpro_select form-select form-select-sm"
-                        t-on-change="(ev) => this.setMailbox(ev)">
-                    <option t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id"
-                            t-att-value="mailbox.id" t-esc="mailbox.email"/>
-                </select>
                 <input type="search" id="o_mailpro_search"
                        class="o_mailpro_search form-control form-control-sm"
                        aria-label="Search people and subjects"
@@ -40,17 +34,31 @@
 
             <div class="o_mailpro_panes d-flex flex-grow-1">
 
-                <!-- 1. where you are -->
-                <nav class="o_mailpro_rail" aria-label="Folders">
-                    <button t-foreach="state.folders" t-as="folder" t-key="folder.id"
-                            type="button"
-                            class="o_mailpro_folder d-flex align-items-center justify-content-between"
-                            t-att-class="{ 'o_mailpro_folder_active': folder.id === state.folder }"
-                            t-att-aria-current="folder.id === state.folder ? 'true' : undefined"
-                            t-on-click="() => this.setFolder(folder.id)">
-                        <span t-esc="folder.name"/>
-                        <span t-if="folder.count" class="o_mailpro_count" t-esc="folderCount(folder)"/>
-                    </button>
+                <!--
+                    1. where you are: the mailbox, and inside it the folder.
+                    The same shape as every mail client, because reading mail
+                    is the one job people already know the layout of. Only the
+                    open mailbox shows its folders: the counts are that
+                    mailbox's, and five rows per account is a rail you scroll.
+                -->
+                <nav class="o_mailpro_rail" aria-label="Mailboxes and folders">
+                    <t t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id">
+                        <button type="button"
+                                class="o_mailpro_mailbox d-flex align-items-center gap-2"
+                                t-att-class="{ 'o_mailpro_mailbox_active': mailbox.id === state.mailboxId }"
+                                t-att-aria-current="mailbox.id === state.mailboxId ? 'true' : undefined"
+                                t-on-click="() => this.setMailbox(mailbox.id)">
+                            <span class="o_mailpro_mailbox_name text-truncate" t-esc="mailbox.email"/>
+                        </button>
+                        <div t-if="mailbox.id === state.mailboxId" class="o_mailpro_folders">
+                            <t t-call="pan_mail_pro.ConversationFolders"/>
+                        </div>
+                    </t>
+                    <!-- No mailbox configured yet: the folders are still the
+                         reader's own mail, so the rail is not empty. -->
+                    <div t-if="!state.mailboxes.length" class="o_mailpro_folders">
+                        <t t-call="pan_mail_pro.ConversationFolders"/>
+                    </div>
                 </nav>
 
                 <!-- 2. what is waiting -->
@@ -174,6 +182,19 @@
 
             </div>
         </div>
+    </t>
+
+    <!-- The folders of the open mailbox. One definition, two call sites. -->
+    <t t-name="pan_mail_pro.ConversationFolders">
+        <button t-foreach="state.folders" t-as="folder" t-key="folder.id"
+                type="button"
+                class="o_mailpro_folder d-flex align-items-center justify-content-between"
+                t-att-class="{ 'o_mailpro_folder_active': folder.id === state.folder }"
+                t-att-aria-current="folder.id === state.folder ? 'true' : undefined"
+                t-on-click="() => this.setFolder(folder.id)">
+            <span t-esc="folder.name"/>
+            <span t-if="folder.count" class="o_mailpro_count" t-esc="folderCount(folder)"/>
+        </button>
     </t>
 
     <t t-name="pan_mail_pro.RecordPane">
