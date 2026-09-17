@@ -221,6 +221,13 @@ class Checks:
             except Exception:
                 self.fail('Reply opened no composer')
             else:
+                # The chatter fills "To" from the record; the composer on its
+                # own fills nothing, and a reply to nobody is the one bug a
+                # green suite cannot see. The seeded thread has a customer,
+                # so their tag has to be there before anyone types.
+                page.wait_for_timeout(600)
+                if not page.query_selector('.modal [name="partner_ids"] .o_tag'):
+                    self.fail('Reply opened a composer with nobody in To')
                 # Discard rather than Escape: Escape leaves the composer open
                 # on a draft, and the screenshot below is what a reviewer
                 # looks at.

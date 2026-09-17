@@ -291,10 +291,32 @@ export class ConversationView extends Component {
                     default_res_ids: [conversation.res_id],
                     default_composition_mode: "comment",
                     default_subtype_xmlid: "mail.mt_comment",
+                    // The chatter fills "To" from the record's suggested
+                    // recipients; the composer itself fills nothing, and since
+                    // 18.2 the customer is no longer a follower by default. A
+                    // reply with an empty "To" reaches nobody, so the person
+                    // who wrote last from their side goes in.
+                    default_partner_ids: this.replyRecipients(conversation),
                 },
             },
             { onClose: () => this.select(conversation) }
         );
+    }
+
+    /**
+     * Who a reply goes to: the author of the newest incoming message, the
+     * person rather than their company. Without one (a thread that is only
+     * our own mail so far) the conversation's correspondent, and without
+     * that nobody, which the composer shows as an empty "To" to fill in.
+     */
+    replyRecipients(conversation) {
+        const incoming = (this.state.thread.messages || [])
+            .filter((m) => m.direction === "incoming" && m.author_id)
+            .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+        if (incoming.length) {
+            return [incoming[0].author_id];
+        }
+        return conversation.partner_id ? [conversation.partner_id] : [];
     }
 
     openRecordChip(chip) {
