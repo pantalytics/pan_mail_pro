@@ -53,7 +53,7 @@ The screen is four panes:
 The panes are the reader's, not ours. Every divider drags, the folder rail and
 the record pane fold away, and the widths live in the browser, so the screen
 opens tomorrow the way it closed tonight. The list and the thread do not fold:
-a screen with no mail on it is not this screen. 19.0.10.1.0.
+a screen with no mail on it is not this screen. 19.0.10.2.0.
 
 When nothing is linked, the fourth pane shows what the matcher considered and
 rejected, with a one-click way to file it. An unfiled conversation is the case
