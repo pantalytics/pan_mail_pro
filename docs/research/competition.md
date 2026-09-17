@@ -46,13 +46,28 @@ lead. No install inside Odoo, no migration of habits. Eight of the 28 survey
 respondents said they work outside Odoo, and this is what that half is offered
 today.
 
-**The platform risk, stated plainly.** Odoo could ship this. `message_post` in
-19.0 already accepts `outgoing_email_to` next to `partner_ids`, described in
-its own docstring as experimental, which is the first sign of Odoo separating
-the addressee from the follower. If Odoo ever ships a real mailbox screen, the
-whole store category goes to zero in one release. Nothing suggests it is
-imminent, and no amount of reading the source tells you a roadmap. It is a risk
-to carry, not one to plan around.
+**The platform risk is not hypothetical.** The tempting reading is that Odoo
+does not care about this and the category is safe. The
+[19.0 release notes](https://www.odoo.com/odoo-19-release-notes) say otherwise.
+Four mail items under **General**, quoted:
+
+| Release note | What it is |
+|---|---|
+| "Connect your personal Gmail or Outlook address to send emails via your account." | Per-user transport. The half we sell. |
+| "Customers are no longer added as followers. Instead, the recipients of previous messages are suggested as recipients of future messages." | The complaint the survey named most often, fixed in core. |
+| "All email recipients are now shown in Odoo and in emails. The email recipient UI and UX has been improved." | The addressee stops being invisible. |
+| "Reply to a specific message and/or forward it to the desired recipients." | Per-message reply and forward, which is inbox behaviour. |
+
+The source agrees: `message_post` in 19.0 already accepts `outgoing_email_to`
+next to `partner_ids`, its own docstring calling it experimental. Same move,
+the addressee separated from the follower.
+
+What is still true: Odoo has not shipped a mailbox screen, and the OAuth pages
+in the 19.0 documentation are still one outgoing server per database with FROM
+filtering, not one account per user. So the gap is real today. What is no
+longer true is that nobody at Odoo is walking towards it. The wedge is
+narrowing from Odoo's end as well as from the store's, which turns bet 4 from
+background risk into a per-release check.
 
 ## Who solves which of the two problems
 
@@ -163,7 +178,8 @@ Written as bets, so they can be checked rather than argued:
 3. **That Odoo does not ship a mailbox screen in the next two releases.**
 4. **That the transport half stays hard.** It is hard today because Graph,
    Gmail and IMAP each behave differently and the catchall is a trap. If Odoo
-   smooths that out, the wedge narrows.
+   smooths that out, the wedge narrows. Odoo 19 took the first step already;
+   see the release notes above.
 
 Bet 1 is the cheapest to test and nobody has tested it.
 
@@ -193,10 +209,34 @@ Four readings, and the evidence for each:
    exactly that.
 
 **And the category is a graveyard.** The store carries the same idea for Odoo
-10, 11, 13, 17, 18 and 19, from different vendors each time. The free 19.0 one
-shows 66 downloads. People keep building an inbox inside Odoo and it keeps not
+10, 11, 13, 17, 18 and 19, from different vendors each time. Two more surfaced
+while checking the forum threads, neither in the table above: Kanak
+Infosystems' [Mailbox (Odoo Inbox)](https://apps.odoo.com/apps/modules/17.0/odoo_inbox)
+at $288.78, listed up to 19.0, and InTechual Solutions'
+[Odoo Mail Inbox](https://apps.odoo.com/apps/modules/17.0/is_mail_inbox) at
+$114.35, stopping at 17.0. Eight vendors, not six. The free 19.0 one shows 66
+downloads. People keep building an inbox inside Odoo and it keeps not
 sticking, which is the pattern to take seriously: an inbox has to be as good as
 Outlook *every day*, and the day it is not, the user has Outlook already open.
+
+**The forum says the same thing, quietly.** Three threads on
+`odoo.com/forum/help-1`, read 17 September 2026:
+
+| Thread | Views | Answers |
+|---|---|---|
+| [Avoid that email in CC are added to a chatter as followers](https://www.odoo.com/forum/help-1/avoid-that-email-in-cc-are-added-to-a-chatter-as-followers-270765) (17.0, one mail added 400 contacts as followers) | 1,084 | 0 |
+| [Get incoming e-mails inside the discussion inbox](https://www.odoo.com/forum/help-1/get-incomming-e-mails-inside-the-dicussion-inbox-v13-174878) (13.0) | 2,488 | 1 |
+| [How to reply email from discuss / @Inbox?](https://www.odoo.com/forum/help-1/how-to-reply-email-from-discuss-inbox-100617) (9.0) | 4,982 | 3 |
+
+The best answer on the second is five words: "Odoo is not an email client." The
+third explains why the reply button is missing rather than how to get it: an
+incoming mail has no `model` and no `record_name`, so there is nothing to post
+to. Nine years apart, same question, answered by describing the architecture.
+
+Nobody on that forum asks for our product. They ask why a mail did not thread,
+and they get an explanation and no fix, in a thread with four figures of views
+and nought to three answers. Same shape as the survey: the pain is named
+constantly, the category never is.
 
 **What this does to the plan.** It does not kill the design, it prices it. The
 fourth pane, the record with its chatter, is the only thing in it that Outlook
