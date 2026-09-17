@@ -220,6 +220,28 @@ class Checks:
         messages = page.query_selector_all('.o_mailpro_message')
         if not messages:
             self.fail('the thread pane shows no messages')
+        elif len(messages) > 1:
+            # A thread is a stack, the way every mail client draws one: the
+            # message you came for is open and the history above it is one
+            # line each. Nine open bodies is a page you have to scroll to find
+            # the end of, and the end is the part anybody reads first.
+            opened = page.query_selector_all('.o_mailpro_message_open')
+            if len(opened) != 1:
+                self.fail(f'{len(opened)} messages are open, expected 1')
+            closed = page.query_selector(
+                '.o_mailpro_message:not(.o_mailpro_message_open)'
+                ' .o_mailpro_message_head')
+            if not closed:
+                self.fail('a collapsed message has no header to click open')
+            else:
+                closed.click()
+                page.wait_for_timeout(400)
+                if len(page.query_selector_all('.o_mailpro_message_open')) != 2:
+                    self.fail('clicking a collapsed message did not open it')
+                else:
+                    # Back to the shape the screenshot below is meant to show.
+                    closed.click()
+                    page.wait_for_timeout(400)
 
         # The fourth pane is the product. If the form view cannot mount, the
         # pane falls back and this is the only place that would notice.

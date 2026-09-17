@@ -26,6 +26,21 @@ import { usePanes } from "./use_panes";
 
 const PAGE = 30;
 
+// The quoted history, as the clients people write to us from mark it:
+// Outlook (the divider it inserts and the header block it draws), Gmail and
+// Apple Mail (`gmail_quote`, and the blockquote everyone falls back to),
+// Thunderbird (`moz-cite-prefix`), and Odoo's own composer, which tags the
+// history it quotes with `data-o-mail-quote`.
+const QUOTE_MARKERS = [
+    "blockquote",
+    ".gmail_quote",
+    ".moz-cite-prefix",
+    "[data-o-mail-quote]",
+    "#divRplyFwdMsg",
+    "#appendonsend",
+    ".OutlookMessageHeader",
+].join(", ");
+
 /** The record pane, isolated so a form-view failure cannot take the page. */
 export class RecordPane extends Component {
     static template = "pan_mail_pro.RecordPane";
@@ -88,9 +103,20 @@ export class ConversationView extends Component {
             hasMore: false,
             selected: null,
             thread: { messages: [], records: [], rejected: [] },
+            // Which messages are open, and whose quoted history is unfolded.
+            // Keyed by message id, so a thread that reloads under a reply
+            // keeps nothing from the thread before it.
+            open: {},
+            quotes: {},
             showRejected: false,
             search: "",
         });
+
+        // Splitting a body into "what was written" and "what was quoted" is a
+        // parse per message, and Owl re-renders this pane on every hover
+        // state. Outside `state` on purpose: it is derived from a message that
+        // cannot change, so it is a cache and not a fact.
+        this.split = new Map();
 
         onWillStart(async () => {
             await this.loadMailboxes();
@@ -175,6 +201,9 @@ export class ConversationView extends Component {
         this.state.showRejected = false;
         // Nothing from the previous thread stays under the new subject.
         this.state.thread = { messages: [], records: [], rejected: [] };
+        this.state.open = {};
+        this.state.quotes = {};
+        this.split.clear();
         try {
             const thread = await this.orm.call(
                 "pan.mail.conversation", "read_conversation", [], {
@@ -186,6 +215,12 @@ export class ConversationView extends Component {
             );
             if (seq === this.threadSeq) {
                 this.state.thread = thread;
+                // The newest message is the one you came for. The rest of the
+                // thread is context, one line each, a click away.
+                const newest = thread.messages[thread.messages.length - 1];
+                if (newest) {
+                    this.state.open[newest.id] = true;
+                }
             }
         } catch (error) {
             if (seq === this.threadSeq) {
@@ -236,11 +271,101 @@ export class ConversationView extends Component {
         return chips.length ? chips[0] : null;
     }
 
-    body(message) {
+    // --------------------------------------------------------- the stack
+
+    isOpen(message) {
+        return !!this.state.open[message.id];
+    }
+
+    toggleMessage(message) {
+        this.state.open[message.id] = !this.state.open[message.id];
+    }
+
+    toggleQuote(message) {
+        this.state.quotes[message.id] = !this.state.quotes[message.id];
+    }
+
+    hasQuote(message) {
+        return !!this.parts(message).quote;
+    }
+
+    visibleBody(message) {
         // `mail.message.body` is an Html field and the framework sanitizes it
         // on write; every provider body enters through `message_post`. This is
-        // the same trust the chatter itself extends to that column.
-        return markup(message.body || "");
+        // the same trust the chatter itself extends to that column, and the
+        // split below only moves nodes -- it never adds any.
+        return markup(this.parts(message).body);
+    }
+
+    quotedBody(message) {
+        return markup(this.parts(message).quote);
+    }
+
+    /** The one line a collapsed message shows, taken from what was written. */
+    snippet(message) {
+        return this.parts(message).text.slice(0, 200);
+    }
+
+    /**
+     * A mail body, split into what this person wrote and what they quoted.
+     *
+     * Every client marks the history it pasted under a reply, and each one
+     * marks it differently; the markers below are what the four clients our
+     * customers write to us from actually emit. A body with none of them is
+     * all reply, which is the right answer for a first mail.
+     *
+     * The cut is the first marker in document order, plus everything after it
+     * among its own siblings. Trailing content above that level stays visible,
+     * which is the harmless way to be wrong: a stray line of signature shows,
+     * rather than a reply disappearing into a fold.
+     */
+    parts(message) {
+        const cached = this.split.get(message.id);
+        if (cached) {
+            return cached;
+        }
+        const doc = new DOMParser().parseFromString(message.body || "", "text/html");
+        const marker = doc.body.querySelector(QUOTE_MARKERS);
+        let quote = "";
+        if (marker) {
+            const folded = doc.createElement("div");
+            let node = marker;
+            while (node) {
+                const next = node.nextSibling;
+                folded.appendChild(node);
+                node = next;
+            }
+            quote = folded.innerHTML;
+            if (!(doc.body.textContent || "").trim()) {
+                // A forward is all quote and nothing written. Folding it
+                // leaves an empty card with a "..." under it, so a message
+                // that is only history is shown as its own body.
+                doc.body.innerHTML = quote;
+                quote = "";
+            }
+        }
+        const parsed = {
+            body: doc.body.innerHTML,
+            quote,
+            text: (doc.body.textContent || "").split(/\s+/).join(" ").trim(),
+        };
+        this.split.set(message.id, parsed);
+        return parsed;
+    }
+
+    /** The author's own picture, which is what makes a stack scannable. */
+    avatar(message) {
+        return `/web/image/res.partner/${message.author_id}/avatar_128`;
+    }
+
+    initials(name) {
+        const words = (name || "").split(/\s+/).filter(Boolean);
+        if (!words.length) {
+            return "?";
+        }
+        const first = words[0][0];
+        const last = words.length > 1 ? words[words.length - 1][0] : "";
+        return (first + last).toUpperCase();
     }
 
     /** The date column, in the reader's own timezone and shortened by age. */
