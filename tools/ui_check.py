@@ -278,6 +278,16 @@ class Checks:
                 page.wait_for_timeout(600)
                 if not page.query_selector('.modal [name="partner_ids"] .o_tag'):
                     self.fail('Reply opened a composer with nobody in To')
+                # And it answers the mail, not the record: the subject is the
+                # thread's, so the customer's client files it where they read
+                # the question. The record's name here means the reply left
+                # as a new conversation.
+                subject = page.query_selector('.modal [name="subject"] input')
+                value = subject.input_value() if subject else ''
+                # "offerte revisie" is in the mail's subject and not in the
+                # lead's name, so the record-name fallback cannot pass this.
+                if 'offerte revisie' not in value.lower():
+                    self.fail(f'Reply subject is "{value}", not the thread subject')
                 # Discard rather than Escape: Escape leaves the composer open
                 # on a draft, and the screenshot below is what a reviewer
                 # looks at.
@@ -292,6 +302,24 @@ class Checks:
         self.panes()
 
         self.shot('inbox.png')
+
+        # The chip opens the record on top of the Inbox. The breadcrumb then
+        # names the screen it came from, and a client action is only named
+        # by its component: the action record's name is not read.
+        chip = page.query_selector('.o_mailpro_chips .o_mailpro_chip_button')
+        if chip:
+            chip.click()
+            try:
+                page.wait_for_selector('.o_form_view .o_breadcrumb', timeout=15000)
+                page.wait_for_timeout(400)
+                crumbs = page.inner_text('.o_breadcrumb')
+                if 'Inbox' not in crumbs:
+                    self.fail(f'the breadcrumb above the record reads "{crumbs}", not Inbox')
+                page.go_back()
+                page.wait_for_selector('.o_mailpro_conversation', timeout=15000)
+                page.wait_for_timeout(600)
+            except Exception as exc:
+                self.fail(f'the Filed-on chip did not open the record: {exc}')
 
         # A wide monitor is where the complaint arrives from, and a narrow one
         # is where the fourth pane is meant to step aside rather than squeeze.

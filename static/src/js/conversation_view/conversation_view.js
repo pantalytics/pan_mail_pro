@@ -16,7 +16,7 @@
  * what is in it.
  */
 
-import { Component, useState, onWillStart, onError, markup } from "@odoo/owl";
+import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
@@ -50,6 +50,17 @@ export class RecordPane extends Component {
     setup() {
         this.action = useService("action");
         this.state = useState({ failed: false });
+        // The form view inherits the action's `config` and names the action
+        // after the record it shows. That is right when the form *is* the
+        // screen and wrong here, where it is one pane of the Inbox: the
+        // breadcrumb and the tab would read as the record, or as nothing at
+        // all. The pane gets a config whose rename is a no-op.
+        useSubEnv({
+            config: {
+                ...this.env.config,
+                setDisplayName: () => {},
+            },
+        });
         onError((error) => {
             console.warn("[Mail Pro] record pane fell back", error);
             this.state.failed = true;
@@ -79,6 +90,10 @@ export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
     static components = { RecordPane };
     static props = ["*"];
+    // A client action's name in the breadcrumb and the browser tab is the
+    // component's, not the action record's: without this, opening a record
+    // from the Inbox shows "Unnamed / Onderhoudscontract 2027" up top.
+    static displayName = _t("Inbox");
 
     setup() {
         this.orm = useService("orm");
@@ -435,6 +450,12 @@ export class ConversationView extends Component {
                     // reply with an empty "To" reaches nobody, so the person
                     // who wrote last from their side goes in.
                     default_partner_ids: this.replyRecipients(conversation),
+                    // The message being answered. The composer takes its
+                    // subject from it, and `message_post` threads the reply
+                    // under it, so the customer's client files the answer in
+                    // the same thread. Without it the subject is the record's
+                    // name and the mail arrives as a new conversation.
+                    default_parent_id: this.newestIncoming()?.id || false,
                 },
             },
             { onClose: () => this.select(conversation) }
@@ -448,13 +469,22 @@ export class ConversationView extends Component {
      * that nobody, which the composer shows as an empty "To" to fill in.
      */
     replyRecipients(conversation) {
-        const incoming = (this.state.thread.messages || [])
-            .filter((m) => m.direction === "incoming" && m.author_id)
-            .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-        if (incoming.length) {
-            return [incoming[0].author_id];
+        const newest = this.newestIncoming();
+        if (newest && newest.author_id) {
+            return [newest.author_id];
         }
         return conversation.partner_id ? [conversation.partner_id] : [];
+    }
+
+    /** The newest message from their side in the open thread, if any. */
+    newestIncoming() {
+        // Newest by date, and by id when two share a second: an import
+        // stamps a whole thread in one go, and the answer still has to go
+        // under the last message and not the first.
+        const incoming = (this.state.thread.messages || [])
+            .filter((m) => m.direction === "incoming")
+            .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
+        return incoming[0] || null;
     }
 
     openRecordChip(chip) {
