@@ -26,6 +26,8 @@ user, never as an administrator.
 
 ### Required Permissions
 
+#### Microsoft 365
+
 **Personal mailbox:**
 
 | Permission | Purpose |
@@ -43,6 +45,25 @@ user, never as an administrator.
 | `Mail.Send.Shared` | Send from shared mailbox |
 
 **Note:** All permissions are delegated. Users authorize their own accounts.
+
+#### Google Workspace
+
+| Scope | Purpose |
+|-------|---------|
+| `openid` | Identifies the user during the callback |
+| `email` | Reads the address that just signed in |
+| `https://www.googleapis.com/auth/gmail.modify` | Read incoming mail and label it |
+| `https://www.googleapis.com/auth/gmail.send` | Send mail |
+
+`gmail.modify` and `gmail.send` are restricted scopes. Mail Pro never asks for
+`https://mail.google.com/` (full mailbox control), because it never deletes
+anything. A shared address is its own Workspace account and grants the same
+scopes once, for itself.
+
+#### IMAP/SMTP
+
+No scopes and no consent screen. The account holds the server names, a login
+and a password, and can do whatever that login can do on that server.
 
 ## Token Security
 
