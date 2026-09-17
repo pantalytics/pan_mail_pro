@@ -47,11 +47,91 @@ $mailpro-warn: #c0392b;
 
     .o_mailpro_panes { min-height: 0; }
 
+    // The dividers.
+    //
+    // A 5px strip so it can be grabbed, with a 1px line painted inside it so
+    // it reads as the border it replaced -- `background-clip: content-box`
+    // over transparent borders, which is how a hit area gets to be bigger
+    // than what you see. The panes themselves lost their own borders: two
+    // lines a pixel apart is a seam, not a divider.
+    .o_mailpro_split {
+        flex: 0 0 5px;
+        position: relative;
+        background: $mailpro-line;
+        background-clip: content-box;
+        border-left: 2px solid transparent;
+        border-right: 2px solid transparent;
+        cursor: col-resize;
+        touch-action: none;
+        user-select: none;
+
+        &:hover,
+        &.o_mailpro_split_dragging { background-color: $mailpro-accent; }
+
+        // Nothing to drag when the pane it borders is folded away; the
+        // chevron is the only control left on it.
+        &.o_mailpro_split_folded {
+            cursor: default;
+
+            &:hover { background-color: $mailpro-line; }
+        }
+
+        &:focus-visible {
+            outline: 2px solid $mailpro-accent;
+            outline-offset: 0;
+        }
+    }
+
+    // The fold, on the divider itself: the pane it belongs to may be gone,
+    // and a button inside a collapsed pane is a button nobody can press.
+    .o_mailpro_split_toggle {
+        position: absolute;
+        top: 0.5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1;
+        width: 1rem;
+        height: 1.5rem;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid $mailpro-line;
+        border-radius: 0.25rem;
+        background: #fff;
+        color: $mailpro-faint;
+        font-size: 0.5625rem;
+        cursor: pointer;
+
+        &:hover { color: $mailpro-accent-ink; border-color: $mailpro-accent; }
+
+        &:focus-visible {
+            outline: 2px solid $mailpro-accent;
+            outline-offset: 1px;
+        }
+    }
+
+    // A folded pane puts its divider against the window edge, where half a
+    // centred button is off the screen -- and it is the button that brings
+    // the pane back.
+    .o_mailpro_split_rail.o_mailpro_split_folded .o_mailpro_split_toggle {
+        left: 0;
+        transform: none;
+    }
+
+    .o_mailpro_split_record.o_mailpro_split_folded .o_mailpro_split_toggle {
+        left: auto;
+        right: 0;
+        transform: none;
+    }
+
     // 1. the rail
     .o_mailpro_rail {
-        flex: 0 0 14.5rem;
+        // The width is an inline flex-basis the reader dragged; no shrink, so
+        // what they set is what they get and the next drag starts where the
+        // last one ended.
+        flex: 0 0 auto;
         background: $mailpro-panel;
-        border-right: 1px solid $mailpro-line;
         padding: 0.875rem 0.5rem;
         overflow-y: auto;
     }
@@ -99,8 +179,7 @@ $mailpro-warn: #c0392b;
 
     // 2. the list
     .o_mailpro_list {
-        flex: 0 0 22rem;
-        border-right: 1px solid $mailpro-line;
+        flex: 0 0 auto;
         overflow-y: auto;
     }
 
@@ -169,7 +248,6 @@ $mailpro-warn: #c0392b;
         min-width: 0;
         display: flex;
         flex-direction: column;
-        border-right: 1px solid $mailpro-line;
         overflow: hidden;
     }
 
@@ -227,7 +305,7 @@ $mailpro-warn: #c0392b;
     // pane. Here it is one column, at the pane's own width, and its own
     // scrolling is the pane's.
     .o_mailpro_record {
-        flex: 0 0 28rem;
+        flex: 0 0 auto;
         background: #fafbfc;
         overflow: hidden auto;
 
@@ -298,11 +376,14 @@ $mailpro-warn: #c0392b;
     // thread. A pane that is one third of its designed width is worse than a
     // pane that stepped aside.
     @media (max-width: 1400px) {
-        .o_mailpro_record { display: none; }
+        .o_mailpro_record,
+        .o_mailpro_split_record { display: none; }
     }
 
+    // A dragged width is an inline style, so the narrow-window cap has to be
+    // a property that outranks flex-basis rather than another flex-basis.
     @media (max-width: 1100px) {
-        .o_mailpro_rail { flex-basis: 11rem; }
-        .o_mailpro_list { flex-basis: 18rem; }
+        .o_mailpro_rail { max-width: 11rem; }
+        .o_mailpro_list { max-width: 18rem; }
     }
 }
