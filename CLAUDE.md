@@ -712,6 +712,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 | File | What it is for |
 |------|----------------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | **The design.** Models, seams, flows, and why. Single source of truth |
+| [docs/product-brief.md](docs/product-brief.md) | **The product, high over.** Which problem, whose problem, who it is not for, and what we refuse to build. No field names. Start here |
 | [README.md](README.md) | Setup and usage for the person installing the module |
 | [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) | UI conventions. Read before adding a field to a settings or mailbox screen |
 | [TESTPLAN.md](TESTPLAN.md) | Manual test plan for what CI cannot reach |
