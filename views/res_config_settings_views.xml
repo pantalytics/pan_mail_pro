@@ -29,6 +29,62 @@
                          page. Anything longer than an answer — a warning, a fix
                          — goes on its own line under the name, never beside it,
                          so the column of dots and names stays a column. -->
+                    <h2>Pantalytics Account</h2>
+                    <!-- Not a setup step: mail flows without it. One primary
+                         action per state, and the code is the biggest thing on
+                         screen while it is waiting, because it gets read off
+                         here and typed somewhere else. -->
+                    <div class="row mt-3 o_settings_container">
+                        <div class="col-12 o_setting_box o_mailpro_about">
+                            <div invisible="x_license_state != 'not_connected'">
+                                <div class="text-muted mb-2">
+                                    Mail Pro works on an Odoo instance that is connected to a Pantalytics account.
+                                </div>
+                                <button name="action_license_connect" type="object"
+                                        string="Connect to Pantalytics" class="btn-primary"/>
+                            </div>
+                            <div invisible="x_license_state != 'pending'">
+                                <div class="mb-1">
+                                    Approve the connection in the Pantalytics tab that just opened.
+                                    It shows this code:
+                                    <field name="x_license_user_code" nolabel="1" readonly="1" class="fw-bold ms-1"/>
+                                </div>
+                                <div class="text-muted">
+                                    No tab? <field name="x_license_verify_url" widget="url" nolabel="1" readonly="1"
+                                                   options="{'website_path': False}" text="Open it again"/>
+                                </div>
+                                <div class="mt-2">
+                                    <button name="action_license_check" type="object"
+                                            string="Check Approval" class="btn-secondary"/>
+                                    <button name="action_license_disconnect" type="object"
+                                            string="Cancel" class="btn-link"/>
+                                </div>
+                            </div>
+                            <div invisible="x_license_state != 'connected'">
+                                <div>
+                                    <span class="o_form_label">Status</span>
+                                    <field name="x_license_status" nolabel="1" readonly="1" class="ms-1"/>
+                                </div>
+                                <div class="text-muted" invisible="not x_license_message">
+                                    <field name="x_license_message" nolabel="1" readonly="1"/>
+                                </div>
+                                <div class="text-muted" invisible="not x_license_valid_until">
+                                    Valid until <field name="x_license_valid_until" nolabel="1" readonly="1"/>
+                                </div>
+                                <button name="action_license_disconnect" type="object"
+                                        string="Disconnect" class="btn-link text-danger ps-0"
+                                        confirm="This Odoo instance forgets its Pantalytics key. You can connect again at any time."/>
+                            </div>
+                            <div class="alert alert-warning mt-2 mb-0" role="alert" invisible="not x_license_sync_blocked">
+                                Incoming mail is not synced and no new mailbox can be connected until this
+                                Odoo instance is connected. Sending keeps working.
+                            </div>
+                            <div class="text-warning mt-2" invisible="not x_license_last_error">
+                                <field name="x_license_last_error" nolabel="1" readonly="1"/>
+                            </div>
+                        </div>
+                    </div>
+
                     <h2>Setup</h2>
                     <div class="row mt-3 o_settings_container">
                     <div class="col-12 o_setting_box o_mailpro_steps">
@@ -156,7 +212,7 @@
                                             </span>
                                         </div>
                                         <div class="o_mailpro_step_msg" invisible="not x_users_pending">
-                                            The rest still send as the database, not as themselves.
+                                            The rest still send as the Odoo instance, not as themselves.
                                             Select them in Users and press "Send Mail Pro Invite".
                                         </div>
                                     </div>
@@ -183,13 +239,13 @@
                                 <field name="x_module_version" nolabel="1" readonly="1" class="ms-1"/>
                             </div>
                             <div class="text-muted">
-                                © Pantalytics B.V. All rights reserved. Proprietary and
-                                confidential software, licensed and not sold. Copying,
-                                modification or distribution outside the terms of your
-                                licence agreement is prohibited.
+                                © Pantalytics B.V. Licensed under the Elastic License 2.0.
+                                You may use, copy and modify this software. You may not
+                                offer it to third parties as a hosted or managed service,
+                                and you may not remove or circumvent its licensing notices.
                             </div>
                             <div class="mt-2">
-                                <a href="https://pantalytics.gitbook.io/pantalytics-docs/" target="_blank">
+                                <a href="https://pantalytics.odoo.com/knowledge/article/116" target="_blank">
                                     <i class="fa fa-external-link me-1" title="Documentation"/>Documentation
                                 </a>
                             </div>

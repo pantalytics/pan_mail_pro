@@ -263,7 +263,7 @@ class MailProviderClient(models.AbstractModel):
         """
         if database_is_neutralized(self.env):
             raise UserError(_(
-                'This database is neutralized (a staging or test copy), so Mail '
+                'This Odoo instance is neutralized (a staging or test copy), so Mail '
                 'Pro will not contact %s.'
             ) % self.provider_label())
 

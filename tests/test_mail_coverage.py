@@ -36,8 +36,35 @@ class TestMailCoverage(MailProTestCase):
     def test_counts(self):
         self.assertEqual(self.coverage.total_count, 5)
         self.assertEqual(self.coverage.unlinked_count, 2)
-        self.assertEqual(self.coverage.linked_count, 3)
+        self.assertEqual(self.coverage.linked_count, 2)
         self.assertEqual(self.coverage.contact_only_count, 1)
+
+    def test_the_three_rows_are_disjoint(self):
+        """They sit under two headings on one screen, so they have to add up.
+
+        Counting the contacts inside the documents made 'filed on a document'
+        look like a group it was not.
+        """
+        self.assertEqual(
+            self.coverage.linked_count
+            + self.coverage.contact_only_count
+            + self.coverage.unlinked_count,
+            self.coverage.total_count,
+        )
+
+    def test_a_contact_message_without_a_res_id_is_unfiled(self):
+        """`model` alone is not a link, so it must not land in two rows."""
+        self._message('res.partner')
+        self.coverage.invalidate_recordset()
+        self.assertEqual(self.coverage.total_count, 6)
+        self.assertEqual(self.coverage.unlinked_count, 3)
+        self.assertEqual(self.coverage.contact_only_count, 1)
+        self.assertEqual(self.coverage.linked_count, 2)
+
+    def test_contact_only_drill_down_matches_the_count(self):
+        action = self.coverage.action_view_contact_only()
+        found = self.env['mail.message'].sudo().search(action['domain'])
+        self.assertEqual(len(found), self.coverage.contact_only_count)
 
     def test_ratio(self):
         self.assertAlmostEqual(self.coverage.unlinked_ratio, 0.4, places=4)

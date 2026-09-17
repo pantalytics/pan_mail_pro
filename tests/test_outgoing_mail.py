@@ -24,7 +24,6 @@ class TestGraphSendPayload(TransactionCase):
 
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'sender@company.com',
-            'mailbox_type': 'shared',
         })
         cls.user = cls.env.user
 

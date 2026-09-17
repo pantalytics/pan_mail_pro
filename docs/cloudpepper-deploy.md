@@ -1,6 +1,6 @@
 # Deploying on Cloudpepper
 
-Internal runbook. Not part of the published GitBook.
+Internal runbook. Not published to the knowledge base.
 
 Cloudpepper has **two independent update tracks** and they are not
 interchangeable:

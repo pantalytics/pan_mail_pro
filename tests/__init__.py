@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from . import connected  # first: see its docstring
 from . import test_mail_account
 from . import test_account_migration
 from . import test_google_provider
@@ -34,9 +35,13 @@ from . import test_mail_coverage
 from . import test_neutralized
 from . import test_rename_migration
 from . import test_sync_sends_nothing
-from . import test_sync_split_migration
+from . import test_sync_level_migration
 from . import test_incoming_gates
 from . import test_field_labels
 from . import test_connect_banner
 from . import test_imap_live
 from . import test_mailbox_test_send
+from . import test_mailbox_type
+from . import test_license
+from . import test_conversation_api
+from . import test_oauth_routes

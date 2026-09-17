@@ -41,11 +41,9 @@ class TestMailMatcher(TransactionCase):
         Mailbox = cls.env['pan.mail.mailbox']
         cls.mailbox = Mailbox.create({
             'email': 'support@company.test',
-            'mailbox_type': 'shared',
         })
         cls.other_mailbox = Mailbox.create({
             'email': 'sales@company.test',
-            'mailbox_type': 'shared',
         })
 
         cls.customer = cls.env['res.partner'].create({

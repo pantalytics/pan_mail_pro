@@ -19,7 +19,7 @@ see [Azure Setup](azure-setup.md); for any other host see
 2. Search for **Gmail API**
 3. Click **Enable**
 
-Nothing works until this is done — the OAuth screen will succeed and every call
+Nothing works until this is done: the OAuth screen will succeed and every call
 afterwards will fail.
 
 ## Step 3: Configure the consent screen

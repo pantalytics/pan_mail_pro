@@ -151,17 +151,34 @@ class MailProOAuthController(http.Controller):
         existing = Mailbox.with_context(active_test=False).search(
             [('email', '=ilike', email)], limit=1)
         if not existing:
+            # Personal by construction: the account created a moment ago
+            # carries this very address, which is what the type is derived from.
             mailbox = Mailbox.create({
                 'email': email,
                 'provider': provider,
-                'mailbox_type': 'personal',
                 'owner_user_id': user.id,
             })
             user.sudo().write({'x_default_mailbox_id': mailbox.id})
             _logger.info('[OAuth] Created personal mailbox %s for %s', email, user.login)
-        elif existing.mailbox_type == 'personal' and (
-                not existing.owner_user_id or existing.owner_user_id == user):
-            # Unowned, or this user's own archived one: the consent that just
-            # happened is the reason it exists, so it comes back.
+        elif existing.mailbox_type == 'personal' and existing.owner_user_id == user:
+            # This user's own archived one: the consent that just happened is
+            # the reason it exists, so it comes back.
             existing.write({'owner_user_id': user.id, 'active': True})
             _logger.info('[OAuth] Assigned existing mailbox %s to %s', email, user.login)
+
+
+class MailProPantalyticsController(http.Controller):
+    """Where the Pantalytics approval page sends the admin back to.
+
+    A plain link the admin clicks on our site after approving, so this is not an
+    OAuth callback and nothing about it is registered anywhere. It collects the
+    key and lands on the settings page, which shows the outcome.
+    """
+
+    @http.route('/mail_pro/pantalytics/return', type='http', auth='user')
+    def pantalytics_return(self, **kwargs):
+        if request.env.user.has_group('base.group_system'):
+            link = request.env['pan.mail.license'].current()
+            if link:
+                link.collect_on_return()
+        return request.redirect(SETTINGS_URL)

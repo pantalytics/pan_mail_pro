@@ -66,7 +66,7 @@
 
         Documentation:
         --------------
-        Full setup guide: https://pantalytics.gitbook.io/pantalytics-docs/
+        Full setup guide: https://pantalytics.odoo.com/knowledge/article/116
 
         Setup Instructions:
         -------------------
@@ -87,7 +87,11 @@
           a mailbox uses.
         - OAuth tokens and mailbox passwords are stored encrypted in your Odoo
           database.
-        - No data is sent to Pantalytics, the module author.
+        - Nothing is sent to Pantalytics unless an administrator links the
+          database under Settings -> Mail Pro -> Pantalytics Account. Once
+          linked, the database reports once a day: its database id, the
+          module and Odoo version, how many accounts are connected and
+          whether sync is healthy. Never an address, subject or body.
         - No AI provider is contacted. The module has no AI feature and ships
           no AI vendor SDK.
     """,
@@ -95,8 +99,8 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.7.13.0',
-    'license': 'LGPL-3',
+    'version': '19.0.10.1.0',
+    'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
         'python': ['cryptography', 'requests'],
@@ -108,6 +112,7 @@
         'data/mail_server_data.xml',
         'data/mail_template_data.xml',
         'views/pan_mail_menus.xml',
+        'views/pan_mail_conversation_views.xml',
         'views/pan_mail_mailbox_views.xml',
         'views/pan_mail_routing_log_views.xml',
         'views/pan_mail_provider_views.xml',
@@ -124,11 +129,14 @@
     'assets': {
         'web.assets_backend': [
             'pan_mail_pro/static/src/scss/setup_status.scss',
+            'pan_mail_pro/static/src/scss/conversation_view.scss',
             'pan_mail_pro/static/src/scss/connect_banner.scss',
             'pan_mail_pro/static/src/js/mailbox_list_controller.js',
             'pan_mail_pro/static/src/js/connect_banner.js',
+            'pan_mail_pro/static/src/js/conversation_view/conversation_view.js',
             'pan_mail_pro/static/src/xml/mailbox_list_view.xml',
             'pan_mail_pro/static/src/xml/connect_banner.xml',
+            'pan_mail_pro/static/src/xml/conversation_view.xml',
         ],
     },
     'images': [

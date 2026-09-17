@@ -169,3 +169,64 @@ class TestSystemNotifications(MailProTestCase):
                    autospec=True, return_value=True):
             mail.send()
         graph_path.assert_not_called()
+
+    def test_password_reset_uses_notification_mailbox(self):
+        """A password reset must not need a mailbox on anybody's profile.
+
+        Reproduces the production shape exactly (auth_signup
+        `_action_reset_password`): `message_type='user_notification'`,
+        `recipient_ids` empty, the recipient named in `email_to`, and
+        `email_from` the company address — from which `mail.message` resolves an
+        author who never chose to send anything. That author used to decide the
+        route, so a database whose admin has no default mailbox refused to send
+        its own password resets and nobody could log back in.
+        """
+        self.assertFalse(
+            self.other_user.x_default_mailbox_id,
+            "Fixture must have no default mailbox for this test to mean anything")
+
+        mail = self.env['mail.mail'].sudo().create({
+            'subject': 'Password reset',
+            'body_html': '<p>Reset your password</p>',
+            'message_type': 'user_notification',
+            'email_from': self.company_partner.email_formatted,
+            'author_id': self.other_user.partner_id.id,
+            'email_to': self.other_user.email,
+            'recipient_ids': [],
+        })
+
+        with self.mock_graph() as calls:
+            mail.send()
+
+        self.assertEqual(mail.state, 'sent', mail.failure_reason)
+        self.assertEqual(
+            calls['draft']['from']['emailAddress']['address'],
+            self.notification_mailbox.email,
+        )
+
+    def test_portal_invite_uses_notification_mailbox(self):
+        """Account mail to a customer is account mail too.
+
+        The portal invitation takes the same path as the reset above, and its
+        recipient is a `share=True` user — so the internal-employee test says
+        no. It is still the database handing out a login, not a salesperson
+        writing to a customer.
+        """
+        mail = self.env['mail.mail'].sudo().create({
+            'subject': 'Your account',
+            'body_html': '<p>Set your password</p>',
+            'message_type': 'user_notification',
+            'email_from': self.company_partner.email_formatted,
+            'author_id': self.other_user.partner_id.id,
+            'email_to': self.portal_user.email,
+            'recipient_ids': [],
+        })
+
+        with self.mock_graph() as calls:
+            mail.send()
+
+        self.assertEqual(mail.state, 'sent', mail.failure_reason)
+        self.assertEqual(
+            calls['draft']['from']['emailAddress']['address'],
+            self.notification_mailbox.email,
+        )

@@ -56,11 +56,8 @@ class TestGmailIncomingSync(MailProTestCase):
         self.mailbox = Mailbox.create({
             'email': 'gmail_sync@test.local',
             'provider': 'gmail',
-            'mailbox_type': 'personal',
             'owner_user_id': self.gmail_user.id,
-            'sync_received': True,
-            'sync_received_scope': 'all',
-            'sync_sent': True,
+            'sync_level': 'everyone',
             'last_sync_date': '2026-01-01 00:00:00',
         })
         self.requested_urls = []

@@ -75,7 +75,7 @@ class TestReplyContext(OutgoingThreadingCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
-            'email': 'support@company.test', 'mailbox_type': 'shared',
+            'email': 'support@company.test',
         })
 
     def test_a_fresh_mail_has_nothing_to_thread_onto(self):
@@ -157,7 +157,7 @@ class TestReplyContext(OutgoingThreadingCase):
 
     def test_another_mailbox_s_thread_is_not_borrowed(self):
         other = self.env['pan.mail.mailbox'].create({
-            'email': 'sales@company.test', 'mailbox_type': 'shared',
+            'email': 'sales@company.test',
         })
         self.env['pan.mail.thread.link'].record(
             mailbox=other, thread_id='CONV-9',
@@ -175,7 +175,7 @@ class TestGmailOutgoingThreading(OutgoingThreadingCase):
 
     def _sendable(self):
         mailbox = self.env['pan.mail.mailbox'].create({
-            'email': 'sales@test.local', 'provider': 'gmail', 'mailbox_type': 'shared',
+            'email': 'sales@test.local', 'provider': 'gmail',
         })
         account = self.env['pan.mail.account'].create({
             'email': 'sales@test.local', 'provider': 'gmail', 'user_id': False,
@@ -265,7 +265,7 @@ class TestGraphOutgoingThreading(OutgoingThreadingCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
-            'email': 'support@test.local', 'mailbox_type': 'shared',
+            'email': 'support@test.local',
         })
         cls.account = cls.env['pan.mail.account'].create({
             'email': 'support@test.local', 'provider': 'outlook', 'user_id': False,

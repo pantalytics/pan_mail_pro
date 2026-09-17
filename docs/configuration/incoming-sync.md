@@ -14,13 +14,16 @@ Before enabling incoming sync:
 1. Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow on step 3 of the checklist)
 2. Open a mailbox
 3. Replies to email sent from Odoo always land on the record they answer, with
-   no setting at all. The two switches are about the rest:
-   - **Receiving → Sync Other Email** - email that starts a new conversation.
-     When it is on, a second question appears: only from existing contacts, or
-     from anyone (which turns every sender into a contact).
-   - **Sending → Sync Sent Items** - read the Sent Items folder of the user's own
-     mail app back into Odoo. Only replies to emails Odoo already has; mail that
-     starts a new conversation stays out.
+   no setting at all. On the **Sync Settings** tab, pick a **Sync level** for
+   the rest. Each level keeps strictly more than the one above it:
+   - **Replies, in Odoo only** (default)
+   - **Replies, in Odoo and your mail app** - your own replies are read back
+     from the Sent folder and land on the same record
+   - **Replies and new email, existing contacts only** - new conversations
+     started by people who are already contacts
+   - **Replies and new email, everyone** - new conversations from strangers
+     too, who become contacts. Mail you start from your own mail app never
+     enters, whatever the level: only your replies do.
 4. On Microsoft 365, set the **Owner** whose sign-in reads the mailbox
 5. Configure routing (see below)
 6. Save

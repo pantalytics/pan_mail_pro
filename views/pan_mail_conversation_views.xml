@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        The conversation view: one screen, opened all day.
+
+        19.0.7.0.0 removed this module's app tile with the argument that a tile
+        is a promise about how often a screen is opened, and that a read-only
+        lens and a queue nobody worked did not keep it. This screen does: it is
+        where someone reads and answers customer mail, which is the whole day
+        for the people the module is for. The diagnostics stay where that
+        release put them, under Settings -> Technical -> Email.
+    -->
+    <record id="action_pan_mail_conversation" model="ir.actions.client">
+        <field name="name">Inbox</field>
+        <field name="tag">pan_mail_conversation_view</field>
+        <!--
+            The group lives on the menu and on the model, not here: Odoo 19's
+            `ir.actions.actions` carries no group field, so an action is
+            reachable by URL to anyone who knows it. That makes the check in
+            `pan.mail.conversation._check_caller` the real gate, and the menu
+            group only the reason it stays out of the app switcher.
+        -->
+    </record>
+
+    <menuitem id="menu_pan_mail_app"
+              name="Mail Pro"
+              web_icon="pan_mail_pro,static/description/icon.png"
+              sequence="30"
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+
+    <menuitem id="menu_pan_mail_conversation"
+              name="Inbox"
+              parent="menu_pan_mail_app"
+              action="action_pan_mail_conversation"
+              sequence="1"
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+
+</odoo>

@@ -60,7 +60,7 @@ class TestImapLive(TransactionCase):
         cls.sender = cls._account(SENDER, SENDER_LOGIN)
         cls.recipient = cls._account(RECIPIENT, RECIPIENT_LOGIN)
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
-            'email': SENDER, 'provider': 'imap', 'mailbox_type': 'shared',
+            'email': SENDER, 'provider': 'imap',
         })
         # GreenMail starts with INBOX and nothing else. A real hoster has a Sent
         # folder already, so create one -- otherwise every APPEND would fail and

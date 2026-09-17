@@ -85,7 +85,6 @@ class TestProviderRegistry(TransactionCase):
     def test_mailbox_resolves_to_its_client(self):
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'contract@company.test',
-            'mailbox_type': 'shared',
         })
         self.assertEqual(mailbox.provider, DEFAULT_PROVIDER)
         self.assertEqual(mailbox._get_client().provider_code(), DEFAULT_PROVIDER)
@@ -101,7 +100,6 @@ class TestProviderRegistry(TransactionCase):
         self.env['pan.mail.provider'].create({'provider': 'gmail'})
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'inherits@company.test',
-            'mailbox_type': 'shared',
         })
         self.assertEqual(mailbox.provider, 'gmail')
         account = self.env['pan.mail.account'].create({'email': 'inherits@company.test'})
@@ -151,7 +149,6 @@ class TestProviderCapabilities(TransactionCase):
         with self.assertRaises(UserError):
             Mailbox.create({
                 'email': 'unsupported@company.test',
-                'mailbox_type': 'shared',
             })
 
     def _connected_user(self, login):
@@ -173,7 +170,6 @@ class TestProviderCapabilities(TransactionCase):
         other = self._connected_user('someone-else@company.test')
         mailbox = self.env['pan.mail.mailbox'].new({
             'email': 'notifications@company.test',
-            'mailbox_type': 'personal',
             'is_notification_mailbox': True,
             'owner_user_id': owner.id,
         })
@@ -186,7 +182,6 @@ class TestProviderCapabilities(TransactionCase):
         author = self._connected_user('author@company.test')
         mailbox = self.env['pan.mail.mailbox'].new({
             'email': 'team@company.test',
-            'mailbox_type': 'shared',
         })
         resolved = self.client.resolve_sending_account(mailbox, author_user=author)
         self.assertEqual(resolved.user_id, author)
@@ -195,7 +190,6 @@ class TestProviderCapabilities(TransactionCase):
         owner = self._connected_user('reader@company.test')
         mailbox = self.env['pan.mail.mailbox'].new({
             'email': 'inbox@company.test',
-            'mailbox_type': 'personal',
             'owner_user_id': owner.id,
         })
         self.assertEqual(

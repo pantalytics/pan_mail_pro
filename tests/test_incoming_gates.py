@@ -20,6 +20,8 @@ silently:
 Deliberately no provider anywhere: the ladder is fed a pre-seeded context, the
 way `_full_message()`'s cache allows. Gate behaviour is not a Graph question.
 """
+from unittest.mock import patch
+
 from odoo.tests import tagged
 
 from ..models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
@@ -40,7 +42,7 @@ class TestIncomingGates(MailProTestCase):
         super().setUp()
         self.processor = self.env['pan.mail.fetcher']
         self.mailbox = self.personal_mailbox
-        self.mailbox.write({'sync_received': True, 'sync_received_scope': 'all'})
+        self.mailbox.write({'sync_level': 'everyone'})
 
     def _messages_on(self, partner):
         """Chatter on a contact. A refused mail must not add to it, and must
@@ -254,7 +256,7 @@ class TestIncomingGates(MailProTestCase):
         """A mailbox on `known_partners` leaves the mail where it is. There is
         no queue it waits in; widening the sync mode is how that answer
         changes."""
-        self.mailbox.write({'sync_received_scope': 'known_partners'})
+        self.mailbox.write({'sync_level': 'contacts'})
         ctx = self._ctx()
         ctx['full_message']['from'] = {'email': 'stranger@nowhere.test', 'name': ''}
 
@@ -331,52 +333,134 @@ class TestEachDirectionIsItsOwnSwitch(MailProTestCase):
     def _folders(self):
         return self.processor._folders_to_sync(self.mailbox)
 
-    def test_the_inbox_is_read_even_with_every_switch_off(self):
+    def test_the_inbox_is_read_at_the_bottom_of_the_ladder(self):
         """Replies need no setting, so the folder they arrive in is never
         skipped. What may enter is the gate ladder's decision, not this."""
-        self.mailbox.write({'sync_received': False, 'sync_sent': False})
+        self.mailbox.write({'sync_level': 'replies'})
         self.assertEqual(self._folders(), [FOLDER_INBOX])
         self.assertFalse(self.mailbox._syncs_more_than_replies())
 
-    def test_receiving_alone_does_not_read_the_sent_folder(self):
-        """The regression this split exists to prevent."""
-        self.mailbox.write({'sync_received': True, 'sync_sent': False})
-        self.assertEqual(self._folders(), [FOLDER_INBOX])
+    def test_the_sent_folder_is_read_from_both_on(self):
+        for level in ('both', 'contacts', 'everyone'):
+            self.mailbox.write({'sync_level': level})
+            self.assertEqual(self._folders(), [FOLDER_INBOX, FOLDER_SENT], level)
+            self.assertTrue(self.mailbox._syncs_more_than_replies(), level)
 
-    def test_the_sent_folder_is_opt_in(self):
-        self.mailbox.write({'sync_received': False, 'sync_sent': True})
-        self.assertEqual(self._folders(), [FOLDER_INBOX, FOLDER_SENT])
-        self.assertTrue(self.mailbox._syncs_more_than_replies())
+    def test_a_new_mailbox_starts_at_the_bottom(self):
+        """Nobody lands on "create contacts from anyone" by accepting
+        defaults: the widest answer is three deliberate clicks away."""
+        defaults = self.env['pan.mail.mailbox'].default_get(['sync_level'])
+        self.assertEqual(defaults.get('sync_level'), 'replies')
 
-    def test_both_switches_read_both_folders(self):
-        self.mailbox.write({'sync_received': True, 'sync_sent': True})
-        self.assertEqual(self._folders(), [FOLDER_INBOX, FOLDER_SENT])
-
-    def test_a_new_mailbox_syncs_nothing_it_was_not_asked_to(self):
-        """Both switches start at off, and the scope question starts at the
-        narrow answer. Nobody lands on "create contacts from anyone" by
-        accepting defaults."""
-        defaults = self.env['pan.mail.mailbox'].default_get(
-            ['sync_received', 'sync_sent', 'sync_received_scope']
-        )
-        self.assertFalse(defaults.get('sync_received'))
-        self.assertFalse(defaults.get('sync_sent'))
-        self.assertEqual(defaults.get('sync_received_scope'), 'known_partners')
-
-    def test_the_sent_folder_alone_still_owes_credentials(self):
+    def test_every_rung_above_replies_owes_credentials(self):
         """Reading the Sent folder is reading, so the mailbox has to be able to
-        reach the provider even with receiving switched off."""
-        self.mailbox.write({'sync_received': False, 'sync_sent': True})
+        reach the provider from the second rung on."""
+        self.mailbox.write({'sync_level': 'both'})
         self.assertTrue(self.mailbox._needs_credentials())
 
-    def test_a_shared_send_only_mailbox_still_owes_nothing(self):
+    def test_a_shared_replies_only_mailbox_still_owes_nothing(self):
         """Reply sync is best-effort on top, never a new obligation. A Microsoft
         shared mailbox sends with the author's own token and has no credentials
         of its own; making it owe some would turn a working configuration red.
         """
         mailbox = self.shared_mailbox
-        mailbox.write({'sync_received': False, 'sync_sent': False})
+        mailbox.write({'sync_level': 'replies'})
         self.assertFalse(mailbox._needs_credentials())
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestSyncLadder(MailProTestCase):
+    """Each rung keeps strictly more of the mailbox than the one below it.
+
+    That nesting is the whole reason `sync_level` is one field and not three:
+    a customer who climbs one step gets exactly one more kind of mail, and a
+    customer who reads the four labels top to bottom reads a ladder rather than
+    a menu of combinations. Every assertion here is one rung, one situation.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.processor = self.env['pan.mail.fetcher']
+        self.mailbox = self.personal_mailbox
+
+    def _ctx(self, folder, partner=None):
+        return {
+            'mailbox': self.mailbox,
+            'folder': folder,
+            'is_outgoing': folder == FOLDER_SENT,
+            'partner': partner,
+            'force_import': False,
+            'internet_message_id': INTERNET_ID,
+            'full_message': {'headers': {}},
+        }
+
+    def _wanted(self, level, folder, partner=None):
+        self.mailbox.write({'sync_level': level})
+        return self.processor._gate_wanted(self._ctx(folder, partner))
+
+    def _reason(self, level, folder, partner=None):
+        skip = self._wanted(level, folder, partner)
+        return skip.reason if skip else None
+
+    # --- what a rung adds --------------------------------------------------
+    def test_replies_lets_no_new_conversation_in(self):
+        self.assertEqual(
+            self._reason('replies', FOLDER_INBOX, self.external_partner),
+            'not_a_reply')
+
+    def test_both_adds_the_sent_folder_and_nothing_from_the_inbox(self):
+        """The second rung is about the owner's own replies, which enter on
+        the reply clause; a new conversation from the inbox still waits for
+        the third rung."""
+        self.assertEqual(
+            self._reason('both', FOLDER_INBOX, self.external_partner),
+            'not_a_reply')
+
+    def test_contacts_lets_a_known_contact_start_a_conversation(self):
+        self.assertIsNone(self._wanted('contacts', FOLDER_INBOX, self.external_partner))
+
+    def test_contacts_leaves_a_stranger_where_they_are(self):
+        self.assertEqual(self._reason('contacts', FOLDER_INBOX), 'unknown_contact')
+
+    def test_everyone_lets_a_stranger_in(self):
+        self.assertIsNone(self._wanted('everyone', FOLDER_INBOX))
+
+    def test_no_rung_lets_the_outbox_start_a_conversation(self):
+        """Sending has no rung of its own: a sent item enters only as a reply.
+        Where a conversation the owner starts from their mail app belongs is a
+        question the module cannot answer, so no level widens it, not even to
+        a known contact."""
+        for level in ('both', 'contacts', 'everyone'):
+            self.assertEqual(
+                self._reason(level, FOLDER_SENT, self.external_partner),
+                'not_a_reply', level)
+            self.assertEqual(self._reason(level, FOLDER_SENT), 'not_a_reply', level)
+
+    # --- what no rung takes away ------------------------------------------
+    def test_a_reply_passes_at_every_rung(self):
+        """The floor is not on the ladder: a reply to something Odoo holds
+        belongs on its record whatever the setting says."""
+        with patch.object(type(self.processor), '_is_reply_to_odoo', return_value=True):
+            for level in ('replies', 'both', 'contacts', 'everyone'):
+                self.assertIsNone(self._wanted(level, FOLDER_INBOX), level)
+                self.assertIsNone(self._wanted(level, FOLDER_SENT), level)
+
+    def test_each_rung_is_a_superset_of_the_one_below(self):
+        """The property the labels promise, checked rather than implied: every
+        situation that passes at one rung still passes at the next."""
+        situations = [
+            (FOLDER_INBOX, self.external_partner),
+            (FOLDER_INBOX, None),
+            (FOLDER_SENT, self.external_partner),
+            (FOLDER_SENT, None),
+        ]
+        levels = ('replies', 'both', 'contacts', 'everyone')
+        for lower, higher in zip(levels, levels[1:]):
+            for folder, partner in situations:
+                if self._wanted(lower, folder, partner) is None:
+                    self.assertIsNone(
+                        self._wanted(higher, folder, partner),
+                        '%s passed at %s but not at %s' % (folder, lower, higher))
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -393,11 +477,7 @@ class TestSentEmailOnlyEntersAsAReply(MailProTestCase):
         super().setUp()
         self.processor = self.env['pan.mail.fetcher']
         self.mailbox = self.personal_mailbox
-        self.mailbox.write({
-            'sync_received': True,
-            'sync_received_scope': 'all',
-            'sync_sent': True,
-        })
+        self.mailbox.write({'sync_level': 'everyone'})
 
     def _ctx(self, folder, partner=None, headers=None):
         return {

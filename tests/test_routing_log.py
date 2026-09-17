@@ -24,7 +24,7 @@ class TestRoutingLog(TransactionCase):
         cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
         cls.Log = cls.env['pan.mail.routing.log']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
-            'email': 'support@company.test', 'mailbox_type': 'shared',
+            'email': 'support@company.test',
         })
         cls.partner = cls.env['res.partner'].create({
             'name': 'Customer', 'email': 'customer@example.com',

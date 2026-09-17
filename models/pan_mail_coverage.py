@@ -37,6 +37,14 @@ class PanMailCoverage(models.TransientModel):
     unlinked_count = fields.Integer(string='Not filed anywhere', compute='_compute_coverage')
     unlinked_ratio = fields.Float(string='Unfiled', compute='_compute_coverage')
 
+    def _contact_only_domain(self):
+        """Filed on a contact and nothing else.
+
+        `res_id` must be set, or the message is unfiled and belongs in that
+        row instead — the three rows have to stay disjoint.
+        """
+        return [('model', '=', 'res.partner'), ('res_id', '!=', False)]
+
     def _period_domain(self):
         self.ensure_one()
         since = fields.Datetime.now() - relativedelta(days=int(self.period_days))
@@ -58,12 +66,16 @@ class PanMailCoverage(models.TransientModel):
                 domain + ['|', ('model', '=', False), ('res_id', '=', False)]
             )
             contact_only = Message.sudo().search_count(
-                domain + [('model', '=', 'res.partner')]
+                domain + record._contact_only_domain()
             )
             record.total_count = total
             record.unlinked_count = unlinked
             record.contact_only_count = contact_only
-            record.linked_count = total - unlinked
+            # The three rows are disjoint and sum to the total: a message is
+            # filed on a document, filed on a contact only, or filed nowhere.
+            # Counting the contacts inside the documents made the two rows on
+            # the screen look like a sum that does not add up.
+            record.linked_count = total - unlinked - contact_only
             # A fraction: the `percentage` widget multiplies by 100 itself.
             record.unlinked_ratio = (unlinked / total) if total else 0.0
 
@@ -86,7 +98,7 @@ class PanMailCoverage(models.TransientModel):
 
     def action_view_contact_only(self):
         return self._open_lens(
-            [('model', '=', 'res.partner')],
+            self._contact_only_domain(),
             _('Mail filed on a contact only'),
         )
 

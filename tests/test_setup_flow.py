@@ -103,7 +103,6 @@ class TestSetupPhase(TransactionCase):
         broken = self.env['pan.mail.mailbox'].create({
             'email': 'broken@company.test',
             'provider': 'imap',
-            'mailbox_type': 'shared',
             'state': 'error',
         })
         answers = self._answers()
@@ -123,7 +122,6 @@ class TestSetupPhase(TransactionCase):
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'phase-sync@company.test',
             'provider': 'imap',
-            'mailbox_type': 'shared',
         })
         with patch.object(type(self.Setup), 'is_ready', return_value=False):
             with self.assertRaises(UserError):

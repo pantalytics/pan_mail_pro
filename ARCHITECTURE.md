@@ -32,7 +32,7 @@ code, the views and the documentation use the same one.
 | **Provider** | Where the mail lives: `outlook`, `gmail` or `imap` | `mail.provider.client`, `PROVIDER_SELECTION` |
 | **Outgoing** | Chatter → email. Odoo composes, the provider sends | `mail.mail` (`_resolve_route`, `send_message`) |
 | **Incoming** | Email → chatter. The provider is read, the matcher decides, Odoo posts | `pan.mail.fetcher`, `pan.mail.matcher` |
-| **Sync** | The user's word for reading a mailbox and its settings | `sync_received`, `sync_sent`, `last_sync_date`, "Sync Now" |
+| **Sync** | The user's word for reading a mailbox and its settings | `sync_level`, `last_sync_date`, "Sync Now" |
 | **Send From** | The mailbox a mail leaves through | `x_send_from_mailbox_id`, `x_default_mailbox_id` |
 | **Direction** | Which way an *email* went for its mailbox, whichever flow carried it | `mail.message.x_direction` |
 
@@ -125,6 +125,7 @@ Providers disagree about sending as somebody else, which is why
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
+| `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key and the last signed entitlement. One row, created on the first Connect. `sync_allowed()` gates incoming sync and new accounts (§9.17) |
 | `res.config.settings` | The setup checklist — three lines, each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
@@ -154,11 +155,34 @@ Providers disagree about sending as somebody else, which is why
 | `pan.mail.routing.log` | One row per delivered mail: rule, confidence, rejected candidates |
 | `pan.mail.coverage` | Transient report: how much mail actually lands on a document |
 
-Every screen the module ships lives under Settings → Technical → Email →
-**Mail Pro**. 19.0.4.0.0 gave it a "Communication" application of its own on
-the home screen; 19.0.7.0.0 took it back. What it held was one read-only lens
-and a queue, which is not an application, and a tile on the home screen invites
-daily use of a diagnostic view.
+**Reading it**
+
+| Model | Purpose |
+|-------|---------|
+| `pan.mail.conversation` | AbstractModel, no table. The queries behind the Inbox screen: folders, conversations, one thread, a customer's timeline, and what the chatter's door needs |
+
+Every configuration and diagnostic screen lives under Settings → Technical →
+Email → **Mail Pro**. 19.0.4.0.0 gave the module a "Communication" application
+of its own on the home screen; 19.0.7.0.0 took it back, because what it held
+was one read-only lens and a queue, and a tile invites daily use of a
+diagnostic view. 19.0.10.0.0 gives the tile back to the Inbox, by that same
+test: a tile is a promise about how often a screen is opened, and this is where
+somebody answers customer mail all day. The diagnostics stayed where they were.
+
+`pan.mail.conversation` is for mailbox managers, and says so itself: the menu
+carries the group, Odoo 19's `ir.actions.actions` cannot, and every method
+checks before it answers. It also reaches two tables whose ACL is
+manager-only (`pan.mail.thread.link`, `pan.mail.routing.log`) with `sudo()`,
+after the message search that fences the result -- the sudo buys the lookup,
+never the answer.
+
+Beyond that it is a namespace, not storage. Two rules hold it together: every query starts at `mail.message` so the ORM applies the record
+rules before anything is grouped (the thread index is not access controlled, so
+reading it first would let a thread key betray a record somebody cannot open),
+and it reads only. Replying, marking read and scheduling a follow-up are Odoo's
+own methods called on the record itself, unwrapped, so the reply path cannot
+drift from the chatter. The screen it serves is designed in
+`docs/plans/conversation-view.md`.
 
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
@@ -194,6 +218,7 @@ pan_mail_pro/
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
 │   ├── pan_mail_routing_log.py
 │   ├── pan_mail_coverage.py       # Coverage report (TransientModel)
+│   ├── pan_mail_conversation.py   # Read side of the Inbox screen (AbstractModel)
 │   ├── mail_mail.py               # Outgoing override + route resolution
 │   ├── mail_message.py            # Threading keys + communication lens
 │   ├── mail_compose_message.py
@@ -286,6 +311,18 @@ Which credentials a mailbox runs on is asked of the provider
 (`resolve_sending_account` / `resolve_receiving_account`), never assumed by the
 caller: only Microsoft 365 lets one person send as another with their own token.
 
+The type is derived, not asked (`_compute_mailbox_type`, stored). No provider
+answers "personal or shared?" well enough to build a form on: Graph exposes
+`mailboxSettings.userPurpose`, but only to a token that already has rights on
+the mailbox being created and a scope the module does not request; Gmail has no
+shared mailboxes, only accounts and delegation; IMAP has a login. What the
+module means by the word is a policy, who may send from here and with whose
+credentials, and that follows from the owner. An owner on their own address
+(one their grant or their user record carries) is personal. No owner, or an
+owner on some other address, is shared. The notification mailbox is personal
+whatever its address. 19.0.7.18.0 removed the radio button and recomputed the
+rows that predate the rule.
+
 **Personal** — auto-created when a user connects (if the admin setting allows).
 `owner_user_id` links it to its owner, and only the owner sees it in the
 composer dropdown.
@@ -312,48 +349,50 @@ out from somewhere.
 > [#38](https://github.com/pantalytics/pan_mail_pro/issues/38).
 
 
-### Replies need no setting; everything else is asked
+### Replies need no setting; the rest is one ladder
 
-The mailbox form asks two questions, one per direction, and neither of them is
-"should this mailbox be read". Every mailbox that can be read is read, because a
-reply to something Odoo sent belongs on the record it continues. A chatter
-thread showing the question and not the answer is the failure this module
-exists to prevent, so it is not a preference.
+The mailbox form asks one question, and it is not "should this mailbox be
+read". Every mailbox that can be read is read, because a reply to something Odoo
+sent belongs on the record it continues. A chatter thread showing the question
+and not the answer is the failure this module exists to prevent, so it is not a
+preference. Sending is not asked either: whether an address is used is decided
+per message, in the composer's Send From.
 
-| | Always | Asked |
+The question is `sync_level`: how much of this mailbox does Odoo read back? Four
+answers, and each keeps strictly more than the one above it:
+
+| `sync_level` | Label | Adds |
 |---|---|---|
-| **Sending** | Mail written in Odoo leaves through this mailbox | `sync_sent` — read the Sent folder back, for replies the owner wrote in their own client |
-| **Receiving** | Replies to conversations Odoo already has land on their record | `sync_received` — email that starts a *new* conversation, and `sync_received_scope` for how wide |
+| `replies` | Replies, in Odoo only | nothing; the inbox is read for replies and that is all |
+| `both` | Replies, in Odoo and your mail app | the Sent folder, for the owner's own replies to threads Odoo already has |
+| `contacts` | Replies and new email, existing contacts only | conversations started by a known contact |
+| `everyone` | Replies and new email, everyone | conversations started by strangers, who become contacts |
 
-`sync_received_scope` only matters while `sync_received` is on, which is why the
-form shows it a level deeper:
+The form shows the consequence under the choice, split by the situation the
+reader recognises rather than by the plumbing: a reply from your contact, your
+reply from your mail app, new mail from your contact, new mail from your mail
+app, new mail from a stranger. Exactly one line changes between two neighbouring
+rungs, which is what makes it a ladder rather than a menu.
 
-| `sync_received_scope` | Meaning |
-|---|---|
-| `known_partners` | Only from addresses that are already contacts |
-| `all` | From anyone. Every sender becomes a contact |
+**Why one field.** 19.0.7.6.0 split a three-way `sync_mode` into two switches
+and a scope, so that asking to receive mail no longer silently copied everything
+the owner wrote in Outlook. Right fix, wrong shape: three independent answers
+made eight combinations, and two of them were nonsense. Reading Sent Items
+without reading the inbox, or syncing new mail while the owner's own answers
+stayed out, both leave half a conversation on the record, the very thing the
+reply rule exists to prevent. 19.0.8.0.0 folded the three into one ladder with
+no such rungs. `_folders_to_sync()` is still the only place that maps a setting
+to a folder, and `_gate_wanted` the only place that decides what may enter; the
+mailbox answers `_reads_sent_folder()`, `_syncs_new_conversations()` and
+`_syncs_strangers()`, three names for the rungs of one field.
 
-**Why the split.** These were one three-way `sync_mode` until 19.0.7.6.0, where
-"send and receive" read the Inbox *and* the Sent folder. A customer who asked to
-receive mail in Odoo also got a copy of everything their people wrote in
-Outlook, without being asked. It also bundled "should this sync at all" with
-"how wide should it cast", so the widest answer sat one click from the off
-position. `_folders_to_sync()` is now the only place that maps a setting to a
-folder, and `_gate_wanted` the only place that decides what may enter.
-
-This is not a walk back on 19.0.5.0.0, which deleted five *computes* over one
-choice — five things that could disagree with the field that decided. These are
-independent stored answers to independent questions, and none of them is derived
-from another.
-
-**Sent capture is not offered the scope question**, because there is nothing
-left to widen. A sent item enters on one door: it replies to a conversation Odoo
-already holds, and lands on the record it continues. Mail that starts something
-new from a mail client stays out even when its recipient is a contact, because
-where it belongs is a question the module cannot answer -- the contact, a lead,
-an opportunity -- and a wrong guess scatters chatter across records nobody asked
-for. Widening this is a design decision waiting on that answer, not a setting
-somebody forgot to add.
+**Sending has no rung of its own.** A sent item enters on one door: it answers
+something Odoo already holds. Mail the owner wrote in their own client that
+starts something new stays out at every level, even to a contact Odoo already
+has. Where such a mail belongs -- the contact, a lead, an opportunity -- is a
+question the module cannot answer yet, and guessing it wrong scatters chatter
+across records nobody asked for. Answering something Odoo already holds has one
+obvious home, so that is the case that syncs.
 
 **The Sent folder is opt-in and the Inbox is not**, because nothing in Sent is
 ever waiting for Odoo: every sent item is either mail Odoo itself sent (dropped
@@ -361,11 +400,11 @@ by the loop guard) or a copy of correspondence Odoo was never part of. The Inbox
 holds replies, which are.
 
 `mailbox._syncs_more_than_replies()` is the question the health status, the
-credentials check and the constraints ask — did somebody switch on more than the
-baseline? A Microsoft shared mailbox that only sends has no credentials of its
-own, and reply sync being best-effort on top is what keeps it from turning red.
-Both switches are booleans, so a NULL falls to False and the unanswered question
-falls the safe way.
+credentials check and the constraints ask: did somebody climb above the bottom
+rung? A Microsoft shared mailbox that only sends has no credentials of its own,
+and reply sync being best-effort on top is what keeps it from turning red. A
+NULL level counts as the bottom rung, so the unanswered question falls the safe
+way.
 
 `routing_smart` (the interlock that kept AI auto-routing off) and
 `queue_unknown_contacts` (hold unknown senders in the triage queue) went with
@@ -506,7 +545,7 @@ an *ingestion* control, so it governs two of them.
 
 | | Sending | Receiving |
 |---|---|---|
-| **Mailbox** | user writes in Outlook; sync reads Sent Items *when `sync_sent` is on*. **Replies to conversations Odoo already holds only**; a new conversation stays out. | mail lands in the inbox; sync always reads it. Replies pass; anything else is **filtered on the From**. |
+| **Mailbox** | user writes in Outlook; sync reads Sent Items *from `sync_level` `both` on*. **Replies to conversations Odoo already holds only**; a new conversation stays out. | mail lands in the inbox; sync always reads it. Replies pass; anything else is **filtered on the From**. |
 | **Odoo** | chatter or notification; `mail.mail.send()` routes it out. **No filter.** | nothing. A Mail Pro database does not receive through `mail.alias`. |
 
 **Sending from Odoo is never filtered.** A person clicked send, or a colleague
@@ -718,10 +757,12 @@ mail.compose.message — x_send_from_mailbox_id = selected mailbox
       ▼
 mail.mail._resolve_route()
   One answer, in this order:
-    1. internal notification → notifications@
-    2. the composer's choice
-    3. the author's default mailbox
-    4. no author at all → notifications@
+    1. the composer's choice
+    2. system notification → notifications@
+       (account mail: a password reset, an invitation, a portal
+        access grant — or mail to one of our own employees)
+    3. no author at all → notifications@
+    4. the author's default mailbox
   Anything unanswerable raises RoutingError and the mail FAILS.
   It is never rerouted to a different sender.
       │
@@ -786,14 +827,41 @@ keeps the timeline instead of collapsing onto the day the import ran.
 Ascending sort plus an incremental cursor, the pattern Odoo fetchmail and
 Stripe webhooks use:
 
-1. Fetch up to 200 messages per folder, oldest first, since `last_sync_date`
-2. Advance `last_sync_date` to the **minimum** of the two folders' latest
-   message, so nothing is skipped in the slower folder
-3. If nothing came back at all, the cursor jumps to `now()` — caught up
+1. **One cursor per folder**: `last_sync_date` for the inbox,
+   `last_sent_sync_date` for Sent. Empty means "no cursor of its own yet" and
+   resumes from `last_sync_date`, which covers both the upgrade and a mailbox
+   that has only ever synced its inbox
+2. Fetch up to 200 messages per folder, oldest first, since that folder's cursor
+3. A folder's progress is the last message that was actually **processed**,
+   and it stops at the first one that raised — the rest of the batch is still
+   read, but the cursor does not pass the failure
+4. If a folder came back empty, *its* cursor jumps to `now()` — caught up. Not
+   when it stalled: that jump is exactly the skip the stall prevents
+
+The two cursors used to be one, advanced to the **minimum** of both folders so
+the quieter folder could never be skipped. That made the quietest folder the
+pace of the whole mailbox: an address that received mail but sent none through
+that account stood still at its last sent item, re-read every message since
+then on every run, and — once more than one batch had accumulated in the gap —
+stopped reaching the newest mail at all (issue #116). A cursor per folder gives
+the same guarantee without the coupling.
+
+Turning Sent syncing off and on again clears its cursor rather than resuming
+where it stood, so the switch cannot import months of old sent mail.
 
 `sync_start_date` is user-configurable (default: now). Moving it earlier
 resets the cursor, which is how a historical import is started. Duplicates are
 skipped on Message-ID, so a re-run is safe.
+
+**A message that fails to process stalls its mailbox** rather than being
+stepped over. The two answers conflict and only one of them is recoverable:
+skipping keeps the mail flowing and loses that mail silently, forever;
+stalling blocks everything behind it until somebody looks. Dedup on
+Message-ID makes the retry free, so the stall is the one that costs nothing
+if the failure was transient — and it is loud on purpose. `_process_mailbox`
+returns the reason instead of raising it (a raise would roll back the mail
+that *did* land in that run) and the caller puts the mailbox in `error` with
+the subject and provider id of the message that blocked it.
 
 ---
 
@@ -1040,9 +1108,10 @@ one thing an admin needs to send at that moment is user invitations, and those
 were exactly what died.
 
 One window survives by design: the first mailbox exists (routing on, SMTP off)
-but `notifications@` is not connected yet. Internal notifications are **queued**
-in that window rather than cancelled, and go out by themselves once the
-notification mailbox works. See `_is_awaiting_notification_mailbox`.
+but `notifications@` is not connected yet. System notifications -- invitations
+and password resets included -- are **queued** in that window rather than
+cancelled, and go out by themselves once the notification mailbox works. See
+`_is_awaiting_notification_mailbox`.
 
 ### 9.8 Configuration that is not configuration
 
@@ -1355,6 +1424,71 @@ whole attempt runs in one savepoint: a failed test that left a `mail.mail`
 behind would be delivered by the queue cron minutes later, which is a test
 email arriving out of nowhere long after the reader concluded it had failed.
 
+### 9.16 Source-available, sold direct, not through the Odoo Apps store
+
+The licence is the Elastic License 2.0 (`LICENSE`), the same one Odoo MCP Pro
+uses. It protects the thing being sold — offering Mail Pro to third parties as
+a hosted or managed service — and leaves customers free to read the code and
+modify it for their own use. That is the right trade for a module whose buyers
+are Odoo integrators and IT departments who will read it either way.
+
+Odoo's manifest has no value for a source-available licence, so
+`__manifest__.py` reads `'license': 'Other proprietary'` and `LICENSE` carries
+the real terms.
+
+**That value is only legal outside the Odoo Apps store, and that is the
+decision.** apps.odoo.com requires `OPL-1` for a paid app, which is a stricter
+licence than we want: it also forbids a customer from redistributing a
+modified copy, which the Elastic License permits and which costs us nothing.
+Mail Pro is sold direct from pantalytics.com, so the store's constraint does
+not apply.
+
+The consequence for anyone changing this: **do not set the manifest licence to
+`OPL-1` to "fix" a store listing.** If distributing through the Odoo Apps store
+is ever wanted, that is a licence change and a business decision, not a
+manifest edit — take it deliberately, and re-check `LICENSE`, the About block
+in `views/res_config_settings_views.xml` and the licence section of
+`README.md` together, because all three state the terms and only one of them is
+the terms.
+
+Releases up to and including `v19.0.7.13.1` were published under LGPL-3 and
+stay there; the relicence applies from `19.0.7.14.0` onwards.
+
+### 9.17 Connecting to Pantalytics, and working only when connected
+
+Settings → Mail Pro → Pantalytics Account. The admin presses **Connect to
+Pantalytics**, gets a short code and a link, approves on our site with their
+Pantalytics account, and presses **Check Approval**; Odoo collects its key.
+That is the device flow's shape: no redirect URI per customer database, so it
+works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
+server half lives in `pantalytics/mail-pro-admin`.
+
+- **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
+  `_heartbeat_body()` and nothing else: database id, module and Odoo version,
+  connected accounts, whether sync is healthy. No address, subject or body. The
+  manifest's Data Disclosure says the same, and has to change with it.
+- **Only a signed answer is stored.** Ed25519 against `PUBLIC_KEY`, and its
+  `db_uuid` must be this database's. An unreachable server keeps the cached
+  answer until `valid_until` (14 days); a refused key drops it.
+- **Neutralized copies do nothing**: no Connect, no heartbeat, and the key is
+  unreadable anyway because it goes through `decrypt_value`.
+- **Check Approval is a button, not a poll loop.** The admin knows when they
+  approved. Dropped: the page does not refresh itself.
+- **Mail Pro works on a connected Odoo instance** (19.0.9.0.0, #126).
+  `sync_allowed()` gates incoming sync (the cron, which marks the mailboxes
+  with the reason, and Sync Now) and creating a **new** `pan.mail.account`.
+  Outgoing mail is never gated: the module took over Odoo's SMTP, so stopping
+  sends would hold all of the instance's email hostage. Reconnecting an
+  existing account is a `write` and stays allowed.
+- **No grace period.** A trial is the server's business (a plan or a Stripe
+  status), so the module asks one question. Existing customers are upgraded
+  and connected in one session; incoming sync pauses for those minutes and the
+  per-folder cursor catches up, so nothing is lost (#126).
+- The server treats a connected installation on plan `free` as `active` until
+  billing exists.
+- `PAN_MAIL_PRO_LICENSE_URL` and `PAN_MAIL_PRO_LICENSE_PUBLIC_KEY` point a
+  deployment at a staging server. Environment only, never a settings field.
+
 ## 10. Security and permissions
 
 All Microsoft permissions are **delegated** (user context, never application) —
@@ -1450,15 +1584,17 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 
 ## 12. Tests
 
-41 files under `tests/`, roughly 10 000 lines. They fall into five groups:
+45 files under `tests/`. They fall into seven groups:
 
 | Group | Files | What they hold |
 |-------|-------|----------------|
 | Contracts | `test_provider_contract.py` | Every provider answers the contract identically |
-| Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_pan_mail_provider.py` | Wire-level behaviour per vendor, and the credential rows behind them |
-| Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_mail_matcher.py`, `test_routing_log.py` | Fetch → filter → match → post |
-| Sending & UI | `test_outgoing_*.py`, `test_compose_*.py`, `test_mailbox_*.py`, `test_setup_flow.py`, `test_onboarding.py` | Routing, threading, composer, permissions, onboarding |
-| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py` | The scripts in `migrations/`, run against real rows |
+| Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_imap_live.py`, `test_pan_mail_provider.py` | Wire-level behaviour per vendor, and the credential rows behind them |
+| Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_mail_matcher.py`, `test_routing_log.py` | Fetch → filter → match → post |
+| Sending & UI | `test_outgoing_*.py`, `test_compose_*.py`, `test_mailbox_*.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py` | Routing, threading, composer, permissions, onboarding, and where the screens live |
+| Reading | `test_conversation_api.py` | What the Inbox may show, and to whom |
+| The outside | `test_oauth_routes.py`, `test_connect_banner.py`, `test_license.py` | Every route this module opens, who may call it, and what the OAuth callback stores |
+| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py` | The scripts in `migrations/`, run against real rows |
 
 `tests/common.py` provides the shared fixture — a notification mailbox, a shared
 mailbox, a personal mailbox, connected users, an external partner, and a
@@ -1471,6 +1607,25 @@ tests prove the refactor preserved behaviour rather than merely not crashing.
 New tests use `@tagged('pan_mail_pro', 'post_install', '-at_install')` and
 extend `TransactionCase`. See [CLAUDE.md](CLAUDE.md) for how to run them and
 what CI enforces.
+
+### The routes
+
+Four, and no more. `tests/test_oauth_routes.py` holds the same list and fails
+when a fifth arrives, because the question a new route raises is who may call
+it, and the answer belongs somewhere a reviewer reads.
+
+| Route | Auth | What it does |
+|-------|------|--------------|
+| `/mail_pro/connect` | `user` | The button in the invitation mail. Sends the user straight to their provider's consent screen, or to the settings page when the provider has none (IMAP) |
+| `/microsoft_oauth/callback` | `user` | Where Microsoft returns. Validates the nonce, exchanges the code, stores the account, claims the personal mailbox |
+| `/google_oauth/callback` | `user` | The same, for Google. One implementation, two routes |
+| `/mail_pro/pantalytics/return` | `user` | Where our own approval page sends an administrator back to. Not an OAuth callback: a plain link carrying the key |
+
+None of them is public. The callback writes credentials, the connect route
+reads the user's provider and the return route takes an approval key, so none
+of the three has an anonymous version. The nonce on the callback is good once:
+`x_pan_mail_oauth_state` is cleared the moment it matches, so a callback URL
+out of a browser history or a log is not a second grant.
 
 ---
 

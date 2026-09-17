@@ -3,7 +3,7 @@
 Complete Microsoft 365, Google Workspace and IMAP/SMTP email integration for
 Odoo - send and receive with full control.
 
-**[Full documentation](https://pantalytics.gitbook.io/pantalytics-docs/)**
+**[Full documentation](https://pantalytics.odoo.com/knowledge/article/116)**
 
 ## Features
 
@@ -134,10 +134,15 @@ Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow
 
 ### Mailbox Types
 
+The type is not a setting. It follows from the owner:
+
 | Type | Description |
 |------|-------------|
-| **Personal** | User's own mailbox. Auto-created on connect. Only visible to owner. |
-| **Shared** | Team mailbox (sales@, support@). Visible to all users. On Microsoft 365 each user sends with their own token and needs SendAs; on Gmail and IMAP/SMTP the address has credentials of its own and no owner. |
+| **Personal** | The owner's own address. Created when they connect. Only visible to the owner. |
+| **Shared** | Any address that is not its owner's own, or has no owner (sales@, support@). Visible to all users. On Microsoft 365 each user sends with their own OAuth grant; on Gmail and IMAP the address has credentials of its own. |
+
+On Microsoft 365 a shared mailbox that reads mail still names an **Owner**: the
+person whose grant reads it. That does not make it theirs.
 
 Exactly one mailbox also has **Notification Mailbox** ticked: system emails —
 user invitations, password resets, activity reminders — go out from it, using
@@ -149,32 +154,31 @@ untick the current one first.
 **Prerequisite:** one mailbox must have **Notification Mailbox** ticked (required for handling emails from external authors).
 
 Replies to email sent from Odoo always land on the record they answer. That
-needs no setting. The two switches below are about everything else.
+needs no setting. Sending needs none either: which mailbox an email leaves from
+is picked per message, under **Send From** in the composer, and it shows up in
+the Sent Items of your mail app like any other mail.
 
-1. Open a mailbox
-2. Under **Sending**, decide about **Sync Sent Items**:
-   - Off (the default) - only mail written in Odoo is logged
-   - On - the Sent Items folder of your people's own mail app (Outlook, Gmail or
-     another client) is read back into Odoo. Only replies to emails that are
-     already in Odoo: the answer lands on the record it continues. Mail that
-     starts a new conversation stays out, contact or not, because where it
-     belongs is not a question Odoo can answer for you.
+1. Open a mailbox, tab **Sync Settings**
+2. Pick a **Sync level**. Each one keeps strictly more than the one above it:
 
-   Mail written in Odoo always goes out through the mailbox. There is no setting
-   for it, because that is what a mailbox is.
-3. Under **Receiving**, decide about **Sync Other Email**:
-   - Off (the default) - only replies come in
-   - On - email that starts a new conversation comes in too, and a second
-     question appears: **Only from people who are already contacts**, or **From
-     anyone**. "From anyone" turns every sender into a contact, newsletters and
-     private email included, so pick it only for an address that exists to hear
-     from strangers.
-4. Optionally route to a **Team** (alias) so emails create tickets or leads
-   instead of landing on the sender's contact
-5. On Microsoft 365, set the **Owner** whose sign-in reads the mailbox. On
-   Gmail and IMAP/SMTP the address has its own account and needs no owner
-6. Optionally set **Start from** for historical email import
-7. Save
+   | Level | What is read back |
+   |---|---|
+   | **Replies, in Odoo only** (default) | Only replies to mail Odoo sent |
+   | **Replies, in Odoo and your mail app** | Also your own replies, read back from the Sent folder |
+   | **Replies and new email, existing contacts only** | Also new conversations started by people who are already contacts |
+   | **Replies and new email, everyone** | Also new conversations from strangers, who become contacts. Newsletters and private email included, so pick it only for an address that exists to hear from strangers |
+
+   Under the choice the form shows what happens in Odoo for each situation:
+   a reply from your contact, your reply from your mail app, new mail from
+   your contact, new mail from your mail app, new mail from a stranger. Mail
+   you start from your own mail app never enters, whatever the level: only
+   your replies do.
+3. From the third level on, optionally **route new conversations to a team**
+   (alias) so they create tickets or leads instead of landing on the sender's
+   contact
+4. On the **Setup** tab: the **Type**, the **Owner** (a user with a connected
+   account), and optionally **Import from** for historical email
+5. Save
 
 **Sync behavior:**
 - Internal domains must be configured in Settings → Mail Pro before any mailbox
@@ -291,3 +295,20 @@ docker-compose start odoo
 wire behaviour, the incoming pipeline (fetch → filter → match → post),
 sending, threading, the composer and onboarding, and the migration scripts.
 See ARCHITECTURE.md §12.
+
+---
+
+## License
+
+Mail Pro is source-available under the **[Elastic License 2.0](LICENSE)**, the
+same licence as Odoo MCP Pro. In short: read the code, run it, modify it for
+your own use. You may not offer it to third parties as a hosted or managed
+service, and you may not remove or circumvent its licensing notices.
+
+Releases up to and including `v19.0.7.13.1` were published under LGPL-3 and
+stay under LGPL-3. The relicence applies from `19.0.7.14.0` onwards.
+
+Mail Pro is sold direct, not through the Odoo Apps store, which requires
+`OPL-1` for paid apps. See ARCHITECTURE.md §9.16 for why.
+
+Commercial terms and support: <support@pantalytics.com>.

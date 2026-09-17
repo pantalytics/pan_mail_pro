@@ -9,7 +9,8 @@ from unittest.mock import patch
 from odoo.tests import TransactionCase, tagged
 import unittest
 
-from odoo.addons.pan_mail_pro.models.mail_provider_client import FOLDER_INBOX
+from odoo.addons.pan_mail_pro.models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from odoo.addons.pan_mail_pro.tests.common import MailProTestCase
 
 
 
@@ -52,7 +53,6 @@ class TestInternalDomain(TransactionCase):
         """There is no per-mailbox escape hatch left. Every mailbox filters."""
         mailbox = self.env['pan.mail.mailbox'].create({
             'email': 'team@company.com',
-            'mailbox_type': 'shared',
         })
         self.assertTrue(self.processor._is_internal_domain('user@company.com', mailbox))
 
@@ -183,7 +183,6 @@ class TestAliasRouting(TransactionCase):
         """Without alias, email should be posted to partner chatter."""
         mailbox_no_alias = self.env['pan.mail.mailbox'].create({
             'email': 'noalias@company.com',
-            'mailbox_type': 'shared',
         })
 
         msg_dict = {
@@ -237,7 +236,6 @@ class TestHelpdeskRouting(TransactionCase):
         })
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'support@company.com',
-            'mailbox_type': 'shared',
             'route_to_team': True,  # Enable team routing
             'alias_id': cls.helpdesk_team.alias_id.id,
         })
@@ -289,7 +287,6 @@ class TestSavepointIsolation(TransactionCase):
         cls.processor = cls.env['pan.mail.fetcher']
         cls.mailbox = cls.env['pan.mail.mailbox'].create({
             'email': 'inbox@company.test',
-            'mailbox_type': 'shared',
         })
 
     def test_one_bad_message_does_not_poison_batch(self):
@@ -328,7 +325,8 @@ class TestSavepointIsolation(TransactionCase):
                           return_value=fake_messages, autospec=True), \
              patch.object(IncomingProcessor, '_process_message',
                           fake_process_message):
-            processed, _ = self.processor._fetch_folder(self.mailbox, FOLDER_INBOX)
+            processed, _, stalled_on = self.processor._fetch_folder(
+                self.mailbox, FOLDER_INBOX)
 
         # All three messages were attempted in order — the failure didn't
         # short-circuit the loop.
@@ -343,3 +341,268 @@ class TestSavepointIsolation(TransactionCase):
         self.assertFalse(Partner.search([('email', '=', 'sender-2@example.com')]))
         # Processed count reflects only the successful messages.
         self.assertEqual(processed, 2)
+        # And the cursor stopped at the message that failed, so the next run
+        # meets it again instead of stepping over it forever.
+        self.assertEqual(stalled_on['message_id'], '<msg-2@test>')
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestCursorHoldsOnFailure(TransactionCase):
+    """Issue #97: a message that raised must not be stepped over.
+
+    The cursor used to advance to the last message of the batch whatever
+    happened inside it, so a mail that failed to process was skipped for good
+    and nothing said so. Processing dedups on Message-ID, so holding the
+    cursor costs a lookup on the retry and loses nothing.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.processor = cls.env['pan.mail.fetcher']
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'inbox@company.test',
+        })
+        cls.mailbox.last_sync_date = datetime(2026, 5, 12, 9, 0, 0)
+
+    def _fetch(self, messages, failing_ids):
+        """Run one folder fetch where `failing_ids` raise inside processing."""
+        IncomingProcessor = type(self.processor)
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        def fake_process_message(self_, mailbox, message, folder):
+            if message['message_id'] in failing_ids:
+                raise ValueError('boom')
+            return True
+
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=messages, autospec=True), \
+             patch.object(IncomingProcessor, '_process_message',
+                          fake_process_message):
+            return self.processor._fetch_folder(self.mailbox, FOLDER_INBOX)
+
+    @staticmethod
+    def _msg(n, minute):
+        return {
+            'provider_message_id': f'g{n}',
+            'message_id': f'<msg-{n}@test>',
+            'subject': f'Message {n}',
+            'date': datetime(2026, 5, 12, 10, minute, 0),
+        }
+
+    def test_cursor_stops_before_the_failed_message(self):
+        messages = [self._msg(1, 0), self._msg(2, 1), self._msg(3, 2)]
+
+        processed, cursor, stalled_on = self._fetch(messages, {'<msg-2@test>'})
+
+        self.assertEqual(processed, 2)
+        # Not 10:02: that would put msg-2 behind the cursor forever.
+        self.assertEqual(cursor, datetime(2026, 5, 12, 10, 0, 0))
+        self.assertEqual(stalled_on['message_id'], '<msg-2@test>')
+
+    def test_first_message_failing_holds_the_cursor_where_it_was(self):
+        messages = [self._msg(1, 0), self._msg(2, 1)]
+
+        processed, cursor, stalled_on = self._fetch(messages, {'<msg-1@test>'})
+
+        self.assertEqual(processed, 1)
+        # No progress to report, but reporting None would let the caller
+        # decide the folder was empty and jump to now().
+        self.assertEqual(cursor, self.mailbox.last_sync_date)
+        self.assertEqual(stalled_on['message_id'], '<msg-1@test>')
+
+    def test_clean_batch_still_advances_to_the_last_message(self):
+        messages = [self._msg(1, 0), self._msg(2, 1), self._msg(3, 2)]
+
+        processed, cursor, stalled_on = self._fetch(messages, set())
+
+        self.assertEqual(processed, 3)
+        self.assertEqual(cursor, datetime(2026, 5, 12, 10, 2, 0))
+        self.assertIsNone(stalled_on)
+
+    def test_mailbox_cursor_does_not_move_past_a_stall(self):
+        """The whole point, seen from `_process_mailbox`."""
+        before = self.mailbox.last_sync_date
+        messages = [self._msg(1, 0), self._msg(2, 1)]
+        IncomingProcessor = type(self.processor)
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        def fake_process_message(self_, mailbox, message, folder):
+            raise ValueError('boom')
+
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=messages, autospec=True), \
+             patch.object(IncomingProcessor, '_process_message',
+                          fake_process_message):
+            stall = self.processor._process_mailbox(self.mailbox)
+
+        self.assertEqual(self.mailbox.last_sync_date, before)
+        # And it says so where somebody looks.
+        self.assertIn('Message 1', stall)
+        self.assertIn('g1', stall)
+
+    def test_a_stall_puts_the_mailbox_in_error(self):
+        messages = [self._msg(1, 0)]
+        IncomingProcessor = type(self.processor)
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        def fake_process_message(self_, mailbox, message, folder):
+            raise ValueError('boom')
+
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=messages, autospec=True), \
+             patch.object(IncomingProcessor, '_process_message',
+                          fake_process_message), \
+             patch.object(type(self.mailbox), '_has_working_credentials',
+                          return_value=True, autospec=True), \
+             patch.object(type(self.env['pan.mail.setup']), 'is_ready',
+                          return_value=True, autospec=True):
+            self.processor._cron_fetch_incoming_mail()
+
+        self.assertEqual(self.mailbox.state, 'error')
+        self.assertIn('Message 1', self.mailbox.error_message)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestPerFolderCursor(MailProTestCase):
+    """Issue #116: one folder must not hold the other one back.
+
+    The cursor was the minimum of both folders' progress, so a mailbox that
+    receives mail but sends none through that account never advanced past its
+    last sent item: every run re-fetched everything since then and discarded it
+    at the duplicate gate, and once more than one batch sat in that gap the
+    newest mail was never reached at all.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.processor = cls.env['pan.mail.fetcher']
+        cls.mailbox = cls.personal_mailbox
+        cls.mailbox.write({
+            'sync_level': 'both',
+            'last_sync_date': datetime(2026, 5, 12, 9, 0, 0),
+        })
+
+    @staticmethod
+    def _msg(n, when):
+        return {
+            'provider_message_id': f'g{n}',
+            'message_id': f'<msg-{n}@test>',
+            'subject': f'Message {n}',
+            'date': when,
+        }
+
+    def _sync(self, per_folder, failing_ids=frozenset()):
+        """Run one mailbox sync where each folder returns its own messages."""
+        IncomingProcessor = type(self.processor)
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        def fake_fetch(self_, account, mailbox, folder, **kwargs):
+            self.since[folder] = kwargs.get('since_datetime')
+            return per_folder.get(folder, [])
+
+        def fake_process_message(self_, mailbox, message, folder):
+            if message['message_id'] in failing_ids:
+                raise ValueError('boom')
+            return True
+
+        self.since = {}
+        with patch.object(GraphClient, 'fetch_messages', fake_fetch), \
+             patch.object(IncomingProcessor, '_process_message',
+                          fake_process_message):
+            return self.processor._process_mailbox(self.mailbox)
+
+    def test_a_quiet_sent_folder_does_not_pin_the_inbox(self):
+        """The bug, exactly as reported."""
+        inbox_last = datetime(2026, 9, 8, 8, 44, 6)
+        self._sync({
+            FOLDER_INBOX: [self._msg(1, inbox_last)],
+            FOLDER_SENT: [self._msg(2, datetime(2026, 7, 10, 23, 11, 40))],
+        })
+
+        self.assertEqual(self.mailbox.last_sync_date, inbox_last)
+        self.assertEqual(self.mailbox.last_sent_sync_date,
+                         datetime(2026, 7, 10, 23, 11, 40))
+
+    def test_each_folder_is_fetched_from_its_own_cursor(self):
+        self.mailbox.write({
+            'last_sync_date': datetime(2026, 9, 8, 8, 0, 0),
+            'last_sent_sync_date': datetime(2026, 7, 10, 23, 11, 40),
+        })
+
+        self._sync({})
+
+        self.assertEqual(self.since[FOLDER_INBOX], datetime(2026, 9, 8, 8, 0, 0))
+        self.assertEqual(self.since[FOLDER_SENT],
+                         datetime(2026, 7, 10, 23, 11, 40))
+
+    def test_a_folder_without_its_own_cursor_resumes_from_the_shared_one(self):
+        """Upgrade path: the Sent cursor is empty on every existing mailbox."""
+        self.mailbox.write({'last_sent_sync_date': False})
+        shared = self.mailbox.last_sync_date
+
+        self._sync({})
+
+        self.assertEqual(self.since[FOLDER_SENT], shared)
+
+    def test_a_stall_in_one_folder_leaves_the_other_free(self):
+        before = self.mailbox.last_sync_date
+        stall = self._sync(
+            {
+                FOLDER_INBOX: [self._msg(1, datetime(2026, 5, 12, 10, 0, 0))],
+                FOLDER_SENT: [self._msg(2, datetime(2026, 5, 12, 10, 5, 0))],
+            },
+            failing_ids={'<msg-1@test>'},
+        )
+
+        self.assertIn('Message 1', stall)
+        self.assertEqual(self.mailbox.last_sync_date, before)
+        self.assertEqual(self.mailbox.last_sent_sync_date,
+                         datetime(2026, 5, 12, 10, 5, 0))
+
+    def test_an_empty_folder_catches_up_on_its_own(self):
+        self.mailbox.write({
+            'last_sent_sync_date': datetime(2026, 7, 10, 23, 11, 40)})
+
+        self._sync({FOLDER_INBOX: [self._msg(1, datetime(2026, 5, 12, 10, 0))]})
+
+        # Nothing in Sent means Sent is caught up, whatever the inbox did.
+        self.assertGreater(self.mailbox.last_sent_sync_date,
+                           datetime(2026, 9, 1))
+        self.assertEqual(self.mailbox.last_sync_date,
+                         datetime(2026, 5, 12, 10, 0))
+
+    def test_rewinding_the_start_date_rewinds_both_cursors(self):
+        self.mailbox.write({
+            'last_sync_date': datetime(2026, 9, 8, 8, 0, 0),
+            'last_sent_sync_date': datetime(2026, 9, 8, 9, 0, 0),
+        })
+
+        self.mailbox.write({'sync_start_date': datetime(2026, 1, 1, 0, 0, 0)})
+
+        self.assertEqual(self.mailbox.last_sync_date, datetime(2026, 1, 1))
+        self.assertEqual(self.mailbox.last_sent_sync_date, datetime(2026, 1, 1))
+
+    def test_climbing_back_onto_sent_reading_resumes_from_the_inbox_cursor(self):
+        """Otherwise the climb imports months of old sent mail."""
+        self.mailbox.write({
+            'sync_level': 'replies',
+            'last_sent_sync_date': datetime(2026, 1, 1, 0, 0, 0),
+        })
+
+        self.mailbox.write({'sync_level': 'both'})
+
+        self.assertFalse(self.mailbox.last_sent_sync_date)
+
+    def test_moving_between_the_upper_rungs_keeps_the_sent_cursor(self):
+        """A mailbox already reading Sent is not restarting; its cursor stays."""
+        self.mailbox.write({
+            'sync_level': 'both',
+            'last_sent_sync_date': datetime(2026, 1, 1, 0, 0, 0),
+        })
+
+        self.mailbox.write({'sync_level': 'contacts'})
+
+        self.assertEqual(self.mailbox.last_sent_sync_date, datetime(2026, 1, 1))
