@@ -4,8 +4,13 @@
     <!--
         Four panes: where you are, what is waiting, the conversation, the
         record. Content carries the screen; the chrome stays out of the way.
-        Progressive disclosure: the folder rail holds the six states that earn
-        a line, everything else is one click deeper on the record itself.
+        Progressive disclosure: the rail holds the five states that earn a
+        line, the routing diagnostic stays folded until somebody asks, and
+        everything else is one click deeper on the record itself.
+
+        Every pane is a region with a name, and everything clickable is a
+        button. A div with a click handler is invisible to a keyboard and to a
+        screen reader, and this screen is somebody's whole working day.
     -->
     <t t-name="pan_mail_pro.ConversationView">
         <div class="o_content o_mailpro_conversation d-flex flex-column h-100">
@@ -14,78 +19,91 @@
                 No title here: the control panel above already says Mail Pro /
                 Inbox, and saying it twice is chrome competing with content.
             -->
-            <div class="o_mailpro_topbar d-flex align-items-center justify-content-end">
-                <div class="d-flex align-items-center gap-2">
-                    <select class="o_mailpro_select form-select form-select-sm"
-                            aria-label="Mailbox" t-on-change="(ev) => this.setMailbox(ev)">
-                        <option t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id"
-                                t-att-value="mailbox.id" t-esc="mailbox.email"/>
-                    </select>
-                    <input type="search" class="o_mailpro_search form-control form-control-sm"
-                           placeholder="Search people and subjects"
-                           t-on-keyup="(ev) => this.onSearch(ev)"/>
-                </div>
+            <div class="o_mailpro_topbar d-flex align-items-center justify-content-end gap-2">
+                <label class="o_mailpro_label mb-0" for="o_mailpro_mailbox">Mailbox</label>
+                <select id="o_mailpro_mailbox" class="o_mailpro_select form-select form-select-sm"
+                        t-on-change="(ev) => this.setMailbox(ev)">
+                    <option t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id"
+                            t-att-value="mailbox.id" t-esc="mailbox.email"/>
+                </select>
+                <input type="search" id="o_mailpro_search"
+                       class="o_mailpro_search form-control form-control-sm"
+                       aria-label="Search people and subjects"
+                       placeholder="Vandermolen, offerte..."
+                       t-on-keyup="(ev) => this.onSearch(ev)"/>
             </div>
 
-            <div t-if="state.error" class="o_mailpro_error d-flex align-items-center gap-2">
-                <span>That did not load. Nothing was changed.</span>
+            <div t-if="state.error" class="o_mailpro_error d-flex align-items-center gap-2" role="alert">
+                <span t-esc="state.error"/>
                 <button class="btn btn-sm btn-link p-0" t-on-click="() => this.refresh()">Try again</button>
             </div>
 
             <div class="o_mailpro_panes d-flex flex-grow-1">
 
                 <!-- 1. where you are -->
-                <div class="o_mailpro_rail">
-                    <div t-foreach="state.folders" t-as="folder" t-key="folder.id"
-                         class="o_mailpro_folder d-flex align-items-center justify-content-between"
-                         t-att-class="{ 'o_mailpro_folder_active': folder.id === state.folder }"
-                         t-on-click="() => this.setFolder(folder.id)">
+                <nav class="o_mailpro_rail" aria-label="Folders">
+                    <button t-foreach="state.folders" t-as="folder" t-key="folder.id"
+                            type="button"
+                            class="o_mailpro_folder d-flex align-items-center justify-content-between"
+                            t-att-class="{ 'o_mailpro_folder_active': folder.id === state.folder }"
+                            t-att-aria-current="folder.id === state.folder ? 'true' : undefined"
+                            t-on-click="() => this.setFolder(folder.id)">
                         <span t-esc="folder.name"/>
-                        <span t-if="folder.count" class="o_mailpro_count" t-esc="folder.count"/>
-                    </div>
-                </div>
+                        <span t-if="folder.count" class="o_mailpro_count" t-esc="folderCount(folder)"/>
+                    </button>
+                </nav>
 
                 <!-- 2. what is waiting -->
-                <div class="o_mailpro_list">
-                    <div t-if="state.loading" class="o_mailpro_skeleton">
-                        <div class="o_mailpro_skeleton_row" t-foreach="[1, 2, 3, 4, 5]" t-as="row" t-key="row"/>
-                    </div>
+                <div class="o_mailpro_list" role="region" aria-label="Conversations">
+                    <t t-if="state.loading and !state.conversations.length">
+                        <div class="o_mailpro_skeleton" aria-hidden="true">
+                            <div class="o_mailpro_skeleton_row" t-foreach="[1, 2, 3, 4, 5]" t-as="row" t-key="row"/>
+                        </div>
+                        <span class="visually-hidden" role="status">Loading conversations</span>
+                    </t>
                     <t t-elif="!state.conversations.length">
                         <div class="o_mailpro_empty">
-                            <p class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel(state.folder)"/>.</p>
+                            <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel(state.folder)"/> yet.</h3>
                             <p class="o_mailpro_empty_text">
-                                Mail lands here once a mailbox is receiving.
+                                New mail appears here as it arrives.
                             </p>
                         </div>
                     </t>
                     <t t-else="">
-                        <div t-foreach="state.conversations" t-as="conversation"
-                             t-key="conversation.model + '-' + conversation.res_id"
-                             class="o_mailpro_item"
-                             t-att-class="{
-                                'o_mailpro_item_active': state.selected
-                                    and state.selected.model === conversation.model
-                                    and state.selected.res_id === conversation.res_id,
-                                'o_mailpro_item_unread': conversation.unread }"
-                             t-on-click="() => this.select(conversation)">
+                        <button t-foreach="state.conversations" t-as="conversation"
+                                t-key="conversation.message_id"
+                                type="button"
+                                class="o_mailpro_item"
+                                t-att-class="{
+                                    'o_mailpro_item_active': state.selected
+                                        and sameConversation(conversation, state.selected),
+                                    'o_mailpro_item_unread': conversation.unread }"
+                                t-att-aria-current="state.selected and sameConversation(conversation, state.selected) ? 'true' : undefined"
+                                t-on-click="() => this.select(conversation)">
+                            <span t-if="conversation.unread" class="visually-hidden">Unread. </span>
                             <div class="d-flex justify-content-between align-items-baseline gap-2">
                                 <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
-                                <span class="o_mailpro_date" t-esc="day(conversation.date)"/>
+                                <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
+                                      t-esc="day(conversation.date)"/>
                             </div>
                             <div class="o_mailpro_subject text-truncate" t-esc="conversation.subject"/>
                             <div class="o_mailpro_preview text-truncate" t-esc="conversation.preview"/>
                             <div class="o_mailpro_meta d-flex align-items-center gap-2">
-                                <span t-if="conversation.record_name" class="o_mailpro_chip"
+                                <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
                                       t-esc="conversation.record_name"/>
-                                <span class="o_mailpro_muted" t-esc="conversation.count + ' messages'"/>
+                                <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
                                 <span t-if="conversation.waiting_on_us" class="o_mailpro_chip_warn">Needs reply</span>
                             </div>
+                        </button>
+                        <div t-if="state.hasMore" class="o_mailpro_more">
+                            <button type="button" class="btn btn-link btn-sm"
+                                    t-on-click="() => this.loadMore()">Load more</button>
                         </div>
                     </t>
                 </div>
 
                 <!-- 3. the conversation -->
-                <div class="o_mailpro_thread">
+                <div class="o_mailpro_thread" role="region" aria-label="Conversation">
                     <t t-if="state.selected">
                         <div class="o_mailpro_thread_head">
                             <div class="d-flex align-items-start justify-content-between gap-3">
@@ -94,13 +112,15 @@
                                     <div class="o_mailpro_thread_sub" t-esc="state.selected.correspondent"/>
                                 </div>
                                 <!-- One primary action per screen. This is it. -->
-                                <button class="btn btn-primary btn-sm flex-shrink-0"
+                                <button type="button" class="btn btn-primary btn-sm flex-shrink-0"
+                                        t-if="state.selected.model"
                                         t-on-click="() => this.reply()">Reply</button>
                             </div>
                             <div t-if="state.thread.records.length" class="o_mailpro_chips d-flex align-items-center gap-2">
                                 <span class="o_mailpro_label">Filed on</span>
                                 <button t-foreach="state.thread.records" t-as="chip"
                                         t-key="chip.model + '-' + chip.res_id"
+                                        type="button"
                                         class="o_mailpro_chip_button"
                                         t-on-click="() => this.openRecordChip(chip)">
                                     <span t-esc="chip.name"/>
@@ -108,37 +128,46 @@
                             </div>
                             <div t-if="!state.thread.records.length and state.thread.rejected.length"
                                  class="o_mailpro_unfiled">
-                                <p class="o_mailpro_unfiled_title">Not filed on a record yet.</p>
-                                <ul class="o_mailpro_unfiled_list">
+                                <div class="d-flex align-items-center justify-content-between gap-2">
+                                    <span class="o_mailpro_unfiled_title">Not filed on a record yet.</span>
+                                    <button type="button" class="btn btn-link btn-sm p-0"
+                                            t-att-aria-expanded="state.showRejected ? 'true' : 'false'"
+                                            t-on-click="() => state.showRejected = !state.showRejected">
+                                        <t t-if="state.showRejected">Hide why</t>
+                                        <t t-else="">Why?</t>
+                                    </button>
+                                </div>
+                                <ul t-if="state.showRejected" class="o_mailpro_unfiled_list">
                                     <li t-foreach="state.thread.rejected" t-as="row" t-key="row.id">
-                                        <span t-esc="row.rule"/>: <span t-esc="row.reason"/>
+                                        <span t-esc="row.rule_label"/>: <span t-esc="row.reason"/>
                                     </li>
                                 </ul>
                             </div>
                         </div>
                         <div class="o_mailpro_messages">
-                            <div t-foreach="state.thread.messages" t-as="message" t-key="message.id"
-                                 class="o_mailpro_message">
+                            <article t-foreach="state.thread.messages" t-as="message" t-key="message.id"
+                                     class="o_mailpro_message">
                                 <div class="d-flex justify-content-between align-items-baseline gap-2">
                                     <span class="o_mailpro_message_from" t-esc="message.author"/>
-                                    <span class="o_mailpro_date" t-esc="day(message.date)"/>
+                                    <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
+                                          t-esc="day(message.date)"/>
                                 </div>
                                 <div t-if="message.recipients.length" class="o_mailpro_muted"
                                      t-esc="'to ' + message.recipients.join(', ')"/>
                                 <div class="o_mailpro_body" t-out="body(message)"/>
-                            </div>
+                            </article>
                         </div>
                     </t>
                     <div t-else="" class="o_mailpro_empty">
-                        <p class="o_mailpro_empty_title">Pick a conversation.</p>
+                        <h3 class="o_mailpro_empty_title">Pick a conversation.</h3>
                     </div>
                 </div>
 
                 <!-- 4. the record: the pane a mail client cannot have -->
-                <div class="o_mailpro_record">
+                <div class="o_mailpro_record" role="region" aria-label="Record">
                     <RecordPane t-if="selectedRecord" record="selectedRecord"/>
                     <div t-else="" class="o_mailpro_empty">
-                        <p class="o_mailpro_empty_title">No record yet.</p>
+                        <h3 class="o_mailpro_empty_title">No record yet.</h3>
                         <p class="o_mailpro_empty_text">File this conversation and it appears here.</p>
                     </div>
                 </div>
@@ -158,16 +187,18 @@
                 <div class="o_mailpro_record_head d-flex align-items-center justify-content-between gap-2">
                     <div class="min-w-0">
                         <div class="o_mailpro_label" t-esc="props.record.model_label"/>
-                        <div class="o_mailpro_record_name text-truncate" t-esc="props.record.name"/>
+                        <h2 class="o_mailpro_record_name text-truncate" t-esc="props.record.name"/>
                     </div>
-                    <button class="btn btn-secondary btn-sm" t-on-click="() => this.openRecord()">Open</button>
+                    <button type="button" class="btn btn-secondary btn-sm"
+                            t-on-click="() => this.openRecord()">Open</button>
                 </div>
                 <View t-props="viewProps"/>
             </t>
             <div t-else="" class="o_mailpro_empty">
-                <p class="o_mailpro_empty_title" t-esc="props.record.name"/>
+                <h3 class="o_mailpro_empty_title" t-esc="props.record.name"/>
                 <p class="o_mailpro_empty_text">This record could not be shown here.</p>
-                <button class="btn btn-primary btn-sm" t-on-click="() => this.openRecord()">Open it</button>
+                <button type="button" class="btn btn-secondary btn-sm"
+                        t-on-click="() => this.openRecord()">Open</button>
             </div>
         </div>
     </t>

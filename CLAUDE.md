@@ -64,6 +64,9 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/ir_http.py` | One session flag: does this user still have to connect a mailbox |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
+| `models/pan_mail_conversation.py` | The read side of the Inbox: five methods, no table, no sudo for an answer |
+| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes, one client action |
+| `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_connect_banner.py` | Who is asked to connect a mailbox, and who is left alone |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
@@ -666,6 +669,13 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **Keep the grep after you delete the thing it guarded.** `anthropic` is now
   banned from the whole module rather than confined to `models/ai/`. A removal
   that leaves no check behind is a removal that comes back.
+
+### Mounting Odoo's own views inside your own screen (19.0.10.0.0)
+- **Bootstrap's display utilities carry `!important`, and Odoo's own markup wears them.** The form renderer is `d-flex flex-nowrap` in its wide layout and the statusbar's button row is `d-flex`; a plain `display: block` / `display: none` from an addon loses both times. The form then renders a chatter with no record above it, and the record's "Convert to Opportunity" stays as the loudest button on a screen whose one job is replying. Both cost a round trip in the browser to find, because nothing errors.
+- **A group on a menu is not an access rule, and in 19.0 an action cannot carry one either.** `ir.actions.actions` has no group field, so a client action opens by URL for anyone who knows it, and every `@api.model` method on the model behind it answers `call_kw` from any session. The check belongs in the methods.
+- **`limit` arrives over RPC.** A read method that passes the caller's `limit` into a search hands anybody a way to materialise the table. Clamp it where it enters.
+- **Odoo 19 renamed `groups_id` to `group_ids`** on the models that still have it, and refuses `default_res_id` on the composer in favour of `default_res_ids`. Both fail loudly, but only in the browser.
+- **A thread index that is unique on (provider, mailbox, thread) maps a thread to one record per mailbox.** A conversation that reaches two records is the cross-mailbox case, and the key that may cross a mailbox is the References root, never the provider's own handle: a Graph `conversationId` means something else in another mailbox.
 
 ### Enterprise vs community (19.0.7.7.1)
 - **A `components` dict is a snapshot, and the edition you do not run takes it first.** `patch(WebClient, {components: ...})` works on community and white-screens Enterprise: `WebClientEnterprise` spreads `WebClient.components` in its class body, `web_enterprise` is bundled before this module, so the patch lands after the copy and Owl cannot resolve the tag. Bind the class to an instance attribute in a patched `setup()` and use `t-component`, which is read at render time.

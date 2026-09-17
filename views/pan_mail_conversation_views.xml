@@ -14,6 +14,13 @@
     <record id="action_pan_mail_conversation" model="ir.actions.client">
         <field name="name">Inbox</field>
         <field name="tag">pan_mail_conversation_view</field>
+        <!--
+            The group lives on the menu and on the model, not here: Odoo 19's
+            `ir.actions.actions` carries no group field, so an action is
+            reachable by URL to anyone who knows it. That makes the check in
+            `pan.mail.conversation._check_caller` the real gate, and the menu
+            group only the reason it stays out of the app switcher.
+        -->
     </record>
 
     <menuitem id="menu_pan_mail_app"

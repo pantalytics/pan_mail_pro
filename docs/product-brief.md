@@ -120,8 +120,9 @@ Three sentences, in the order they matter.
    an inbox, where the fourth pane is the quote or the ticket. That is the pane
    Outlook can never have, and it is the reason to read mail here.
 
-The first two exist. The third is designed and not built, and it is the half the
-survey says people leave over.
+The first two exist, and so does the third as of 19.0.10.0.0: the inbox ships
+with the record beside the thread. What is still on paper is the chatter's own
+door into it and the per-customer timeline.
 
 ## The shape of the thing
 

@@ -138,9 +138,11 @@ class Checks:
 
     # -- The Inbox ------------------------------------------------------------
 
-    # The six states that earn a line in the rail. More than six and the rail
-    # is a filter panel; fewer and people ask where their mail went.
-    FOLDERS = ('Inbox', 'Needs reply', 'Waiting on customer', 'Sent',
+    # The five states that earn a line in the rail. More than five and the
+    # rail is a filter panel; fewer and people ask where their mail went.
+    # "Sent" is not one of them: it was the same query as "Waiting on
+    # customer", and the provider's own Sent folder already exists.
+    FOLDERS = ('Inbox', 'Needs reply', 'Waiting on customer',
                'On a contact only', 'Linked to nothing')
 
     def conversation_view(self):
@@ -171,6 +173,14 @@ class Checks:
         if rail != list(self.FOLDERS):
             self.fail(f'the folder rail reads {rail}, expected {list(self.FOLDERS)}')
 
+        # Everything clickable is a real button, so a keyboard can reach it.
+        for selector, what in (('.o_mailpro_folder', 'folder'),
+                               ('.o_mailpro_item', 'conversation')):
+            divs = [el for el in page.query_selector_all(selector)
+                    if el.evaluate('el => el.tagName') != 'BUTTON']
+            if divs:
+                self.fail(f'{len(divs)} {what} rows are not buttons')
+
         items = page.query_selector_all('.o_mailpro_item')
         if not items:
             self.fail('the conversation list is empty with seeded mail on a lead')
@@ -188,6 +198,17 @@ class Checks:
         if page.query_selector('.o_mailpro_record .o_form_view') is None:
             self.fail('the record pane did not mount the record form')
 
+        # ...and the form's own statusbar buttons stay out of it. A filled
+        # "Convert to Opportunity" in the fourth pane is a louder button than
+        # Reply, on a screen whose one job is replying. The chatter's own
+        # composer stays: it is how you log an internal note, and it is the
+        # control people already know from every other Odoo screen.
+        loud = [b for b in page.query_selector_all(
+            '.o_mailpro_record .o_form_statusbar button') if b.is_visible()]
+        if loud:
+            self.fail('the record pane shows %d form buttons beside Reply'
+                      % len(loud))
+
         # The screen's one primary action. A reader-only inbox is half a
         # product, and this is the click that proves it is not one.
         reply = page.query_selector('.o_mailpro_thread_head button.btn-primary')
@@ -200,8 +221,16 @@ class Checks:
             except Exception:
                 self.fail('Reply opened no composer')
             else:
-                page.keyboard.press('Escape')
-                page.wait_for_timeout(800)
+                # Discard rather than Escape: Escape leaves the composer open
+                # on a draft, and the screenshot below is what a reviewer
+                # looks at.
+                discard = page.query_selector('.modal button:has-text("Discard")')
+                if discard:
+                    discard.click()
+                else:
+                    page.keyboard.press('Escape')
+                page.wait_for_selector('.modal', state='detached', timeout=15000)
+                page.wait_for_timeout(600)
 
         self.shot('inbox.png')
 

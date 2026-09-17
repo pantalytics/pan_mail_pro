@@ -3,8 +3,9 @@
 Status: **partly built**, 19.0.10.0.0. The inbox itself ships: the folder rail,
 the conversation list, the thread and the record pane, reading through
 `pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
-Still on paper: door 1 (the chatter's own button and its more-messages-elsewhere
-line), the customer view and its timeline. Each section below says which it is.
+Still on paper: the *screens* for door 1 (the chatter's own button and its
+more-messages-elsewhere line) and for the customer view and its timeline. Their
+read methods shipped and are tested, so what is left of each is markup.
 
 Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
 the inbox, an unfiled conversation, the model, the chatter with its door to the

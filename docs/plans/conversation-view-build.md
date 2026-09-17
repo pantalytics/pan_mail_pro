@@ -61,8 +61,8 @@ That is the whole API. Each returns plain dicts, and each is paginated.
 | Method | Takes | Returns |
 |---|---|---|
 | `folder_counts` | `mailbox_id` | one row per folder with its count |
-| `search_conversations` | `mailbox_id`, `folder`, `partner_id`, `search`, `limit`, `offset` | list rows: thread key, subject, last message, participants, record refs, message count, unread, waiting-on-us |
-| `read_conversation` | `thread_key`, `limit`, `offset` | the messages, the record chips, and for an unfiled one what the matcher rejected |
+| `search_conversations` | `mailbox_id`, `folder`, `partner_id`, `search`, `limit`, `offset` | list rows: `model`, `res_id`, `message_id`, `subject`, `preview`, `correspondent`, `partner_id`, `date`, `count`, `record_name`, `unread`, `waiting_on_us`, `mailbox` |
+| `read_conversation` | `model`, `res_id`, `mailbox_id`, `message_id`, `limit`, `offset` | the messages, the record chips, and for an unfiled one what the matcher rejected |
 | `customer_timeline` | `partner_id`, `kinds`, `limit`, `offset` | the merged axis: messages, done activities, record events |
 | `record_conversations` | `model`, `res_id` | what door 1 needs: how many conversations touch this record, and how many of their messages sit elsewhere |
 
@@ -71,18 +71,22 @@ That is the whole API. Each returns plain dicts, and each is paginated.
 The order of the query is the security model.
 
 ```python
-# right: the ORM applies the rules, then we group what came back
+# right: the ORM applies the rules, then the index widens the names
 messages = self.env['mail.message'].search(domain)     # ACL applied here
-keys = self.env['pan.mail.message.ref']._keys_for(messages)
+links = self.env['pan.mail.thread.link'].sudo().search(...)  # after, never before
+records = self.env[model].browse(ids)._filtered_access('read')
 
-# wrong: the index is not access-controlled, and a thread key
-# would leak the existence of a record the user cannot open
-keys = self.env['pan.mail.thread.link'].search([...])
+# wrong: the index is not access controlled, so a thread key read first
+# betrays the existence of a record the user cannot open
+links = self.env['pan.mail.thread.link'].search([...])
+messages = ...
 ```
 
-No `sudo()` in this layer. A message on a record the user cannot open is not in
-the result, the conversation it belongs to shows a smaller count, and that is
-the correct answer rather than a hidden one.
+The `sudo()` on the index buys the lookup and not the answer: the ACL on
+`pan.mail.thread.link` is mailbox-manager only, and every record it yields goes
+back through `_filtered_access`. A message on a record the user cannot open is
+not in the result, the conversation shows a smaller count, and that is the
+correct answer rather than a hidden one.
 
 ### The list query
 
@@ -96,12 +100,14 @@ follow-up read:
    over the same message ids.
 
 **Waiting on us** is computed in step 2 from rows already in memory: the newest
-message is inbound (`message_type = 'email'` and its author is not an internal
-user). It is never stored, never cached, and therefore never stale.
+message's `x_direction` is `incoming`. Never stored, never cached, never stale.
+The two folders that depend on it are settled after the grouping query rather
+than inside it, because direction lives on a message and the question is about
+the newest one.
 
-**Folder counts** come from the same `read_group` without the limit. If that
-turns out to be slow on a big mailbox, the fix is a `LIMIT`ed count with a
-"99+" display, not a stored counter.
+**Folder counts** are `_read_group` with a limit of 100 and a "99+" label. An
+exact count means aggregating every row the reader can see, once per folder, on
+every click; nobody reads the exact number of conversations in a busy mailbox.
 
 ### What must be covered by tests
 

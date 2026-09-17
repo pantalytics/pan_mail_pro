@@ -8,8 +8,8 @@
  *
  * The record pane mounts Odoo's own form view. That is the one load-bearing
  * assumption in the whole screen, so it sits behind an error boundary: if the
- * form cannot render, the pane falls back to a link and the rest of the
- * inbox keeps working.
+ * form cannot render, the pane falls back to a link and the rest of the inbox
+ * keeps working.
  */
 
 import { Component, useState, onWillStart, onError, markup } from "@odoo/owl";
@@ -17,6 +17,9 @@ import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
+import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
+
+const PAGE = 30;
 
 /** The record pane, isolated so a form-view failure cannot take the page. */
 export class RecordPane extends Component {
@@ -61,21 +64,26 @@ export class ConversationView extends Component {
         this.orm = useService("orm");
         this.action = useService("action");
 
+        // Two request tokens, one per pane. Somebody who clicks three folders
+        // in a second starts three reads, and without these the slowest answer
+        // wins the screen -- which need not be the one they asked for last.
+        this.listSeq = 0;
+        this.threadSeq = 0;
+
         this.state = useState({
             loading: true,
-            error: false,
+            error: "",
             folders: [],
             folder: "inbox",
             mailboxes: [],
             mailboxId: null,
             conversations: [],
+            limit: PAGE,
+            hasMore: false,
             selected: null,
             thread: { messages: [], records: [], rejected: [] },
+            showRejected: false,
             search: "",
-            // Progressive disclosure: the fourth pane is the point of the
-            // screen, but on a narrow window it is one tab away instead of
-            // three panes squeezed into two.
-            showRecord: true,
         });
 
         onWillStart(async () => {
@@ -94,63 +102,103 @@ export class ConversationView extends Component {
             "pan.mail.mailbox",
             [["active", "=", true], ["is_notification_mailbox", "=", false]],
             ["email"],
-            { limit: 20, order: "sequence, email" }
+            { limit: 50, order: "sequence, email" }
         );
         if (this.state.mailboxes.length) {
             this.state.mailboxId = this.state.mailboxes[0].id;
         }
     }
 
-    async refresh() {
+    async refresh({ keepSelection = false } = {}) {
+        const seq = ++this.listSeq;
         this.state.loading = true;
-        this.state.error = false;
+        this.state.error = "";
         try {
+            const args = {
+                mailbox_id: this.state.mailboxId,
+                search: this.state.search || null,
+            };
             const [folders, conversations] = await Promise.all([
-                this.orm.call("pan.mail.conversation", "folder_counts", [], {
-                    mailbox_id: this.state.mailboxId,
-                }),
+                this.orm.call("pan.mail.conversation", "folder_counts", [], args),
                 this.orm.call("pan.mail.conversation", "search_conversations", [], {
-                    mailbox_id: this.state.mailboxId,
+                    ...args,
                     folder: this.state.folder,
-                    search: this.state.search || null,
+                    limit: this.state.limit,
                 }),
             ]);
+            if (seq !== this.listSeq) {
+                return; // A newer request is already on its way.
+            }
             this.state.folders = folders;
             this.state.conversations = conversations;
-            if (conversations.length) {
-                await this.select(conversations[0]);
-            } else {
-                this.state.selected = null;
-                this.state.thread = { messages: [], records: [], rejected: [] };
+            this.state.hasMore = conversations.length >= this.state.limit;
+
+            const stillThere = keepSelection && this.state.selected
+                && conversations.some((row) => this.sameConversation(row, this.state.selected));
+            if (!stillThere) {
+                if (conversations.length) {
+                    await this.select(conversations[0]);
+                } else {
+                    this.state.selected = null;
+                    this.state.thread = { messages: [], records: [], rejected: [] };
+                }
             }
         } catch (error) {
-            // Keep what the reader was looking at; say one line and offer
-            // a retry rather than clearing the pane.
-            this.state.error = true;
+            // Keep what the reader was looking at; say one line and offer a
+            // retry rather than clearing the pane.
+            if (seq === this.listSeq) {
+                this.state.error = _t("Could not load your conversations.");
+            }
             console.warn("[Mail Pro] conversation list failed", error);
         } finally {
-            this.state.loading = false;
+            if (seq === this.listSeq) {
+                this.state.loading = false;
+            }
         }
     }
 
+    sameConversation(left, right) {
+        return left.model === right.model
+            && left.res_id === right.res_id
+            && left.message_id === right.message_id;
+    }
+
     async select(conversation) {
+        const seq = ++this.threadSeq;
         this.state.selected = conversation;
-        this.state.thread = await this.orm.call(
-            "pan.mail.conversation", "read_conversation", [], {
-                model: conversation.model,
-                res_id: conversation.res_id,
-                mailbox_id: this.state.mailboxId,
+        this.state.showRejected = false;
+        // Nothing from the previous thread stays under the new subject.
+        this.state.thread = { messages: [], records: [], rejected: [] };
+        try {
+            const thread = await this.orm.call(
+                "pan.mail.conversation", "read_conversation", [], {
+                    model: conversation.model,
+                    res_id: conversation.res_id,
+                    message_id: conversation.message_id,
+                    mailbox_id: this.state.mailboxId,
+                }
+            );
+            if (seq === this.threadSeq) {
+                this.state.thread = thread;
             }
-        );
+        } catch (error) {
+            if (seq === this.threadSeq) {
+                this.state.error = _t("Could not open that conversation.");
+            }
+            console.warn("[Mail Pro] conversation failed to open", error);
+        }
     }
 
     async setFolder(folder) {
         this.state.folder = folder;
+        this.state.limit = PAGE;
         await this.refresh();
     }
 
     async setMailbox(event) {
-        this.state.mailboxId = parseInt(event.target.value, 10) || null;
+        const value = parseInt(event.target.value, 10);
+        this.state.mailboxId = Number.isNaN(value) ? null : value;
+        this.state.limit = PAGE;
         await this.refresh();
     }
 
@@ -159,7 +207,13 @@ export class ConversationView extends Component {
             return;
         }
         this.state.search = event.target.value;
+        this.state.limit = PAGE;
         await this.refresh();
+    }
+
+    async loadMore() {
+        this.state.limit += PAGE;
+        await this.refresh({ keepSelection: true });
     }
 
     // --------------------------------------------------------------- render
@@ -170,19 +224,44 @@ export class ConversationView extends Component {
     }
 
     body(message) {
+        // `mail.message.body` is an Html field and the framework sanitizes it
+        // on write; every provider body enters through `message_post`. This is
+        // the same trust the chatter itself extends to that column.
         return markup(message.body || "");
     }
 
+    /** The date column, in the reader's own timezone and shortened by age. */
     day(value) {
         if (!value) {
             return "";
         }
-        return String(value).slice(0, 16).replace("T", " ");
+        const when = deserializeDateTime(value);
+        const now = when.constructor.now();
+        if (when.hasSame(now, "day")) {
+            return when.toFormat("HH:mm");
+        }
+        if (now.diff(when, "days").days < 7) {
+            return when.toFormat("ccc HH:mm");
+        }
+        return when.toFormat("d LLL");
+    }
+
+    /** The whole stamp, for the title attribute. */
+    fullDate(value) {
+        return value ? formatDateTime(deserializeDateTime(value)) : "";
+    }
+
+    messageCount(count) {
+        return count === 1 ? _t("1 message") : _t("%s messages", count);
     }
 
     folderLabel(id) {
-        const folder = this.state.folders.find((f) => f.id === id);
-        return folder ? folder.name : _t("Inbox");
+        const folder = this.state.folders.find((entry) => entry.id === id);
+        return folder ? folder.name : "";
+    }
+
+    folderCount(folder) {
+        return folder.capped ? `${folder.count}+` : `${folder.count}`;
     }
 
     /**
