@@ -173,8 +173,36 @@ class Checks:
         if rail != list(self.FOLDERS):
             self.fail(f'the folder rail reads {rail}, expected {list(self.FOLDERS)}')
 
+        # The mailbox sits in the rail above its own folders, the way it does
+        # in the mail client next to this one. The seed makes two, so this is
+        # also the only place that proves switching mailbox works at all.
+        def mailbox_names():
+            return [el.inner_text().strip()
+                    for el in page.query_selector_all('.o_mailpro_mailbox')]
+
+        def open_mailbox(index):
+            page.query_selector_all('.o_mailpro_mailbox')[index].click()
+            page.wait_for_timeout(1500)
+            open_now = page.query_selector_all('.o_mailpro_mailbox_active')
+            return [el.inner_text().strip() for el in open_now]
+
+        names = mailbox_names()
+        if len(names) < 2:
+            self.fail(f'{len(names)} mailboxes in the rail, expected the seeded 2')
+        else:
+            active = [el.inner_text().strip()
+                      for el in page.query_selector_all('.o_mailpro_mailbox_active')]
+            if active != names[:1]:
+                self.fail(f'the rail opens on {active}, expected {names[:1]}')
+            if open_mailbox(1) != names[1:2]:
+                self.fail('clicking a mailbox did not open it')
+            # Back to the one the seeded mail is in, so everything below reads
+            # the filled screen.
+            open_mailbox(0)
+
         # Everything clickable is a real button, so a keyboard can reach it.
-        for selector, what in (('.o_mailpro_folder', 'folder'),
+        for selector, what in (('.o_mailpro_mailbox', 'mailbox'),
+                               ('.o_mailpro_folder', 'folder'),
                                ('.o_mailpro_item', 'conversation')):
             divs = [el for el in page.query_selector_all(selector)
                     if el.evaluate('el => el.tagName') != 'BUTTON']

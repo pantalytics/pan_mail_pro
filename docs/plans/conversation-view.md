@@ -60,6 +60,33 @@ rejected, with a one-click way to file it. An unfiled conversation is the case
 that decides whether people trust the screen, so it gets a designed state rather
 than an empty panel.
 
+### Notes in the thread
+
+**Notes are interleaved in pane 3, always, and there is no toggle.** A note
+about a mail is a reply that did not go out. It belongs under the message it
+answers, not one pane to the right and out of order. A toggle would mean the
+default is wrong for half the people using it, and that both shapes have to be
+built, styled and kept honest forever.
+
+What comes in: `message_type = 'comment'` on the records the conversation is
+filed on, from the thread's first message onward, sorted with the mail by date.
+Drawn apart from correspondence, not as another bubble: indented, marked
+internal, no recipient line. **A note is never quoted in a reply.** That is the
+one part of this which is a test rather than a convention, because it is the
+failure a customer sees.
+
+What stays out of pane 3: tracking values, activity system messages and every
+other `message_type = 'notification'` row. Those are record history, not
+conversation, and the record pane already shows them.
+
+The record pane keeps the whole chatter, unchanged, so nothing this filter
+drops becomes unreachable. Writing a note happens in the thread's own composer,
+which gets the two modes the chatter has: Send and Log note.
+
+The cost, said out loud: a record carrying two conversations shows its notes in
+both. That is right more often than the alternative, which is a note visible on
+only one of the threads it was written about.
+
 An earlier draft put this on a tab of the contact form. It was rejected in
 review for the right reason: nobody recognises that interface. The customer view
 is still reachable, as the same list filtered to one company.

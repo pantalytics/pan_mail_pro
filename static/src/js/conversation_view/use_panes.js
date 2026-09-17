@@ -35,7 +35,7 @@ const THREAD_MIN = 360;
 const STEP = 16;
 
 function paneLabel(name) {
-    return { rail: _t("Folders"), list: _t("Conversations"), record: _t("Record") }[name];
+    return { rail: _t("Mailboxes"), list: _t("Conversations"), record: _t("Record") }[name];
 }
 
 function clamp(value, min, max) {

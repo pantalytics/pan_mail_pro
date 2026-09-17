@@ -34,7 +34,6 @@ $mailpro-warn: #c0392b;
         border-bottom: 1px solid $mailpro-line;
     }
 
-    .o_mailpro_select { width: 14rem; }
     .o_mailpro_search { width: 18rem; }
 
     .o_mailpro_error {
@@ -136,6 +135,34 @@ $mailpro-warn: #c0392b;
         overflow-y: auto;
     }
 
+    // The account, and under it its folders. Same shape as the mail client
+    // next to this one, so nobody has to learn where they are.
+    .o_mailpro_mailbox {
+        width: 100%;
+        border: 0;
+        background: none;
+        text-align: left;
+        padding: 0.5rem 0.625rem;
+        margin-top: 0.25rem;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: $mailpro-faint;
+        cursor: pointer;
+
+        &:hover { background: rgba(0, 29, 33, 0.04); }
+        &:first-child { margin-top: 0; }
+    }
+
+    .o_mailpro_mailbox_name { min-width: 0; }
+
+    .o_mailpro_mailbox_active { color: $mailpro-ink; }
+
+    // The folders belong to the mailbox above them, and the indent is what
+    // says so.
+    .o_mailpro_folders { padding-left: 0.5rem; }
+
     .o_mailpro_folder {
         width: 100%;
         border: 0;
@@ -163,6 +190,7 @@ $mailpro-warn: #c0392b;
     // Every control gets the same designed focus ring. Hover alone is a
     // mouse-only affordance, and this screen is navigated with a keyboard all
     // day by the people who live in it.
+    .o_mailpro_mailbox,
     .o_mailpro_folder,
     .o_mailpro_item,
     .o_mailpro_chip_button,
