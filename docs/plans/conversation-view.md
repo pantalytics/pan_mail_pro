@@ -4,9 +4,10 @@ Status: **agreed design**, 16 September 2026. Not built yet, so nothing here is
 in `ARCHITECTURE.md`: that file describes what exists. When this ships, the
 models and seams move there and this file becomes history.
 
-Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- five artboards:
-the inbox, an unfiled conversation, the model, the chatter with its door to
-the mail, and one customer's correspondence across records.
+Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
+the inbox, an unfiled conversation, the model, the chatter with its door to the
+mail, one customer's correspondence across records, and that customer's
+timeline with the open activities on top.
 
 The survey says two thirds of respondents already send from inside Odoo and
 that what they cannot do is see a customer's correspondence in one place.
@@ -191,8 +192,22 @@ a preview.
 ### Door 3: the customer view
 
 Every thread where one company is a participant, across records and across
-mailboxes, in the same three panes with the folder column replaced by nothing.
-It is the inbox with one filter on it, not a second screen.
+mailboxes, in the same three panes with the folder column replaced by the
+company. It is the inbox with one filter on it, not a second screen.
+
+**Two tabs, not five.** *Conversations* is the default, because mail is why the
+screen exists. *Timeline* is the 360: one axis, newest first, carrying the
+messages, the activities that were done and the record events a person would
+mention out loud, with three filter chips over it. Pinned above that axis,
+**Next**: the open activities with their deadline and their owner, because a
+history answers what happened and never answers what now. Those are
+`mail.activity` rows, unchanged, marked done through `activity_schedule()`'s own
+counterpart so the Activities clock agrees.
+
+Where each of those came from, and the four things it refuses (a health score,
+an AI summary of the relationship, bought enrichment, and a stored
+last-contacted field), is in
+[docs/research/customer-360.md](../research/customer-360.md).
 
 Reached from the contact form, from a button in the button box with the
 conversation count on it, so the path is the one Odoo users already know:
