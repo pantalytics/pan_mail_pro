@@ -10,6 +10,10 @@
  * assumption in the whole screen, so it sits behind an error boundary: if the
  * form cannot render, the pane falls back to a link and the rest of the inbox
  * keeps working.
+ *
+ * The panes themselves are draggable and the two outer ones fold away; that
+ * lives in `use_panes.js`, because how wide a pane is has nothing to do with
+ * what is in it.
  */
 
 import { Component, useState, onWillStart, onError, markup } from "@odoo/owl";
@@ -18,6 +22,7 @@ import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
+import { usePanes } from "./use_panes";
 
 const PAGE = 30;
 
@@ -78,6 +83,7 @@ export class ConversationView extends Component {
     setup() {
         this.orm = useService("orm");
         this.action = useService("action");
+        this.panes = usePanes();
 
         // Two request tokens, one per pane. Somebody who clicks three folders
         // in a second starts three reads, and without these the slowest answer

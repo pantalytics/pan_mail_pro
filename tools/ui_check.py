@@ -289,6 +289,8 @@ class Checks:
                 page.wait_for_selector('.modal', state='detached', timeout=15000)
                 page.wait_for_timeout(600)
 
+        self.panes()
+
         self.shot('inbox.png')
 
         # A wide monitor is where the complaint arrives from, and a narrow one
@@ -301,6 +303,78 @@ class Checks:
         self.shot('inbox-narrow.png')
         page.set_viewport_size({'width': WIDE, 'height': 1100})
         page.wait_for_timeout(400)
+
+    def panes(self):
+        """The dividers move, the side panes fold, and the browser remembers.
+
+        The remembering is the half that cannot be seen in a screenshot and is
+        the half people notice: a width you have to set again every morning is
+        worse than one you were never offered. So this one reloads the page
+        and looks again.
+        """
+        page = self.page
+
+        divider = page.query_selector('.o_mailpro_split_list')
+        pane = page.query_selector('.o_mailpro_list')
+        if not divider or not pane:
+            self.fail('the conversation list has no divider to drag')
+            return
+
+        before = pane.bounding_box()['width']
+        box = divider.bounding_box()
+        # 200px down the strip: the fold button sits at the top of it, and a
+        # drag that starts on a button is a click.
+        grab = (box['x'] + box['width'] / 2, box['y'] + 200)
+        page.mouse.move(*grab)
+        page.mouse.down()
+        page.mouse.move(grab[0] + 90, grab[1], steps=8)
+        page.mouse.up()
+        page.wait_for_timeout(400)
+
+        widened = page.query_selector('.o_mailpro_list').bounding_box()['width']
+        if widened - before < 40:
+            self.fail('dragging the divider 90px moved the list %dpx'
+                      % (widened - before))
+
+        fold = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        if not fold:
+            self.fail('the record pane cannot be folded away')
+            return
+        fold.click()
+        page.wait_for_timeout(400)
+        record = page.query_selector('.o_mailpro_record')
+        if record and record.is_visible():
+            self.fail('the record pane did not fold away')
+        self.shot('inbox-folded.png')
+
+        # Both of those are a preference, not a gesture: they survive the
+        # reload or they were never worth storing.
+        page.reload(wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_item', timeout=30000)
+        except Exception:
+            self.fail('the Inbox did not come back after a reload')
+            return
+        page.wait_for_timeout(1200)
+
+        record = page.query_selector('.o_mailpro_record')
+        if record and record.is_visible():
+            self.fail('the folded record pane came back on reload')
+        kept = page.query_selector('.o_mailpro_list').bounding_box()['width']
+        if abs(kept - widened) > 8:
+            self.fail('the list width was %dpx before the reload and %dpx after'
+                      % (widened, kept))
+
+        # Leave the screen the way the next check expects to find it.
+        fold = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        if fold:
+            fold.click()
+        divider = page.query_selector('.o_mailpro_split_list')
+        if divider:
+            divider.dblclick(position={'x': 2, 'y': 200})
+        page.wait_for_timeout(500)
+        if page.query_selector('.o_mailpro_record') is None:
+            self.fail('the record pane did not come back when unfolded')
 
     # -- The provider form ----------------------------------------------------
 

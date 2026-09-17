@@ -10,7 +10,9 @@
 
         Every pane is a region with a name, and everything clickable is a
         button. A div with a click handler is invisible to a keyboard and to a
-        screen reader, and this screen is somebody's whole working day.
+        screen reader, and this screen is somebody's whole working day. The
+        dividers are controls too: a separator you can drag, arrow-key, and
+        fold with Enter.
     -->
     <t t-name="pan_mail_pro.ConversationView">
         <div class="o_content o_mailpro_conversation d-flex flex-column h-100">
@@ -41,7 +43,9 @@
                     open mailbox shows its folders: the counts are that
                     mailbox's, and five rows per account is a rail you scroll.
                 -->
-                <nav class="o_mailpro_rail" aria-label="Mailboxes and folders">
+                <nav t-if="!panes.state.collapsed.rail" class="o_mailpro_rail"
+                     aria-label="Mailboxes and folders"
+                     t-attf-style="flex-basis: {{panes.state.rail}}px">
                     <t t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id">
                         <button type="button"
                                 class="o_mailpro_mailbox d-flex align-items-center gap-2"
@@ -61,8 +65,12 @@
                     </div>
                 </nav>
 
+                <t t-set="divider" t-value="'rail'"/>
+                <t t-call="pan_mail_pro.PaneSplitter"/>
+
                 <!-- 2. what is waiting -->
-                <div class="o_mailpro_list" role="region" aria-label="Conversations">
+                <div class="o_mailpro_list" role="region" aria-label="Conversations"
+                     t-attf-style="flex-basis: {{panes.state.list}}px">
                     <t t-if="state.loading and !state.conversations.length">
                         <div class="o_mailpro_skeleton" aria-hidden="true">
                             <div class="o_mailpro_skeleton_row" t-foreach="[1, 2, 3, 4, 5]" t-as="row" t-key="row"/>
@@ -109,6 +117,9 @@
                         </div>
                     </t>
                 </div>
+
+                <t t-set="divider" t-value="'list'"/>
+                <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 3. the conversation -->
                 <div class="o_mailpro_thread" role="region" aria-label="Conversation">
@@ -213,8 +224,13 @@
                     </div>
                 </div>
 
+                <t t-set="divider" t-value="'record'"/>
+                <t t-call="pan_mail_pro.PaneSplitter"/>
+
                 <!-- 4. the record: the pane a mail client cannot have -->
-                <div class="o_mailpro_record" role="region" aria-label="Record">
+                <div t-if="!panes.state.collapsed.record" class="o_mailpro_record"
+                     role="region" aria-label="Record"
+                     t-attf-style="flex-basis: {{panes.state.record}}px">
                     <RecordPane t-if="selectedRecord" record="selectedRecord"/>
                     <div t-else="" class="o_mailpro_empty">
                         <h3 class="o_mailpro_empty_title">No record yet.</h3>
@@ -237,6 +253,36 @@
             <span t-esc="folder.name"/>
             <span t-if="folder.count" class="o_mailpro_count" t-esc="folderCount(folder)"/>
         </button>
+    </t>
+
+    <!--
+        One divider, three call sites. It is a separator with a value, so a
+        screen reader reads a width rather than a decoration, and the chevron
+        is a real button: the fold has to be reachable without a mouse and
+        without knowing that double-click resets.
+    -->
+    <t t-name="pan_mail_pro.PaneSplitter">
+        <div class="o_mailpro_split"
+             t-att-class="'o_mailpro_split_' + divider
+                          + (panes.state.collapsed[divider] ? ' o_mailpro_split_folded' : '')"
+             role="separator" aria-orientation="vertical" tabindex="0"
+             t-att-aria-label="panes.label(divider)"
+             t-att-aria-valuenow="panes.state.collapsed[divider] ? 0 : panes.state[divider]"
+             t-att-aria-valuemin="panes.panes[divider].min"
+             t-att-aria-valuemax="panes.panes[divider].max"
+             t-on-pointerdown="(ev) => panes.startDrag(divider, ev)"
+             t-on-keydown="(ev) => panes.onKey(divider, ev)"
+             t-on-dblclick="() => panes.reset(divider)">
+            <button t-if="panes.collapsible(divider)" type="button"
+                    class="o_mailpro_split_toggle"
+                    t-att-aria-label="panes.toggleLabel(divider)"
+                    t-att-aria-expanded="panes.state.collapsed[divider] ? 'false' : 'true'"
+                    t-on-pointerdown.stop="() => {}"
+                    t-on-dblclick.stop="() => {}"
+                    t-on-click.stop="() => panes.toggle(divider)">
+                <i class="fa" t-att-class="panes.chevron(divider)" aria-hidden="true"/>
+            </button>
+        </div>
     </t>
 
     <t t-name="pan_mail_pro.RecordPane">
