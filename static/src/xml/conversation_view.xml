@@ -128,7 +128,12 @@
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <div class="min-w-0">
                                     <h2 class="o_mailpro_thread_title" t-esc="state.selected.subject"/>
-                                    <div class="o_mailpro_thread_sub" t-esc="state.selected.correspondent"/>
+                                    <div class="o_mailpro_thread_sub">
+                                        <span t-esc="state.selected.correspondent"/>
+                                        <span t-if="state.thread.messages.length > 1">
+                                            &#183; <t t-esc="messageCount(state.thread.messages.length)"/>
+                                        </span>
+                                    </div>
                                 </div>
                                 <!-- One primary action per screen. This is it. -->
                                 <button type="button" class="btn btn-primary btn-sm flex-shrink-0"
@@ -163,17 +168,54 @@
                                 </ul>
                             </div>
                         </div>
+                        <!--
+                            The thread is a stack, the way every mail client
+                            draws one: the message you came for is open and
+                            the history above it is one line each. A thread of
+                            nine mails that opens nine full bodies is a page
+                            you have to scroll to find the end of, and the end
+                            is the only part anybody reads first.
+
+                            The header is the toggle and it is a button, so
+                            the whole history is reachable with a keyboard.
+                        -->
                         <div class="o_mailpro_messages">
                             <article t-foreach="state.thread.messages" t-as="message" t-key="message.id"
-                                     class="o_mailpro_message">
-                                <div class="d-flex justify-content-between align-items-baseline gap-2">
-                                    <span class="o_mailpro_message_from" t-esc="message.author"/>
-                                    <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
-                                          t-esc="day(message.date)"/>
-                                </div>
-                                <div t-if="message.recipients.length" class="o_mailpro_muted"
-                                     t-esc="'to ' + message.recipients.join(', ')"/>
-                                <div class="o_mailpro_body" t-out="body(message)"/>
+                                     class="o_mailpro_message"
+                                     t-att-class="{ 'o_mailpro_message_open': isOpen(message) }">
+                                <button type="button" class="o_mailpro_message_head d-flex gap-2 w-100"
+                                        t-att-aria-expanded="isOpen(message) ? 'true' : 'false'"
+                                        t-on-click="() => this.toggleMessage(message)">
+                                    <img t-if="message.author_id" class="o_mailpro_avatar flex-shrink-0"
+                                         alt="" t-att-src="avatar(message)"/>
+                                    <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
+                                          aria-hidden="true" t-esc="initials(message.author)"/>
+                                    <span class="o_mailpro_message_lines flex-grow-1 min-w-0">
+                                        <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                            <span class="o_mailpro_message_from text-truncate"
+                                                  t-esc="message.author"/>
+                                            <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
+                                                  t-esc="day(message.date)"/>
+                                        </span>
+                                        <span t-if="!isOpen(message)"
+                                              class="o_mailpro_message_snippet d-block text-truncate"
+                                              t-esc="snippet(message)"/>
+                                        <span t-elif="message.recipients.length"
+                                              class="o_mailpro_muted d-block text-truncate"
+                                              t-esc="'to ' + message.recipients.join(', ')"/>
+                                    </span>
+                                </button>
+                                <t t-if="isOpen(message)">
+                                    <div class="o_mailpro_body" t-out="visibleBody(message)"/>
+                                    <div t-if="hasQuote(message)" class="o_mailpro_quote_block">
+                                        <button type="button" class="o_mailpro_quote_toggle"
+                                                aria-label="Quoted history"
+                                                t-att-aria-expanded="state.quotes[message.id] ? 'true' : 'false'"
+                                                t-on-click="() => this.toggleQuote(message)">&#8230;</button>
+                                        <div t-if="state.quotes[message.id]" class="o_mailpro_quote"
+                                             t-out="quotedBody(message)"/>
+                                    </div>
+                                </t>
                             </article>
                         </div>
                     </t>
