@@ -65,7 +65,7 @@
                     </div>
                 </nav>
 
-                <t t-set="split" t-value="'rail'"/>
+                <t t-set="divider" t-value="'rail'"/>
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 2. what is waiting -->
@@ -118,7 +118,7 @@
                     </t>
                 </div>
 
-                <t t-set="split" t-value="'list'"/>
+                <t t-set="divider" t-value="'list'"/>
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 3. the conversation -->
@@ -224,7 +224,7 @@
                     </div>
                 </div>
 
-                <t t-set="split" t-value="'record'"/>
+                <t t-set="divider" t-value="'record'"/>
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 4. the record: the pane a mail client cannot have -->
@@ -263,24 +263,24 @@
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
         <div class="o_mailpro_split"
-             t-att-class="'o_mailpro_split_' + split
-                          + (panes.state.collapsed[split] ? ' o_mailpro_split_folded' : '')"
+             t-att-class="'o_mailpro_split_' + divider
+                          + (panes.state.collapsed[divider] ? ' o_mailpro_split_folded' : '')"
              role="separator" aria-orientation="vertical" tabindex="0"
-             t-att-aria-label="panes.label(split)"
-             t-att-aria-valuenow="panes.state.collapsed[split] ? 0 : panes.state[split]"
-             t-att-aria-valuemin="panes.panes[split].min"
-             t-att-aria-valuemax="panes.panes[split].max"
-             t-on-pointerdown="(ev) => panes.startDrag(split, ev)"
-             t-on-keydown="(ev) => panes.onKey(split, ev)"
-             t-on-dblclick="() => panes.reset(split)">
-            <button t-if="panes.collapsible(split)" type="button"
+             t-att-aria-label="panes.label(divider)"
+             t-att-aria-valuenow="panes.state.collapsed[divider] ? 0 : panes.state[divider]"
+             t-att-aria-valuemin="panes.panes[divider].min"
+             t-att-aria-valuemax="panes.panes[divider].max"
+             t-on-pointerdown="(ev) => panes.startDrag(divider, ev)"
+             t-on-keydown="(ev) => panes.onKey(divider, ev)"
+             t-on-dblclick="() => panes.reset(divider)">
+            <button t-if="panes.collapsible(divider)" type="button"
                     class="o_mailpro_split_toggle"
-                    t-att-aria-label="panes.toggleLabel(split)"
-                    t-att-aria-expanded="panes.state.collapsed[split] ? 'false' : 'true'"
+                    t-att-aria-label="panes.toggleLabel(divider)"
+                    t-att-aria-expanded="panes.state.collapsed[divider] ? 'false' : 'true'"
                     t-on-pointerdown.stop="() => {}"
                     t-on-dblclick.stop="() => {}"
-                    t-on-click.stop="() => panes.toggle(split)">
-                <i class="fa" t-att-class="panes.chevron(split)" aria-hidden="true"/>
+                    t-on-click.stop="() => panes.toggle(divider)">
+                <i class="fa" t-att-class="panes.chevron(divider)" aria-hidden="true"/>
             </button>
         </div>
     </t>
