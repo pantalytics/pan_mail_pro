@@ -1,8 +1,10 @@
 # The conversation view
 
-Status: **agreed design**, 16 September 2026. Not built yet, so nothing here is
-in `ARCHITECTURE.md`: that file describes what exists. When this ships, the
-models and seams move there and this file becomes history.
+Status: **partly built**, 19.0.10.0.0. The inbox itself ships: the folder rail,
+the conversation list, the thread and the record pane, reading through
+`pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
+Still on paper: door 1 (the chatter's own button and its more-messages-elsewhere
+line), the customer view and its timeline. Each section below says which it is.
 
 Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
 the inbox, an unfiled conversation, the model, the chatter with its door to the

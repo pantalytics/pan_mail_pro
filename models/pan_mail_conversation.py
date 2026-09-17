@@ -110,8 +110,9 @@ class PanMailConversation(models.AbstractModel):
     def folder_counts(self, mailbox_id=None):
         """How many conversations sit in each folder, for the rail.
 
-        Counted, never stored. A stored counter is a fact that can disagree
-        with the messages, and this screen exists to not have any of those.
+        These are counted on every read. A stored counter would be one more
+        fact that can disagree with the messages, and the whole point of this
+        screen is that it holds none of those.
         """
         counts = []
         for value, label in FOLDERS:
@@ -291,7 +292,8 @@ class PanMailConversation(models.AbstractModel):
             'count': count,
             'record_name': record_name,
             'unread': self._unread_for(newest),
-            # Derived, so it cannot go stale: the last word was theirs.
+            # The last word was theirs. Worked out here every time, so it
+            # is never a day out of date.
             'waiting_on_us': newest.x_direction == 'incoming',
             'mailbox': newest.x_mailbox_id.email or '',
         }

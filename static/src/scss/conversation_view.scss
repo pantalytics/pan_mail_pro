@@ -178,7 +178,8 @@ $mailpro-warn: #c0392b;
     .o_mailpro_unfiled_title { margin: 0 0 0.25rem; font-size: 0.8125rem; font-weight: 600; }
     .o_mailpro_unfiled_list { margin: 0; padding-left: 1.125rem; font-size: 0.75rem; color: $mailpro-muted; }
 
-    // A measure, not a full-width column: mail is prose and prose has a width.
+    // Mail is prose, and prose has a comfortable width. The column stops
+    // well before the window does.
     .o_mailpro_messages {
         flex: 1 1 auto;
         padding: 1.25rem 1.375rem;

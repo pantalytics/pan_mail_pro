@@ -1,8 +1,10 @@
 # Building the conversation view
 
-Status: **proposed**, 17 September 2026. The screen and its rules are in
-[conversation-view.md](conversation-view.md); this file is how it gets built.
-Nothing here is implemented yet.
+Status: **steps 1 to 3 built** in 19.0.10.0.0, the rest proposed. The screen and
+its rules are in [conversation-view.md](conversation-view.md); this file is how
+it gets built. What shipped is the read layer, the client action with its four
+panes, and Reply through Odoo's own composer. What the browser found that no
+unit test would have is at the bottom, under **What actually broke**.
 
 ## The decision: OWL, inside the Odoo backend
 
@@ -193,6 +195,26 @@ company with no headcount to spare.
    with it.
 4. Door 1, the chatter patch.
 5. The customer view and its timeline, which is `customer_timeline` plus a tab.
+
+## What actually broke
+
+Four things, none of which a unit test could have seen. They are here because
+the next person to mount an Odoo view inside their own component will hit the
+same ones.
+
+- **Bootstrap's display utilities carry `!important`.** Odoo's form renderer
+  wears `d-flex flex-nowrap` in its wide layout, so a plain
+  `display: block` on it loses, the sheet keeps a width of zero, and the pane
+  shows a chatter with no record above it. It renders, it just renders nothing
+  you wanted.
+- **The mailbox picker opened on the notification mailbox**, which is the one
+  address in the database nobody reads. First run of the screen: an empty
+  inbox, on a database with mail in it.
+- **19.0 refuses `default_res_id` by name.** The composer takes
+  `default_res_ids`, a list, because it also composes in batch. The error is a
+  raised `ValueError` in an "Oops" dialog, not a console warning.
+- **The thread read newest-first**, because that is how the query is ordered
+  and nobody had looked at it. A conversation reads downwards.
 
 ## Risks
 
