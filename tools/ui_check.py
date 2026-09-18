@@ -357,7 +357,9 @@ class Checks:
             self.fail('the record pane still shows a chatter')
 
         # The four readings of a conversation, in one strip over pane 3.
-        tabs = [el.inner_text().split('\n')[0].strip()
+        # The label is the first span; the second is the count, and reading
+        # the button's text gives "Activities2" the moment there is one.
+        tabs = [el.query_selector('span').inner_text().strip()
                 for el in page.query_selector_all('.o_mailpro_tab')]
         if tabs != ['Mail', 'Everything', 'Files', 'Activities']:
             self.fail(f'the tab strip reads {tabs}')
@@ -367,6 +369,25 @@ class Checks:
                 tab.click()
                 page.wait_for_timeout(900)
                 self.error_free(f'the {name} tab')
+
+            # The Activities tab draws Odoo's own activity card, so a follow-up
+            # reads here exactly as it does in the chatter: the type's icon, the
+            # deadline's colour and Mark Done. A restyled row of our own would
+            # pass every other assertion on this screen.
+            page.query_selector('.o_mailpro_tab:has-text("Activities")').click()
+            page.wait_for_selector('.o_mailpro_activities', timeout=15000)
+            page.wait_for_timeout(900)
+            cards = page.query_selector_all('.o_mailpro_activities .o-mail-Activity')
+            if len(cards) != 2:
+                self.fail(f'the Activities tab drew {len(cards)} activity cards, expected 2')
+            elif not page.query_selector(
+                    '.o_mailpro_activities .o-mail-Activity-iconContainer.text-bg-danger'):
+                self.fail('no overdue activity, so the state colours are not Odoo\'s')
+            elif not page.query_selector('.o_mailpro_activities .o-mail-Activity-markDone'):
+                self.fail('the activity card carries no Mark Done button')
+            self.shot('inbox-activities.png')
+            page.query_selector('.o_mailpro_tab:has-text("Mail")').click()
+            page.wait_for_timeout(600)
 
         # The screen's one primary action. A reader-only inbox is half a
         # product, and this is the click that proves it is not one.

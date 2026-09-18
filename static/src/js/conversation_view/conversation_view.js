@@ -29,6 +29,12 @@ import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
 import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 import { useComposer, ComposerForm } from "./use_composer";
+// The Activities tab draws Odoo's own activity card. Borrowing the component
+// rather than restyling ours is what keeps the icons, the three state colours
+// and Mark Done / Edit / Cancel identical to the chatter, for free and
+// forever: a change Odoo makes to it arrives here with the upgrade.
+import { Activity } from "@mail/core/web/activity";
+import { compareDatetime } from "@mail/utils/common/misc";
 
 const PAGE = 30;
 
@@ -137,7 +143,7 @@ export class RecordPane extends Component {
 
 export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
-    static components = { RecordPane, ComposerForm };
+    static components = { RecordPane, ComposerForm, Activity };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
     // component's, not the action record's: without this, opening a record
@@ -149,6 +155,9 @@ export class ConversationView extends Component {
         this.action = useService("action");
         this.dialog = useService("dialog");
         this.notification = useService("notification");
+        // Odoo's activity card reads its activity out of the mail store, not
+        // out of a dict we hand it.
+        this.mailStore = useService("mail.store");
         this.panes = usePanes();
         this.composer = useComposer({ onSent: () => this.onReplySent() });
 
@@ -181,6 +190,11 @@ export class ConversationView extends Component {
             selected: null,
             tab: restoreTab(),
             thread: EMPTY_THREAD(),
+            // The ids whose activity cards are in the mail store. A card
+            // lives in the store rather than in this state, so this list is
+            // both what the tab draws and what tells Owl the second read
+            // arrived.
+            activityIds: [],
             // Which messages are open, and whose quoted history is unfolded.
             // Keyed by message id, so a thread that reloads under a reply
             // keeps nothing from the thread before it.
@@ -343,6 +357,7 @@ export class ConversationView extends Component {
         this.state.linking = false;
         // Nothing from the previous thread stays under the new subject.
         this.state.thread = EMPTY_THREAD();
+        this.state.activityIds = [];
         this.state.open = {};
         this.state.quotes = {};
         this.split.clear();
@@ -366,6 +381,7 @@ export class ConversationView extends Component {
                 if (newest) {
                     this.state.open[newest.id] = true;
                 }
+                this.loadActivities(seq);
             }
         } catch (error) {
             if (seq === this.threadSeq) {
@@ -547,13 +563,56 @@ export class ConversationView extends Component {
         return `${(size / (1024 * 1024)).toFixed(1)} MB`;
     }
 
-    openActivityRecord(activity) {
-        this.action.doAction({
-            type: "ir.actions.act_window",
-            res_model: activity.model,
-            res_id: activity.res_id,
-            views: [[false, "form"]],
-        });
+    // ------------------------------------------------------ the follow-ups
+
+    /**
+     * Put this conversation's activities in the mail store.
+     *
+     * `read_conversation` answers with the rows the tab count needs; Odoo's
+     * activity card needs the record the chatter draws from, which is what
+     * `activity_format` returns. It is the same call Odoo's own activity
+     * popover makes, ACLs and all, so the ids are the only thing we add.
+     */
+    async loadActivities(seq) {
+        const ids = (this.state.thread.activities || []).map((row) => row.id);
+        if (!ids.length) {
+            return;
+        }
+        const data = await this.orm.silent.call("mail.activity", "activity_format", [ids]);
+        if (seq === this.threadSeq) {
+            this.mailStore.insert(data);
+            this.state.activityIds = ids;
+        }
+    }
+
+    /** The store records behind this conversation's activities, soonest first. */
+    get activities() {
+        const ids = new Set(this.state.activityIds);
+        return Object.values(this.mailStore["mail.activity"].records)
+            .filter((activity) => ids.has(activity.id))
+            .sort((a, b) => compareDatetime(a.date_deadline, b.date_deadline) || a.id - b.id);
+    }
+
+    /**
+     * Which record this follow-up sits on, and only when that is a question.
+     *
+     * The chatter never asks it: everything it lists belongs to the record it
+     * hangs under. A conversation can have reached a lead and a contact both,
+     * and then "call back" without a name on it is half an instruction.
+     */
+    activityRecordName(activity) {
+        const rows = this.state.thread.activities || [];
+        if (new Set(rows.map((row) => `${row.model},${row.res_id}`)).size < 2) {
+            return "";
+        }
+        return (rows.find((row) => row.id === activity.id) || {}).record_name || "";
+    }
+
+    /** An activity changed under us. Re-read the conversation, counts and all. */
+    onActivityChanged() {
+        if (this.state.selected) {
+            this.select(this.state.selected);
+        }
     }
 
     // --------------------------------------------------------- the stack
@@ -783,21 +842,8 @@ export class ConversationView extends Component {
         if (!record) {
             return;
         }
-        await this.action.doAction(
-            {
-                type: "ir.actions.act_window",
-                res_model: "mail.activity.schedule",
-                views: [[false, "form"]],
-                target: "new",
-                context: {
-                    active_model: record.model,
-                    active_ids: [record.res_id],
-                    default_res_model: record.model,
-                    default_res_ids: [record.res_id],
-                },
-            },
-            { onClose: () => this.select(this.state.selected) }
-        );
+        await this.mailStore.scheduleActivity(record.model, [record.res_id]);
+        this.onActivityChanged();
     }
 
     /**

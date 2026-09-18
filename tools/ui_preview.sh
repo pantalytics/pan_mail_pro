@@ -131,6 +131,24 @@ for subject, body, direction, when in (
         'subject': subject, 'body': body, 'author_id': customer,
         'email_from': 'bart@vandermolen.example', 'date': when,
         'x_direction': direction, 'x_mailbox_id': ids[2]})
+# Two follow-ups on the lead. The Activities tab draws Odoo's own activity
+# card, and both the icon and the colour come off the activity type and the
+# deadline: one planned and one overdue is the pair that shows both.
+def xmlid(module, name):
+    return call('ir.model.data', 'search_read',
+                [('module', '=', module), ('name', '=', name)],
+                fields=['res_id'])[0]['res_id']
+lead_model = call('ir.model', 'search', [('model', '=', 'crm.lead')])[0]
+for ref, summary, days in (
+    ('mail_activity_data_call', 'Bart terugbellen over regel 3', 3),
+    ('mail_activity_data_todo', 'Opdrachtbevestiging opstellen', -2),
+):
+    call('mail.activity', 'create', {
+        'res_model_id': lead_model, 'res_id': lead,
+        'activity_type_id': xmlid('mail', ref),
+        'summary': summary, 'user_id': uid,
+        'date_deadline': (datetime.date.today()
+                          + datetime.timedelta(days=days)).strftime('%Y-%m-%d')})
 # Two conversations that landed on a contact and nowhere better: the real
 # `fallback` outcome, delivered but to a place nobody is looking. Each carries
 # the suggestion the ladder nearly picked, which is what the Inbox offers with

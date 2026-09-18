@@ -220,6 +220,16 @@ other panes are hidden, so the widths are where you left them when you return.
 It is the one pane state the browser does not remember: a reading mode you
 have to notice you left on is a screen that lost its mail.
 
+19.0.12.2.0 stopped drawing the Activities tab itself. It is Odoo's own
+`mail.Activity` component now -- the same card the chatter draws -- so the
+activity type's icon, the three state colours and Mark Done / Edit / Cancel are
+the platform's and cannot drift from it. The card reads its activity out of the
+mail store rather than out of a dict, so the tab makes the second call Odoo's
+own activity popover makes (`activity_format` on the ids `read_conversation`
+already returned) and inserts the answer. The one thing this screen adds is the
+question the chatter never has to ask: which record the follow-up sits on,
+drawn only when the conversation touched more than one.
+
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
 Aliases entries they read as seven unrelated features rather than one module,
