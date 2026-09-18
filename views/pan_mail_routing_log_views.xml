@@ -138,12 +138,14 @@
         </field>
     </record>
 
-    <!-- Menu: Settings → Technical → Email → Mail Routing -->
+    <!-- Menu: Settings → Technical → Email → Mail Routing.
+         Mailbox Manager for the same reason as Mailboxes: the ACL already
+         says they may read and work this log. -->
     <menuitem id="menu_pan_mail_routing_log"
               name="Mail Routing"
               parent="pan_mail_pro.menu_pan_mail_root"
               action="action_pan_mail_routing_log"
               sequence="50"
-              groups="base.group_system"/>
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
 
 </odoo>

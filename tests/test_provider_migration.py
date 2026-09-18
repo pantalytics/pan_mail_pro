@@ -41,7 +41,7 @@ class TestProviderMigration(TransactionCase):
 
     def test_credentials_and_the_choice_become_a_row(self):
         self.ICP.set_param('pan_mail_pro.microsoft_client_id', 'client-id')
-        self.ICP.set_param('pan_mail_pro.microsoft_tenant_id', 'tenant-id')
+        self.ICP.set_param('pan_mail_pro.microsoft_tenant_id', '11111111-2222-3333-4444-555555555555')
         self.ICP.set_param('pan_mail_pro.microsoft_client_secret_encrypted', 'cipher-text')
         self.ICP.set_param('pan_mail_pro.setup_provider', 'outlook')
 
@@ -50,7 +50,7 @@ class TestProviderMigration(TransactionCase):
         row = self.Provider.search([('provider', '=', 'outlook')])
         self.assertEqual(len(row), 1)
         self.assertEqual(row.client_id, 'client-id')
-        self.assertEqual(row.tenant_id, 'tenant-id')
+        self.assertEqual(row.tenant_id, '11111111-2222-3333-4444-555555555555')
         # Copied as the ciphertext it already is, never decrypted and
         # re-encrypted — same key, same database, so the string is portable
         # as-is (see ARCHITECTURE.md §9.1 and §9.13).
@@ -63,7 +63,7 @@ class TestProviderMigration(TransactionCase):
         only the chosen one becomes a row; the other registration is dropped
         and re-issued from its console if it is ever needed."""
         self.ICP.set_param('pan_mail_pro.microsoft_client_id', 'client-id')
-        self.ICP.set_param('pan_mail_pro.microsoft_tenant_id', 'tenant-id')
+        self.ICP.set_param('pan_mail_pro.microsoft_tenant_id', '11111111-2222-3333-4444-555555555555')
         self.ICP.set_param('pan_mail_pro.google_client_id', 'google-id')
         self.ICP.set_param('pan_mail_pro.setup_provider', 'gmail')
 

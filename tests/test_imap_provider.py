@@ -612,6 +612,43 @@ class TestImapProvider(TransactionCase):
             self.client.fetch_messages(account, mailbox, folder=FOLDER_SENT)
         self.assertEqual(imap.selected, '"INBOX.Verzonden"')
 
+    def test_a_sent_folder_under_inbox_is_found_without_the_flag(self):
+        """Courier and some Dovecot namespace setups advertise no \\Sent and
+        file sent mail in INBOX.Sent. The literal fallback `Sent` does not
+        exist there, so the APPEND failed, the copy was lost, and the only
+        trace was a warning in a log nobody reads."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        imap = FakeImap(uids=[], fetch=[], folders=[
+            b'(\\HasNoChildren) "." "INBOX"',
+            b'(\\HasNoChildren) "." "INBOX.Sent"',
+        ])
+        with self._patch_imap(imap):
+            self.client.fetch_messages(account, mailbox, folder=FOLDER_SENT)
+        self.assertEqual(imap.selected, '"INBOX.Sent"')
+
+    def test_the_special_use_flag_still_beats_a_folder_named_sent(self):
+        """The flag is the server saying which folder it is. A name is a
+        guess, so it is only consulted when there is no flag."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        imap = FakeImap(uids=[], fetch=[], folders=[
+            b'(\\HasNoChildren) "." "INBOX.Sent"',
+            b'(\\HasNoChildren \\Sent) "." "Sent Items"',
+        ])
+        with self._patch_imap(imap):
+            self.client.fetch_messages(account, mailbox, folder=FOLDER_SENT)
+        self.assertEqual(imap.selected, '"Sent Items"')
+
+    def test_a_server_with_no_sent_folder_at_all_falls_back(self):
+        """Nothing is created on a guess: the literal name is the last word,
+        and a failed APPEND must still not fail a delivered mail."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        imap = FakeImap(uids=[], fetch=[], folders=[
+            b'(\\HasNoChildren) "." "INBOX"',
+        ])
+        with self._patch_imap(imap):
+            self.client.fetch_messages(account, mailbox, folder=FOLDER_SENT)
+        self.assertEqual(imap.selected, '"Sent"')
+
     def test_headers_are_lowercased_for_the_loop_guard(self):
         account, mailbox = self._imap_account(), self._mailbox()
         raw = self._raw_email(extra_headers={
