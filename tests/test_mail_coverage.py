@@ -24,7 +24,7 @@ class TestMailCoverage(MailProTestCase):
 
     def setUp(self):
         super().setUp()
-        # Two filed on a real document, one on a contact, two filed nowhere.
+        # Two linked to a real document, one on a contact, two linked to nothing.
         self.env['mail.message'].sudo().search([('x_direction', '!=', False)]).unlink()
         self._message('res.users', self.salesperson.id)
         self._message('res.users', self.other_user.id)
@@ -42,7 +42,7 @@ class TestMailCoverage(MailProTestCase):
     def test_the_three_rows_are_disjoint(self):
         """They sit under two headings on one screen, so they have to add up.
 
-        Counting the contacts inside the documents made 'filed on a document'
+        Counting the contacts inside the documents made 'linked to a document'
         look like a group it was not.
         """
         self.assertEqual(
@@ -52,7 +52,7 @@ class TestMailCoverage(MailProTestCase):
             self.coverage.total_count,
         )
 
-    def test_a_contact_message_without_a_res_id_is_unfiled(self):
+    def test_a_contact_message_without_a_res_id_is_unlinked(self):
         """`model` alone is not a link, so it must not land in two rows."""
         self._message('res.partner')
         self.coverage.invalidate_recordset()
@@ -70,7 +70,7 @@ class TestMailCoverage(MailProTestCase):
         self.assertAlmostEqual(self.coverage.unlinked_ratio, 0.4, places=4)
 
     def test_ratio_is_zero_on_an_empty_database(self):
-        """No mail is not 100% unfiled; a division by zero here would be a
+        """No mail is not 100% unlinked; a division by zero here would be a
         crash on every fresh install."""
         self.env['mail.message'].sudo().search([('x_direction', '!=', False)]).unlink()
         empty = self.env['pan.mail.coverage'].create({})

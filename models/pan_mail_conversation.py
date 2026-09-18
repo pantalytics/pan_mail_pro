@@ -54,6 +54,12 @@ MAX_LIMIT = 200
 # every row the reader can see, once per folder, on every click.
 COUNT_CAP = 99
 
+# How many models the "link it here" picker offers. The list is built from
+# what this database already links mail to, so it is short by construction;
+# the cap is there so a database with a long history of routing targets does
+# not turn a picker into a directory.
+MAX_LINK_TARGETS = 12
+
 # How much of a body the one-line preview looks at. A real mail carries a
 # signature, an inline stylesheet and the whole quoted history; the preview is
 # 140 characters.
@@ -86,8 +92,8 @@ RAIL_FOLDERS = [
 # holding mail of their own -- the difference between a view and a place.
 LIST_FILTERS = [
     ('needs_reply', 'Needs reply'),
-    ('unfiled_contact', 'On a contact only'),
-    ('unfiled_none', 'Linked to nothing'),
+    ('unlinked_contact', 'On a contact only'),
+    ('unlinked_none', 'Linked to nothing'),
 ]
 
 KINDS = ({value: 'folder' for value, _label in RAIL_FOLDERS}
@@ -174,9 +180,9 @@ class PanMailConversation(models.AbstractModel):
             if folder == 'sent':
                 return []
             return [('x_direction', '=', DIRECTION_FOLDERS[filter_name])]
-        if filter_name == 'unfiled_contact':
+        if filter_name == 'unlinked_contact':
             return [('model', '=', 'res.partner')]
-        if filter_name == 'unfiled_none':
+        if filter_name == 'unlinked_none':
             return [('model', '=', False)]
         return []
 
@@ -267,7 +273,7 @@ class PanMailConversation(models.AbstractModel):
             newest = self._newest_per_group(base if base is not None else domain,
                                             groups)
             total = len(self._filter_by_direction(newest, value))
-        elif value == 'unfiled_none':
+        elif value == 'unlinked_none':
             # Unfiled mail does not group: every row is its own conversation,
             # and grouping on (model, res_id) counts the whole pile as one.
             total = sum(count for _model, _res_id, count, _date in groups)
@@ -307,8 +313,8 @@ class PanMailConversation(models.AbstractModel):
         # (model, res_id) would collapse every unmatched message in the
         # database into a single row belonging to nobody, which is the exact
         # opposite of the state this filter exists to make reviewable.
-        if filter_name == 'unfiled_none':
-            return self._unfiled_rows(narrowed, limit, offset)
+        if filter_name == 'unlinked_none':
+            return self._unlinked_rows(narrowed, limit, offset)
 
         Message = self.env['mail.message']
         domain = narrowed + self._filter_domain(filter_name, folder)
@@ -367,8 +373,8 @@ class PanMailConversation(models.AbstractModel):
         else -- a tab count that moves when you open another tab reads as a
         bug -- so `files` and `activities` are the same on every tab.
 
-        An unfiled conversation has no record to key on, so it is addressed by
-        `message_id` instead.
+        A conversation linked to nothing has no record to key on, so it is
+        addressed by `message_id` instead.
         """
         self._check_caller()
         limit, offset = self._page(limit, offset, default=50)
@@ -387,8 +393,8 @@ class PanMailConversation(models.AbstractModel):
         elif message_id:
             domain = Domain(base + [('id', '=', int(message_id))])
         else:
-            # `= 0` does not match a NULL res_id, so an unfiled conversation
-            # asked for by key rather than by message has to say False.
+            # `= 0` does not match a NULL res_id, so a conversation linked to
+            # nothing, asked for by key rather than by message, has to say False.
             domain = Domain(base + [('model', '=', False), ('res_id', '=', False)])
 
         # Newest N, shown oldest first: the page you want is the end of the
@@ -402,6 +408,7 @@ class PanMailConversation(models.AbstractModel):
                          for m in messages.sorted(lambda m: (m.date, m.id))],
             'records': records,
             'rejected': [] if model else self._rejected_for(messages),
+            'suggestion': self._suggestion_for(messages),
             'files': self._files_for(model, res_id, messages),
             'activities': self._activities_for(records),
         }
@@ -508,8 +515,8 @@ class PanMailConversation(models.AbstractModel):
     # Batch helpers: one query for the page, never one per row
     # ------------------------------------------------------------------
 
-    def _unfiled_rows(self, domain, limit, offset):
-        """One row per unfiled message, because that is what it is.
+    def _unlinked_rows(self, domain, limit, offset):
+        """One row per unlinked message, because that is what it is.
 
         Nothing groups these: they are the mails the matcher could not place,
         and the whole point of the filter is to look at them one at a time.
@@ -872,6 +879,85 @@ class PanMailConversation(models.AbstractModel):
             'reason': log.reason or '',
             'candidates': log.candidate_count,
         } for log in logs]
+
+    def _suggestion_for(self, messages):
+        """The one record the ladder nearly picked, if the reader may see it.
+
+        One, not a list. A screen that offers five possibilities asks the
+        reader to do the matching we failed to do; a screen that offers one
+        asks them to confirm or ignore, which is a decision a person makes in
+        a second.
+
+        Filtered through `_filtered_access` for the same reason `_rejected_for`
+        carries no target name: the suggestion was computed with sudo at
+        ingest, and naming a record somebody cannot open would tell them it
+        exists.
+        """
+        if not messages:
+            return False
+        logs = self.env['pan.mail.routing.log'].sudo().search([
+            ('mail_message_id', 'in', messages.ids),
+            ('suggested_model', '!=', False),
+        ], limit=5)
+        for log in logs:
+            if log.suggested_model not in self.env or not log.suggested_res_id:
+                continue
+            record = self.env[log.suggested_model].browse(log.suggested_res_id).exists()
+            if not record or not record._filtered_access('read'):
+                continue
+            return {
+                'model': log.suggested_model,
+                'res_id': log.suggested_res_id,
+                'name': record.display_name,
+                'reason': log.suggested_reason or '',
+                'model_label': self.env['ir.model']._get(log.suggested_model).name
+                or log.suggested_model,
+            }
+        return False
+
+    @api.model
+    def link_targets(self):
+        """The models mail may be linked to, for the picker.
+
+        Not every model with a chatter. The list is what this database has
+        already proved it links mail to -- the mailboxes' own routing targets
+        and the models the log has seen -- plus the contact, which is where
+        unmatched mail lands anyway. It therefore grows with use and starts
+        short, instead of being a dropdown of four hundred technical names on
+        day one.
+
+        `write` is the right question: putting somebody's correspondence on a
+        record is a change to that record, and a model the reader may only read
+        is not a place they may put mail.
+        """
+        self._check_caller()
+        names = ['res.partner']
+        names += self.env['pan.mail.mailbox'].sudo().search(
+            [('alias_id.alias_model_id', '!=', False)]
+        ).mapped('alias_id.alias_model_id.model')
+        # `_read_group` with one groupby and no aggregate yields one-tuples.
+        names += [
+            group[0]
+            for group in self.env['pan.mail.routing.log'].sudo()._read_group(
+                [('model', '!=', False)], groupby=['model'], limit=20)
+            if group[0]
+        ]
+
+        targets, seen = [], set()
+        for name in names:
+            if name in seen or name not in self.env:
+                continue
+            seen.add(name)
+            Model = self.env[name]
+            if not hasattr(Model, 'message_post') or not Model.has_access('write'):
+                continue
+            targets.append({
+                'model': name,
+                'label': self.env['ir.model']._get(name).name or name,
+            })
+            if len(targets) >= MAX_LINK_TARGETS:
+                break
+        return targets
 
     def _next_for(self, company):
         """This customer's open activities, soonest first.

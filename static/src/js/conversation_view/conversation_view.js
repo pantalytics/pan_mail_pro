@@ -27,6 +27,7 @@ import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
+import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 import { useComposer, ComposerForm } from "./use_composer";
 
 const PAGE = 30;
@@ -34,7 +35,9 @@ const PAGE = 30;
 // What a pane with nothing selected holds. A function rather than a constant:
 // four lists shared between two selections is one stale thread away from a
 // reply landing under the wrong subject.
-const EMPTY_THREAD = () => ({ messages: [], records: [], rejected: [], files: [], activities: [] });
+const EMPTY_THREAD = () => ({
+    messages: [], records: [], rejected: [], files: [], activities: [], suggestion: false,
+});
 
 // Which mailboxes stand open in the rail. In the browser, next to the pane
 // widths: it is the same kind of preference, per person and per monitor, and
@@ -139,6 +142,8 @@ export class ConversationView extends Component {
     setup() {
         this.orm = useService("orm");
         this.action = useService("action");
+        this.dialog = useService("dialog");
+        this.notification = useService("notification");
         this.panes = usePanes();
         this.composer = useComposer({ onSent: () => this.onReplySent() });
 
@@ -177,6 +182,11 @@ export class ConversationView extends Component {
             open: {},
             quotes: {},
             showRejected: false,
+            // The model row of the link picker. Closed unless somebody asked
+            // to link something, because on a correctly linked thread it is
+            // an answer to a question nobody has.
+            linking: false,
+            linkTargets: [],
             search: "",
         });
 
@@ -188,6 +198,7 @@ export class ConversationView extends Component {
 
         onWillStart(async () => {
             await this.loadMailboxes();
+            await this.loadLinkTargets();
             await this.refresh();
         });
     }
@@ -324,6 +335,7 @@ export class ConversationView extends Component {
         this.composer.close();
         this.state.selected = conversation;
         this.state.showRejected = false;
+        this.state.linking = false;
         // Nothing from the previous thread stays under the new subject.
         this.state.thread = EMPTY_THREAD();
         this.state.open = {};
@@ -806,6 +818,98 @@ export class ConversationView extends Component {
             .filter((m) => m.direction === "incoming")
             .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
         return incoming[0] || null;
+    }
+
+    // --------------------------------------------------------------- linking
+
+    /**
+     * What mail may be linked to. Read once: it is the shape of this
+     * database, not of the conversation on screen, and it changes about as
+     * often as a mailbox is configured.
+     */
+    async loadLinkTargets() {
+        try {
+            this.state.linkTargets = await this.orm.call(
+                "pan.mail.conversation", "link_targets", []
+            );
+        } catch (error) {
+            // A picker nobody can open is better than an inbox that does not
+            // load. Linking stays unavailable and everything else works.
+            console.warn("[Mail Pro] could not read link targets", error);
+        }
+    }
+
+    /** Take the suggestion the matcher made. One click, the common case. */
+    async acceptSuggestion() {
+        const suggestion = this.state.thread.suggestion;
+        if (suggestion) {
+            await this.linkTo(suggestion.model, suggestion.res_id);
+        }
+    }
+
+    /**
+     * Pick a record on a model, through Odoo's own list-and-search dialog.
+     * Creating from here is off: linking is about where mail belongs, and a
+     * record invented to hold it is a different decision.
+     */
+    pickTarget(target) {
+        this.state.linking = false;
+        this.dialog.add(SelectCreateDialog, {
+            resModel: target.model,
+            title: _t("Link this conversation to a %s", target.label),
+            multiSelect: false,
+            noCreate: true,
+            onSelected: (resIds) => {
+                if (resIds.length) {
+                    this.linkTo(target.model, resIds[0]);
+                }
+            },
+        });
+    }
+
+    /**
+     * Move the conversation, and say what the move bought.
+     *
+     * The confirmation names the thread link rather than the move, because
+     * that is the part somebody would not otherwise know happened: the rest
+     * of this conversation now files itself.
+     */
+    async linkTo(model, resId) {
+        const messageIds = this.state.thread.messages.map((message) => message.id);
+        if (!messageIds.length) {
+            return;
+        }
+        let linked;
+        try {
+            linked = await this.orm.call(
+                "pan.mail.routing.log", "link_to", [messageIds, model, resId]
+            );
+        } catch (error) {
+            this.notification.add(_t("Could not link this conversation."), { type: "danger" });
+            console.warn("[Mail Pro] linking failed", error);
+            return;
+        }
+        this.notification.add(
+            _t("Linked to %s. The next mail in this thread lands here too.", linked.name),
+            { type: "success" }
+        );
+        // The conversation is somewhere else now, so it is addressed by the
+        // record it moved to. `keepSelection` then does the right thing in
+        // both folders it can be linked from: in the inbox the row is still
+        // there under its new record and the reader keeps their place, and in
+        // an unlinked folder it is gone, so the screen moves on to the next
+        // one waiting -- which is what working a queue means.
+        this.state.selected = {
+            ...this.state.selected, model: linked.model, res_id: linked.res_id,
+        };
+        this.state.linking = false;
+        await this.refresh({ keepSelection: true });
+        if (this.state.selected && this.state.selected.model === linked.model
+            && this.state.selected.res_id === linked.res_id) {
+            // Still on it: re-read the thread so the chips replace the
+            // suggestion instead of the screen still offering it.
+            await this.select(this.state.selected);
+        }
     }
 
     openRecordChip(chip) {

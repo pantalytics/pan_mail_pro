@@ -18,11 +18,11 @@
                         <field name="period_days" widget="radio" options="{'horizontal': true}"/>
                     </group>
                     <group>
-                        <group string="Filed">
+                        <group string="Linked">
                             <field name="linked_count"/>
                             <field name="contact_only_count"/>
                         </group>
-                        <group string="Not filed">
+                        <group string="Not linked">
                             <field name="unlinked_count"/>
                             <field name="unlinked_ratio" widget="percentage"/>
                         </group>
@@ -32,7 +32,7 @@
                     </group>
                     <footer>
                         <button name="action_view_unlinked" type="object"
-                                string="Show unfiled mail" class="btn-primary"
+                                string="Show unlinked mail" class="btn-primary"
                                 invisible="unlinked_count == 0"/>
                         <button name="action_view_contact_only" type="object"
                                 string="Show contact-only mail" class="btn-secondary"
