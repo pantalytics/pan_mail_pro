@@ -95,7 +95,7 @@ class TestConversationApi(TransactionCase):
     def test_the_rail_holds_folders_and_the_list_holds_filters(self):
         """The rail is the shape every mail client has, and nothing else.
 
-        Our own states -- needs reply, the two unfiled ones -- read as a
+        Our own states -- needs reply, the two unlinked ones -- read as a
         filter over a list, not as places mail sits, so they come back
         separately and only for the folder somebody has open.
         """
@@ -105,7 +105,7 @@ class TestConversationApi(TransactionCase):
         self.assertEqual([row['id'] for row in counts['folders']],
                          ['inbox', 'sent'])
         self.assertEqual([row['id'] for row in counts['filters']],
-                         ['needs_reply', 'unfiled_contact', 'unfiled_none'])
+                         ['needs_reply', 'unlinked_contact', 'unlinked_none'])
         by_id = {row['id']: row['count']
                  for row in counts['folders'] + counts['filters']}
         self.assertEqual(by_id['inbox'], 1)
@@ -164,10 +164,10 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(row['subject'], 'Re: Second')
         self.assertEqual(row['count'], 3, 'three messages, not one incoming')
 
-    def test_unfiled_mail_is_not_one_conversation(self):
+    def test_unlinked_mail_is_not_one_conversation(self):
         """Two unmatched mails from two companies are two rows.
 
-        Grouping on (model, res_id) collapsed every unfiled message in the
+        Grouping on (model, res_id) collapsed every unlinked message in the
         database into a single row belonging to nobody, under the one filter
         that exists to make those messages reviewable. The rail counts them
         the same way, one per message.
@@ -183,13 +183,13 @@ class TestConversationApi(TransactionCase):
                 'x_mailbox_id': self.mailbox.id,
             })
         rows = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, filter_name='unfiled_none')
+            mailbox_id=self.mailbox.id, filter_name='unlinked_none')
         self.assertEqual(len(rows), 2)
         self.assertEqual({row['subject'] for row in rows},
                          {'Stranger one', 'Stranger two'})
         counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
             mailbox_id=self.mailbox.id, folder='inbox')['filters']}
-        self.assertEqual(counts['unfiled_none'], 2,
+        self.assertEqual(counts['unlinked_none'], 2,
                          'the number says how many mails there are to review')
 
         # And each one opens on its own message rather than on all of them.

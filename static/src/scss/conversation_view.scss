@@ -380,15 +380,31 @@ $mailpro-warn: #c0392b;
         color: $mailpro-faint;
     }
 
-    .o_mailpro_unfiled {
+    .o_mailpro_unlinked {
         margin-top: 0.75rem;
         padding: 0.75rem 0.875rem;
         border: 1px dashed $mailpro-line;
         border-radius: 0.375rem;
     }
 
-    .o_mailpro_unfiled_title { font-size: 0.8125rem; font-weight: 600; }
-    .o_mailpro_unfiled_list { margin: 0; padding-left: 1.125rem; font-size: 0.75rem; color: $mailpro-muted; }
+    .o_mailpro_unlinked_title { font-size: 0.8125rem; font-weight: 600; }
+    .o_mailpro_unlinked_list { margin: 0; padding-left: 1.125rem; font-size: 0.75rem; color: $mailpro-muted; }
+
+    // The suggestion sits next to the state it belongs to, so "not linked"
+    // and "but it looks like this" read as one state rather than two
+    // competing announcements.
+    .o_mailpro_suggestion {
+        margin-top: 0.625rem;
+        font-size: 0.8125rem;
+    }
+
+    .o_mailpro_suggestion_text { color: $mailpro-ink-soft; }
+
+    .o_mailpro_relink_open { margin-top: 0.5rem; }
+
+    // The model row. Chips, like every other record on this screen, because
+    // picking a model here is the first half of picking a record.
+    .o_mailpro_relink { margin-top: 0.75rem; }
 
     // The tab strip: four readings of one conversation, and the only chrome
     // between the matching row and the mail. Underline rather than a pill
@@ -722,7 +738,7 @@ $mailpro-warn: #c0392b;
     }
 
     // Narrow windows drop the record pane rather than squeezing four columns
-    // into a laptop. The "Filed on" chips in the thread head are then the way
+    // into a laptop. The "Linked to" chips in the thread head are then the way
     // to the record, and they open it full screen rather than beside the
     // thread. A pane that is one third of its designed width is worse than a
     // pane that stepped aside.

@@ -226,7 +226,7 @@
                                 </div>
                             </div>
                             <div t-if="state.thread.records.length" class="o_mailpro_chips d-flex align-items-center gap-2">
-                                <span class="o_mailpro_label">Filed on</span>
+                                <span class="o_mailpro_label">Linked to</span>
                                 <button t-foreach="state.thread.records" t-as="chip"
                                         t-key="chip.model + '-' + chip.res_id"
                                         type="button"
@@ -234,23 +234,85 @@
                                         t-on-click="() => this.openRecordChip(chip)">
                                     <span t-esc="chip.name"/>
                                 </button>
+                                <!-- Secondary, and deliberately quiet: a
+                                     correctly linked thread is the normal case
+                                     and this is the exception next to it. -->
+                                <button t-if="state.linkTargets.length" type="button"
+                                        class="btn btn-link btn-sm p-0 o_mailpro_relink_toggle"
+                                        t-att-aria-expanded="state.linking ? 'true' : 'false'"
+                                        t-on-click="() => state.linking = !state.linking">
+                                    <t t-if="state.linking">Cancel</t>
+                                    <t t-else="">Change</t>
+                                </button>
                             </div>
-                            <div t-if="!state.thread.records.length and state.thread.rejected.length"
-                                 class="o_mailpro_unfiled">
+                            <!--
+                                The suggestion is its own block, outside the
+                                unlinked one, because the case it matters most
+                                in is not "linked to nothing" but "linked to
+                                the contact": delivered, and to a place nobody is
+                                looking. A thread with a real record never
+                                carries one, because the server only records
+                                a suggestion when the mail went somewhere else.
+
+                                One suggestion, never a list. Five
+                                possibilities hand the matching back to the
+                                reader; one asks them to confirm or ignore,
+                                which is a decision made in a second. The
+                                number behind it stays in the routing log, one
+                                level deeper.
+                            -->
+                            <div t-if="state.thread.suggestion"
+                                 class="o_mailpro_suggestion d-flex align-items-center flex-wrap gap-2">
+                                <span class="o_mailpro_suggestion_text">
+                                    Looks like
+                                    <strong t-esc="state.thread.suggestion.name"/>
+                                </span>
+                                <span class="o_mailpro_muted" t-esc="state.thread.suggestion.reason"/>
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                        t-on-click="() => this.acceptSuggestion()">Link it here</button>
+                            </div>
+                            <div t-if="!state.thread.records.length" class="o_mailpro_unlinked">
                                 <div class="d-flex align-items-center justify-content-between gap-2">
-                                    <span class="o_mailpro_unfiled_title">Not filed on a record yet.</span>
-                                    <button type="button" class="btn btn-link btn-sm p-0"
+                                    <span class="o_mailpro_unlinked_title">Not linked to a record yet.</span>
+                                    <button t-if="state.thread.rejected.length"
+                                            type="button" class="btn btn-link btn-sm p-0"
                                             t-att-aria-expanded="state.showRejected ? 'true' : 'false'"
                                             t-on-click="() => state.showRejected = !state.showRejected">
                                         <t t-if="state.showRejected">Hide why</t>
                                         <t t-else="">Why?</t>
                                     </button>
                                 </div>
-                                <ul t-if="state.showRejected" class="o_mailpro_unfiled_list">
+                                <ul t-if="state.showRejected" class="o_mailpro_unlinked_list">
                                     <li t-foreach="state.thread.rejected" t-as="row" t-key="row.id">
                                         <span t-esc="row.rule_label"/>: <span t-esc="row.reason"/>
                                     </li>
                                 </ul>
+                            </div>
+                            <div t-if="state.selected and state.linkTargets.length and !state.thread.records.length"
+                                 class="o_mailpro_relink_open">
+                                <button type="button" class="btn btn-link btn-sm p-0"
+                                        t-att-aria-expanded="state.linking ? 'true' : 'false'"
+                                        t-on-click="() => state.linking = !state.linking">
+                                    <t t-if="state.linking">Cancel</t>
+                                    <t t-else="">Link to a record</t>
+                                </button>
+                            </div>
+                            <!--
+                                The model first, the record second. A single
+                                picker over every model in the database would
+                                be a search box that answers with four hundred
+                                technical names; two short steps are the same
+                                two decisions, asked in the order somebody
+                                already has them.
+                            -->
+                            <div t-if="state.linking" class="o_mailpro_relink d-flex align-items-center flex-wrap gap-2"
+                                 role="group" aria-label="Link this conversation to">
+                                <span class="o_mailpro_label">Link to</span>
+                                <button t-foreach="state.linkTargets" t-as="target" t-key="target.model"
+                                        type="button" class="o_mailpro_chip_button"
+                                        t-on-click="() => this.pickTarget(target)">
+                                    <span t-esc="target.label"/>
+                                </button>
                             </div>
                             <!--
                                 Four readings of one conversation, one strip.
@@ -391,7 +453,7 @@
                                 onToggleZoom.bind="() => panes.toggleZoom()"/>
                     <div t-else="" class="o_mailpro_empty">
                         <h3 class="o_mailpro_empty_title">No record yet.</h3>
-                        <p class="o_mailpro_empty_text">File this conversation and it appears here.</p>
+                        <p class="o_mailpro_empty_text">Link this conversation and it appears here.</p>
                         <!-- Zoom hides the way back with the rest of the
                              screen, so the way back comes along. -->
                         <button t-if="panes.state.zoom" type="button"

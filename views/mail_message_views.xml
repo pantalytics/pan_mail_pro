@@ -71,7 +71,7 @@
                 -->
                 <filter name="filter_unlinked" string="Not linked"
                         domain="['|', ('model', '=', False), ('res_id', '=', False)]"/>
-                <filter name="filter_on_contact" string="Filed on a contact only"
+                <filter name="filter_on_contact" string="On a contact only"
                         domain="[('model', '=', 'res.partner')]"/>
                 <separator/>
                 <filter name="filter_delivery_failed" string="Delivery failed"
@@ -118,7 +118,7 @@
             </p>
             <p>
                 Every email Mail Pro sends or receives from now on appears here,
-                together with the document it was filed against.
+                together with the document it is linked to.
             </p>
             <p>
                 This is a read-only overview. Mail sent before this version was

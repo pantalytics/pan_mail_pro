@@ -29,7 +29,9 @@ confusing row, while a queue that is wrong costs a customer an answer.
 """
 import logging
 
-from odoo import models, fields, api
+from odoo import models, fields, api, _
+from odoo.exceptions import AccessError, UserError
+from odoo.fields import Domain
 
 _logger = logging.getLogger(__name__)
 
@@ -127,6 +129,27 @@ class PanMailRoutingLog(models.Model):
              'what the matcher nearly chose.',
     )
 
+    suggested_model = fields.Char(
+        string='Suggested Model',
+        help='The best candidate the ladder found without reaching the '
+             'routing threshold. One, not a list: the screen offers a '
+             'suggestion somebody accepts or ignores, and the full candidate '
+             'set stays in `candidates` for whoever is debugging.',
+    )
+    suggested_res_id = fields.Many2oneReference(
+        string='Suggested Record',
+        model_field='suggested_model',
+    )
+    suggested_name = fields.Char(
+        string='Suggestion',
+        help='Display name at the time of routing, stored for the same reason '
+             'as `target_name`.',
+    )
+    suggested_reason = fields.Char(
+        string='Why That One',
+        help='The candidate rule\'s own words, shown next to the suggestion.',
+    )
+
     needs_review = fields.Boolean(
         string='Needs Review',
         compute='_compute_needs_review',
@@ -163,6 +186,20 @@ class PanMailRoutingLog(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': self.model,
             'res_id': self.res_id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    def action_open_suggestion(self):
+        """Open the record the ladder nearly picked, to see whether it fits."""
+        self.ensure_one()
+        if not self.suggested_model or not self.suggested_res_id \
+                or self.suggested_model not in self.env:
+            return False
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self.suggested_model,
+            'res_id': self.suggested_res_id,
             'view_mode': 'form',
             'target': 'current',
         }
@@ -208,6 +245,7 @@ class PanMailRoutingLog(models.Model):
                 'res_id': target_record.id,
                 'target_name': target_record.display_name,
             })
+        vals.update(self._suggestion_vals(match, target_record))
 
         try:
             # Savepoint so a failed insert cannot poison the transaction the
@@ -230,6 +268,148 @@ class PanMailRoutingLog(models.Model):
             )
             for c in candidates
         )
+
+    @api.model
+    def _suggestion_vals(self, match, target_record):
+        """The one candidate worth offering, if the mail did not land on it.
+
+        Only ever the best below-threshold candidate, and only when it is
+        somewhere other than where the mail actually went. A suggestion that
+        repeats the destination is noise on a screen whose whole job is to
+        show the cases that need a decision.
+        """
+        empty = {
+            'suggested_model': False,
+            'suggested_res_id': False,
+            'suggested_name': False,
+            'suggested_reason': False,
+        }
+        if match.get('model'):
+            # The ladder settled it. There is nothing to propose.
+            return empty
+        for candidate in match.get('candidates') or []:
+            model, res_id = candidate.get('model'), candidate.get('res_id')
+            if not model or not res_id or model not in self.env:
+                continue
+            if target_record is not None and target_record \
+                    and target_record._name == model and target_record.id == res_id:
+                continue
+            record = self.env[model].sudo().browse(res_id)
+            if not record.exists():
+                continue
+            return {
+                'suggested_model': model,
+                'suggested_res_id': res_id,
+                'suggested_name': record.display_name,
+                'suggested_reason': candidate.get('reason') or False,
+            }
+        return empty
+
+    # ------------------------------------------------------------------ #
+    # Correcting a decision
+    # ------------------------------------------------------------------ #
+
+    @api.model
+    def link_to(self, message_ids, model, res_id):
+        """Move messages onto another record, and remember the correction.
+
+        The point is not the move. The point is the thread link it writes: the
+        next mail in this conversation matches at rule 3, exactly and without
+        anyone being asked again. One click buys permanent correctness for a
+        thread, which is the only part of triage that compounds.
+
+        Three things it deliberately does not do.
+
+        **It adds no followers.** A message arriving on a ticket is not a
+        reason to subscribe its author to that ticket, for the same reason CC
+        never creates one (ARCHITECTURE.md §3). Linking mail must not become
+        a way to start notifying people.
+
+        **It posts nothing.** A correction is bookkeeping; a chatter note
+        about it would be the second copy of a fact the message itself now
+        carries.
+
+        **It moves the whole conversation, not one message.** "This is linked
+        to the wrong thing" is never about a single mail in a thread, and
+        leaving the rest behind splits a conversation across two records,
+        which is the failure the matcher exists to prevent.
+
+        Access is checked twice and neither check is the ACL on `mail.message`:
+        the caller must be a mailbox manager, and must be allowed to write the
+        destination. The write itself is `sudo`, because `mail.message.model`
+        and `res_id` are not fields an ordinary user may set -- which is the
+        whole reason this lives in one method instead of at a dozen call sites.
+        """
+        if not self.env.user.has_group('pan_mail_pro.group_mail_mailbox_manager'):
+            raise AccessError(_("Linking mail to a record is for mailbox managers."))
+        if not model or not res_id or model not in self.env:
+            raise UserError(_("That record no longer exists."))
+
+        record = self.env[model].browse(int(res_id))
+        if not record.exists():
+            raise UserError(_("That record no longer exists."))
+        if not hasattr(record, 'message_post'):
+            raise UserError(_("%s has no chatter to link mail to.",
+                              record._description or model))
+        # The destination decides. A reader who cannot write the ticket cannot
+        # put somebody else's correspondence on it either.
+        record.check_access('write')
+
+        messages = self.env['mail.message'].browse(
+            [int(mid) for mid in (message_ids or [])]
+        ).exists()
+        if not messages:
+            raise UserError(_("Nothing to link."))
+        # Read as the caller. A message sitting on a record they cannot open
+        # is refused here rather than moved on their behalf by rights they do
+        # not have.
+        messages.check_access('read')
+        messages = messages.filtered(lambda m: m.message_type == 'email')
+        if not messages:
+            raise UserError(_("Only email can be linked to a record."))
+
+        messages.sudo().write({
+            'model': model,
+            'res_id': record.id,
+            'record_name': record.display_name,
+        })
+
+        logs = self.sudo().search([('mail_message_id', 'in', messages.ids)])
+        self._relink_threads(logs, model, record)
+        logs.write({
+            'reviewed': True,
+            'suggested_model': False,
+            'suggested_res_id': False,
+            'suggested_name': False,
+            'suggested_reason': False,
+        })
+        _logger.info(
+            "[Mail Matcher] %s message(s) relinked to %s/%s by %s",
+            len(messages), model, record.id, self.env.user.login,
+        )
+        return {'model': model, 'res_id': record.id, 'name': record.display_name}
+
+    @api.model
+    def _relink_threads(self, logs, model, record):
+        """Point this conversation's thread links at the corrected record.
+
+        The links are found through the log rows rather than re-derived from
+        the mail, because the log is what recorded the handle the matcher
+        actually keyed on. A conversation with no link -- one that matched on
+        headers alone, or whose row has aged out -- simply has nothing to
+        repoint, and the correction is still worth making for the messages.
+        """
+        pairs = {(log.mailbox_id.id, log.thread_id) for log in logs if log.thread_id}
+        if not pairs:
+            return self.env['pan.mail.thread.link']
+        domain = Domain.OR([
+            Domain([('mailbox_id', '=', mailbox_id), ('thread_id', '=', thread_id)])
+            for mailbox_id, thread_id in pairs
+        ])
+        links = self.env['pan.mail.thread.link'].sudo().search(domain)
+        if links:
+            links.write({'model': model, 'res_id': record.id})
+        return links
 
     # ------------------------------------------------------------------ #
     # Housekeeping
