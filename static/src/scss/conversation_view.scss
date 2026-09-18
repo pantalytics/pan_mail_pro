@@ -217,6 +217,7 @@ $mailpro-warn: #c0392b;
     .o_mailpro_mailbox,
     .o_mailpro_mailbox_toggle,
     .o_mailpro_folder,
+    .o_mailpro_filter,
     .o_mailpro_item,
     .o_mailpro_chip_button,
     .o_mailpro_message_head,
@@ -256,6 +257,41 @@ $mailpro-warn: #c0392b;
     .o_mailpro_list {
         flex: 0 0 auto;
         overflow-y: auto;
+    }
+
+    // The filter row sits over the list it filters, and stays there while the
+    // list scrolls under it: which question you asked is part of reading the
+    // answer.
+    .o_mailpro_filters {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        padding: 0.5rem 0.625rem;
+        background: #fff;
+        border-bottom: 1px solid $mailpro-line-soft;
+    }
+
+    .o_mailpro_filter {
+        border: 1px solid $mailpro-line;
+        background: none;
+        border-radius: 999px;
+        padding: 0.125rem 0.5rem;
+        font-size: 0.75rem;
+        color: $mailpro-ink-soft;
+        cursor: pointer;
+
+        &:hover { background: rgba(0, 29, 33, 0.04); }
+
+        .o_mailpro_count { margin-left: 0.25rem; }
+    }
+
+    .o_mailpro_filter_active {
+        font-weight: 600;
+        color: $mailpro-accent-ink;
+        border-color: $mailpro-accent;
+        background: rgba(93, 91, 214, 0.1);
+
+        .o_mailpro_count { color: $mailpro-accent-ink; }
     }
 
     .o_mailpro_item {

@@ -78,23 +78,31 @@ QUOTE_START = re.compile(
 # which is after the grouping query.
 DIRECTION_OVERFETCH = 2
 
-# The folders in the rail, in the order they are shown. The value is what the
-# client sends back; the label is what a person reads.
-#
-# There is no "Sent" folder. It was the same query as "Waiting on customer",
-# and the provider's own Sent folder already exists in the mail client
-# everybody also has open.
-FOLDERS = [
+# The rail, in the order it is drawn. A mailbox and the two folders every
+# mail client has, because the rail is the part of this screen people already
+# know how to read. Our own states are not folders and do not belong here;
+# they filter the list, one pane to the right.
+RAIL_FOLDERS = [
     ('inbox', 'Inbox'),
+    ('sent', 'Sent'),
+]
+
+# The states worth filtering a folder down to. These are ours, not the
+# provider's, so they read as filters over a list rather than as folders
+# holding mail of their own -- the difference between a view and a place.
+LIST_FILTERS = [
     ('needs_reply', 'Needs reply'),
-    ('waiting', 'Waiting on customer'),
     ('unlinked_contact', 'On a contact only'),
     ('unlinked_none', 'Linked to nothing'),
 ]
 
-# The two folders whose answer is about the newest message, not about any
-# message in the conversation.
-DIRECTION_FOLDERS = {'needs_reply': 'incoming', 'waiting': 'outgoing'}
+KINDS = ({value: 'folder' for value, _label in RAIL_FOLDERS}
+         | {value: 'filter' for value, _label in LIST_FILTERS})
+
+# The one state whose answer is about the newest message rather than about any
+# message in the conversation. "Sent" is not: a thread you wrote in belongs in
+# Sent whoever spoke last, which is what every mail client means by the word.
+DIRECTION_FOLDERS = {'needs_reply': 'incoming'}
 
 # The matcher's rule names, in words. The screen shows why a mail was not
 # filed, and `subject_participants` is not why anything happened.
@@ -144,19 +152,37 @@ class PanMailConversation(models.AbstractModel):
         return domain
 
     def _folder_domain(self, folder):
-        """The extra clauses one folder adds to the grouping query.
+        """The extra clauses the rail folder adds to the grouping query.
 
-        The two direction folders cannot be settled here. "Needs reply" is
-        about the *newest* message, and a conversation with one inbound message
-        somewhere in its history is a different set. This narrows the grouping
-        to what could qualify; `_filter_by_direction` settles it once the
-        newest message of each group is known.
+        Sent is "this conversation was written in", not "we spoke last": a
+        thread the customer answered is still one you sent in, which is what
+        the word means in the mail client open next to this one.
         """
-        if folder in DIRECTION_FOLDERS:
-            return [('x_direction', '=', DIRECTION_FOLDERS[folder])]
-        if folder == 'unlinked_contact':
+        if folder == 'sent':
+            return [('x_direction', '=', 'outgoing')]
+        return []
+
+    def _filter_domain(self, filter_name, folder='inbox'):
+        """The extra clauses a list filter adds to the grouping query.
+
+        "Needs reply" cannot be settled here. It is about the *newest*
+        message, and a conversation with one inbound message somewhere in its
+        history is a different set. This narrows the grouping to what could
+        qualify; `_filter_by_direction` settles it once the newest message of
+        each group is known.
+
+        Inside Sent it does not even narrow: "has an outgoing message" and
+        "has an incoming message" are true of the same conversation and false
+        of the same message, so an AND of the two clauses finds nothing. The
+        grouping stays wide there and the newest message decides alone.
+        """
+        if filter_name in DIRECTION_FOLDERS:
+            if folder == 'sent':
+                return []
+            return [('x_direction', '=', DIRECTION_FOLDERS[filter_name])]
+        if filter_name == 'unlinked_contact':
             return [('model', '=', 'res.partner')]
-        if folder == 'unlinked_none':
+        if filter_name == 'unlinked_none':
             return [('model', '=', False)]
         return []
 
@@ -200,50 +226,77 @@ class PanMailConversation(models.AbstractModel):
     # ------------------------------------------------------------------
 
     @api.model
-    def folder_counts(self, mailbox_id=None, partner_id=None, search=None):
-        """How many conversations sit in each folder, for the rail.
+    def folder_counts(self, mailbox_id=None, folder=None,
+                      partner_id=None, search=None):
+        """The numbers on the rail, and on the filters of one folder.
 
         Counted on every read, capped at `COUNT_CAP`. A stored counter would be
         one more fact that can disagree with the messages; an exact count means
-        aggregating every row the reader can see, once per folder, on every
+        aggregating every row the reader can see, once per entry, on every
         click. The cap costs a "+" on the label and saves the scan.
 
         It takes the same `partner_id` and `search` the list takes, so the rail
         and the list always describe the same mail.
 
-        The two direction folders are counted the way they are listed, on the
-        newest message, which is why they cost a page of newest messages each.
+        `folder` is the one the reader has open. The filters are counted
+        inside it and only for that mailbox, because they are a filter row
+        over one list rather than a second rail: a mailbox standing open in
+        the rail costs its two folders, not five.
+
+        "Needs reply" is counted the way it is listed, on the newest message,
+        which is why it costs a page of newest messages.
         """
         self._check_caller()
-        counts = []
-        for value, label in FOLDERS:
-            domain = (self._base_domain(mailbox_id, partner_id, search)
-                      + self._folder_domain(value))
-            groups = self.env['mail.message']._read_group(
-                domain, groupby=['model', 'res_id'],
-                aggregates=['__count', 'date:max'],
-                order='date:max DESC, model ASC, res_id ASC',
-                limit=COUNT_CAP + 1,
-            )
-            if value in DIRECTION_FOLDERS:
-                newest = self._newest_per_group(
-                    self._base_domain(mailbox_id, partner_id, search), groups)
-                total = len(self._filter_by_direction(newest, value))
-            else:
-                total = len(groups)
-            counts.append({
-                'id': value,
-                'name': label,
-                'count': min(total, COUNT_CAP),
-                'capped': total > COUNT_CAP,
-            })
-        return counts
+        base = self._base_domain(mailbox_id, partner_id, search)
+        folders = [self._count_entry(base, value, label,
+                                     self._folder_domain(value))
+                   for value, label in RAIL_FOLDERS]
+        filters = []
+        if folder:
+            within = base + self._folder_domain(folder)
+            filters = [
+                self._count_entry(within, value, label,
+                                  self._filter_domain(value, folder), base=base)
+                for value, label in LIST_FILTERS
+            ]
+        return {'folders': folders, 'filters': filters}
+
+    def _count_entry(self, domain, value, label, extra, base=None):
+        """One number for the rail or the filter row, capped."""
+        groups = self.env['mail.message']._read_group(
+            domain + extra, groupby=['model', 'res_id'],
+            aggregates=['__count', 'date:max'],
+            order='date:max DESC, model ASC, res_id ASC',
+            limit=COUNT_CAP + 1,
+        )
+        if value in DIRECTION_FOLDERS:
+            newest = self._newest_per_group(base if base is not None else domain,
+                                            groups)
+            total = len(self._filter_by_direction(newest, value))
+        elif value == 'unlinked_none':
+            # Unfiled mail does not group: every row is its own conversation,
+            # and grouping on (model, res_id) counts the whole pile as one.
+            total = sum(count for _model, _res_id, count, _date in groups)
+        else:
+            total = len(groups)
+        return {
+            'id': value,
+            'name': label,
+            'kind': KINDS[value],
+            'count': min(total, COUNT_CAP),
+            'capped': total > COUNT_CAP,
+        }
 
     @api.model
     def search_conversations(self, mailbox_id=None, folder='inbox',
-                             partner_id=None, search=None,
+                             filter_name=None, partner_id=None, search=None,
                              limit=DEFAULT_LIMIT, offset=0):
         """One page of conversations, newest first.
+
+        Two dimensions: the folder from the rail, and the filter over it. A
+        folder is a place mail is, a filter is a question about it, and the
+        screen keeps them apart because the rail is the part people already
+        know how to read.
 
         A fixed number of queries, whatever the page size: the grouping, the
         newest message of each group, the message counts, the unread rows, and
@@ -254,20 +307,21 @@ class PanMailConversation(models.AbstractModel):
         self._check_caller()
         limit, offset = self._page(limit, offset)
         base = self._base_domain(mailbox_id, partner_id, search)
+        narrowed = base + self._folder_domain(folder)
 
         # Mail nobody filed is not one conversation. Grouping it on
         # (model, res_id) would collapse every unmatched message in the
         # database into a single row belonging to nobody, which is the exact
-        # opposite of the state this folder exists to make reviewable.
-        if folder == 'unlinked_none':
-            return self._unlinked_rows(base, limit, offset)
+        # opposite of the state this filter exists to make reviewable.
+        if filter_name == 'unlinked_none':
+            return self._unlinked_rows(narrowed, limit, offset)
 
         Message = self.env['mail.message']
-        domain = base + self._folder_domain(folder)
+        domain = narrowed + self._filter_domain(filter_name, folder)
 
-        # Over-fetch only where the folder's answer depends on the newest
-        # message. Everywhere else the grouping query is already the answer.
-        directional = folder in DIRECTION_FOLDERS
+        # Over-fetch only where the answer depends on the newest message.
+        # Everywhere else the grouping query is already the answer.
+        directional = filter_name in DIRECTION_FOLDERS
         fetch = limit * DIRECTION_OVERFETCH if directional else limit
 
         groups = Message._read_group(
@@ -285,12 +339,12 @@ class PanMailConversation(models.AbstractModel):
             return []
 
         # The newest message and the message count come from the *base*
-        # domain, never from the folder's. In "Needs reply", the folder domain
+        # domain, never from the narrowed one. In "Needs reply" the grouping
         # holds only inbound mail, so it would show the customer's older
         # message as the latest one and count three of a twelve-message thread.
         newest = self._newest_per_group(base, groups)
         if directional:
-            newest = self._filter_by_direction(newest, folder)[:limit]
+            newest = self._filter_by_direction(newest, filter_name)[:limit]
         if not newest:
             return []
 
@@ -320,8 +374,7 @@ class PanMailConversation(models.AbstractModel):
         bug -- so `files` and `activities` are the same on every tab.
 
         A conversation linked to nothing has no record to key on, so it is
-        addressed by
-        `message_id` instead.
+        addressed by `message_id` instead.
         """
         self._check_caller()
         limit, offset = self._page(limit, offset, default=50)
@@ -462,14 +515,14 @@ class PanMailConversation(models.AbstractModel):
     # Batch helpers: one query for the page, never one per row
     # ------------------------------------------------------------------
 
-    def _unlinked_rows(self, base, limit, offset):
+    def _unlinked_rows(self, domain, limit, offset):
         """One row per unlinked message, because that is what it is.
 
         Nothing groups these: they are the mails the matcher could not place,
-        and the whole point of the folder is to look at them one at a time.
+        and the whole point of the filter is to look at them one at a time.
         """
         messages = self.env['mail.message'].search(
-            base + [('model', '=', False)],
+            domain + [('model', '=', False)],
             order='date desc, id desc', limit=limit, offset=offset,
         )
         unread = self._unread_ids(messages)
@@ -529,9 +582,9 @@ class PanMailConversation(models.AbstractModel):
         )
         return {(model, res_id): count for model, res_id, count in groups}
 
-    def _filter_by_direction(self, newest, folder):
+    def _filter_by_direction(self, newest, filter_name):
         """Keep the conversations whose newest message went the right way."""
-        wanted = DIRECTION_FOLDERS[folder]
+        wanted = DIRECTION_FOLDERS[filter_name]
         return newest.filtered(lambda message: message.x_direction == wanted)
 
     def _unread_ids(self, messages):
