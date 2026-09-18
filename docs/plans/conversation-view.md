@@ -7,10 +7,11 @@ record pane without its chatter, reading through
 Still on paper: the *screens* for door 1 (the chatter's own button and its
 more-messages-elsewhere line) and for the customer view and its timeline. Their
 read methods shipped and are tested, so what is left of each is markup. Also
-still on paper: the composer's **To/Cc/followers block**. Reply and Log note
-open Odoo's own composer unextended, so To is filled from the newest inbound
-message and Cc is not filled at all -- the recipient block below is decided,
-not built.
+still on paper: the composer's **To/Cc/followers block** and the **New mail**
+flow beside it. Reply and Log note open Odoo's own composer unextended, so To
+is filled from the newest inbound message and Cc is not filled at all, and
+there is no way to start a mail that is not an answer. Both are decided below,
+neither is built.
 
 Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
 the inbox, an unfiled conversation, the model, the chatter with its door to the
@@ -44,10 +45,12 @@ The screen is four panes:
    them as places mail sits makes the rail read as a filter panel next to the
    mail client the same person has open. 19.0.11.1.0.
 2. **The conversation list.** Sender, subject, snippet, date, and the record the
-   thread is filed on. Unread is weight, not a badge. Over it, the filter row:
-   needs reply, and the two unfiled ones (on a contact only, linked to
-   nothing). A filter is a question about the folder you are in, so it survives
-   a folder switch and a second click clears it.
+   thread is filed on. Unread is weight, not a badge, and it is the only state
+   on a row: a mailbox has read and unread, and a state of ours ("needs reply")
+   is a second inbox to keep correct. Over it, the filter row: the two unfiled
+   ones (on a contact only, linked to nothing), both about linking rather than
+   about the mail. A filter is a question about the folder you are in, so it
+   survives a folder switch and a second click clears it. 19.0.12.2.0.
 3. **The thread.** Messages in order, quoted history collapsed, and a reply that
    goes out through the right mailbox with the conversation quoted underneath.
    That last part is a survey complaint in its own right: today each chatter
@@ -171,6 +174,111 @@ purpose (19.0.6.3.0). A field that exists leaks eventually -- through an
 export, the API, a report or a template -- and no respondent asked for one.
 Somebody who needs a blind copy has a mail client. If Bcc ever arrives it
 arrives as a design change with a reason, not as a third input on a form.
+
+### A new mail
+
+**Every mail sent from this screen is posted on a record, and the default is
+the contact. There is no unlinked outbound mail.**
+
+That is the one decision here. 19.0.12.0.0 established why: a `mail.message`
+with no `model` is visible to its author and to almost nobody else, so a new
+mail with no record is a mail the colleague who has to answer the reply cannot
+see. `res.partner` is the real fallback state, the "On a contact only" folder
+is where it lands, and the reader can move it from there like any other
+mail.
+
+**New** sits at the top of the conversation list and is that pane's one
+primary action. It opens in pane 3, because that is the only pane anybody
+writes in, and the list keeps its selection so the thread being read is still
+there after a discard.
+
+The composer is the same `mail.compose.message`, in the same inline form, with
+the reply's block plus two lines:
+
+- **From** -- the mailbox. The Send From dropdown the composer already has.
+- **To**, **Cc** -- empty instead of filled from an inbound message. No Bcc,
+  for the reasons above.
+- **Subject** -- required. A reply inherits one; a new mail without one is the
+  mail nobody answers, and it is also what the `References` root will carry.
+- **Linked to** -- directly above Send, always drawn, and it starts empty.
+  The first To's contact is the first chip, **offered and not chosen**; beside
+  it that contact's own open documents, the quote, the ticket, the invoice.
+  Send stays off until one is picked. A typed address that matches no contact
+  becomes one, the way Odoo's composer already makes one, so there is always
+  at least that chip to pick. *Other...* opens the picker `link_targets()`
+  already serves, which is the same list triage corrects a match from.
+
+  **The pick is deliberate, not a default.** Putting somebody's
+  correspondence on a record is a change to that record, and a prefilled
+  value under the fold is the filing nobody read and triage has to undo
+  later. One click, on a word the writer looked at. It is also the cheapest
+  place this product ever gets to teach what it does: the mail you are
+  sending lands here.
+- **Followers** -- the read-only line, drawn only once the link is a real
+  document. Same rule as the reply, and nobody is subscribed by this screen
+  here either.
+
+With a conversation selected, New starts from it: To is its correspondent and
+the record it is on is the first chip offered. Still picked by hand, for the
+reason above. That is the "mail this customer about this quote" case, and it
+costs nothing because both values are already on screen.
+
+Send is `message_post` on the linked record, so the reply arrives through the
+matcher, finds the `References` root in the thread index, and lands on the same
+record at rule 3. The link is written once, by the person who knew it, and the
+conversation compounds from there.
+
+**The cases we drop.**
+
+- **Drafts.** Closing the pane loses the text. The composer is a transient
+  model and a half-written mail that survives a reload is a second inbox to
+  empty.
+- **More than one record.** One mail, one record. `mail.message` has one
+  `res_id`, and a mail that is about two things is two mails or a link in the
+  body.
+- **Creating a record from the composer.** No "new lead from this mail". Make
+  the record, then write from it. A composer that also creates documents is a
+  second creation form, with none of the validation of the first.
+
+### Many conversations on one record
+
+**A record holds many conversations, and that is the ordinary case.**
+`pan.mail.thread.link` maps a thread key to one record, so the record side was
+always the many side. A quote picks up a question in March and a delivery
+complaint in June; those are two conversations on one `sale.order`, and the
+only thing that would be wrong is treating them as one.
+
+Nothing is stored differently for it and nothing merges. Three of the four
+surfaces need no rule at all:
+
+- **The conversation list** draws two rows carrying the same record chip. That
+  is what happened, so it is what it shows.
+- **The record pane** is one record either way.
+- **The chatter** already interleaves every message filed on the record, which
+  is Odoo's behaviour and stays it.
+
+The one place it needs a decision is **door 1's button**. *Open in mail* cannot
+open "this record's newest thread" when there are three: newest is a guess, and
+the conversation somebody wants is the one they were just reading.
+
+- **One conversation on the record** -- it opens that one. The common case
+  stays one click.
+- **More than one** -- it opens the Inbox with the list filtered to this
+  record, newest first, nothing selected in pane 3. The same progressive step
+  as the composer's chips: a choice appears only when there is one to make.
+- **From a message** -- the message's own conversation, which is exact and
+  needs no list at all.
+
+That costs `record_conversations` one number it does not have yet. Its
+`conversations` key today counts the *records* the recent mail touched, which
+is the other axis and is what the "messages elsewhere" line needs; the button
+needs the thread count on this record. Both, when the button is built.
+
+**What we do not build: merge and split.** No control joins two conversations
+on one record into one thread, and none splits one in two. A conversation is
+the `References` chain, which is the sender's fact and not ours to rewrite.
+Somebody who says "these two are really one thing" is describing the record,
+and the record already holds both.
 
 ## What Odoo already has
 

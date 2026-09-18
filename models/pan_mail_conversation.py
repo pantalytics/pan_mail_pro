@@ -16,8 +16,10 @@ Two rules hold this layer together.
 search on `mail.message`, so the ORM applies the record rules before we group
 anything. `pan.mail.thread.link` is not access controlled: reading it first
 would let a thread key betray the existence of a record the user cannot open.
-There is no `sudo()` here, on purpose, and a message on a record somebody
-cannot read is absent from their result rather than hidden inside it.
+A message on a record somebody cannot read is absent from their result
+rather than hidden inside it. Where this file does take `sudo()` it buys a
+lookup and never an answer: the thread index behind the record chips, and
+the attachments of messages the search already cleared.
 
 **Reads happen here, writes do not.** Replying, marking read, starring and
 scheduling a follow-up are Odoo's own methods called on the record itself. A
@@ -38,9 +40,14 @@ from datetime import datetime
 from odoo import models, api, _
 from odoo.exceptions import AccessError
 from odoo.fields import Domain
+from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import html2plaintext
 
 _logger = logging.getLogger(__name__)
+
+# What the Files tab draws at most. A tab, not a document archive: past this
+# many, the record's own Files box is the screen for it.
+FILE_PAGE = 50
 
 # One page. Deliberately small: the list is read, not scrolled through.
 DEFAULT_LIMIT = 30
@@ -54,11 +61,12 @@ MAX_LIMIT = 200
 # every row the reader can see, once per folder, on every click.
 COUNT_CAP = 99
 
-# How many models the "link it here" picker offers. The list is built from
-# what this database already links mail to, so it is short by construction;
-# the cap is there so a database with a long history of routing targets does
-# not turn a picker into a directory.
+# How many rows either step of the link picker hands back. Both steps have a
+# search box, so the list is the head of an answer and not the answer: a
+# database with four hundred models or ten thousand quotes shows twelve and
+# lets the reader type.
 MAX_LINK_TARGETS = 12
+MAX_LINK_CANDIDATES = 12
 
 # How much of a body the one-line preview looks at. A real mail carries a
 # signature, an inline stylesheet and the whole quoted history; the preview is
@@ -72,12 +80,6 @@ QUOTE_START = re.compile(
     r'|data-o-mail-quote|id="(?:divRplyFwdMsg|appendonsend)"',
     re.IGNORECASE)
 
-# How many groups to over-fetch for the two folders whose answer depends on
-# which way the *newest* message went. Direction lives on the message, so that
-# filter can only be applied once the newest message of each group is known,
-# which is after the grouping query.
-DIRECTION_OVERFETCH = 2
-
 # The rail, in the order it is drawn. A mailbox and the two folders every
 # mail client has, because the rail is the part of this screen people already
 # know how to read. Our own states are not folders and do not belong here;
@@ -90,19 +92,19 @@ RAIL_FOLDERS = [
 # The states worth filtering a folder down to. These are ours, not the
 # provider's, so they read as filters over a list rather than as folders
 # holding mail of their own -- the difference between a view and a place.
+#
+# They are all about *linking*, never about the mail itself. A mailbox has
+# read and unread, and that is the whole vocabulary of a mail list; a state
+# like "needs reply" is one we made up, and it was ours to keep correct on a
+# screen that reads mail somebody already triages in Outlook. Read status is
+# Odoo's, and it is enough.
 LIST_FILTERS = [
-    ('needs_reply', 'Needs reply'),
     ('unlinked_contact', 'On a contact only'),
     ('unlinked_none', 'Linked to nothing'),
 ]
 
 KINDS = ({value: 'folder' for value, _label in RAIL_FOLDERS}
          | {value: 'filter' for value, _label in LIST_FILTERS})
-
-# The one state whose answer is about the newest message rather than about any
-# message in the conversation. "Sent" is not: a thread you wrote in belongs in
-# Sent whoever spoke last, which is what every mail client means by the word.
-DIRECTION_FOLDERS = {'needs_reply': 'incoming'}
 
 # The matcher's rule names, in words. The screen shows why a mail was not
 # filed, and `subject_participants` is not why anything happened.
@@ -162,24 +164,12 @@ class PanMailConversation(models.AbstractModel):
             return [('x_direction', '=', 'outgoing')]
         return []
 
-    def _filter_domain(self, filter_name, folder='inbox'):
+    def _filter_domain(self, filter_name):
         """The extra clauses a list filter adds to the grouping query.
 
-        "Needs reply" cannot be settled here. It is about the *newest*
-        message, and a conversation with one inbound message somewhere in its
-        history is a different set. This narrows the grouping to what could
-        qualify; `_filter_by_direction` settles it once the newest message of
-        each group is known.
-
-        Inside Sent it does not even narrow: "has an outgoing message" and
-        "has an incoming message" are true of the same conversation and false
-        of the same message, so an AND of the two clauses finds nothing. The
-        grouping stays wide there and the newest message decides alone.
+        Every filter here is a clause on the message, so the grouping query
+        is the whole answer.
         """
-        if filter_name in DIRECTION_FOLDERS:
-            if folder == 'sent':
-                return []
-            return [('x_direction', '=', DIRECTION_FOLDERS[filter_name])]
         if filter_name == 'unlinked_contact':
             return [('model', '=', 'res.partner')]
         if filter_name == 'unlinked_none':
@@ -241,10 +231,7 @@ class PanMailConversation(models.AbstractModel):
         `folder` is the one the reader has open. The filters are counted
         inside it and only for that mailbox, because they are a filter row
         over one list rather than a second rail: a mailbox standing open in
-        the rail costs its two folders, not five.
-
-        "Needs reply" is counted the way it is listed, on the newest message,
-        which is why it costs a page of newest messages.
+        the rail costs its two folders, not four.
         """
         self._check_caller()
         base = self._base_domain(mailbox_id, partner_id, search)
@@ -256,12 +243,12 @@ class PanMailConversation(models.AbstractModel):
             within = base + self._folder_domain(folder)
             filters = [
                 self._count_entry(within, value, label,
-                                  self._filter_domain(value, folder), base=base)
+                                  self._filter_domain(value))
                 for value, label in LIST_FILTERS
             ]
         return {'folders': folders, 'filters': filters}
 
-    def _count_entry(self, domain, value, label, extra, base=None):
+    def _count_entry(self, domain, value, label, extra):
         """One number for the rail or the filter row, capped."""
         groups = self.env['mail.message']._read_group(
             domain + extra, groupby=['model', 'res_id'],
@@ -269,11 +256,7 @@ class PanMailConversation(models.AbstractModel):
             order='date:max DESC, model ASC, res_id ASC',
             limit=COUNT_CAP + 1,
         )
-        if value in DIRECTION_FOLDERS:
-            newest = self._newest_per_group(base if base is not None else domain,
-                                            groups)
-            total = len(self._filter_by_direction(newest, value))
-        elif value == 'unlinked_none':
+        if value == 'unlinked_none':
             # Unfiled mail does not group: every row is its own conversation,
             # and grouping on (model, res_id) counts the whole pile as one.
             total = sum(count for _model, _res_id, count, _date in groups)
@@ -317,12 +300,7 @@ class PanMailConversation(models.AbstractModel):
             return self._unlinked_rows(narrowed, limit, offset)
 
         Message = self.env['mail.message']
-        domain = narrowed + self._filter_domain(filter_name, folder)
-
-        # Over-fetch only where the answer depends on the newest message.
-        # Everywhere else the grouping query is already the answer.
-        directional = filter_name in DIRECTION_FOLDERS
-        fetch = limit * DIRECTION_OVERFETCH if directional else limit
+        domain = narrowed + self._filter_domain(filter_name)
 
         groups = Message._read_group(
             domain,
@@ -332,19 +310,16 @@ class PanMailConversation(models.AbstractModel):
             # ORDER BY may return the same conversation on two pages and never
             # return another one.
             order='date:max DESC, model ASC, res_id ASC',
-            limit=fetch,
+            limit=limit,
             offset=offset,
         )
         if not groups:
             return []
 
         # The newest message and the message count come from the *base*
-        # domain, never from the narrowed one. In "Needs reply" the grouping
-        # holds only inbound mail, so it would show the customer's older
-        # message as the latest one and count three of a twelve-message thread.
+        # domain, never from the narrowed one: the row describes the whole
+        # conversation, not the folder's slice of it.
         newest = self._newest_per_group(base, groups)
-        if directional:
-            newest = self._filter_by_direction(newest, filter_name)[:limit]
         if not newest:
             return []
 
@@ -582,11 +557,6 @@ class PanMailConversation(models.AbstractModel):
         )
         return {(model, res_id): count for model, res_id, count in groups}
 
-    def _filter_by_direction(self, newest, filter_name):
-        """Keep the conversations whose newest message went the right way."""
-        wanted = DIRECTION_FOLDERS[filter_name]
-        return newest.filtered(lambda message: message.x_direction == wanted)
-
     def _unread_ids(self, messages):
         """Which of these messages are unread, in one query.
 
@@ -647,9 +617,6 @@ class PanMailConversation(models.AbstractModel):
             'count': count,
             'record_name': record_name,
             'unread': newest.id in unread_ids,
-            # The last word was theirs. Worked out here every time, so it is
-            # never a day out of date.
-            'waiting_on_us': newest.x_direction == 'incoming',
             'mailbox': newest.x_mailbox_id.email or '',
         }
 
@@ -723,11 +690,32 @@ class PanMailConversation(models.AbstractModel):
         return ''
 
     def _files_for(self, model, res_id, messages):
-        """Every attachment on this conversation, newest first.
+        """Every file on this conversation, newest first.
 
-        Read from the record rather than from the messages on screen, so the
-        number beside the tab is the same whichever tab is open.
+        The same list the chatter draws, from the same two places: the
+        attachments on the record itself -- which is what Odoo's own file box
+        shows, uploads included -- and the attachments that arrived on the
+        mail. A file somebody attaches here is a file on the record, so
+        reading only the messages would have made an upload disappear on the
+        next read.
+
+        The rows are Odoo's own `ir.attachment` store format, because the tab
+        is Odoo's own `AttachmentList`: the same cards, the same preview, the
+        same download and delete. `ids` carries the order -- the store payload
+        is keyed by model and says nothing about it.
+
+        The `sudo()` is the one `mail.message` takes for its own
+        `attachment_ids`: the messages came out of an access-checked search,
+        and an attachment on a message somebody may read is one they may read.
+        The record's own files are asked for with the reader's rights, which
+        is what the chatter would have done.
         """
+        attachments = self.env['ir.attachment'].sudo()
+        if model and res_id:
+            record = self.env[model].browse(res_id).exists()
+            if record and record.has_access('read') and hasattr(
+                    record, '_get_mail_thread_data_attachments'):
+                attachments |= record._get_mail_thread_data_attachments().sudo()
         if model:
             source = self.env['mail.message'].search(
                 [('model', '=', model), ('res_id', '=', res_id),
@@ -735,21 +723,17 @@ class PanMailConversation(models.AbstractModel):
                 order='date desc, id desc', limit=50,
             )
         else:
-            source = messages.sorted(lambda m: (m.date or datetime.min, m.id),
-                                     reverse=True)
-        rows = []
+            source = messages
         for message in source:
-            for attachment in message.attachment_ids:
-                rows.append({
-                    'id': attachment.id,
-                    'name': attachment.name or _('Attachment'),
-                    'mimetype': attachment.mimetype or '',
-                    'size': attachment.file_size or 0,
-                    'date': message.date,
-                    'author': (message.author_id.display_name
-                               or message.email_from or ''),
-                })
-        return rows
+            attachments |= message.sudo().attachment_ids
+        # One order for two sources, and it is the chatter's: newest first.
+        # Capped, because a tab is not a document management system: a record
+        # with a thousand files is one somebody opens the record for.
+        attachments = attachments.sorted('id', reverse=True)[:FILE_PAGE]
+        return {
+            'ids': attachments.ids,
+            'store': Store().add(attachments).get_result() if attachments else {},
+        }
 
     def _activities_for(self, records):
         """What is still open on the records this conversation touched.
@@ -921,21 +905,38 @@ class PanMailConversation(models.AbstractModel):
         return False
 
     @api.model
-    def link_targets(self):
-        """The models mail may be linked to, for the picker.
+    def link_targets(self, search=None):
+        """Step one of the picker: which kind of record this mail belongs to.
 
-        Not every model with a chatter. The list is what this database has
-        already proved it links mail to -- the mailboxes' own routing targets
-        and the models the log has seen -- plus the contact, which is where
-        unmatched mail lands anyway. It therefore grows with use and starts
-        short, instead of being a dropdown of four hundred technical names on
-        day one.
+        What this database already links mail to comes first -- the mailboxes'
+        own routing targets and the models the log has seen, plus the contact,
+        which is where unmatched mail lands anyway. That list is the whole
+        answer on a database with a history and almost empty on a fresh one,
+        which is the day the picker is needed most, so the rest of the page is
+        filled with the other models that carry a chatter. Twelve rows either
+        way, because both steps have a search box and a list longer than the
+        dialog is a list nobody reads to the end.
 
-        `write` is the right question: putting somebody's correspondence on a
-        record is a change to that record, and a model the reader may only read
-        is not a place they may put mail.
+        A search widens to every model with a chatter, matched on its label,
+        the already-linked ones still first: a search for "lead" should offer
+        the model the log knows before the ones nobody has filed a mail on.
         """
         self._check_caller()
+        known = self._known_link_models()
+        if not search:
+            return self._link_target_rows(known + self._other_mail_models())
+
+        found = self.env['ir.model'].sudo().search([
+            ('is_mail_thread', '=', True),
+            ('transient', '=', False),
+            ('name', 'ilike', search.strip()),
+        ], limit=60).mapped('model')
+        ordered = ([name for name in known if name in found]
+                   + [name for name in found if name not in known])
+        return self._link_target_rows(ordered)
+
+    def _known_link_models(self):
+        """The models this database already files mail on, best first."""
         names = ['res.partner']
         names += self.env['pan.mail.mailbox'].sudo().search(
             [('alias_id.alias_model_id', '!=', False)]
@@ -947,8 +948,39 @@ class PanMailConversation(models.AbstractModel):
                 [('model', '!=', False)], groupby=['model'], limit=20)
             if group[0]
         ]
+        return names
 
-        targets, seen = [], set()
+    def _other_mail_models(self):
+        """The filler under what this database already links mail to.
+
+        A chatter is not enough: a mail blacklist and a scheduled action have
+        one, and offering them is how a picker turns into a directory. The
+        rule is the same one step two runs on -- the model has to know whose
+        record it is, so a `partner_id` at a contact -- which leaves quotes,
+        leads, tasks and tickets and drops the plumbing. Alphabetical, because
+        it is a list somebody scans and not a ranking we can honestly make.
+        """
+        names = self.env['ir.model'].sudo().search([
+            ('is_mail_thread', '=', True),
+            ('transient', '=', False),
+        ], order='name', limit=MAX_LINK_TARGETS * 20).mapped('model')
+        keep = []
+        for name in names:
+            if name not in self.env:
+                continue
+            field = self.env[name]._fields.get('partner_id')
+            if field and field.type == 'many2one' and field.comodel_name == 'res.partner':
+                keep.append(name)
+        return keep
+
+    def _link_target_rows(self, names):
+        """Names to picker rows, dropping what this reader may not write.
+
+        `write` is the right question: putting somebody's correspondence on a
+        record is a change to that record, and a model the reader may only
+        read is not a place they may put mail.
+        """
+        rows, seen = [], set()
         for name in names:
             if name in seen or name not in self.env:
                 continue
@@ -956,13 +988,96 @@ class PanMailConversation(models.AbstractModel):
             Model = self.env[name]
             if not hasattr(Model, 'message_post') or not Model.has_access('write'):
                 continue
-            targets.append({
+            rows.append({
                 'model': name,
                 'label': self.env['ir.model']._get(name).name or name,
             })
-            if len(targets) >= MAX_LINK_TARGETS:
+            if len(rows) >= MAX_LINK_TARGETS:
                 break
-        return targets
+        return rows
+
+    @api.model
+    def link_candidates(self, model, search=None, partner_id=None,
+                        limit=MAX_LINK_CANDIDATES):
+        """Step two: which record of that kind.
+
+        With a search, `name_search` -- the same lookup every many2one on this
+        database uses, so a quote is found here the way people already find
+        quotes everywhere else.
+
+        Without one, the records that already belong to the correspondent.
+        That is the whole of the smart half: mail from bart@vandermolen.test,
+        on a quote, opens on Vandermolen's quotes rather than on an empty
+        search box. Two ways in, and only two: a `partner_id` pointing at a
+        contact, or an `email_from`. A model that relates to a contact through
+        anything else -- a `partner_ids`, a field of its own -- gets the most
+        recent records and the search box. Guessing at a third relation would
+        be a rule nobody could predict from the screen.
+        """
+        self._check_caller()
+        Model = self._link_model(model)
+        try:
+            limit = int(limit or MAX_LINK_CANDIDATES)
+        except (TypeError, ValueError):
+            limit = MAX_LINK_CANDIDATES
+        limit = max(min(limit, MAX_LINK_CANDIDATES), 1)
+
+        if search and search.strip():
+            found = Model.name_search(search.strip(), limit=limit)
+            return {
+                'related': False,
+                'partner': '',
+                'rows': [{'id': row[0], 'name': row[1]} for row in found],
+            }
+
+        partner = self.env['res.partner']
+        if partner_id:
+            partner = partner.browse(int(partner_id)).exists()
+        domain = self._candidate_domain(Model, partner)
+        records = Model.search(domain or [], limit=limit, order='id desc')
+        # The company, not the person who wrote: it is whose records these are,
+        # and a list of the company's quotes under one employee's name reads
+        # as a mistake.
+        family = partner.commercial_partner_id or partner
+        return {
+            'related': domain is not None,
+            'partner': family.display_name if domain is not None else '',
+            'rows': [{'id': record.id, 'name': record.display_name}
+                     for record in records],
+        }
+
+    def _link_model(self, model):
+        """The model step two may read, or an error.
+
+        `model` arrives over RPC and nothing stops a caller skipping step one,
+        so the question step one answers is asked again here: mail goes where
+        a chatter can carry it and the reader may write.
+        """
+        if not model or model not in self.env:
+            raise AccessError(_("Mail cannot be linked to %s.", model))
+        Model = self.env[model]
+        if not hasattr(Model, 'message_post') or not Model.has_access('write'):
+            raise AccessError(_("Mail cannot be linked to %s.", model))
+        return Model
+
+    def _candidate_domain(self, Model, partner):
+        """What this correspondent already has on that model, or nothing.
+
+        `child_of` the commercial partner rather than the partner itself: mail
+        from one employee is about the company's quotes, and a contact person
+        rarely carries the records.
+        """
+        if not partner:
+            return None
+        family = partner.commercial_partner_id or partner
+        if Model._name == 'res.partner':
+            return [('id', 'child_of', family.id)]
+        field = Model._fields.get('partner_id')
+        if field and field.type == 'many2one' and field.comodel_name == 'res.partner':
+            return [('partner_id', 'child_of', family.id)]
+        if 'email_from' in Model._fields and partner.email:
+            return [('email_from', 'ilike', partner.email)]
+        return None
 
     def _next_for(self, company):
         """This customer's open activities, soonest first.

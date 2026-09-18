@@ -182,7 +182,7 @@ class Checks:
     FOLDERS = ('Inbox', 'Sent')
 
     # Those states, as the filter row over the list they filter.
-    FILTERS = ('Needs reply', 'On a contact only', 'Linked to nothing')
+    FILTERS = ('On a contact only', 'Linked to nothing')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.
@@ -357,7 +357,9 @@ class Checks:
             self.fail('the record pane still shows a chatter')
 
         # The four readings of a conversation, in one strip over pane 3.
-        tabs = [el.inner_text().split('\n')[0].strip()
+        # The label is the first span; the second is the count, and reading
+        # the button's text gives "Activities2" the moment there is one.
+        tabs = [el.query_selector('span').inner_text().strip()
                 for el in page.query_selector_all('.o_mailpro_tab')]
         if tabs != ['Mail', 'Everything', 'Files', 'Activities']:
             self.fail(f'the tab strip reads {tabs}')
@@ -367,6 +369,27 @@ class Checks:
                 tab.click()
                 page.wait_for_timeout(900)
                 self.error_free(f'the {name} tab')
+                if name == 'Files':
+                    self.check_files_tab(page)
+
+            # The Activities tab draws Odoo's own activity card, so a follow-up
+            # reads here exactly as it does in the chatter: the type's icon, the
+            # deadline's colour and Mark Done. A restyled row of our own would
+            # pass every other assertion on this screen.
+            page.query_selector('.o_mailpro_tab:has-text("Activities")').click()
+            page.wait_for_selector('.o_mailpro_activities', timeout=15000)
+            page.wait_for_timeout(900)
+            cards = page.query_selector_all('.o_mailpro_activities .o-mail-Activity')
+            if len(cards) != 2:
+                self.fail(f'the Activities tab drew {len(cards)} activity cards, expected 2')
+            elif not page.query_selector(
+                    '.o_mailpro_activities .o-mail-Activity-iconContainer.text-bg-danger'):
+                self.fail('no overdue activity, so the state colours are not Odoo\'s')
+            elif not page.query_selector('.o_mailpro_activities .o-mail-Activity-markDone'):
+                self.fail('the activity card carries no Mark Done button')
+            self.shot('inbox-activities.png')
+            page.query_selector('.o_mailpro_tab:has-text("Mail")').click()
+            page.wait_for_timeout(600)
 
         # The screen's one primary action. A reader-only inbox is half a
         # product, and this is the click that proves it is not one.
@@ -542,20 +565,54 @@ class Checks:
         if '%' in text or '0.6' in text:
             self.fail(f'the suggestion shows a score: "{text}"')
 
-        # The picker is two steps, and the first one is closed until asked.
-        if page.query_selector('.o_mailpro_relink'):
-            self.fail('the model picker is open on a screen nobody asked')
+        # The picker: two steps, each a search box over a list, and nothing
+        # on screen until somebody asks for it. Worth a browser because both
+        # steps are an RPC per keystroke and a Python test sees neither the
+        # dialog nor the step it leaves behind.
+        if page.query_selector('.o_mailpro_link_dialog'):
+            self.fail('the link picker is open on a screen nobody asked')
         opener = page.query_selector('.o_mailpro_relink_toggle')
         if not opener:
             self.fail('a linked conversation offers no way to change where it went')
-        else:
-            opener.click()
-            page.wait_for_timeout(400)
-            targets = page.query_selector_all('.o_mailpro_relink .o_mailpro_chip_button')
-            if not targets:
-                self.fail('the model picker opened with nothing in it')
-            opener.click()
-            page.wait_for_timeout(400)
+            return
+        opener.click()
+        page.wait_for_timeout(800)
+        dialog = page.query_selector('.o_mailpro_link_dialog')
+        if not dialog:
+            self.fail('the link picker did not open')
+            return
+        if not dialog.query_selector('.o_mailpro_link_search'):
+            self.fail('step one of the picker has no search box')
+        models = dialog.query_selector_all('.o_mailpro_link_row')
+        if not models:
+            self.fail('step one of the picker opened with nothing in it')
+            return
+        self.shot('inbox-link-models.png')
+
+        # Step two: the records of the model just picked, seeded from the
+        # correspondent. Seeded, so the list must not be empty before anybody
+        # has typed -- an empty second step is the bug this replaced.
+        models[0].click()
+        page.wait_for_timeout(1200)
+        if not dialog.query_selector('.o_mailpro_link_search'):
+            self.fail('step two of the picker has no search box')
+        if not dialog.query_selector('.o_mailpro_link_back'):
+            self.fail('step two of the picker cannot go back to the models')
+        if not dialog.query_selector_all('.o_mailpro_link_row'):
+            self.fail('step two opened empty instead of on the correspondent')
+        self.shot('inbox-link-records.png')
+
+        # Typing searches rather than filtering what is drawn: a term that
+        # matches nothing has to reach the server and come back empty.
+        page.fill('.o_mailpro_link_search', 'zzzzgeenmatch')
+        page.wait_for_timeout(1500)
+        if dialog.query_selector_all('.o_mailpro_link_row'):
+            self.fail('the record search answers rows for a term nothing matches')
+        page.keyboard.press('Escape')
+        page.wait_for_timeout(400)
+        if page.query_selector('.o_mailpro_link_dialog'):
+            self.fail('the link picker does not close')
+        self.error_free('opening the link picker')
 
         self.shot('inbox-unlinked.png')
 
@@ -862,6 +919,36 @@ class Checks:
         self.page.wait_for_selector('.o_form_view', timeout=30000)
         self.page.wait_for_timeout(1200)
         return self.page.inner_text('.o_form_view')
+
+    def check_files_tab(self, page):
+        """The Files tab is Odoo's own attachment list, or it is a copy.
+
+        The card, the viewer behind a click and the uploader are what people
+        already know from the chatter; a row of links of our own looked fine
+        and could do none of the three. So the assertion is on Odoo's own
+        class names -- the moment this screen grows a file list of its own,
+        this check is what says so.
+        """
+        card = page.query_selector('.o_mailpro_files .o-mail-AttachmentContainer')
+        if not card:
+            self.fail("the Files tab draws no attachment card")
+            return
+        self.shot('inbox-files.png')
+        card.click()
+        try:
+            page.wait_for_selector('.o-FileViewer', timeout=10000)
+        except Exception:
+            self.fail('a file in the Files tab opens no viewer')
+        else:
+            close = page.query_selector('.o-FileViewer [aria-label="Close"]')
+            if close:
+                close.click()
+            else:
+                page.keyboard.press('Escape')
+            page.wait_for_timeout(400)
+        # Attaching a file is half of what the chatter's file list is for.
+        if not page.query_selector('.o_mailpro_files input[type="file"]'):
+            self.fail('the Files tab has no way to attach a file')
 
     def error_free(self, where):
         dialog = self.page.query_selector('.o_error_dialog, .o_dialog_error')

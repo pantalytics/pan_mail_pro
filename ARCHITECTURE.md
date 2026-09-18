@@ -220,6 +220,27 @@ other panes are hidden, so the widths are where you left them when you return.
 It is the one pane state the browser does not remember: a reading mode you
 have to notice you left on is a screen that lost its mail.
 
+19.0.12.3.0 did the same to Files. `read_conversation` hands back the
+attachments in the shape the web client's attachment store reads, the tab
+mounts `AttachmentList`, and a file there behaves the way it does in the
+chatter: the same card, the same viewer on a click, the same download and
+delete on hover, and an "Attach files" that lands the file on the
+conversation's record. The list is the chatter's too -- the record's own
+attachments plus the ones that arrived on the mail -- because reading only the
+messages would have made an upload from this screen disappear on the next read.
+Our own rows were a link and a size: they looked fine, could do none of that,
+and were a second implementation of something Odoo maintains.
+
+19.0.12.2.0 stopped drawing the Activities tab itself. It is Odoo's own
+`mail.Activity` component now -- the same card the chatter draws -- so the
+activity type's icon, the three state colours and Mark Done / Edit / Cancel are
+the platform's and cannot drift from it. The card reads its activity out of the
+mail store rather than out of a dict, so the tab makes the second call Odoo's
+own activity popover makes (`activity_format` on the ids `read_conversation`
+already returned) and inserts the answer. The one thing this screen adds is the
+question the chatter never has to ask: which record the follow-up sits on,
+drawn only when the conversation touched more than one.
+
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
 Aliases entries they read as seven unrelated features rather than one module,
@@ -1057,12 +1078,29 @@ The surface is the inbox, not this log. Settings → Technical is where you go
 to ask why; the screen where mail is read is where it gets fixed. A thread
 that is linked carries a quiet `Change` next to its chips; one that is not
 carries the suggestion (rule 5, or the best proposal any rule made) with a
-`Link it here`, and a `Link to a record` that opens the picker: the model
-first, then Odoo's own search dialog for the record. `link_targets()` builds
-that model list out of what this database already links mail to — the
-mailboxes' routing targets and the models the log has seen — so it starts
-short and grows with use rather than being a dropdown of four hundred
-technical names on day one.
+`Link it here`, and a `Link to a record`. Both open the same picker: one
+dialog, one search box, two steps behind it.
+
+**Step one, the kind of record.** `link_targets(search)` starts from what this
+database already links mail to — the mailboxes' routing targets and the models
+the log has seen — so the list is short and grows with use rather than being a
+dropdown of four hundred technical names on day one. A search widens it to
+every model with a chatter, the already-linked ones first, which is the way out
+for the model nobody has filed mail on yet.
+
+**Step two, the record.** `link_candidates(model, search, partner_id)` opens on
+the correspondent's own records instead of an empty box: mail from
+`bart@vandermolen.test`, on a quote, offers Vandermolen's quotes. Two relations
+count and only two — a `partner_id` at a contact, or an `email_from` — read
+against the *commercial* partner, because mail from one employee is about the
+company's records. A model relating to a contact through anything else gets the
+most recent records and the search box; a third guess would be a rule nobody
+could predict from the screen. Typing replaces the list with a plain
+`name_search`, so the seeding is a head start and never a filter to escape.
+
+Both steps take the model from the caller, so both check it the same way:
+a chatter to carry the mail, and `write` on the model, because putting
+somebody's correspondence on a record is a change to that record.
 
 Three things it deliberately does not do:
 
@@ -1153,7 +1191,32 @@ though the feature were absent; AI must never be reachable from
 `mail.mail.send()` or `_process_message()`, which run in a one-minute cron
 inside a savepoint where a slow call stalls a mailbox and a failure rolls the
 message back; and a suggestion naming anything outside a deterministically
-built shortlist is discarded. Bring-your-own-key, envelope only, never a body.
+built shortlist is discarded.
+
+**What such a tier may read is decided ([#153](https://github.com/pantalytics/pan_mail_pro/issues/153)):
+the mail itself, body included, plus the Odoo context the shortlist is built
+from.** Envelope-only was the promise in this section until 19.0.12.0.0, and it
+is withdrawn because it cannot be kept. A subject line does not separate "reply
+to the quote" from "new problem with the same machine", which is the one case
+the tier exists for, so a tier held to the envelope is weaker than the
+deterministic rungs already shipped and not worth a key. The permission is
+therefore a real one, and the module says so rather than implying less: with AI
+triage switched on, the message's headers and its body with the quoted history
+stripped go to the AI provider the customer configured, together with the
+candidate records the deterministic rules shortlisted and the contact they
+belong to. Attachments do not. That is a hard call, not a limit waiting to be
+relaxed.
+
+Widening the Odoo context later -- what else about a contact, a ticket or an
+order helps the tier choose -- is this same permission doing its job, not a
+second decision. What is off limits is a second *purpose*: this permission
+covers deciding where a mail belongs, and nothing else.
+
+Two things it does not touch. It is one switch, off by default, per database, so
+an unconfigured database still behaves as though the feature were absent -- the
+first of the three properties above. And it is the customer's own key, so the
+content reaches their provider account and never Pantalytics: the heartbeat
+stays counts and error codes (§9.17), and nothing here changes that boundary.
 
 ---
 

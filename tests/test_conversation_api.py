@@ -64,7 +64,7 @@ class TestConversationApi(TransactionCase):
         self._mail()
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
         for key in ('model', 'res_id', 'subject', 'preview', 'correspondent',
-                    'date', 'count', 'record_name', 'unread', 'waiting_on_us'):
+                    'date', 'count', 'record_name', 'unread'):
             self.assertIn(key, row, f'the list draws {key}')
         self.assertEqual(row['subject'], 'Offerte')
         self.assertEqual(row['model'], 'crm.lead')
@@ -95,9 +95,9 @@ class TestConversationApi(TransactionCase):
     def test_the_rail_holds_folders_and_the_list_holds_filters(self):
         """The rail is the shape every mail client has, and nothing else.
 
-        Our own states -- needs reply, the two unlinked ones -- read as a
-        filter over a list, not as places mail sits, so they come back
-        separately and only for the folder somebody has open.
+        Our own states -- the two unlinked ones -- read as a filter over a
+        list, not as places mail sits, so they come back separately and only
+        for the folder somebody has open.
         """
         self._mail()
         counts = self.Conversation.folder_counts(
@@ -105,12 +105,11 @@ class TestConversationApi(TransactionCase):
         self.assertEqual([row['id'] for row in counts['folders']],
                          ['inbox', 'sent'])
         self.assertEqual([row['id'] for row in counts['filters']],
-                         ['needs_reply', 'unlinked_contact', 'unlinked_none'])
+                         ['unlinked_contact', 'unlinked_none'])
         by_id = {row['id']: row['count']
                  for row in counts['folders'] + counts['filters']}
         self.assertEqual(by_id['inbox'], 1)
         self.assertEqual(by_id['sent'], 0)
-        self.assertEqual(by_id['needs_reply'], 1)
 
     def test_a_folded_mailbox_is_not_asked_for_filter_counts(self):
         """The filter row belongs to one list, so it costs one mailbox."""
@@ -130,37 +129,28 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(rows[0]['subject'], 'Re: Offerte',
                          'the row is the conversation, not the mail we sent')
 
-        # And the filter still asks its own question inside that folder.
-        needs = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, folder='sent', filter_name='needs_reply')
-        self.assertEqual(len(needs), 1)
+    def test_a_list_row_carries_no_state_of_our_own(self):
+        """A mail list has read and unread. Everything else we invented.
 
-    def test_an_answered_conversation_leaves_needs_reply(self):
-        """The filter is about the newest message, not about any message.
-
-        Filtering the messages instead of the conversation left a thread in
-        Needs reply forever after it was answered.
+        "Needs reply" was a state of ours derived from the direction of the
+        newest message: a second inbox to keep correct, next to the one the
+        same person already triages in Outlook.
         """
         self._mail(direction='incoming')
-        self._mail(direction='outgoing', subject='Re: Offerte')
+        row = self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id)[0]
+        self.assertNotIn('waiting_on_us', row)
+        self.assertIn('unread', row)
 
-        needs = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, filter_name='needs_reply')
-        self.assertEqual(needs, [])
-
-        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
-            mailbox_id=self.mailbox.id, folder='inbox')['filters']}
-        self.assertEqual(counts['needs_reply'], 0)
-
-    def test_the_row_describes_the_conversation_not_the_filter(self):
-        """Under a filter on direction, the subject, the date and the message
-        count still belong to the whole thread."""
+    def test_the_row_describes_the_conversation_not_the_page(self):
+        """The subject, the date and the message count belong to the whole
+        thread, whatever narrowed the list."""
         self._mail(direction='outgoing', subject='First')
         self._mail(direction='outgoing', subject='Second')
         self._mail(direction='incoming', subject='Re: Second')
 
         row = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, filter_name='needs_reply')[0]
+            mailbox_id=self.mailbox.id)[0]
         self.assertEqual(row['subject'], 'Re: Second')
         self.assertEqual(row['count'], 3, 'three messages, not one incoming')
 
@@ -264,19 +254,6 @@ class TestConversationApi(TransactionCase):
         self.assertIn('records', thread)
         self.assertIn('rejected', thread)
 
-    # ---------------------------------------------------------------- derived
-
-    def test_waiting_on_us_follows_the_last_message(self):
-        """Derived, so it cannot go stale. The moment we answer, the
-        conversation stops waiting on us, in the same transaction."""
-        self._mail(direction='incoming')
-        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
-        self.assertTrue(row['waiting_on_us'])
-
-        self._mail(direction='outgoing', subject='Re: Offerte')
-        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
-        self.assertFalse(row['waiting_on_us'])
-
     def test_notes_stay_out_of_a_screen_about_mail(self):
         self.env['mail.message'].create({
             'model': 'crm.lead',
@@ -360,15 +337,33 @@ class TestConversationApi(TransactionCase):
         for scope in ('mail', 'all'):
             thread = self.Conversation.read_conversation(
                 'crm.lead', self.lead.id, scope=scope)
-            self.assertEqual([f['name'] for f in thread['files']],
-                             ['offerte.pdf'], scope)
+            self.assertEqual(thread['files']['ids'], attachment.ids, scope)
+            # The rows are Odoo's own attachment store format, which is what
+            # the tab's `AttachmentList` reads.
+            self.assertEqual(
+                [f['name'] for f in thread['files']['store']['ir.attachment']],
+                ['offerte.pdf'], scope)
             self.assertEqual([a['summary'] for a in thread['activities']],
                              ['Levertijd navragen'], scope)
+
+    def test_a_file_on_the_record_and_not_on_a_message_is_still_on_the_tab(self):
+        """The tab lists what the chatter's file box lists: the record's own
+        attachments. Reading only the messages made a file somebody attached
+        from this screen disappear on the very next read."""
+        self._mail()
+        attachment = self.env['ir.attachment'].create({
+            'name': 'tekening.pdf',
+            'datas': b'JVBERi0=',
+            'res_model': 'crm.lead',
+            'res_id': self.lead.id,
+        })
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual(thread['files']['ids'], attachment.ids)
 
     def test_a_conversation_with_neither_says_so_with_empty_lists(self):
         self._mail()
         thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
-        self.assertEqual(thread['files'], [])
+        self.assertEqual(thread['files'], {'ids': [], 'store': {}})
         self.assertEqual(thread['activities'], [])
 
     # ----------------------------------------------------------------- access
