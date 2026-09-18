@@ -1,14 +1,16 @@
 # The conversation view
 
-Status: **partly built**, 19.0.10.6.0. The inbox itself ships: the folder rail,
-the conversation list, the thread and the record pane, reading through
+Status: **partly built**, 19.0.11.1.0. The inbox itself ships: the folder rail,
+the conversation list, the thread with its four-position tab strip, and the
+record pane without its chatter, reading through
 `pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
 Still on paper: the *screens* for door 1 (the chatter's own button and its
 more-messages-elsewhere line) and for the customer view and its timeline. Their
-read methods shipped and are tested, so what is left of each is markup. Also on
-paper, and decided in this document rather than built: the tab strip over the
-thread, the composer that replaces the record pane's chatter, and the To/Cc
-block that goes with it.
+read methods shipped and are tested, so what is left of each is markup. Also
+still on paper: the composer's **To/Cc/followers block**. Reply and Log note
+open Odoo's own composer unextended, so To is filled from the newest inbound
+message and Cc is not filled at all -- the recipient block below is decided,
+not built.
 
 Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
 the inbox, an unfiled conversation, the model, the chatter with its door to the
@@ -40,7 +42,7 @@ The screen is four panes:
    two words every mail client uses -- and nothing else. Shared mailboxes below
    your own. The states that are ours are not folders and are not here: naming
    them as places mail sits makes the rail read as a filter panel next to the
-   mail client the same person has open. 19.0.10.6.0.
+   mail client the same person has open. 19.0.11.1.0.
 2. **The conversation list.** Sender, subject, snippet, date, and the record the
    thread is filed on. Unread is weight, not a badge. Over it, the filter row:
    needs reply, and the two unfiled ones (on a contact only, linked to
