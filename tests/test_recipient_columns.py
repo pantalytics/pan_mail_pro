@@ -186,7 +186,11 @@ class TestRecipientColumns(MailProTestCase):
         reply written here shows its To and Cc without waiting for the Sent
         folder to come back around -- and an IMAP mailbox with no Sent
         sync would otherwise never show them at all."""
-        account = self.connect(self.salesperson, email=self.mailbox.email)
+        # The fixture already connected the mailbox owner; the account is
+        # unique per (user, provider), so a second connect would collide.
+        account = self.env['pan.mail.account'].sudo().search(
+            [('user_id', '=', self.salesperson.id)], limit=1)
+        self.assertTrue(account, 'the fixture connects the mailbox owner')
         message = self.env['mail.message'].create({
             'model': 'res.partner',
             'res_id': self.external_partner.id,
