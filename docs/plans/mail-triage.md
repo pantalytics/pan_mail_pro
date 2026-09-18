@@ -1,9 +1,13 @@
 # Triage: where mail goes when the headers do not say
 
-Status: **design only.** Nothing here is built. The ladder's first three rungs
-already ship (ARCHITECTURE.md §4); this document is about the residue underneath
-them, the screen that shows and corrects a match, and whether a language model
-belongs in it.
+Status: **steps 2 and 3 built**, 19.0.12.0.0 (#144): the two deterministic
+rungs (`_rule_record_reference`, `_rule_only_open_record`) sit in the ladder,
+and the Inbox shows the suggestion and takes the correction through
+`pan.mail.routing.log.link_to()`. Step 4, the AI rung, is design only and
+stays that way until `pan.mail.coverage` has been read on a customer database.
+The ladder's first three rungs already ship (ARCHITECTURE.md §4); this document
+is about the residue underneath them, the screen that shows and corrects a
+match, and whether a language model belongs in it.
 
 Gated on a number we have not read yet. `pan.mail.coverage` exists to say what
 share of mail files itself correctly today. If that number is 90%, everything
