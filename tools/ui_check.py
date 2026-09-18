@@ -213,6 +213,13 @@ class Checks:
         if not items:
             self.fail('the conversation list is empty with seeded mail on a lead')
         else:
+            # Every line carries a face: the contact's photo, Odoo's letter
+            # circle when the partner has none, initials when the sender is
+            # nobody in the database. A line without one reads as broken.
+            faceless = [el for el in items
+                        if not el.query_selector('.o_mailpro_avatar')]
+            if faceless:
+                self.fail(f'{len(faceless)} conversation rows have no avatar')
             selected = page.query_selector_all('.o_mailpro_item_active')
             if len(selected) != 1:
                 self.fail(f'{len(selected)} conversations look selected, expected 1')
