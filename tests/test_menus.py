@@ -69,3 +69,29 @@ class TestMenus(MailProTestCase):
             "two menus share a sequence, so their order is undefined: %s" % sorted(
                 (menu.sequence, menu.name) for menu in children),
         )
+
+    def test_a_mailbox_manager_can_reach_the_screens_their_acl_covers(self):
+        """The group is only worth granting if it opens something.
+
+        `ir.model.access.csv` gives Mailbox Manager write on the mailbox and
+        the routing log, and `action_sync_now` / `action_test_incoming` are
+        gated on that group -- while every child menu but Internal Domains
+        asked for `base.group_system`. The only people allowed to press those
+        buttons could not open the form the buttons are on.
+
+        Credentials are the deliberate exception: Email Accounts and Providers
+        stay administrator-only.
+        """
+        manager = self.env.ref('pan_mail_pro.group_mail_mailbox_manager')
+        system = self.env.ref('base.group_system')
+        for xmlid in ('menu_pan_mail_root',
+                      'menu_pan_mail_mailbox',
+                      'menu_pan_mail_routing_log',
+                      'menu_communication_domains'):
+            menu = self.env.ref('pan_mail_pro.%s' % xmlid)
+            self.assertIn(manager, menu.group_ids, xmlid)
+        for xmlid in ('menu_pan_mail_account', 'menu_pan_mail_provider'):
+            menu = self.env.ref('pan_mail_pro.%s' % xmlid)
+            self.assertEqual(
+                menu.group_ids, system,
+                "%s holds credentials and stays administrator-only" % xmlid)

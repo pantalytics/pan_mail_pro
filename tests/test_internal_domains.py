@@ -269,6 +269,29 @@ class TestInternalDomainSuggestion(TransactionCase):
         self.assertTrue(portal.share, "fixture must be a share user to prove this")
         self.assertNotIn('customer.test', self.Domains.suggest_domains())
 
+    def test_odoobot_does_not_put_example_com_in_the_list(self):
+        """Every Odoo database ever created ships OdooBot on
+        `odoobot@example.com`, so a derivation that read inactive users put
+        `example.com` in every suggested list. Pollution rather than a leak --
+        no real mail comes from there -- but the list is shown to the admin as
+        "your domains", and one visibly wrong entry makes the whole derivation
+        look untrustworthy."""
+        self.assertNotIn('example.com', self.Domains.suggest_domains())
+
+    def test_an_archived_colleague_is_not_a_source(self):
+        """Somebody who left is not evidence of a domain the company sends on
+        today, and archived users are where the OdooBot address hid."""
+        archived = self.env['res.users'].with_context(
+            no_reset_password=True
+        ).create({
+            'name': 'Colleague Who Left',
+            'login': 'gone@third.test',
+            'email': 'gone@third.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        archived.action_archive()
+        self.assertNotIn('third.test', self.Domains.suggest_domains())
+
     def test_applying_the_suggestion_carries_every_domain_it_named(self):
         """The property the "Add" button promises.
 
