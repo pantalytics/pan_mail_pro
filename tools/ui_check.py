@@ -327,29 +327,35 @@ class Checks:
                 self.fail('New Email step two offers no records')
                 return
             records[0].click()       # step two: the record itself
-            # The composer opens in its own window with the Send its arch's
-            # footer carries. A composer in a pane has no footer at all,
-            # which is why this one is a dialog.
+            # The composer opens in the conversation pane, the same one a
+            # reply uses. A regression here is New Email having gone back to
+            # being a popup over the Inbox.
             try:
-                page.wait_for_selector('.modal .o_mail_composer_form',
+                page.wait_for_selector('.o_mailpro_composer .o_form_view',
                                        timeout=15000)
             except Exception:
-                self.fail('picking a record did not open the composer')
+                self.fail('picking a record did not open the composer in the pane')
                 return
-            if not page.query_selector('.modal footer .o_mail_send'):
+            if page.query_selector('.modal .o_mail_composer_form'):
+                self.fail('New Email opened the composer in a dialog')
+            head = page.query_selector('.o_mailpro_thread_head .o_mailpro_thread_title')
+            if not head or head.inner_text().strip() != 'New email':
+                self.fail('the pane head does not say a new email is being written')
+            if not page.query_selector(
+                    '.o_mailpro_thread_head button:has-text("Send")'):
                 self.fail('the New Email composer has no Send button')
             self.shot('inbox-new-email-composer.png')
-            # Its own close button, not Escape: a composer with a body in it
-            # asks before it throws the draft away, and a stuck dialog takes
-            # every check after this one down with it.
-            for _ in range(3):
-                button = page.query_selector('.modal .btn-close')
-                if not button:
-                    break
-                button.click()
-                page.wait_for_timeout(1200)
-            if page.query_selector('.modal'):
-                self.fail('a dialog was left over the Inbox after New Email')
+            # Discard rather than Escape: Escape leaves the draft open, and
+            # an open composer takes every check after this one down with it.
+            discard = page.query_selector(
+                '.o_mailpro_thread_head button:has-text("Discard")')
+            if not discard:
+                self.fail('an open New Email cannot be discarded')
+            else:
+                discard.click()
+                page.wait_for_timeout(1000)
+            if page.query_selector('.o_mailpro_composer'):
+                self.fail('the New Email composer stayed open after Discard')
                 return
         self.error_free('Inbox New Email')
 

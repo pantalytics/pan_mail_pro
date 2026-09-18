@@ -110,7 +110,7 @@ export class LinkDialog extends Component {
     /** A row: the model in step one, the destination in step two. */
     async choose(entry) {
         if (this.state.target) {
-            this.props.onSelect(this.state.target.model, entry.row.id);
+            this.props.onSelect(this.state.target.model, entry.row.id, entry.label);
             this.props.close();
             return;
         }
