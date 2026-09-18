@@ -23,4 +23,34 @@
             </xpath>
         </field>
     </record>
+
+    <!--
+        The same composer, for the Inbox's own pane.
+
+        `FormController` cuts every <footer> out of the arch and renders it
+        only inside a dialog, so mounted in a pane the paperclip and the
+        template selector are not drawn at all. They move into the body here.
+        Send and Discard do not come with them: the pane is what closes, so
+        the pane owns those two buttons — see
+        static/src/js/conversation_view/use_composer.js.
+    -->
+    <record id="mail_compose_message_inline_form" model="ir.ui.view">
+        <field name="name">mail.compose.message.form.inline</field>
+        <field name="model">mail.compose.message</field>
+        <field name="inherit_id" ref="mail.email_compose_message_wizard_form"/>
+        <field name="mode">primary</field>
+        <field name="priority">100</field>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="attributes">
+                <attribute name="js_class">pan_mail_inline_composer_form</attribute>
+            </xpath>
+            <xpath expr="//footer" position="replace">
+                <div class="o_mailpro_composer_tools d-flex align-items-center gap-2">
+                    <field name="attachment_ids" widget="mail_composer_attachment_selector"
+                           invisible="not can_edit_body"/>
+                    <field name="template_id" widget="mail_composer_template_selector"/>
+                </div>
+            </xpath>
+        </field>
+    </record>
 </odoo>

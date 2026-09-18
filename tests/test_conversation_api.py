@@ -475,3 +475,35 @@ class TestConversationApi(TransactionCase):
         timeline = self.Conversation.customer_timeline(self.customer.id)
         self.assertEqual([row['summary'] for row in timeline['next']],
                          ['Call Bart about line 3'])
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestInlineComposerView(TransactionCase):
+    """The composer the Inbox mounts in its own pane instead of a dialog.
+
+    A form view that is not in a dialog never renders the arch's `<footer>`,
+    and nothing says so: the pane shows a composer with no paperclip and no
+    template selector, and the server log is empty. The inline view moves the
+    two controls a reply needs into the body. These assertions are what keeps
+    it doing that.
+    """
+
+    def _arch(self):
+        view = self.env.ref('pan_mail_pro.mail_compose_message_inline_form')
+        return self.env['mail.compose.message'].get_view(view.id)['arch']
+
+    def test_the_inline_composer_has_no_footer_left(self):
+        arch = self._arch()
+        self.assertNotIn('<footer', arch)
+        self.assertIn('o_mailpro_composer_tools', arch)
+        self.assertIn('mail_composer_attachment_selector', arch)
+
+    def test_the_inline_composer_names_the_pane_s_controller(self):
+        """The js_class is what hands the record to the pane's Send button."""
+        self.assertIn('pan_mail_inline_composer_form', self._arch())
+
+    def test_the_inline_composer_still_carries_send_from(self):
+        """It is a primary view over mail's own, so this module's own
+        extension of that form has to come with it -- a reply that cannot
+        pick its mailbox sends from the wrong address."""
+        self.assertIn('x_send_from_mailbox_id', self._arch())
