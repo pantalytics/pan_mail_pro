@@ -105,11 +105,39 @@ class TestConversationApi(TransactionCase):
         self.assertEqual([row['id'] for row in counts['folders']],
                          ['inbox', 'sent'])
         self.assertEqual([row['id'] for row in counts['filters']],
-                         ['unlinked_contact', 'unlinked_none'])
+                         ['unread', 'unlinked_contact', 'unlinked_none'])
         by_id = {row['id']: row['count']
                  for row in counts['folders'] + counts['filters']}
         self.assertEqual(by_id['inbox'], 1)
         self.assertEqual(by_id['sent'], 0)
+
+    def test_unread_is_odoos_own_needaction_row(self):
+        """The filter and the dot on the list row read the same fact.
+
+        `needaction` is Odoo's own search over `mail.notification`, so a
+        conversation is unread here exactly when the list draws it unread. A
+        flag of ours would be a second answer to one question, and the two
+        would disagree the first time somebody read the mail somewhere else.
+        """
+        message = self._mail()
+        self.env['mail.notification'].create({
+            'mail_message_id': message.id,
+            'res_partner_id': self.env.user.partner_id.id,
+            'notification_type': 'inbox',
+            'is_read': False,
+        })
+        rows = self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id, filter_name='unread')
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]['unread'])
+        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id, folder='inbox')['filters']}
+        self.assertEqual(counts['unread'], 1)
+
+        self.env['mail.notification'].search([
+            ('mail_message_id', '=', message.id)]).is_read = True
+        self.assertFalse(self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id, filter_name='unread'))
 
     def test_a_folded_mailbox_is_not_asked_for_filter_counts(self):
         """The filter row belongs to one list, so it costs one mailbox."""

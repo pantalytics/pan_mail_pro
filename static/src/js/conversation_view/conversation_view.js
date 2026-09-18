@@ -24,6 +24,9 @@ import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
+import { Dropdown } from "@web/core/dropdown/dropdown";
+import { CheckboxItem } from "@web/core/dropdown/checkbox_item";
+import { useDebounced } from "@web/core/utils/timing";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
@@ -40,6 +43,11 @@ import { Activity } from "@mail/core/web/activity";
 import { compareDatetime } from "@mail/utils/common/misc";
 
 const PAGE = 30;
+
+// How long the search waits after the last keystroke. Long enough that typing
+// a name is one query instead of eight, short enough that it still reads as
+// the list following along.
+const SEARCH_DELAY = 400;
 
 // What a pane with nothing selected holds. A function rather than a constant:
 // four lists shared between two selections is one stale thread away from a
@@ -151,6 +159,7 @@ export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
     static components = {
         RecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
+        Dropdown, CheckboxItem,
     };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
@@ -171,6 +180,10 @@ export class ConversationView extends Component {
         this.attachmentUploader = useAttachmentUploader();
         this.panes = usePanes();
         this.composer = useComposer({ onSent: () => this.onReplySent() });
+        // Typing is the search, the way it is in every mail client. Debounced
+        // rather than bound to Enter: a list that only moves when you press a
+        // key you were not told about reads as a search box that is broken.
+        this.applySearch = useDebounced(() => this.runSearch(), SEARCH_DELAY);
 
         // Two request tokens, one per pane. Somebody who clicks three folders
         // in a second starts three reads, and without these the slowest answer
@@ -491,9 +504,14 @@ export class ConversationView extends Component {
         return (this.state.counts[this.railKey(mailboxId)] || {}).folders || [];
     }
 
-    /** The filter row over the list, counted inside the open folder. */
+    /** The filter menu over the list, counted inside the open folder. */
     get filters() {
         return (this.state.counts[this.railKey()] || {}).filters || [];
+    }
+
+    /** The one in use, named on the button so a closed menu still says so. */
+    get activeFilter() {
+        return this.filters.find((pill) => pill.id === this.state.filter) || null;
     }
 
     /** Open another mailbox, from the rail. Folders are per mailbox. */
@@ -513,11 +531,25 @@ export class ConversationView extends Component {
         await this.refresh();
     }
 
-    async onSearch(event) {
-        if (event.key !== "Enter") {
-            return;
-        }
+    onSearchInput(event) {
         this.state.search = event.target.value;
+        this.applySearch();
+    }
+
+    /** Enter does not wait, and Escape gives the whole folder back. */
+    onSearchKey(event) {
+        if (event.key === "Enter") {
+            this.applySearch.cancel();
+            this.runSearch();
+        } else if (event.key === "Escape" && this.state.search) {
+            event.target.value = "";
+            this.state.search = "";
+            this.applySearch.cancel();
+            this.runSearch();
+        }
+    }
+
+    async runSearch() {
         this.state.limit = PAGE;
         await this.refresh();
     }
@@ -861,6 +893,12 @@ export class ConversationView extends Component {
         return count === 1 ? _t("1 message") : _t("%s messages", count);
     }
 
+    /** The folder the list is showing, for the header over it. */
+    get folderLabel() {
+        const folders = this.foldersFor();
+        return (folders.find((e) => e.id === this.state.folder) || {}).name || "";
+    }
+
     /** What the list is showing, in words: the folder, narrowed by the filter. */
     get listLabel() {
         const named = (entries, id) => (entries.find((e) => e.id === id) || {}).name;
@@ -908,6 +946,57 @@ export class ConversationView extends Component {
             // new conversation.
             default_parent_id: this.newestIncoming()?.id || false,
         });
+    }
+
+    /**
+     * A new mail, on a record picked first.
+     *
+     * Odoo's own composer in its own dialog, the way every other screen opens
+     * it: the arch's footer is where Send lives, and a dialog is the one
+     * place `FormController` renders one. The pane composer exists because a
+     * reply has three panes worth reading behind it; a new mail has none of
+     * that context yet, so it gets the standard window and nothing of ours.
+     *
+     * The record is not optional. This module files mail on documents -- a
+     * mail sent from here with no record behind it is the "Linked to nothing"
+     * state the Inbox has a filter for, arriving by our own hand. So the same
+     * dialog linking uses asks the same two questions, in the same two
+     * searchable steps, and the composer only opens once both are answered.
+     * One dialog for "where does this mail belong" is one thing to learn.
+     */
+    newEmail() {
+        this.dialog.add(LinkDialog, {
+            title: _t("New email on"),
+            onSelect: (model, resId) => this.composeOn(model, resId),
+        });
+    }
+
+    /** The composer dialog, and a re-read of the list once it closes. */
+    async composeOn(model, resId) {
+        await this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "mail.compose.message",
+                views: [[false, "form"]],
+                target: "new",
+                name: _t("New Email"),
+                context: {
+                    default_model: model,
+                    default_res_ids: [resId],
+                    default_composition_mode: "comment",
+                    default_subtype_xmlid: "mail.mt_comment",
+                },
+            },
+            {
+                onClose: async () => {
+                    // Sent or discarded, we cannot tell from here and do not
+                    // need to: a re-read costs one query and a mail that went
+                    // out but is missing from the list reads as a mail that
+                    // did not.
+                    await this.refresh({ keepSelection: true });
+                },
+            }
+        );
     }
 
     /**

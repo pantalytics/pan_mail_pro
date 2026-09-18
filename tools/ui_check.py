@@ -221,8 +221,9 @@ class Checks:
     # clothes, which is what people notice first and trust least.
     FOLDERS = ('Inbox', 'Sent')
 
-    # Those states, as the filter row over the list they filter.
-    FILTERS = ('On a contact only', 'Linked to nothing')
+    # Those states, in the filter menu at the top right of the list they
+    # filter -- where the mail client next to this one puts its own.
+    FILTERS = ('Unread', 'On a contact only', 'Linked to nothing')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.
@@ -252,26 +253,105 @@ class Checks:
         if rail != list(self.FOLDERS):
             self.fail(f'the folder rail reads {rail}, expected {list(self.FOLDERS)}')
 
-        # The filter row sits over the list, once, not once per mailbox. The
-        # count sits inline next to the label rather than on its own line the
-        # way the rail draws it, so read the label itself.
+        # The bar reads the way Outlook's does: New Email on the left, the
+        # search in the middle, and the filter at the top right of the list.
+        # Their order on screen is the assertion -- three controls in the
+        # right places is the whole point of the layout.
+        if not page.query_selector('.o_mailpro_new'):
+            self.fail('the Inbox has no New Email button')
+        if not page.query_selector('.o_mailpro_topbar #o_mailpro_search'):
+            self.fail('the search is not in the top bar')
+        if not page.query_selector('.o_mailpro_list_head .o_mailpro_filter_toggle'):
+            self.fail('the filter is not at the top of the conversation list')
+
+        # The filter menu opens once, over the list, not once per mailbox.
+        page.click('.o_mailpro_filter_toggle')
+        page.wait_for_timeout(800)
         pills = [el.inner_text().strip()
-                 for el in page.query_selector_all('.o_mailpro_filter_label')]
+                 for el in page.query_selector_all(
+                     '.o_mailpro_filter_menu .o_mailpro_filter_item '
+                     '.o_mailpro_filter_label')]
         if pills != list(self.FILTERS):
-            self.fail(f'the filter row reads {pills}, expected {list(self.FILTERS)}')
+            self.fail(f'the filter menu reads {pills}, expected {list(self.FILTERS)}')
         else:
-            # A pill narrows the list and a second click gives it back, which
-            # is the whole promise of a filter over a folder.
-            first = page.query_selector_all('.o_mailpro_filter')[0]
-            first.click()
+            # An item narrows the list and a second click gives it back, which
+            # is the whole promise of a filter over a folder. The menu stays
+            # open while you do it, the way Odoo's own filter menu does.
+            items = page.query_selector_all(
+                '.o_mailpro_filter_menu .o_mailpro_filter_item')
+            items[0].click()
             page.wait_for_timeout(1500)
-            if not page.query_selector('.o_mailpro_filter_active'):
+            if not page.query_selector('.o_mailpro_filter_menu .selected'):
                 self.fail('clicking a filter did not mark it as the one in use')
-            first.click()
+            page.query_selector_all(
+                '.o_mailpro_filter_menu .o_mailpro_filter_item')[0].click()
             page.wait_for_timeout(1500)
-            if page.query_selector('.o_mailpro_filter_active'):
+            if page.query_selector('.o_mailpro_filter_menu .selected'):
                 self.fail('clicking the filter again did not clear it')
-            self.error_free('Inbox filter row')
+            self.error_free('Inbox filter menu')
+        self.shot('inbox-filter-menu.png')
+        page.keyboard.press('Escape')
+        page.wait_for_timeout(500)
+
+        # Typing is the search: no Enter, no button, the list follows.
+        page.fill('#o_mailpro_search', 'zzzznothingmatchesthis')
+        page.wait_for_timeout(2500)
+        if page.query_selector_all('.o_mailpro_item'):
+            self.fail('typing in the search did not narrow the conversation list')
+        page.fill('#o_mailpro_search', '')
+        page.wait_for_timeout(2500)
+        if not page.query_selector_all('.o_mailpro_item'):
+            self.fail('clearing the search did not give the conversations back')
+        self.error_free('Inbox search')
+
+        # New Email asks which record to write on before it opens anything:
+        # a mail this module sends with nothing behind it is the state the
+        # filter menu one line up exists to find. It is the same two-step
+        # dialog linking uses, which is the point -- one thing to learn.
+        page.click('.o_mailpro_new')
+        try:
+            page.wait_for_selector('.o_mailpro_link_dialog', timeout=15000)
+        except Exception:
+            self.fail('New Email opened no record picker')
+            return
+        rows = page.query_selector_all('.o_mailpro_link_dialog .o_mailpro_link_row')
+        if not rows:
+            self.fail('New Email offers nothing to write the mail on')
+        else:
+            self.shot('inbox-new-email.png')
+            rows[0].click()          # step one: the kind of record
+            page.wait_for_timeout(1500)
+            records = page.query_selector_all(
+                '.o_mailpro_link_dialog .o_mailpro_link_row')
+            if not records:
+                self.fail('New Email step two offers no records')
+                return
+            records[0].click()       # step two: the record itself
+            # The composer opens in its own window with the Send its arch's
+            # footer carries. A composer in a pane has no footer at all,
+            # which is why this one is a dialog.
+            try:
+                page.wait_for_selector('.modal .o_mail_composer_form',
+                                       timeout=15000)
+            except Exception:
+                self.fail('picking a record did not open the composer')
+                return
+            if not page.query_selector('.modal footer .o_mail_send'):
+                self.fail('the New Email composer has no Send button')
+            self.shot('inbox-new-email-composer.png')
+            # Its own close button, not Escape: a composer with a body in it
+            # asks before it throws the draft away, and a stuck dialog takes
+            # every check after this one down with it.
+            for _ in range(3):
+                button = page.query_selector('.modal .btn-close')
+                if not button:
+                    break
+                button.click()
+                page.wait_for_timeout(1200)
+            if page.query_selector('.modal'):
+                self.fail('a dialog was left over the Inbox after New Email')
+                return
+        self.error_free('Inbox New Email')
 
         # The mailbox sits in the rail above its own folders, the way it does
         # in the mail client next to this one. The seed makes two, so this is
@@ -588,13 +668,18 @@ class Checks:
         is the whole reason the filter exists.
         """
         page = self.page
+        page.click('.o_mailpro_filter_toggle')
+        page.wait_for_timeout(800)
         pill = page.query_selector(
-            '.o_mailpro_filter:has(.o_mailpro_filter_label:text-is("On a contact only"))')
+            '.o_mailpro_filter_item:has(.o_mailpro_filter_label:text-is('
+            '"On a contact only"))')
         if not pill:
             self.fail('there is no "On a contact only" filter to link from')
             return
         pill.click()
         page.wait_for_timeout(1500)
+        page.keyboard.press('Escape')
+        page.wait_for_timeout(500)
 
         items = page.query_selector_all('.o_mailpro_item')
         if len(items) < 2:

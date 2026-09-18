@@ -53,6 +53,11 @@ class TestProviderRegistry(TransactionCase):
             'get_valid_token', 'get_user_email', 'test_connection',
             'send_message', 'fetch_messages', 'get_message',
             'get_message_attachments',
+            # The mailbox actions. `tests/test_mailbox_actions.py` checks the
+            # same list against Squirrel's tool names.
+            'list_folders', 'create_folder', 'rename_folder', 'delete_folder',
+            'search_messages', 'set_seen', 'set_flagged', 'move_messages',
+            'delete_messages', 'save_draft', 'update_draft', 'send_draft',
         ]
         for code in PROVIDER_CLIENTS:
             client = get_provider_client(self.env, code)
@@ -208,7 +213,15 @@ class TestGraphNormalization(TransactionCase):
         self.assertEqual(self.client._graph_folder(FOLDER_INBOX), 'Inbox')
         self.assertEqual(self.client._graph_folder(FOLDER_SENT), 'SentItems')
         with self.assertRaises(UserError):
-            self.client._graph_folder('drafts')
+            self.client._graph_folder('outbox')
+
+    def test_a_folder_id_passes_through_where_a_role_is_translated(self):
+        """Graph takes a well-known name and a folder id in the same path
+        segment, so the actions can hand it either."""
+        self.assertEqual(self.client._graph_folder_id(FOLDER_SENT), 'SentItems')
+        self.assertEqual(self.client._graph_folder_id('AAMkAGfolder='), 'AAMkAGfolder=')
+        with self.assertRaises(UserError):
+            self.client._graph_folder_id('')
 
     def test_full_message_is_normalized(self):
         raw = {
