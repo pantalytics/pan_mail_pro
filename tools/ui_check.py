@@ -368,6 +368,12 @@ class Checks:
                 page.wait_for_timeout(900)
                 self.error_free(f'the {name} tab')
 
+        # One writing action per tab, and each on the tab that shows what it
+        # writes. Both everywhere is how a note written in Mail vanishes on
+        # save, and how a reply gets sent from a screen showing no mail.
+        if page.query_selector('.o_mailpro_thread_head button:has-text("Log note")'):
+            self.fail('the Mail tab offers Log note')
+
         # The screen's one primary action. A reader-only inbox is half a
         # product, and this is the click that proves it is not one.
         reply = page.query_selector('.o_mailpro_thread_head button.btn-primary')
@@ -440,7 +446,12 @@ class Checks:
         # is the same composer with the note subtype, so the thing to prove is
         # that it lands in the pane too and says what it will do: a button
         # reading Send over a note is how somebody mails a customer their own
-        # internal margin.
+        # internal margin. It lives in Everything, which is the tab that shows
+        # a note once it is written.
+        page.click('.o_mailpro_tab:has-text("Everything")')
+        page.wait_for_timeout(900)
+        if page.query_selector('.o_mailpro_thread_head button:has-text("Reply")'):
+            self.fail('the Everything tab offers Reply')
         note = page.query_selector('.o_mailpro_thread_head button:has-text("Log note")')
         if not note:
             self.fail('there is no way to log a note')
