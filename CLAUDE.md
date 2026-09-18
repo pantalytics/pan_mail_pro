@@ -68,7 +68,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
 | `models/pan_mail_conversation.py` | The read side of the Inbox: five methods, no table, no sudo for an answer |
-| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes, one client action |
+| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes, one client action, and the tab strip (Mail / Everything / Files / Activities) that replaced the record pane's chatter |
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is and which ones are folded away. Dragged, keyboard-resizable, stored in the browser |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
@@ -349,7 +349,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer, one open message in a collapsed thread, the record pane stepping aside at 1280px, and the dividers dragging, folding and surviving a reload |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer, one open message in a collapsed thread, the record pane stepping aside at 1280px, the four tabs opening without a traceback, no chatter left in the record pane, and the dividers dragging, folding and surviving a reload |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |

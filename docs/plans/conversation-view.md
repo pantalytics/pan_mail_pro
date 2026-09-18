@@ -1,14 +1,16 @@
 # The conversation view
 
-Status: **partly built**, 19.0.10.0.0. The inbox itself ships: the folder rail,
-the conversation list, the thread and the record pane, reading through
+Status: **partly built**, 19.0.10.0.0 and 19.0.11.0.0. The inbox itself ships:
+the folder rail, the conversation list, the thread with its four-position tab
+strip, and the record pane without its chatter, reading through
 `pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
 Still on paper: the *screens* for door 1 (the chatter's own button and its
 more-messages-elsewhere line) and for the customer view and its timeline. Their
-read methods shipped and are tested, so what is left of each is markup. Also on
-paper, and decided in this document rather than built: the tab strip over the
-thread, the composer that replaces the record pane's chatter, and the To/Cc
-block that goes with it.
+read methods shipped and are tested, so what is left of each is markup. Also
+still on paper: the composer's **To/Cc/followers block**. Reply and Log note
+open Odoo's own composer unextended, so To is filled from the newest inbound
+message and Cc is not filled at all -- the recipient block below is decided,
+not built.
 
 Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
 the inbox, an unfiled conversation, the model, the chatter with its door to the

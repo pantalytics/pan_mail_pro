@@ -277,14 +277,35 @@ class Checks:
 
         # ...and the form's own statusbar buttons stay out of it. A filled
         # "Convert to Opportunity" in the fourth pane is a louder button than
-        # Reply, on a screen whose one job is replying. The chatter's own
-        # composer stays: it is how you log an internal note, and it is the
-        # control people already know from every other Odoo screen.
+        # Reply, on a screen whose one job is replying.
         loud = [b for b in page.query_selector_all(
             '.o_mailpro_record .o_form_statusbar button') if b.is_visible()]
         if loud:
             self.fail('the record pane shows %d form buttons beside Reply'
                       % len(loud))
+
+        # The chatter goes with them. Two composers a divider apart is the
+        # thing the tab strip replaced, and the one that loses is the one
+        # that cannot thread a reply. Visibility rather than presence: it is
+        # hidden with CSS, so it still mounts -- what must not happen is that
+        # somebody sees it or tabs into it.
+        chatter = [el for el in page.query_selector_all(
+            '.o_mailpro_record .o-mail-Form-chatter, '
+            '.o_mailpro_record .o-mail-Chatter') if el.is_visible()]
+        if chatter:
+            self.fail('the record pane still shows a chatter')
+
+        # The four readings of a conversation, in one strip over pane 3.
+        tabs = [el.inner_text().split('\n')[0].strip()
+                for el in page.query_selector_all('.o_mailpro_tab')]
+        if tabs != ['Mail', 'Everything', 'Files', 'Activities']:
+            self.fail(f'the tab strip reads {tabs}')
+        else:
+            for name in ('Everything', 'Files', 'Activities', 'Mail'):
+                tab = page.query_selector(f'.o_mailpro_tab:has-text("{name}")')
+                tab.click()
+                page.wait_for_timeout(900)
+                self.error_free(f'the {name} tab')
 
         # The screen's one primary action. A reader-only inbox is half a
         # product, and this is the click that proves it is not one.

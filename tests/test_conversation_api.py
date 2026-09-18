@@ -258,6 +258,81 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(
             self.Conversation.search_conversations(mailbox_id=self.mailbox.id), [])
 
+    # ------------------------------------------------------------- the tabs
+
+    def _note(self, body='<p>Marge op regel 3 is krap</p>'):
+        return self.env['mail.message'].create({
+            'model': 'crm.lead',
+            'res_id': self.lead.id,
+            'message_type': 'comment',
+            'body': body,
+        })
+
+    def test_the_mail_tab_is_the_correspondence_and_nothing_else(self):
+        self._mail()
+        self._note()
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual([m['kind'] for m in thread['messages']], ['mail'])
+
+    def test_everything_brings_the_notes_back(self):
+        """The record pane lost its chatter, so this tab is where the notes
+        went. If it cannot show them they exist nowhere on this screen."""
+        self._mail()
+        self._note()
+        thread = self.Conversation.read_conversation(
+            'crm.lead', self.lead.id, scope='all')
+        self.assertEqual(sorted(m['kind'] for m in thread['messages']),
+                         ['mail', 'note'])
+
+    def test_a_note_in_another_mailbox_s_conversation_is_still_a_note(self):
+        """A note carries no mailbox, so running it through the mailbox
+        filter would empty the tab that exists to show it."""
+        self._mail()
+        self._note()
+        thread = self.Conversation.read_conversation(
+            'crm.lead', self.lead.id, mailbox_id=self.mailbox.id, scope='all')
+        self.assertIn('note', [m['kind'] for m in thread['messages']])
+
+    def test_an_outgoing_reply_is_mail_even_when_odoo_calls_it_a_comment(self):
+        """The chatter posts a `comment`. One that went out over the wire is
+        correspondence, and filing it under "internal note" is the mistake on
+        this screen a customer eventually reads about."""
+        note = self._note(body='<p>Bevestigd, drie weken.</p>')
+        note.write({'x_direction': 'outgoing', 'x_mailbox_id': self.mailbox.id})
+        thread = self.Conversation.read_conversation(
+            'crm.lead', self.lead.id, scope='all')
+        self.assertEqual([m['kind'] for m in thread['messages']], ['mail'])
+
+    def test_files_and_activities_ride_along_with_every_tab(self):
+        """The counts are drawn on the strip itself, so they have to be the
+        same whichever tab is open. A number that moves when you click another
+        tab reads as a bug."""
+        attachment = self.env['ir.attachment'].create({
+            'name': 'offerte.pdf',
+            'datas': b'JVBERi0=',
+        })
+        self._mail().write({'attachment_ids': [(6, 0, attachment.ids)]})
+        self.env['mail.activity'].create({
+            'res_model': 'crm.lead',
+            'res_id': self.lead.id,
+            'activity_type_id': self.env.ref('mail.mail_activity_data_todo').id,
+            'summary': 'Levertijd navragen',
+            'user_id': self.env.user.id,
+        })
+        for scope in ('mail', 'all'):
+            thread = self.Conversation.read_conversation(
+                'crm.lead', self.lead.id, scope=scope)
+            self.assertEqual([f['name'] for f in thread['files']],
+                             ['offerte.pdf'], scope)
+            self.assertEqual([a['summary'] for a in thread['activities']],
+                             ['Levertijd navragen'], scope)
+
+    def test_a_conversation_with_neither_says_so_with_empty_lists(self):
+        self._mail()
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual(thread['files'], [])
+        self.assertEqual(thread['activities'], [])
+
     # ----------------------------------------------------------------- access
 
     def _mailbox_manager(self, login):

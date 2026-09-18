@@ -9,7 +9,9 @@
  * The record pane mounts Odoo's own form view. That is the one load-bearing
  * assumption in the whole screen, so it sits behind an error boundary: if the
  * form cannot render, the pane falls back to a link and the rest of the inbox
- * keeps working.
+ * keeps working. It shows the record and never its chatter: this screen writes
+ * in one pane, and what the chatter carried is the strip of four tabs over the
+ * thread -- Mail, Everything, Files, Activities.
  *
  * The panes themselves are draggable and the two outer ones fold away; that
  * lives in `use_panes.js`, because how wide a pane is has nothing to do with
@@ -27,10 +29,31 @@ import { usePanes } from "./use_panes";
 
 const PAGE = 30;
 
+// What a pane with nothing selected holds. A function rather than a constant:
+// four lists shared between two selections is one stale thread away from a
+// reply landing under the wrong subject.
+const EMPTY_THREAD = () => ({ messages: [], records: [], rejected: [], files: [], activities: [] });
+
 // Which mailboxes stand open in the rail. In the browser, next to the pane
 // widths: it is the same kind of preference, per person and per monitor, and
 // a table for it would have to be read on every open.
 const RAIL_KEY = "pan_mail_pro.rail";
+
+// Which of the four readings of a conversation this person left open. Theirs
+// rather than the conversation's: somebody clearing an inbox stays in Mail,
+// somebody catching up on a deal stays in Everything.
+const TAB_KEY = "pan_mail_pro.tab";
+const TAB_IDS = ["mail", "all", "files", "activities"];
+
+/** The tab this person last read in, or Mail. */
+function restoreTab() {
+    try {
+        const stored = browser.localStorage.getItem(TAB_KEY);
+        return TAB_IDS.includes(stored) ? stored : "mail";
+    } catch {
+        return "mail";
+    }
+}
 
 /** Stored state is somebody else's data by the time we read it back. */
 function restoreExpanded() {
@@ -138,7 +161,8 @@ export class ConversationView extends Component {
             limit: PAGE,
             hasMore: false,
             selected: null,
-            thread: { messages: [], records: [], rejected: [] },
+            tab: restoreTab(),
+            thread: EMPTY_THREAD(),
             // Which messages are open, and whose quoted history is unfolded.
             // Keyed by message id, so a thread that reloads under a reply
             // keeps nothing from the thread before it.
@@ -254,7 +278,7 @@ export class ConversationView extends Component {
                     await this.select(conversations[0]);
                 } else {
                     this.state.selected = null;
-                    this.state.thread = { messages: [], records: [], rejected: [] };
+                    this.state.thread = EMPTY_THREAD();
                 }
             }
         } catch (error) {
@@ -282,7 +306,7 @@ export class ConversationView extends Component {
         this.state.selected = conversation;
         this.state.showRejected = false;
         // Nothing from the previous thread stays under the new subject.
-        this.state.thread = { messages: [], records: [], rejected: [] };
+        this.state.thread = EMPTY_THREAD();
         this.state.open = {};
         this.state.quotes = {};
         this.split.clear();
@@ -293,6 +317,9 @@ export class ConversationView extends Component {
                     res_id: conversation.res_id,
                     message_id: conversation.message_id,
                     mailbox_id: this.state.mailboxId,
+                    // Files and Activities are two other lists over the same
+                    // conversation, so they read the mail thread underneath.
+                    scope: this.state.tab === "all" ? "all" : "mail",
                 }
             );
             if (seq === this.threadSeq) {
@@ -399,6 +426,82 @@ export class ConversationView extends Component {
     get selectedRecord() {
         const chips = this.state.thread.records || [];
         return chips.length ? chips[0] : null;
+    }
+
+    // ----------------------------------------------------------- the tabs
+
+    /**
+     * The strip itself. One control with four positions rather than a toggle
+     * plus a tab bar: two pieces of chrome over one pane is chrome competing
+     * with content.
+     */
+    get TABS() {
+        return [
+            { id: "mail", label: _t("Mail") },
+            { id: "all", label: _t("Everything") },
+            { id: "files", label: _t("Files") },
+            { id: "activities", label: _t("Activities") },
+        ];
+    }
+
+    /**
+     * The four readings of one conversation.
+     *
+     * Mail and Everything are the same list read twice, so switching between
+     * them re-reads the thread. Files and Activities came down with it, so
+     * they cost nothing to open and their counts do not move when you do.
+     */
+    async setTab(tab) {
+        if (tab === this.state.tab) {
+            return;
+        }
+        const reread = (tab === "all") !== (this.state.tab === "all");
+        this.state.tab = tab;
+        try {
+            browser.localStorage.setItem(TAB_KEY, tab);
+        } catch {
+            // A tab nobody can store is still a tab you can open today.
+        }
+        if (reread && this.state.selected) {
+            await this.select(this.state.selected);
+        }
+    }
+
+    /** The number beside a tab, drawn only when there is one. */
+    tabCount(tab) {
+        if (tab === "files") {
+            return (this.state.thread.files || []).length;
+        }
+        if (tab === "activities") {
+            return (this.state.thread.activities || []).length;
+        }
+        return 0;
+    }
+
+    /** What the reader downloads. Odoo's own attachment route, unchanged. */
+    fileUrl(file) {
+        return `/web/content/${file.id}?download=true`;
+    }
+
+    /** A size somebody can read, which is not a number of bytes. */
+    fileSize(bytes) {
+        const size = Number(bytes) || 0;
+        if (size < 1024) {
+            return `${size} B`;
+        }
+        if (size < 1024 * 1024) {
+            return `${Math.round(size / 1024)} kB`;
+        }
+        return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    openActivityRecord(activity) {
+        this.action.doAction({
+            type: "ir.actions.act_window",
+            res_model: activity.model,
+            res_id: activity.res_id,
+            views: [[false, "form"]],
+        });
     }
 
     // --------------------------------------------------------- the stack
@@ -579,6 +682,65 @@ export class ConversationView extends Component {
                 },
             },
             { onClose: () => this.select(conversation) }
+        );
+    }
+
+    /**
+     * An internal note, in the same composer and the same pane.
+     *
+     * The record pane no longer carries a chatter, so this is where a note
+     * gets written. No recipients and no parent: a note reaches the record's
+     * followers through Odoo's own subtype and threads nothing outwards. A
+     * recipient row on a note is what makes people believe a note is a mail.
+     */
+    async logNote() {
+        const conversation = this.state.selected;
+        if (!conversation || !conversation.model) {
+            return;
+        }
+        await this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "mail.compose.message",
+                views: [[false, "form"]],
+                target: "new",
+                context: {
+                    default_model: conversation.model,
+                    default_res_ids: [conversation.res_id],
+                    default_composition_mode: "comment",
+                    default_subtype_xmlid: "mail.mt_note",
+                },
+            },
+            { onClose: () => this.select(conversation) }
+        );
+    }
+
+    /**
+     * A follow-up with a date on it is a `mail.activity` on the record.
+     *
+     * Odoo's own scheduler, so the activity lands in the Activities clock the
+     * rest of the database reads. This module has never kept a queue of its
+     * own and this is not the place to start one.
+     */
+    async scheduleActivity() {
+        const record = this.selectedRecord;
+        if (!record) {
+            return;
+        }
+        await this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "mail.activity.schedule",
+                views: [[false, "form"]],
+                target: "new",
+                context: {
+                    active_model: record.model,
+                    active_ids: [record.res_id],
+                    default_res_model: record.model,
+                    default_res_ids: [record.res_id],
+                },
+            },
+            { onClose: () => this.select(this.state.selected) }
         );
     }
 

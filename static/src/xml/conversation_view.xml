@@ -174,10 +174,18 @@
                                         </span>
                                     </div>
                                 </div>
-                                <!-- One primary action per screen. This is it. -->
-                                <button type="button" class="btn btn-primary btn-sm flex-shrink-0"
-                                        t-if="state.selected.model"
-                                        t-on-click="() => this.reply()">Reply</button>
+                                <!--
+                                    One primary action per screen: Reply. Log
+                                    note is beside it and quiet, because the
+                                    record pane no longer carries a chatter
+                                    and a note has to be writable somewhere.
+                                -->
+                                <div t-if="state.selected.model" class="d-flex align-items-center gap-2 flex-shrink-0">
+                                    <button type="button" class="btn btn-link btn-sm p-0"
+                                            t-on-click="() => this.logNote()">Log note</button>
+                                    <button type="button" class="btn btn-primary btn-sm"
+                                            t-on-click="() => this.reply()">Reply</button>
+                                </div>
                             </div>
                             <div t-if="state.thread.records.length" class="o_mailpro_chips d-flex align-items-center gap-2">
                                 <span class="o_mailpro_label">Filed on</span>
@@ -206,6 +214,26 @@
                                     </li>
                                 </ul>
                             </div>
+                            <!--
+                                Four readings of one conversation, one strip.
+                                This is what the record pane's chatter used to
+                                carry: the notes, the record's own events, the
+                                files and the follow-ups. A count is drawn
+                                only when there is one.
+                            -->
+                            <div class="o_mailpro_tabs d-flex align-items-center gap-1" role="tablist"
+                                 aria-label="What to read about this conversation">
+                                <button t-foreach="TABS" t-as="tab" t-key="tab.id"
+                                        type="button" role="tab"
+                                        class="o_mailpro_tab"
+                                        t-att-class="{ 'o_mailpro_tab_active': state.tab === tab.id }"
+                                        t-att-aria-selected="state.tab === tab.id ? 'true' : 'false'"
+                                        t-on-click="() => this.setTab(tab.id)">
+                                    <span t-esc="tab.label"/>
+                                    <span t-if="tabCount(tab.id)" class="o_mailpro_tab_count"
+                                          t-esc="tabCount(tab.id)"/>
+                                </button>
+                            </div>
                         </div>
                         <!--
                             The thread is a stack, the way every mail client
@@ -218,10 +246,39 @@
                             The header is the toggle and it is a button, so
                             the whole history is reachable with a keyboard.
                         -->
-                        <div class="o_mailpro_messages">
-                            <article t-foreach="state.thread.messages" t-as="message" t-key="message.id"
+                        <t t-if="state.tab === 'files'">
+                            <t t-call="pan_mail_pro.ConversationFiles"/>
+                        </t>
+                        <t t-elif="state.tab === 'activities'">
+                            <t t-call="pan_mail_pro.ConversationActivities"/>
+                        </t>
+                        <div t-else="" class="o_mailpro_messages">
+                            <t t-foreach="state.thread.messages" t-as="message" t-key="message.id">
+                            <!--
+                                A record event is one line, never a card:
+                                "Stage: New to Qualified" is the whole message,
+                                and forty of them as cards is a page you
+                                scroll past to reach the mail.
+                            -->
+                            <div t-if="message.kind === 'event'" class="o_mailpro_event d-flex justify-content-between gap-2">
+                                <span class="min-w-0">
+                                    <t t-if="message.tracking.length">
+                                        <span t-foreach="message.tracking" t-as="change" t-key="change.field"
+                                              class="o_mailpro_event_change">
+                                            <t t-esc="change.field"/>: <t t-esc="change.old or '-'"/>
+                                            &#8594; <t t-esc="change.new or '-'"/>
+                                        </span>
+                                    </t>
+                                    <t t-else=""><span t-esc="message.subject or message.author"/></t>
+                                </span>
+                                <span class="o_mailpro_date flex-shrink-0" t-att-title="fullDate(message.date)"
+                                      t-esc="day(message.date)"/>
+                            </div>
+                            <article t-else=""
                                      class="o_mailpro_message"
-                                     t-att-class="{ 'o_mailpro_message_open': isOpen(message) }">
+                                     t-att-class="{
+                                        'o_mailpro_message_open': isOpen(message),
+                                        'o_mailpro_message_note': message.kind === 'note' }">
                                 <button type="button" class="o_mailpro_message_head d-flex gap-2 w-100"
                                         t-att-aria-expanded="isOpen(message) ? 'true' : 'false'"
                                         t-on-click="() => this.toggleMessage(message)">
@@ -231,8 +288,14 @@
                                           aria-hidden="true" t-esc="initials(message.author)"/>
                                     <span class="o_mailpro_message_lines flex-grow-1 min-w-0">
                                         <span class="d-flex justify-content-between align-items-baseline gap-2">
-                                            <span class="o_mailpro_message_from text-truncate"
-                                                  t-esc="message.author"/>
+                                            <span class="min-w-0 d-flex align-items-baseline gap-2">
+                                                <span class="o_mailpro_message_from text-truncate"
+                                                      t-esc="message.author"/>
+                                                <!-- The one thing that must never be
+                                                     mistaken for a mail to the customer. -->
+                                                <span t-if="message.kind === 'note'"
+                                                      class="o_mailpro_note_tag flex-shrink-0">Internal note</span>
+                                            </span>
                                             <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
                                                   t-esc="day(message.date)"/>
                                         </span>
@@ -256,6 +319,7 @@
                                     </div>
                                 </t>
                             </article>
+                            </t>
                         </div>
                     </t>
                     <div t-else="" class="o_mailpro_empty">
@@ -297,6 +361,63 @@
             <span t-esc="folder.name"/>
             <span t-if="folder.count" class="o_mailpro_count" t-esc="folderCount(folder)"/>
         </button>
+    </t>
+
+    <!--
+        The files of a conversation. Every attachment on it, newest first,
+        which is the list the chatter's paperclip used to hold. A row is a
+        link and not a preview: what people do here is open the quote they
+        were sent, and a gallery is a second screen to maintain.
+    -->
+    <t t-name="pan_mail_pro.ConversationFiles">
+        <div class="o_mailpro_files">
+            <t t-if="state.thread.files.length">
+                <a t-foreach="state.thread.files" t-as="file" t-key="file.id"
+                   class="o_mailpro_file d-flex align-items-center justify-content-between gap-2"
+                   t-att-href="fileUrl(file)" t-att-title="file.name">
+                    <span class="o_mailpro_file_name text-truncate" t-esc="file.name"/>
+                    <span class="o_mailpro_muted flex-shrink-0">
+                        <t t-esc="fileSize(file.size)"/> &#183; <t t-esc="day(file.date)"/>
+                    </span>
+                </a>
+            </t>
+            <div t-else="" class="o_mailpro_empty">
+                <h3 class="o_mailpro_empty_title">No files on this conversation.</h3>
+                <p class="o_mailpro_empty_text">Attachments on its mail and its notes appear here.</p>
+            </div>
+        </div>
+    </t>
+
+    <!--
+        The follow-ups. `mail.activity` on the records this conversation
+        touched, scheduled through Odoo's own wizard so it lands in the
+        Activities clock the rest of the database reads.
+    -->
+    <t t-name="pan_mail_pro.ConversationActivities">
+        <div class="o_mailpro_activities">
+            <div t-if="selectedRecord" class="o_mailpro_activities_head">
+                <button type="button" class="btn btn-secondary btn-sm"
+                        t-on-click="() => this.scheduleActivity()">Schedule</button>
+            </div>
+            <t t-if="state.thread.activities.length">
+                <button t-foreach="state.thread.activities" t-as="activity" t-key="activity.id"
+                        type="button" class="o_mailpro_activity"
+                        t-att-class="{ 'o_mailpro_activity_late': activity.state === 'overdue' }"
+                        t-on-click="() => this.openActivityRecord(activity)">
+                    <span class="d-flex justify-content-between align-items-baseline gap-2">
+                        <span class="o_mailpro_activity_summary text-truncate" t-esc="activity.summary"/>
+                        <span class="o_mailpro_date flex-shrink-0" t-esc="activity.deadline"/>
+                    </span>
+                    <span class="o_mailpro_muted d-block text-truncate">
+                        <t t-esc="activity.user"/><t t-if="activity.record_name"> &#183; <t t-esc="activity.record_name"/></t>
+                    </span>
+                </button>
+            </t>
+            <div t-else="" class="o_mailpro_empty">
+                <h3 class="o_mailpro_empty_title">Nothing scheduled.</h3>
+                <p class="o_mailpro_empty_text">A follow-up with a date on it lives on the record.</p>
+            </div>
+        </div>
     </t>
 
     <!--
