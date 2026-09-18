@@ -39,28 +39,41 @@
                 <!--
                     1. where you are: the mailbox, and inside it the folder.
                     The same shape as every mail client, because reading mail
-                    is the one job people already know the layout of. Only the
-                    open mailbox shows its folders: the counts are that
-                    mailbox's, and five rows per account is a rail you scroll.
+                    is the one job people already know the layout of. Every
+                    mailbox folds away the way Outlook folds an account: the
+                    chevron opens and closes it, the name opens the mailbox
+                    itself. A folded mailbox is not counted, so a rail of six
+                    accounts costs what the ones you actually watch cost.
                 -->
                 <nav t-if="!panes.state.collapsed.rail" class="o_mailpro_rail"
                      aria-label="Mailboxes and folders"
                      t-attf-style="flex-basis: {{panes.state.rail}}px">
                     <t t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id">
-                        <button type="button"
-                                class="o_mailpro_mailbox d-flex align-items-center gap-2"
-                                t-att-class="{ 'o_mailpro_mailbox_active': mailbox.id === state.mailboxId }"
-                                t-att-aria-current="mailbox.id === state.mailboxId ? 'true' : undefined"
-                                t-on-click="() => this.setMailbox(mailbox.id)">
-                            <span class="o_mailpro_mailbox_name text-truncate" t-esc="mailbox.email"/>
-                        </button>
-                        <div t-if="mailbox.id === state.mailboxId" class="o_mailpro_folders">
+                        <div class="o_mailpro_mailbox_row d-flex align-items-center">
+                            <button type="button" class="o_mailpro_mailbox_toggle flex-shrink-0"
+                                    t-att-aria-expanded="isExpanded(mailbox.id) ? 'true' : 'false'"
+                                    t-attf-aria-label="{{ isExpanded(mailbox.id) ? 'Hide folders of' : 'Show folders of' }} {{ mailbox.email }}"
+                                    t-on-click="() => this.toggleMailbox(mailbox.id)">
+                                <i class="fa" aria-hidden="true"
+                                   t-att-class="isExpanded(mailbox.id) ? 'fa-caret-down' : 'fa-caret-right'"/>
+                            </button>
+                            <button type="button"
+                                    class="o_mailpro_mailbox d-flex align-items-center gap-2"
+                                    t-att-class="{ 'o_mailpro_mailbox_active': mailbox.id === state.mailboxId }"
+                                    t-att-aria-current="mailbox.id === state.mailboxId ? 'true' : undefined"
+                                    t-on-click="() => this.setMailbox(mailbox.id)">
+                                <span class="o_mailpro_mailbox_name text-truncate" t-esc="mailbox.email"/>
+                            </button>
+                        </div>
+                        <div t-if="isExpanded(mailbox.id)" class="o_mailpro_folders">
+                            <t t-set="railMailbox" t-value="mailbox.id"/>
                             <t t-call="pan_mail_pro.ConversationFolders"/>
                         </div>
                     </t>
                     <!-- No mailbox configured yet: the folders are still the
                          reader's own mail, so the rail is not empty. -->
                     <div t-if="!state.mailboxes.length" class="o_mailpro_folders">
+                        <t t-set="railMailbox" t-value="false"/>
                         <t t-call="pan_mail_pro.ConversationFolders"/>
                     </div>
                 </nav>
@@ -106,18 +119,35 @@
                                 t-att-aria-current="state.selected and sameConversation(conversation, state.selected) ? 'true' : undefined"
                                 t-on-click="() => this.select(conversation)">
                             <span t-if="conversation.unread" class="visually-hidden">Unread. </span>
-                            <div class="d-flex justify-content-between align-items-baseline gap-2">
-                                <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
-                                <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
-                                      t-esc="day(conversation.date)"/>
-                            </div>
-                            <div class="o_mailpro_subject text-truncate" t-esc="conversation.subject"/>
-                            <div class="o_mailpro_preview text-truncate" t-esc="conversation.preview"/>
-                            <div class="o_mailpro_meta d-flex align-items-center gap-2">
-                                <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
-                                      t-esc="conversation.record_name"/>
-                                <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
-                                <span t-if="conversation.waiting_on_us" class="o_mailpro_chip_warn">Needs reply</span>
+                            <!--
+                                The contact's own picture, the way every mail
+                                client draws a list: you find the conversation
+                                you want by who it is with, before you read a
+                                word. A partner without a photo gets Odoo's own
+                                letter circle; a sender who is nobody in the
+                                database gets initials from the name on the
+                                mail.
+                            -->
+                            <div class="d-flex align-items-start gap-2">
+                                <img t-if="conversation.partner_id" class="o_mailpro_avatar flex-shrink-0"
+                                     alt="" t-att-src="partnerAvatar(conversation)"/>
+                                <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
+                                      aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
+                                <span class="flex-grow-1 min-w-0">
+                                    <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                        <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
+                                        <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
+                                              t-esc="day(conversation.date)"/>
+                                    </span>
+                                    <span class="o_mailpro_subject d-block text-truncate" t-esc="conversation.subject"/>
+                                    <span class="o_mailpro_preview d-block text-truncate" t-esc="conversation.preview"/>
+                                    <span class="o_mailpro_meta d-flex align-items-center gap-2">
+                                        <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
+                                              t-esc="conversation.record_name"/>
+                                        <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
+                                        <span t-if="conversation.waiting_on_us" class="o_mailpro_chip_warn">Needs reply</span>
+                                    </span>
+                                </span>
                             </div>
                         </button>
                         <div t-if="state.hasMore" class="o_mailpro_more">
@@ -144,10 +174,35 @@
                                         </span>
                                     </div>
                                 </div>
-                                <!-- One primary action per screen. This is it. -->
-                                <button type="button" class="btn btn-primary btn-sm flex-shrink-0"
-                                        t-if="state.selected.model"
-                                        t-on-click="() => this.reply()">Reply</button>
+                                <!--
+                                    One primary action per screen. This is it,
+                                    and while a reply is open it is Send: the
+                                    button does not move, it changes what it
+                                    does. Log note sits beside Reply and quiet,
+                                    because the record pane no longer carries a
+                                    chatter and a note has to be writable
+                                    somewhere.
+                                -->
+                                <div t-if="state.selected.model and !composer.state.open"
+                                     class="d-flex align-items-center gap-2 flex-shrink-0">
+                                    <button type="button" class="btn btn-link btn-sm"
+                                            t-on-click="() => this.logNote()">Log note</button>
+                                    <button type="button" class="btn btn-primary btn-sm"
+                                            t-on-click="() => this.reply()">Reply</button>
+                                </div>
+                                <div t-if="composer.state.open"
+                                     class="d-flex align-items-center gap-2 flex-shrink-0">
+                                    <button type="button" class="btn btn-link btn-sm"
+                                            t-on-click="() => composer.close()">Discard</button>
+                                    <!-- Same button, and it says what it will
+                                         do: a note is logged, a reply is sent. -->
+                                    <button type="button" class="btn btn-primary btn-sm"
+                                            t-att-disabled="composer.state.sending"
+                                            t-on-click="() => composer.send()">
+                                        <t t-if="composer.state.mode === 'note'">Log</t>
+                                        <t t-else="">Send</t>
+                                    </button>
+                                </div>
                             </div>
                             <div t-if="state.thread.records.length" class="o_mailpro_chips d-flex align-items-center gap-2">
                                 <span class="o_mailpro_label">Linked to</span>
@@ -238,6 +293,27 @@
                                     <span t-esc="target.label"/>
                                 </button>
                             </div>
+                            <!--
+                                Four readings of one conversation, one strip.
+                                This is what the record pane's chatter used to
+                                carry: the notes, the record's own events, the
+                                files and the follow-ups. A count is drawn
+                                only when there is one.
+                            -->
+                            <div t-if="!composer.state.open"
+                                 class="o_mailpro_tabs d-flex align-items-center gap-1" role="tablist"
+                                 aria-label="What to read about this conversation">
+                                <button t-foreach="TABS" t-as="tab" t-key="tab.id"
+                                        type="button" role="tab"
+                                        class="o_mailpro_tab"
+                                        t-att-class="{ 'o_mailpro_tab_active': state.tab === tab.id }"
+                                        t-att-aria-selected="state.tab === tab.id ? 'true' : 'false'"
+                                        t-on-click="() => this.setTab(tab.id)">
+                                    <span t-esc="tab.label"/>
+                                    <span t-if="tabCount(tab.id)" class="o_mailpro_tab_count"
+                                          t-esc="tabCount(tab.id)"/>
+                                </button>
+                            </div>
                         </div>
                         <!--
                             The thread is a stack, the way every mail client
@@ -250,10 +326,51 @@
                             The header is the toggle and it is a button, so
                             the whole history is reachable with a keyboard.
                         -->
-                        <div class="o_mailpro_messages">
-                            <article t-foreach="state.thread.messages" t-as="message" t-key="message.id"
+                        <!--
+                            Answering happens where the mail is. The composer
+                            takes this pane instead of a dialog over the
+                            screen, so the list, the record and the mail being
+                            answered all stay readable while somebody writes.
+                            It is Odoo's own composer form; `use_composer.js`
+                            says what mounting it here costs.
+                        -->
+                        <div t-if="composer.state.open" class="o_mailpro_composer"
+                             role="region" aria-label="Reply">
+                            <ComposerForm t-props="composer.formProps"/>
+                        </div>
+                        <t t-elif="state.tab === 'files'">
+                            <t t-call="pan_mail_pro.ConversationFiles"/>
+                        </t>
+                        <t t-elif="state.tab === 'activities'">
+                            <t t-call="pan_mail_pro.ConversationActivities"/>
+                        </t>
+                        <div t-else="" class="o_mailpro_messages">
+                            <t t-foreach="state.thread.messages" t-as="message" t-key="message.id">
+                            <!--
+                                A record event is one line, never a card:
+                                "Stage: New to Qualified" is the whole message,
+                                and forty of them as cards is a page you
+                                scroll past to reach the mail.
+                            -->
+                            <div t-if="message.kind === 'event'" class="o_mailpro_event d-flex justify-content-between gap-2">
+                                <span class="min-w-0">
+                                    <t t-if="message.tracking.length">
+                                        <span t-foreach="message.tracking" t-as="change" t-key="change.field"
+                                              class="o_mailpro_event_change">
+                                            <t t-esc="change.field"/>: <t t-esc="change.old or '-'"/>
+                                            &#8594; <t t-esc="change.new or '-'"/>
+                                        </span>
+                                    </t>
+                                    <t t-else=""><span t-esc="message.subject or message.author"/></t>
+                                </span>
+                                <span class="o_mailpro_date flex-shrink-0" t-att-title="fullDate(message.date)"
+                                      t-esc="day(message.date)"/>
+                            </div>
+                            <article t-else=""
                                      class="o_mailpro_message"
-                                     t-att-class="{ 'o_mailpro_message_open': isOpen(message) }">
+                                     t-att-class="{
+                                        'o_mailpro_message_open': isOpen(message),
+                                        'o_mailpro_message_note': message.kind === 'note' }">
                                 <button type="button" class="o_mailpro_message_head d-flex gap-2 w-100"
                                         t-att-aria-expanded="isOpen(message) ? 'true' : 'false'"
                                         t-on-click="() => this.toggleMessage(message)">
@@ -263,8 +380,14 @@
                                           aria-hidden="true" t-esc="initials(message.author)"/>
                                     <span class="o_mailpro_message_lines flex-grow-1 min-w-0">
                                         <span class="d-flex justify-content-between align-items-baseline gap-2">
-                                            <span class="o_mailpro_message_from text-truncate"
-                                                  t-esc="message.author"/>
+                                            <span class="min-w-0 d-flex align-items-baseline gap-2">
+                                                <span class="o_mailpro_message_from text-truncate"
+                                                      t-esc="message.author"/>
+                                                <!-- The one thing that must never be
+                                                     mistaken for a mail to the customer. -->
+                                                <span t-if="message.kind === 'note'"
+                                                      class="o_mailpro_note_tag flex-shrink-0">Internal note</span>
+                                            </span>
                                             <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
                                                   t-esc="day(message.date)"/>
                                         </span>
@@ -288,6 +411,7 @@
                                     </div>
                                 </t>
                             </article>
+                            </t>
                         </div>
                     </t>
                     <div t-else="" class="o_mailpro_empty">
@@ -313,17 +437,79 @@
         </div>
     </t>
 
-    <!-- The folders of the open mailbox. One definition, two call sites. -->
+    <!--
+        The folders of one mailbox, `railMailbox`. One definition, two call
+        sites. A folder is only the open one when its mailbox is the open one:
+        two unfolded mailboxes must not both claim to be showing Inbox.
+    -->
     <t t-name="pan_mail_pro.ConversationFolders">
-        <button t-foreach="state.folders" t-as="folder" t-key="folder.id"
+        <t t-set="isOpenMailbox" t-value="(railMailbox or false) === (state.mailboxId or false)"/>
+        <button t-foreach="foldersFor(railMailbox)" t-as="folder" t-key="folder.id"
                 type="button"
                 class="o_mailpro_folder d-flex align-items-center justify-content-between"
-                t-att-class="{ 'o_mailpro_folder_active': folder.id === state.folder }"
-                t-att-aria-current="folder.id === state.folder ? 'true' : undefined"
-                t-on-click="() => this.setFolder(folder.id)">
+                t-att-class="{ 'o_mailpro_folder_active': isOpenMailbox and folder.id === state.folder }"
+                t-att-aria-current="isOpenMailbox and folder.id === state.folder ? 'true' : undefined"
+                t-on-click="() => this.setFolder(folder.id, railMailbox or null)">
             <span t-esc="folder.name"/>
             <span t-if="folder.count" class="o_mailpro_count" t-esc="folderCount(folder)"/>
         </button>
+    </t>
+
+    <!--
+        The files of a conversation. Every attachment on it, newest first,
+        which is the list the chatter's paperclip used to hold. A row is a
+        link and not a preview: what people do here is open the quote they
+        were sent, and a gallery is a second screen to maintain.
+    -->
+    <t t-name="pan_mail_pro.ConversationFiles">
+        <div class="o_mailpro_files">
+            <t t-if="state.thread.files.length">
+                <a t-foreach="state.thread.files" t-as="file" t-key="file.id"
+                   class="o_mailpro_file d-flex align-items-center justify-content-between gap-2"
+                   t-att-href="fileUrl(file)" t-att-title="file.name">
+                    <span class="o_mailpro_file_name text-truncate" t-esc="file.name"/>
+                    <span class="o_mailpro_muted flex-shrink-0">
+                        <t t-esc="fileSize(file.size)"/> &#183; <t t-esc="day(file.date)"/>
+                    </span>
+                </a>
+            </t>
+            <div t-else="" class="o_mailpro_empty">
+                <h3 class="o_mailpro_empty_title">No files on this conversation.</h3>
+                <p class="o_mailpro_empty_text">Attachments on its mail and its notes appear here.</p>
+            </div>
+        </div>
+    </t>
+
+    <!--
+        The follow-ups. `mail.activity` on the records this conversation
+        touched, scheduled through Odoo's own wizard so it lands in the
+        Activities clock the rest of the database reads.
+    -->
+    <t t-name="pan_mail_pro.ConversationActivities">
+        <div class="o_mailpro_activities">
+            <div t-if="selectedRecord" class="o_mailpro_activities_head">
+                <button type="button" class="btn btn-secondary btn-sm"
+                        t-on-click="() => this.scheduleActivity()">Schedule</button>
+            </div>
+            <t t-if="state.thread.activities.length">
+                <button t-foreach="state.thread.activities" t-as="activity" t-key="activity.id"
+                        type="button" class="o_mailpro_activity"
+                        t-att-class="{ 'o_mailpro_activity_late': activity.state === 'overdue' }"
+                        t-on-click="() => this.openActivityRecord(activity)">
+                    <span class="d-flex justify-content-between align-items-baseline gap-2">
+                        <span class="o_mailpro_activity_summary text-truncate" t-esc="activity.summary"/>
+                        <span class="o_mailpro_date flex-shrink-0" t-esc="activity.deadline"/>
+                    </span>
+                    <span class="o_mailpro_muted d-block text-truncate">
+                        <t t-esc="activity.user"/><t t-if="activity.record_name"> &#183; <t t-esc="activity.record_name"/></t>
+                    </span>
+                </button>
+            </t>
+            <div t-else="" class="o_mailpro_empty">
+                <h3 class="o_mailpro_empty_title">Nothing scheduled.</h3>
+                <p class="o_mailpro_empty_text">A follow-up with a date on it lives on the record.</p>
+            </div>
+        </div>
     </t>
 
     <!--
@@ -354,6 +540,14 @@
                 <i class="fa" t-att-class="panes.chevron(divider)" aria-hidden="true"/>
             </button>
         </div>
+    </t>
+
+    <!--
+        The composer, one component deep so the env mail's composer form needs
+        stops at it rather than reaching the record pane. See use_composer.js.
+    -->
+    <t t-name="pan_mail_pro.ComposerForm">
+        <View t-props="props.viewProps"/>
     </t>
 
     <t t-name="pan_mail_pro.RecordPane">

@@ -136,14 +136,22 @@ $mailpro-warn: #c0392b;
     }
 
     // The account, and under it its folders. Same shape as the mail client
-    // next to this one, so nobody has to learn where they are.
+    // next to this one, so nobody has to learn where they are. The row is the
+    // caret and the name: two controls, because folding a mailbox away and
+    // opening it are two different intentions.
+    .o_mailpro_mailbox_row {
+        margin-top: 0.25rem;
+
+        &:first-child { margin-top: 0; }
+    }
+
     .o_mailpro_mailbox {
-        width: 100%;
+        flex: 1 1 auto;
+        min-width: 0;
         border: 0;
         background: none;
         text-align: left;
-        padding: 0.5rem 0.625rem;
-        margin-top: 0.25rem;
+        padding: 0.5rem 0.625rem 0.5rem 0.25rem;
         border-radius: 0.25rem;
         font-size: 0.75rem;
         font-weight: 600;
@@ -152,7 +160,23 @@ $mailpro-warn: #c0392b;
         cursor: pointer;
 
         &:hover { background: rgba(0, 29, 33, 0.04); }
-        &:first-child { margin-top: 0; }
+    }
+
+    // A caret with a 24px target, which is what a finger and a shaking hand
+    // both need; the glyph itself stays as quiet as the label beside it.
+    .o_mailpro_mailbox_toggle {
+        width: 1.5rem;
+        height: 1.5rem;
+        border: 0;
+        background: none;
+        padding: 0;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        line-height: 1;
+        color: $mailpro-faint;
+        cursor: pointer;
+
+        &:hover { background: rgba(0, 29, 33, 0.06); }
     }
 
     .o_mailpro_mailbox_name { min-width: 0; }
@@ -191,6 +215,7 @@ $mailpro-warn: #c0392b;
     // mouse-only affordance, and this screen is navigated with a keyboard all
     // day by the people who live in it.
     .o_mailpro_mailbox,
+    .o_mailpro_mailbox_toggle,
     .o_mailpro_folder,
     .o_mailpro_item,
     .o_mailpro_chip_button,
@@ -206,6 +231,26 @@ $mailpro-warn: #c0392b;
     }
 
     .o_mailpro_more { padding: 0.75rem 1rem; text-align: center; }
+
+    // The picture is what makes a list or a stack scannable at a glance: you
+    // find the line you want by who it is with, long before you read a name.
+    // Shared by the conversation list and the thread.
+    .o_mailpro_avatar {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+
+    .o_mailpro_avatar_text {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(93, 91, 214, 0.14);
+        color: $mailpro-accent-ink;
+        font-size: 0.6875rem;
+        font-weight: 600;
+    }
 
     // 2. the list
     .o_mailpro_list {
@@ -325,6 +370,81 @@ $mailpro-warn: #c0392b;
     // picking a model here is the first half of picking a record.
     .o_mailpro_relink { margin-top: 0.75rem; }
 
+    // The tab strip: four readings of one conversation, and the only chrome
+    // between the matching row and the mail. Underline rather than a pill
+    // row, so the strip weighs less than the Reply button above it.
+    .o_mailpro_tabs { margin: 0.875rem -0.25rem -1rem; }
+
+    .o_mailpro_tab {
+        border: 0;
+        background: none;
+        padding: 0.375rem 0.5rem 0.625rem;
+        font-size: 0.8125rem;
+        color: $mailpro-muted;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+
+        &:hover { color: $mailpro-ink; }
+
+        &:focus-visible {
+            outline: 2px solid $mailpro-accent;
+            outline-offset: -2px;
+            border-radius: 0.25rem;
+        }
+    }
+
+    .o_mailpro_tab_active {
+        color: $mailpro-ink;
+        font-weight: 600;
+        border-bottom-color: $mailpro-accent;
+    }
+
+    .o_mailpro_tab_count {
+        margin-left: 0.3125rem;
+        font-size: 0.6875rem;
+        color: $mailpro-faint;
+    }
+
+    .o_mailpro_tab_active .o_mailpro_tab_count { color: $mailpro-accent-ink; }
+
+    // 3b. the reply, in the same pane
+    //
+    // The composer is Odoo's own form view, so it needs the same armour as
+    // the record pane: the form renderer wears `d-flex flex-nowrap` with
+    // Bootstrap's `!important` behind it, and its field grid is sized for a
+    // window rather than for a pane.
+    .o_mailpro_composer {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden auto;
+        max-width: 48rem;
+
+        .o_form_renderer {
+            display: block !important;
+            width: 100%;
+        }
+
+        .o_form_view,
+        .o_form_sheet_bg,
+        .o_form_sheet {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-shadow: none;
+            border: 0;
+        }
+
+        .o_inner_group { grid-template-columns: minmax(0, 1fr) !important; }
+
+        // The paperclip and the template selector come from the arch's
+        // footer, which only a dialog draws. Here they sit under the body,
+        // where the Send button would have been in the dialog.
+        .o_mailpro_composer_tools {
+            padding-top: 0.5rem;
+            border-top: 1px solid $mailpro-line;
+        }
+    }
+
     // Mail is prose, and prose has a comfortable width. The column stops
     // well before the window does.
     .o_mailpro_messages {
@@ -366,27 +486,79 @@ $mailpro-warn: #c0392b;
         padding-bottom: 0.625rem;
     }
 
-    // The picture is what makes a stack scannable at a glance: you find the
-    // message you want by who wrote it long before you read a name.
-    .o_mailpro_avatar {
-        width: 2rem;
-        height: 2rem;
-        border-radius: 50%;
-        object-fit: cover;
-    }
-
-    .o_mailpro_avatar_text {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(93, 91, 214, 0.14);
-        color: $mailpro-accent-ink;
-        font-size: 0.6875rem;
-        font-weight: 600;
-    }
-
     .o_mailpro_message_from { font-size: 0.8125rem; font-weight: 600; }
     .o_mailpro_message_snippet { font-size: 0.75rem; color: $mailpro-muted; }
+
+    // A note is not correspondence, and the whole point of drawing it apart
+    // is that nobody reads it as mail the customer received. Indented, on
+    // its own paper, with the word on it.
+    .o_mailpro_message_note {
+        margin-left: 1.5rem;
+        background: rgba(0, 29, 33, 0.02);
+        border-left: 2px solid $mailpro-line;
+        border-radius: 0 0.5rem 0.5rem 0;
+    }
+
+    .o_mailpro_note_tag {
+        padding: 0.0625rem 0.375rem;
+        border-radius: 0.25rem;
+        background: rgba(0, 29, 33, 0.06);
+        color: $mailpro-faint;
+        font-size: 0.625rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+
+    // A record event is a line in the margin of the correspondence, never a
+    // card: forty stage changes as cards is a page you scroll past.
+    .o_mailpro_event {
+        padding: 0.3125rem 0.75rem 0.3125rem 3.25rem;
+        font-size: 0.75rem;
+        color: $mailpro-muted;
+    }
+
+    .o_mailpro_event_change { display: block; }
+
+    // The two lists that are not the thread. Same rhythm as the conversation
+    // list, so nothing on this screen has to be learned twice.
+    .o_mailpro_files,
+    .o_mailpro_activities {
+        flex: 1 1 auto;
+        padding: 0.75rem 1.375rem;
+        overflow-y: auto;
+        max-width: 48rem;
+    }
+
+    .o_mailpro_activities_head { margin-bottom: 0.75rem; }
+
+    .o_mailpro_file,
+    .o_mailpro_activity {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-bottom: 1px solid $mailpro-line-soft;
+        background: none;
+        text-align: left;
+        padding: 0.625rem 0.25rem;
+        font-size: 0.8125rem;
+        color: $mailpro-ink-soft;
+        text-decoration: none;
+        cursor: pointer;
+
+        &:hover { background: rgba(0, 29, 33, 0.03); color: $mailpro-ink; }
+
+        &:focus-visible {
+            outline: 2px solid $mailpro-accent;
+            outline-offset: -2px;
+            border-radius: 0.25rem;
+        }
+    }
+
+    .o_mailpro_file_name,
+    .o_mailpro_activity_summary { font-weight: 600; }
+
+    .o_mailpro_activity_late .o_mailpro_activity_summary { color: $mailpro-warn; }
 
     // The body lines up under the name, not under the avatar.
     .o_mailpro_body {
@@ -445,13 +617,27 @@ $mailpro-warn: #c0392b;
 
         .o_form_sheet_bg,
         .o_form_sheet,
-        .o-mail-Form-chatter,
         .o_form_view {
             width: 100% !important;
             max-width: 100% !important;
             min-width: 0 !important;
             box-shadow: none;
         }
+
+        // The chatter goes. This screen offered two composers a divider
+        // apart, and they are not the same composer: pane 3's reply threads
+        // under the message it answers and addresses the people who were on
+        // it, the chatter's does neither. What the chatter carried -- the
+        // notes, the record's events, the files, the follow-ups -- is the tab
+        // strip over pane 3.
+        //
+        // `display: none` and not `visibility`: a hidden composer somebody
+        // can still tab into is the same second composer, one keypress away.
+        // `!important` because Odoo's own markup wears Bootstrap's display
+        // utilities, which carry it (19.0.7.7.1 cost a release to that).
+        .o-mail-Form-chatter,
+        .o-mail-Chatter,
+        .o_FormRenderer_chatterContainer { display: none !important; }
 
         // Odoo's field groups are a two-column grid sized for a window, not
         // for a pane. One column here, so a value is never half a word.
@@ -468,7 +654,6 @@ $mailpro-warn: #c0392b;
 
         .o_form_sheet_bg { padding: 0; border: 0; }
         .o_form_sheet { padding: 1rem; margin: 0; }
-        .o-mail-Form-chatter { border-left: 0; }
     }
 
     .o_mailpro_record_head {

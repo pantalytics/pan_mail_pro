@@ -7,9 +7,11 @@ Run with: python -m odoo -d test_db --test-enable --test-tags=pan_mail_pro
 from datetime import datetime
 from unittest.mock import patch
 from odoo.tests import TransactionCase, tagged
+from odoo.tools import mute_logger
 import unittest
 
 from odoo.addons.pan_mail_pro.models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import SYNC_FAILURE_LIMIT
 from odoo.addons.pan_mail_pro.tests.common import MailProTestCase
 
 
@@ -462,6 +464,84 @@ class TestCursorHoldsOnFailure(TransactionCase):
 
         self.assertEqual(self.mailbox.state, 'error')
         self.assertIn('Message 1', self.mailbox.error_message)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestTransientSyncFailures(TransactionCase):
+    """Issue #82: one bad minute at the provider is not a broken mailbox.
+
+    `error` is the state the cron used to filter *out*, and the first failure
+    of any kind wrote it. So a Graph 503 -- Microsoft asking to be called back
+    later -- took the mailbox out of every future run, with no retry, no
+    backoff and no way back but a person pressing a button. Two of our own
+    shared mailboxes sat out of sync for four months on exactly that.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.processor = cls.env['pan.mail.fetcher']
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'inbox@company.test',
+            'state': 'active',
+        })
+
+    def _run(self, failing=True):
+        Mailbox = type(self.mailbox)
+        IncomingProcessor = type(self.processor)
+
+        def fake_process_mailbox(self_, mailbox):
+            if failing:
+                raise ValueError('503 Service Unavailable')
+            return None
+
+        with patch.object(IncomingProcessor, '_process_mailbox',
+                          fake_process_mailbox), \
+             patch.object(Mailbox, '_has_working_credentials',
+                          return_value=True, autospec=True), \
+             patch.object(type(self.env['pan.mail.setup']), 'is_ready',
+                          return_value=True, autospec=True), \
+             patch.object(type(self.env['pan.mail.license']), 'sync_allowed',
+                          return_value=True, autospec=True):
+            self.processor._cron_fetch_incoming_mail()
+
+    def test_one_failure_records_the_reason_and_keeps_syncing(self):
+        with mute_logger('odoo.addons.pan_mail_pro.models.pan_mail_fetcher'):
+            self._run()
+
+        self.assertEqual(self.mailbox.state, 'active')
+        self.assertEqual(self.mailbox.sync_failure_count, 1)
+        self.assertIn('503', self.mailbox.error_message)
+
+    def test_it_gives_up_once_the_failures_stop_looking_temporary(self):
+        with mute_logger('odoo.addons.pan_mail_pro.models.pan_mail_fetcher'):
+            for _ in range(SYNC_FAILURE_LIMIT):
+                self._run()
+
+        self.assertEqual(self.mailbox.state, 'error')
+        self.assertEqual(self.mailbox.sync_failure_count, SYNC_FAILURE_LIMIT)
+
+    def test_a_mailbox_in_error_is_still_read(self):
+        """The half that made it permanent. A mailbox that can still be read
+        is read, whatever the last run said; what keeps a genuinely broken one
+        from being retried every minute is the credentials filter."""
+        self.mailbox.write({'state': 'error', 'error_message': 'old news'})
+
+        self._run(failing=False)
+
+        self.assertEqual(self.mailbox.state, 'active')
+        self.assertFalse(self.mailbox.error_message)
+        self.assertEqual(self.mailbox.sync_failure_count, 0)
+
+    def test_a_run_that_succeeds_clears_the_count(self):
+        with mute_logger('odoo.addons.pan_mail_pro.models.pan_mail_fetcher'):
+            self._run()
+        self.assertEqual(self.mailbox.sync_failure_count, 1)
+
+        self._run(failing=False)
+
+        self.assertEqual(self.mailbox.sync_failure_count, 0)
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

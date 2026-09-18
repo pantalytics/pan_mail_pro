@@ -159,7 +159,7 @@ Providers disagree about sending as somebody else, which is why
 
 | Model | Purpose |
 |-------|---------|
-| `pan.mail.conversation` | AbstractModel, no table. The queries behind the Inbox screen: folders, conversations, one thread, a customer's timeline, and what the chatter's door needs |
+| `pan.mail.conversation` | AbstractModel, no table. The queries behind the Inbox screen: folders, conversations, one thread with its files and follow-ups, a customer's timeline, and what the chatter's door needs |
 
 Every configuration and diagnostic screen lives under Settings → Technical →
 Email → **Mail Pro**. 19.0.4.0.0 gave the module a "Communication" application
@@ -183,6 +183,33 @@ and it reads only. Replying, marking read and scheduling a follow-up are Odoo's
 own methods called on the record itself, unwrapped, so the reply path cannot
 drift from the chatter. The screen it serves is designed in
 `docs/plans/conversation-view.md`.
+
+Replying happens in the conversation pane, not in a dialog over the screen: a
+dialog hides the list, the record and the mail being answered, which are the
+three things somebody looks at while writing. It is still `mail.compose.message`
+-- 19.0.10.5.0 only changed where the form is mounted. Two things had to move
+for it to live outside a dialog, and both are in
+`static/src/js/conversation_view/use_composer.js`: the arch's `<footer>` is
+rendered by a dialog and nowhere else, so
+`pan_mail_pro.mail_compose_message_inline_form` puts the paperclip and the
+template selector back in the body, and Send saves the composer and calls
+`action_send_mail` itself, from the pane, because the pane is what closes when
+the mail is out.
+
+19.0.11.0.0 took the chatter out of the Inbox's fourth pane and put what it
+carried into a four-position strip over the third: Mail, Everything (the notes
+and the record's own events, interleaved), Files, Activities. The screen had
+offered two composers a divider apart, and they were not the same composer --
+pane 3's reply threads under the message it answers and addresses the people
+who were on it, the chatter's does neither -- so the chatter is the one that
+lost. `read_conversation` grew a `scope` for the two readings of the thread;
+the files and the follow-ups ride along with every read, because a count on a
+tab that moves when you open another tab reads as a bug.
+
+Log note is the same composer in the same pane, with the note subtype instead
+of the comment one and no recipients, so the screen still writes in exactly
+one place. The strip steps aside while somebody is writing: the pane has one
+job then, and a tab click would drop the draft.
 
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
@@ -862,6 +889,20 @@ pan.mail.routing.log row written; cursor advanced
 
 Every `message_post` carries the provider's own `date`, so a historical import
 keeps the timeline instead of collapsing onto the day the import ran.
+
+**A failed run is not a broken mailbox.** The cron reads every mailbox in
+`draft`, `active` *or* `error` that still has usable credentials, and a failure
+raises `sync_failure_count` rather than parking the mailbox. Only the fifth
+consecutive failure writes `error`, so `error` means "we tried, somebody has to
+look" instead of "the last minute went badly". The reason is written on the
+mailbox every time, so the form always says what happened, and the first run
+that succeeds clears both.
+
+Two things make this safe. Credentials, not state, are what keeps a genuinely
+broken mailbox out of the loop: revoked consent and a deleted account fail
+`_has_working_credentials()` and are never called again. And a *stall* -- a
+message this mailbox cannot process -- still goes straight to `error`, because
+retrying it is retrying the same message, not calling a provider back later.
 
 ### Cursor
 

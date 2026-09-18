@@ -258,6 +258,90 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(
             self.Conversation.search_conversations(mailbox_id=self.mailbox.id), [])
 
+    # ------------------------------------------------------------- the tabs
+
+    def _note(self, body='<p>Marge op regel 3 is krap</p>'):
+        return self.env['mail.message'].create({
+            'model': 'crm.lead',
+            'res_id': self.lead.id,
+            'message_type': 'comment',
+            'body': body,
+        })
+
+    def test_the_mail_tab_is_the_correspondence_and_nothing_else(self):
+        self._mail()
+        self._note()
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual([m['kind'] for m in thread['messages']], ['mail'])
+
+    def test_everything_brings_the_notes_back(self):
+        """The record pane lost its chatter, so this tab is where the notes
+        went. If it cannot show them they exist nowhere on this screen.
+
+        The lead logs its own creation, so this also pins the third kind: a
+        record event, which the tab draws as one line rather than a card.
+        """
+        self._mail()
+        self._note()
+        kinds = set(m['kind'] for m in self.Conversation.read_conversation(
+            'crm.lead', self.lead.id, scope='all')['messages'])
+        self.assertEqual(kinds, {'mail', 'note', 'event'})
+
+    def test_a_note_in_another_mailbox_s_conversation_is_still_a_note(self):
+        """A note carries no mailbox, so running it through the mailbox
+        filter would empty the tab that exists to show it."""
+        self._mail()
+        self._note()
+        thread = self.Conversation.read_conversation(
+            'crm.lead', self.lead.id, mailbox_id=self.mailbox.id, scope='all')
+        self.assertIn('note', [m['kind'] for m in thread['messages']])
+        self.assertIn('mail', [m['kind'] for m in thread['messages']])
+
+    def test_an_outgoing_reply_is_mail_even_when_odoo_calls_it_a_comment(self):
+        """The chatter posts a `comment`. One that went out over the wire is
+        correspondence, and filing it under "internal note" is the mistake on
+        this screen a customer eventually reads about."""
+        note = self._note(body='<p>Bevestigd, drie weken.</p>')
+        note.write({'x_direction': 'outgoing', 'x_mailbox_id': self.mailbox.id})
+        thread = self.Conversation.read_conversation(
+            'crm.lead', self.lead.id, scope='all')
+        kinds = {m['id']: m['kind'] for m in thread['messages']}
+        self.assertEqual(kinds[note.id], 'mail')
+        self.assertNotIn('note', kinds.values())
+
+    def test_files_and_activities_ride_along_with_every_tab(self):
+        """The counts are drawn on the strip itself, so they have to be the
+        same whichever tab is open. A number that moves when you click another
+        tab reads as a bug."""
+        attachment = self.env['ir.attachment'].create({
+            'name': 'offerte.pdf',
+            'datas': b'JVBERi0=',
+        })
+        self._mail().write({'attachment_ids': [(6, 0, attachment.ids)]})
+        self.env['mail.activity'].create({
+            # `res_model` is related to `res_model_id` and writing it alone
+            # leaves the column NULL, which the model's own check constraint
+            # refuses.
+            'res_model_id': self.env['ir.model']._get_id('crm.lead'),
+            'res_id': self.lead.id,
+            'activity_type_id': self.env.ref('mail.mail_activity_data_todo').id,
+            'summary': 'Levertijd navragen',
+            'user_id': self.env.user.id,
+        })
+        for scope in ('mail', 'all'):
+            thread = self.Conversation.read_conversation(
+                'crm.lead', self.lead.id, scope=scope)
+            self.assertEqual([f['name'] for f in thread['files']],
+                             ['offerte.pdf'], scope)
+            self.assertEqual([a['summary'] for a in thread['activities']],
+                             ['Levertijd navragen'], scope)
+
+    def test_a_conversation_with_neither_says_so_with_empty_lists(self):
+        self._mail()
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual(thread['files'], [])
+        self.assertEqual(thread['activities'], [])
+
     # ----------------------------------------------------------------- access
 
     def _mailbox_manager(self, login):
@@ -446,3 +530,35 @@ class TestConversationApi(TransactionCase):
         timeline = self.Conversation.customer_timeline(self.customer.id)
         self.assertEqual([row['summary'] for row in timeline['next']],
                          ['Call Bart about line 3'])
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestInlineComposerView(TransactionCase):
+    """The composer the Inbox mounts in its own pane instead of a dialog.
+
+    A form view that is not in a dialog never renders the arch's `<footer>`,
+    and nothing says so: the pane shows a composer with no paperclip and no
+    template selector, and the server log is empty. The inline view moves the
+    two controls a reply needs into the body. These assertions are what keeps
+    it doing that.
+    """
+
+    def _arch(self):
+        view = self.env.ref('pan_mail_pro.mail_compose_message_inline_form')
+        return self.env['mail.compose.message'].get_view(view.id)['arch']
+
+    def test_the_inline_composer_has_no_footer_left(self):
+        arch = self._arch()
+        self.assertNotIn('<footer', arch)
+        self.assertIn('o_mailpro_composer_tools', arch)
+        self.assertIn('mail_composer_attachment_selector', arch)
+
+    def test_the_inline_composer_names_the_pane_s_controller(self):
+        """The js_class is what hands the record to the pane's Send button."""
+        self.assertIn('pan_mail_inline_composer_form', self._arch())
+
+    def test_the_inline_composer_still_carries_send_from(self):
+        """It is a primary view over mail's own, so this module's own
+        extension of that form has to come with it -- a reply that cannot
+        pick its mailbox sends from the wrong address."""
+        self.assertIn('x_send_from_mailbox_id', self._arch())

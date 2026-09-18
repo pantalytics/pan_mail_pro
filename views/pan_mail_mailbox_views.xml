@@ -268,12 +268,20 @@
         </field>
     </record>
 
+    <!--
+        Mailbox Manager, not only the system administrator: the ACL gives that
+        group write on `pan.mail.mailbox`, and `action_sync_now` /
+        `action_test_incoming` are gated on it, so an admin-only menu meant the
+        only people allowed to press those buttons could not reach the form
+        they are on. Credentials stay administrator-only: Email Accounts and
+        Providers keep `base.group_system`.
+    -->
     <!-- Menu: Settings → Technical → Email → Mailboxes -->
     <menuitem id="menu_pan_mail_mailbox"
               name="Mailboxes"
               parent="pan_mail_pro.menu_pan_mail_root"
               action="action_pan_mail_mailbox"
               sequence="20"
-              groups="base.group_system"/>
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
 
 </odoo>

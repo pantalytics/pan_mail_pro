@@ -78,7 +78,7 @@ def call(model, method, *args, **kw):
 # One provider row -- Mail Pro runs on one, and a second is refused.
 call('pan.mail.provider', 'create', {
     'provider': 'outlook', 'client_id': 'demo-client', 'client_secret': 'demo-secret',
-    'tenant_id': 'demo-tenant'})
+    'tenant_id': '11111111-2222-3333-4444-555555555555'})
 for name in ('example.com', 'example.odoo.com'):
     call('pan.mail.domain', 'create', {'name': name})
 # Accounts are only created on a connected Odoo instance. Connect for the

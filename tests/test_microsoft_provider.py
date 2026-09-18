@@ -47,7 +47,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
         cls.env['pan.mail.provider'].create({
             'provider': 'outlook',
             'client_id': 'test-client-id',
-            'tenant_id': 'test-tenant-id',
+            'tenant_id': '11111111-2222-3333-4444-555555555555',
         })
 
     def _account(self, **vals):
@@ -259,7 +259,7 @@ class TestGraphAuthorizationScopes(TransactionCase):
         cls.env['pan.mail.provider'].create({
             'provider': 'outlook',
             'client_id': 'test-client-id',
-            'tenant_id': 'test-tenant-id',
+            'tenant_id': '11111111-2222-3333-4444-555555555555',
         })
 
     def test_both_halves_of_the_draft_then_send_flow_are_requested(self):
@@ -306,7 +306,7 @@ class TestGraphCredentialTest(TransactionCase):
             'provider': 'outlook',
             'client_id': 'test-client-id',
             'client_secret': 'test-secret',
-            'tenant_id': 'test-tenant-id',
+            'tenant_id': '11111111-2222-3333-4444-555555555555',
         })
 
     def _response(self, status_code, payload):
@@ -324,7 +324,7 @@ class TestGraphCredentialTest(TransactionCase):
 
         self.assertTrue(result['success'])
         url, kwargs = post.call_args[0][0], post.call_args[1]
-        self.assertIn('test-tenant-id', url)
+        self.assertIn('11111111-2222-3333-4444-555555555555', url)
         self.assertEqual(kwargs['data']['grant_type'], 'client_credentials')
         self.assertEqual(kwargs['data']['client_secret'], 'test-secret')
 
@@ -387,7 +387,7 @@ class TestGraphCredentialTest(TransactionCase):
         action = self.provider.action_connect_myself()
         self.assertEqual(action['type'], 'ir.actions.act_url')
         self.assertIn('login.microsoftonline.com', action['url'])
-        self.assertIn('test-tenant-id', action['url'])
+        self.assertIn('11111111-2222-3333-4444-555555555555', action['url'])
 
     def test_a_provider_without_a_registration_offers_no_button(self):
         """IMAP has nothing to test, so the form hides it rather than

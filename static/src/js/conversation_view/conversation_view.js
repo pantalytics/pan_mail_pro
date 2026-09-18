@@ -9,23 +9,66 @@
  * The record pane mounts Odoo's own form view. That is the one load-bearing
  * assumption in the whole screen, so it sits behind an error boundary: if the
  * form cannot render, the pane falls back to a link and the rest of the inbox
- * keeps working.
+ * keeps working. It shows the record and never its chatter: this screen writes
+ * in one pane, and what the chatter carried is the strip of four tabs over the
+ * thread -- Mail, Everything, Files, Activities.
  *
  * The panes themselves are draggable and the two outer ones fold away; that
  * lives in `use_panes.js`, because how wide a pane is has nothing to do with
- * what is in it.
+ * what is in it. Replying takes the conversation pane rather than a dialog
+ * over the screen; that lives in `use_composer.js`.
  */
 
 import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
 import { registry } from "@web/core/registry";
+import { browser } from "@web/core/browser/browser";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
 import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
+import { useComposer, ComposerForm } from "./use_composer";
 
 const PAGE = 30;
+
+// What a pane with nothing selected holds. A function rather than a constant:
+// four lists shared between two selections is one stale thread away from a
+// reply landing under the wrong subject.
+const EMPTY_THREAD = () => ({
+    messages: [], records: [], rejected: [], files: [], activities: [], suggestion: false,
+});
+
+// Which mailboxes stand open in the rail. In the browser, next to the pane
+// widths: it is the same kind of preference, per person and per monitor, and
+// a table for it would have to be read on every open.
+const RAIL_KEY = "pan_mail_pro.rail";
+
+// Which of the four readings of a conversation this person left open. Theirs
+// rather than the conversation's: somebody clearing an inbox stays in Mail,
+// somebody catching up on a deal stays in Everything.
+const TAB_KEY = "pan_mail_pro.tab";
+const TAB_IDS = ["mail", "all", "files", "activities"];
+
+/** The tab this person last read in, or Mail. */
+function restoreTab() {
+    try {
+        const stored = browser.localStorage.getItem(TAB_KEY);
+        return TAB_IDS.includes(stored) ? stored : "mail";
+    } catch {
+        return "mail";
+    }
+}
+
+/** Stored state is somebody else's data by the time we read it back. */
+function restoreExpanded() {
+    try {
+        const stored = JSON.parse(browser.localStorage.getItem(RAIL_KEY) || "null");
+        return Array.isArray(stored) ? stored.filter(Number.isFinite) : [];
+    } catch {
+        return []; // Private window, cleared storage, a half-written value.
+    }
+}
 
 // The quoted history, as the clients people write to us from mark it:
 // Outlook (the divider it inserts and the header block it draws), Gmail and
@@ -89,7 +132,7 @@ export class RecordPane extends Component {
 
 export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
-    static components = { RecordPane };
+    static components = { RecordPane, ComposerForm };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
     // component's, not the action record's: without this, opening a record
@@ -102,6 +145,7 @@ export class ConversationView extends Component {
         this.dialog = useService("dialog");
         this.notification = useService("notification");
         this.panes = usePanes();
+        this.composer = useComposer({ onSent: () => this.onReplySent() });
 
         // Two request tokens, one per pane. Somebody who clicks three folders
         // in a second starts three reads, and without these the slowest answer
@@ -112,15 +156,21 @@ export class ConversationView extends Component {
         this.state = useState({
             loading: true,
             error: "",
-            folders: [],
             folder: "inbox",
             mailboxes: [],
             mailboxId: null,
+            // The rail, the way Outlook draws it: every mailbox can stand
+            // open or folded, and folding one does not close the mail you
+            // are reading. `counts` is keyed by mailbox id (0 when there is
+            // no mailbox yet), so a folded mailbox costs no query at all.
+            expanded: {},
+            counts: {},
             conversations: [],
             limit: PAGE,
             hasMore: false,
             selected: null,
-            thread: { messages: [], records: [], rejected: [], suggestion: false },
+            tab: restoreTab(),
+            thread: EMPTY_THREAD(),
             // Which messages are open, and whose quoted history is unfolded.
             // Keyed by message id, so a thread that reloads under a reply
             // keeps nothing from the thread before it.
@@ -163,6 +213,45 @@ export class ConversationView extends Component {
         if (this.state.mailboxes.length) {
             this.state.mailboxId = this.state.mailboxes[0].id;
         }
+        // What stood open last time, minus the mailboxes that are gone. The
+        // one you land in is always open: a rail that opens fully folded
+        // hides the folder you are looking at.
+        const known = new Set(this.state.mailboxes.map((mailbox) => mailbox.id));
+        for (const id of restoreExpanded()) {
+            if (known.has(id)) {
+                this.state.expanded[id] = true;
+            }
+        }
+        this.state.expanded[this.railKey()] = true;
+    }
+
+    /** The key a mailbox's folders are stored under; 0 is "no mailbox". */
+    railKey(mailboxId) {
+        return (mailboxId === undefined ? this.state.mailboxId : mailboxId) || 0;
+    }
+
+    /** The mailboxes whose folders are on screen, so whose counts we need. */
+    expandedKeys() {
+        const keys = this.state.mailboxes
+            .map((mailbox) => mailbox.id)
+            .filter((id) => this.state.expanded[id]);
+        // Without a mailbox the rail still shows the reader's own folders,
+        // and the open mailbox is counted even when its folders are folded:
+        // the empty state names the folder you are in.
+        const active = this.railKey();
+        return keys.includes(active) ? keys : [...keys, active];
+    }
+
+    saveExpanded() {
+        try {
+            browser.localStorage.setItem(
+                RAIL_KEY,
+                JSON.stringify(Object.keys(this.state.expanded)
+                    .filter((id) => this.state.expanded[id])
+                    .map(Number)));
+        } catch {
+            // A rail nobody can store is still a rail you can fold today.
+        }
     }
 
     async refresh({ keepSelection = false } = {}) {
@@ -174,8 +263,14 @@ export class ConversationView extends Component {
                 mailbox_id: this.state.mailboxId,
                 search: this.state.search || null,
             };
-            const [folders, conversations] = await Promise.all([
-                this.orm.call("pan.mail.conversation", "folder_counts", [], args),
+            // One count query per mailbox that is standing open. A folded
+            // mailbox is not counted, which is what keeps a rail of six
+            // accounts from costing six times the queries of one.
+            const keys = this.expandedKeys();
+            const [counts, conversations] = await Promise.all([
+                Promise.all(keys.map((key) => this.orm.call(
+                    "pan.mail.conversation", "folder_counts", [],
+                    { ...args, mailbox_id: key || null }))),
                 this.orm.call("pan.mail.conversation", "search_conversations", [], {
                     ...args,
                     folder: this.state.folder,
@@ -185,7 +280,8 @@ export class ConversationView extends Component {
             if (seq !== this.listSeq) {
                 return; // A newer request is already on its way.
             }
-            this.state.folders = folders;
+            this.state.counts = Object.fromEntries(
+                keys.map((key, index) => [key, counts[index]]));
             this.state.conversations = conversations;
             this.state.hasMore = conversations.length >= this.state.limit;
 
@@ -196,9 +292,7 @@ export class ConversationView extends Component {
                     await this.select(conversations[0]);
                 } else {
                     this.state.selected = null;
-                    this.state.thread = {
-                        messages: [], records: [], rejected: [], suggestion: false,
-                    };
+                    this.state.thread = EMPTY_THREAD();
                 }
             }
         } catch (error) {
@@ -223,11 +317,15 @@ export class ConversationView extends Component {
 
     async select(conversation) {
         const seq = ++this.threadSeq;
+        // A reply belongs to the conversation it answers, and this is another
+        // one. The draft goes with it: nothing was stored yet, and a composer
+        // left open over the wrong thread is worse than retyping two lines.
+        this.composer.close();
         this.state.selected = conversation;
         this.state.showRejected = false;
         this.state.linking = false;
         // Nothing from the previous thread stays under the new subject.
-        this.state.thread = { messages: [], records: [], rejected: [], suggestion: false };
+        this.state.thread = EMPTY_THREAD();
         this.state.open = {};
         this.state.quotes = {};
         this.split.clear();
@@ -238,6 +336,9 @@ export class ConversationView extends Component {
                     res_id: conversation.res_id,
                     message_id: conversation.message_id,
                     mailbox_id: this.state.mailboxId,
+                    // Files and Activities are two other lists over the same
+                    // conversation, so they read the mail thread underneath.
+                    scope: this.state.tab === "all" ? "all" : "mail",
                 }
             );
             if (seq === this.threadSeq) {
@@ -257,10 +358,55 @@ export class ConversationView extends Component {
         }
     }
 
-    async setFolder(folder) {
+    /**
+     * Open a folder. A folder belongs to the mailbox it sits under, so
+     * clicking one in a mailbox you are not in switches mailbox and folder
+     * in a single read rather than two.
+     */
+    async setFolder(folder, mailboxId) {
+        if (mailboxId !== undefined && mailboxId !== this.state.mailboxId) {
+            this.state.mailboxId = mailboxId;
+        // Opening a mailbox unfolds it: the folders are where you go next.
+        this.state.expanded[this.railKey()] = true;
+        this.saveExpanded();
+        }
         this.state.folder = folder;
         this.state.limit = PAGE;
         await this.refresh();
+    }
+
+    /** Fold a mailbox away, or open it, without leaving the one you are in. */
+    async toggleMailbox(mailboxId) {
+        const key = this.railKey(mailboxId);
+        this.state.expanded[key] = !this.state.expanded[key];
+        this.saveExpanded();
+        if (this.state.expanded[key] && !this.state.counts[key]) {
+            await this.loadCounts(key);
+        }
+    }
+
+    isExpanded(mailboxId) {
+        return !!this.state.expanded[this.railKey(mailboxId)];
+    }
+
+    /** The folder counts of one mailbox, loaded when it is unfolded. */
+    async loadCounts(key) {
+        try {
+            this.state.counts[key] = await this.orm.call(
+                "pan.mail.conversation", "folder_counts", [], {
+                    mailbox_id: key || null,
+                    search: this.state.search || null,
+                });
+        } catch (error) {
+            // A rail that cannot count is a rail without numbers, not an
+            // error banner over the mail somebody is reading.
+            console.warn("[Mail Pro] folder counts failed", error);
+            this.state.counts[key] = [];
+        }
+    }
+
+    foldersFor(mailboxId) {
+        return this.state.counts[this.railKey(mailboxId)] || [];
     }
 
     /** Open another mailbox, from the rail. Folders are per mailbox. */
@@ -269,6 +415,9 @@ export class ConversationView extends Component {
             return;
         }
         this.state.mailboxId = mailboxId;
+        // Opening a mailbox unfolds it: the folders are where you go next.
+        this.state.expanded[this.railKey()] = true;
+        this.saveExpanded();
         // The folder you were in carries over. It is the same five states in
         // every mailbox, and landing back in Inbox on every switch loses the
         // one thing somebody switching mailboxes is usually doing: working
@@ -296,6 +445,82 @@ export class ConversationView extends Component {
     get selectedRecord() {
         const chips = this.state.thread.records || [];
         return chips.length ? chips[0] : null;
+    }
+
+    // ----------------------------------------------------------- the tabs
+
+    /**
+     * The strip itself. One control with four positions rather than a toggle
+     * plus a tab bar: two pieces of chrome over one pane is chrome competing
+     * with content.
+     */
+    get TABS() {
+        return [
+            { id: "mail", label: _t("Mail") },
+            { id: "all", label: _t("Everything") },
+            { id: "files", label: _t("Files") },
+            { id: "activities", label: _t("Activities") },
+        ];
+    }
+
+    /**
+     * The four readings of one conversation.
+     *
+     * Mail and Everything are the same list read twice, so switching between
+     * them re-reads the thread. Files and Activities came down with it, so
+     * they cost nothing to open and their counts do not move when you do.
+     */
+    async setTab(tab) {
+        if (tab === this.state.tab) {
+            return;
+        }
+        const reread = (tab === "all") !== (this.state.tab === "all");
+        this.state.tab = tab;
+        try {
+            browser.localStorage.setItem(TAB_KEY, tab);
+        } catch {
+            // A tab nobody can store is still a tab you can open today.
+        }
+        if (reread && this.state.selected) {
+            await this.select(this.state.selected);
+        }
+    }
+
+    /** The number beside a tab, drawn only when there is one. */
+    tabCount(tab) {
+        if (tab === "files") {
+            return (this.state.thread.files || []).length;
+        }
+        if (tab === "activities") {
+            return (this.state.thread.activities || []).length;
+        }
+        return 0;
+    }
+
+    /** What the reader downloads. Odoo's own attachment route, unchanged. */
+    fileUrl(file) {
+        return `/web/content/${file.id}?download=true`;
+    }
+
+    /** A size somebody can read, which is not a number of bytes. */
+    fileSize(bytes) {
+        const size = Number(bytes) || 0;
+        if (size < 1024) {
+            return `${size} B`;
+        }
+        if (size < 1024 * 1024) {
+            return `${Math.round(size / 1024)} kB`;
+        }
+        return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    openActivityRecord(activity) {
+        this.action.doAction({
+            type: "ir.actions.act_window",
+            res_model: activity.model,
+            res_id: activity.res_id,
+            views: [[false, "form"]],
+        });
     }
 
     // --------------------------------------------------------- the stack
@@ -385,6 +610,11 @@ export class ConversationView extends Component {
         return `/web/image/res.partner/${message.author_id}/avatar_128`;
     }
 
+    /** The same picture for the list, from the contact the thread is with. */
+    partnerAvatar(conversation) {
+        return `/web/image/res.partner/${conversation.partner_id}/avatar_128`;
+    }
+
     initials(name) {
         const words = (name || "").split(/\s+/).filter(Boolean);
         if (!words.length) {
@@ -421,7 +651,7 @@ export class ConversationView extends Component {
     }
 
     folderLabel(id) {
-        const folder = this.state.folders.find((entry) => entry.id === id);
+        const folder = this.foldersFor().find((entry) => entry.id === id);
         return folder ? folder.name : "";
     }
 
@@ -436,41 +666,101 @@ export class ConversationView extends Component {
      * the templates and the attachment handling, and `message_post` is what
      * files the reply on the record and threads it. A composer of our own
      * would be a second implementation of all of that, drifting from the day
-     * it shipped.
+     * it shipped. It opens in the conversation pane -- see `use_composer.js`
+     * for what that costs and what it buys.
      */
-    async reply() {
+    reply() {
         const conversation = this.state.selected;
         if (!conversation || !conversation.model) {
+            return;
+        }
+        this.composer.open({
+            default_model: conversation.model,
+            // 19.0 refuses `default_res_id` by name: the composer takes a
+            // list, because it also composes in batch.
+            default_res_ids: [conversation.res_id],
+            default_composition_mode: "comment",
+            default_subtype_xmlid: "mail.mt_comment",
+            // The chatter fills "To" from the record's suggested recipients;
+            // the composer itself fills nothing, and since 18.2 the customer
+            // is no longer a follower by default. A reply with an empty "To"
+            // reaches nobody, so the person who wrote last from their side
+            // goes in.
+            default_partner_ids: this.replyRecipients(conversation),
+            // The message being answered. The composer takes its subject from
+            // it, and `message_post` threads the reply under it, so the
+            // customer's client files the answer in the same thread. Without
+            // it the subject is the record's name and the mail arrives as a
+            // new conversation.
+            default_parent_id: this.newestIncoming()?.id || false,
+        });
+    }
+
+    /**
+     * It went out: show it in the thread, and recount the folders.
+     *
+     * A note is not correspondence, so the Mail tab will not show it. Land on
+     * Everything, where it is: a note that vanishes on save reads as a note
+     * that was not saved.
+     */
+    async onReplySent() {
+        const conversation = this.state.selected;
+        if (this.composer.state.mode === "note" && this.state.tab === "mail") {
+            await this.setTab("all"); // which re-reads the thread itself
+        } else if (conversation) {
+            await this.select(conversation);
+        }
+        await this.refresh({ keepSelection: true });
+    }
+
+    /**
+     * An internal note, in the same composer and the same pane as the reply.
+     *
+     * The record pane no longer carries a chatter, so this is where a note
+     * gets written. No recipients and no parent: a note reaches the record's
+     * followers through Odoo's own note subtype and threads nothing outwards.
+     * A recipient row on a note is what makes people believe a note is a
+     * mail, and the subtype is the whole difference between the two.
+     */
+    logNote() {
+        const conversation = this.state.selected;
+        if (!conversation || !conversation.model) {
+            return;
+        }
+        this.composer.open({
+            default_model: conversation.model,
+            default_res_ids: [conversation.res_id],
+            default_composition_mode: "comment",
+            default_subtype_xmlid: "mail.mt_note",
+        }, "note");
+    }
+
+    /**
+     * A follow-up with a date on it is a `mail.activity` on the record.
+     *
+     * Odoo's own scheduler, so the activity lands in the Activities clock the
+     * rest of the database reads. This module has never kept a queue of its
+     * own and this is not the place to start one.
+     */
+    async scheduleActivity() {
+        const record = this.selectedRecord;
+        if (!record) {
             return;
         }
         await this.action.doAction(
             {
                 type: "ir.actions.act_window",
-                res_model: "mail.compose.message",
+                res_model: "mail.activity.schedule",
                 views: [[false, "form"]],
                 target: "new",
                 context: {
-                    default_model: conversation.model,
-                    // 19.0 refuses `default_res_id` by name: the composer
-                    // takes a list, because it also composes in batch.
-                    default_res_ids: [conversation.res_id],
-                    default_composition_mode: "comment",
-                    default_subtype_xmlid: "mail.mt_comment",
-                    // The chatter fills "To" from the record's suggested
-                    // recipients; the composer itself fills nothing, and since
-                    // 18.2 the customer is no longer a follower by default. A
-                    // reply with an empty "To" reaches nobody, so the person
-                    // who wrote last from their side goes in.
-                    default_partner_ids: this.replyRecipients(conversation),
-                    // The message being answered. The composer takes its
-                    // subject from it, and `message_post` threads the reply
-                    // under it, so the customer's client files the answer in
-                    // the same thread. Without it the subject is the record's
-                    // name and the mail arrives as a new conversation.
-                    default_parent_id: this.newestIncoming()?.id || false,
+                    active_model: record.model,
+                    active_ids: [record.res_id],
+                    default_res_model: record.model,
+                    default_res_ids: [record.res_id],
                 },
             },
-            { onClose: () => this.select(conversation) }
+            { onClose: () => this.select(this.state.selected) }
         );
     }
 

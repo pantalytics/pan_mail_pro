@@ -68,8 +68,9 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
 | `models/pan_mail_conversation.py` | The read side of the Inbox: five methods, no table, no sudo for an answer |
-| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes, one client action |
+| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes, one client action, and the tab strip (Mail / Everything / Files / Activities) that replaced the record pane's chatter |
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is and which ones are folded away. Dragged, keyboard-resizable, stored in the browser |
+| `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, and the Send that saves it and calls `action_send_mail` |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_connect_banner.py` | Who is asked to connect a mailbox, and who is left alone |
@@ -240,8 +241,8 @@ docker-compose build odoo && docker-compose up -d
 |---|---|
 | URL | https://mailpro-dev.cloudpepper.site |
 | Server | `Pantalytics Demo` (Odoo 19.0 **community**), shared with the demo instances |
-| Tracks | branch `19.0`, webhook + auto-upgrade on |
-| Login | `admin` / secret `MAILPRO_ODOO_ADMIN_PASSWORD`, project `dev` in Bitwarden Secrets Manager |
+| Tracks | branch `19.0`: a push pulls the code and restarts Odoo. It has never run `-u` (issue #134), so a version bump lands via Apps → Mail Pro → Upgrade |
+| Login | `admin` / secret `CLOUDPEPPER_MAILPRO_DEV_ADMIN_PASSWORD`, project `prod` in Bitwarden Secrets Manager |
 
 Only `pan_mail_pro` and its dependencies (`mail`, `base`, `crm`) are installed, so
 this is the closest thing to what CI builds — with a public HTTPS URL in front of it.
@@ -262,12 +263,14 @@ short.
   `helpdesk_community` addons are no substitute, because this code names
   `helpdesk.team` and `helpdesk.ticket` directly and those use their own models.
 
-**Auto-upgrade only migrates when the manifest version moves.** Cloudpepper pulls
-the code and runs `-u pan_mail_pro` on every push, but Odoo only executes migration
-scripts when `__manifest__.py`'s version is *higher* than what `ir.module.module`
-records. Python, view and asset changes land on the restart regardless; new fields
-and data migrations need the version bump the Odoo 19 checklist already asks for.
-Forget it and the instance quietly serves the old schema.
+**A push restarts; it does not upgrade.** Cloudpepper pulls the code and restarts
+Odoo on every push, and Python, view and asset changes land on that restart. New
+models, menus, fields and migrations need `-u pan_mail_pro`, which the instance
+has never run on its own even with `auto_upgrade` on (issue #134): after a merge
+that bumps the manifest version, open Apps → Mail Pro → Upgrade, then check
+`ir_module_module` says the new version. Odoo only executes migration scripts
+when that version is *higher* than what it records, so the bump the Odoo 19
+checklist asks for is what makes the upgrade do anything.
 
 **Odoo core and addons are two separate update tracks, and neither migrates the
 database on its own.** Core first, addons second, `-u` third -- the order and the
@@ -347,7 +350,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer, one open message in a collapsed thread, the record pane stepping aside at 1280px, the dividers dragging, folding and surviving a reload, and linking a conversation from the suggestion so the correction actually reaches the database |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, and linking a conversation from the suggestion so the correction actually reaches the database |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
@@ -675,7 +678,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   banned from the whole module rather than confined to `models/ai/`. A removal
   that leaves no check behind is a removal that comes back.
 
-### Triage and correcting a match (19.0.11.0.0)
+### Triage and correcting a match (19.0.12.0.0)
 - **A `mail.message` with no `model` is visible to its author and almost nobody
   else.** Odoo's `mail.message._search` filters every row down to "you wrote
   it, you are a recipient, or you can read its document", and a message with
@@ -710,6 +713,8 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **A group on a menu is not an access rule, and in 19.0 an action cannot carry one either.** `ir.actions.actions` has no group field, so a client action opens by URL for anyone who knows it, and every `@api.model` method on the model behind it answers `call_kw` from any session. The check belongs in the methods.
 - **`limit` arrives over RPC.** A read method that passes the caller's `limit` into a search hands anybody a way to materialise the table. Clamp it where it enters.
 - **Odoo 19 renamed `groups_id` to `group_ids`** on the models that still have it, and refuses `default_res_id` on the composer in favour of `default_res_ids`. Both fail loudly, but only in the browser.
+- **A form view renders its `<footer>` only inside a dialog.** `FormController` cuts every footer out of the arch, and `web.FormView` draws it under `t-if="env.inDialog"`, portalled into the modal's footer. Mount the composer in a pane and Send, the paperclip and the template selector are simply not there -- no error, no log line. A primary view moves the widgets into the body; the buttons belong to whatever closes, which is the pane.
+- **Driving a form from outside it needs the controller, not the DOM.** `View` passes unknown props straight to the controller and `FormController.props` is a strict schema, so there is no prop to hang "give me your record" on. A `js_class` of our own whose controller writes itself into the env is the seam; the arch's own `js_class` wins over the `jsClass` prop, so swapping it is an inherited-view attribute, not a JS argument.
 - **A thread index that is unique on (provider, mailbox, thread) maps a thread to one record per mailbox.** A conversation that reaches two records is the cross-mailbox case, and the key that may cross a mailbox is the References root, never the provider's own handle: a Graph `conversationId` means something else in another mailbox.
 
 ### Enterprise vs community (19.0.7.7.1)

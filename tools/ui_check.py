@@ -58,9 +58,46 @@ class Checks:
         self.out = out
         self.browser = browser
         self.failures = []
+        # Uncaught JS, which is how every failure of a mounted Odoo view
+        # arrives: nothing on the Python side sees it and the server log is
+        # empty. Printed with the failures, so the next person reads the
+        # error instead of guessing from a Playwright timeout.
+        self.js_errors = []
 
     def fail(self, message):
+        # Printed as it happens, not only in the summary: a Playwright click
+        # that times out takes the process down with it, and the failures
+        # collected before that are the ones that say why.
+        print(f'  - {message}', flush=True)
         self.failures.append(message)
+
+    def dialog_in_the_way(self):
+        """The text of an Odoo error dialog over the screen, and close it.
+
+        A view that fails to mount leaves the pane looking fine with a modal
+        on top of it, and the next click times out thirty seconds later
+        somewhere unrelated. Read it where it happened, then get it out of
+        the way so the checks after this one still run.
+        """
+        modal = self.page.query_selector('.modal.o_technical_modal, .o_dialog_container .modal')
+        if not modal or not modal.is_visible():
+            return ''
+        # Odoo's error dialog says "Oops!" and keeps the stack behind a link.
+        # The stack is the whole message: without it this reads as "something
+        # went wrong somewhere in the web client".
+        details = modal.query_selector('a:has-text("technical details"), '
+                                       'button:has-text("technical details")')
+        if details:
+            details.click()
+            self.page.wait_for_timeout(300)
+        text = ' '.join(modal.inner_text().split())[:1200]
+        for selector in ('button:has-text("Close")', 'button:has-text("Ok")', '.btn-close'):
+            button = modal.query_selector(selector)
+            if button:
+                button.click()
+                break
+        self.page.wait_for_timeout(400)
+        return text
 
     def shot(self, name):
         if self.out:
@@ -200,8 +237,28 @@ class Checks:
             # the filled screen.
             open_mailbox(0)
 
+        # A mailbox folds its folders away and unfolds them again, the way an
+        # account does in Outlook. Asserted on the folder rows, not on the
+        # caret: the caret pointing the right way proves nothing about what
+        # is on screen.
+        def folder_rows():
+            return len(page.query_selector_all('.o_mailpro_folder'))
+
+        def fold(index):
+            page.query_selector_all('.o_mailpro_mailbox_toggle')[index].click()
+            page.wait_for_timeout(1200)
+            return folder_rows()
+
+        if len(names) >= 2:
+            before = folder_rows()
+            if fold(0) != before - len(self.FOLDERS):
+                self.fail('folding a mailbox left its folders on screen')
+            if fold(0) != before:
+                self.fail('unfolding a mailbox did not bring its folders back')
+
         # Everything clickable is a real button, so a keyboard can reach it.
         for selector, what in (('.o_mailpro_mailbox', 'mailbox'),
+                               ('.o_mailpro_mailbox_toggle', 'mailbox caret'),
                                ('.o_mailpro_folder', 'folder'),
                                ('.o_mailpro_item', 'conversation')):
             divs = [el for el in page.query_selector_all(selector)
@@ -213,6 +270,13 @@ class Checks:
         if not items:
             self.fail('the conversation list is empty with seeded mail on a lead')
         else:
+            # Every line carries a face: the contact's photo, Odoo's letter
+            # circle when the partner has none, initials when the sender is
+            # nobody in the database. A line without one reads as broken.
+            faceless = [el for el in items
+                        if not el.query_selector('.o_mailpro_avatar')]
+            if faceless:
+                self.fail(f'{len(faceless)} conversation rows have no avatar')
             selected = page.query_selector_all('.o_mailpro_item_active')
             if len(selected) != 1:
                 self.fail(f'{len(selected)} conversations look selected, expected 1')
@@ -250,14 +314,35 @@ class Checks:
 
         # ...and the form's own statusbar buttons stay out of it. A filled
         # "Convert to Opportunity" in the fourth pane is a louder button than
-        # Reply, on a screen whose one job is replying. The chatter's own
-        # composer stays: it is how you log an internal note, and it is the
-        # control people already know from every other Odoo screen.
+        # Reply, on a screen whose one job is replying.
         loud = [b for b in page.query_selector_all(
             '.o_mailpro_record .o_form_statusbar button') if b.is_visible()]
         if loud:
             self.fail('the record pane shows %d form buttons beside Reply'
                       % len(loud))
+
+        # The chatter goes with them. Two composers a divider apart is the
+        # thing the tab strip replaced, and the one that loses is the one
+        # that cannot thread a reply. Visibility rather than presence: it is
+        # hidden with CSS, so it still mounts -- what must not happen is that
+        # somebody sees it or tabs into it.
+        chatter = [el for el in page.query_selector_all(
+            '.o_mailpro_record .o-mail-Form-chatter, '
+            '.o_mailpro_record .o-mail-Chatter') if el.is_visible()]
+        if chatter:
+            self.fail('the record pane still shows a chatter')
+
+        # The four readings of a conversation, in one strip over pane 3.
+        tabs = [el.inner_text().split('\n')[0].strip()
+                for el in page.query_selector_all('.o_mailpro_tab')]
+        if tabs != ['Mail', 'Everything', 'Files', 'Activities']:
+            self.fail(f'the tab strip reads {tabs}')
+        else:
+            for name in ('Everything', 'Files', 'Activities', 'Mail'):
+                tab = page.query_selector(f'.o_mailpro_tab:has-text("{name}")')
+                tab.click()
+                page.wait_for_timeout(900)
+                self.error_free(f'the {name} tab')
 
         # The screen's one primary action. A reader-only inbox is half a
         # product, and this is the click that proves it is not one.
@@ -267,37 +352,94 @@ class Checks:
         else:
             reply.click()
             try:
-                page.wait_for_selector('.modal .o_form_view', timeout=15000)
+                # In the pane, not on top of it: a dialog over the Inbox hides
+                # the list, the record and the mail being answered. A `.modal`
+                # here is the composer having gone back to being a popup.
+                page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
             except Exception:
-                self.fail('Reply opened no composer')
+                problem = self.dialog_in_the_way()
+                self.fail('Reply opened no composer in the conversation pane'
+                          + (f': {problem}' if problem else ''))
             else:
+                page.wait_for_timeout(600)
+                if page.query_selector('.modal .o_form_view'):
+                    self.fail('Reply opened the composer in a dialog')
                 # The chatter fills "To" from the record; the composer on its
                 # own fills nothing, and a reply to nobody is the one bug a
                 # green suite cannot see. The seeded thread has a customer,
                 # so their tag has to be there before anyone types.
-                page.wait_for_timeout(600)
-                if not page.query_selector('.modal [name="partner_ids"] .o_tag'):
+                if not page.query_selector('.o_mailpro_composer [name="partner_ids"] .o_tag'):
                     self.fail('Reply opened a composer with nobody in To')
                 # And it answers the mail, not the record: the subject is the
                 # thread's, so the customer's client files it where they read
                 # the question. The record's name here means the reply left
                 # as a new conversation.
-                subject = page.query_selector('.modal [name="subject"] input')
+                subject = page.query_selector('.o_mailpro_composer [name="subject"] input')
                 value = subject.input_value() if subject else ''
                 # "offerte revisie" is in the mail's subject and not in the
                 # lead's name, so the record-name fallback cannot pass this.
                 if 'offerte revisie' not in value.lower():
                     self.fail(f'Reply subject is "{value}", not the thread subject')
-                # Discard rather than Escape: Escape leaves the composer open
-                # on a draft, and the screenshot below is what a reviewer
-                # looks at.
-                discard = page.query_selector('.modal button:has-text("Discard")')
+                # The arch's footer is cut out of every form that is not in a
+                # dialog, so without the inline view there is no way to attach
+                # a file to a reply -- and nothing errors, the paperclip is
+                # simply not there.
+                if not page.query_selector(
+                        '.o_mailpro_composer .o_mailpro_composer_tools'):
+                    self.fail('the reply has no attachment or template row')
+                # The record stays readable beside the reply. That is the
+                # whole reason this is a pane and not a dialog.
+                if not page.query_selector('.o_mailpro_record .o_form_view'):
+                    self.fail('the record pane went away while replying')
+                self.shot('inbox-reply.png')
+                # A dialog on top of the reply is this screen's failure mode:
+                # the pane renders, something throws behind it, and the next
+                # click times out thirty seconds later somewhere unrelated.
+                over_the_reply = self.dialog_in_the_way()
+                if over_the_reply:
+                    self.fail(f'a dialog opened over the reply: {over_the_reply}')
+                # Discard rather than Escape: Escape leaves the draft open,
+                # and the screenshot below is what a reviewer looks at.
+                discard = page.query_selector(
+                    '.o_mailpro_thread_head button:has-text("Discard")')
+                if not discard:
+                    self.fail('an open reply cannot be discarded')
+                else:
+                    discard.click()
+                    page.wait_for_selector('.o_mailpro_messages', timeout=15000)
+                    page.wait_for_timeout(600)
+            left_open = self.dialog_in_the_way()
+            if left_open:
+                self.fail(f'a dialog was left over the Inbox: {left_open}')
+
+        # Log note is the other half of "this screen writes in one pane". It
+        # is the same composer with the note subtype, so the thing to prove is
+        # that it lands in the pane too and says what it will do: a button
+        # reading Send over a note is how somebody mails a customer their own
+        # internal margin.
+        note = page.query_selector('.o_mailpro_thread_head button:has-text("Log note")')
+        if not note:
+            self.fail('there is no way to log a note')
+        else:
+            note.click()
+            try:
+                page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+            except Exception:
+                self.fail('Log note opened no composer in the conversation pane')
+            else:
+                page.wait_for_timeout(600)
+                over_the_note = self.dialog_in_the_way()
+                if over_the_note:
+                    self.fail(f'a dialog opened over the note: {over_the_note}')
+                if not page.query_selector(
+                        '.o_mailpro_thread_head button:has-text("Log")'):
+                    self.fail('the note is sent by a button that says Send')
+                discard = page.query_selector(
+                    '.o_mailpro_thread_head button:has-text("Discard")')
                 if discard:
                     discard.click()
-                else:
-                    page.keyboard.press('Escape')
-                page.wait_for_selector('.modal', state='detached', timeout=15000)
-                page.wait_for_timeout(600)
+                    page.wait_for_selector('.o_mailpro_messages', timeout=15000)
+                    page.wait_for_timeout(600)
 
         self.panes()
 
@@ -690,6 +832,12 @@ def main():
         page.wait_for_timeout(1500)
 
         checks = Checks(page, args.out, browser)
+        page.on('pageerror', lambda error:
+                checks.js_errors.append(str(error).splitlines()[0][:300]))
+        # Odoo's error service catches what Owl throws, so the only trace of
+        # it outside the dialog is the console.
+        page.on('console', lambda message: message.type == 'error'
+                and checks.js_errors.append(message.text.splitlines()[0][:300]))
         checks.base = args.url
         checks.db = args.db
         checks.call = rpc_for(args.url, args.db)
@@ -705,6 +853,8 @@ def main():
         print('UI check failed:')
         for failure in checks.failures:
             print(f'  - {failure}')
+        for error in checks.js_errors:
+            print(f'  js: {error}')
         sys.exit(1)
     print('UI check passed.')
 
