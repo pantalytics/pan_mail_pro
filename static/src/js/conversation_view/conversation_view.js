@@ -18,6 +18,7 @@
 
 import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
 import { registry } from "@web/core/registry";
+import { browser } from "@web/core/browser/browser";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
@@ -25,6 +26,21 @@ import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
 
 const PAGE = 30;
+
+// Which mailboxes stand open in the rail. In the browser, next to the pane
+// widths: it is the same kind of preference, per person and per monitor, and
+// a table for it would have to be read on every open.
+const RAIL_KEY = "pan_mail_pro.rail";
+
+/** Stored state is somebody else's data by the time we read it back. */
+function restoreExpanded() {
+    try {
+        const stored = JSON.parse(browser.localStorage.getItem(RAIL_KEY) || "null");
+        return Array.isArray(stored) ? stored.filter(Number.isFinite) : [];
+    } catch {
+        return []; // Private window, cleared storage, a half-written value.
+    }
+}
 
 // The quoted history, as the clients people write to us from mark it:
 // Outlook (the divider it inserts and the header block it draws), Gmail and
@@ -109,10 +125,15 @@ export class ConversationView extends Component {
         this.state = useState({
             loading: true,
             error: "",
-            folders: [],
             folder: "inbox",
             mailboxes: [],
             mailboxId: null,
+            // The rail, the way Outlook draws it: every mailbox can stand
+            // open or folded, and folding one does not close the mail you
+            // are reading. `counts` is keyed by mailbox id (0 when there is
+            // no mailbox yet), so a folded mailbox costs no query at all.
+            expanded: {},
+            counts: {},
             conversations: [],
             limit: PAGE,
             hasMore: false,
@@ -154,6 +175,45 @@ export class ConversationView extends Component {
         if (this.state.mailboxes.length) {
             this.state.mailboxId = this.state.mailboxes[0].id;
         }
+        // What stood open last time, minus the mailboxes that are gone. The
+        // one you land in is always open: a rail that opens fully folded
+        // hides the folder you are looking at.
+        const known = new Set(this.state.mailboxes.map((mailbox) => mailbox.id));
+        for (const id of restoreExpanded()) {
+            if (known.has(id)) {
+                this.state.expanded[id] = true;
+            }
+        }
+        this.state.expanded[this.railKey()] = true;
+    }
+
+    /** The key a mailbox's folders are stored under; 0 is "no mailbox". */
+    railKey(mailboxId) {
+        return (mailboxId === undefined ? this.state.mailboxId : mailboxId) || 0;
+    }
+
+    /** The mailboxes whose folders are on screen, so whose counts we need. */
+    expandedKeys() {
+        const keys = this.state.mailboxes
+            .map((mailbox) => mailbox.id)
+            .filter((id) => this.state.expanded[id]);
+        // Without a mailbox the rail still shows the reader's own folders,
+        // and the open mailbox is counted even when its folders are folded:
+        // the empty state names the folder you are in.
+        const active = this.railKey();
+        return keys.includes(active) ? keys : [...keys, active];
+    }
+
+    saveExpanded() {
+        try {
+            browser.localStorage.setItem(
+                RAIL_KEY,
+                JSON.stringify(Object.keys(this.state.expanded)
+                    .filter((id) => this.state.expanded[id])
+                    .map(Number)));
+        } catch {
+            // A rail nobody can store is still a rail you can fold today.
+        }
     }
 
     async refresh({ keepSelection = false } = {}) {
@@ -165,8 +225,14 @@ export class ConversationView extends Component {
                 mailbox_id: this.state.mailboxId,
                 search: this.state.search || null,
             };
-            const [folders, conversations] = await Promise.all([
-                this.orm.call("pan.mail.conversation", "folder_counts", [], args),
+            // One count query per mailbox that is standing open. A folded
+            // mailbox is not counted, which is what keeps a rail of six
+            // accounts from costing six times the queries of one.
+            const keys = this.expandedKeys();
+            const [counts, conversations] = await Promise.all([
+                Promise.all(keys.map((key) => this.orm.call(
+                    "pan.mail.conversation", "folder_counts", [],
+                    { ...args, mailbox_id: key || null }))),
                 this.orm.call("pan.mail.conversation", "search_conversations", [], {
                     ...args,
                     folder: this.state.folder,
@@ -176,7 +242,8 @@ export class ConversationView extends Component {
             if (seq !== this.listSeq) {
                 return; // A newer request is already on its way.
             }
-            this.state.folders = folders;
+            this.state.counts = Object.fromEntries(
+                keys.map((key, index) => [key, counts[index]]));
             this.state.conversations = conversations;
             this.state.hasMore = conversations.length >= this.state.limit;
 
@@ -245,10 +312,55 @@ export class ConversationView extends Component {
         }
     }
 
-    async setFolder(folder) {
+    /**
+     * Open a folder. A folder belongs to the mailbox it sits under, so
+     * clicking one in a mailbox you are not in switches mailbox and folder
+     * in a single read rather than two.
+     */
+    async setFolder(folder, mailboxId) {
+        if (mailboxId !== undefined && mailboxId !== this.state.mailboxId) {
+            this.state.mailboxId = mailboxId;
+        // Opening a mailbox unfolds it: the folders are where you go next.
+        this.state.expanded[this.railKey()] = true;
+        this.saveExpanded();
+        }
         this.state.folder = folder;
         this.state.limit = PAGE;
         await this.refresh();
+    }
+
+    /** Fold a mailbox away, or open it, without leaving the one you are in. */
+    async toggleMailbox(mailboxId) {
+        const key = this.railKey(mailboxId);
+        this.state.expanded[key] = !this.state.expanded[key];
+        this.saveExpanded();
+        if (this.state.expanded[key] && !this.state.counts[key]) {
+            await this.loadCounts(key);
+        }
+    }
+
+    isExpanded(mailboxId) {
+        return !!this.state.expanded[this.railKey(mailboxId)];
+    }
+
+    /** The folder counts of one mailbox, loaded when it is unfolded. */
+    async loadCounts(key) {
+        try {
+            this.state.counts[key] = await this.orm.call(
+                "pan.mail.conversation", "folder_counts", [], {
+                    mailbox_id: key || null,
+                    search: this.state.search || null,
+                });
+        } catch (error) {
+            // A rail that cannot count is a rail without numbers, not an
+            // error banner over the mail somebody is reading.
+            console.warn("[Mail Pro] folder counts failed", error);
+            this.state.counts[key] = [];
+        }
+    }
+
+    foldersFor(mailboxId) {
+        return this.state.counts[this.railKey(mailboxId)] || [];
     }
 
     /** Open another mailbox, from the rail. Folders are per mailbox. */
@@ -257,6 +369,9 @@ export class ConversationView extends Component {
             return;
         }
         this.state.mailboxId = mailboxId;
+        // Opening a mailbox unfolds it: the folders are where you go next.
+        this.state.expanded[this.railKey()] = true;
+        this.saveExpanded();
         // The folder you were in carries over. It is the same five states in
         // every mailbox, and landing back in Inbox on every switch loses the
         // one thing somebody switching mailboxes is usually doing: working
@@ -409,7 +524,7 @@ export class ConversationView extends Component {
     }
 
     folderLabel(id) {
-        const folder = this.state.folders.find((entry) => entry.id === id);
+        const folder = this.foldersFor().find((entry) => entry.id === id);
         return folder ? folder.name : "";
     }
 
