@@ -276,13 +276,16 @@ class TestConversationApi(TransactionCase):
 
     def test_everything_brings_the_notes_back(self):
         """The record pane lost its chatter, so this tab is where the notes
-        went. If it cannot show them they exist nowhere on this screen."""
+        went. If it cannot show them they exist nowhere on this screen.
+
+        The lead logs its own creation, so this also pins the third kind: a
+        record event, which the tab draws as one line rather than a card.
+        """
         self._mail()
         self._note()
-        thread = self.Conversation.read_conversation(
-            'crm.lead', self.lead.id, scope='all')
-        self.assertEqual(sorted(m['kind'] for m in thread['messages']),
-                         ['mail', 'note'])
+        kinds = set(m['kind'] for m in self.Conversation.read_conversation(
+            'crm.lead', self.lead.id, scope='all')['messages'])
+        self.assertEqual(kinds, {'mail', 'note', 'event'})
 
     def test_a_note_in_another_mailbox_s_conversation_is_still_a_note(self):
         """A note carries no mailbox, so running it through the mailbox
@@ -292,6 +295,7 @@ class TestConversationApi(TransactionCase):
         thread = self.Conversation.read_conversation(
             'crm.lead', self.lead.id, mailbox_id=self.mailbox.id, scope='all')
         self.assertIn('note', [m['kind'] for m in thread['messages']])
+        self.assertIn('mail', [m['kind'] for m in thread['messages']])
 
     def test_an_outgoing_reply_is_mail_even_when_odoo_calls_it_a_comment(self):
         """The chatter posts a `comment`. One that went out over the wire is
@@ -301,7 +305,9 @@ class TestConversationApi(TransactionCase):
         note.write({'x_direction': 'outgoing', 'x_mailbox_id': self.mailbox.id})
         thread = self.Conversation.read_conversation(
             'crm.lead', self.lead.id, scope='all')
-        self.assertEqual([m['kind'] for m in thread['messages']], ['mail'])
+        kinds = {m['id']: m['kind'] for m in thread['messages']}
+        self.assertEqual(kinds[note.id], 'mail')
+        self.assertNotIn('note', kinds.values())
 
     def test_files_and_activities_ride_along_with_every_tab(self):
         """The counts are drawn on the strip itself, so they have to be the
@@ -313,7 +319,10 @@ class TestConversationApi(TransactionCase):
         })
         self._mail().write({'attachment_ids': [(6, 0, attachment.ids)]})
         self.env['mail.activity'].create({
-            'res_model': 'crm.lead',
+            # `res_model` is related to `res_model_id` and writing it alone
+            # leaves the column NULL, which the model's own check constraint
+            # refuses.
+            'res_model_id': self.env['ir.model']._get_id('crm.lead'),
             'res_id': self.lead.id,
             'activity_type_id': self.env.ref('mail.mail_activity_data_todo').id,
             'summary': 'Levertijd navragen',
