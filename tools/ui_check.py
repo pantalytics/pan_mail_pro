@@ -58,9 +58,34 @@ class Checks:
         self.out = out
         self.browser = browser
         self.failures = []
+        # Uncaught JS, which is how every failure of a mounted Odoo view
+        # arrives: nothing on the Python side sees it and the server log is
+        # empty. Printed with the failures, so the next person reads the
+        # error instead of guessing from a Playwright timeout.
+        self.js_errors = []
 
     def fail(self, message):
         self.failures.append(message)
+
+    def dialog_in_the_way(self):
+        """The text of an Odoo error dialog over the screen, and close it.
+
+        A view that fails to mount leaves the pane looking fine with a modal
+        on top of it, and the next click times out thirty seconds later
+        somewhere unrelated. Read it where it happened, then get it out of
+        the way so the checks after this one still run.
+        """
+        modal = self.page.query_selector('.modal.o_technical_modal, .o_dialog_container .modal')
+        if not modal or not modal.is_visible():
+            return ''
+        text = ' '.join(modal.inner_text().split())[:300]
+        for selector in ('.btn-close', 'button:has-text("Close")', 'button:has-text("Ok")'):
+            button = modal.query_selector(selector)
+            if button:
+                button.click()
+                break
+        self.page.wait_for_timeout(400)
+        return text
 
     def shot(self, name):
         if self.out:
@@ -272,7 +297,9 @@ class Checks:
                 # here is the composer having gone back to being a popup.
                 page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
             except Exception:
-                self.fail('Reply opened no composer in the conversation pane')
+                problem = self.dialog_in_the_way()
+                self.fail('Reply opened no composer in the conversation pane'
+                          + (f': {problem}' if problem else ''))
             else:
                 page.wait_for_timeout(600)
                 if page.query_selector('.modal .o_form_view'):
@@ -315,6 +342,9 @@ class Checks:
                     discard.click()
                     page.wait_for_selector('.o_mailpro_messages', timeout=15000)
                     page.wait_for_timeout(600)
+            left_open = self.dialog_in_the_way()
+            if left_open:
+                self.fail(f'a dialog was left over the Inbox: {left_open}')
 
         self.panes()
 
@@ -633,6 +663,8 @@ def main():
         page.wait_for_timeout(1500)
 
         checks = Checks(page, args.out, browser)
+        page.on('pageerror', lambda error:
+                checks.js_errors.append(str(error).splitlines()[0][:300]))
         checks.base = args.url
         checks.db = args.db
         checks.call = rpc_for(args.url, args.db)
@@ -647,6 +679,8 @@ def main():
         print('UI check failed:')
         for failure in checks.failures:
             print(f'  - {failure}')
+        for error in checks.js_errors:
+            print(f'  js: {error}')
         sys.exit(1)
     print('UI check passed.')
 

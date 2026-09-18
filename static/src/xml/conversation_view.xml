@@ -211,7 +211,7 @@
                         -->
                         <div t-if="composer.state.open" class="o_mailpro_composer"
                              role="region" aria-label="Reply">
-                            <View t-props="composer.viewProps"/>
+                            <ComposerForm t-props="composer.formProps"/>
                         </div>
                         <div t-else="" class="o_mailpro_messages">
                             <article t-foreach="state.thread.messages" t-as="message" t-key="message.id"
@@ -317,6 +317,14 @@
                 <i class="fa" t-att-class="panes.chevron(divider)" aria-hidden="true"/>
             </button>
         </div>
+    </t>
+
+    <!--
+        The composer, one component deep so the env mail's composer form needs
+        stops at it rather than reaching the record pane. See use_composer.js.
+    -->
+    <t t-name="pan_mail_pro.ComposerForm">
+        <View t-props="props.viewProps"/>
     </t>
 
     <t t-name="pan_mail_pro.RecordPane">

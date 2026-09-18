@@ -9,23 +9,30 @@
  *
  * It is still Odoo's own `mail.compose.message` form -- the Send From
  * dropdown, the templates, the attachments and `message_post` are the ones
- * the chatter uses. Two things have to move for it to live outside a dialog:
+ * the chatter uses. Three things have to be arranged for it to live outside a
+ * dialog:
  *
  * - **The footer.** `FormController` cuts every `<footer>` out of the arch
  *   and renders it only in a dialog, so inline the arch's Send button and
- *   the paperclip beside it are not drawn at all. The view this hook mounts
- *   is `pan_mail_pro.mail_compose_message_inline_form`, which puts the
- *   paperclip and the template selector back in the body. Send and Discard
- *   do not come with them: the pane is what closes, so the pane owns them.
+ *   the paperclip beside it are not drawn at all. The view mounted here is
+ *   `pan_mail_pro.mail_compose_message_inline_form`, which puts the paperclip
+ *   and the template selector back in the body. Send and Discard do not come
+ *   with them: the pane is what closes, so the pane owns them.
  * - **The record.** Send saves the composer and then calls it, so this needs
  *   the form's own record. The controller hands itself to the hook through
  *   the env, which is the smallest seam that does not reach into the form
  *   from the outside.
+ * - **A dialog to talk to.** mail's composer form writes to `env.dialogData`
+ *   while it mounts, and without one the mount throws before a field renders.
+ *   `ComposerForm` provides it, and provides it around the composer rather
+ *   than around the Inbox: the record pane mounts a form view too, and it has
+ *   no business thinking it is in a dialog.
  */
 
-import { useEnv, useState, useSubEnv, onWillDestroy } from "@odoo/owl";
+import { Component, useState, useSubEnv, onWillDestroy } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
+import { View } from "@web/views/view";
 import { formView } from "@web/views/form/form_view";
 
 const INLINE_FORM = "pan_mail_pro.mail_compose_message_inline_form";
@@ -56,50 +63,71 @@ registry.category("views").add("pan_mail_inline_composer_form", {
     Controller: InlineComposerController,
 });
 
+/** The composer form, with the env mail's composer expects around it. */
+export class ComposerForm extends Component {
+    static template = "pan_mail_pro.ComposerForm";
+    static components = { View };
+    static props = {
+        viewProps: Object,
+        handle: Object,
+        close: Function,
+    };
+
+    setup() {
+        useSubEnv({
+            // Where the form's controller leaves itself, for Send to find.
+            mailproComposer: this.props.handle,
+            // mail's composer form writes to `env.dialogData` twice while it
+            // mounts: the controller stamps the model on it, the renderer
+            // hangs its recipient-sync callback on `dismiss`. Outside a dialog
+            // there is nothing to write to, so the mount throws before a
+            // single field renders -- in the browser only, with an empty
+            // server log. Both writes want somewhere to land more than they
+            // want a real dialog; `close` is there for whatever asks to be
+            // closed, and what closes here is the pane.
+            dialogData: {
+                close: () => this.props.close(),
+                dismiss: () => this.props.close(),
+            },
+            // A composer is not a screen, so it does not get to name one: the
+            // form view renames the breadcrumb and the browser tab after the
+            // record it holds, and here that is "New". Same guard as the
+            // record pane, for the same reason.
+            config: { ...this.env.config, setDisplayName: () => {} },
+        });
+    }
+}
+
 /**
  * @param {Object} options
  * @param {Function} options.onSent called after the mail actually went out
  */
 export function useComposer({ onSent }) {
-    const env = useEnv();
     const orm = useService("orm");
     const state = useState({ open: false, sending: false });
 
-    // The controller writes itself in here on mount. Not in `state`: it is a
-    // component, not a fact about the screen, and nothing renders from it.
+    // Where the form's controller leaves itself on mount. Not in `state`: it
+    // is a component, not a fact about the screen, and nothing renders it.
     const handle = {};
-
-    // View props built once per reply and never rebuilt: `View` reloads the
-    // form when `context` changes, which on a half-written reply would mean
-    // losing it.
-    let viewProps = null;
-
-    useSubEnv({
-        mailproComposer: handle,
-        // A composer is not a screen, so it does not get to name one: the
-        // form view renames the breadcrumb and the browser tab after the
-        // record it holds, and here that is "New". Same guard as the record
-        // pane, one level higher.
-        config: { ...env.config, setDisplayName: () => {} },
-    });
 
     function close() {
         state.open = false;
         state.sending = false;
-        viewProps = null;
         handle.controller = null;
+        formProps.viewProps = null;
     }
+
+    // One object, never replaced: `View` reloads the form when the props it
+    // reads change, and a half-written reply is not worth risking that.
+    const formProps = { viewProps: null, handle, close };
 
     return {
         state,
-
-        get viewProps() {
-            return viewProps;
-        },
+        formProps,
 
         /** @param {Object} context the `default_*` values for the reply */
         open(context) {
-            viewProps = {
+            formProps.viewProps = {
                 type: "form",
                 resModel: "mail.compose.message",
                 resId: false,
@@ -116,8 +144,8 @@ export function useComposer({ onSent }) {
          * Save the composer, then send it -- which is what the button in the
          * dialog's footer does, in that order.
          *
-         * A save that fails says which field is missing, in the form, next
-         * to the field. A send that fails raises, which is Odoo's own error
+         * A save that fails says which field is missing, in the form, next to
+         * the field. A send that fails raises, which is Odoo's own error
          * dialog, and leaves the reply open to try again.
          */
         async send() {

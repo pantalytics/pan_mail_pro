@@ -24,7 +24,7 @@ import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
-import { useComposer } from "./use_composer";
+import { useComposer, ComposerForm } from "./use_composer";
 
 const PAGE = 30;
 
@@ -90,7 +90,7 @@ export class RecordPane extends Component {
 
 export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
-    static components = { RecordPane, View };
+    static components = { RecordPane, ComposerForm };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
     // component's, not the action record's: without this, opening a record
