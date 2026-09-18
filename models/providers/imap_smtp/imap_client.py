@@ -44,11 +44,16 @@ import ssl
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy
-from email.utils import getaddresses, parsedate_to_datetime, parseaddr
+from email.utils import (
+    format_datetime, getaddresses, parsedate_to_datetime, parseaddr,
+)
 
 from odoo import models, api, _
 from odoo.exceptions import UserError
-from ...mail_provider_client import ERROR_NO_RECIPIENTS, FOLDER_INBOX, FOLDER_SENT
+from ...mail_provider_client import (
+    ERROR_NO_RECIPIENTS, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_ROLES, FOLDER_SENT,
+    FOLDER_TRASH,
+)
 from .. import mime_utils
 
 _logger = logging.getLogger(__name__)
@@ -79,6 +84,14 @@ _INTERNALDATE_RE = re.compile(
 _MONTHS = {m: i for i, m in enumerate(
     ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], start=1)}
+
+# `(\HasNoChildren \Sent) "/" "INBOX/Sent"` — flags, delimiter, name. The
+# delimiter is "/" on one server and "." on the next, which is why a caller is
+# asked for a parent folder rather than left to assemble a path.
+_LIST_RE = re.compile(r'^\(([^)]*)\)\s+(?:"([^"]*)"|NIL)\s+(.*)$')
+# COPYUID comes back on a UID MOVE / UID COPY from any server speaking UIDPLUS
+# (RFC 4315): the destination's UIDVALIDITY, the source uids, the new ones.
+_COPYUID_RE = re.compile(r'COPYUID (\d+) ([\d,:]+) ([\d,:]+)', re.IGNORECASE)
 
 _UID_RE = re.compile(r'\bUID (\d+)')
 _FLAGS_RE = re.compile(r'FLAGS \(([^)]*)\)')
@@ -328,13 +341,19 @@ class ImapSmtpClient(models.AbstractModel):
         \\Sent special-use flag is asked for first, an admin override beats it,
         and 'Sent' is the last resort.
         """
+        if not folder:
+            raise UserError(_('No mail folder given.'))
         if folder == FOLDER_INBOX:
             return 'INBOX'
-        if folder != FOLDER_SENT:
-            raise UserError(_('Unknown mail folder: %s') % folder)
-        if account.imap_sent_folder:
-            return account.imap_sent_folder
-        return self._detect_sent_folder(conn) or 'Sent'
+        if folder == FOLDER_SENT:
+            if account.imap_sent_folder:
+                return account.imap_sent_folder
+            return self._detect_sent_folder(conn) or 'Sent'
+        if folder in FOLDER_ROLES:
+            return self._detect_special_folder(conn, folder) or FOLDER_ROLES[folder]
+        # Not a role, so it is already this server's own name for a folder —
+        # one `list_folders()` handed back. There is nothing to translate.
+        return folder
 
     @api.model
     def _detect_sent_folder(self, conn):
@@ -376,13 +395,14 @@ class ImapSmtpClient(models.AbstractModel):
         return match.group(1) if match else None
 
     @api.model
-    def _select(self, conn, account, folder):
-        """Open a folder read-only and return (name, uidvalidity).
+    def _select(self, conn, account, folder, readonly=True):
+        """Open a folder and return (name, uidvalidity).
 
-        Read-only on purpose: syncing must never mark someone's mail as read.
+        Read-only by default, on purpose: syncing must never mark someone's
+        mail as read. The actions that write say so.
         """
         name = self._folder_name(conn, account, folder)
-        typ, _data = conn.select(self._quote(name), readonly=True)
+        typ, _data = conn.select(self._quote(name), readonly=readonly)
         if typ != 'OK':
             raise UserError(_('Could not open IMAP folder "%s".') % name)
         uidvalidity = (conn.response('UIDVALIDITY')[1] or [b''])[0]
@@ -805,3 +825,712 @@ class ImapSmtpClient(models.AbstractModel):
         for arg in getattr(exc, 'args', ()) or ():
             parts.append(arg.decode(errors='replace') if isinstance(arg, bytes) else str(arg))
         return ' '.join(p for p in parts if p) or str(exc) or type(exc).__name__
+
+    # -------------------------------------------------------------------------
+    # Mailbox actions — contract implementation
+    #
+    # Three IMAP facts shape everything below:
+    #
+    # - A folder's NAME is not knowable, only its role. The SPECIAL-USE
+    #   attribute (RFC 6154) in the LIST reply is what says which folder is the
+    #   Trash, because "Prullenbak" and "Deleted Messages" are the same folder
+    #   to everyone but a client guessing at a name.
+    # - A UID is folder-scoped, so a move changes a message's whole reference.
+    #   The new ones come back; the old ones point at nothing.
+    # - EXPUNGE is not scoped to anything. A bare EXPUNGE permanently removes
+    #   whatever another mail client left marked \Deleted in the folder, which
+    #   is why nothing here issues one: marking uses a raw UID STORE, and the
+    #   two places that must really remove a message use UID EXPUNGE (RFC 4315)
+    #   on their own uids or refuse.
+    # -------------------------------------------------------------------------
+
+    # SPECIAL-USE attributes (RFC 6154) -> this contract's folder roles.
+    _ROLE_ATTRIBUTES = {
+        '\\sent': FOLDER_SENT,
+        '\\trash': FOLDER_TRASH,
+        '\\drafts': FOLDER_DRAFTS,
+        '\\archive': 'archive',
+        '\\junk': 'junk',
+    }
+
+    # ---- folders ------------------------------------------------------------
+
+    @api.model
+    def _list_folders_raw(self, conn):
+        """Every folder on the server as {name, flags, delimiter}."""
+        try:
+            typ, data = conn.list()
+        except (imaplib.IMAP4.error, OSError) as e:
+            raise UserError(_('Could not list IMAP folders: %s') % self._error_text(e))
+        if typ != 'OK':
+            raise UserError(_('Could not list IMAP folders.'))
+        folders = []
+        for line in data or []:
+            text = line.decode(errors='replace') if isinstance(line, bytes) else str(line)
+            match = _LIST_RE.match(text.strip())
+            if not match:
+                continue
+            flags, delimiter, raw_name = match.groups()
+            name = raw_name.strip()
+            if name.startswith('"') and name.endswith('"'):
+                name = name[1:-1]
+            if not name:
+                continue
+            folders.append({
+                'name': name,
+                'flags': flags.split(),
+                'delimiter': delimiter or '/',
+            })
+        return folders
+
+    @api.model
+    def _folder_role_from_flags(self, flags):
+        """Which contract role a folder's LIST flags claim, if any."""
+        lowered = {str(flag).lower() for flag in flags or []}
+        for attribute, role in self._ROLE_ATTRIBUTES.items():
+            if attribute in lowered:
+                return role
+        return None
+
+    @api.model
+    def _detect_special_folder(self, conn, role):
+        """This server's folder for `role`, or None.
+
+        Two passes over one LIST, the same shape `_detect_sent_folder` has
+        used for the Sent copy all along: the SPECIAL-USE attribute wins, and a
+        folder merely *named* like the role is the fallback for the servers
+        that advertise nothing — `INBOX.Trash` and `INBOX/Trash` are the folder
+        a bare "Trash" was reaching for.
+        """
+        fallback_name = FOLDER_ROLES.get(role, '')
+        named = None
+        for folder in self._list_folders_raw(conn):
+            if self._folder_role_from_flags(folder['flags']) == role:
+                return folder['name']
+            leaf = folder['name'].rsplit(folder['delimiter'], 1)[-1]
+            if named is None and leaf.lower() == fallback_name.lower():
+                named = folder['name']
+        return named
+
+    @api.model
+    def list_folders(self, account, mailbox):
+        """Every folder in the mailbox, with the role each one claims."""
+        with self._imap(account) as conn:
+            folders = self._list_folders_raw(conn)
+        result = []
+        for folder in folders:
+            role = self._folder_role_from_flags(folder['flags'])
+            if not role and folder['name'].upper() == 'INBOX':
+                role = FOLDER_INBOX
+            result.append({
+                'id': folder['name'],
+                'name': folder['name'],
+                'role': role,
+            })
+        return result
+
+    @api.model
+    def _refuse_if_load_bearing(self, conn, account, name, verb):
+        """INBOX and the role folders are not ours to rename or delete.
+
+        Every one of them is somewhere mail is filed without anybody asking:
+        the Sent copy this client APPENDs, the Trash a delete lands in, the
+        Drafts a review sits in. The role is read from the folder's own flags
+        first and from `_folder_name` second, because a server that advertises
+        nothing still has the Trash this module files deletes into — protecting
+        only the flagged ones would leave exactly those mailboxes unprotected.
+        """
+        if name.strip().upper() == 'INBOX':
+            raise UserError(_(
+                'INBOX cannot be %s: it is the mailbox itself, not a folder in it.'
+            ) % verb)
+        for folder in self._list_folders_raw(conn):
+            if folder['name'] != name:
+                continue
+            role = self._folder_role_from_flags(folder['flags'])
+            if role:
+                raise UserError(_(
+                    '"%(name)s" is this mailbox\'s %(role)s folder, so it cannot be '
+                    '%(verb)s: mail is filed there without anyone asking.',
+                    name=name, role=role, verb=verb,
+                ))
+        for role in FOLDER_ROLES:
+            if role != FOLDER_INBOX and self._folder_name(conn, account, role) == name:
+                raise UserError(_(
+                    '"%(name)s" is this mailbox\'s %(role)s folder, so it cannot be '
+                    '%(verb)s: mail is filed there without anyone asking.',
+                    name=name, role=role, verb=verb,
+                ))
+
+    @api.model
+    def create_folder(self, account, mailbox, name, parent=None):
+        """Create a folder, optionally inside `parent` (see contract)."""
+        name = (name or '').strip()
+        if not name:
+            raise UserError(_('A folder needs a name.'))
+        with self._imap(account) as conn:
+            folders = self._list_folders_raw(conn)
+            by_name = {f['name']: f for f in folders}
+            delimiter = next((f['delimiter'] for f in folders if f['delimiter']), '/')
+            full = name
+            if parent:
+                parent_name = self._folder_name(conn, account, parent)
+                if parent_name not in by_name:
+                    raise UserError(_('No folder named "%s" to create it inside.') % parent)
+                if not full.startswith(parent_name + delimiter):
+                    full = parent_name + delimiter + full
+            if full in by_name:
+                # Asked for, and already true. Not a failure.
+                return full, False
+            typ, data = conn.create(self._quote(full))
+            if typ != 'OK':
+                raise UserError(_(
+                    'The server refused to create "%(name)s": %(error)s. Some mailboxes '
+                    'keep every folder under INBOX — try again with INBOX as the parent.',
+                    name=full, error=self._response_text(data),
+                ))
+            # Not every server subscribes a folder it created, and an
+            # unsubscribed folder is invisible in most mail clients.
+            try:
+                conn.subscribe(self._quote(full))
+            except (imaplib.IMAP4.error, OSError):
+                _logger.info('[IMAP] Created %s but could not subscribe it', full)
+            return full, True
+
+    @api.model
+    def rename_folder(self, account, mailbox, folder, new_name):
+        """Rename a folder, keeping it where it is (see contract)."""
+        new_name = (new_name or '').strip()
+        if not new_name:
+            raise UserError(_('A folder needs a name.'))
+        with self._imap(account) as conn:
+            name = self._folder_name(conn, account, folder)
+            self._refuse_if_load_bearing(conn, account, name, _('renamed'))
+            folders = self._list_folders_raw(conn)
+            delimiter = next((f['delimiter'] for f in folders if f['delimiter']), '/')
+            # Keep it where it is: a bare name would move a nested folder to
+            # the top of the hierarchy, which is a move, not a rename.
+            if delimiter in name and delimiter not in new_name:
+                new_name = name.rsplit(delimiter, 1)[0] + delimiter + new_name
+            typ, data = conn.rename(self._quote(name), self._quote(new_name))
+            if typ != 'OK':
+                raise UserError(_(
+                    'The server refused to rename "%(name)s": %(error)s',
+                    name=name, error=self._response_text(data),
+                ))
+            return new_name
+
+    @api.model
+    def delete_folder(self, account, mailbox, folder):
+        """Delete an EMPTY folder (see contract).
+
+        IMAP's DELETE takes the folder's messages with it and no Trash catches
+        them — the one genuinely irreversible thing this client can do, and
+        exactly what `delete_messages` was written not to be. So the mail has
+        to be gone first, by hand, and it can go the recoverable way.
+        """
+        with self._imap(account) as conn:
+            name = self._folder_name(conn, account, folder)
+            folders = self._list_folders_raw(conn)
+            by_name = {f['name']: f for f in folders}
+            if name not in by_name:
+                raise UserError(_('No folder named "%s".') % name)
+            self._refuse_if_load_bearing(conn, account, name, _('deleted'))
+            delimiter = by_name[name]['delimiter'] or '/'
+            children = sorted(n for n in by_name if n.startswith(name + delimiter))
+            if children:
+                raise UserError(_(
+                    '"%(name)s" still has folders inside it (%(children)s). Delete '
+                    'those first, innermost one first.',
+                    name=name, children=', '.join(children[:5]),
+                ))
+            held = self._message_count(conn, name)
+            if held:
+                raise UserError(_(
+                    '"%(name)s" still holds %(count)s message(s), and deleting a folder '
+                    'takes its mail with it — there is no Trash for that. Empty it '
+                    'first: delete the messages (they go to Trash and can be fished '
+                    'back out) or move them somewhere else.',
+                    name=name, count=held,
+                ))
+            # Deleting the folder you are standing in is undefined enough that
+            # servers disagree; step back to INBOX first.
+            conn.select('INBOX', readonly=True)
+            typ, data = conn.delete(self._quote(name))
+            if typ != 'OK':
+                raise UserError(_(
+                    'The server refused to delete "%(name)s": %(error)s',
+                    name=name, error=self._response_text(data),
+                ))
+            return name
+
+    @api.model
+    def _message_count(self, conn, name):
+        """How many messages a folder holds, for the emptiness check above."""
+        try:
+            typ, data = conn.status(self._quote(name), '(MESSAGES)')
+            if typ == 'OK':
+                match = re.search(r'MESSAGES\s+(\d+)', self._response_text(data))
+                if match:
+                    return int(match.group(1))
+        except (imaplib.IMAP4.error, OSError):
+            pass
+        # A server that will not answer STATUS is not one to take an empty
+        # folder on trust from: count the uids by hand instead.
+        typ, _data = conn.select(self._quote(name), readonly=True)
+        if typ != 'OK':
+            raise UserError(_('Could not open IMAP folder "%s".') % name)
+        typ, data = conn.uid('SEARCH', None, 'ALL')
+        return len((data[0] or b'').split()) if typ == 'OK' else 0
+
+    @api.model
+    def _response_text(self, data):
+        """The server's own words out of an imaplib response, for an error."""
+        parts = []
+        for entry in data or []:
+            if isinstance(entry, bytes):
+                parts.append(entry.decode(errors='replace'))
+            elif isinstance(entry, tuple):
+                parts.append(' '.join(
+                    p.decode(errors='replace') if isinstance(p, bytes) else str(p)
+                    for p in entry))
+            else:
+                parts.append(str(entry))
+        return ' '.join(parts).strip()
+
+    # ---- searching ----------------------------------------------------------
+
+    @api.model
+    def search_messages(self, account, mailbox, folder=FOLDER_INBOX, query=None,
+                        sender=None, unread_only=False, flagged_only=False,
+                        has_attachment=False, limit=50):
+        """Search one folder, newest first (see contract).
+
+        `query` is split into words and ANDed as separate TEXT keys rather than
+        sent as one string. A literal is the wrong default here: IMAP's TEXT is
+        a substring of the raw message, so a contact's name misses a signature
+        that folded a header or spelled it "Klooster, Iris" — and RFC 3501
+        explicitly lets a server "implement flexible matching" for TEXT, so one
+        host word-matches and the next does strict substring. Separate keys
+        defeat none of those and mean the same thing everywhere.
+
+        `has_attachment` is the one term that cannot be answered exactly: IMAP
+        has no such key, so it narrows on the Content-Type header and stays the
+        server's word. Everything else is the server's own SEARCH.
+        """
+        limit = max(1, min(int(limit or 50), 200))
+        criteria = []
+        for word in str(query or '').split():
+            criteria.extend(['TEXT', self._quote(word)])
+        if sender:
+            criteria.extend(['FROM', self._quote(str(sender))])
+        if unread_only:
+            criteria.append('UNSEEN')
+        if flagged_only:
+            criteria.append('FLAGGED')
+        if has_attachment:
+            criteria.extend(['HEADER', 'Content-Type', self._quote('multipart/mixed')])
+        if not criteria:
+            criteria = ['ALL']
+
+        with self._imap(account) as conn:
+            name, uidvalidity = self._select(conn, account, folder)
+            typ, data = conn.uid('SEARCH', None, *criteria)
+            if typ != 'OK':
+                raise UserError(_('IMAP search failed in folder "%s".') % name)
+            uids = (data[0] or b'').split()
+            if not uids:
+                return []
+            # SEARCH answers ascending, which is arrival order, so the newest
+            # are the tail — and newest first is what a person searching wants.
+            uids = uids[-limit:]
+            typ, data = conn.uid('FETCH', b','.join(uids),
+                                 '(UID FLAGS INTERNALDATE BODY.PEEK[HEADER])')
+            if typ != 'OK':
+                raise UserError(_('Could not read messages from folder "%s".') % name)
+            # The reference is built from the folder ARGUMENT, not from the
+            # name it resolved to, so a message the sync found and a message
+            # this found carry the same provider_message_id.
+            messages = [
+                self._normalize_message(item, folder, uidvalidity)
+                for item in self._parse_fetch(data)
+            ]
+        messages.sort(key=lambda m: m['date'] or datetime.min, reverse=True)
+        return messages
+
+    # ---- message state ------------------------------------------------------
+
+    @api.model
+    def set_seen(self, account, mailbox, provider_message_ids, seen=True):
+        """Mark messages read or unread (see contract)."""
+        return self._store(account, provider_message_ids, '\\Seen', seen)
+
+    @api.model
+    def set_flagged(self, account, mailbox, provider_message_ids, flagged=True):
+        """Star messages or unstar them (see contract)."""
+        return self._store(account, provider_message_ids, '\\Flagged', flagged)
+
+    def _store(self, account, provider_message_ids, marker, on):
+        """A raw UID STORE, and deliberately nothing after it.
+
+        No EXPUNGE. Marking is meant to be the one mail write a person can
+        undo, so it does not get to delete anything as a side effect — and an
+        EXPUNGE here would permanently remove whatever another mail client left
+        marked \\Deleted in the folder. The \\Seen sweep is where that bites
+        hardest: marking an inbox read touches every message in it.
+        """
+        grouped = self._group_refs(provider_message_ids)
+        if not grouped:
+            return 0
+        count = 0
+        with self._imap(account) as conn:
+            for folder, uids in grouped.items():
+                name, current = self._select(conn, account, folder, readonly=False)
+                uid_set = ','.join(uid for validity, uid in uids
+                                   if self._valid_uidvalidity(name, validity, current))
+                if not uid_set:
+                    continue
+                typ, data = conn.uid('STORE', uid_set,
+                                     ('+' if on else '-') + 'FLAGS', f'({marker})')
+                if typ != 'OK':
+                    raise UserError(_(
+                        'Could not update flags in "%(folder)s": %(error)s',
+                        folder=name, error=self._response_text(data),
+                    ))
+                count += len(uid_set.split(','))
+        return count
+
+    @api.model
+    def _group_refs(self, provider_message_ids):
+        """Group `folder:uidvalidity:uid` references by folder, order kept."""
+        if isinstance(provider_message_ids, str):
+            provider_message_ids = [provider_message_ids]
+        grouped = {}
+        for ref in provider_message_ids or []:
+            folder, uidvalidity, uid = self._parse_message_ref(ref)
+            if not uid.isdigit():
+                # Rejects anything that is not a bare uid, so a crafted
+                # reference cannot smuggle extra IMAP into a command below.
+                raise UserError(_('Not an IMAP message reference: %s') % ref)
+            grouped.setdefault(folder, []).append((uidvalidity, uid))
+        return grouped
+
+    @api.model
+    def _valid_uidvalidity(self, name, expected, current):
+        """Refuse a uid from before the server renumbered the folder.
+
+        A bare uid after a UIDVALIDITY change addresses a *different* message,
+        so acting on one is worse than skipping it.
+        """
+        if expected == current:
+            return True
+        _logger.warning(
+            '[IMAP] Folder "%s" was renumbered (UIDVALIDITY %s -> %s); '
+            'skipping a message reference from before that.', name, expected, current)
+        return False
+
+    # ---- filing -------------------------------------------------------------
+
+    @api.model
+    def move_messages(self, account, mailbox, provider_message_ids, destination):
+        """Move messages into `destination` (see contract).
+
+        UID MOVE (RFC 6851) when the server has it, UID COPY plus a scoped UID
+        EXPUNGE (RFC 4315) when it has UIDPLUS instead. A server with neither
+        is refused rather than served: the alternatives are leaving the message
+        in both folders, which is a copy wearing the word move, and a bare
+        EXPUNGE, which would take another client's pending deletions with it.
+        """
+        grouped = self._group_refs(provider_message_ids)
+        moved = []
+        with self._imap(account) as conn:
+            target = self._folder_name(conn, account, destination)
+            # Same rule as search: a role stays a role in the reference.
+            ref_folder = destination if destination in FOLDER_ROLES else target
+            has_move = self._has_capability(conn, 'MOVE')
+            has_uidplus = self._has_capability(conn, 'UIDPLUS')
+            if not has_move and not has_uidplus:
+                raise UserError(_(
+                    'This IMAP server supports neither MOVE nor UIDPLUS, so a message '
+                    'cannot be moved without either leaving a copy behind or expunging '
+                    'the whole folder. Move it in your mail client instead.'
+                ))
+            for folder, uids in grouped.items():
+                name, current = self._select(conn, account, folder, readonly=False)
+                usable = [uid for validity, uid in uids
+                          if self._valid_uidvalidity(name, validity, current)]
+                if not usable:
+                    continue
+                uid_set = ','.join(usable)
+                command = 'MOVE' if has_move else 'COPY'
+                typ, data = conn.uid(command, uid_set, self._quote(target))
+                if typ != 'OK':
+                    raise UserError(_(
+                        'Could not move mail from "%(folder)s" to "%(target)s": %(error)s',
+                        folder=name, target=target, error=self._response_text(data),
+                    ))
+                new_uids, new_validity = self._copyuid(data, usable)
+                if command == 'COPY':
+                    self._remove_uids(conn, uid_set)
+                moved.extend(self._message_ref(ref_folder, new_validity, uid)
+                             for uid in new_uids)
+        return moved
+
+    @api.model
+    def _has_capability(self, conn, name):
+        """Whether the server advertised a capability in its greeting.
+
+        imaplib collects them at login and exposes the tuple, not a lookup.
+        """
+        return name.upper() in {str(c).upper() for c in (conn.capabilities or ())}
+
+    @api.model
+    def _copyuid(self, data, source_uids):
+        """The destination uids out of a COPYUID response (RFC 4315).
+
+        Every server that can move a message this way says where it put it, so
+        there is no guessing to do — and a caller holding the old reference is
+        holding one that points at nothing.
+        """
+        match = _COPYUID_RE.search(self._response_text(data))
+        if not match:
+            raise UserError(_(
+                'The server moved the mail but did not say where to; re-sync the '
+                'folder to pick the messages up again.'
+            ))
+        validity, _source_set, destination_set = match.groups()
+        new_uids = self._expand_uid_set(destination_set)
+        if len(new_uids) != len(source_uids):
+            raise UserError(_('The server reported a partial move; re-sync the folder.'))
+        return new_uids, validity
+
+    @api.model
+    def _expand_uid_set(self, uid_set):
+        """`5,7:9` -> ['5', '7', '8', '9']."""
+        uids = []
+        for part in (uid_set or '').split(','):
+            if ':' in part:
+                start, end = part.split(':', 1)
+                uids.extend(str(uid) for uid in range(int(start), int(end) + 1))
+            elif part:
+                uids.append(part)
+        return uids
+
+    @api.model
+    def _remove_uids(self, conn, uid_set):
+        """Mark these uids deleted and expunge THEM — never the folder.
+
+        `UID EXPUNGE` is the whole point: a bare EXPUNGE removes every message
+        in the folder that carries \\Deleted, including the ones another mail
+        client is holding for its own undo.
+        """
+        conn.uid('STORE', uid_set, '+FLAGS', '(\\Deleted)')
+        typ, data = conn.uid('EXPUNGE', uid_set)
+        if typ != 'OK':
+            _logger.warning('[IMAP] UID EXPUNGE of %s failed: %s',
+                            uid_set, self._response_text(data))
+
+    @api.model
+    def delete_messages(self, account, mailbox, provider_message_ids):
+        """Move messages to this mailbox's Trash (see contract)."""
+        grouped = self._group_refs(provider_message_ids)
+        with self._imap(account) as conn:
+            trash = self._folder_name(conn, account, FOLDER_TRASH)
+            for folder in grouped:
+                if self._folder_name(conn, account, folder) == trash:
+                    raise UserError(_(
+                        'Those messages are already in "%s". Emptying the trash is not '
+                        'something Mail Pro does for you: move them somewhere else, or '
+                        'delete them in your mail client.'
+                    ) % trash)
+        # The role, not the name it resolved to, so a reference from here and
+        # one from `move_messages(FOLDER_TRASH)` are the same string.
+        moved = self.move_messages(account, mailbox, provider_message_ids, FOLDER_TRASH)
+        return moved, trash
+
+    # ---- drafts -------------------------------------------------------------
+
+    @api.model
+    def save_draft(self, mail_record, mailbox, account, reply_context=None):
+        """Store `mail_record` in the Drafts folder without sending.
+
+        The same MIME `send_message` builds, APPENDed \\Draft \\Seen: what is
+        reviewed is byte for byte what leaves, because `send_draft` sends these
+        bytes rather than rebuilding them from Odoo's fields.
+        """
+        msg, error = self._draft_message(mail_record, mailbox, reply_context)
+        if error:
+            raise UserError(_('Could not save the draft: %s') % error['error'])
+        with self._imap(account) as conn:
+            name = self._folder_name(conn, account, FOLDER_DRAFTS)
+            typ, data = conn.append(self._quote(name), '(\\Draft \\Seen)', None,
+                                    msg.as_bytes())
+            if typ != 'OK':
+                raise UserError(_(
+                    'Could not store the draft in "%(folder)s": %(error)s',
+                    folder=name, error=self._response_text(data),
+                ))
+            return self._appended_ref(conn, account, FOLDER_DRAFTS, data,
+                                      msg['Message-ID'])
+
+    @api.model
+    def update_draft(self, mail_record, mailbox, account, provider_message_id,
+                     reply_context=None):
+        """Replace a stored draft (see contract).
+
+        IMAP cannot edit a message, so this is an APPEND of the new revision
+        and a scoped removal of the old one, in that order: a failure in
+        between leaves two drafts, which a person can sort out, rather than
+        none, which they cannot.
+
+        When the caller says nothing about threading, the replaced draft's own
+        In-Reply-To and References are carried over — an edit rewrites the
+        message, and a reviewed reply must not quietly become a new
+        conversation at the moment it is sent.
+        """
+        if reply_context is None:
+            reply_context = self._draft_reply_context(account, provider_message_id)
+        new_ref = self.save_draft(mail_record, mailbox, account, reply_context)
+        grouped = self._group_refs(provider_message_id)
+        with self._imap(account) as conn:
+            for folder, uids in grouped.items():
+                name, current = self._select(conn, account, folder, readonly=False)
+                usable = [uid for validity, uid in uids
+                          if self._valid_uidvalidity(name, validity, current)]
+                if usable:
+                    self._remove_uids(conn, ','.join(usable))
+        return new_ref
+
+    @api.model
+    def _draft_reply_context(self, account, provider_message_id):
+        """The threading of a stored draft, for an edit that did not mention any."""
+        try:
+            item = self._fetch_one(account, provider_message_id)
+        except UserError:
+            _logger.warning('[IMAP] Could not read threading off draft %s',
+                            provider_message_id)
+            return {}
+        msg = message_from_bytes(item['raw'], policy=policy.default)
+        return {
+            'in_reply_to': msg.get('In-Reply-To'),
+            'references': (msg.get('References') or '').split(),
+            'thread_id': None,
+            'provider_message_id': None,
+        }
+
+    @api.model
+    def send_draft(self, account, mailbox, provider_message_id):
+        """Send a stored draft as it stands (see contract).
+
+        The draft's own bytes go on the wire. Rebuilding the message from the
+        fields this module models would quietly drop the multipart/related an
+        inline image lives in, the In-Reply-To that makes it a reply, and any
+        header another mail client wrote — what was approved has to be what
+        leaves. Exactly two headers are re-stamped: Date, because a draft's is
+        when it was *written* and would sort the mail above what the recipient
+        has already read, and a Message-ID when the draft has none.
+
+        Removing the draft afterwards is last and never fatal: the mail is with
+        the recipient by then, so a failure there rides back in the result
+        instead of reporting a delivered message as undelivered.
+        """
+        item = self._fetch_one(account, provider_message_id)
+        msg = message_from_bytes(item['raw'], policy=policy.default)
+
+        recipients = mime_utils.bare_addresses([
+            address for header in ('To', 'Cc', 'Bcc')
+            for address in (msg.get_all(header) or [])
+        ])
+        if not recipients:
+            return {'success': False, 'error': 'This draft has no recipients.',
+                    'error_code': ERROR_NO_RECIPIENTS, 'message_id': None,
+                    'thread_id': None}
+
+        del msg['Date']
+        msg['Date'] = format_datetime(datetime.now(timezone.utc))
+        message_id = msg.get('Message-ID')
+        if not message_id:
+            message_id = mime_utils.new_message_id(mailbox.email)
+            msg['Message-ID'] = message_id
+        # Bcc leaves the envelope, not the message: the recipients are already
+        # resolved above, and the header is the one thing a blind copy may not
+        # carry to anybody else.
+        del msg['Bcc']
+
+        payload_size = len(msg.as_bytes())
+        try:
+            with self._smtp(account, payload_size=payload_size) as conn:
+                self._check_size(conn, payload_size)
+                conn.send_message(
+                    msg, from_addr=parseaddr(mailbox.email)[1] or mailbox.email,
+                    to_addrs=recipients)
+        except UserError as e:
+            return {'success': False, 'error': str(e), 'error_code': None,
+                    'message_id': None, 'thread_id': None}
+        except (smtplib.SMTPException, OSError) as e:
+            _logger.error('[SMTP] Sending draft %s from %s failed: %s',
+                          provider_message_id, mailbox.email, self._error_text(e))
+            return {'success': False, 'error': self._error_text(e), 'error_code': None,
+                    'message_id': None, 'thread_id': None}
+
+        self._append_to_sent(account, msg)
+        self._remove_draft(account, provider_message_id)
+        return {
+            'success': True,
+            'error': None,
+            'error_code': None,
+            'message_id': message_id,
+            'thread_id': mime_utils.thread_key(msg, message_id),
+        }
+
+    @api.model
+    def _remove_draft(self, account, provider_message_id):
+        """Take the sent draft out of Drafts. Never fatal — see `send_draft`."""
+        try:
+            grouped = self._group_refs(provider_message_id)
+            with self._imap(account) as conn:
+                for folder, uids in grouped.items():
+                    name, current = self._select(conn, account, folder, readonly=False)
+                    usable = [uid for validity, uid in uids
+                              if self._valid_uidvalidity(name, validity, current)]
+                    if usable:
+                        self._remove_uids(conn, ','.join(usable))
+        except Exception as e:
+            _logger.warning('[IMAP] Sent draft %s but could not remove it: %s',
+                            provider_message_id, self._error_text(e))
+
+    @api.model
+    def _draft_message(self, mail_record, mailbox, reply_context=None):
+        """Build the draft's MIME. Returns (message, error)."""
+        to_addrs = mime_utils.collect_recipients(mail_record.email_to,
+                                                 mail_record.recipient_ids)
+        cc_addrs = mime_utils.collect_recipients(mail_record.email_cc)
+        if not to_addrs and not cc_addrs:
+            return None, {
+                'success': False,
+                'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
+                'error_code': ERROR_NO_RECIPIENTS,
+            }
+        message_id = mime_utils.new_message_id(mailbox.email)
+        return mime_utils.build_message(
+            mail_record, mailbox.email, to_addrs, cc_addrs, message_id,
+            reply_context=reply_context or {}), None
+
+    @api.model
+    def _appended_ref(self, conn, account, folder, data, message_id):
+        """The reference of a message this client just APPENDed.
+
+        APPENDUID (RFC 4315) says it outright. A server without UIDPLUS is
+        asked for the Message-ID instead, which is ours and unique — one extra
+        round trip on the servers that need it, and no guessing on either.
+        """
+        match = re.search(r'APPENDUID (\d+) (\d+)', self._response_text(data))
+        if match:
+            return self._message_ref(folder, match.group(1), match.group(2))
+        name, uidvalidity = self._select(conn, account, folder)
+        typ, found = conn.uid('SEARCH', None, 'HEADER', 'Message-ID',
+                              self._quote(message_id or ''))
+        uids = (found[0] or b'').split() if typ == 'OK' else []
+        if not uids:
+            raise UserError(_('Stored the draft in "%s" but could not find it again.') % name)
+        return self._message_ref(folder, uidvalidity, uids[-1].decode())

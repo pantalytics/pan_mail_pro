@@ -9,7 +9,10 @@ from datetime import datetime, timedelta
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from ... import encryption_utils
-from ...mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from ...mail_provider_client import (
+    ERROR_NO_RECIPIENTS, FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
+    FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -94,11 +97,23 @@ class MicrosoftGraphClient(models.AbstractModel):
     # token endpoint, with no user and no consent — see `test_credentials`.
     supports_credential_test = True
 
-    # Odoo's folder vocabulary -> Graph's well-known folder names.
+    # Odoo's folder roles -> Graph's well-known folder names. Graph accepts one
+    # of these wherever it accepts a folder id, which is why a role needs no
+    # lookup here: 'deleteditems' addresses the Trash of a mailbox in any
+    # language.
     _FOLDER_MAP = {
         FOLDER_INBOX: 'Inbox',
         FOLDER_SENT: 'SentItems',
+        FOLDER_DRAFTS: 'Drafts',
+        FOLDER_TRASH: 'DeletedItems',
+        FOLDER_ARCHIVE: 'Archive',
+        FOLDER_JUNK: 'JunkEmail',
     }
+    # The reverse, for reading a role off a folder Graph handed back. Keyed
+    # lowercase because `wellKnownName` is always lowercase, where the names
+    # above are the spelling Graph's own documentation uses in a URL — the two
+    # are the same folder and Graph is case-insensitive about which you send.
+    _WELL_KNOWN_ROLES = {name.lower(): role for role, name in _FOLDER_MAP.items()}
 
     @api.model
     def provider_code(self):
@@ -146,11 +161,25 @@ class MicrosoftGraphClient(models.AbstractModel):
 
     @api.model
     def _graph_folder(self, folder):
-        """Translate a contract folder id into a Graph folder name."""
-        try:
-            return self._FOLDER_MAP[folder]
-        except KeyError:
-            raise UserError(_('Unknown mail folder: %s') % folder)
+        """Translate a contract folder role into a Graph folder name.
+
+        Roles only: `fetch_messages` reads the two folders the sync knows about
+        and has no business being handed a folder id. Everything in the actions
+        surface goes through `_graph_folder_id` instead.
+        """
+        self._check_folder_role(folder)
+        return self._FOLDER_MAP[folder]
+
+    @api.model
+    def _graph_folder_id(self, folder):
+        """A role or a folder id, resolved to whatever Graph takes in a URL.
+
+        Graph makes this easy: a well-known name and a folder id are the same
+        path segment, so a role maps and anything else is already an id.
+        """
+        if not folder:
+            raise UserError(_('No mail folder given.'))
+        return self._FOLDER_MAP.get(folder, folder)
 
     @api.model
     def _get_config_params(self):
@@ -655,7 +684,136 @@ class MicrosoftGraphClient(models.AbstractModel):
         return response.json()
 
     @api.model
-    def send_email_via_graph(self, mail_record, mailbox, account, reply_context=None):
+    def _draft_content(self, mail_record, mailbox):
+        """Turn one `mail.mail` into the Graph message body and its attachments.
+
+        The half a send and a saved draft have in common, which is all of it
+        bar the final POST: recipients, the X-Odoo-* loop guard, inline images
+        rewritten to cid: parts, and the regular attachments kept out of the
+        JSON so the 4MB payload limit is never the thing that fails.
+
+        Returns:
+            tuple: (message dict, attachments list, error) — `error` is a failed
+            send result and is None when there is nothing wrong.
+        """
+        mailbox_email = mailbox.email
+        # Parse To recipients from both email_to and recipient_ids (partners)
+        from email.utils import parseaddr
+
+        def _parse_address_list(raw_value):
+            """Parse a comma-separated RFC 5322 address list into Graph recipient dicts."""
+            result = []
+            if not raw_value:
+                return result
+            for raw in raw_value.split(','):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                name, address = parseaddr(raw)
+                if address:
+                    recipient = {'emailAddress': {'address': address}}
+                    if name:
+                        recipient['emailAddress']['name'] = name
+                    result.append(recipient)
+            return result
+
+        to_recipients = _parse_address_list(mail_record.email_to)
+
+        # Add recipients from recipient_ids (Odoo partners)
+        if mail_record.recipient_ids:
+            for partner in mail_record.recipient_ids:
+                if partner.email:
+                    to_recipients.append({
+                        'emailAddress': {
+                            'address': partner.email,
+                            'name': partner.name
+                        }
+                    })
+
+        # Parse CC recipients from email_cc (set by Odoo core when Sign/composer adds CC)
+        cc_recipients = _parse_address_list(mail_record.email_cc)
+
+        # Check if we have any recipients at all
+        if not to_recipients and not cc_recipients:
+            # Distinguishable code so mail.mail.send() can skip+cancel this mail
+            # (typically an internal notification to a user/partner without an
+            # email address) instead of aborting the whole batch.
+            return None, [], {
+                'success': False,
+                'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
+                'error_code': ERROR_NO_RECIPIENTS,
+            }
+
+        # Build custom headers for tracking
+        internet_message_headers = []
+
+        # Add model and record ID if available
+        if mail_record.model and mail_record.res_id:
+            internet_message_headers.extend([
+                {'name': 'X-Odoo-Model', 'value': mail_record.model},
+                {'name': 'X-Odoo-Record-Id', 'value': str(mail_record.res_id)},
+            ])
+
+        # Add mail.mail ID
+        internet_message_headers.append({
+            'name': 'X-Odoo-Mail-Id',
+            'value': str(mail_record.id)
+        })
+
+        # Add mail.message ID if available (for replies)
+        if mail_record.mail_message_id:
+            internet_message_headers.append({
+                'name': 'X-Odoo-Message-Id',
+                'value': str(mail_record.mail_message_id.id)
+            })
+
+        # Process body: convert /web/image/ URLs to cid: inline attachments
+        # This embeds images directly in the email so they work regardless
+        # of whether the Odoo server is publicly accessible
+        body_html = mail_record.body_html or mail_record.body or ''
+        body_html, inline_attachments, inline_att_ids = self._prepare_inline_images(body_html)
+
+        # Build regular attachments (skip those already embedded inline)
+        regular_attachments = []
+        if mail_record.attachment_ids:
+            for attachment in mail_record.attachment_ids:
+                if attachment.id in inline_att_ids:
+                    continue
+                content_type = attachment.mimetype or mimetypes.guess_type(attachment.name)[0] or 'application/octet-stream'
+                attachment_data = attachment.datas
+                if attachment_data:
+                    regular_attachments.append({
+                        '@odata.type': '#microsoft.graph.fileAttachment',
+                        'name': attachment.name,
+                        'contentType': content_type,
+                        'contentBytes': attachment_data.decode('utf-8') if isinstance(attachment_data, bytes) else attachment_data,
+                    })
+
+        all_attachments = inline_attachments + regular_attachments
+
+        # Build message payload for draft creation (WITHOUT attachments —
+        # attachments are added separately to avoid the 4MB JSON payload limit)
+        message = {
+            'subject': mail_record.subject or '(No Subject)',
+            'body': {
+                'contentType': 'HTML',
+                'content': body_html
+            },
+            'toRecipients': to_recipients,
+            'from': {
+                'emailAddress': {
+                    'address': mailbox_email
+                }
+            },
+            'internetMessageHeaders': internet_message_headers
+        }
+        if cc_recipients:
+            message['ccRecipients'] = cc_recipients
+        return message, all_attachments, None
+
+    @api.model
+    def send_email_via_graph(self, mail_record, mailbox, account, reply_context=None,
+                             send=True):
         """
         Send email via Microsoft Graph API using Draft → Send flow.
 
@@ -670,6 +828,11 @@ class MicrosoftGraphClient(models.AbstractModel):
                 `provider_message_id` is usable here — Graph will not accept
                 In-Reply-To or References — and it selects the createReply
                 draft flow instead of a plain one.
+            send: stop after the draft is complete instead of sending it. This
+                is what `save_draft` wants, and it is the same code path rather
+                than a second one because Graph's send *is* draft-then-send:
+                everything a draft needs was already built here, and the last
+                POST is the only difference.
 
         Returns:
             dict: {
@@ -690,128 +853,22 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             _logger.info(f"[Graph API] Using delegated token for {account.email} to send from mailbox: {mailbox_email}")
 
-            # Parse To recipients from both email_to and recipient_ids (partners)
-            from email.utils import parseaddr
-
-            def _parse_address_list(raw_value):
-                """Parse a comma-separated RFC 5322 address list into Graph recipient dicts."""
-                result = []
-                if not raw_value:
-                    return result
-                for raw in raw_value.split(','):
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    name, address = parseaddr(raw)
-                    if address:
-                        recipient = {'emailAddress': {'address': address}}
-                        if name:
-                            recipient['emailAddress']['name'] = name
-                        result.append(recipient)
-                return result
-
-            to_recipients = _parse_address_list(mail_record.email_to)
-
-            # Add recipients from recipient_ids (Odoo partners)
-            if mail_record.recipient_ids:
-                for partner in mail_record.recipient_ids:
-                    if partner.email:
-                        to_recipients.append({
-                            'emailAddress': {
-                                'address': partner.email,
-                                'name': partner.name
-                            }
-                        })
-
-            # Parse CC recipients from email_cc (set by Odoo core when Sign/composer adds CC)
-            cc_recipients = _parse_address_list(mail_record.email_cc)
-
-            # Check if we have any recipients at all
-            if not to_recipients and not cc_recipients:
-                return {
-                    'success': False,
-                    'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
-                    # Distinguishable code so mail.mail.send() can skip+cancel this
-                    # mail (typically an internal notification to a user/partner
-                    # without an email address) instead of aborting the whole batch.
-                    'error_code': 'no_recipients',
-                }
-
-            # Build custom headers for tracking
-            internet_message_headers = []
-
-            # Add model and record ID if available
-            if mail_record.model and mail_record.res_id:
-                internet_message_headers.extend([
-                    {'name': 'X-Odoo-Model', 'value': mail_record.model},
-                    {'name': 'X-Odoo-Record-Id', 'value': str(mail_record.res_id)},
-                ])
-
-            # Add mail.mail ID
-            internet_message_headers.append({
-                'name': 'X-Odoo-Mail-Id',
-                'value': str(mail_record.id)
-            })
-
-            # Add mail.message ID if available (for replies)
-            if mail_record.mail_message_id:
-                internet_message_headers.append({
-                    'name': 'X-Odoo-Message-Id',
-                    'value': str(mail_record.mail_message_id.id)
-                })
-
-            # Process body: convert /web/image/ URLs to cid: inline attachments
-            # This embeds images directly in the email so they work regardless
-            # of whether the Odoo server is publicly accessible
-            body_html = mail_record.body_html or mail_record.body or ''
-            body_html, inline_attachments, inline_att_ids = self._prepare_inline_images(body_html)
-
-            # Build regular attachments (skip those already embedded inline)
-            regular_attachments = []
-            if mail_record.attachment_ids:
-                for attachment in mail_record.attachment_ids:
-                    if attachment.id in inline_att_ids:
-                        continue
-                    content_type = attachment.mimetype or mimetypes.guess_type(attachment.name)[0] or 'application/octet-stream'
-                    attachment_data = attachment.datas
-                    if attachment_data:
-                        regular_attachments.append({
-                            '@odata.type': '#microsoft.graph.fileAttachment',
-                            'name': attachment.name,
-                            'contentType': content_type,
-                            'contentBytes': attachment_data.decode('utf-8') if isinstance(attachment_data, bytes) else attachment_data,
-                        })
-
-            all_attachments = inline_attachments + regular_attachments
-
-            # Build message payload for draft creation (WITHOUT attachments —
-            # attachments are added separately to avoid the 4MB JSON payload limit)
-            message = {
-                'subject': mail_record.subject or '(No Subject)',
-                'body': {
-                    'contentType': 'HTML',
-                    'content': body_html
-                },
-                'toRecipients': to_recipients,
-                'from': {
-                    'emailAddress': {
-                        'address': mailbox_email
-                    }
-                },
-                'internetMessageHeaders': internet_message_headers
-            }
-            if cc_recipients:
-                message['ccRecipients'] = cc_recipients
+            message, all_attachments, content_error = self._draft_content(
+                mail_record, mailbox)
+            if content_error:
+                return content_error
 
             headers = {
                 'Authorization': f'Bearer {token}',
                 'Content-Type': 'application/json',
             }
 
-            # Build recipient list for logging
-            recipient_emails = [r['emailAddress'].get('address', 'NO_ADDRESS') for r in to_recipients]
-            cc_emails = [r['emailAddress'].get('address', 'NO_ADDRESS') for r in cc_recipients]
-            _logger.info(f"[Graph API] Sending email from {mailbox_email} to {recipient_emails} cc {cc_emails}")
+            recipient_emails = [r['emailAddress'].get('address', 'NO_ADDRESS')
+                                for r in message.get('toRecipients') or []]
+            cc_emails = [r['emailAddress'].get('address', 'NO_ADDRESS')
+                         for r in message.get('ccRecipients') or []]
+            _logger.info(f"[Graph API] {'Sending' if send else 'Drafting'} email from "
+                         f"{mailbox_email} to {recipient_emails} cc {cc_emails}")
 
             # Step 1: Create draft (body + headers only), threaded when we know
             # which message this answers.
@@ -839,6 +896,15 @@ class MicrosoftGraphClient(models.AbstractModel):
                         is_inline=att.get('isInline', False),
                     )
 
+            if not send:
+                _logger.info("[Graph API] Stored draft %s", draft_id)
+                return {
+                    'success': True,
+                    'microsoft_draft_id': draft_id,
+                    'microsoft_message_id': microsoft_message_id,
+                    'microsoft_conversation_id': microsoft_conversation_id,
+                }
+
             # Step 3: Send the draft
             send_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/send'
             send_response = requests.post(send_url, headers=headers, timeout=30)
@@ -848,6 +914,7 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             return {
                 'success': True,
+                'microsoft_draft_id': draft_id,
                 'microsoft_message_id': microsoft_message_id,
                 'microsoft_conversation_id': microsoft_conversation_id,
             }
@@ -1284,3 +1351,404 @@ class MicrosoftGraphClient(models.AbstractModel):
         except Exception as e:
             _logger.warning(f"[Graph API] Could not fetch user email: {e}")
             return None
+
+    # -------------------------------------------------------------------------
+    # Mailbox actions — contract implementation
+    #
+    # Folders, search, marking, filing and drafts. Everything here addresses a
+    # mailbox as /users/{email}/..., the same delegated token the sync and the
+    # send already use, and every folder argument goes through
+    # `_graph_folder_id` so a role and a folder id are interchangeable.
+    # -------------------------------------------------------------------------
+
+    def _graph_call(self, account, method, path, **kwargs):
+        """One authenticated Graph call against the mailbox, JSON in and out.
+
+        Everything below goes through it so that retry, rate limiting and the
+        error message an admin actually reads are written once.
+        """
+        token = self.get_valid_token(account)
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json',
+        }
+        url = f'https://graph.microsoft.com/v1.0{path}'
+        try:
+            response = self._request_with_retry(method, url, headers=headers, **kwargs)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            detail = self._extract_graph_error(e)
+            _logger.error('[Graph API] %s %s failed: %s', method.upper(), path, detail)
+            raise UserError(_('Microsoft 365 refused the request: %s') % detail)
+        if response.status_code == 204 or not (response.content or b'').strip():
+            return {}
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    # ---- folders ------------------------------------------------------------
+
+    @api.model
+    def list_folders(self, account, mailbox):
+        """Every folder in the mailbox, children included (see contract).
+
+        Graph lists one level at a time, so the children are walked rather than
+        asked for: `childFolderCount` says where to descend and nowhere else,
+        which keeps this to one call per folder that actually has children.
+
+        The role comes from `wellKnownName` when Graph fills it in, and from
+        the folder's position among the well-known folders when it does not —
+        never from the display name, which is localized.
+        """
+        folders = []
+        self._walk_folders(account, mailbox, '/mailFolders', folders, depth=0)
+        return folders
+
+    def _walk_folders(self, account, mailbox, path, out, depth, prefix=''):
+        # Deep enough for any mailbox a person made by hand; a cycle or a
+        # pathological hierarchy stops here rather than in a timeout.
+        if depth > 6:
+            return
+        data = self._graph_call(
+            account, 'get', f'/users/{mailbox.email}{path}',
+            params={'$top': 200},
+        )
+        for raw in data.get('value') or []:
+            folder_id = raw.get('id')
+            if not folder_id:
+                continue
+            name = raw.get('displayName') or ''
+            out.append({
+                'id': folder_id,
+                'name': prefix + name if prefix else name,
+                'role': self._folder_role(raw),
+            })
+            if raw.get('childFolderCount'):
+                self._walk_folders(
+                    account, mailbox, f'/mailFolders/{folder_id}/childFolders',
+                    out, depth + 1, prefix=f'{prefix}{name}/',
+                )
+
+    @api.model
+    def _folder_role(self, raw):
+        """Which contract role a Graph folder claims, if any."""
+        well_known = (raw.get('wellKnownName') or '').lower()
+        return self._WELL_KNOWN_ROLES.get(well_known)
+
+    @api.model
+    def _folder_id_for_role(self, account, mailbox, role):
+        """The mailbox's own id for a role's well-known folder."""
+        self._check_folder_role(role)
+        data = self._graph_call(
+            account, 'get',
+            f'/users/{mailbox.email}/mailFolders/{self._FOLDER_MAP[role]}',
+            params={'$select': 'id,displayName'},
+        )
+        return data.get('id')
+
+    @api.model
+    def _refuse_if_load_bearing(self, account, mailbox, folder, verb):
+        """Refuse the inbox and any folder holding a role.
+
+        Every one of them is somewhere mail is filed without anybody asking —
+        the Sent copy, the Trash a delete lands in, the Drafts a review sits
+        in. Renaming or deleting one breaks that quietly and the next call
+        cannot say why, so it is refused by name rather than gated behind a
+        confirmation nobody can judge.
+        """
+        folder_id = self._graph_folder_id(folder)
+        for role in FOLDER_ROLES:
+            if folder in (role, self._FOLDER_MAP[role]):
+                raise UserError(_(
+                    'The %(role)s folder cannot be %(verb)s: mail is filed there '
+                    'without anyone asking, including by Microsoft 365 itself.',
+                    role=role, verb=verb,
+                ))
+            if self._folder_id_for_role(account, mailbox, role) == folder_id:
+                raise UserError(_(
+                    'That is this mailbox\'s %(role)s folder, so it cannot be '
+                    '%(verb)s: mail is filed there without anyone asking, '
+                    'including by Microsoft 365 itself.',
+                    role=role, verb=verb,
+                ))
+
+    @api.model
+    def create_folder(self, account, mailbox, name, parent=None):
+        """Create a folder, optionally inside `parent` (see contract)."""
+        name = (name or '').strip()
+        if not name:
+            raise UserError(_('A folder needs a name.'))
+        if parent:
+            parent_id = self._graph_folder_id(parent)
+            path = f'/users/{mailbox.email}/mailFolders/{parent_id}/childFolders'
+        else:
+            path = f'/users/{mailbox.email}/mailFolders'
+        existing = self._graph_call(account, 'get', path, params={'$top': 200})
+        for raw in existing.get('value') or []:
+            if (raw.get('displayName') or '').lower() == name.lower():
+                # Asked for, and already true. Not a failure.
+                return raw.get('id'), False
+        created = self._graph_call(account, 'post', path, json={'displayName': name})
+        return created.get('id'), True
+
+    @api.model
+    def rename_folder(self, account, mailbox, folder, new_name):
+        """Rename a folder, keeping it where it is (see contract)."""
+        new_name = (new_name or '').strip()
+        if not new_name:
+            raise UserError(_('A folder needs a name.'))
+        self._refuse_if_load_bearing(account, mailbox, folder, _('renamed'))
+        folder_id = self._graph_folder_id(folder)
+        data = self._graph_call(
+            account, 'patch', f'/users/{mailbox.email}/mailFolders/{folder_id}',
+            json={'displayName': new_name},
+        )
+        return data.get('id') or folder_id
+
+    @api.model
+    def delete_folder(self, account, mailbox, folder):
+        """Delete an EMPTY folder (see contract).
+
+        Graph deletes the folder's mail with it, exactly as IMAP does, so the
+        emptiness check is not a courtesy — it is the whole reason the caller
+        can trust that nothing here loses mail.
+        """
+        self._refuse_if_load_bearing(account, mailbox, folder, _('deleted'))
+        folder_id = self._graph_folder_id(folder)
+        raw = self._graph_call(
+            account, 'get', f'/users/{mailbox.email}/mailFolders/{folder_id}',
+            params={'$select': 'id,displayName,totalItemCount,childFolderCount'},
+        )
+        if raw.get('childFolderCount'):
+            raise UserError(_(
+                '"%(name)s" still has %(count)s folder(s) inside it. Delete those '
+                'first, innermost one first.',
+                name=raw.get('displayName') or folder, count=raw['childFolderCount'],
+            ))
+        if raw.get('totalItemCount'):
+            raise UserError(_(
+                '"%(name)s" still holds %(count)s message(s), and deleting a folder '
+                'takes its mail with it. Empty it first: delete the messages (they '
+                'go to the Deleted Items folder and can be fished back out) or move '
+                'them somewhere else.',
+                name=raw.get('displayName') or folder, count=raw['totalItemCount'],
+            ))
+        self._graph_call(account, 'delete', f'/users/{mailbox.email}/mailFolders/{folder_id}')
+        return folder_id
+
+    # ---- searching ----------------------------------------------------------
+
+    @api.model
+    def search_messages(self, account, mailbox, folder=FOLDER_INBOX, query=None,
+                        sender=None, unread_only=False, flagged_only=False,
+                        has_attachment=False, limit=50):
+        """Search one folder, newest first (see contract).
+
+        Graph refuses `$search` and `$filter` in the same request, which is the
+        one thing that shapes this method. With free text we go to `$search`
+        and hand it the terms KQL understands (`from:`, `hasAttachment:`);
+        without it we go to `$filter`, which is the only way to get
+        `$orderby receivedDateTime desc` at all — `$search` orders by
+        relevance and will not be told otherwise.
+
+        What KQL cannot express (read and flag state) is verified here, on the
+        summaries Graph returned: narrowing in Python after the fact is exact,
+        and the alternative is a filter the server would refuse to combine.
+        """
+        limit = max(1, min(int(limit or 50), 200))
+        folder_id = self._graph_folder_id(folder)
+        select = ('id,internetMessageId,conversationId,subject,from,toRecipients,'
+                  'ccRecipients,receivedDateTime,bodyPreview,hasAttachments,isRead,flag')
+        params = {'$top': limit, '$select': select}
+
+        if query:
+            terms = [str(query).strip()]
+            if sender:
+                terms.append('from:%s' % sender)
+            if has_attachment:
+                terms.append('hasAttachment:true')
+            params['$search'] = '"%s"' % ' '.join(terms).replace('"', '')
+        else:
+            clauses = []
+            if sender:
+                clauses.append("from/emailAddress/address eq '%s'" % str(sender).replace("'", "''"))
+            if has_attachment:
+                clauses.append('hasAttachments eq true')
+            if unread_only:
+                clauses.append('isRead eq false')
+            if clauses:
+                params['$filter'] = ' and '.join(clauses)
+            params['$orderby'] = 'receivedDateTime desc'
+
+        data = self._graph_call(
+            account, 'get',
+            f'/users/{mailbox.email}/mailFolders/{folder_id}/messages',
+            params=params,
+        )
+        messages = []
+        for raw in data.get('value') or []:
+            if unread_only and raw.get('isRead'):
+                continue
+            if flagged_only and (raw.get('flag') or {}).get('flagStatus') != 'flagged':
+                continue
+            messages.append(self._normalize_message(raw))
+        return messages[:limit]
+
+    # ---- message state ------------------------------------------------------
+
+    @api.model
+    def set_seen(self, account, mailbox, provider_message_ids, seen=True):
+        """Mark messages read or unread (see contract)."""
+        return self._patch_messages(account, mailbox, provider_message_ids,
+                                    {'isRead': bool(seen)})
+
+    @api.model
+    def set_flagged(self, account, mailbox, provider_message_ids, flagged=True):
+        """Star messages or unstar them (see contract)."""
+        status = 'flagged' if flagged else 'notFlagged'
+        return self._patch_messages(account, mailbox, provider_message_ids,
+                                    {'flag': {'flagStatus': status}})
+
+    def _patch_messages(self, account, mailbox, provider_message_ids, payload):
+        """PATCH the same body onto each message. Returns how many were changed.
+
+        One request per message on purpose: Graph's `$batch` would halve the
+        round trips and doubles the failure modes (a partial batch reports 200
+        with per-item errors inside), and marking a handful of messages is not
+        where this module spends its time.
+        """
+        count = 0
+        for message_id in self._as_id_list(provider_message_ids):
+            self._graph_call(
+                account, 'patch', f'/users/{mailbox.email}/messages/{message_id}',
+                json=payload,
+            )
+            count += 1
+        return count
+
+    @api.model
+    def _as_id_list(self, provider_message_ids):
+        """One id or many, always a list."""
+        if not provider_message_ids:
+            return []
+        if isinstance(provider_message_ids, str):
+            return [provider_message_ids]
+        return [i for i in provider_message_ids if i]
+
+    # ---- filing -------------------------------------------------------------
+
+    @api.model
+    def move_messages(self, account, mailbox, provider_message_ids, destination):
+        """Move messages into `destination` (see contract).
+
+        Graph mints a new message id on a move, which is why the new ones come
+        back: a caller holding the old id is holding a reference to a message
+        that is not there any more.
+        """
+        destination_id = self._graph_folder_id(destination)
+        moved = []
+        for message_id in self._as_id_list(provider_message_ids):
+            data = self._graph_call(
+                account, 'post', f'/users/{mailbox.email}/messages/{message_id}/move',
+                json={'destinationId': destination_id},
+            )
+            moved.append(data.get('id') or message_id)
+        return moved
+
+    @api.model
+    def delete_messages(self, account, mailbox, provider_message_ids):
+        """Move messages to Deleted Items (see contract).
+
+        Not `DELETE /messages/{id}`, which on Graph is a real delete once the
+        message is already in Deleted Items — and the point of this method is
+        that it is the one mail write a person can undo.
+        """
+        message_ids = self._as_id_list(provider_message_ids)
+        trash_id = self._folder_id_for_role(account, mailbox, FOLDER_TRASH)
+        for message_id in message_ids:
+            raw = self._graph_call(
+                account, 'get', f'/users/{mailbox.email}/messages/{message_id}',
+                params={'$select': 'id,parentFolderId'},
+            )
+            if raw.get('parentFolderId') == trash_id:
+                raise UserError(_(
+                    'Those messages are already in Deleted Items. Emptying it is not '
+                    'something Mail Pro does for you: move them somewhere else, or '
+                    'delete them in Outlook.'
+                ))
+        return self.move_messages(account, mailbox, message_ids, trash_id), trash_id
+
+    # ---- drafts -------------------------------------------------------------
+
+    @api.model
+    def save_draft(self, mail_record, mailbox, account, reply_context=None):
+        """Store `mail_record` in Drafts without sending (see contract)."""
+        result = self.send_email_via_graph(
+            mail_record=mail_record, mailbox=mailbox, account=account,
+            reply_context=reply_context, send=False,
+        )
+        if not result.get('success'):
+            raise UserError(_('Could not save the draft: %s') % (result.get('error') or ''))
+        return result.get('microsoft_draft_id')
+
+    @api.model
+    def update_draft(self, mail_record, mailbox, account, provider_message_id,
+                     reply_context=None):
+        """Replace a stored draft's content, keeping the draft (see contract).
+
+        PATCHed in place rather than deleted and rebuilt, which is what keeps
+        the threading `reply_context` is allowed to be silent about: the draft
+        Graph made with `createReply` carries In-Reply-To, References and the
+        conversationId, and none of those can be set on a draft made from
+        scratch. The attachments are the exception — Graph has no way to
+        replace a collection, so they are removed and re-added.
+        """
+        payload, attachments, error = self._draft_content(mail_record, mailbox)
+        if error:
+            raise UserError(_('Could not update the draft: %s') % error)
+        base = f'/users/{mailbox.email}/messages/{provider_message_id}'
+        self._graph_call(account, 'patch', base, json=payload)
+
+        existing = self._graph_call(account, 'get', f'{base}/attachments',
+                                    params={'$select': 'id'})
+        for raw in existing.get('value') or []:
+            if raw.get('id'):
+                self._graph_call(account, 'delete', f'{base}/attachments/{raw["id"]}')
+
+        token = self.get_valid_token(account)
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        for att in attachments:
+            raw_bytes = base64.b64decode(att['contentBytes'])
+            if len(raw_bytes) < DIRECT_ATTACHMENT_LIMIT:
+                self._add_attachment_to_draft(headers, mailbox.email,
+                                              provider_message_id, att)
+            else:
+                self._upload_large_attachment(
+                    headers, mailbox.email, provider_message_id,
+                    name=att['name'], content_type=att['contentType'],
+                    raw_bytes=raw_bytes, is_inline=att.get('isInline', False),
+                )
+        return provider_message_id
+
+    @api.model
+    def send_draft(self, account, mailbox, provider_message_id):
+        """Send a stored draft as it stands (see contract).
+
+        Graph sends the draft itself and files it in Sent Items, so there is no
+        draft left to remove afterwards — the one place this provider gets the
+        never-fatal cleanup for free.
+        """
+        base = f'/users/{mailbox.email}/messages/{provider_message_id}'
+        # Read the ids before sending: the draft is gone from Drafts the moment
+        # it goes out, and these are the handles dedup and threading key on.
+        raw = self._graph_call(account, 'get', base,
+                               params={'$select': 'id,internetMessageId,conversationId'})
+        self._graph_call(account, 'post', f'{base}/send')
+        return {
+            'success': True,
+            'error': None,
+            'error_code': None,
+            'message_id': raw.get('internetMessageId'),
+            'thread_id': raw.get('conversationId'),
+        }
