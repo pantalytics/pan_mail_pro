@@ -35,7 +35,8 @@
                 <button class="btn btn-sm btn-link p-0" t-on-click="() => this.refresh()">Try again</button>
             </div>
 
-            <div class="o_mailpro_panes d-flex flex-grow-1">
+            <div class="o_mailpro_panes d-flex flex-grow-1"
+                 t-att-class="{'o_mailpro_zoomed': panes.state.zoom}">
 
                 <!--
                     1. where you are: the mailbox, and inside it the folder.
@@ -46,7 +47,7 @@
                     itself. A folded mailbox is not counted, so a rail of six
                     accounts costs what the ones you actually watch cost.
                 -->
-                <nav t-if="!panes.state.collapsed.rail" class="o_mailpro_rail"
+                <nav t-if="!panes.state.collapsed.rail and !panes.state.zoom" class="o_mailpro_rail"
                      aria-label="Mailboxes and folders"
                      t-attf-style="flex-basis: {{panes.state.rail}}px">
                     <t t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id">
@@ -83,7 +84,7 @@
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 2. what is waiting -->
-                <div class="o_mailpro_list" role="region" aria-label="Conversations"
+                <div t-if="!panes.state.zoom" class="o_mailpro_list" role="region" aria-label="Conversations"
                      t-attf-style="flex-basis: {{panes.state.list}}px">
 
                     <!--
@@ -181,7 +182,7 @@
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 3. the conversation -->
-                <div class="o_mailpro_thread" role="region" aria-label="Conversation">
+                <div t-if="!panes.state.zoom" class="o_mailpro_thread" role="region" aria-label="Conversation">
                     <t t-if="state.selected">
                         <div class="o_mailpro_thread_head">
                             <div class="d-flex align-items-start justify-content-between gap-3">
@@ -381,13 +382,21 @@
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 4. the record: the pane a mail client cannot have -->
-                <div t-if="!panes.state.collapsed.record" class="o_mailpro_record"
+                <div t-if="!panes.state.collapsed.record or panes.state.zoom" class="o_mailpro_record"
                      role="region" aria-label="Record"
                      t-attf-style="flex-basis: {{panes.state.record}}px">
-                    <RecordPane t-if="selectedRecord" record="selectedRecord"/>
+                    <RecordPane t-if="selectedRecord" record="selectedRecord"
+                                zoomed="panes.state.zoom"
+                                zoomLabel="panes.zoomLabel()"
+                                onToggleZoom.bind="() => panes.toggleZoom()"/>
                     <div t-else="" class="o_mailpro_empty">
                         <h3 class="o_mailpro_empty_title">No record yet.</h3>
                         <p class="o_mailpro_empty_text">File this conversation and it appears here.</p>
+                        <!-- Zoom hides the way back with the rest of the
+                             screen, so the way back comes along. -->
+                        <button t-if="panes.state.zoom" type="button"
+                                class="btn btn-secondary btn-sm"
+                                t-on-click="() => panes.toggleZoom()">Back to the Inbox</button>
                     </div>
                 </div>
 
@@ -477,7 +486,7 @@
         without knowing that double-click resets.
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
-        <div class="o_mailpro_split"
+        <div t-if="!panes.state.zoom" class="o_mailpro_split"
              t-att-class="'o_mailpro_split_' + divider
                           + (panes.state.collapsed[divider] ? ' o_mailpro_split_folded' : '')"
              role="separator" aria-orientation="vertical" tabindex="0"
@@ -516,13 +525,29 @@
                     record this is and offers the one action that leaves the
                     screen. Everything else you can do to it, you do below.
                 -->
-                <div class="o_mailpro_record_head d-flex align-items-center justify-content-between gap-2">
+<div class="o_mailpro_record_head d-flex align-items-center justify-content-between gap-2"
+                     t-on-dblclick="() => this.props.onToggleZoom()">
                     <div class="min-w-0">
                         <div class="o_mailpro_label" t-esc="props.record.model_label"/>
                         <h2 class="o_mailpro_record_name text-truncate" t-esc="props.record.name"/>
                     </div>
-                    <button type="button" class="btn btn-secondary btn-sm"
-                            t-on-click="() => this.openRecord()">Open</button>
+                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                        <!--
+                            The record on the whole screen while you read it.
+                            Quiet, because Open is still the action that
+                            leaves; this one only moves a divider.
+                        -->
+                        <button type="button" class="btn btn-link btn-sm o_mailpro_record_zoom"
+                                t-att-title="props.zoomLabel"
+                                t-att-aria-pressed="props.zoomed ? 'true' : 'false'"
+                                t-on-click="() => this.props.onToggleZoom()">
+                            <i class="fa" aria-hidden="true"
+                               t-att-class="props.zoomed ? 'fa-compress' : 'fa-expand'"/>
+                            <span class="visually-hidden" t-esc="props.zoomLabel"/>
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm"
+                                t-on-click="() => this.openRecord()">Open</button>
+                    </div>
                 </div>
                 <View t-props="viewProps"/>
             </t>
