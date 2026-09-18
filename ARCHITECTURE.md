@@ -984,8 +984,9 @@ carried four models, an API key in the database, a data-disclosure paragraph in
 the manifest and a boolean on every mailbox whose only job was to stay False.
 That is a standing cost against a feature nobody had asked to switch on.
 
-**Where it would go back.** In the matcher, as one more rule at the bottom of
-`_match_rules()` — never in rules 1 to 3, where a `References` chain is exact,
+**Where it would go back**, and what would have to be true first, is
+[docs/plans/mail-triage.md](docs/plans/mail-triage.md). In short: in the
+matcher, as one more rule at the bottom of `_match_rules()` — never in rules 1 to 3, where a `References` chain is exact,
 free and reproducible and a language model would make a solved problem
 probabilistic. The ambiguous residue is where it earns its place: a customer
 who starts a fresh mail instead of replying, a known contact with three open
