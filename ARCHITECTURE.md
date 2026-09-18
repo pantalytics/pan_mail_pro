@@ -1683,6 +1683,13 @@ server half lives in `pantalytics/mail-pro-admin`.
   unreadable anyway because it goes through `decrypt_value`.
 - **Check Approval is a button, not a poll loop.** The admin knows when they
   approved. Dropped: the page does not refresh itself.
+- **Until it is connected, the settings page is one button.** The checklist,
+  the users block and About are hidden while the state is anything but
+  connected: every one of them configures a product that will not sync, and a
+  checklist you cannot finish reads as the broken thing on the screen. One
+  screen, one action. `tools/ui_check.py` disconnects the seeded instance and
+  asserts exactly that, because the gate is a view modifier no Python test can
+  see.
 - **Mail Pro works on a connected Odoo instance** (19.0.9.0.0, #126).
   `sync_allowed()` gates incoming sync (the cron, which marks the mailboxes
   with the reason, and Sync Now) and creating a **new** `pan.mail.account`.
