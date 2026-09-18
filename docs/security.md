@@ -128,7 +128,10 @@ User → Odoo → Microsoft Graph API / Gmail API / IMAP+SMTP host
 4. Call made to the provider
 5. Response processed in Odoo
 
-Nothing goes to Pantalytics.
+Nothing of this goes to Pantalytics. The one thing that does is the daily
+licence check-in: module and Odoo version, how many accounts are connected
+and whether sync is healthy. Counts and flags only; never an address, a
+subject or a message.
 
 ## Audit Trail
 
