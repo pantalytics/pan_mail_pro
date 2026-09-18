@@ -468,7 +468,9 @@ class Checks:
             if full is None:
                 self.fail('clicking the To/Cc line did not open the header')
             else:
-                labels = [dt.inner_text().strip() for dt in full.query_selector_all('dt')]
+                # text_content, not inner_text: the labels are set in
+                # capitals by CSS, and inner_text returns what is drawn.
+                labels = [dt.text_content().strip() for dt in full.query_selector_all('dt')]
                 for word in ('From', 'To', 'Date'):
                     if word not in labels:
                         self.fail(f'the open header has no {word} line')
