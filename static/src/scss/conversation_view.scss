@@ -207,6 +207,26 @@ $mailpro-warn: #c0392b;
 
     .o_mailpro_more { padding: 0.75rem 1rem; text-align: center; }
 
+    // The picture is what makes a list or a stack scannable at a glance: you
+    // find the line you want by who it is with, long before you read a name.
+    // Shared by the conversation list and the thread.
+    .o_mailpro_avatar {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+
+    .o_mailpro_avatar_text {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(93, 91, 214, 0.14);
+        color: $mailpro-accent-ink;
+        font-size: 0.6875rem;
+        font-weight: 600;
+    }
+
     // 2. the list
     .o_mailpro_list {
         flex: 0 0 auto;
@@ -348,25 +368,6 @@ $mailpro-warn: #c0392b;
         align-items: flex-start;
         border-bottom: 1px solid $mailpro-line-soft;
         padding-bottom: 0.625rem;
-    }
-
-    // The picture is what makes a stack scannable at a glance: you find the
-    // message you want by who wrote it long before you read a name.
-    .o_mailpro_avatar {
-        width: 2rem;
-        height: 2rem;
-        border-radius: 50%;
-        object-fit: cover;
-    }
-
-    .o_mailpro_avatar_text {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(93, 91, 214, 0.14);
-        color: $mailpro-accent-ink;
-        font-size: 0.6875rem;
-        font-weight: 600;
     }
 
     .o_mailpro_message_from { font-size: 0.8125rem; font-weight: 600; }

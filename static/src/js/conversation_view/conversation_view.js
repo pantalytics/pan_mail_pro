@@ -373,6 +373,11 @@ export class ConversationView extends Component {
         return `/web/image/res.partner/${message.author_id}/avatar_128`;
     }
 
+    /** The same picture for the list, from the contact the thread is with. */
+    partnerAvatar(conversation) {
+        return `/web/image/res.partner/${conversation.partner_id}/avatar_128`;
+    }
+
     initials(name) {
         const words = (name || "").split(/\s+/).filter(Boolean);
         if (!words.length) {
