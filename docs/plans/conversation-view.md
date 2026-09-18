@@ -7,10 +7,11 @@ record pane without its chatter, reading through
 Still on paper: the *screens* for door 1 (the chatter's own button and its
 more-messages-elsewhere line) and for the customer view and its timeline. Their
 read methods shipped and are tested, so what is left of each is markup. Also
-still on paper: the composer's **To/Cc/followers block**. Reply and Log note
-open Odoo's own composer unextended, so To is filled from the newest inbound
-message and Cc is not filled at all -- the recipient block below is decided,
-not built.
+still on paper: the composer's **To/Cc/followers block** and the **New mail**
+flow beside it. Reply and Log note open Odoo's own composer unextended, so To
+is filled from the newest inbound message and Cc is not filled at all, and
+there is no way to start a mail that is not an answer. Both are decided below,
+neither is built.
 
 Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
 the inbox, an unfiled conversation, the model, the chatter with its door to the
@@ -171,6 +172,63 @@ purpose (19.0.6.3.0). A field that exists leaks eventually -- through an
 export, the API, a report or a template -- and no respondent asked for one.
 Somebody who needs a blind copy has a mail client. If Bcc ever arrives it
 arrives as a design change with a reason, not as a third input on a form.
+
+### A new mail
+
+**Every mail sent from this screen is posted on a record, and the default is
+the contact. There is no unlinked outbound mail.**
+
+That is the one decision here. 19.0.12.0.0 established why: a `mail.message`
+with no `model` is visible to its author and to almost nobody else, so a new
+mail with no record is a mail the colleague who has to answer the reply cannot
+see. `res.partner` is the real fallback state, the "On a contact only" folder
+is where it lands, and the reader can move it from there like any other
+mail.
+
+**New** sits at the top of the conversation list and is that pane's one
+primary action. It opens in pane 3, because that is the only pane anybody
+writes in, and the list keeps its selection so the thread being read is still
+there after a discard.
+
+The composer is the same `mail.compose.message`, in the same inline form, with
+the reply's block plus two lines:
+
+- **From** -- the mailbox. The Send From dropdown the composer already has.
+- **To**, **Cc** -- empty instead of filled from an inbound message. No Bcc,
+  for the reasons above.
+- **Subject** -- required. A reply inherits one; a new mail without one is the
+  mail nobody answers, and it is also what the `References` root will carry.
+- **Linked to** -- one line under Cc, never empty. It fills itself from the
+  first To the moment that resolves to a contact, and offers that contact's own
+  open documents as chips beside it: the quote, the ticket, the invoice. A
+  typed address that matches no contact becomes one, the way Odoo's composer
+  already makes one, and that contact is the link. *Other...* opens the picker
+  `link_targets()` already serves, which is the same list triage corrects a
+  match from.
+- **Followers** -- the read-only line, drawn only once the link is a real
+  document. Same rule as the reply, and nobody is subscribed by this screen
+  here either.
+
+With a conversation selected, New starts from it: To is its correspondent and
+Linked to is the record it is on. That is the "mail this customer about this
+quote" case, and it costs nothing because both values are already on screen.
+
+Send is `message_post` on the linked record, so the reply arrives through the
+matcher, finds the `References` root in the thread index, and lands on the same
+record at rule 3. The link is written once, by the person who knew it, and the
+conversation compounds from there.
+
+**The cases we drop.**
+
+- **Drafts.** Closing the pane loses the text. The composer is a transient
+  model and a half-written mail that survives a reload is a second inbox to
+  empty.
+- **More than one record.** One mail, one record. `mail.message` has one
+  `res_id`, and a mail that is about two things is two mails or a link in the
+  body.
+- **Creating a record from the composer.** No "new lead from this mail". Make
+  the record, then write from it. A composer that also creates documents is a
+  second creation form, with none of the validation of the first.
 
 ## What Odoo already has
 
