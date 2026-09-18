@@ -118,8 +118,15 @@ class PanMailFetcher(models.AbstractModel):
         # continues whatever the mailbox was configured for; the gate ladder is
         # what decides how much of the rest may enter. A mailbox nobody wants
         # touched at all is archived, which is the one switch that means it.
+        # `error` is in the set on purpose. It used to be the one state the
+        # cron could not see, so the first failure of any kind -- a Graph 503,
+        # a timeout -- took the mailbox out of the run permanently and only a
+        # person pressing a button could put it back. What keeps a genuinely
+        # broken mailbox from being retried every minute is the credentials
+        # filter below, not the state: revoked consent and a deleted account
+        # both fail `_has_working_credentials()`.
         mailboxes = self.env['pan.mail.mailbox'].search([
-            ('state', 'in', ['active', 'draft']),  # Also try draft to auto-activate
+            ('state', 'in', ['active', 'draft', 'error']),
         ]).filtered(lambda m: m._has_working_credentials())
 
         # Setup is not a warning, it is a phase: nothing is carried until all
@@ -152,18 +159,17 @@ class PanMailFetcher(models.AbstractModel):
                 if stall:
                     # Written outside the savepoint's success path but with no
                     # exception, so the mail that did land this run is kept and
-                    # the reason it stopped there is on the mailbox.
+                    # the reason it stopped there is on the mailbox. A stall is
+                    # a message this mailbox cannot process, not a bad minute
+                    # at the provider, so it goes straight to `error`.
                     mailbox.write({'state': 'error', 'error_message': stall})
-                elif mailbox.state != 'active':
-                    mailbox.write({'state': 'active', 'error_message': False})
+                else:
+                    mailbox._record_sync_success()
             except Exception as e:
                 # Savepoint rolled back: the cursor is usable again, so the
                 # error write below won't hit "current transaction is aborted".
                 _logger.exception(f"[Incoming Mail] Error processing mailbox {mailbox.email}")
-                mailbox.write({
-                    'state': 'error',
-                    'error_message': str(e),
-                })
+                mailbox._record_sync_failure(str(e))
 
         _logger.info("[Incoming Mail] Sync completed")
 

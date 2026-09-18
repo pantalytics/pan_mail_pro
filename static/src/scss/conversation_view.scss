@@ -136,14 +136,22 @@ $mailpro-warn: #c0392b;
     }
 
     // The account, and under it its folders. Same shape as the mail client
-    // next to this one, so nobody has to learn where they are.
+    // next to this one, so nobody has to learn where they are. The row is the
+    // caret and the name: two controls, because folding a mailbox away and
+    // opening it are two different intentions.
+    .o_mailpro_mailbox_row {
+        margin-top: 0.25rem;
+
+        &:first-child { margin-top: 0; }
+    }
+
     .o_mailpro_mailbox {
-        width: 100%;
+        flex: 1 1 auto;
+        min-width: 0;
         border: 0;
         background: none;
         text-align: left;
-        padding: 0.5rem 0.625rem;
-        margin-top: 0.25rem;
+        padding: 0.5rem 0.625rem 0.5rem 0.25rem;
         border-radius: 0.25rem;
         font-size: 0.75rem;
         font-weight: 600;
@@ -152,7 +160,23 @@ $mailpro-warn: #c0392b;
         cursor: pointer;
 
         &:hover { background: rgba(0, 29, 33, 0.04); }
-        &:first-child { margin-top: 0; }
+    }
+
+    // A caret with a 24px target, which is what a finger and a shaking hand
+    // both need; the glyph itself stays as quiet as the label beside it.
+    .o_mailpro_mailbox_toggle {
+        width: 1.5rem;
+        height: 1.5rem;
+        border: 0;
+        background: none;
+        padding: 0;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        line-height: 1;
+        color: $mailpro-faint;
+        cursor: pointer;
+
+        &:hover { background: rgba(0, 29, 33, 0.06); }
     }
 
     .o_mailpro_mailbox_name { min-width: 0; }
@@ -191,6 +215,7 @@ $mailpro-warn: #c0392b;
     // mouse-only affordance, and this screen is navigated with a keyboard all
     // day by the people who live in it.
     .o_mailpro_mailbox,
+    .o_mailpro_mailbox_toggle,
     .o_mailpro_folder,
     .o_mailpro_item,
     .o_mailpro_chip_button,
@@ -206,6 +231,26 @@ $mailpro-warn: #c0392b;
     }
 
     .o_mailpro_more { padding: 0.75rem 1rem; text-align: center; }
+
+    // The picture is what makes a list or a stack scannable at a glance: you
+    // find the line you want by who it is with, long before you read a name.
+    // Shared by the conversation list and the thread.
+    .o_mailpro_avatar {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+
+    .o_mailpro_avatar_text {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(93, 91, 214, 0.14);
+        color: $mailpro-accent-ink;
+        font-size: 0.6875rem;
+        font-weight: 600;
+    }
 
     // 2. the list
     .o_mailpro_list {
@@ -386,25 +431,6 @@ $mailpro-warn: #c0392b;
         align-items: flex-start;
         border-bottom: 1px solid $mailpro-line-soft;
         padding-bottom: 0.625rem;
-    }
-
-    // The picture is what makes a stack scannable at a glance: you find the
-    // message you want by who wrote it long before you read a name.
-    .o_mailpro_avatar {
-        width: 2rem;
-        height: 2rem;
-        border-radius: 50%;
-        object-fit: cover;
-    }
-
-    .o_mailpro_avatar_text {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(93, 91, 214, 0.14);
-        color: $mailpro-accent-ink;
-        font-size: 0.6875rem;
-        font-weight: 600;
     }
 
     .o_mailpro_message_from { font-size: 0.8125rem; font-weight: 600; }

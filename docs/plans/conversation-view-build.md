@@ -1,7 +1,8 @@
 # Building the conversation view
 
-Status: **steps 1 to 3 built** in 19.0.10.0.0, the reply moved into the pane
-in 19.0.10.3.0, the rest proposed. The screen and
+Status: **steps 1 to 3 built** in 19.0.10.0.0 and step 4's composer in
+19.0.10.5.0 -- the reply is in the pane, the tab strip and the chatter are
+still to come. The rest is proposed. The screen and
 its rules are in [conversation-view.md](conversation-view.md); this file is how
 it gets built. What shipped is the read layer, the client action with its four
 panes, and Reply through Odoo's own composer. What the browser found that no
@@ -10,9 +11,10 @@ unit test would have is at the bottom, under **What actually broke**.
 ## The decision: OWL, inside the Odoo backend
 
 Not a separate frontend. The one thing this product has that Outlook cannot
-have is the fourth pane, the real Odoo record with its real chatter, and there
-is exactly one place where that is free: inside the web client, where the form
-view already exists and already knows the session.
+have is the fourth pane, the real Odoo record -- its fields, its status bar and
+its buttons, rendered by Odoo -- and there is exactly one place where that is
+free: inside the web client, where the form view already exists and already
+knows the session.
 
 What a standalone app (React, its own service) would cost:
 
@@ -144,8 +146,13 @@ flowchart TD
   in a `useState`, and nothing else holds state.
 - **`RecordPane`** mounts Odoo's own `View` component with `type="form"`, which
   is what `FormViewDialog` already does with a form inside another component.
-  The chatter comes with it, so we do not rebuild the chatter, the activities,
-  or the follower list.
+  **Without the chatter**: pane 3 is the chatter now, and two composers a
+  divider apart is the thing that decision fixes. See
+  [Writing happens in one pane](conversation-view.md#writing-happens-in-one-pane).
+- **`ThreadPane`** owns the tab strip -- Mail, Everything, Files, Activities --
+  and the composer under it. Three of the four read from
+  `pan.mail.conversation`; Activities reads `mail.activity` on the records the
+  conversation touched, because those rows are Odoo's and stay Odoo's.
 - **`conversationService`** is the only thing that calls `orm`. Components read
   from it and call it; they never call `orm` directly, which is what keeps the
   five methods above the whole API surface.
@@ -200,8 +207,28 @@ company with no headcount to spare.
    pane. Already useful: it is the first time a mailbox is readable in Odoo.
 3. The record pane. The risky step, alone, so it cannot take anything else down
    with it.
-4. Door 1, the chatter patch.
-5. The customer view and its timeline, which is `customer_timeline` plus a tab.
+4. The tab strip and the composer, and the chatter off the record pane. These
+   are one step, not two: taking the chatter away before its replacement ships
+   leaves no way to write a note, and shipping the replacement while the
+   chatter is still there is the second composer all over again.
+5. Door 1, the chatter patch.
+6. The customer view and its timeline, which is `customer_timeline` plus a tab.
+
+### Turning the chatter off is the unverified part
+
+`View` takes `display: { controlPanel: false }`, which is how the pane already
+drops the breadcrumb; there is no documented `chatter: false` beside it. Two
+candidates, in order of preference:
+
+1. A `useSubEnv` flag the patched `FormRenderer` reads, the same shape as the
+   `setDisplayName` no-op the pane already installs on `env.config`.
+2. Failing that, `display: none !important` scoped to `.o_mailpro_record`. It
+   works, and it is second because the chatter still mounts, still fetches the
+   messages on every selection, and still leaves a composer in the tab order
+   that nobody can see.
+
+Whichever lands, it is a browser round trip to find out, and `tools/ci_ui.sh`
+gets the assertion: the record pane has no composer in it.
 
 ## What actually broke
 
@@ -226,7 +253,7 @@ same ones.
   cuts every footer out of the arch and the `web.FormView` template draws it
   under `t-if="env.inDialog"`, portalled into the modal's own footer. So the
   composer mounted in a pane came up with no Send button, no paperclip and no
-  template selector, and nothing anywhere said so. 19.0.10.3.0 answers it with
+  template selector, and nothing anywhere said so. 19.0.10.5.0 answers it with
   a primary view that moves the two widgets into the body, and with Send and
   Discard as the pane's own buttons -- the pane is what closes, so the pane
   owns them.

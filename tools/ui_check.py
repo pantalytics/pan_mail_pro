@@ -237,8 +237,28 @@ class Checks:
             # the filled screen.
             open_mailbox(0)
 
+        # A mailbox folds its folders away and unfolds them again, the way an
+        # account does in Outlook. Asserted on the folder rows, not on the
+        # caret: the caret pointing the right way proves nothing about what
+        # is on screen.
+        def folder_rows():
+            return len(page.query_selector_all('.o_mailpro_folder'))
+
+        def fold(index):
+            page.query_selector_all('.o_mailpro_mailbox_toggle')[index].click()
+            page.wait_for_timeout(1200)
+            return folder_rows()
+
+        if len(names) >= 2:
+            before = folder_rows()
+            if fold(0) != before - len(self.FOLDERS):
+                self.fail('folding a mailbox left its folders on screen')
+            if fold(0) != before:
+                self.fail('unfolding a mailbox did not bring its folders back')
+
         # Everything clickable is a real button, so a keyboard can reach it.
         for selector, what in (('.o_mailpro_mailbox', 'mailbox'),
+                               ('.o_mailpro_mailbox_toggle', 'mailbox caret'),
                                ('.o_mailpro_folder', 'folder'),
                                ('.o_mailpro_item', 'conversation')):
             divs = [el for el in page.query_selector_all(selector)
@@ -250,6 +270,13 @@ class Checks:
         if not items:
             self.fail('the conversation list is empty with seeded mail on a lead')
         else:
+            # Every line carries a face: the contact's photo, Odoo's letter
+            # circle when the partner has none, initials when the sender is
+            # nobody in the database. A line without one reads as broken.
+            faceless = [el for el in items
+                        if not el.query_selector('.o_mailpro_avatar')]
+            if faceless:
+                self.fail(f'{len(faceless)} conversation rows have no avatar')
             selected = page.query_selector_all('.o_mailpro_item_active')
             if len(selected) != 1:
                 self.fail(f'{len(selected)} conversations look selected, expected 1')

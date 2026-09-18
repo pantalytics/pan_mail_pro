@@ -241,8 +241,8 @@ docker-compose build odoo && docker-compose up -d
 |---|---|
 | URL | https://mailpro-dev.cloudpepper.site |
 | Server | `Pantalytics Demo` (Odoo 19.0 **community**), shared with the demo instances |
-| Tracks | branch `19.0`, webhook + auto-upgrade on |
-| Login | `admin` / secret `MAILPRO_ODOO_ADMIN_PASSWORD`, project `dev` in Bitwarden Secrets Manager |
+| Tracks | branch `19.0`: a push pulls the code and restarts Odoo. It has never run `-u` (issue #134), so a version bump lands via Apps → Mail Pro → Upgrade |
+| Login | `admin` / secret `CLOUDPEPPER_MAILPRO_DEV_ADMIN_PASSWORD`, project `prod` in Bitwarden Secrets Manager |
 
 Only `pan_mail_pro` and its dependencies (`mail`, `base`, `crm`) are installed, so
 this is the closest thing to what CI builds — with a public HTTPS URL in front of it.
@@ -263,12 +263,14 @@ short.
   `helpdesk_community` addons are no substitute, because this code names
   `helpdesk.team` and `helpdesk.ticket` directly and those use their own models.
 
-**Auto-upgrade only migrates when the manifest version moves.** Cloudpepper pulls
-the code and runs `-u pan_mail_pro` on every push, but Odoo only executes migration
-scripts when `__manifest__.py`'s version is *higher* than what `ir.module.module`
-records. Python, view and asset changes land on the restart regardless; new fields
-and data migrations need the version bump the Odoo 19 checklist already asks for.
-Forget it and the instance quietly serves the old schema.
+**A push restarts; it does not upgrade.** Cloudpepper pulls the code and restarts
+Odoo on every push, and Python, view and asset changes land on that restart. New
+models, menus, fields and migrations need `-u pan_mail_pro`, which the instance
+has never run on its own even with `auto_upgrade` on (issue #134): after a merge
+that bumps the manifest version, open Apps → Mail Pro → Upgrade, then check
+`ir_module_module` says the new version. Odoo only executes migration scripts
+when that version is *higher* than what it records, so the bump the Odoo 19
+checklist asks for is what makes the upgrade do anything.
 
 **Odoo core and addons are two separate update tracks, and neither migrates the
 database on its own.** Core first, addons second, `-u` third -- the order and the
