@@ -220,14 +220,26 @@ other panes are hidden, so the widths are where you left them when you return.
 It is the one pane state the browser does not remember: a reading mode you
 have to notice you left on is a screen that lost its mail.
 
-19.0.12.2.0 makes Files Odoo's own file list rather than a list of our own.
-`read_conversation` hands back the attachments in the shape the web client's
-attachment store reads, the tab mounts `AttachmentList`, and a file there
-behaves the way it does in the chatter: the same card, the same viewer on a
-click, the same download and delete on hover, and an "Attach files" that lands
-the file on the conversation's record. Our own rows were a link and a size:
-they looked fine, could do none of that, and were a second implementation of
-something Odoo maintains.
+19.0.12.3.0 did the same to Files. `read_conversation` hands back the
+attachments in the shape the web client's attachment store reads, the tab
+mounts `AttachmentList`, and a file there behaves the way it does in the
+chatter: the same card, the same viewer on a click, the same download and
+delete on hover, and an "Attach files" that lands the file on the
+conversation's record. The list is the chatter's too -- the record's own
+attachments plus the ones that arrived on the mail -- because reading only the
+messages would have made an upload from this screen disappear on the next read.
+Our own rows were a link and a size: they looked fine, could do none of that,
+and were a second implementation of something Odoo maintains.
+
+19.0.12.2.0 stopped drawing the Activities tab itself. It is Odoo's own
+`mail.Activity` component now -- the same card the chatter draws -- so the
+activity type's icon, the three state colours and Mark Done / Edit / Cancel are
+the platform's and cannot drift from it. The card reads its activity out of the
+mail store rather than out of a dict, so the tab makes the second call Odoo's
+own activity popover makes (`activity_format` on the ids `read_conversation`
+already returned) and inserts the answer. The one thing this screen adds is the
+question the chatter never has to ask: which record the follow-up sits on,
+drawn only when the conversation touched more than one.
 
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
@@ -1058,12 +1070,29 @@ The surface is the inbox, not this log. Settings → Technical is where you go
 to ask why; the screen where mail is read is where it gets fixed. A thread
 that is linked carries a quiet `Change` next to its chips; one that is not
 carries the suggestion (rule 5, or the best proposal any rule made) with a
-`Link it here`, and a `Link to a record` that opens the picker: the model
-first, then Odoo's own search dialog for the record. `link_targets()` builds
-that model list out of what this database already links mail to — the
-mailboxes' routing targets and the models the log has seen — so it starts
-short and grows with use rather than being a dropdown of four hundred
-technical names on day one.
+`Link it here`, and a `Link to a record`. Both open the same picker: one
+dialog, one search box, two steps behind it.
+
+**Step one, the kind of record.** `link_targets(search)` starts from what this
+database already links mail to — the mailboxes' routing targets and the models
+the log has seen — so the list is short and grows with use rather than being a
+dropdown of four hundred technical names on day one. A search widens it to
+every model with a chatter, the already-linked ones first, which is the way out
+for the model nobody has filed mail on yet.
+
+**Step two, the record.** `link_candidates(model, search, partner_id)` opens on
+the correspondent's own records instead of an empty box: mail from
+`bart@vandermolen.test`, on a quote, offers Vandermolen's quotes. Two relations
+count and only two — a `partner_id` at a contact, or an `email_from` — read
+against the *commercial* partner, because mail from one employee is about the
+company's records. A model relating to a contact through anything else gets the
+most recent records and the search box; a third guess would be a rule nobody
+could predict from the screen. Typing replaces the list with a plain
+`name_search`, so the seeding is a head start and never a filter to escape.
+
+Both steps take the model from the caller, so both check it the same way:
+a chatter to carry the mail, and `write` on the model, because putting
+somebody's correspondence on a record is a change to that record.
 
 Three things it deliberately does not do:
 

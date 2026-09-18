@@ -27,11 +27,17 @@ import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
-import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
+import { LinkDialog } from "./link_dialog";
 import { AttachmentList } from "@mail/core/common/attachment_list";
 import { useAttachmentUploader } from "@mail/core/common/attachment_uploader_hook";
 import { FileUploader } from "@web/views/fields/file_handler";
 import { useComposer, ComposerForm } from "./use_composer";
+// The Activities tab draws Odoo's own activity card. Borrowing the component
+// rather than restyling ours is what keeps the icons, the three state colours
+// and Mark Done / Edit / Cancel identical to the chatter, for free and
+// forever: a change Odoo makes to it arrives here with the upgrade.
+import { Activity } from "@mail/core/web/activity";
+import { compareDatetime } from "@mail/utils/common/misc";
 
 const PAGE = 30;
 
@@ -143,7 +149,9 @@ export class RecordPane extends Component {
 
 export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
-    static components = { RecordPane, ComposerForm, AttachmentList, FileUploader };
+    static components = {
+        RecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
+    };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
     // component's, not the action record's: without this, opening a record
@@ -155,11 +163,11 @@ export class ConversationView extends Component {
         this.action = useService("action");
         this.dialog = useService("dialog");
         this.notification = useService("notification");
-        // The Files tab is Odoo's own attachment list over Odoo's own
-        // attachment store, so a file behaves here exactly as it does in the
-        // chatter: preview, download, delete, and an upload that lands on the
-        // record rather than in a copy of it.
-        this.store = useService("mail.store");
+        // Odoo's activity card reads its activity out of the mail store, not
+        // out of a dict we hand it, and the Files tab is Odoo's own attachment
+        // list over the same store: preview, download, delete, and an upload
+        // that lands on the record rather than in a copy of it.
+        this.mailStore = useService("mail.store");
         this.attachmentUploader = useAttachmentUploader();
         this.panes = usePanes();
         this.composer = useComposer({ onSent: () => this.onReplySent() });
@@ -193,17 +201,17 @@ export class ConversationView extends Component {
             selected: null,
             tab: restoreTab(),
             thread: EMPTY_THREAD(),
+            // The ids whose activity cards are in the mail store. A card
+            // lives in the store rather than in this state, so this list is
+            // both what the tab draws and what tells Owl the second read
+            // arrived.
+            activityIds: [],
             // Which messages are open, and whose quoted history is unfolded.
             // Keyed by message id, so a thread that reloads under a reply
             // keeps nothing from the thread before it.
             open: {},
             quotes: {},
             showRejected: false,
-            // The model row of the link picker. Closed unless somebody asked
-            // to link something, because on a correctly linked thread it is
-            // an answer to a question nobody has.
-            linking: false,
-            linkTargets: [],
             search: "",
         });
 
@@ -215,7 +223,6 @@ export class ConversationView extends Component {
 
         onWillStart(async () => {
             await this.loadMailboxes();
-            await this.loadLinkTargets();
             await this.refresh();
         });
     }
@@ -352,9 +359,9 @@ export class ConversationView extends Component {
         this.composer.close();
         this.state.selected = conversation;
         this.state.showRejected = false;
-        this.state.linking = false;
         // Nothing from the previous thread stays under the new subject.
         this.state.thread = EMPTY_THREAD();
+        this.state.activityIds = [];
         this.state.open = {};
         this.state.quotes = {};
         this.split.clear();
@@ -374,7 +381,7 @@ export class ConversationView extends Component {
                 // The attachments go into the mail store, which is where the
                 // rest of the client reads them from, and this screen keeps
                 // their ids.
-                this.store.insert(thread.files?.store || {});
+                this.mailStore.insert(thread.files?.store || {});
                 this.state.thread = thread;
                 // The newest message is the one you came for. The rest of the
                 // thread is context, one line each, a click away.
@@ -382,6 +389,7 @@ export class ConversationView extends Component {
                 if (newest) {
                     this.state.open[newest.id] = true;
                 }
+                this.loadActivities(seq);
             }
         } catch (error) {
             if (seq === this.threadSeq) {
@@ -563,7 +571,7 @@ export class ConversationView extends Component {
      */
     get files() {
         return this.fileIds
-            .map((id) => this.store["ir.attachment"].get(id))
+            .map((id) => this.mailStore["ir.attachment"].get(id))
             .filter(Boolean);
     }
 
@@ -571,7 +579,7 @@ export class ConversationView extends Component {
     get uploadThread() {
         const record = this.selectedRecord;
         return record
-            ? this.store.Thread.insert({ model: record.model, id: record.res_id })
+            ? this.mailStore.Thread.insert({ model: record.model, id: record.res_id })
             : null;
     }
 
@@ -602,13 +610,56 @@ export class ConversationView extends Component {
         }
     }
 
-    openActivityRecord(activity) {
-        this.action.doAction({
-            type: "ir.actions.act_window",
-            res_model: activity.model,
-            res_id: activity.res_id,
-            views: [[false, "form"]],
-        });
+    // ------------------------------------------------------ the follow-ups
+
+    /**
+     * Put this conversation's activities in the mail store.
+     *
+     * `read_conversation` answers with the rows the tab count needs; Odoo's
+     * activity card needs the record the chatter draws from, which is what
+     * `activity_format` returns. It is the same call Odoo's own activity
+     * popover makes, ACLs and all, so the ids are the only thing we add.
+     */
+    async loadActivities(seq) {
+        const ids = (this.state.thread.activities || []).map((row) => row.id);
+        if (!ids.length) {
+            return;
+        }
+        const data = await this.orm.silent.call("mail.activity", "activity_format", [ids]);
+        if (seq === this.threadSeq) {
+            this.mailStore.insert(data);
+            this.state.activityIds = ids;
+        }
+    }
+
+    /** The store records behind this conversation's activities, soonest first. */
+    get activities() {
+        const ids = new Set(this.state.activityIds);
+        return Object.values(this.mailStore["mail.activity"].records)
+            .filter((activity) => ids.has(activity.id))
+            .sort((a, b) => compareDatetime(a.date_deadline, b.date_deadline) || a.id - b.id);
+    }
+
+    /**
+     * Which record this follow-up sits on, and only when that is a question.
+     *
+     * The chatter never asks it: everything it lists belongs to the record it
+     * hangs under. A conversation can have reached a lead and a contact both,
+     * and then "call back" without a name on it is half an instruction.
+     */
+    activityRecordName(activity) {
+        const rows = this.state.thread.activities || [];
+        if (new Set(rows.map((row) => `${row.model},${row.res_id}`)).size < 2) {
+            return "";
+        }
+        return (rows.find((row) => row.id === activity.id) || {}).record_name || "";
+    }
+
+    /** An activity changed under us. Re-read the conversation, counts and all. */
+    onActivityChanged() {
+        if (this.state.selected) {
+            this.select(this.state.selected);
+        }
     }
 
     // --------------------------------------------------------- the stack
@@ -838,21 +889,8 @@ export class ConversationView extends Component {
         if (!record) {
             return;
         }
-        await this.action.doAction(
-            {
-                type: "ir.actions.act_window",
-                res_model: "mail.activity.schedule",
-                views: [[false, "form"]],
-                target: "new",
-                context: {
-                    active_model: record.model,
-                    active_ids: [record.res_id],
-                    default_res_model: record.model,
-                    default_res_ids: [record.res_id],
-                },
-            },
-            { onClose: () => this.select(this.state.selected) }
-        );
+        await this.mailStore.scheduleActivity(record.model, [record.res_id]);
+        this.onActivityChanged();
     }
 
     /**
@@ -882,23 +920,6 @@ export class ConversationView extends Component {
 
     // --------------------------------------------------------------- linking
 
-    /**
-     * What mail may be linked to. Read once: it is the shape of this
-     * database, not of the conversation on screen, and it changes about as
-     * often as a mailbox is configured.
-     */
-    async loadLinkTargets() {
-        try {
-            this.state.linkTargets = await this.orm.call(
-                "pan.mail.conversation", "link_targets", []
-            );
-        } catch (error) {
-            // A picker nobody can open is better than an inbox that does not
-            // load. Linking stays unavailable and everything else works.
-            console.warn("[Mail Pro] could not read link targets", error);
-        }
-    }
-
     /** Take the suggestion the matcher made. One click, the common case. */
     async acceptSuggestion() {
         const suggestion = this.state.thread.suggestion;
@@ -908,22 +929,17 @@ export class ConversationView extends Component {
     }
 
     /**
-     * Pick a record on a model, through Odoo's own list-and-search dialog.
-     * Creating from here is off: linking is about where mail belongs, and a
-     * record invented to hold it is a different decision.
+     * Open the picker: the kind of record, then the record, both searchable.
+     *
+     * It gets the correspondent so the second step can open on their own
+     * records instead of an empty search box. `pan.mail.conversation` decides
+     * what that means; this only hands over who is on the thread.
      */
-    pickTarget(target) {
-        this.state.linking = false;
-        this.dialog.add(SelectCreateDialog, {
-            resModel: target.model,
-            title: _t("Link this conversation to a %s", target.label),
-            multiSelect: false,
-            noCreate: true,
-            onSelected: (resIds) => {
-                if (resIds.length) {
-                    this.linkTo(target.model, resIds[0]);
-                }
-            },
+    openLinkDialog() {
+        this.dialog.add(LinkDialog, {
+            partnerId: this.state.selected?.partner_id || false,
+            correspondent: this.state.selected?.correspondent || "",
+            onSelect: (model, resId) => this.linkTo(model, resId),
         });
     }
 
@@ -962,7 +978,6 @@ export class ConversationView extends Component {
         this.state.selected = {
             ...this.state.selected, model: linked.model, res_id: linked.res_id,
         };
-        this.state.linking = false;
         await this.refresh({ keepSelection: true });
         if (this.state.selected && this.state.selected.model === linked.model
             && this.state.selected.res_id === linked.res_id) {
