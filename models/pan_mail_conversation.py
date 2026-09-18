@@ -802,7 +802,7 @@ class PanMailConversation(models.AbstractModel):
         for (model, res_id) in seen:
             by_model.setdefault(model, []).append(res_id)
 
-        names, labels = {}, {}
+        names, labels, icons = {}, {}, {}
         for model, ids in by_model.items():
             # A link outlives the module that wrote it: Helpdesk is Enterprise,
             # and a community database can hold rows naming a model it has not
@@ -813,6 +813,7 @@ class PanMailConversation(models.AbstractModel):
             for record in records._filtered_access('read'):
                 names[(model, record.id)] = record.display_name
             labels[model] = self.env['ir.model']._get(model).name or model
+            icons[model] = self._model_icon(model)
 
         rows = sorted(seen.items(),
                       key=lambda item: item[1] or datetime.min, reverse=True)
@@ -821,7 +822,27 @@ class PanMailConversation(models.AbstractModel):
             'res_id': res_id,
             'name': names[(model, res_id)],
             'model_label': labels.get(model, model),
+            'icon': icons.get(model, False),
         } for (model, res_id), _date in rows if (model, res_id) in names]
+
+    def _model_icon(self, model):
+        """The icon of the app a record belongs to, as a URL, or False.
+
+        A quotation is a Sales record and a ticket a Helpdesk one, and the
+        chip that names them reads faster with the app's own tile than with a
+        word. The tile is the module's `static/description/icon.png`, and the
+        module is the one that *defined* the model, which the registry keeps
+        as `_original_module`: `sale.order` resolves to `sale`, `res.partner`
+        to `base`. Not `ir.model.data`: every module that extends a model
+        writes its own `<module>.model_<name>` xml id there, so a contact
+        would come back wearing Accounting's tile as readily as base's.
+        """
+        if model not in self.env:
+            return False
+        module = self.env[model]._original_module
+        if not module:
+            return False
+        return '/%s/static/description/icon.png' % module
 
     def _linked_records(self, messages):
         """The other records this thread touched, from the thread index.

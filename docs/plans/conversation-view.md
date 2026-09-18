@@ -1,17 +1,18 @@
 # The conversation view
 
-Status: **partly built**, 19.0.11.1.0. The inbox itself ships: the folder rail,
-the conversation list, the thread with its four-position tab strip, and the
-record pane without its chatter, reading through
+Status: **mostly built**, 19.0.13.1.0. The inbox itself ships: the folder rail,
+the conversation list with its filters and search, New Email, the thread with
+its four-position tab strip, linking in two steps with the suggestion chips,
+and the record pane without its chatter, reading through
 `pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
 Still on paper: the *screens* for door 1 (the chatter's own button and its
 more-messages-elsewhere line) and for the customer view and its timeline. Their
-read methods shipped and are tested, so what is left of each is markup. Also
-still on paper: the composer's **To/Cc/followers block** and the **New mail**
-flow beside it. Reply and Log note open Odoo's own composer unextended, so To
-is filled from the newest inbound message and Cc is not filled at all, and
-there is no way to start a mail that is not an answer. Both are decided below,
-neither is built.
+read methods (`record_conversations`, `customer_timeline`) shipped and are
+tested, so what is left of each is markup. Also still on paper: the composer's
+**Cc/followers block**. Reply opens Odoo's own composer with To filled from
+the newest inbound message and Cc not filled at all. New Email opens the same
+composer in a dialog after the record is picked, rather than in pane 3 as
+decided below. What the MVP needs of this file is in [mvp.md](mvp.md).
 
 Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
 the inbox, an unfiled conversation, the model, the chatter with its door to the
@@ -73,9 +74,10 @@ Above the panes, the bar every mail client has, in the order they all put it:
 **New Email** on the left, the **search** in the middle. Typing is the search,
 debounced; Escape gives the folder back. New Email opens the same two-step
 dialog linking opens -- which kind of record, then which record -- and only
-then opens Odoo's own composer in its own window. The record is not optional:
-a mail this module sends with nothing behind it is the "linked to nothing"
-state the filter menu one pane over exists to find. 19.0.13.0.0.
+then opens the composer, in the conversation pane like a reply. The record is
+not optional: a mail this module sends with nothing behind it is the "linked
+to nothing" state the filter menu one pane over exists to find. 19.0.13.0.0;
+the composer moved from its own window into the pane in 19.0.13.2.0.
 
 The panes are the reader's, not ours. Every divider drags, the folder rail and
 the record pane fold away, and the widths live in the browser, so the screen

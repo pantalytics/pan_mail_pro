@@ -287,6 +287,12 @@ are one conversation read two ways, so the read happens in place and what was
 open stays open, rather than the header collapsing and the thread being drawn
 again.
 
+19.0.13.2.0 puts New Email in the same pane. It opened Odoo's composer in its
+own window, which was a second composer to keep in step with the one the pane
+already has; now the two-step record dialog hands the record to the pane
+composer, and the head names that record where a subject would go. One place
+on the screen writes mail.
+
 19.0.12.1.0 adds the one pane state that is not a width: the record on the
 whole screen. Reading a lead is not the same job as reading mail, and a pane
 sized for the fourth column is a two-column form squeezed into one. The
@@ -702,7 +708,7 @@ record is not. Deleting "unused" aliases breaks routing.
 **CC is stored as text and acted on by nothing.** The sync writes To and CC to
 `mail.message.x_email_to` / `x_email_cc`, two plain chars holding the addresses
 the header held, and `mail.mail._record_sent()` writes the same two for a mail
-that went out from here (19.0.13.2.0). Everyone on the mail already saw them,
+that went out from here (19.0.13.3.0). Everyone on the mail already saw them,
 so keeping them costs no confidentiality, and they are what the Inbox's To/Cc
 line reads and what a future reply-all would read.
 

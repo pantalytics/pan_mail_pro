@@ -327,29 +327,35 @@ class Checks:
                 self.fail('New Email step two offers no records')
                 return
             records[0].click()       # step two: the record itself
-            # The composer opens in its own window with the Send its arch's
-            # footer carries. A composer in a pane has no footer at all,
-            # which is why this one is a dialog.
+            # The composer opens in the conversation pane, the same one a
+            # reply uses. A regression here is New Email having gone back to
+            # being a popup over the Inbox.
             try:
-                page.wait_for_selector('.modal .o_mail_composer_form',
+                page.wait_for_selector('.o_mailpro_composer .o_form_view',
                                        timeout=15000)
             except Exception:
-                self.fail('picking a record did not open the composer')
+                self.fail('picking a record did not open the composer in the pane')
                 return
-            if not page.query_selector('.modal footer .o_mail_send'):
+            if page.query_selector('.modal .o_mail_composer_form'):
+                self.fail('New Email opened the composer in a dialog')
+            head = page.query_selector('.o_mailpro_thread_head .o_mailpro_thread_title')
+            if not head or head.inner_text().strip() != 'New email':
+                self.fail('the pane head does not say a new email is being written')
+            if not page.query_selector(
+                    '.o_mailpro_thread_head button:has-text("Send")'):
                 self.fail('the New Email composer has no Send button')
             self.shot('inbox-new-email-composer.png')
-            # Its own close button, not Escape: a composer with a body in it
-            # asks before it throws the draft away, and a stuck dialog takes
-            # every check after this one down with it.
-            for _ in range(3):
-                button = page.query_selector('.modal .btn-close')
-                if not button:
-                    break
-                button.click()
-                page.wait_for_timeout(1200)
-            if page.query_selector('.modal'):
-                self.fail('a dialog was left over the Inbox after New Email')
+            # Discard rather than Escape: Escape leaves the draft open, and
+            # an open composer takes every check after this one down with it.
+            discard = page.query_selector(
+                '.o_mailpro_thread_head button:has-text("Discard")')
+            if not discard:
+                self.fail('an open New Email cannot be discarded')
+            else:
+                discard.click()
+                page.wait_for_timeout(1000)
+            if page.query_selector('.o_mailpro_composer'):
+                self.fail('the New Email composer stayed open after Discard')
                 return
         self.error_free('Inbox New Email')
 
@@ -656,6 +662,13 @@ class Checks:
         # by its component: the action record's name is not read.
         chip = page.query_selector('.o_mailpro_chips .o_mailpro_chip_button')
         if chip:
+            # The app's tile, and a loaded one: a broken image is what a
+            # wrong module name looks like, and nothing else reports it.
+            icon = chip.query_selector('.o_mailpro_chip_icon')
+            if not icon:
+                self.fail('the Linked-to chip has no app icon')
+            elif not icon.evaluate('img => img.complete && img.naturalWidth > 0'):
+                self.fail('the Linked-to chip icon did not load')
             chip.click()
             try:
                 page.wait_for_selector('.o_form_view .o_breadcrumb', timeout=15000)
@@ -888,6 +901,11 @@ class Checks:
             self.fail('the record pane has no control to take the screen')
             return
 
+        # One way to make the record bigger. Leaving for the record's own
+        # screen is offered once you are on the whole screen, not beside it.
+        if page.query_selector('.o_mailpro_record_open'):
+            self.fail('Open sits next to Expand in the record pane')
+
         button.click()
         page.wait_for_timeout(500)
 
@@ -898,6 +916,9 @@ class Checks:
             pane = page.query_selector(selector)
             if pane and pane.is_visible():
                 self.fail(f'{name} is still on screen while the record is zoomed')
+
+        if not page.query_selector('.o_mailpro_record_open'):
+            self.fail('the zoomed record has no way to its own screen')
 
         record = page.query_selector('.o_mailpro_record')
         panes = page.query_selector('.o_mailpro_panes')
