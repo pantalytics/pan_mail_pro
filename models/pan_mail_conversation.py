@@ -817,20 +817,18 @@ class PanMailConversation(models.AbstractModel):
         A quotation is a Sales record and a ticket a Helpdesk one, and the
         chip that names them reads faster with the app's own tile than with a
         word. The tile is the module's `static/description/icon.png`, and the
-        module is the one that created the model: `ir.model.data` holds one
-        `<module>.model_<name>` per model, written by whichever module
-        defined it, so `sale.order` resolves to `sale` and `res.partner` to
-        `base`. Read with `sudo()` because the lookup is metadata (a module
-        name) and the row's own ACL is not the point; the record it decorates
-        was already put through `_filtered_access` by the caller.
+        module is the one that *defined* the model, which the registry keeps
+        as `_original_module`: `sale.order` resolves to `sale`, `res.partner`
+        to `base`. Not `ir.model.data`: every module that extends a model
+        writes its own `<module>.model_<name>` xml id there, so a contact
+        would come back wearing Accounting's tile as readily as base's.
         """
-        data = self.env['ir.model.data'].sudo().search([
-            ('model', '=', 'ir.model'),
-            ('name', '=', 'model_' + model.replace('.', '_')),
-        ], limit=1)
-        if not data.module:
+        if model not in self.env:
             return False
-        return '/%s/static/description/icon.png' % data.module
+        module = self.env[model]._original_module
+        if not module:
+            return False
+        return '/%s/static/description/icon.png' % module
 
     def _linked_records(self, messages):
         """The other records this thread touched, from the thread index.
