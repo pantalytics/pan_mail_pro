@@ -107,6 +107,12 @@ call('pan.mail.mailbox', 'write', ids[1:], {'state': 'error'})
 # laptop and failed on a CI runner, which is the definition of a flaky
 # fixture. The lead thread is the most recent, the two unlinked ones are days
 # old, and the screen opens on the same conversation every time.
+# A 1x1 PNG. The smallest file that is really an image, so the viewer has
+# something to draw and the seed carries no binary of its own.
+PIXEL = ('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQ'
+         'DwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+
+
 def ago(**kw):
     return (datetime.datetime.now(datetime.UTC) - datetime.timedelta(**kw)).strftime(
         '%Y-%m-%d %H:%M:%S')
@@ -126,11 +132,21 @@ for subject, body, direction, when in (
      '<p>Prima. Dan graag opdracht bevestigen.</p>',
      'incoming', ago(hours=2)),
 ):
-    call('mail.message', 'create', {
+    message = call('mail.message', 'create', {
         'model': 'crm.lead', 'res_id': lead, 'message_type': 'email',
         'subject': subject, 'body': body, 'author_id': customer,
         'email_from': 'bart@vandermolen.example', 'date': when,
         'x_direction': direction, 'x_mailbox_id': ids[2]})
+    if direction == 'outgoing':
+        # One attachment, so the Files tab shows the list it exists for
+        # instead of its empty state. An image, because it is the one type
+        # the viewer renders without a plugin: what the check has to prove
+        # is that a click opens Odoo's own viewer at all.
+        attachment = call('ir.attachment', 'create', {
+            'name': 'asafdichting.png', 'mimetype': 'image/png',
+            'res_model': 'crm.lead', 'res_id': lead, 'datas': PIXEL})
+        call('mail.message', 'write', [message],
+             {'attachment_ids': [(6, 0, [attachment])]})
 # Two conversations that landed on a contact and nowhere better: the real
 # `fallback` outcome, delivered but to a place nobody is looking. Each carries
 # the suggestion the ladder nearly picked, which is what the Inbox offers with

@@ -485,27 +485,35 @@
     </t>
 
     <!--
-        The files of a conversation. Every attachment on it, newest first,
-        which is the list the chatter's paperclip used to hold. A row is a
-        link and not a preview: what people do here is open the quote they
-        were sent, and a gallery is a second screen to maintain.
+        The files of a conversation. Odoo's own attachment list over Odoo's
+        own attachment store, so a file here behaves the way it does in the
+        chatter: the same cards, the same preview on click, the same download
+        and delete on hover, and the same "Attach files" underneath. A second
+        implementation of an attachment is a second set of bugs.
     -->
     <t t-name="pan_mail_pro.ConversationFiles">
         <div class="o_mailpro_files">
-            <t t-if="state.thread.files.length">
-                <a t-foreach="state.thread.files" t-as="file" t-key="file.id"
-                   class="o_mailpro_file d-flex align-items-center justify-content-between gap-2"
-                   t-att-href="fileUrl(file)" t-att-title="file.name">
-                    <span class="o_mailpro_file_name text-truncate" t-esc="file.name"/>
-                    <span class="o_mailpro_muted flex-shrink-0">
-                        <t t-esc="fileSize(file.size)"/> &#183; <t t-esc="day(file.date)"/>
-                    </span>
-                </a>
-            </t>
+            <AttachmentList t-if="files.length"
+                            attachments="files"
+                            unlinkAttachment.bind="unlinkAttachment"/>
             <div t-else="" class="o_mailpro_empty">
                 <h3 class="o_mailpro_empty_title">No files on this conversation.</h3>
                 <p class="o_mailpro_empty_text">Attachments on its mail and its notes appear here.</p>
             </div>
+            <!--
+                An upload needs a record to land on. A conversation linked to
+                nothing has none, and a button that cannot say where the file
+                went is worse than no button.
+            -->
+            <FileUploader t-if="selectedRecord" multiUpload="true"
+                          onUploaded.bind="onFileUploaded">
+                <t t-set-slot="toggler">
+                    <button class="btn btn-link" type="button">
+                        <i class="fa fa-plus-square"/>
+                        Attach files
+                    </button>
+                </t>
+            </FileUploader>
         </div>
     </t>
 

@@ -16,8 +16,10 @@ Two rules hold this layer together.
 search on `mail.message`, so the ORM applies the record rules before we group
 anything. `pan.mail.thread.link` is not access controlled: reading it first
 would let a thread key betray the existence of a record the user cannot open.
-There is no `sudo()` here, on purpose, and a message on a record somebody
-cannot read is absent from their result rather than hidden inside it.
+A message on a record somebody cannot read is absent from their result
+rather than hidden inside it. Where this file does take `sudo()` it buys a
+lookup and never an answer: the thread index behind the record chips, and
+the attachments of messages the search already cleared.
 
 **Reads happen here, writes do not.** Replying, marking read, starring and
 scheduling a follow-up are Odoo's own methods called on the record itself. A
@@ -38,9 +40,14 @@ from datetime import datetime
 from odoo import models, api, _
 from odoo.exceptions import AccessError
 from odoo.fields import Domain
+from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import html2plaintext
 
 _logger = logging.getLogger(__name__)
+
+# What the Files tab draws at most. A tab, not a document archive: past this
+# many, the record's own Files box is the screen for it.
+FILE_PAGE = 50
 
 # One page. Deliberately small: the list is read, not scrolled through.
 DEFAULT_LIMIT = 30
@@ -718,11 +725,32 @@ class PanMailConversation(models.AbstractModel):
         return ''
 
     def _files_for(self, model, res_id, messages):
-        """Every attachment on this conversation, newest first.
+        """Every file on this conversation, newest first.
 
-        Read from the record rather than from the messages on screen, so the
-        number beside the tab is the same whichever tab is open.
+        The same list the chatter draws, from the same two places: the
+        attachments on the record itself -- which is what Odoo's own file box
+        shows, uploads included -- and the attachments that arrived on the
+        mail. A file somebody attaches here is a file on the record, so
+        reading only the messages would have made an upload disappear on the
+        next read.
+
+        The rows are Odoo's own `ir.attachment` store format, because the tab
+        is Odoo's own `AttachmentList`: the same cards, the same preview, the
+        same download and delete. `ids` carries the order -- the store payload
+        is keyed by model and says nothing about it.
+
+        The `sudo()` is the one `mail.message` takes for its own
+        `attachment_ids`: the messages came out of an access-checked search,
+        and an attachment on a message somebody may read is one they may read.
+        The record's own files are asked for with the reader's rights, which
+        is what the chatter would have done.
         """
+        attachments = self.env['ir.attachment'].sudo()
+        if model and res_id:
+            record = self.env[model].browse(res_id).exists()
+            if record and record.has_access('read') and hasattr(
+                    record, '_get_mail_thread_data_attachments'):
+                attachments |= record._get_mail_thread_data_attachments().sudo()
         if model:
             source = self.env['mail.message'].search(
                 [('model', '=', model), ('res_id', '=', res_id),
@@ -730,21 +758,17 @@ class PanMailConversation(models.AbstractModel):
                 order='date desc, id desc', limit=50,
             )
         else:
-            source = messages.sorted(lambda m: (m.date or datetime.min, m.id),
-                                     reverse=True)
-        rows = []
+            source = messages
         for message in source:
-            for attachment in message.attachment_ids:
-                rows.append({
-                    'id': attachment.id,
-                    'name': attachment.name or _('Attachment'),
-                    'mimetype': attachment.mimetype or '',
-                    'size': attachment.file_size or 0,
-                    'date': message.date,
-                    'author': (message.author_id.display_name
-                               or message.email_from or ''),
-                })
-        return rows
+            attachments |= message.sudo().attachment_ids
+        # One order for two sources, and it is the chatter's: newest first.
+        # Capped, because a tab is not a document management system: a record
+        # with a thousand files is one somebody opens the record for.
+        attachments = attachments.sorted('id', reverse=True)[:FILE_PAGE]
+        return {
+            'ids': attachments.ids,
+            'store': Store().add(attachments).get_result() if attachments else {},
+        }
 
     def _activities_for(self, records):
         """What is still open on the records this conversation touched.

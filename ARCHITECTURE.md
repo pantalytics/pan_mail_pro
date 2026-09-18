@@ -220,6 +220,15 @@ other panes are hidden, so the widths are where you left them when you return.
 It is the one pane state the browser does not remember: a reading mode you
 have to notice you left on is a screen that lost its mail.
 
+19.0.12.2.0 makes Files Odoo's own file list rather than a list of our own.
+`read_conversation` hands back the attachments in the shape the web client's
+attachment store reads, the tab mounts `AttachmentList`, and a file there
+behaves the way it does in the chatter: the same card, the same viewer on a
+click, the same download and delete on hover, and an "Attach files" that lands
+the file on the conversation's record. Our own rows were a link and a size:
+they looked fine, could do none of that, and were a second implementation of
+something Odoo maintains.
+
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
 Aliases entries they read as seven unrelated features rather than one module,

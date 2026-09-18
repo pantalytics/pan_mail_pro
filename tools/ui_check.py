@@ -367,6 +367,8 @@ class Checks:
                 tab.click()
                 page.wait_for_timeout(900)
                 self.error_free(f'the {name} tab')
+                if name == 'Files':
+                    self.check_files_tab(page)
 
         # The screen's one primary action. A reader-only inbox is half a
         # product, and this is the click that proves it is not one.
@@ -862,6 +864,36 @@ class Checks:
         self.page.wait_for_selector('.o_form_view', timeout=30000)
         self.page.wait_for_timeout(1200)
         return self.page.inner_text('.o_form_view')
+
+    def check_files_tab(self, page):
+        """The Files tab is Odoo's own attachment list, or it is a copy.
+
+        The card, the viewer behind a click and the uploader are what people
+        already know from the chatter; a row of links of our own looked fine
+        and could do none of the three. So the assertion is on Odoo's own
+        class names -- the moment this screen grows a file list of its own,
+        this check is what says so.
+        """
+        card = page.query_selector('.o_mailpro_files .o-mail-AttachmentContainer')
+        if not card:
+            self.fail("the Files tab draws no attachment card")
+            return
+        self.shot('inbox-files.png')
+        card.click()
+        try:
+            page.wait_for_selector('.o-FileViewer', timeout=10000)
+        except Exception:
+            self.fail('a file in the Files tab opens no viewer')
+        else:
+            close = page.query_selector('.o-FileViewer [aria-label="Close"]')
+            if close:
+                close.click()
+            else:
+                page.keyboard.press('Escape')
+            page.wait_for_timeout(400)
+        # Attaching a file is half of what the chatter's file list is for.
+        if not page.query_selector('.o_mailpro_files input[type="file"]'):
+            self.fail('the Files tab has no way to attach a file')
 
     def error_free(self, where):
         dialog = self.page.query_selector('.o_error_dialog, .o_dialog_error')

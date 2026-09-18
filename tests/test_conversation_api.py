@@ -360,15 +360,33 @@ class TestConversationApi(TransactionCase):
         for scope in ('mail', 'all'):
             thread = self.Conversation.read_conversation(
                 'crm.lead', self.lead.id, scope=scope)
-            self.assertEqual([f['name'] for f in thread['files']],
-                             ['offerte.pdf'], scope)
+            self.assertEqual(thread['files']['ids'], attachment.ids, scope)
+            # The rows are Odoo's own attachment store format, which is what
+            # the tab's `AttachmentList` reads.
+            self.assertEqual(
+                [f['name'] for f in thread['files']['store']['ir.attachment']],
+                ['offerte.pdf'], scope)
             self.assertEqual([a['summary'] for a in thread['activities']],
                              ['Levertijd navragen'], scope)
+
+    def test_a_file_on_the_record_and_not_on_a_message_is_still_on_the_tab(self):
+        """The tab lists what the chatter's file box lists: the record's own
+        attachments. Reading only the messages made a file somebody attached
+        from this screen disappear on the very next read."""
+        self._mail()
+        attachment = self.env['ir.attachment'].create({
+            'name': 'tekening.pdf',
+            'datas': b'JVBERi0=',
+            'res_model': 'crm.lead',
+            'res_id': self.lead.id,
+        })
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual(thread['files']['ids'], attachment.ids)
 
     def test_a_conversation_with_neither_says_so_with_empty_lists(self):
         self._mail()
         thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
-        self.assertEqual(thread['files'], [])
+        self.assertEqual(thread['files'], {'ids': [], 'store': {}})
         self.assertEqual(thread['activities'], [])
 
     # ----------------------------------------------------------------- access

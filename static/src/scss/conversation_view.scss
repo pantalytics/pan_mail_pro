@@ -556,8 +556,8 @@ $mailpro-warn: #c0392b;
 
     .o_mailpro_event_change { display: block; }
 
-    // The two lists that are not the thread. Same rhythm as the conversation
-    // list, so nothing on this screen has to be learned twice.
+    // The two lists that are not the thread. Files is Odoo's own attachment
+    // list and styles itself; this is only the box it sits in.
     .o_mailpro_files,
     .o_mailpro_activities {
         flex: 1 1 auto;
@@ -568,7 +568,6 @@ $mailpro-warn: #c0392b;
 
     .o_mailpro_activities_head { margin-bottom: 0.75rem; }
 
-    .o_mailpro_file,
     .o_mailpro_activity {
         display: block;
         width: 100%;
@@ -591,7 +590,6 @@ $mailpro-warn: #c0392b;
         }
     }
 
-    .o_mailpro_file_name,
     .o_mailpro_activity_summary { font-weight: 600; }
 
     .o_mailpro_activity_late .o_mailpro_activity_summary { color: $mailpro-warn; }
