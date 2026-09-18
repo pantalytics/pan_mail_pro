@@ -332,14 +332,14 @@ class Checks:
         page.set_viewport_size({'width': WIDE, 'height': 1100})
         page.wait_for_timeout(400)
 
-    def filing(self):
+    def linking(self):
         """The screen where a match is corrected, and the correction sticking.
 
         Two things here are worth a browser and nothing else can prove them.
         That the suggestion is offered as one record and not a candidate list,
-        and that clicking it actually moves the conversation: a `refile` that
-        works over RPC and leaves the screen showing the old state is a bug a
-        green Python suite cannot see.
+        and that clicking it actually moves the conversation: a `link_to`
+        that works over RPC and leaves the screen showing the old state is a
+        bug a green Python suite cannot see.
 
         "On a contact only" is the folder this works from, not "Linked to
         nothing". A mail the ladder could not place still lands somewhere, and
@@ -349,7 +349,7 @@ class Checks:
         page = self.page
         folder = page.query_selector('.o_mailpro_folder:has-text("On a contact only")')
         if not folder:
-            self.fail('there is no "On a contact only" folder to file from')
+            self.fail('there is no "On a contact only" folder to link from')
             return
         folder.click()
         page.wait_for_timeout(1500)
@@ -375,21 +375,21 @@ class Checks:
             self.fail(f'the suggestion shows a score: "{text}"')
 
         # The picker is two steps, and the first one is closed until asked.
-        if page.query_selector('.o_mailpro_refile'):
+        if page.query_selector('.o_mailpro_relink'):
             self.fail('the model picker is open on a screen nobody asked')
-        opener = page.query_selector('.o_mailpro_refile_toggle')
+        opener = page.query_selector('.o_mailpro_relink_toggle')
         if not opener:
-            self.fail('a filed conversation offers no way to change where it went')
+            self.fail('a linked conversation offers no way to change where it went')
         else:
             opener.click()
             page.wait_for_timeout(400)
-            targets = page.query_selector_all('.o_mailpro_refile .o_mailpro_chip_button')
+            targets = page.query_selector_all('.o_mailpro_relink .o_mailpro_chip_button')
             if not targets:
                 self.fail('the model picker opened with nothing in it')
             opener.click()
             page.wait_for_timeout(400)
 
-        self.shot('inbox-unfiled.png')
+        self.shot('inbox-unlinked.png')
 
         accept = page.query_selector('.o_mailpro_suggestion button')
         if not accept:
@@ -397,14 +397,14 @@ class Checks:
             return
         accept.click()
         page.wait_for_timeout(2500)
-        self.error_free('filing a conversation')
+        self.error_free('linking a conversation')
 
         # It left the folder it was in, which is the only proof from here that
         # the move reached the database rather than the screen.
         remaining = page.query_selector_all('.o_mailpro_item')
         if len(remaining) != 1:
             self.fail(f'{len(remaining)} conversations left on a contact after '
-                      f'filing one, expected 1')
+                      f'linking one, expected 1')
 
     def panes(self):
         """The dividers move, the side panes fold, and the browser remembers.
@@ -696,7 +696,7 @@ def main():
         checks.settings()
         checks.menus()
         checks.conversation_view()
-        checks.filing()
+        checks.linking()
         checks.provider_form()
         checks.connect_banner()
         browser.close()

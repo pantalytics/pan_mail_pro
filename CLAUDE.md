@@ -347,7 +347,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer, one open message in a collapsed thread, the record pane stepping aside at 1280px, the dividers dragging, folding and surviving a reload, and filing a conversation from the suggestion so the correction actually reaches the database |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer, one open message in a collapsed thread, the record pane stepping aside at 1280px, the dividers dragging, folding and surviving a reload, and linking a conversation from the suggestion so the correction actually reaches the database |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
@@ -693,10 +693,15 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   Settings → Technical is where you go to ask why; the screen where mail is
   read is where it gets fixed. The queue removed in 19.0.7.0.0 was the same
   mistake in another shape.
-- **The correction is the feature, not the model.** Filing a conversation by
+- **The correction is the feature, not the model.** Linking a conversation by
   hand writes a `pan.mail.thread.link`, so the rest of that conversation
   matches at rule 3 from then on — exactly, for free. That is the only part of
   triage that compounds, and it needs no AI at all.
+- **"Filed on" was the one place the vocabulary drifted.** The rail already
+  said "Linked to nothing" and the report is called link coverage; the chip
+  row said "Filed on" and the method was `refile`. One idea, two words, and
+  the technical one had reached the screen. It is **linked** now, in the copy
+  and in the code.
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 

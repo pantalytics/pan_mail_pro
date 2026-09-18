@@ -980,7 +980,7 @@ is wrong costs a customer an answer. A daily cron drops rows past
 
 ### Correcting a match
 
-`pan.mail.routing.log.refile(message_ids, model, res_id)` moves a conversation
+`pan.mail.routing.log.link_to(message_ids, model, res_id)` moves a conversation
 onto another record. It is the one write in the whole reading path, and it is
 not really about the move.
 
@@ -990,13 +990,18 @@ anyone being asked again. One click buys permanent correctness for a thread,
 which is the only part of triage that compounds. The inbox says so in those
 words when it confirms.
 
+The word is **linked**, everywhere: the chip row reads `Linked to`, the rail
+already had `Linked to nothing`, and the report in §7 is called link coverage.
+"Filed" was the technical word for the same idea and it was the only place the
+vocabulary drifted.
+
 The surface is the inbox, not this log. Settings → Technical is where you go
 to ask why; the screen where mail is read is where it gets fixed. A thread
-that is filed carries a quiet `Change` next to its chips; one that is not
+that is linked carries a quiet `Change` next to its chips; one that is not
 carries the suggestion (rule 5, or the best proposal any rule made) with a
-`File it here`, and a `File on a record` that opens the picker: the model
-first, then Odoo's own search dialog for the record. `refile_targets()` builds
-that model list out of what this database already files mail on — the
+`Link it here`, and a `Link to a record` that opens the picker: the model
+first, then Odoo's own search dialog for the record. `link_targets()` builds
+that model list out of what this database already links mail to — the
 mailboxes' routing targets and the models the log has seen — so it starts
 short and grows with use rather than being a dropdown of four hundred
 technical names on day one.
@@ -1005,17 +1010,17 @@ Three things it deliberately does not do:
 
 - **It subscribes nobody.** A message arriving on a ticket is not a reason to
   put its author on that ticket's follower list, for the same reason CC never
-  creates one (§3). Filing mail must not become a way to start notifying
+  creates one (§3). Linking mail must not become a way to start notifying
   people.
 - **It posts nothing.** A correction is bookkeeping; a chatter note about it
   would be a second copy of a fact the message itself now carries.
-- **It moves the conversation, not one message.** "This is filed wrong" is
-  never about a single mail in a thread, and leaving the rest behind splits a
-  conversation across two records.
+- **It moves the conversation, not one message.** "This is linked to the wrong
+  thing" is never about a single mail in a thread, and leaving the rest behind
+  splits a conversation across two records.
 
 Access is checked twice, and neither check is the ACL on `mail.message`: the
 caller must be a mailbox manager, and must be allowed to *write* the
-destination — filing somebody's correspondence onto a record is a change to
+destination — putting somebody's correspondence on a record is a change to
 that record. The write itself is `sudo`, because `mail.message.model` and
 `res_id` are not fields an ordinary user may set, which is exactly why this
 lives in one method instead of at a dozen call sites.

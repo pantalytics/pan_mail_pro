@@ -69,30 +69,30 @@ this lives in, `On a contact only` and `Linked to nothing`, and
 `pan.mail.conversation._rejected_for()` already reads what the matcher turned
 down.
 
-**The filed-on chip.** Every conversation row and the thread header carry one
-chip: the record the thread is filed on, and why, in the words
+**The linked-to chip.** Every conversation row and the thread header carry one
+chip: the record the thread is linked to, and why, in the words
 `ROUTING_RULES` already holds ("The reply headers of the thread"). The chip is
 the affordance. Clicking it opens a popover with the candidates the matcher
-rejected, a `File here` on each, and a record search for the case where none of
-them is right.
+rejected, a `Link it here` on each, and a record search for the case where none
+of them is right.
 
 **Three states, not a percentage.**
 
 | State | Reads as | Action |
 |---|---|---|
-| Filed | the record name, plain | open it |
+| Linked | the record name, plain | open it |
 | Suggested | dotted chip, "Looks like <record>" | Accept, or Choose another |
-| Unfiled | grey, "Not filed" | Choose a record |
+| Unlinked | grey, "Not linked" | Choose a record |
 
 A number on screen is a number people argue with. The confidence stays in the
 popover and in the routing log, one level deeper, for the person debugging.
 
-**Correcting says what it bought.** The popover's confirmation is one line:
-"Filed here. The next mail in this thread lands here too." That is the visible
+**Correcting says what it bought.** The confirmation is one line:
+"Linked to X. The next mail in this thread lands here too." That is the visible
 payoff for the click, and it is true because the correction wrote a thread link.
 
-**Bulk is multi-select in the unfiled folder, and that is all.** Pick several,
-file them on one record.
+**Bulk is multi-select in the unlinked folder, and that is all.** Pick several,
+link them to one record.
 
 **Dropped on purpose: a per-mailbox rules builder.** Conditions and actions in
 the UI is a support surface a two-person team cannot carry, and every customer
@@ -116,7 +116,7 @@ Fits:
 Gaps:
 
 1. **There is no write path.** Nothing can move a message to another record
-   after the fact. Refiling means writing `model` / `res_id` on the
+   after the fact. Relinking means writing `model` / `res_id` on the
    `mail.message`, moving the thread link, fixing followers, and marking the log
    reviewed, under the access rights of a person who may not be able to read the
    target. `pan.mail.conversation`'s own rule is that reads happen there and
@@ -191,6 +191,6 @@ in the same words as the heartbeat's.
    small, stop here.
 2. The record reference rule and the only-open-record rule. Deterministic,
    testable without a provider, no key.
-3. The filed-on chip and refiling, writing a thread link. Useful alone.
+3. The linked-to chip and relinking, writing a thread link. Useful alone.
 4. The second-pass cron, suggesting from a shortlist, capped below auto-route.
 5. Only then: raising the bar for the classes that earned it.

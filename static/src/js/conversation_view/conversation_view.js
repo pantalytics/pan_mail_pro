@@ -127,11 +127,11 @@ export class ConversationView extends Component {
             open: {},
             quotes: {},
             showRejected: false,
-            // The model row of the filing picker. Closed unless somebody asked
-            // to file something, because on a correctly filed thread it is an
-            // answer to a question nobody has.
-            filing: false,
-            refileTargets: [],
+            // The model row of the link picker. Closed unless somebody asked
+            // to link something, because on a correctly linked thread it is
+            // an answer to a question nobody has.
+            linking: false,
+            linkTargets: [],
             search: "",
         });
 
@@ -143,7 +143,7 @@ export class ConversationView extends Component {
 
         onWillStart(async () => {
             await this.loadMailboxes();
-            await this.loadRefileTargets();
+            await this.loadLinkTargets();
             await this.refresh();
         });
     }
@@ -225,7 +225,7 @@ export class ConversationView extends Component {
         const seq = ++this.threadSeq;
         this.state.selected = conversation;
         this.state.showRejected = false;
-        this.state.filing = false;
+        this.state.linking = false;
         // Nothing from the previous thread stays under the new subject.
         this.state.thread = { messages: [], records: [], rejected: [], suggestion: false };
         this.state.open = {};
@@ -499,22 +499,22 @@ export class ConversationView extends Component {
         return incoming[0] || null;
     }
 
-    // ---------------------------------------------------------------- filing
+    // --------------------------------------------------------------- linking
 
     /**
-     * Where mail may be filed. Read once: it is the shape of this database,
-     * not of the conversation on screen, and it changes about as often as a
-     * mailbox is configured.
+     * What mail may be linked to. Read once: it is the shape of this
+     * database, not of the conversation on screen, and it changes about as
+     * often as a mailbox is configured.
      */
-    async loadRefileTargets() {
+    async loadLinkTargets() {
         try {
-            this.state.refileTargets = await this.orm.call(
-                "pan.mail.conversation", "refile_targets", []
+            this.state.linkTargets = await this.orm.call(
+                "pan.mail.conversation", "link_targets", []
             );
         } catch (error) {
             // A picker nobody can open is better than an inbox that does not
-            // load. Filing stays unavailable and everything else works.
-            console.warn("[Mail Pro] could not read filing targets", error);
+            // load. Linking stays unavailable and everything else works.
+            console.warn("[Mail Pro] could not read link targets", error);
         }
     }
 
@@ -522,25 +522,25 @@ export class ConversationView extends Component {
     async acceptSuggestion() {
         const suggestion = this.state.thread.suggestion;
         if (suggestion) {
-            await this.fileOn(suggestion.model, suggestion.res_id);
+            await this.linkTo(suggestion.model, suggestion.res_id);
         }
     }
 
     /**
      * Pick a record on a model, through Odoo's own list-and-search dialog.
-     * Creating from here is off: filing is about where mail belongs, and a
+     * Creating from here is off: linking is about where mail belongs, and a
      * record invented to hold it is a different decision.
      */
     pickTarget(target) {
-        this.state.filing = false;
+        this.state.linking = false;
         this.dialog.add(SelectCreateDialog, {
             resModel: target.model,
-            title: _t("File this conversation on a %s", target.label),
+            title: _t("Link this conversation to a %s", target.label),
             multiSelect: false,
             noCreate: true,
             onSelected: (resIds) => {
                 if (resIds.length) {
-                    this.fileOn(target.model, resIds[0]);
+                    this.linkTo(target.model, resIds[0]);
                 }
             },
         });
@@ -553,38 +553,38 @@ export class ConversationView extends Component {
      * that is the part somebody would not otherwise know happened: the rest
      * of this conversation now files itself.
      */
-    async fileOn(model, resId) {
+    async linkTo(model, resId) {
         const messageIds = this.state.thread.messages.map((message) => message.id);
         if (!messageIds.length) {
             return;
         }
-        let filed;
+        let linked;
         try {
-            filed = await this.orm.call(
-                "pan.mail.routing.log", "refile", [messageIds, model, resId]
+            linked = await this.orm.call(
+                "pan.mail.routing.log", "link_to", [messageIds, model, resId]
             );
         } catch (error) {
-            this.notification.add(_t("Could not file this conversation."), { type: "danger" });
-            console.warn("[Mail Pro] refile failed", error);
+            this.notification.add(_t("Could not link this conversation."), { type: "danger" });
+            console.warn("[Mail Pro] linking failed", error);
             return;
         }
         this.notification.add(
-            _t("Filed on %s. The next mail in this thread lands here too.", filed.name),
+            _t("Linked to %s. The next mail in this thread lands here too.", linked.name),
             { type: "success" }
         );
         // The conversation is somewhere else now, so it is addressed by the
         // record it moved to. `keepSelection` then does the right thing in
-        // both folders it can be filed from: in the inbox the row is still
+        // both folders it can be linked from: in the inbox the row is still
         // there under its new record and the reader keeps their place, and in
-        // an unfiled folder it is gone, so the screen moves on to the next
+        // an unlinked folder it is gone, so the screen moves on to the next
         // one waiting -- which is what working a queue means.
         this.state.selected = {
-            ...this.state.selected, model: filed.model, res_id: filed.res_id,
+            ...this.state.selected, model: linked.model, res_id: linked.res_id,
         };
-        this.state.filing = false;
+        this.state.linking = false;
         await this.refresh({ keepSelection: true });
-        if (this.state.selected && this.state.selected.model === filed.model
-            && this.state.selected.res_id === filed.res_id) {
+        if (this.state.selected && this.state.selected.model === linked.model
+            && this.state.selected.res_id === linked.res_id) {
             // Still on it: re-read the thread so the chips replace the
             // suggestion instead of the screen still offering it.
             await this.select(this.state.selected);

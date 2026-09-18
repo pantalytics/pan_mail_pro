@@ -310,7 +310,7 @@ class PanMailRoutingLog(models.Model):
     # ------------------------------------------------------------------ #
 
     @api.model
-    def refile(self, message_ids, model, res_id):
+    def link_to(self, message_ids, model, res_id):
         """Move messages onto another record, and remember the correction.
 
         The point is not the move. The point is the thread link it writes: the
@@ -322,17 +322,17 @@ class PanMailRoutingLog(models.Model):
 
         **It adds no followers.** A message arriving on a ticket is not a
         reason to subscribe its author to that ticket, for the same reason CC
-        never creates one (ARCHITECTURE.md §3). Filing mail must not become a
-        way to start notifying people.
+        never creates one (ARCHITECTURE.md §3). Linking mail must not become
+        a way to start notifying people.
 
         **It posts nothing.** A correction is bookkeeping; a chatter note
         about it would be the second copy of a fact the message itself now
         carries.
 
-        **It moves the whole conversation, not one message.** "This is filed
-        wrong" is never about a single mail in a thread, and leaving the rest
-        behind splits a conversation across two records, which is the failure
-        the matcher exists to prevent.
+        **It moves the whole conversation, not one message.** "This is linked
+        to the wrong thing" is never about a single mail in a thread, and
+        leaving the rest behind splits a conversation across two records,
+        which is the failure the matcher exists to prevent.
 
         Access is checked twice and neither check is the ACL on `mail.message`:
         the caller must be a mailbox manager, and must be allowed to write the
@@ -341,7 +341,7 @@ class PanMailRoutingLog(models.Model):
         whole reason this lives in one method instead of at a dozen call sites.
         """
         if not self.env.user.has_group('pan_mail_pro.group_mail_mailbox_manager'):
-            raise AccessError(_("Filing mail is for mailbox managers."))
+            raise AccessError(_("Linking mail to a record is for mailbox managers."))
         if not model or not res_id or model not in self.env:
             raise UserError(_("That record no longer exists."))
 
@@ -349,7 +349,8 @@ class PanMailRoutingLog(models.Model):
         if not record.exists():
             raise UserError(_("That record no longer exists."))
         if not hasattr(record, 'message_post'):
-            raise UserError(_("%s has no chatter to file mail on.", record._description or model))
+            raise UserError(_("%s has no chatter to link mail to.",
+                              record._description or model))
         # The destination decides. A reader who cannot write the ticket cannot
         # put somebody else's correspondence on it either.
         record.check_access('write')
@@ -358,14 +359,14 @@ class PanMailRoutingLog(models.Model):
             [int(mid) for mid in (message_ids or [])]
         ).exists()
         if not messages:
-            raise UserError(_("Nothing to file."))
+            raise UserError(_("Nothing to link."))
         # Read as the caller. A message sitting on a record they cannot open
         # is refused here rather than moved on their behalf by rights they do
         # not have.
         messages.check_access('read')
         messages = messages.filtered(lambda m: m.message_type == 'email')
         if not messages:
-            raise UserError(_("Only email can be filed on a record."))
+            raise UserError(_("Only email can be linked to a record."))
 
         messages.sudo().write({
             'model': model,
@@ -383,7 +384,7 @@ class PanMailRoutingLog(models.Model):
             'suggested_reason': False,
         })
         _logger.info(
-            "[Mail Matcher] %s message(s) refiled onto %s/%s by %s",
+            "[Mail Matcher] %s message(s) relinked to %s/%s by %s",
             len(messages), model, record.id, self.env.user.login,
         )
         return {'model': model, 'res_id': record.id, 'name': record.display_name}

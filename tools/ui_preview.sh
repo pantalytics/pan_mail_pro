@@ -120,7 +120,7 @@ for subject, body, direction in (
 # `fallback` outcome, delivered but to a place nobody is looking. Each carries
 # the suggestion the ladder nearly picked, which is what the Inbox offers with
 # one click. Two different contacts, because mail on one contact is one
-# conversation however many messages it holds -- and filing the first has to
+# conversation however many messages it holds -- and linking the first has to
 # leave a second behind.
 for name, address, subject, body in (
     ('Vandermolen Techniek B.V.', 'bart@vandermolen.example',

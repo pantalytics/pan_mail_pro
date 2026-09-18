@@ -27,7 +27,7 @@ from . import test_outgoing_threading
 from . import test_thread_drift
 from . import test_reply_sync
 from . import test_routing_log
-from . import test_refile
+from . import test_linking
 from . import test_setup_flow
 from . import test_mailbox_permission
 from . import test_incoming_sync_gmail

@@ -8,8 +8,8 @@ must match at rule 3, exactly, without anyone being asked again. That is the
 only part of triage that compounds, and it is invisible from the screen -- so
 if it silently stopped happening, nothing would say so.
 
-The rest of these are the three things `refile` deliberately does not do, each
-of which would be a quiet regression rather than a failure: it must not
+The rest of these are the three things `link_to` deliberately does not do,
+each of which would be a quiet regression rather than a failure: it must not
 subscribe anybody to the destination, it must not accept a caller who cannot
 write that destination, and it must not move a note.
 """
@@ -18,7 +18,7 @@ from odoo.tests import TransactionCase, tagged
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestRefile(TransactionCase):
+class TestLinkTo(TransactionCase):
 
     @classmethod
     def setUpClass(cls):
@@ -83,19 +83,19 @@ class TestRefile(TransactionCase):
     # What the correction buys
     # ------------------------------------------------------------------ #
 
-    def test_refile_moves_the_message(self):
+    def test_link_to_moves_the_message(self):
         message, _log = self._fallback_mail()
 
-        result = self.Log.refile([message.id], 'crm.lead', self.lead.id)
+        result = self.Log.link_to([message.id], 'crm.lead', self.lead.id)
 
         self.assertEqual(message.model, 'crm.lead')
         self.assertEqual(message.res_id, self.lead.id)
         self.assertEqual(result['name'], self.lead.display_name)
 
-    def test_refile_repoints_the_thread_so_the_next_mail_needs_nobody(self):
+    def test_link_to_repoints_the_thread_so_the_next_mail_needs_nobody(self):
         """The whole point. One click, and rule 3 answers from then on."""
         message, _log = self._fallback_mail()
-        self.Log.refile([message.id], 'crm.lead', self.lead.id)
+        self.Log.link_to([message.id], 'crm.lead', self.lead.id)
 
         decision = self.env['pan.mail.matcher'].match(
             {
@@ -111,7 +111,7 @@ class TestRefile(TransactionCase):
         self.assertEqual(decision['res_id'], self.lead.id)
         self.assertEqual(decision['rule'], 'thread_link')
 
-    def test_refile_marks_the_row_reviewed_and_drops_the_suggestion(self):
+    def test_link_to_marks_the_row_reviewed_and_drops_the_suggestion(self):
         """A corrected row is answered, so it stops asking."""
         message, log = self._fallback_mail()
         log.write({
@@ -120,17 +120,17 @@ class TestRefile(TransactionCase):
             'suggested_name': self.lead.display_name,
         })
 
-        self.Log.refile([message.id], 'crm.lead', self.lead.id)
+        self.Log.link_to([message.id], 'crm.lead', self.lead.id)
 
         self.assertTrue(log.reviewed)
         self.assertFalse(log.suggested_model)
 
-    def test_refile_moves_the_whole_conversation_it_is_given(self):
+    def test_link_to_moves_the_whole_conversation_it_is_given(self):
         """Leaving half a thread behind splits it across two records."""
         first, _log = self._fallback_mail()
         second, _log2 = self._fallback_mail(subject='Re: Storing aan de pers')
 
-        self.Log.refile([first.id, second.id], 'crm.lead', self.lead.id)
+        self.Log.link_to([first.id, second.id], 'crm.lead', self.lead.id)
 
         self.assertEqual(first.res_id, self.lead.id)
         self.assertEqual(second.res_id, self.lead.id)
@@ -139,8 +139,8 @@ class TestRefile(TransactionCase):
     # What it must not do
     # ------------------------------------------------------------------ #
 
-    def test_refile_subscribes_nobody(self):
-        """Filing mail must not become a way to start notifying people.
+    def test_link_to_subscribes_nobody(self):
+        """Linking mail must not become a way to start notifying people.
 
         The same rule CC follows: a message arriving on a record is not a
         reason to put its author on that record's follower list.
@@ -148,12 +148,12 @@ class TestRefile(TransactionCase):
         message, _log = self._fallback_mail()
         before = set(self.lead.message_partner_ids.ids)
 
-        self.Log.refile([message.id], 'crm.lead', self.lead.id)
+        self.Log.link_to([message.id], 'crm.lead', self.lead.id)
 
         self.assertEqual(set(self.lead.message_partner_ids.ids), before)
 
-    def test_refile_refuses_a_note(self):
-        """Only correspondence is filed. A note belongs to its record."""
+    def test_link_to_refuses_a_note(self):
+        """Only correspondence is linked. A note belongs to its record."""
         note = self.env['mail.message'].create({
             'model': 'res.partner',
             'res_id': self.customer.id,
@@ -161,30 +161,30 @@ class TestRefile(TransactionCase):
             'body': '<p>gebeld</p>',
         })
         with self.assertRaises(UserError):
-            self.Log.refile([note.id], 'crm.lead', self.lead.id)
+            self.Log.link_to([note.id], 'crm.lead', self.lead.id)
         self.assertEqual(note.model, 'res.partner')
 
-    def test_refile_refuses_a_destination_that_is_gone(self):
+    def test_link_to_refuses_a_destination_that_is_gone(self):
         message, _log = self._fallback_mail()
         missing = self.lead.id
         self.lead.unlink()
 
         with self.assertRaises(UserError):
-            self.Log.refile([message.id], 'crm.lead', missing)
+            self.Log.link_to([message.id], 'crm.lead', missing)
 
-    def test_refile_is_for_mailbox_managers(self):
+    def test_link_to_is_for_mailbox_managers(self):
         """The menu carries the group; the method has to carry it too.
 
-        `refile` answers `call_kw` from any session, so the group on the
+        `link_to` answers `call_kw` from any session, so the group on the
         inbox's menu protects nothing on its own.
         """
         message, _log = self._fallback_mail()
         stranger = self.env['res.users'].create({
             'name': 'Buitenstaander',
-            'login': 'refile-stranger',
+            'login': 'linking-stranger',
             'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
         })
 
         with self.assertRaises(AccessError):
-            self.Log.with_user(stranger).refile([message.id], 'crm.lead', self.lead.id)
+            self.Log.with_user(stranger).link_to([message.id], 'crm.lead', self.lead.id)
         self.assertEqual(message.model, 'res.partner')

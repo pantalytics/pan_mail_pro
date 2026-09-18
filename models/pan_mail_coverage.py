@@ -32,15 +32,15 @@ class PanMailCoverage(models.TransientModel):
     )
 
     total_count = fields.Integer(string='Messages', compute='_compute_coverage')
-    linked_count = fields.Integer(string='Filed on a document', compute='_compute_coverage')
-    contact_only_count = fields.Integer(string='Filed on a contact only', compute='_compute_coverage')
-    unlinked_count = fields.Integer(string='Not filed anywhere', compute='_compute_coverage')
-    unlinked_ratio = fields.Float(string='Unfiled', compute='_compute_coverage')
+    linked_count = fields.Integer(string='Linked to a document', compute='_compute_coverage')
+    contact_only_count = fields.Integer(string='On a contact only', compute='_compute_coverage')
+    unlinked_count = fields.Integer(string='Linked to nothing', compute='_compute_coverage')
+    unlinked_ratio = fields.Float(string='Not linked', compute='_compute_coverage')
 
     def _contact_only_domain(self):
-        """Filed on a contact and nothing else.
+        """Linked to a contact and nothing else.
 
-        `res_id` must be set, or the message is unfiled and belongs in that
+        `res_id` must be set, or the message is linked to nothing and belongs in that
         row instead — the three rows have to stay disjoint.
         """
         return [('model', '=', 'res.partner'), ('res_id', '!=', False)]
@@ -72,7 +72,7 @@ class PanMailCoverage(models.TransientModel):
             record.unlinked_count = unlinked
             record.contact_only_count = contact_only
             # The three rows are disjoint and sum to the total: a message is
-            # filed on a document, filed on a contact only, or filed nowhere.
+            # linked to a document, on a contact only, or linked to nothing.
             # Counting the contacts inside the documents made the two rows on
             # the screen look like a sum that does not add up.
             record.linked_count = total - unlinked - contact_only
@@ -93,13 +93,13 @@ class PanMailCoverage(models.TransientModel):
     def action_view_unlinked(self):
         return self._open_lens(
             ['|', ('model', '=', False), ('res_id', '=', False)],
-            _('Mail not filed anywhere'),
+            _('Mail linked to nothing'),
         )
 
     def action_view_contact_only(self):
         return self._open_lens(
             self._contact_only_domain(),
-            _('Mail filed on a contact only'),
+            _('Mail on a contact only'),
         )
 
     def action_view_all(self):

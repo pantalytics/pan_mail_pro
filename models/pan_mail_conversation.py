@@ -54,11 +54,11 @@ MAX_LIMIT = 200
 # every row the reader can see, once per folder, on every click.
 COUNT_CAP = 99
 
-# How many models the "file it here" picker offers. The list is built from
-# what this database already files mail on, so it is short by construction;
+# How many models the "link it here" picker offers. The list is built from
+# what this database already links mail to, so it is short by construction;
 # the cap is there so a database with a long history of routing targets does
 # not turn a picker into a directory.
-MAX_REFILE_TARGETS = 12
+MAX_LINK_TARGETS = 12
 
 # How much of a body the one-line preview looks at. A real mail carries a
 # signature, an inline stylesheet and the whole quoted history; the preview is
@@ -88,8 +88,8 @@ FOLDERS = [
     ('inbox', 'Inbox'),
     ('needs_reply', 'Needs reply'),
     ('waiting', 'Waiting on customer'),
-    ('unfiled_contact', 'On a contact only'),
-    ('unfiled_none', 'Linked to nothing'),
+    ('unlinked_contact', 'On a contact only'),
+    ('unlinked_none', 'Linked to nothing'),
 ]
 
 # The two folders whose answer is about the newest message, not about any
@@ -154,9 +154,9 @@ class PanMailConversation(models.AbstractModel):
         """
         if folder in DIRECTION_FOLDERS:
             return [('x_direction', '=', DIRECTION_FOLDERS[folder])]
-        if folder == 'unfiled_contact':
+        if folder == 'unlinked_contact':
             return [('model', '=', 'res.partner')]
-        if folder == 'unfiled_none':
+        if folder == 'unlinked_none':
             return [('model', '=', False)]
         return []
 
@@ -259,8 +259,8 @@ class PanMailConversation(models.AbstractModel):
         # (model, res_id) would collapse every unmatched message in the
         # database into a single row belonging to nobody, which is the exact
         # opposite of the state this folder exists to make reviewable.
-        if folder == 'unfiled_none':
-            return self._unfiled_rows(base, limit, offset)
+        if folder == 'unlinked_none':
+            return self._unlinked_rows(base, limit, offset)
 
         Message = self.env['mail.message']
         domain = base + self._folder_domain(folder)
@@ -312,7 +312,8 @@ class PanMailConversation(models.AbstractModel):
         it is only looked up when nothing was filed, because that is the only
         case anybody wants to read it.
 
-        An unfiled conversation has no record to key on, so it is addressed by
+        A conversation linked to nothing has no record to key on, so it is
+        addressed by
         `message_id` instead.
         """
         self._check_caller()
@@ -324,8 +325,8 @@ class PanMailConversation(models.AbstractModel):
         elif message_id:
             domain += [('id', '=', int(message_id))]
         else:
-            # `= 0` does not match a NULL res_id, so an unfiled conversation
-            # asked for by key rather than by message has to say False.
+            # `= 0` does not match a NULL res_id, so a conversation linked to
+            # nothing, asked for by key rather than by message, has to say False.
             domain += [('model', '=', False), ('res_id', '=', False)]
 
         # Newest N, shown oldest first: the page you want is the end of the
@@ -443,8 +444,8 @@ class PanMailConversation(models.AbstractModel):
     # Batch helpers: one query for the page, never one per row
     # ------------------------------------------------------------------
 
-    def _unfiled_rows(self, base, limit, offset):
-        """One row per unfiled message, because that is what it is.
+    def _unlinked_rows(self, base, limit, offset):
+        """One row per unlinked message, because that is what it is.
 
         Nothing groups these: they are the mails the matcher could not place,
         and the whole point of the folder is to look at them one at a time.
@@ -749,17 +750,17 @@ class PanMailConversation(models.AbstractModel):
         return False
 
     @api.model
-    def refile_targets(self):
-        """The models mail may be filed on, for the picker.
+    def link_targets(self):
+        """The models mail may be linked to, for the picker.
 
         Not every model with a chatter. The list is what this database has
-        already proved it files mail on -- the mailboxes' own routing targets
+        already proved it links mail to -- the mailboxes' own routing targets
         and the models the log has seen -- plus the contact, which is where
         unmatched mail lands anyway. It therefore grows with use and starts
         short, instead of being a dropdown of four hundred technical names on
         day one.
 
-        `write` is the right question: filing somebody's correspondence onto a
+        `write` is the right question: putting somebody's correspondence on a
         record is a change to that record, and a model the reader may only read
         is not a place they may put mail.
         """
@@ -788,7 +789,7 @@ class PanMailConversation(models.AbstractModel):
                 'model': name,
                 'label': self.env['ir.model']._get(name).name or name,
             })
-            if len(targets) >= MAX_REFILE_TARGETS:
+            if len(targets) >= MAX_LINK_TARGETS:
                 break
         return targets
 

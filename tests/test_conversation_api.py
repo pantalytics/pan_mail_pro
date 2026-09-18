@@ -98,7 +98,7 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(
             [row['id'] for row in counts],
             ['inbox', 'needs_reply', 'waiting',
-             'unfiled_contact', 'unfiled_none'],
+             'unlinked_contact', 'unlinked_none'],
             'no Sent folder: it was the same query as Waiting on customer',
         )
         by_id = {row['id']: row['count'] for row in counts}
@@ -140,10 +140,10 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(row['subject'], 'Re: Second')
         self.assertEqual(row['count'], 3, 'three messages, not one outgoing')
 
-    def test_unfiled_mail_is_not_one_conversation(self):
+    def test_unlinked_mail_is_not_one_conversation(self):
         """Two unmatched mails from two companies are two rows.
 
-        Grouping on (model, res_id) collapsed every unfiled message in the
+        Grouping on (model, res_id) collapsed every unlinked message in the
         database into a single row belonging to nobody, in the one folder that
         exists to make those messages reviewable.
         """
@@ -158,7 +158,7 @@ class TestConversationApi(TransactionCase):
                 'x_mailbox_id': self.mailbox.id,
             })
         rows = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, folder='unfiled_none')
+            mailbox_id=self.mailbox.id, folder='unlinked_none')
         self.assertEqual(len(rows), 2)
         self.assertEqual({row['subject'] for row in rows},
                          {'Stranger one', 'Stranger two'})
