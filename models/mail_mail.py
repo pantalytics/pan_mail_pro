@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
-from odoo import fields, models, api, _
+from odoo import fields, models, api, tools, _
 from odoo.exceptions import AccessError, UserError
 
 from .mail_provider_client import ERROR_NO_RECIPIENTS
@@ -452,12 +452,29 @@ class MailMail(models.Model):
                 'x_direction': 'outgoing',
                 'x_mailbox_id': mailbox.id,
                 'x_account_id': account.id,
+                # Who the mail went to, the way the sync records it for a
+                # received one: addresses, as text. A chatter reply carries
+                # its recipients as partners and a template mail as
+                # `email_to`; either way the Inbox's To line reads one column.
+                'x_email_to': self._addresses(self.email_to, self.recipient_ids),
+                'x_email_cc': self._addresses(self.email_cc),
             })
 
         self._index_sent_message(mailbox, message_id, thread_id, reply_context)
         _logger.info(f"[Outgoing Mail] Mail {self.id} sent from {mailbox.email} "
                      f"(message {message_id}, thread {thread_id})")
 
+
+    @staticmethod
+    def _addresses(value, partners=None):
+        """Bare addresses, comma separated, in the order they were given."""
+        seen = []
+        for address in tools.email_split(value or '') + [
+                p.email for p in (partners or []) if p.email]:
+            address = address.strip()
+            if address and address not in seen:
+                seen.append(address)
+        return ', '.join(seen)
 
     def _build_reply_context(self, mailbox):
         """Everything a provider needs to send this mail *inside* its thread.

@@ -701,9 +701,10 @@ record is not. Deleting "unused" aliases breaks routing.
 
 **CC is stored as text and acted on by nothing.** The sync writes To and CC to
 `mail.message.x_email_to` / `x_email_cc`, two plain chars holding the addresses
-the header held. Everyone on the mail already saw them, so keeping them costs
-no confidentiality, and they are what the Inbox's recipients line reads and
-what a future reply-all would read.
+the header held, and `mail.mail._record_sent()` writes the same two for a mail
+that went out from here (19.0.13.2.0). Everyone on the mail already saw them,
+so keeping them costs no confidentiality, and they are what the Inbox's To/Cc
+line reads and what a future reply-all would read.
 
 Text rather than a relation, and that is the whole decision. A recipient
 never creates a `res.partner` and never creates a follower: the first would
@@ -711,7 +712,8 @@ build a contact database out of other companies' colleagues, the second is the
 mechanism behind §9.10. `partner_ids` stays what Odoo means by it -- who was
 notified -- which for an imported mail is nobody, and the Inbox falls back to
 it only for messages that carry no columns (mail written in the chatter, and
-everything older than 19.0.12.2.0).
+everything older than 19.0.12.2.0). An incoming mail with neither shows the
+mailbox it arrived on, which is the one To that is always true of it.
 
 **BCC must not cross the provider boundary.** A received message carries no BCC
 list, so an inbox sync is safe by construction. The sender's own copy in Sent
