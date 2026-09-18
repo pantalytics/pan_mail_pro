@@ -84,6 +84,17 @@ IMPORT_CTX = {
 }
 
 
+def _address_list(recipients):
+    """The addresses of a normalized recipient list, comma separated.
+
+    Addresses only, no display names: this is read back as a list of people to
+    reach, and a quoted name that has to survive a round trip through a char
+    column is a parsing problem nobody asked for.
+    """
+    return ', '.join(
+        r.get('email', '') for r in recipients or [] if r.get('email')
+    )
+
 
 class PanMailFetcher(models.AbstractModel):
     """The incoming flow: email in a mailbox folder becomes chatter on a record.
@@ -894,9 +905,8 @@ class PanMailFetcher(models.AbstractModel):
 
         # Build msg_dict in Odoo's expected format for message_new()
         email_from = f'"{contact_name}" <{contact_email}>' if contact_name else contact_email
-        cc_addresses = ', '.join(
-            r.get('email', '') for r in full_message.get('cc') or []
-        )
+        to_addresses = _address_list(full_message.get('to'))
+        cc_addresses = _address_list(full_message.get('cc'))
         msg_dict = {
             'message_type': 'email',
             'subject': full_message.get('subject', ''),
@@ -1016,6 +1026,13 @@ class PanMailFetcher(models.AbstractModel):
                     'x_direction': 'outgoing' if is_outgoing else 'incoming',
                     'x_mailbox_id': mailbox.id,
                     'x_account_id': account.id,
+                    # Who else was on the mail. Text, not partners: see the
+                    # field comment on mail.message. Written here rather than
+                    # passed into message_post for the same reason as the three
+                    # above -- and on every branch at once, which is what the
+                    # earlier attempt through msg_dict never managed.
+                    'x_email_to': to_addresses,
+                    'x_email_cc': cc_addresses,
                 })
 
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
