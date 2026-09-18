@@ -100,7 +100,7 @@
                                 t-att-class="{ 'o_mailpro_filter_active': state.filter === pill.id }"
                                 t-att-aria-pressed="state.filter === pill.id ? 'true' : 'false'"
                                 t-on-click="() => this.setFilter(pill.id)">
-                            <span t-esc="pill.name"/>
+                            <span class="o_mailpro_filter_label" t-esc="pill.name"/>
                             <span t-if="pill.count" class="o_mailpro_count" t-esc="folderCount(pill)"/>
                         </button>
                     </div>

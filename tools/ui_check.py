@@ -212,9 +212,11 @@ class Checks:
         if rail != list(self.FOLDERS):
             self.fail(f'the folder rail reads {rail}, expected {list(self.FOLDERS)}')
 
-        # The filter row sits over the list, once, not once per mailbox.
-        pills = [el.inner_text().split('\n')[0].strip()
-                 for el in page.query_selector_all('.o_mailpro_filter')]
+        # The filter row sits over the list, once, not once per mailbox. The
+        # count sits inline next to the label rather than on its own line the
+        # way the rail draws it, so read the label itself.
+        pills = [el.inner_text().strip()
+                 for el in page.query_selector_all('.o_mailpro_filter_label')]
         if pills != list(self.FILTERS):
             self.fail(f'the filter row reads {pills}, expected {list(self.FILTERS)}')
         else:
