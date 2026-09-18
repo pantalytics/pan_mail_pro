@@ -182,7 +182,7 @@ class Checks:
     FOLDERS = ('Inbox', 'Sent')
 
     # Those states, as the filter row over the list they filter.
-    FILTERS = ('Needs reply', 'On a contact only', 'Linked to nothing')
+    FILTERS = ('On a contact only', 'Linked to nothing')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.

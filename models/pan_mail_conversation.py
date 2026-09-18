@@ -80,12 +80,6 @@ QUOTE_START = re.compile(
     r'|data-o-mail-quote|id="(?:divRplyFwdMsg|appendonsend)"',
     re.IGNORECASE)
 
-# How many groups to over-fetch for the two folders whose answer depends on
-# which way the *newest* message went. Direction lives on the message, so that
-# filter can only be applied once the newest message of each group is known,
-# which is after the grouping query.
-DIRECTION_OVERFETCH = 2
-
 # The rail, in the order it is drawn. A mailbox and the two folders every
 # mail client has, because the rail is the part of this screen people already
 # know how to read. Our own states are not folders and do not belong here;
@@ -98,19 +92,19 @@ RAIL_FOLDERS = [
 # The states worth filtering a folder down to. These are ours, not the
 # provider's, so they read as filters over a list rather than as folders
 # holding mail of their own -- the difference between a view and a place.
+#
+# They are all about *linking*, never about the mail itself. A mailbox has
+# read and unread, and that is the whole vocabulary of a mail list; a state
+# like "needs reply" is one we made up, and it was ours to keep correct on a
+# screen that reads mail somebody already triages in Outlook. Read status is
+# Odoo's, and it is enough.
 LIST_FILTERS = [
-    ('needs_reply', 'Needs reply'),
     ('unlinked_contact', 'On a contact only'),
     ('unlinked_none', 'Linked to nothing'),
 ]
 
 KINDS = ({value: 'folder' for value, _label in RAIL_FOLDERS}
          | {value: 'filter' for value, _label in LIST_FILTERS})
-
-# The one state whose answer is about the newest message rather than about any
-# message in the conversation. "Sent" is not: a thread you wrote in belongs in
-# Sent whoever spoke last, which is what every mail client means by the word.
-DIRECTION_FOLDERS = {'needs_reply': 'incoming'}
 
 # The matcher's rule names, in words. The screen shows why a mail was not
 # filed, and `subject_participants` is not why anything happened.
@@ -170,24 +164,12 @@ class PanMailConversation(models.AbstractModel):
             return [('x_direction', '=', 'outgoing')]
         return []
 
-    def _filter_domain(self, filter_name, folder='inbox'):
+    def _filter_domain(self, filter_name):
         """The extra clauses a list filter adds to the grouping query.
 
-        "Needs reply" cannot be settled here. It is about the *newest*
-        message, and a conversation with one inbound message somewhere in its
-        history is a different set. This narrows the grouping to what could
-        qualify; `_filter_by_direction` settles it once the newest message of
-        each group is known.
-
-        Inside Sent it does not even narrow: "has an outgoing message" and
-        "has an incoming message" are true of the same conversation and false
-        of the same message, so an AND of the two clauses finds nothing. The
-        grouping stays wide there and the newest message decides alone.
+        Every filter here is a clause on the message, so the grouping query
+        is the whole answer.
         """
-        if filter_name in DIRECTION_FOLDERS:
-            if folder == 'sent':
-                return []
-            return [('x_direction', '=', DIRECTION_FOLDERS[filter_name])]
         if filter_name == 'unlinked_contact':
             return [('model', '=', 'res.partner')]
         if filter_name == 'unlinked_none':
@@ -249,10 +231,7 @@ class PanMailConversation(models.AbstractModel):
         `folder` is the one the reader has open. The filters are counted
         inside it and only for that mailbox, because they are a filter row
         over one list rather than a second rail: a mailbox standing open in
-        the rail costs its two folders, not five.
-
-        "Needs reply" is counted the way it is listed, on the newest message,
-        which is why it costs a page of newest messages.
+        the rail costs its two folders, not four.
         """
         self._check_caller()
         base = self._base_domain(mailbox_id, partner_id, search)
@@ -264,12 +243,12 @@ class PanMailConversation(models.AbstractModel):
             within = base + self._folder_domain(folder)
             filters = [
                 self._count_entry(within, value, label,
-                                  self._filter_domain(value, folder), base=base)
+                                  self._filter_domain(value))
                 for value, label in LIST_FILTERS
             ]
         return {'folders': folders, 'filters': filters}
 
-    def _count_entry(self, domain, value, label, extra, base=None):
+    def _count_entry(self, domain, value, label, extra):
         """One number for the rail or the filter row, capped."""
         groups = self.env['mail.message']._read_group(
             domain + extra, groupby=['model', 'res_id'],
@@ -277,11 +256,7 @@ class PanMailConversation(models.AbstractModel):
             order='date:max DESC, model ASC, res_id ASC',
             limit=COUNT_CAP + 1,
         )
-        if value in DIRECTION_FOLDERS:
-            newest = self._newest_per_group(base if base is not None else domain,
-                                            groups)
-            total = len(self._filter_by_direction(newest, value))
-        elif value == 'unlinked_none':
+        if value == 'unlinked_none':
             # Unfiled mail does not group: every row is its own conversation,
             # and grouping on (model, res_id) counts the whole pile as one.
             total = sum(count for _model, _res_id, count, _date in groups)
@@ -325,12 +300,7 @@ class PanMailConversation(models.AbstractModel):
             return self._unlinked_rows(narrowed, limit, offset)
 
         Message = self.env['mail.message']
-        domain = narrowed + self._filter_domain(filter_name, folder)
-
-        # Over-fetch only where the answer depends on the newest message.
-        # Everywhere else the grouping query is already the answer.
-        directional = filter_name in DIRECTION_FOLDERS
-        fetch = limit * DIRECTION_OVERFETCH if directional else limit
+        domain = narrowed + self._filter_domain(filter_name)
 
         groups = Message._read_group(
             domain,
@@ -340,19 +310,16 @@ class PanMailConversation(models.AbstractModel):
             # ORDER BY may return the same conversation on two pages and never
             # return another one.
             order='date:max DESC, model ASC, res_id ASC',
-            limit=fetch,
+            limit=limit,
             offset=offset,
         )
         if not groups:
             return []
 
         # The newest message and the message count come from the *base*
-        # domain, never from the narrowed one. In "Needs reply" the grouping
-        # holds only inbound mail, so it would show the customer's older
-        # message as the latest one and count three of a twelve-message thread.
+        # domain, never from the narrowed one: the row describes the whole
+        # conversation, not the folder's slice of it.
         newest = self._newest_per_group(base, groups)
-        if directional:
-            newest = self._filter_by_direction(newest, filter_name)[:limit]
         if not newest:
             return []
 
@@ -590,11 +557,6 @@ class PanMailConversation(models.AbstractModel):
         )
         return {(model, res_id): count for model, res_id, count in groups}
 
-    def _filter_by_direction(self, newest, filter_name):
-        """Keep the conversations whose newest message went the right way."""
-        wanted = DIRECTION_FOLDERS[filter_name]
-        return newest.filtered(lambda message: message.x_direction == wanted)
-
     def _unread_ids(self, messages):
         """Which of these messages are unread, in one query.
 
@@ -655,9 +617,6 @@ class PanMailConversation(models.AbstractModel):
             'count': count,
             'record_name': record_name,
             'unread': newest.id in unread_ids,
-            # The last word was theirs. Worked out here every time, so it is
-            # never a day out of date.
-            'waiting_on_us': newest.x_direction == 'incoming',
             'mailbox': newest.x_mailbox_id.email or '',
         }
 

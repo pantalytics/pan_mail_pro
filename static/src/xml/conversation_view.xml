@@ -91,8 +91,8 @@
                         The states that are ours, as a filter row over the
                         list rather than as folders in the rail. A folder is
                         a place mail is and the provider decides what those
-                        are; "needs reply" is a question we ask about it.
-                        A second click clears the filter.
+                        are; "linked to nothing" is a question we ask about
+                        it. A second click clears the filter.
                     -->
                     <div t-if="filters.length" class="o_mailpro_filters d-flex align-items-center gap-1 flex-wrap"
                          role="group" aria-label="Filter conversations">
@@ -166,7 +166,6 @@
                                         <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
                                               t-esc="conversation.record_name"/>
                                         <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
-                                        <span t-if="conversation.waiting_on_us" class="o_mailpro_chip_warn">Needs reply</span>
                                     </span>
                                 </span>
                             </div>

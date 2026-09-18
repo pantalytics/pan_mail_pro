@@ -333,15 +333,6 @@ $mailpro-warn: #c0392b;
         font-weight: 500;
     }
 
-    .o_mailpro_chip_warn {
-        padding: 0.125rem 0.4375rem;
-        border-radius: 0.25rem;
-        background: rgba(192, 57, 43, 0.1);
-        color: $mailpro-warn;
-        font-size: 0.6875rem;
-        font-weight: 600;
-    }
-
     .o_mailpro_chip_button {
         padding: 0.25rem 0.625rem;
         border: 1px solid $mailpro-line;
