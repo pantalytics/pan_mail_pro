@@ -175,12 +175,14 @@ class Checks:
 
     # -- The Inbox ------------------------------------------------------------
 
-    # The five states that earn a line in the rail. More than five and the
-    # rail is a filter panel; fewer and people ask where their mail went.
-    # "Sent" is not one of them: it was the same query as "Waiting on
-    # customer", and the provider's own Sent folder already exists.
-    FOLDERS = ('Inbox', 'Needs reply', 'Waiting on customer',
-               'On a contact only', 'Linked to nothing')
+    # The rail is the shape the mail client next to this one has: a mailbox
+    # and its folders. Our own states are not folders and do not go here --
+    # a rail of invented names reads as a filter panel wearing a rail's
+    # clothes, which is what people notice first and trust least.
+    FOLDERS = ('Inbox', 'Sent')
+
+    # Those states, as the filter row over the list they filter.
+    FILTERS = ('Needs reply', 'On a contact only', 'Linked to nothing')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.
@@ -209,6 +211,27 @@ class Checks:
                 for el in page.query_selector_all('.o_mailpro_folder')]
         if rail != list(self.FOLDERS):
             self.fail(f'the folder rail reads {rail}, expected {list(self.FOLDERS)}')
+
+        # The filter row sits over the list, once, not once per mailbox. The
+        # count sits inline next to the label rather than on its own line the
+        # way the rail draws it, so read the label itself.
+        pills = [el.inner_text().strip()
+                 for el in page.query_selector_all('.o_mailpro_filter_label')]
+        if pills != list(self.FILTERS):
+            self.fail(f'the filter row reads {pills}, expected {list(self.FILTERS)}')
+        else:
+            # A pill narrows the list and a second click gives it back, which
+            # is the whole promise of a filter over a folder.
+            first = page.query_selector_all('.o_mailpro_filter')[0]
+            first.click()
+            page.wait_for_timeout(1500)
+            if not page.query_selector('.o_mailpro_filter_active'):
+                self.fail('clicking a filter did not mark it as the one in use')
+            first.click()
+            page.wait_for_timeout(1500)
+            if page.query_selector('.o_mailpro_filter_active'):
+                self.fail('clicking the filter again did not clear it')
+            self.error_free('Inbox filter row')
 
         # The mailbox sits in the rail above its own folders, the way it does
         # in the mail client next to this one. The seed makes two, so this is
@@ -260,6 +283,7 @@ class Checks:
         for selector, what in (('.o_mailpro_mailbox', 'mailbox'),
                                ('.o_mailpro_mailbox_toggle', 'mailbox caret'),
                                ('.o_mailpro_folder', 'folder'),
+                               ('.o_mailpro_filter', 'filter'),
                                ('.o_mailpro_item', 'conversation')):
             divs = [el for el in page.query_selector_all(selector)
                     if el.evaluate('el => el.tagName') != 'BUTTON']

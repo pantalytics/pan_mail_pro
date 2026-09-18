@@ -92,60 +92,85 @@ class TestConversationApi(TransactionCase):
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
         self.assertEqual(row['preview'], 'Dank!')
 
-    def test_folder_counts_cover_every_folder(self):
+    def test_the_rail_holds_folders_and_the_list_holds_filters(self):
+        """The rail is the shape every mail client has, and nothing else.
+
+        Our own states -- needs reply, the two unfiled ones -- read as a
+        filter over a list, not as places mail sits, so they come back
+        separately and only for the folder somebody has open.
+        """
+        self._mail()
+        counts = self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id, folder='inbox')
+        self.assertEqual([row['id'] for row in counts['folders']],
+                         ['inbox', 'sent'])
+        self.assertEqual([row['id'] for row in counts['filters']],
+                         ['needs_reply', 'unfiled_contact', 'unfiled_none'])
+        by_id = {row['id']: row['count']
+                 for row in counts['folders'] + counts['filters']}
+        self.assertEqual(by_id['inbox'], 1)
+        self.assertEqual(by_id['sent'], 0)
+        self.assertEqual(by_id['needs_reply'], 1)
+
+    def test_a_folded_mailbox_is_not_asked_for_filter_counts(self):
+        """The filter row belongs to one list, so it costs one mailbox."""
         self._mail()
         counts = self.Conversation.folder_counts(mailbox_id=self.mailbox.id)
-        self.assertEqual(
-            [row['id'] for row in counts],
-            ['inbox', 'needs_reply', 'waiting',
-             'unfiled_contact', 'unfiled_none'],
-            'no Sent folder: it was the same query as Waiting on customer',
-        )
-        by_id = {row['id']: row['count'] for row in counts}
-        self.assertEqual(by_id['inbox'], 1)
-        self.assertEqual(by_id['needs_reply'], 1)
-        self.assertEqual(by_id['waiting'], 0)
+        self.assertEqual(counts['filters'], [])
+        self.assertEqual(len(counts['folders']), 2)
+
+    def test_sent_is_every_thread_written_in_not_the_last_word(self):
+        """A customer answering does not take a thread out of Sent."""
+        self._mail(direction='outgoing', subject='Offerte')
+        self._mail(direction='incoming', subject='Re: Offerte')
+
+        rows = self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id, folder='sent')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['subject'], 'Re: Offerte',
+                         'the row is the conversation, not the mail we sent')
+
+        # And the filter still asks its own question inside that folder.
+        needs = self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id, folder='sent', filter_name='needs_reply')
+        self.assertEqual(len(needs), 1)
 
     def test_an_answered_conversation_leaves_needs_reply(self):
-        """The folder is about the newest message, not about any message.
+        """The filter is about the newest message, not about any message.
 
-        Filtering the messages instead of the conversation put one thread in
-        Needs reply and Waiting on customer at the same time, and left it in
+        Filtering the messages instead of the conversation left a thread in
         Needs reply forever after it was answered.
         """
         self._mail(direction='incoming')
         self._mail(direction='outgoing', subject='Re: Offerte')
 
         needs = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, folder='needs_reply')
-        waiting = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, folder='waiting')
+            mailbox_id=self.mailbox.id, filter_name='needs_reply')
         self.assertEqual(needs, [])
-        self.assertEqual(len(waiting), 1)
 
-        counts = {row['id']: row['count']
-                  for row in self.Conversation.folder_counts(mailbox_id=self.mailbox.id)}
+        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id, folder='inbox')['filters']}
         self.assertEqual(counts['needs_reply'], 0)
-        self.assertEqual(counts['waiting'], 1)
 
-    def test_the_row_describes_the_conversation_not_the_folder(self):
-        """In a folder that filters on direction, the subject, the date and
-        the message count still belong to the whole thread."""
-        self._mail(direction='incoming', subject='First')
-        self._mail(direction='incoming', subject='Second')
-        self._mail(direction='outgoing', subject='Re: Second')
+    def test_the_row_describes_the_conversation_not_the_filter(self):
+        """Under a filter on direction, the subject, the date and the message
+        count still belong to the whole thread."""
+        self._mail(direction='outgoing', subject='First')
+        self._mail(direction='outgoing', subject='Second')
+        self._mail(direction='incoming', subject='Re: Second')
 
         row = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, folder='waiting')[0]
+            mailbox_id=self.mailbox.id, filter_name='needs_reply')[0]
         self.assertEqual(row['subject'], 'Re: Second')
-        self.assertEqual(row['count'], 3, 'three messages, not one outgoing')
+        self.assertEqual(row['count'], 3, 'three messages, not one incoming')
 
     def test_unfiled_mail_is_not_one_conversation(self):
         """Two unmatched mails from two companies are two rows.
 
         Grouping on (model, res_id) collapsed every unfiled message in the
-        database into a single row belonging to nobody, in the one folder that
-        exists to make those messages reviewable.
+        database into a single row belonging to nobody, under the one filter
+        that exists to make those messages reviewable. The rail counts them
+        the same way, one per message.
         """
         for subject in ('Stranger one', 'Stranger two'):
             self.env['mail.message'].create({
@@ -158,10 +183,14 @@ class TestConversationApi(TransactionCase):
                 'x_mailbox_id': self.mailbox.id,
             })
         rows = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, folder='unfiled_none')
+            mailbox_id=self.mailbox.id, filter_name='unfiled_none')
         self.assertEqual(len(rows), 2)
         self.assertEqual({row['subject'] for row in rows},
                          {'Stranger one', 'Stranger two'})
+        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id, folder='inbox')['filters']}
+        self.assertEqual(counts['unfiled_none'], 2,
+                         'the number says how many mails there are to review')
 
         # And each one opens on its own message rather than on all of them.
         thread = self.Conversation.read_conversation(
@@ -193,7 +222,7 @@ class TestConversationApi(TransactionCase):
             mailbox_id=self.mailbox.id, search='asafdicht')
         self.assertEqual(len(rows), 1)
         counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
-            mailbox_id=self.mailbox.id, search='asafdicht')}
+            mailbox_id=self.mailbox.id, search='asafdicht')['folders']}
         self.assertEqual(counts['inbox'], 1,
                          'the rail describes the same mail as the list')
 
