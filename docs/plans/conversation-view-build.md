@@ -1,14 +1,15 @@
 # Building the conversation view
 
-Status: **steps 1 to 4 built**, 19.0.10.0.0 and 19.0.11.0.0; steps 5 and 6
-proposed. The screen and its rules are in
+Status: **steps 1 to 4 built**, 19.0.10.0.0, 19.0.10.5.0 and 19.0.11.0.0;
+steps 5 and 6 proposed. The screen and its rules are in
 [conversation-view.md](conversation-view.md); this file is how it gets built.
 What shipped is the read layer, the client action with its four panes, Reply
-and Log note through Odoo's own composer, the tab strip, and the record pane
-without its chatter. What is still on paper inside step 4 is the composer's own
-To/Cc/followers block: the reply uses Odoo's composer unextended, which fills
-To from the newest inbound message and leaves Cc alone. What the browser found
-that no unit test would have is at the bottom, under **What actually broke**.
+and Log note in Odoo's own composer mounted in the conversation pane, the tab
+strip, and the record pane without its chatter. What is still on paper inside
+step 4 is the composer's own To/Cc/followers block: the composer is Odoo's
+unextended, so To is filled from the newest inbound message and Cc is left
+alone. What the browser found that no unit test would have is at the bottom,
+under **What actually broke**.
 
 ## The decision: OWL, inside the Odoo backend
 
@@ -254,6 +255,14 @@ same ones.
   raised `ValueError` in an "Oops" dialog, not a console warning.
 - **The thread read newest-first**, because that is how the query is ordered
   and nobody had looked at it. A conversation reads downwards.
+- **A form view only renders its `<footer>` inside a dialog.** `FormController`
+  cuts every footer out of the arch and the `web.FormView` template draws it
+  under `t-if="env.inDialog"`, portalled into the modal's own footer. So the
+  composer mounted in a pane came up with no Send button, no paperclip and no
+  template selector, and nothing anywhere said so. 19.0.10.5.0 answers it with
+  a primary view that moves the two widgets into the body, and with Send and
+  Discard as the pane's own buttons -- the pane is what closes, so the pane
+  owns them.
 
 ## Risks
 

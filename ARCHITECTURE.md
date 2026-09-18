@@ -184,6 +184,18 @@ own methods called on the record itself, unwrapped, so the reply path cannot
 drift from the chatter. The screen it serves is designed in
 `docs/plans/conversation-view.md`.
 
+Replying happens in the conversation pane, not in a dialog over the screen: a
+dialog hides the list, the record and the mail being answered, which are the
+three things somebody looks at while writing. It is still `mail.compose.message`
+-- 19.0.10.5.0 only changed where the form is mounted. Two things had to move
+for it to live outside a dialog, and both are in
+`static/src/js/conversation_view/use_composer.js`: the arch's `<footer>` is
+rendered by a dialog and nowhere else, so
+`pan_mail_pro.mail_compose_message_inline_form` puts the paperclip and the
+template selector back in the body, and Send saves the composer and calls
+`action_send_mail` itself, from the pane, because the pane is what closes when
+the mail is out.
+
 19.0.11.0.0 took the chatter out of the Inbox's fourth pane and put what it
 carried into a four-position strip over the third: Mail, Everything (the notes
 and the record's own events, interleaved), Files, Activities. The screen had
@@ -193,6 +205,11 @@ who were on it, the chatter's does neither -- so the chatter is the one that
 lost. `read_conversation` grew a `scope` for the two readings of the thread;
 the files and the follow-ups ride along with every read, because a count on a
 tab that moves when you open another tab reads as a bug.
+
+Log note is the same composer in the same pane, with the note subtype instead
+of the comment one and no recipients, so the screen still writes in exactly
+one place. The strip steps aside while somebody is writing: the pane has one
+job then, and a tab click would drop the draft.
 
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /

@@ -15,7 +15,8 @@
  *
  * The panes themselves are draggable and the two outer ones fold away; that
  * lives in `use_panes.js`, because how wide a pane is has nothing to do with
- * what is in it.
+ * what is in it. Replying takes the conversation pane rather than a dialog
+ * over the screen; that lives in `use_composer.js`.
  */
 
 import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
@@ -26,6 +27,7 @@ import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
+import { useComposer, ComposerForm } from "./use_composer";
 
 const PAGE = 30;
 
@@ -127,7 +129,7 @@ export class RecordPane extends Component {
 
 export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
-    static components = { RecordPane };
+    static components = { RecordPane, ComposerForm };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
     // component's, not the action record's: without this, opening a record
@@ -138,6 +140,7 @@ export class ConversationView extends Component {
         this.orm = useService("orm");
         this.action = useService("action");
         this.panes = usePanes();
+        this.composer = useComposer({ onSent: () => this.onReplySent() });
 
         // Two request tokens, one per pane. Somebody who clicks three folders
         // in a second starts three reads, and without these the slowest answer
@@ -303,6 +306,10 @@ export class ConversationView extends Component {
 
     async select(conversation) {
         const seq = ++this.threadSeq;
+        // A reply belongs to the conversation it answers, and this is another
+        // one. The draft goes with it: nothing was stored yet, and a composer
+        // left open over the wrong thread is worse than retyping two lines.
+        this.composer.close();
         this.state.selected = conversation;
         this.state.showRejected = false;
         // Nothing from the previous thread stays under the new subject.
@@ -647,72 +654,73 @@ export class ConversationView extends Component {
      * the templates and the attachment handling, and `message_post` is what
      * files the reply on the record and threads it. A composer of our own
      * would be a second implementation of all of that, drifting from the day
-     * it shipped.
+     * it shipped. It opens in the conversation pane -- see `use_composer.js`
+     * for what that costs and what it buys.
      */
-    async reply() {
+    reply() {
         const conversation = this.state.selected;
         if (!conversation || !conversation.model) {
             return;
         }
-        await this.action.doAction(
-            {
-                type: "ir.actions.act_window",
-                res_model: "mail.compose.message",
-                views: [[false, "form"]],
-                target: "new",
-                context: {
-                    default_model: conversation.model,
-                    // 19.0 refuses `default_res_id` by name: the composer
-                    // takes a list, because it also composes in batch.
-                    default_res_ids: [conversation.res_id],
-                    default_composition_mode: "comment",
-                    default_subtype_xmlid: "mail.mt_comment",
-                    // The chatter fills "To" from the record's suggested
-                    // recipients; the composer itself fills nothing, and since
-                    // 18.2 the customer is no longer a follower by default. A
-                    // reply with an empty "To" reaches nobody, so the person
-                    // who wrote last from their side goes in.
-                    default_partner_ids: this.replyRecipients(conversation),
-                    // The message being answered. The composer takes its
-                    // subject from it, and `message_post` threads the reply
-                    // under it, so the customer's client files the answer in
-                    // the same thread. Without it the subject is the record's
-                    // name and the mail arrives as a new conversation.
-                    default_parent_id: this.newestIncoming()?.id || false,
-                },
-            },
-            { onClose: () => this.select(conversation) }
-        );
+        this.composer.open({
+            default_model: conversation.model,
+            // 19.0 refuses `default_res_id` by name: the composer takes a
+            // list, because it also composes in batch.
+            default_res_ids: [conversation.res_id],
+            default_composition_mode: "comment",
+            default_subtype_xmlid: "mail.mt_comment",
+            // The chatter fills "To" from the record's suggested recipients;
+            // the composer itself fills nothing, and since 18.2 the customer
+            // is no longer a follower by default. A reply with an empty "To"
+            // reaches nobody, so the person who wrote last from their side
+            // goes in.
+            default_partner_ids: this.replyRecipients(conversation),
+            // The message being answered. The composer takes its subject from
+            // it, and `message_post` threads the reply under it, so the
+            // customer's client files the answer in the same thread. Without
+            // it the subject is the record's name and the mail arrives as a
+            // new conversation.
+            default_parent_id: this.newestIncoming()?.id || false,
+        });
     }
 
     /**
-     * An internal note, in the same composer and the same pane.
+     * It went out: show it in the thread, and recount the folders.
+     *
+     * A note is not correspondence, so the Mail tab will not show it. Land on
+     * Everything, where it is: a note that vanishes on save reads as a note
+     * that was not saved.
+     */
+    async onReplySent() {
+        const conversation = this.state.selected;
+        if (this.composer.state.mode === "note" && this.state.tab === "mail") {
+            await this.setTab("all"); // which re-reads the thread itself
+        } else if (conversation) {
+            await this.select(conversation);
+        }
+        await this.refresh({ keepSelection: true });
+    }
+
+    /**
+     * An internal note, in the same composer and the same pane as the reply.
      *
      * The record pane no longer carries a chatter, so this is where a note
      * gets written. No recipients and no parent: a note reaches the record's
-     * followers through Odoo's own subtype and threads nothing outwards. A
-     * recipient row on a note is what makes people believe a note is a mail.
+     * followers through Odoo's own note subtype and threads nothing outwards.
+     * A recipient row on a note is what makes people believe a note is a
+     * mail, and the subtype is the whole difference between the two.
      */
-    async logNote() {
+    logNote() {
         const conversation = this.state.selected;
         if (!conversation || !conversation.model) {
             return;
         }
-        await this.action.doAction(
-            {
-                type: "ir.actions.act_window",
-                res_model: "mail.compose.message",
-                views: [[false, "form"]],
-                target: "new",
-                context: {
-                    default_model: conversation.model,
-                    default_res_ids: [conversation.res_id],
-                    default_composition_mode: "comment",
-                    default_subtype_xmlid: "mail.mt_note",
-                },
-            },
-            { onClose: () => this.select(conversation) }
-        );
+        this.composer.open({
+            default_model: conversation.model,
+            default_res_ids: [conversation.res_id],
+            default_composition_mode: "comment",
+            default_subtype_xmlid: "mail.mt_note",
+        }, "note");
     }
 
     /**
