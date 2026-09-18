@@ -107,15 +107,31 @@ call('pan.mail.mailbox', 'write', ids[1:], {'state': 'error'})
 # laptop and failed on a CI runner, which is the definition of a flaky
 # fixture. The lead thread is the most recent, the two unlinked ones are days
 # old, and the screen opens on the same conversation every time.
-# A 1x1 PNG. The smallest file that is really an image, so the viewer has
-# something to draw and the seed carries no binary of its own.
-PIXEL = ('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQ'
-         'DwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
-
-
 def ago(**kw):
     return (datetime.datetime.now(datetime.UTC) - datetime.timedelta(**kw)).strftime(
         '%Y-%m-%d %H:%M:%S')
+
+
+# A 1x1 PNG, built rather than pasted. Odoo opens an image attachment with
+# PIL at create(), so a base64 blob that is a few bytes short is a
+# valid-looking string and a create that fails with "Truncated File Read".
+import base64
+import struct
+import zlib
+
+
+def _png_chunk(kind, data):
+    return (struct.pack('>I', len(data)) + kind + data
+            + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff))
+
+
+PIXEL = base64.b64encode(
+    b'\x89PNG\r\n\x1a\n'
+    + _png_chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0))
+    + _png_chunk(b'IDAT', zlib.compress(b'\x00\xff\xff\xff', 9))
+    + _png_chunk(b'IEND', b'')).decode()
+
+
 customer = call('res.partner', 'create', {
     'name': 'Vandermolen Techniek B.V.', 'email': 'bart@vandermolen.example'})
 lead = call('crm.lead', 'create', {
