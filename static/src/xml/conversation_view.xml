@@ -240,16 +240,17 @@
                                     One primary action per screen. This is it,
                                     and while a reply is open it is Send: the
                                     button does not move, it changes what it
-                                    does. Log note sits beside Reply and quiet,
-                                    because the record pane no longer carries a
-                                    chatter and a note has to be writable
-                                    somewhere.
+                                    does. One action per tab, each on the tab
+                                    that shows what it writes: Reply in Mail,
+                                    Log note in Everything. Files and
+                                    Activities are lists, and neither is a
+                                    place to write.
                                 -->
-                                <div t-if="state.selected.model and !composer.state.open"
+                                <div t-if="!composer.state.open and (canReply or canLogNote)"
                                      class="d-flex align-items-center gap-2 flex-shrink-0">
-                                    <button type="button" class="btn btn-link btn-sm"
+                                    <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm"
                                             t-on-click="() => this.logNote()">Log note</button>
-                                    <button type="button" class="btn btn-primary btn-sm"
+                                    <button t-if="canReply" type="button" class="btn btn-primary btn-sm"
                                             t-on-click="() => this.reply()">Reply</button>
                                 </div>
                                 <div t-if="composer.state.open"

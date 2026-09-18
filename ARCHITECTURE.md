@@ -277,6 +277,16 @@ of the comment one and no recipients, so the screen still writes in exactly
 one place. The strip steps aside while somebody is writing: the pane has one
 job then, and a tab click would drop the draft.
 
+19.0.13.1.0 gives each tab one writing action instead of both: Reply on Mail,
+Log note on Everything, and neither on Files or Activities, which are lists.
+Each action sits on the tab that shows what it produces, so nothing has to be
+moved after saving -- a note used to be written in Mail, where a note is not
+shown, and the screen answered by switching tabs under the reader. The same
+release stopped emptying the pane when the tab changes: Mail and Everything
+are one conversation read two ways, so the read happens in place and what was
+open stays open, rather than the header collapsing and the thread being drawn
+again.
+
 19.0.12.1.0 adds the one pane state that is not a width: the record on the
 whole screen. Reading a lead is not the same job as reading mail, and a pane
 sized for the fourth column is a two-column form squeezed into one. The

@@ -365,7 +365,6 @@ export class ConversationView extends Component {
     }
 
     async select(conversation) {
-        const seq = ++this.threadSeq;
         // A reply belongs to the conversation it answers, and this is another
         // one. The draft goes with it: nothing was stored yet, and a composer
         // left open over the wrong thread is worse than retyping two lines.
@@ -378,6 +377,26 @@ export class ConversationView extends Component {
         this.state.open = {};
         this.state.quotes = {};
         this.split.clear();
+        await this.readThread();
+    }
+
+    /**
+     * Read the open conversation, leaving on screen whatever is there.
+     *
+     * `select()` empties the pane before calling this, because another
+     * conversation is coming. Everything else -- switching Mail to
+     * Everything, a reply that just went out -- is the *same* conversation
+     * read again, and blanking it there is what made the pane flicker:
+     * the header collapsed, the messages vanished, and the reader lost
+     * which ones they had open. Here the old thread stays up until the new
+     * one arrives, and what was open stays open.
+     */
+    async readThread({ openNewest = false } = {}) {
+        const conversation = this.state.selected;
+        if (!conversation) {
+            return;
+        }
+        const seq = ++this.threadSeq;
         try {
             const thread = await this.orm.call(
                 "pan.mail.conversation", "read_conversation", [], {
@@ -390,20 +409,31 @@ export class ConversationView extends Component {
                     scope: this.state.tab === "all" ? "all" : "mail",
                 }
             );
-            if (seq === this.threadSeq) {
-                // The attachments go into the mail store, which is where the
-                // rest of the client reads them from, and this screen keeps
-                // their ids.
-                this.mailStore.insert(thread.files?.store || {});
-                this.state.thread = thread;
-                // The newest message is the one you came for. The rest of the
-                // thread is context, one line each, a click away.
-                const newest = thread.messages[thread.messages.length - 1];
-                if (newest) {
-                    this.state.open[newest.id] = true;
-                }
-                this.loadActivities(seq);
+            if (seq !== this.threadSeq) {
+                return;
             }
+            // The attachments go into the mail store, which is where the
+            // rest of the client reads them from, and this screen keeps
+            // their ids.
+            this.mailStore.insert(thread.files?.store || {});
+            this.state.thread = thread;
+            // Keep the reader's place: a message that was open before this
+            // read is still open after it, and one that is gone from this
+            // reading takes its entry with it.
+            const open = {};
+            for (const message of thread.messages) {
+                if (this.state.open[message.id]) {
+                    open[message.id] = true;
+                }
+            }
+            const newest = thread.messages[thread.messages.length - 1];
+            // The newest message is the one you came for. The rest of the
+            // thread is context, one line each, a click away.
+            if (newest && (openNewest || !Object.keys(open).length)) {
+                open[newest.id] = true;
+            }
+            this.state.open = open;
+            this.loadActivities(seq);
         } catch (error) {
             if (seq === this.threadSeq) {
                 this.state.error = _t("Could not open that conversation.");
@@ -571,8 +601,27 @@ export class ConversationView extends Component {
             // A tab nobody can store is still a tab you can open today.
         }
         if (reread && this.state.selected) {
-            await this.select(this.state.selected);
+            // In place: the same conversation read another way is not a
+            // reason to empty the pane and draw it again.
+            await this.readThread();
         }
+    }
+
+    /**
+     * Which of the two writing actions this tab carries.
+     *
+     * One per tab, and each in the tab that shows what it produces: a reply
+     * is correspondence and lands in Mail, a note is not and lands in
+     * Everything. Both on every tab meant a note written in Mail vanished on
+     * save and a reply sent from Files landed on a screen that shows no mail
+     * at all.
+     */
+    get canReply() {
+        return this.state.tab === "mail" && !!this.state.selected?.model;
+    }
+
+    get canLogNote() {
+        return this.state.tab === "all" && !!this.state.selected?.model;
     }
 
     /** The number beside a tab, drawn only when there is one. */
@@ -655,6 +704,12 @@ export class ConversationView extends Component {
     async loadActivities(seq) {
         const ids = (this.state.thread.activities || []).map((row) => row.id);
         if (!ids.length) {
+            return;
+        }
+        // The same conversation read another way carries the same follow-ups,
+        // so a tab switch does not pay for this call twice.
+        const known = this.state.activityIds;
+        if (known.length === ids.length && ids.every((id, i) => known[i] === id)) {
             return;
         }
         const data = await this.orm.silent.call("mail.activity", "activity_format", [ids]);
@@ -868,7 +923,7 @@ export class ConversationView extends Component {
      */
     reply() {
         const conversation = this.state.selected;
-        if (!conversation || !conversation.model) {
+        if (!this.canReply) {
             return;
         }
         this.composer.open({
@@ -947,17 +1002,12 @@ export class ConversationView extends Component {
     /**
      * It went out: show it in the thread, and recount the folders.
      *
-     * A note is not correspondence, so the Mail tab will not show it. Land on
-     * Everything, where it is: a note that vanishes on save reads as a note
-     * that was not saved.
+     * Each of the two is written from the tab that shows it -- a reply in
+     * Mail, a note in Everything -- so what was just written is on screen
+     * without leaving the tab, and it is the message that opens.
      */
     async onReplySent() {
-        const conversation = this.state.selected;
-        if (this.composer.state.mode === "note" && this.state.tab === "mail") {
-            await this.setTab("all"); // which re-reads the thread itself
-        } else if (conversation) {
-            await this.select(conversation);
-        }
+        await this.readThread({ openNewest: true });
         await this.refresh({ keepSelection: true });
     }
 
@@ -972,7 +1022,7 @@ export class ConversationView extends Component {
      */
     logNote() {
         const conversation = this.state.selected;
-        if (!conversation || !conversation.model) {
+        if (!this.canLogNote) {
             return;
         }
         this.composer.open({

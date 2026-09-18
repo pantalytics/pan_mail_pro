@@ -124,6 +124,14 @@ drawn when it is not zero.
 The tab is the reader's, stored in the browser next to the pane widths, and it
 is per person rather than per conversation.
 
+**One writing action per tab, on the tab that shows what it writes.** Reply
+lives in Mail, Log note in Everything, and Files and Activities carry neither,
+because a list is not a place to write. Both buttons on every tab is what made
+a note written in Mail vanish the moment it saved, and the screen answered by
+switching tabs under the reader. Switching tabs itself re-reads in place: Mail
+and Everything are one conversation read two ways, so the pane is never
+emptied and the messages somebody had open stay open.
+
 **In Everything**: notes are drawn apart from correspondence -- indented,
 marked internal, no recipient line. Record events (tracking values and the
 rest of `message_type = 'notification'`) are one line each, never a card: *Stage:
