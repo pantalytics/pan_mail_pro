@@ -79,9 +79,10 @@ at the end of this section.
   `common`. Approval comes back to the redirect page as `admin_consent=True`,
   which it forwards to Odoo like a code.
 - **Bring your own app stays**, one level down on the provider form, for the
-  IT department that requires it. Same code path, a different client id, a
-  secret and a per-customer redirect, and the fallback if our app ever goes
-  away.
+  organisation that does not want a multi-tenant app in its directory. Same
+  code path, a different client id, a secret and a per-customer redirect,
+  and the fallback if our app ever goes away. The Pantalytics app is the
+  proposed route and the default; the own-app form is one click further.
 
 ### The one cost of a public client
 
@@ -93,6 +94,40 @@ change is rare and the banner already exists.
 
 Refresh tokens otherwise live 90 days from their last use and renew on every
 use. The daily sync keeps them alive.
+
+### Registering with Microsoft, once
+
+Publisher verification needs a Partner Center account, and Partner Center
+takes days where the app registration takes minutes. Start here.
+
+1. **Enrol in the Microsoft AI Cloud Partner Program** (the programme
+   formerly called MPN) at partner.microsoft.com, *Become a partner*.
+   Membership itself is free; the paid packages (Partner Launch, Success
+   Core, Solutions Partner) are benefit bundles we do not need. Sign in with
+   a work account in the Pantalytics Entra tenant as a **Global
+   Administrator**, never a personal Microsoft account; the enrolling person
+   must be allowed to sign the programme agreement for the company.
+2. **Legal entity.** Legal name, address and primary contact exactly as in
+   the trade register (KvK), plus the KvK number as Registration ID. A
+   spelling difference is the most common rejection.
+3. **Verification, three to five business days.** Four checks: the contact
+   email, the identity of one user (government id, name must match the
+   account), employment (a domain document from the registrar showing
+   `pantalytics.com`, its owner and dates), and the business itself (KvK
+   extract). Progress and document uploads live under Account settings,
+   Legal info, Verification summary. Enrolment is active only when the
+   status reads *Authorized*.
+4. **Partner One ID.** Account settings, Identifiers, the Microsoft AI Cloud
+   Partner Program tab. Two ids appear; the verification step wants the
+   **partner global account** (PGA), not the location.
+5. **Publisher domain on the tenant.** If `pantalytics.com` is already a
+   verified domain of the tenant (it is, when Microsoft 365 mail runs on it),
+   the app's Branding page lets you pick it. Otherwise host
+   `https://pantalytics.com/.well-known/microsoft-identity-association.json`
+   with the app's client id and press *Verify and save domain*; the file can
+   go once verified.
+
+Then the app, below, and the verification badge as its last step.
 
 ### Configuring the app, step by step
 
@@ -176,6 +211,12 @@ enough Google customers to make that a line item. IMAP/SMTP has no app at all.
   and [how to mark the app](https://learn.microsoft.com/en-us/entra/identity-platform/mark-app-as-publisher-verified)
 - [User consent settings](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent):
   the default policies and what "low impact" leaves out
+- [Partner Center enrolment](https://learn.microsoft.com/en-us/partner-center/enroll/partner-center-enroll-overview),
+  [the verification process](https://learn.microsoft.com/en-us/partner-center/enroll/understand-the-verification-process)
+  and [membership offers](https://learn.microsoft.com/en-us/partner-center/membership/mpn-overview)
+  (what is free and what is a paid bundle)
+- [Publisher domain](https://learn.microsoft.com/en-us/entra/identity-platform/howto-configure-publisher-domain):
+  the verified-domain pick and the JSON file alternative
 - [Odoo's own Azure guide](https://www.odoo.com/documentation/19.0/applications/general/email_communication/azure_oauth.html):
   one app per customer, on every hosting
 
