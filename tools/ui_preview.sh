@@ -81,10 +81,11 @@ call('pan.mail.provider', 'create', {
     'tenant_id': '11111111-2222-3333-4444-555555555555'})
 for name in ('example.com', 'example.odoo.com'):
     call('pan.mail.domain', 'create', {'name': name})
-# Accounts are only created on a connected Odoo instance. Connect for the
-# seeding, then disconnect, so the page shows what a new customer sees.
+# The instance stays connected: accounts are only created on a connected one,
+# and the settings page shows nothing but the Connect button until it is.
+# `tools/ui_check.py` disconnects it itself to look at that state.
 import datetime
-link = call('pan.mail.license', 'create', {
+call('pan.mail.license', 'create', {
     'status': 'active',
     'valid_until': (datetime.datetime.now(datetime.UTC)
                     + datetime.timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')})
@@ -110,6 +111,28 @@ call('pan.mail.mailbox', 'write', ids[1:], {'state': 'error'})
 def ago(**kw):
     return (datetime.datetime.now(datetime.UTC) - datetime.timedelta(**kw)).strftime(
         '%Y-%m-%d %H:%M:%S')
+
+
+# A 1x1 PNG, built rather than pasted. Odoo opens an image attachment with
+# PIL at create(), so a base64 blob that is a few bytes short is a
+# valid-looking string and a create that fails with "Truncated File Read".
+import base64
+import struct
+import zlib
+
+
+def _png_chunk(kind, data):
+    return (struct.pack('>I', len(data)) + kind + data
+            + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff))
+
+
+PIXEL = base64.b64encode(
+    b'\x89PNG\r\n\x1a\n'
+    + _png_chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0))
+    + _png_chunk(b'IDAT', zlib.compress(b'\x00\xff\xff\xff', 9))
+    + _png_chunk(b'IEND', b'')).decode()
+
+
 customer = call('res.partner', 'create', {
     'name': 'Vandermolen Techniek B.V.', 'email': 'bart@vandermolen.example'})
 lead = call('crm.lead', 'create', {
@@ -126,11 +149,39 @@ for subject, body, direction, when in (
      '<p>Prima. Dan graag opdracht bevestigen.</p>',
      'incoming', ago(hours=2)),
 ):
-    call('mail.message', 'create', {
+    message = call('mail.message', 'create', {
         'model': 'crm.lead', 'res_id': lead, 'message_type': 'email',
         'subject': subject, 'body': body, 'author_id': customer,
         'email_from': 'bart@vandermolen.example', 'date': when,
         'x_direction': direction, 'x_mailbox_id': ids[2]})
+    if direction == 'outgoing':
+        # One attachment, so the Files tab shows the list it exists for
+        # instead of its empty state. An image, because it is the one type
+        # the viewer renders without a plugin: what the check has to prove
+        # is that a click opens Odoo's own viewer at all.
+        attachment = call('ir.attachment', 'create', {
+            'name': 'asafdichting.png', 'mimetype': 'image/png',
+            'res_model': 'crm.lead', 'res_id': lead, 'datas': PIXEL})
+        call('mail.message', 'write', [message],
+             {'attachment_ids': [(6, 0, [attachment])]})
+# Two follow-ups on the lead. The Activities tab draws Odoo's own activity
+# card, and both the icon and the colour come off the activity type and the
+# deadline: one planned and one overdue is the pair that shows both.
+def xmlid(module, name):
+    return call('ir.model.data', 'search_read',
+                [('module', '=', module), ('name', '=', name)],
+                fields=['res_id'])[0]['res_id']
+lead_model = call('ir.model', 'search', [('model', '=', 'crm.lead')])[0]
+for ref, summary, days in (
+    ('mail_activity_data_call', 'Bart terugbellen over regel 3', 3),
+    ('mail_activity_data_todo', 'Opdrachtbevestiging opstellen', -2),
+):
+    call('mail.activity', 'create', {
+        'res_model_id': lead_model, 'res_id': lead,
+        'activity_type_id': xmlid('mail', ref),
+        'summary': summary, 'user_id': uid,
+        'date_deadline': (datetime.date.today()
+                          + datetime.timedelta(days=days)).strftime('%Y-%m-%d')})
 # Two conversations that landed on a contact and nowhere better: the real
 # `fallback` outcome, delivered but to a place nobody is looking. Each carries
 # the suggestion the ladder nearly picked, which is what the Inbox offers with
@@ -162,7 +213,6 @@ for name, address, subject, body, when in (
         'suggested_model': 'crm.lead', 'suggested_res_id': lead,
         'suggested_name': 'Asafdichtingen, revisie',
         'suggested_reason': 'The only open Lead/Opportunity for %s' % name})
-call('pan.mail.license', 'unlink', [link])
 PY
 
 echo "http://localhost:8069 — admin / admin"

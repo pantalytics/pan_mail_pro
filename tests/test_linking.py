@@ -188,3 +188,123 @@ class TestLinkTo(TransactionCase):
         with self.assertRaises(AccessError):
             self.Log.with_user(stranger).link_to([message.id], 'crm.lead', self.lead.id)
         self.assertEqual(message.model, 'res.partner')
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestLinkPicker(TransactionCase):
+    """The two steps of the picker: which kind of record, then which record.
+
+    Both answer over RPC, so both are reachable by anyone with a session, and
+    the second one takes a model name from the caller. The interesting half is
+    what step two offers when nobody has typed anything: the correspondent's
+    own records, which is the only part of this screen that saves a search.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['pan.mail.domain'].set_domains(['company.test'])
+        cls.Conversation = cls.env['pan.mail.conversation']
+        cls.customer = cls.env['res.partner'].create({
+            'name': 'Vandermolen Techniek',
+            'email': 'info@vandermolen.test',
+        })
+        cls.contact = cls.env['res.partner'].create({
+            'name': 'Bart Vandermolen',
+            'email': 'bart@vandermolen.test',
+            'parent_id': cls.customer.id,
+        })
+        cls.other = cls.env['res.partner'].create({
+            'name': 'Asaf BV', 'email': 'inkoop@asaf.test',
+        })
+        cls.theirs = cls.env['crm.lead'].create({
+            'name': 'Pers revisie', 'partner_id': cls.customer.id,
+        })
+        cls.not_theirs = cls.env['crm.lead'].create({
+            'name': 'Asafdichtingen', 'partner_id': cls.other.id,
+        })
+        cls.env.user.sudo().write({'group_ids': [
+            (4, cls.env.ref('pan_mail_pro.group_mail_mailbox_manager').id)]})
+
+    # ------------------------------------------------------- step one: model
+
+    def test_targets_start_from_what_this_database_links_mail_to(self):
+        labels = {row['model'] for row in self.Conversation.link_targets()}
+        self.assertIn('res.partner', labels)
+
+    def test_the_list_is_filled_with_models_that_know_whose_record_it_is(self):
+        """A chatter is not enough, or the picker becomes a directory."""
+        models = {row['model'] for row in self.Conversation.link_targets()}
+        self.assertIn('crm.lead', models)
+        self.assertNotIn('mail.blacklist', models)
+
+    def test_a_search_widens_past_that_list(self):
+        """The model nobody has filed mail on yet is one search away."""
+        found = {row['model']
+                 for row in self.Conversation.link_targets(search='Lead')}
+        self.assertIn('crm.lead', found)
+
+    def test_a_search_offers_what_is_already_linked_first(self):
+        rows = self.Conversation.link_targets(search='Contact')
+        self.assertEqual(rows[0]['model'], 'res.partner')
+
+    def test_the_picker_is_for_mailbox_managers(self):
+        stranger = self.env['res.users'].create({
+            'name': 'Buitenstaander', 'login': 'picker-stranger',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        with self.assertRaises(AccessError):
+            self.Conversation.with_user(stranger).link_targets()
+        with self.assertRaises(AccessError):
+            self.Conversation.with_user(stranger).link_candidates('crm.lead')
+
+    # ----------------------------------------------------- step two: records
+
+    def test_candidates_open_on_the_correspondents_own_records(self):
+        result = self.Conversation.link_candidates(
+            'crm.lead', partner_id=self.contact.id)
+
+        self.assertTrue(result['related'])
+        ids = [row['id'] for row in result['rows']]
+        self.assertEqual(ids, [self.theirs.id])
+        self.assertEqual(result['partner'], self.customer.display_name)
+
+    def test_the_company_answers_for_the_person_who_wrote(self):
+        """Mail from one employee is about the company's records."""
+        result = self.Conversation.link_candidates(
+            'res.partner', partner_id=self.contact.id)
+
+        ids = [row['id'] for row in result['rows']]
+        self.assertIn(self.contact.id, ids)
+        self.assertIn(self.customer.id, ids)
+        self.assertNotIn(self.other.id, ids)
+
+    def test_a_search_replaces_the_head_start(self):
+        result = self.Conversation.link_candidates(
+            'crm.lead', search='Asafdicht', partner_id=self.contact.id)
+
+        self.assertFalse(result['related'])
+        self.assertEqual([row['id'] for row in result['rows']],
+                         [self.not_theirs.id])
+
+    def test_without_a_correspondent_it_is_recent_records_and_a_box(self):
+        """The fallback, which is also what a model relating to a contact
+        through anything but `partner_id` or `email_from` gets. That is the
+        dropped case, on purpose: a third relation would be a guess nobody
+        could predict from the screen.
+        """
+        result = self.Conversation.link_candidates('crm.lead')
+
+        self.assertFalse(result['related'])
+        self.assertEqual(result['partner'], '')
+        self.assertIn(self.theirs.id, [row['id'] for row in result['rows']])
+
+    def test_candidates_refuse_a_model_mail_cannot_land_on(self):
+        with self.assertRaises(AccessError):
+            self.Conversation.link_candidates('ir.config_parameter')
+        with self.assertRaises(AccessError):
+            self.Conversation.link_candidates('not.a.model')
+
+    def test_candidates_clamp_the_limit_they_are_given(self):
+        result = self.Conversation.link_candidates('res.partner', limit=5000)
+        self.assertLessEqual(len(result['rows']), 12)
