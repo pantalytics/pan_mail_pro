@@ -11,6 +11,11 @@
  * Widths live in the browser, not the database. It is a per-monitor
  * preference, the same person has a laptop and a desk, and a table for it
  * would have to be read on every open.
+ *
+ * Zoom is the fourth state and the one that is not stored: the record pane
+ * takes the whole screen while you read it, and the next open is the Inbox
+ * again. A reading mode you have to remember you left on is a screen that
+ * lost its mail.
  */
 
 import { useState } from "@odoo/owl";
@@ -48,6 +53,7 @@ function defaults() {
         list: PANES.list.start,
         record: PANES.record.start,
         collapsed: { rail: false, record: false },
+        zoom: false,
     };
 }
 
@@ -79,7 +85,8 @@ export function usePanes() {
 
     function save() {
         try {
-            browser.localStorage.setItem(KEY, JSON.stringify(state));
+            const { zoom, ...stored } = state;
+            browser.localStorage.setItem(KEY, JSON.stringify(stored));
         } catch {
             // A width nobody can store is still a width you can drag today.
         }
@@ -189,6 +196,18 @@ export function usePanes() {
             const step = (ev.key === "ArrowRight" ? STEP : -STEP) * direction(name);
             resize(name, state[name] + step, containerWidth(ev.currentTarget));
             save();
+        },
+
+        zoomLabel() {
+            return state.zoom ? _t("Back to the Inbox") : _t("Full width");
+        },
+
+        /**
+         * The record on its own. Nothing else is collapsed, only hidden: the
+         * widths are where you left them when you come back.
+         */
+        toggleZoom() {
+            state.zoom = !state.zoom;
         },
 
         toggle(name) {

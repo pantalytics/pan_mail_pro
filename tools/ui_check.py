@@ -466,6 +466,7 @@ class Checks:
                     page.wait_for_timeout(600)
 
         self.panes()
+        self.zoom()
 
         self.shot('inbox.png')
 
@@ -644,6 +645,71 @@ class Checks:
         page.wait_for_timeout(500)
         if page.query_selector('.o_mailpro_record') is None:
             self.fail('the record pane did not come back when unfolded')
+
+    def zoom(self):
+        """The record on the whole screen, and the way back out of it.
+
+        Zoom is the one pane state that is not stored, so this one asserts the
+        opposite of what `panes` asserts: a reload lands on the Inbox, not on
+        the record somebody was reading yesterday.
+        """
+        page = self.page
+
+        button = page.query_selector('.o_mailpro_record_zoom')
+        if not button:
+            # The reload above lands on the list; pick a conversation so the
+            # fourth pane has a record to zoom.
+            item = page.query_selector('.o_mailpro_item')
+            if item:
+                item.click()
+                page.wait_for_timeout(1200)
+            button = page.query_selector('.o_mailpro_record_zoom')
+        if not button:
+            self.fail('the record pane has no control to take the screen')
+            return
+
+        button.click()
+        page.wait_for_timeout(500)
+
+        for selector, name in (('.o_mailpro_list', 'the conversation list'),
+                               ('.o_mailpro_thread', 'the conversation'),
+                               ('.o_mailpro_rail', 'the mailbox rail'),
+                               ('.o_mailpro_split_list', 'a divider')):
+            pane = page.query_selector(selector)
+            if pane and pane.is_visible():
+                self.fail(f'{name} is still on screen while the record is zoomed')
+
+        record = page.query_selector('.o_mailpro_record')
+        panes = page.query_selector('.o_mailpro_panes')
+        if not record or not record.is_visible():
+            self.fail('the record pane went away when it was zoomed')
+            return
+        share = record.bounding_box()['width'] / panes.bounding_box()['width']
+        if share < 0.9:
+            self.fail('the zoomed record takes %d%% of the screen' % (share * 100))
+        self.shot('inbox-zoom.png')
+
+        page.query_selector('.o_mailpro_record_zoom').click()
+        page.wait_for_timeout(500)
+        for selector, name in (('.o_mailpro_list', 'the conversation list'),
+                               ('.o_mailpro_thread', 'the conversation')):
+            pane = page.query_selector(selector)
+            if not pane or not pane.is_visible():
+                self.fail(f'{name} did not come back when the zoom was closed')
+
+        # A reading mode, not a preference: the reload lands on the Inbox.
+        page.query_selector('.o_mailpro_record_zoom').click()
+        page.wait_for_timeout(400)
+        page.reload(wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_item', timeout=30000)
+        except Exception:
+            self.fail('the Inbox did not come back after a reload')
+            return
+        page.wait_for_timeout(1200)
+        pane = page.query_selector('.o_mailpro_list')
+        if not pane or not pane.is_visible():
+            self.fail('the reload came back zoomed on the record')
 
     # -- The provider form ----------------------------------------------------
 

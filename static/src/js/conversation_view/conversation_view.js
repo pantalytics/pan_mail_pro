@@ -89,7 +89,12 @@ const QUOTE_MARKERS = [
 export class RecordPane extends Component {
     static template = "pan_mail_pro.RecordPane";
     static components = { View };
-    static props = { record: { type: Object, optional: true } };
+    static props = {
+        record: { type: Object, optional: true },
+        zoomed: { type: Boolean, optional: true },
+        zoomLabel: { type: String, optional: true },
+        onToggleZoom: { type: Function, optional: true },
+    };
 
     setup() {
         this.action = useService("action");

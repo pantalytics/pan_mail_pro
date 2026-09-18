@@ -211,6 +211,15 @@ of the comment one and no recipients, so the screen still writes in exactly
 one place. The strip steps aside while somebody is writing: the pane has one
 job then, and a tab click would drop the draft.
 
+19.0.12.1.0 adds the one pane state that is not a width: the record on the
+whole screen. Reading a lead is not the same job as reading mail, and a pane
+sized for the fourth column is a two-column form squeezed into one. The
+control sits in the record pane's own header and doubles as the way back, a
+double-click on that header does the same, and nothing is collapsed -- the
+other panes are hidden, so the widths are where you left them when you return.
+It is the one pane state the browser does not remember: a reading mode you
+have to notice you left on is a screen that lost its mail.
+
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
 Aliases entries they read as seven unrelated features rather than one module,
