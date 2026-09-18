@@ -747,6 +747,23 @@ export class ConversationView extends Component {
         return markup(this.parts(message).quote);
     }
 
+    /**
+     * Who the open message went to, on one line.
+     *
+     * Cc is worth its own word: on a shared mailbox "was my colleague on this"
+     * is the question this line exists to answer, and a merged list cannot.
+     */
+    recipientLine(message) {
+        const parts = [];
+        if (message.recipients) {
+            parts.push(`to ${message.recipients}`);
+        }
+        if (message.cc) {
+            parts.push(`cc ${message.cc}`);
+        }
+        return parts.join(" \u00b7 ");
+    }
+
     /** The one line a collapsed message shows, taken from what was written. */
     snippet(message) {
         return this.parts(message).text.slice(0, 200);

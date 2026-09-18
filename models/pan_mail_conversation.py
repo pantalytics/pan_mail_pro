@@ -634,7 +634,12 @@ class PanMailConversation(models.AbstractModel):
             'res_id': message.res_id or 0,
             'record_name': message.x_document_name or message.record_name or '',
             'mailbox': message.x_mailbox_id.email or '',
-            'recipients': message.partner_ids.mapped('display_name'),
+            # The mail's own To/Cc when the sync wrote them, and Odoo's
+            # notified partners for everything else (mail sent from the
+            # chatter, and every message that predates the two columns).
+            'recipients': message.x_email_to or ', '.join(
+                p.email or p.display_name for p in message.partner_ids),
+            'cc': message.x_email_cc or '',
         }
         if row['kind'] == 'event':
             # A record event usually has no body at all: what happened is in

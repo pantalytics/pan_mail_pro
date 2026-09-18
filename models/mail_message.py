@@ -99,6 +99,38 @@ class MailMessage(models.Model):
         help='Aggregated delivery status of the notifications for this message.',
     )
 
+    # -------------------------------------------------------------------------
+    # The recipient list, as text
+    #
+    # `partner_ids` answers "who was notified", which for an imported mail is
+    # nobody -- the sync notifies no one by design (see mail_thread.py). So the
+    # question the Inbox actually asks, "who else was on this mail", had no
+    # source at all and the recipients line rendered empty.
+    #
+    # Two chars rather than a relation, deliberately. A m2m would demand a
+    # `res.partner` per address, which builds a contact database out of other
+    # companies' colleagues, and it would need an ACL of its own. These hold
+    # what the header held: addresses, comma separated, read by the Inbox and
+    # by nothing else. They create no follower and never reach the router.
+    #
+    # There is no Bcc column and there will not be one: a received mail carries
+    # no Bcc, and the sender's copy in Sent Items is stripped of it at the
+    # provider boundary (ARCHITECTURE.md section 3).
+    # -------------------------------------------------------------------------
+    x_email_to = fields.Char(
+        string='To',
+        readonly=True,
+        help='To addresses as they stood on the mail. Written by the sync; '
+             'display only.',
+    )
+
+    x_email_cc = fields.Char(
+        string='Cc',
+        readonly=True,
+        help='Cc addresses as they stood on the mail. Written by the sync; '
+             'display only.',
+    )
+
     # -- computes ---------------------------------------------------------- #
 
     @api.depends('model')

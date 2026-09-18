@@ -399,9 +399,9 @@
                                         <span t-if="!isOpen(message)"
                                               class="o_mailpro_message_snippet d-block text-truncate"
                                               t-esc="snippet(message)"/>
-                                        <span t-elif="message.recipients.length"
+                                        <span t-elif="message.recipients or message.cc"
                                               class="o_mailpro_muted d-block text-truncate"
-                                              t-esc="'to ' + message.recipients.join(', ')"/>
+                                              t-esc="recipientLine(message)"/>
                                     </span>
                                 </button>
                                 <t t-if="isOpen(message)">
