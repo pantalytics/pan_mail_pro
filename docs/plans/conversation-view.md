@@ -1,6 +1,6 @@
 # The conversation view
 
-Status: **partly built**, 19.0.10.0.0. The inbox itself ships: the folder rail,
+Status: **partly built**, 19.0.10.5.0. The inbox itself ships: the folder rail,
 the conversation list, the thread and the record pane, reading through
 `pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
 Still on paper: the *screens* for door 1 (the chatter's own button and its
@@ -36,11 +36,16 @@ matcher already uses.
 
 The screen is four panes:
 
-1. **Folders.** The mailbox you are in, plus the states that are worth their own
-   entry: needs reply, waiting on customer, sent, and the two unfiled ones (on a
-   contact only, linked to nothing). Shared mailboxes below your own.
+1. **Folders.** The mailbox you are in and its folders -- Inbox and Sent, the
+   two words every mail client uses -- and nothing else. Shared mailboxes below
+   your own. The states that are ours are not folders and are not here: naming
+   them as places mail sits makes the rail read as a filter panel next to the
+   mail client the same person has open. 19.0.10.5.0.
 2. **The conversation list.** Sender, subject, snippet, date, and the record the
-   thread is filed on. Unread is weight, not a badge.
+   thread is filed on. Unread is weight, not a badge. Over it, the filter row:
+   needs reply, and the two unfiled ones (on a contact only, linked to
+   nothing). A filter is a question about the folder you are in, so it survives
+   a folder switch and a second click clears it.
 3. **The thread.** Messages in order, quoted history collapsed, and a reply that
    goes out through the right mailbox with the conversation quoted underneath.
    That last part is a survey complaint in its own right: today each chatter

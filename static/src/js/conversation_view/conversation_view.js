@@ -126,6 +126,11 @@ export class ConversationView extends Component {
             loading: true,
             error: "",
             folder: "inbox",
+            // Two dimensions, two controls: the rail says where you are, the
+            // filter row says what you are looking for in there. Naming our
+            // own states as folders made the rail read like a filter panel
+            // next to the mail client everybody also has open.
+            filter: null,
             mailboxes: [],
             mailboxId: null,
             // The rail, the way Outlook draws it: every mailbox can stand
@@ -231,11 +236,18 @@ export class ConversationView extends Component {
             const keys = this.expandedKeys();
             const [counts, conversations] = await Promise.all([
                 Promise.all(keys.map((key) => this.orm.call(
-                    "pan.mail.conversation", "folder_counts", [],
-                    { ...args, mailbox_id: key || null }))),
+                    "pan.mail.conversation", "folder_counts", [], {
+                        ...args,
+                        mailbox_id: key || null,
+                        // The filter row belongs to the list, so it is
+                        // counted for the mailbox the list is showing and
+                        // nowhere else.
+                        folder: key === this.railKey() ? this.state.folder : null,
+                    }))),
                 this.orm.call("pan.mail.conversation", "search_conversations", [], {
                     ...args,
                     folder: this.state.folder,
+                    filter_name: this.state.filter,
                     limit: this.state.limit,
                 }),
             ]);
@@ -325,6 +337,17 @@ export class ConversationView extends Component {
         this.saveExpanded();
         }
         this.state.folder = folder;
+        // A filter is a question about the folder you are in, so switching
+        // folder keeps it: "needs reply" in Sent is a fair question, and
+        // dropping it on every click is the thing that makes a filter row
+        // feel like it undoes itself.
+        this.state.limit = PAGE;
+        await this.refresh();
+    }
+
+    /** Narrow the folder you are in, or clear the filter with a second click. */
+    async setFilter(filter) {
+        this.state.filter = this.state.filter === filter ? null : filter;
         this.state.limit = PAGE;
         await this.refresh();
     }
@@ -360,7 +383,12 @@ export class ConversationView extends Component {
     }
 
     foldersFor(mailboxId) {
-        return this.state.counts[this.railKey(mailboxId)] || [];
+        return (this.state.counts[this.railKey(mailboxId)] || {}).folders || [];
+    }
+
+    /** The filter row over the list, counted inside the open folder. */
+    get filters() {
+        return (this.state.counts[this.railKey()] || {}).filters || [];
     }
 
     /** Open another mailbox, from the rail. Folders are per mailbox. */
@@ -372,10 +400,10 @@ export class ConversationView extends Component {
         // Opening a mailbox unfolds it: the folders are where you go next.
         this.state.expanded[this.railKey()] = true;
         this.saveExpanded();
-        // The folder you were in carries over. It is the same five states in
-        // every mailbox, and landing back in Inbox on every switch loses the
+        // The folder and the filter carry over. Every mailbox has the same
+        // two folders, and landing back in Inbox on every switch loses the
         // one thing somebody switching mailboxes is usually doing: working
-        // one folder across all of them.
+        // one view across all of them.
         this.state.limit = PAGE;
         await this.refresh();
     }
@@ -528,9 +556,12 @@ export class ConversationView extends Component {
         return count === 1 ? _t("1 message") : _t("%s messages", count);
     }
 
-    folderLabel(id) {
-        const folder = this.foldersFor().find((entry) => entry.id === id);
-        return folder ? folder.name : "";
+    /** What the list is showing, in words: the folder, narrowed by the filter. */
+    get listLabel() {
+        const named = (entries, id) => (entries.find((e) => e.id === id) || {}).name;
+        const folder = named(this.foldersFor(), this.state.folder) || "";
+        const filter = this.state.filter && named(this.filters, this.state.filter);
+        return filter ? `${folder} / ${filter}` : folder;
     }
 
     folderCount(folder) {
