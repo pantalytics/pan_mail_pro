@@ -86,7 +86,8 @@ for name in ('example.com', 'example.odoo.com'):
 import datetime
 link = call('pan.mail.license', 'create', {
     'status': 'active',
-    'valid_until': (datetime.datetime.utcnow() + datetime.timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')})
+    'valid_until': (datetime.datetime.now(datetime.UTC)
+                    + datetime.timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')})
 call('pan.mail.account', 'create', {
     'user_id': uid, 'provider': 'outlook', 'email': 'notifications@example.com',
     'refresh_token': 'demo', 'access_token': 'demo'})
@@ -98,23 +99,37 @@ ids = [call('pan.mail.mailbox', 'create', vals) for vals in (
 call('pan.mail.mailbox', 'write', ids[1:], {'state': 'error'})
 # Mail, so the Inbox screen shows the thing it is for rather than its empty
 # state. Three messages on one lead: a question, our answer, their reply.
+#
+# Every date below is explicit, and that is not decoration. The Inbox orders
+# conversations by their newest message and breaks a tie on the model name, so
+# a seed that lets Postgres stamp everything `now()` opens on whichever record
+# sorts first *when the seed happens to straddle a second*. That passed on a
+# laptop and failed on a CI runner, which is the definition of a flaky
+# fixture. The lead thread is the most recent, the two unlinked ones are days
+# old, and the screen opens on the same conversation every time.
+def ago(**kw):
+    return (datetime.datetime.now(datetime.UTC) - datetime.timedelta(**kw)).strftime(
+        '%Y-%m-%d %H:%M:%S')
 customer = call('res.partner', 'create', {
     'name': 'Vandermolen Techniek B.V.', 'email': 'bart@vandermolen.example'})
 lead = call('crm.lead', 'create', {
     'name': 'Asafdichtingen, revisie', 'partner_id': customer,
     'email_from': 'bart@vandermolen.example'})
-for subject, body, direction in (
+for subject, body, direction, when in (
     ('Offerte revisie asafdichtingen',
-     '<p>Kunnen jullie de levertijd op regel 3 nog bevestigen?</p>', 'incoming'),
+     '<p>Kunnen jullie de levertijd op regel 3 nog bevestigen?</p>',
+     'incoming', ago(hours=26)),
     ('Re: Offerte revisie asafdichtingen',
-     '<p>Drie weken vanaf akkoord, dat leggen we vast.</p>', 'outgoing'),
+     '<p>Drie weken vanaf akkoord, dat leggen we vast.</p>',
+     'outgoing', ago(hours=22)),
     ('Re: Offerte revisie asafdichtingen',
-     '<p>Prima. Dan graag opdracht bevestigen.</p>', 'incoming'),
+     '<p>Prima. Dan graag opdracht bevestigen.</p>',
+     'incoming', ago(hours=2)),
 ):
     call('mail.message', 'create', {
         'model': 'crm.lead', 'res_id': lead, 'message_type': 'email',
         'subject': subject, 'body': body, 'author_id': customer,
-        'email_from': 'bart@vandermolen.example',
+        'email_from': 'bart@vandermolen.example', 'date': when,
         'x_direction': direction, 'x_mailbox_id': ids[2]})
 # Two conversations that landed on a contact and nowhere better: the real
 # `fallback` outcome, delivered but to a place nobody is looking. Each carries
@@ -122,20 +137,22 @@ for subject, body, direction in (
 # one click. Two different contacts, because mail on one contact is one
 # conversation however many messages it holds -- and linking the first has to
 # leave a second behind.
-for name, address, subject, body in (
+for name, address, subject, body, when in (
     ('Vandermolen Techniek B.V.', 'bart@vandermolen.example',
      'Storing aan de pers, spoed',
-     '<p>De pers loopt vast bij het inschakelen. Kunnen jullie meekijken?</p>'),
+     '<p>De pers loopt vast bij het inschakelen. Kunnen jullie meekijken?</p>',
+     ago(days=2)),
     ('Keersluis Onderhoud', 'inkoop@keersluis.example',
      'Nieuwe aanvraag afdichtingen',
-     '<p>Graag een prijs voor twee sets, zelfde maat als vorig jaar.</p>'),
+     '<p>Graag een prijs voor twee sets, zelfde maat als vorig jaar.</p>',
+     ago(days=3)),
 ):
     sender = call('res.partner', 'create', {'name': name, 'email': address}) \
         if address != 'bart@vandermolen.example' else customer
     fallen_back = call('mail.message', 'create', {
         'model': 'res.partner', 'res_id': sender,
         'message_type': 'email', 'subject': subject, 'body': body,
-        'author_id': sender, 'email_from': address,
+        'author_id': sender, 'email_from': address, 'date': when,
         'x_direction': 'incoming', 'x_mailbox_id': ids[2]})
     call('pan.mail.routing.log', 'create', {
         'mailbox_id': ids[2], 'mail_message_id': fallen_back, 'outcome': 'fallback',
