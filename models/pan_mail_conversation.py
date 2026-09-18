@@ -99,6 +99,7 @@ RAIL_FOLDERS = [
 # screen that reads mail somebody already triages in Outlook. Read status is
 # Odoo's, and it is enough.
 LIST_FILTERS = [
+    ('unread', 'Unread'),
     ('unlinked_contact', 'On a contact only'),
     ('unlinked_none', 'Linked to nothing'),
 ]
@@ -170,6 +171,11 @@ class PanMailConversation(models.AbstractModel):
         Every filter here is a clause on the message, so the grouping query
         is the whole answer.
         """
+        if filter_name == 'unread':
+            # Odoo's own needaction search, which is the same row
+            # `_unread_ids` reads to put the dot on the list. Never a flag of
+            # ours: two answers to "have I read this" is one answer too many.
+            return [('needaction', '=', True)]
         if filter_name == 'unlinked_contact':
             return [('model', '=', 'res.partner')]
         if filter_name == 'unlinked_none':

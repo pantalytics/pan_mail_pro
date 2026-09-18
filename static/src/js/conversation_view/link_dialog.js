@@ -32,6 +32,9 @@ export class LinkDialog extends Component {
         // a conversation with no contact behind it still has to be linkable.
         partnerId: { type: [Number, Boolean], optional: true },
         correspondent: { type: String, optional: true },
+        // What the dialog is for, when it is not linking an existing
+        // conversation. New Email asks the same two questions.
+        title: { type: String, optional: true },
         onSelect: Function,
         close: Function,
     };
@@ -59,9 +62,10 @@ export class LinkDialog extends Component {
     }
 
     get title() {
+        const opening = this.props.title || _t("Link this conversation");
         return this.state.target
-            ? _t("Link to a %s", this.state.target.label)
-            : _t("Link this conversation");
+            ? `${opening}: ${this.state.target.label}`
+            : opening;
     }
 
     get placeholder() {
