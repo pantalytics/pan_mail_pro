@@ -110,6 +110,28 @@ call('pan.mail.mailbox', 'write', ids[1:], {'state': 'error'})
 def ago(**kw):
     return (datetime.datetime.now(datetime.UTC) - datetime.timedelta(**kw)).strftime(
         '%Y-%m-%d %H:%M:%S')
+
+
+# A 1x1 PNG, built rather than pasted. Odoo opens an image attachment with
+# PIL at create(), so a base64 blob that is a few bytes short is a
+# valid-looking string and a create that fails with "Truncated File Read".
+import base64
+import struct
+import zlib
+
+
+def _png_chunk(kind, data):
+    return (struct.pack('>I', len(data)) + kind + data
+            + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff))
+
+
+PIXEL = base64.b64encode(
+    b'\x89PNG\r\n\x1a\n'
+    + _png_chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0))
+    + _png_chunk(b'IDAT', zlib.compress(b'\x00\xff\xff\xff', 9))
+    + _png_chunk(b'IEND', b'')).decode()
+
+
 customer = call('res.partner', 'create', {
     'name': 'Vandermolen Techniek B.V.', 'email': 'bart@vandermolen.example'})
 lead = call('crm.lead', 'create', {
@@ -126,11 +148,21 @@ for subject, body, direction, when in (
      '<p>Prima. Dan graag opdracht bevestigen.</p>',
      'incoming', ago(hours=2)),
 ):
-    call('mail.message', 'create', {
+    message = call('mail.message', 'create', {
         'model': 'crm.lead', 'res_id': lead, 'message_type': 'email',
         'subject': subject, 'body': body, 'author_id': customer,
         'email_from': 'bart@vandermolen.example', 'date': when,
         'x_direction': direction, 'x_mailbox_id': ids[2]})
+    if direction == 'outgoing':
+        # One attachment, so the Files tab shows the list it exists for
+        # instead of its empty state. An image, because it is the one type
+        # the viewer renders without a plugin: what the check has to prove
+        # is that a click opens Odoo's own viewer at all.
+        attachment = call('ir.attachment', 'create', {
+            'name': 'asafdichting.png', 'mimetype': 'image/png',
+            'res_model': 'crm.lead', 'res_id': lead, 'datas': PIXEL})
+        call('mail.message', 'write', [message],
+             {'attachment_ids': [(6, 0, [attachment])]})
 # Two follow-ups on the lead. The Activities tab draws Odoo's own activity
 # card, and both the icon and the colour come off the activity type and the
 # deadline: one planned and one overdue is the pair that shows both.

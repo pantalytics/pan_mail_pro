@@ -220,6 +220,17 @@ other panes are hidden, so the widths are where you left them when you return.
 It is the one pane state the browser does not remember: a reading mode you
 have to notice you left on is a screen that lost its mail.
 
+19.0.12.3.0 did the same to Files. `read_conversation` hands back the
+attachments in the shape the web client's attachment store reads, the tab
+mounts `AttachmentList`, and a file there behaves the way it does in the
+chatter: the same card, the same viewer on a click, the same download and
+delete on hover, and an "Attach files" that lands the file on the
+conversation's record. The list is the chatter's too -- the record's own
+attachments plus the ones that arrived on the mail -- because reading only the
+messages would have made an upload from this screen disappear on the next read.
+Our own rows were a link and a size: they looked fine, could do none of that,
+and were a second implementation of something Odoo maintains.
+
 19.0.12.2.0 stopped drawing the Activities tab itself. It is Odoo's own
 `mail.Activity` component now -- the same card the chatter draws -- so the
 activity type's icon, the three state colours and Mark Done / Edit / Cancel are

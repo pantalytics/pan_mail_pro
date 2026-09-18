@@ -28,6 +28,9 @@ import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
 import { LinkDialog } from "./link_dialog";
+import { AttachmentList } from "@mail/core/common/attachment_list";
+import { useAttachmentUploader } from "@mail/core/common/attachment_uploader_hook";
+import { FileUploader } from "@web/views/fields/file_handler";
 import { useComposer, ComposerForm } from "./use_composer";
 // The Activities tab draws Odoo's own activity card. Borrowing the component
 // rather than restyling ours is what keeps the icons, the three state colours
@@ -42,7 +45,10 @@ const PAGE = 30;
 // four lists shared between two selections is one stale thread away from a
 // reply landing under the wrong subject.
 const EMPTY_THREAD = () => ({
-    messages: [], records: [], rejected: [], files: [], activities: [], suggestion: false,
+    messages: [], records: [], rejected: [], activities: [], suggestion: false,
+    // The attachments as the mail store holds them: the ids in order, the
+    // records themselves in `store`. See `files` below.
+    files: { ids: [], store: {} },
 });
 
 // Which mailboxes stand open in the rail. In the browser, next to the pane
@@ -143,7 +149,9 @@ export class RecordPane extends Component {
 
 export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
-    static components = { RecordPane, ComposerForm, Activity };
+    static components = {
+        RecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
+    };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
     // component's, not the action record's: without this, opening a record
@@ -156,8 +164,11 @@ export class ConversationView extends Component {
         this.dialog = useService("dialog");
         this.notification = useService("notification");
         // Odoo's activity card reads its activity out of the mail store, not
-        // out of a dict we hand it.
+        // out of a dict we hand it, and the Files tab is Odoo's own attachment
+        // list over the same store: preview, download, delete, and an upload
+        // that lands on the record rather than in a copy of it.
         this.mailStore = useService("mail.store");
+        this.attachmentUploader = useAttachmentUploader();
         this.panes = usePanes();
         this.composer = useComposer({ onSent: () => this.onReplySent() });
 
@@ -367,6 +378,10 @@ export class ConversationView extends Component {
                 }
             );
             if (seq === this.threadSeq) {
+                // The attachments go into the mail store, which is where the
+                // rest of the client reads them from, and this screen keeps
+                // their ids.
+                this.mailStore.insert(thread.files?.store || {});
                 this.state.thread = thread;
                 // The newest message is the one you came for. The rest of the
                 // thread is context, one line each, a click away.
@@ -531,7 +546,7 @@ export class ConversationView extends Component {
     /** The number beside a tab, drawn only when there is one. */
     tabCount(tab) {
         if (tab === "files") {
-            return (this.state.thread.files || []).length;
+            return this.fileIds.length;
         }
         if (tab === "activities") {
             return (this.state.thread.activities || []).length;
@@ -539,21 +554,60 @@ export class ConversationView extends Component {
         return 0;
     }
 
-    /** What the reader downloads. Odoo's own attachment route, unchanged. */
-    fileUrl(file) {
-        return `/web/content/${file.id}?download=true`;
+    // --------------------------------------------------------- the files
+
+    /** The order the server read them in, newest first. */
+    get fileIds() {
+        return this.state.thread.files?.ids || [];
     }
 
-    /** A size somebody can read, which is not a number of bytes. */
-    fileSize(bytes) {
-        const size = Number(bytes) || 0;
-        if (size < 1024) {
-            return `${size} B`;
+    /**
+     * The attachments themselves, out of the mail store.
+     *
+     * The store is where Odoo keeps an attachment, and holding a second copy
+     * of one here is how the two drift: an upload, a delete or a rename in
+     * another part of the client updates the store and nothing else. So this
+     * screen keeps the ids and asks the store for the records.
+     */
+    get files() {
+        return this.fileIds
+            .map((id) => this.mailStore["ir.attachment"].get(id))
+            .filter(Boolean);
+    }
+
+    /** The record an upload lands on: the one the chatter would have used. */
+    get uploadThread() {
+        const record = this.selectedRecord;
+        return record
+            ? this.mailStore.Thread.insert({ model: record.model, id: record.res_id })
+            : null;
+    }
+
+    /** Delete, through Odoo's own route. The dialog is the list's own. */
+    async unlinkAttachment(attachment) {
+        // The id first: after the delete the record is gone from the store,
+        // and asking a deleted record what it was is how a row survives its
+        // own removal.
+        const id = attachment.id;
+        await this.attachmentUploader.unlink(attachment);
+        this.state.thread.files.ids = this.fileIds.filter((other) => other !== id);
+    }
+
+    /**
+     * Attach a file to the conversation's record.
+     *
+     * The same upload the chatter does, so the file lands on the record and
+     * is there for everybody who opens it -- not in a store of our own.
+     */
+    async onFileUploaded(data) {
+        const thread = this.uploadThread;
+        if (!thread) {
+            return;
         }
-        if (size < 1024 * 1024) {
-            return `${Math.round(size / 1024)} kB`;
+        const attachment = await this.attachmentUploader.uploadData(data, { thread });
+        if (attachment && !this.fileIds.includes(attachment.id)) {
+            this.state.thread.files.ids = [attachment.id, ...this.fileIds];
         }
-        return `${(size / (1024 * 1024)).toFixed(1)} MB`;
     }
 
     // ------------------------------------------------------ the follow-ups
