@@ -635,6 +635,13 @@ class Checks:
         # by its component: the action record's name is not read.
         chip = page.query_selector('.o_mailpro_chips .o_mailpro_chip_button')
         if chip:
+            # The app's tile, and a loaded one: a broken image is what a
+            # wrong module name looks like, and nothing else reports it.
+            icon = chip.query_selector('.o_mailpro_chip_icon')
+            if not icon:
+                self.fail('the Linked-to chip has no app icon')
+            elif not icon.evaluate('img => img.complete && img.naturalWidth > 0'):
+                self.fail('the Linked-to chip icon did not load')
             chip.click()
             try:
                 page.wait_for_selector('.o_form_view .o_breadcrumb', timeout=15000)
@@ -867,6 +874,11 @@ class Checks:
             self.fail('the record pane has no control to take the screen')
             return
 
+        # One way to make the record bigger. Leaving for the record's own
+        # screen is offered once you are on the whole screen, not beside it.
+        if page.query_selector('.o_mailpro_record_open'):
+            self.fail('Open sits next to Expand in the record pane')
+
         button.click()
         page.wait_for_timeout(500)
 
@@ -877,6 +889,9 @@ class Checks:
             pane = page.query_selector(selector)
             if pane and pane.is_visible():
                 self.fail(f'{name} is still on screen while the record is zoomed')
+
+        if not page.query_selector('.o_mailpro_record_open'):
+            self.fail('the zoomed record has no way to its own screen')
 
         record = page.query_selector('.o_mailpro_record')
         panes = page.query_selector('.o_mailpro_panes')

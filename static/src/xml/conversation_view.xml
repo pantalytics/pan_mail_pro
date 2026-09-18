@@ -285,6 +285,12 @@
                                         type="button"
                                         class="o_mailpro_chip_button"
                                         t-on-click="() => this.openRecordChip(chip)">
+                                    <!-- The app's own tile says "a quotation"
+                                         faster than a word would, and the
+                                         word is still there for the mouse. -->
+                                    <img t-if="chip.icon" class="o_mailpro_chip_icon"
+                                         t-att-src="chip.icon" t-att-alt="chip.model_label"
+                                         t-att-title="chip.model_label"/>
                                     <span t-esc="chip.name"/>
                                 </button>
                                 <!-- Secondary, and deliberately quiet: a
@@ -650,30 +656,28 @@
             <t t-if="!state.failed">
                 <!--
                     The form's own control panel is off, so the pane says which
-                    record this is and offers the one action that leaves the
-                    screen. Everything else you can do to it, you do below.
+                    record this is and offers one action: the record on the
+                    whole screen. Leaving the Inbox for the record's own screen
+                    is a step further, so Open only appears once you are there.
+                    Two ways to make the record bigger side by side read as
+                    one of them being broken.
                 -->
-<div class="o_mailpro_record_head d-flex align-items-center justify-content-between gap-2"
+                <div class="o_mailpro_record_head d-flex align-items-center justify-content-between gap-2"
                      t-on-dblclick="() => this.props.onToggleZoom()">
                     <div class="min-w-0">
                         <div class="o_mailpro_label" t-esc="props.record.model_label"/>
                         <h2 class="o_mailpro_record_name text-truncate" t-esc="props.record.name"/>
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                        <!--
-                            The record on the whole screen while you read it.
-                            Quiet, because Open is still the action that
-                            leaves; this one only moves a divider.
-                        -->
-                        <button type="button" class="btn btn-link btn-sm o_mailpro_record_zoom"
-                                t-att-title="props.zoomLabel"
+                        <button type="button" class="btn btn-secondary btn-sm o_mailpro_record_zoom"
                                 t-att-aria-pressed="props.zoomed ? 'true' : 'false'"
                                 t-on-click="() => this.props.onToggleZoom()">
-                            <i class="fa" aria-hidden="true"
+                            <i class="fa me-1" aria-hidden="true"
                                t-att-class="props.zoomed ? 'fa-compress' : 'fa-expand'"/>
-                            <span class="visually-hidden" t-esc="props.zoomLabel"/>
+                            <t t-esc="props.zoomLabel"/>
                         </button>
-                        <button type="button" class="btn btn-secondary btn-sm"
+                        <button t-if="props.zoomed" type="button"
+                                class="btn btn-secondary btn-sm o_mailpro_record_open"
                                 t-on-click="() => this.openRecord()">Open</button>
                     </div>
                 </div>

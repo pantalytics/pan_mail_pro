@@ -199,7 +199,7 @@ export function usePanes() {
         },
 
         zoomLabel() {
-            return state.zoom ? _t("Back to the Inbox") : _t("Full width");
+            return state.zoom ? _t("Back to the Inbox") : _t("Expand");
         },
 
         /**
