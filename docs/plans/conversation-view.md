@@ -60,6 +60,12 @@ the record pane fold away, and the widths live in the browser, so the screen
 opens tomorrow the way it closed tonight. The list and the thread do not fold:
 a screen with no mail on it is not this screen. 19.0.10.2.0.
 
+Inside the rail, each mailbox folds away too, the way an account does in
+Outlook: the caret opens and closes it, the name opens the mailbox itself, and
+which ones stand open is remembered next to the widths. A folded mailbox is not
+counted, so the rail costs one folder query per mailbox somebody actually
+watches rather than one per mailbox that exists. 19.0.10.4.0.
+
 When nothing is linked, the fourth pane shows what the matcher considered and
 rejected, with a one-click way to file it. An unfiled conversation is the case
 that decides whether people trust the screen, so it gets a designed state rather

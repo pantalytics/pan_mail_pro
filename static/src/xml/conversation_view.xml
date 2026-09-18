@@ -39,28 +39,41 @@
                 <!--
                     1. where you are: the mailbox, and inside it the folder.
                     The same shape as every mail client, because reading mail
-                    is the one job people already know the layout of. Only the
-                    open mailbox shows its folders: the counts are that
-                    mailbox's, and five rows per account is a rail you scroll.
+                    is the one job people already know the layout of. Every
+                    mailbox folds away the way Outlook folds an account: the
+                    chevron opens and closes it, the name opens the mailbox
+                    itself. A folded mailbox is not counted, so a rail of six
+                    accounts costs what the ones you actually watch cost.
                 -->
                 <nav t-if="!panes.state.collapsed.rail" class="o_mailpro_rail"
                      aria-label="Mailboxes and folders"
                      t-attf-style="flex-basis: {{panes.state.rail}}px">
                     <t t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id">
-                        <button type="button"
-                                class="o_mailpro_mailbox d-flex align-items-center gap-2"
-                                t-att-class="{ 'o_mailpro_mailbox_active': mailbox.id === state.mailboxId }"
-                                t-att-aria-current="mailbox.id === state.mailboxId ? 'true' : undefined"
-                                t-on-click="() => this.setMailbox(mailbox.id)">
-                            <span class="o_mailpro_mailbox_name text-truncate" t-esc="mailbox.email"/>
-                        </button>
-                        <div t-if="mailbox.id === state.mailboxId" class="o_mailpro_folders">
+                        <div class="o_mailpro_mailbox_row d-flex align-items-center">
+                            <button type="button" class="o_mailpro_mailbox_toggle flex-shrink-0"
+                                    t-att-aria-expanded="isExpanded(mailbox.id) ? 'true' : 'false'"
+                                    t-attf-aria-label="{{ isExpanded(mailbox.id) ? 'Hide folders of' : 'Show folders of' }} {{ mailbox.email }}"
+                                    t-on-click="() => this.toggleMailbox(mailbox.id)">
+                                <i class="fa" aria-hidden="true"
+                                   t-att-class="isExpanded(mailbox.id) ? 'fa-caret-down' : 'fa-caret-right'"/>
+                            </button>
+                            <button type="button"
+                                    class="o_mailpro_mailbox d-flex align-items-center gap-2"
+                                    t-att-class="{ 'o_mailpro_mailbox_active': mailbox.id === state.mailboxId }"
+                                    t-att-aria-current="mailbox.id === state.mailboxId ? 'true' : undefined"
+                                    t-on-click="() => this.setMailbox(mailbox.id)">
+                                <span class="o_mailpro_mailbox_name text-truncate" t-esc="mailbox.email"/>
+                            </button>
+                        </div>
+                        <div t-if="isExpanded(mailbox.id)" class="o_mailpro_folders">
+                            <t t-set="railMailbox" t-value="mailbox.id"/>
                             <t t-call="pan_mail_pro.ConversationFolders"/>
                         </div>
                     </t>
                     <!-- No mailbox configured yet: the folders are still the
                          reader's own mail, so the rail is not empty. -->
                     <div t-if="!state.mailboxes.length" class="o_mailpro_folders">
+                        <t t-set="railMailbox" t-value="false"/>
                         <t t-call="pan_mail_pro.ConversationFolders"/>
                     </div>
                 </nav>
@@ -268,14 +281,19 @@
         </div>
     </t>
 
-    <!-- The folders of the open mailbox. One definition, two call sites. -->
+    <!--
+        The folders of one mailbox, `railMailbox`. One definition, two call
+        sites. A folder is only the open one when its mailbox is the open one:
+        two unfolded mailboxes must not both claim to be showing Inbox.
+    -->
     <t t-name="pan_mail_pro.ConversationFolders">
-        <button t-foreach="state.folders" t-as="folder" t-key="folder.id"
+        <t t-set="isOpenMailbox" t-value="(railMailbox or false) === (state.mailboxId or false)"/>
+        <button t-foreach="foldersFor(railMailbox)" t-as="folder" t-key="folder.id"
                 type="button"
                 class="o_mailpro_folder d-flex align-items-center justify-content-between"
-                t-att-class="{ 'o_mailpro_folder_active': folder.id === state.folder }"
-                t-att-aria-current="folder.id === state.folder ? 'true' : undefined"
-                t-on-click="() => this.setFolder(folder.id)">
+                t-att-class="{ 'o_mailpro_folder_active': isOpenMailbox and folder.id === state.folder }"
+                t-att-aria-current="isOpenMailbox and folder.id === state.folder ? 'true' : undefined"
+                t-on-click="() => this.setFolder(folder.id, railMailbox or null)">
             <span t-esc="folder.name"/>
             <span t-if="folder.count" class="o_mailpro_count" t-esc="folderCount(folder)"/>
         </button>
