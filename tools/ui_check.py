@@ -356,8 +356,10 @@ class Checks:
         if chatter:
             self.fail('the record pane still shows a chatter')
 
-        # The four readings of a conversation, in one strip over pane 3.
-        tabs = [el.inner_text().split('\n')[0].strip()
+        # The four readings of a conversation, in one strip over pane 3. The
+        # label is the first span: the count beside it is a second one on the
+        # same line, so reading the button's own text gives "Files1".
+        tabs = [(el.query_selector('span') or el).inner_text().strip()
                 for el in page.query_selector_all('.o_mailpro_tab')]
         if tabs != ['Mail', 'Everything', 'Files', 'Activities']:
             self.fail(f'the tab strip reads {tabs}')
