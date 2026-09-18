@@ -30,6 +30,8 @@ and it is never handed back to the browser once saved: `client_secret` reads
 back a placeholder, and re-saving the placeholder is a no-op rather than
 encrypting the placeholder itself.
 """
+import re
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
@@ -43,6 +45,17 @@ from .mail_provider_client import (
 )
 
 SECRET_PLACEHOLDER = '********'
+
+
+# What Azure accepts as the first path segment of a login URL: the directory
+# GUID, a verified domain, or one of the three multi-tenant literals. Anything
+# else is a value pasted into the wrong field, and the only place we can catch
+# it is before it is saved -- once it is, it leaves the building as a path
+# segment of a request to login.microsoftonline.com.
+_GUID_RE = re.compile(r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$')
+_DOMAIN_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?'
+                        r'(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$')
+TENANT_LITERALS = ('common', 'organizations', 'consumers')
 
 
 class PanMailProvider(models.Model):
@@ -293,3 +306,35 @@ class PanMailProvider(models.Model):
                 'Mail Pro runs on one provider. Change the existing "%s" row, '
                 'or delete it first.'
             ) % dict(PROVIDER_SELECTION).get(existing.provider, existing.provider))
+
+    @api.constrains('provider', 'tenant_id')
+    def _check_tenant_id(self):
+        """Refuse a Tenant ID that cannot be one.
+
+        Azure shows the Directory (tenant) ID, the Application (client) ID and
+        the client secret on one screen, and the secret sits visually next to
+        the other two. Pasting the secret into Tenant ID used to get as far as
+        Microsoft, which answered AADSTS900023 -- their error, naming none of
+        our fields, so the admin had to guess which of the three was wrong.
+        Worse, the secret travelled there as a path segment of the login URL
+        and has to be rotated afterwards.
+
+        Same reasoning as the fail-closed domain gate: gate the configuration,
+        not only the runtime. This is the last point at which the value is
+        still inside the database.
+        """
+        for record in self:
+            if record.provider != 'outlook':
+                continue
+            tenant = (record.tenant_id or '').strip()
+            if tenant and not (
+                tenant.lower() in TENANT_LITERALS
+                or _GUID_RE.match(tenant)
+                or _DOMAIN_RE.match(tenant)
+            ):
+                raise ValidationError(_(
+                    'That is not a Tenant ID. Azure calls it the '
+                    '"Directory (tenant) ID" on the app registration overview: '
+                    'a GUID, or your verified domain. It is not the client '
+                    'secret, which belongs in the Client Secret field.'
+                ))

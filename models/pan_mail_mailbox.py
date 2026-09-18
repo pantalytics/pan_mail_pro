@@ -12,6 +12,12 @@ from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 
+# How many consecutive failed sync runs before the mailbox is called broken.
+# Below it the mailbox stays in the set the cron reads, so a 503, a timeout or
+# a rate limit costs one run instead of every run after it. The cron runs every
+# minute, so five is minutes of trouble, not months of silence.
+SYNC_FAILURE_LIMIT = 5
+
 
 
 class PanMailMailbox(models.Model):
@@ -304,6 +310,15 @@ class PanMailMailbox(models.Model):
         readonly=True,
         help='Error message from last failed sync attempt'
     )
+    sync_failure_count = fields.Integer(
+        string='Consecutive Sync Failures',
+        readonly=True,
+        copy=False,
+        default=0,
+        help='Reset by the first run that succeeds. Once it reaches the '
+             'escalation limit the mailbox goes to Error and a person has to '
+             'look at it.',
+    )
 
     # -------------------------------------------------------------------------
     # Health Status (computed for list view)
@@ -315,6 +330,7 @@ class PanMailMailbox(models.Model):
     ], string='Status', compute='_compute_health_status', store=False)
 
     @api.depends('state', 'sync_level', 'mailbox_type', 'provider', 'owner_user_id',
+                 'sync_failure_count',
                  'owner_user_id.x_pan_mail_account_ids.connected')
     def _compute_health_status(self):
         for record in self:
@@ -322,10 +338,52 @@ class PanMailMailbox(models.Model):
                 record.health_status = 'error'
             elif record._needs_credentials() and not record._has_working_credentials():
                 record.health_status = 'error'
+            elif record.sync_failure_count:
+                # Failing, not yet given up on. The run that succeeds clears
+                # it; until then the list says so rather than reading healthy.
+                record.health_status = 'warning'
             elif record._syncs_more_than_replies() and record.state == 'draft':
                 record.health_status = 'warning'
             else:
                 record.health_status = 'healthy'
+
+    # -------------------------------------------------------------------------
+    # What a failed sync run means
+    # -------------------------------------------------------------------------
+    def _record_sync_failure(self, reason):
+        """One failed run is not a broken mailbox.
+
+        A 503 from Graph is the provider asking to be called back later, and
+        the first one used to write `state = 'error'`, which is also the state
+        the cron filters *out*. So a single transient failure removed the
+        mailbox from the set the cron would ever read again: two of our own
+        shared mailboxes sat out of sync for four months on one 503, with
+        nothing but a red badge on a form nobody opens.
+
+        The reason is recorded on every failure, so the form always says what
+        happened. The state only follows once the failures stop looking
+        temporary -- and `error` now means "we tried SYNC_FAILURE_LIMIT times,
+        somebody has to look", which is the thing worth a person's attention.
+        """
+        self.ensure_one()
+        count = (self.sync_failure_count or 0) + 1
+        vals = {'sync_failure_count': count, 'error_message': reason}
+        if count >= SYNC_FAILURE_LIMIT:
+            vals['state'] = 'error'
+        self.write(vals)
+
+    def _record_sync_success(self):
+        """Back to active, counter cleared. Writes only when something moved."""
+        self.ensure_one()
+        vals = {}
+        if self.state != 'active':
+            vals['state'] = 'active'
+        if self.error_message:
+            vals['error_message'] = False
+        if self.sync_failure_count:
+            vals['sync_failure_count'] = 0
+        if vals:
+            self.write(vals)
 
     # -------------------------------------------------------------------------
     # The inspection surface: two counters on the form, no fields to fill in
@@ -478,6 +536,7 @@ class PanMailMailbox(models.Model):
             self.write({
                 'state': 'active',
                 'error_message': False,
+                'sync_failure_count': 0,
             })
 
             return self._test_notification(
@@ -623,9 +682,10 @@ class PanMailMailbox(models.Model):
             # mail that did land before the failure. The form reloads onto the
             # mailbox, which is where the reason now is.
             self.write({'state': 'error', 'error_message': stall})
-        elif self.state != 'active':
-            # Mark as active on success (clear any previous error)
-            self.write({'state': 'active', 'error_message': False})
+        else:
+            # Mark as active on success (clear any previous error and the
+            # consecutive-failure count the cron escalates on)
+            self._record_sync_success()
 
         # Reload the form to show updated status
         return {

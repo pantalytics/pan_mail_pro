@@ -100,7 +100,7 @@ class TestOAuthCallback(HttpCase):
             'provider': 'outlook',
             'client_id': 'id',
             'client_secret': 'secret',
-            'tenant_id': 'tenant',
+            'tenant_id': '11111111-2222-3333-4444-555555555555',
         })
         self.user = self.env['res.users'].create({
             'name': 'Nora Employee',

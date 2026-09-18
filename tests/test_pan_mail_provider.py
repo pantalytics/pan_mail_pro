@@ -25,8 +25,39 @@ class TestProviderCredentials(TransactionCase):
         })
         self.assertFalse(row.credentials_set)
 
-        row.tenant_id = 'tenant'
+        row.tenant_id = '11111111-2222-3333-4444-555555555555'
         self.assertTrue(row.credentials_set)
+
+    def test_a_client_secret_pasted_into_the_tenant_field_is_refused(self):
+        """Azure shows the tenant id, the client id and the secret on one
+        screen. A secret in the Tenant ID box used to get as far as Microsoft,
+        which answered AADSTS900023 naming none of our fields -- and the secret
+        travelled there as a path segment of the login URL, so it had to be
+        rotated afterwards. This is the last point at which it is still inside
+        the database."""
+        with self.assertRaises(ValidationError):
+            self.Provider.create({
+                'provider': 'outlook', 'client_id': 'id',
+                'tenant_id': 'Abc8Q~xY1234567890abcdefghijklmnopqrstuv',
+            })
+
+    def test_a_guid_a_domain_and_the_three_literals_are_accepted(self):
+        row = self.Provider.create({
+            'provider': 'outlook', 'client_id': 'id',
+            'tenant_id': '11111111-2222-3333-4444-555555555555',
+        })
+        for value in ('contoso.onmicrosoft.com', 'common', 'organizations',
+                      'consumers'):
+            row.tenant_id = value
+        self.assertEqual(row.tenant_id, 'consumers')
+
+    def test_the_tenant_check_is_microsofts_alone(self):
+        """Google and IMAP have no tenant. A row that never fills the field in
+        must not be argued with about its shape."""
+        self.Provider.create({
+            'provider': 'gmail', 'client_id': 'id', 'client_secret': 'secret',
+            'tenant_id': 'not-a-tenant',
+        })
 
     def test_google_needs_no_tenant(self):
         """Google has no tenant, so the same flag must not demand one."""
@@ -75,7 +106,7 @@ class TestProviderCredentials(TransactionCase):
     def test_switching_provider_is_editing_the_row(self):
         row = self.Provider.create({
             'provider': 'outlook',
-            'client_id': 'id', 'client_secret': 'secret', 'tenant_id': 'tenant',
+            'client_id': 'id', 'client_secret': 'secret', 'tenant_id': '11111111-2222-3333-4444-555555555555',
         })
         row.provider = 'gmail'
         self.assertEqual(self.Provider.current().provider, 'gmail')

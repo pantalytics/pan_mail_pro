@@ -23,7 +23,7 @@ just no longer decide anything by themselves.
 import logging
 import re
 
-from odoo import _, api, fields, models
+from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
@@ -209,13 +209,21 @@ class PanMailDomain(models.Model):
         Portal and public users are excluded: a customer with a login is not
         the company, and folding their domain in would mark a customer's mail
         internal and stop syncing it.
+
+        So are archived users and the system user. Every Odoo database ever
+        created ships OdooBot on `odoobot@example.com`, so reading inactive
+        users put `example.com` in every derived list. The effect was pollution
+        rather than a leak -- no real mail comes from there -- but this list is
+        shown to the admin as "your domains", and one visibly wrong entry makes
+        the whole derivation look untrustworthy.
         """
         mailboxes = self.env['pan.mail.mailbox'].sudo().with_context(
             active_test=False
         ).search([])
-        users = self.env['res.users'].sudo().with_context(
-            active_test=False
-        ).search([('share', '=', False)])
+        users = self.env['res.users'].sudo().search([
+            ('share', '=', False),
+            ('id', '!=', SUPERUSER_ID),
+        ])
         addresses = [
             address for address in mailboxes.mapped('email') + users.mapped('email')
             if address

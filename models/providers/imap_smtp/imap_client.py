@@ -84,6 +84,9 @@ _UID_RE = re.compile(r'\bUID (\d+)')
 _FLAGS_RE = re.compile(r'FLAGS \(([^)]*)\)')
 # Servers advertise their Sent folder with the \Sent special-use flag (RFC 6154).
 _SENT_FLAG_RE = re.compile(r'\\Sent', re.IGNORECASE)
+# ... and the ones that do not still tend to name it Sent, under whatever
+# hierarchy delimiter they use: `INBOX.Sent`, `INBOX/Sent`.
+_SENT_LEAF_RE = re.compile(r'(?:^|[./])sent$', re.IGNORECASE)
 
 
 class ImapSmtpClient(models.AbstractModel):
@@ -335,20 +338,42 @@ class ImapSmtpClient(models.AbstractModel):
 
     @api.model
     def _detect_sent_folder(self, conn):
+        """Which folder this server files sent mail in, or None.
+
+        Two passes over one LIST. The \\Sent special-use flag is the reliable
+        answer and wins. When the server does not advertise it -- Courier and
+        some Dovecot namespace setups do not -- a folder *named* Sent under any
+        hierarchy delimiter is the answer: `INBOX.Sent` and `INBOX/Sent` are
+        the same folder the literal fallback `Sent` was reaching for, and when
+        the fallback misses, the APPEND fails and the user's own mail client
+        shows no record of anything Odoo sent.
+
+        Still no folder creation. Making folders in somebody's mailbox on a
+        guess is worse than not filing the copy.
+        """
         try:
             typ, data = conn.list()
         except (imaplib.IMAP4.error, OSError):
             return None
         if typ != 'OK':
             return None
+        named_sent = None
         for line in data or []:
             text = line.decode(errors='replace') if isinstance(line, bytes) else str(line)
+            name = self._list_line_folder(text)
+            if not name:
+                continue
             if _SENT_FLAG_RE.search(text):
-                # LIST lines end with the folder name, quoted when it has spaces.
-                match = re.search(r'"([^"]*)"\s*$', text) or re.search(r'(\S+)\s*$', text)
-                if match:
-                    return match.group(1)
-        return None
+                return name
+            if named_sent is None and _SENT_LEAF_RE.search(name):
+                named_sent = name
+        return named_sent
+
+    @api.model
+    def _list_line_folder(self, text):
+        """The folder name at the end of a LIST line, quoted when it has spaces."""
+        match = re.search(r'"([^"]*)"\s*$', text) or re.search(r'(\S+)\s*$', text)
+        return match.group(1) if match else None
 
     @api.model
     def _select(self, conn, account, folder):
