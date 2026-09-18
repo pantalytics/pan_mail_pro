@@ -267,37 +267,54 @@ class Checks:
         else:
             reply.click()
             try:
-                page.wait_for_selector('.modal .o_form_view', timeout=15000)
+                # In the pane, not on top of it: a dialog over the Inbox hides
+                # the list, the record and the mail being answered. A `.modal`
+                # here is the composer having gone back to being a popup.
+                page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
             except Exception:
-                self.fail('Reply opened no composer')
+                self.fail('Reply opened no composer in the conversation pane')
             else:
+                page.wait_for_timeout(600)
+                if page.query_selector('.modal .o_form_view'):
+                    self.fail('Reply opened the composer in a dialog')
                 # The chatter fills "To" from the record; the composer on its
                 # own fills nothing, and a reply to nobody is the one bug a
                 # green suite cannot see. The seeded thread has a customer,
                 # so their tag has to be there before anyone types.
-                page.wait_for_timeout(600)
-                if not page.query_selector('.modal [name="partner_ids"] .o_tag'):
+                if not page.query_selector('.o_mailpro_composer [name="partner_ids"] .o_tag'):
                     self.fail('Reply opened a composer with nobody in To')
                 # And it answers the mail, not the record: the subject is the
                 # thread's, so the customer's client files it where they read
                 # the question. The record's name here means the reply left
                 # as a new conversation.
-                subject = page.query_selector('.modal [name="subject"] input')
+                subject = page.query_selector('.o_mailpro_composer [name="subject"] input')
                 value = subject.input_value() if subject else ''
                 # "offerte revisie" is in the mail's subject and not in the
                 # lead's name, so the record-name fallback cannot pass this.
                 if 'offerte revisie' not in value.lower():
                     self.fail(f'Reply subject is "{value}", not the thread subject')
-                # Discard rather than Escape: Escape leaves the composer open
-                # on a draft, and the screenshot below is what a reviewer
-                # looks at.
-                discard = page.query_selector('.modal button:has-text("Discard")')
-                if discard:
-                    discard.click()
+                # The arch's footer is cut out of every form that is not in a
+                # dialog, so without the inline view there is no way to attach
+                # a file to a reply -- and nothing errors, the paperclip is
+                # simply not there.
+                if not page.query_selector(
+                        '.o_mailpro_composer .o_mailpro_composer_tools'):
+                    self.fail('the reply has no attachment or template row')
+                # The record stays readable beside the reply. That is the
+                # whole reason this is a pane and not a dialog.
+                if not page.query_selector('.o_mailpro_record .o_form_view'):
+                    self.fail('the record pane went away while replying')
+                self.shot('inbox-reply.png')
+                # Discard rather than Escape: Escape leaves the draft open,
+                # and the screenshot below is what a reviewer looks at.
+                discard = page.query_selector(
+                    '.o_mailpro_thread_head button:has-text("Discard")')
+                if not discard:
+                    self.fail('an open reply cannot be discarded')
                 else:
-                    page.keyboard.press('Escape')
-                page.wait_for_selector('.modal', state='detached', timeout=15000)
-                page.wait_for_timeout(600)
+                    discard.click()
+                    page.wait_for_selector('.o_mailpro_messages', timeout=15000)
+                    page.wait_for_timeout(600)
 
         self.panes()
 

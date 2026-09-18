@@ -309,6 +309,44 @@ $mailpro-warn: #c0392b;
     .o_mailpro_unfiled_title { font-size: 0.8125rem; font-weight: 600; }
     .o_mailpro_unfiled_list { margin: 0; padding-left: 1.125rem; font-size: 0.75rem; color: $mailpro-muted; }
 
+    // 3b. the reply, in the same pane
+    //
+    // The composer is Odoo's own form view, so it needs the same armour as
+    // the record pane: the form renderer wears `d-flex flex-nowrap` with
+    // Bootstrap's `!important` behind it, and its field grid is sized for a
+    // window rather than for a pane.
+    .o_mailpro_composer {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden auto;
+        max-width: 48rem;
+
+        .o_form_renderer {
+            display: block !important;
+            width: 100%;
+        }
+
+        .o_form_view,
+        .o_form_sheet_bg,
+        .o_form_sheet {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-shadow: none;
+            border: 0;
+        }
+
+        .o_inner_group { grid-template-columns: minmax(0, 1fr) !important; }
+
+        // The paperclip and the template selector come from the arch's
+        // footer, which only a dialog draws. Here they sit under the body,
+        // where the Send button would have been in the dialog.
+        .o_mailpro_composer_tools {
+            padding-top: 0.5rem;
+            border-top: 1px solid $mailpro-line;
+        }
+    }
+
     // Mail is prose, and prose has a comfortable width. The column stops
     // well before the window does.
     .o_mailpro_messages {

@@ -184,6 +184,18 @@ own methods called on the record itself, unwrapped, so the reply path cannot
 drift from the chatter. The screen it serves is designed in
 `docs/plans/conversation-view.md`.
 
+Replying happens in the conversation pane, not in a dialog over the screen: a
+dialog hides the list, the record and the mail being answered, which are the
+three things somebody looks at while writing. It is still `mail.compose.message`
+-- 19.0.10.3.0 only changed where the form is mounted. Two things had to move
+for it to live outside a dialog, and both are in
+`static/src/js/conversation_view/use_composer.js`: the arch's `<footer>` is
+rendered by a dialog and nowhere else, so
+`pan_mail_pro.mail_compose_message_inline_form` puts the paperclip and the
+template selector back in the body, and Send saves the composer and calls
+`action_send_mail` itself, from the pane, because the pane is what closes when
+the mail is out.
+
 19.0.7.7.0 put the seven screens under one submenu instead of hanging each off
 `base.menu_email` directly. Interleaved with Odoo's own Emails / Templates /
 Aliases entries they read as seven unrelated features rather than one module,

@@ -144,10 +144,23 @@
                                         </span>
                                     </div>
                                 </div>
-                                <!-- One primary action per screen. This is it. -->
-                                <button type="button" class="btn btn-primary btn-sm flex-shrink-0"
-                                        t-if="state.selected.model"
+                                <!--
+                                    One primary action per screen. This is it,
+                                    and while a reply is open it is Send: the
+                                    button does not move, it changes what it
+                                    does.
+                                -->
+                                <button t-if="state.selected.model and !composer.state.open"
+                                        type="button" class="btn btn-primary btn-sm flex-shrink-0"
                                         t-on-click="() => this.reply()">Reply</button>
+                                <div t-if="composer.state.open"
+                                     class="d-flex align-items-center gap-2 flex-shrink-0">
+                                    <button type="button" class="btn btn-link btn-sm"
+                                            t-on-click="() => composer.close()">Discard</button>
+                                    <button type="button" class="btn btn-primary btn-sm"
+                                            t-att-disabled="composer.state.sending"
+                                            t-on-click="() => composer.send()">Send</button>
+                                </div>
                             </div>
                             <div t-if="state.thread.records.length" class="o_mailpro_chips d-flex align-items-center gap-2">
                                 <span class="o_mailpro_label">Filed on</span>
@@ -188,7 +201,19 @@
                             The header is the toggle and it is a button, so
                             the whole history is reachable with a keyboard.
                         -->
-                        <div class="o_mailpro_messages">
+                        <!--
+                            Answering happens where the mail is. The composer
+                            takes this pane instead of a dialog over the
+                            screen, so the list, the record and the mail being
+                            answered all stay readable while somebody writes.
+                            It is Odoo's own composer form; `use_composer.js`
+                            says what mounting it here costs.
+                        -->
+                        <div t-if="composer.state.open" class="o_mailpro_composer"
+                             role="region" aria-label="Reply">
+                            <View t-props="composer.viewProps"/>
+                        </div>
+                        <div t-else="" class="o_mailpro_messages">
                             <article t-foreach="state.thread.messages" t-as="message" t-key="message.id"
                                      class="o_mailpro_message"
                                      t-att-class="{ 'o_mailpro_message_open': isOpen(message) }">
