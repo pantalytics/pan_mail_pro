@@ -568,8 +568,13 @@ $mailpro-warn: #c0392b;
 
     .o_mailpro_activities_head { margin-bottom: 0.75rem; }
 
-    .o_mailpro_file,
-    .o_mailpro_activity {
+    // The Activities tab is Odoo's own `mail.Activity`, so it takes Odoo's own
+    // body colour rather than this screen's ink. The point of borrowing the
+    // component is that the card looks like the one in the chatter; a colour
+    // inherited from here is exactly the drift that would undo that.
+    .o_mailpro_activities { color: var(--bs-body-color); }
+
+    .o_mailpro_file {
         display: block;
         width: 100%;
         border: 0;
@@ -591,10 +596,7 @@ $mailpro-warn: #c0392b;
         }
     }
 
-    .o_mailpro_file_name,
-    .o_mailpro_activity_summary { font-weight: 600; }
-
-    .o_mailpro_activity_late .o_mailpro_activity_summary { color: $mailpro-warn; }
+    .o_mailpro_file_name { font-weight: 600; }
 
     // The body lines up under the name, not under the avatar.
     .o_mailpro_body {
