@@ -237,13 +237,9 @@
                                 <!-- Secondary, and deliberately quiet: a
                                      correctly linked thread is the normal case
                                      and this is the exception next to it. -->
-                                <button t-if="state.linkTargets.length" type="button"
+                                <button type="button"
                                         class="btn btn-link btn-sm p-0 o_mailpro_relink_toggle"
-                                        t-att-aria-expanded="state.linking ? 'true' : 'false'"
-                                        t-on-click="() => state.linking = !state.linking">
-                                    <t t-if="state.linking">Cancel</t>
-                                    <t t-else="">Change</t>
-                                </button>
+                                        t-on-click="() => this.openLinkDialog()">Change</button>
                             </div>
                             <!--
                                 The suggestion is its own block, outside the
@@ -288,31 +284,19 @@
                                     </li>
                                 </ul>
                             </div>
-                            <div t-if="state.selected and state.linkTargets.length and !state.thread.records.length"
-                                 class="o_mailpro_relink_open">
-                                <button type="button" class="btn btn-link btn-sm p-0"
-                                        t-att-aria-expanded="state.linking ? 'true' : 'false'"
-                                        t-on-click="() => state.linking = !state.linking">
-                                    <t t-if="state.linking">Cancel</t>
-                                    <t t-else="">Link to a record</t>
-                                </button>
-                            </div>
                             <!--
-                                The model first, the record second. A single
-                                picker over every model in the database would
-                                be a search box that answers with four hundred
-                                technical names; two short steps are the same
-                                two decisions, asked in the order somebody
-                                already has them.
+                                The model first, the record second, both with
+                                a search box, both in one dialog. The row of
+                                model chips this replaced was fine for the
+                                four models a database files mail on and
+                                useless for the fifth, and it left the record
+                                to Odoo's own list dialog, which opens on
+                                everything and knows nothing about who wrote.
                             -->
-                            <div t-if="state.linking" class="o_mailpro_relink d-flex align-items-center flex-wrap gap-2"
-                                 role="group" aria-label="Link this conversation to">
-                                <span class="o_mailpro_label">Link to</span>
-                                <button t-foreach="state.linkTargets" t-as="target" t-key="target.model"
-                                        type="button" class="o_mailpro_chip_button"
-                                        t-on-click="() => this.pickTarget(target)">
-                                    <span t-esc="target.label"/>
-                                </button>
+                            <div t-if="state.selected and !state.thread.records.length"
+                                 class="o_mailpro_relink_open">
+                                <button type="button" class="btn btn-link btn-sm p-0 o_mailpro_relink_toggle"
+                                        t-on-click="() => this.openLinkDialog()">Link to a record</button>
                             </div>
                             <!--
                                 Four readings of one conversation, one strip.

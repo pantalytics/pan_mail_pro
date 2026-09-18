@@ -54,11 +54,12 @@ MAX_LIMIT = 200
 # every row the reader can see, once per folder, on every click.
 COUNT_CAP = 99
 
-# How many models the "link it here" picker offers. The list is built from
-# what this database already links mail to, so it is short by construction;
-# the cap is there so a database with a long history of routing targets does
-# not turn a picker into a directory.
+# How many rows either step of the link picker hands back. Both steps have a
+# search box, so the list is the head of an answer and not the answer: a
+# database with four hundred models or ten thousand quotes shows twelve and
+# lets the reader type.
 MAX_LINK_TARGETS = 12
+MAX_LINK_CANDIDATES = 12
 
 # How much of a body the one-line preview looks at. A real mail carries a
 # signature, an inline stylesheet and the whole quoted history; the preview is
@@ -916,21 +917,38 @@ class PanMailConversation(models.AbstractModel):
         return False
 
     @api.model
-    def link_targets(self):
-        """The models mail may be linked to, for the picker.
+    def link_targets(self, search=None):
+        """Step one of the picker: which kind of record this mail belongs to.
 
-        Not every model with a chatter. The list is what this database has
-        already proved it links mail to -- the mailboxes' own routing targets
-        and the models the log has seen -- plus the contact, which is where
-        unmatched mail lands anyway. It therefore grows with use and starts
-        short, instead of being a dropdown of four hundred technical names on
-        day one.
+        What this database already links mail to comes first -- the mailboxes'
+        own routing targets and the models the log has seen, plus the contact,
+        which is where unmatched mail lands anyway. That list is the whole
+        answer on a database with a history and almost empty on a fresh one,
+        which is the day the picker is needed most, so the rest of the page is
+        filled with the other models that carry a chatter. Twelve rows either
+        way, because both steps have a search box and a list longer than the
+        dialog is a list nobody reads to the end.
 
-        `write` is the right question: putting somebody's correspondence on a
-        record is a change to that record, and a model the reader may only read
-        is not a place they may put mail.
+        A search widens to every model with a chatter, matched on its label,
+        the already-linked ones still first: a search for "lead" should offer
+        the model the log knows before the ones nobody has filed a mail on.
         """
         self._check_caller()
+        known = self._known_link_models()
+        if not search:
+            return self._link_target_rows(known + self._other_mail_models())
+
+        found = self.env['ir.model'].sudo().search([
+            ('is_mail_thread', '=', True),
+            ('transient', '=', False),
+            ('name', 'ilike', search.strip()),
+        ], limit=60).mapped('model')
+        ordered = ([name for name in known if name in found]
+                   + [name for name in found if name not in known])
+        return self._link_target_rows(ordered)
+
+    def _known_link_models(self):
+        """The models this database already files mail on, best first."""
         names = ['res.partner']
         names += self.env['pan.mail.mailbox'].sudo().search(
             [('alias_id.alias_model_id', '!=', False)]
@@ -942,8 +960,39 @@ class PanMailConversation(models.AbstractModel):
                 [('model', '!=', False)], groupby=['model'], limit=20)
             if group[0]
         ]
+        return names
 
-        targets, seen = [], set()
+    def _other_mail_models(self):
+        """The filler under what this database already links mail to.
+
+        A chatter is not enough: a mail blacklist and a scheduled action have
+        one, and offering them is how a picker turns into a directory. The
+        rule is the same one step two runs on -- the model has to know whose
+        record it is, so a `partner_id` at a contact -- which leaves quotes,
+        leads, tasks and tickets and drops the plumbing. Alphabetical, because
+        it is a list somebody scans and not a ranking we can honestly make.
+        """
+        names = self.env['ir.model'].sudo().search([
+            ('is_mail_thread', '=', True),
+            ('transient', '=', False),
+        ], order='name', limit=MAX_LINK_TARGETS * 20).mapped('model')
+        keep = []
+        for name in names:
+            if name not in self.env:
+                continue
+            field = self.env[name]._fields.get('partner_id')
+            if field and field.type == 'many2one' and field.comodel_name == 'res.partner':
+                keep.append(name)
+        return keep
+
+    def _link_target_rows(self, names):
+        """Names to picker rows, dropping what this reader may not write.
+
+        `write` is the right question: putting somebody's correspondence on a
+        record is a change to that record, and a model the reader may only
+        read is not a place they may put mail.
+        """
+        rows, seen = [], set()
         for name in names:
             if name in seen or name not in self.env:
                 continue
@@ -951,13 +1000,96 @@ class PanMailConversation(models.AbstractModel):
             Model = self.env[name]
             if not hasattr(Model, 'message_post') or not Model.has_access('write'):
                 continue
-            targets.append({
+            rows.append({
                 'model': name,
                 'label': self.env['ir.model']._get(name).name or name,
             })
-            if len(targets) >= MAX_LINK_TARGETS:
+            if len(rows) >= MAX_LINK_TARGETS:
                 break
-        return targets
+        return rows
+
+    @api.model
+    def link_candidates(self, model, search=None, partner_id=None,
+                        limit=MAX_LINK_CANDIDATES):
+        """Step two: which record of that kind.
+
+        With a search, `name_search` -- the same lookup every many2one on this
+        database uses, so a quote is found here the way people already find
+        quotes everywhere else.
+
+        Without one, the records that already belong to the correspondent.
+        That is the whole of the smart half: mail from bart@vandermolen.test,
+        on a quote, opens on Vandermolen's quotes rather than on an empty
+        search box. Two ways in, and only two: a `partner_id` pointing at a
+        contact, or an `email_from`. A model that relates to a contact through
+        anything else -- a `partner_ids`, a field of its own -- gets the most
+        recent records and the search box. Guessing at a third relation would
+        be a rule nobody could predict from the screen.
+        """
+        self._check_caller()
+        Model = self._link_model(model)
+        try:
+            limit = int(limit or MAX_LINK_CANDIDATES)
+        except (TypeError, ValueError):
+            limit = MAX_LINK_CANDIDATES
+        limit = max(min(limit, MAX_LINK_CANDIDATES), 1)
+
+        if search and search.strip():
+            found = Model.name_search(search.strip(), limit=limit)
+            return {
+                'related': False,
+                'partner': '',
+                'rows': [{'id': row[0], 'name': row[1]} for row in found],
+            }
+
+        partner = self.env['res.partner']
+        if partner_id:
+            partner = partner.browse(int(partner_id)).exists()
+        domain = self._candidate_domain(Model, partner)
+        records = Model.search(domain or [], limit=limit, order='id desc')
+        # The company, not the person who wrote: it is whose records these are,
+        # and a list of the company's quotes under one employee's name reads
+        # as a mistake.
+        family = partner.commercial_partner_id or partner
+        return {
+            'related': domain is not None,
+            'partner': family.display_name if domain is not None else '',
+            'rows': [{'id': record.id, 'name': record.display_name}
+                     for record in records],
+        }
+
+    def _link_model(self, model):
+        """The model step two may read, or an error.
+
+        `model` arrives over RPC and nothing stops a caller skipping step one,
+        so the question step one answers is asked again here: mail goes where
+        a chatter can carry it and the reader may write.
+        """
+        if not model or model not in self.env:
+            raise AccessError(_("Mail cannot be linked to %s.", model))
+        Model = self.env[model]
+        if not hasattr(Model, 'message_post') or not Model.has_access('write'):
+            raise AccessError(_("Mail cannot be linked to %s.", model))
+        return Model
+
+    def _candidate_domain(self, Model, partner):
+        """What this correspondent already has on that model, or nothing.
+
+        `child_of` the commercial partner rather than the partner itself: mail
+        from one employee is about the company's quotes, and a contact person
+        rarely carries the records.
+        """
+        if not partner:
+            return None
+        family = partner.commercial_partner_id or partner
+        if Model._name == 'res.partner':
+            return [('id', 'child_of', family.id)]
+        field = Model._fields.get('partner_id')
+        if field and field.type == 'many2one' and field.comodel_name == 'res.partner':
+            return [('partner_id', 'child_of', family.id)]
+        if 'email_from' in Model._fields and partner.email:
+            return [('email_from', 'ilike', partner.email)]
+        return None
 
     def _next_for(self, company):
         """This customer's open activities, soonest first.

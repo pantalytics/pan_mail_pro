@@ -135,10 +135,12 @@
             'pan_mail_pro/static/src/js/connect_banner.js',
             'pan_mail_pro/static/src/js/conversation_view/use_panes.js',
             'pan_mail_pro/static/src/js/conversation_view/use_composer.js',
+            'pan_mail_pro/static/src/js/conversation_view/link_dialog.js',
             'pan_mail_pro/static/src/js/conversation_view/conversation_view.js',
             'pan_mail_pro/static/src/xml/mailbox_list_view.xml',
             'pan_mail_pro/static/src/xml/connect_banner.xml',
             'pan_mail_pro/static/src/xml/conversation_view.xml',
+            'pan_mail_pro/static/src/xml/link_dialog.xml',
         ],
     },
     'images': [
