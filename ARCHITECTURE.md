@@ -211,7 +211,7 @@ of the comment one and no recipients, so the screen still writes in exactly
 one place. The strip steps aside while somebody is writing: the pane has one
 job then, and a tab click would drop the draft.
 
-19.0.12.5.0 gives each tab one writing action instead of both: Reply on Mail,
+19.0.12.6.0 gives each tab one writing action instead of both: Reply on Mail,
 Log note on Everything, and neither on Files or Activities, which are lists.
 Each action sits on the tab that shows what it produces, so nothing has to be
 moved after saving -- a note used to be written in Mail, where a note is not
