@@ -314,14 +314,35 @@ class Checks:
 
         # ...and the form's own statusbar buttons stay out of it. A filled
         # "Convert to Opportunity" in the fourth pane is a louder button than
-        # Reply, on a screen whose one job is replying. The chatter's own
-        # composer stays: it is how you log an internal note, and it is the
-        # control people already know from every other Odoo screen.
+        # Reply, on a screen whose one job is replying.
         loud = [b for b in page.query_selector_all(
             '.o_mailpro_record .o_form_statusbar button') if b.is_visible()]
         if loud:
             self.fail('the record pane shows %d form buttons beside Reply'
                       % len(loud))
+
+        # The chatter goes with them. Two composers a divider apart is the
+        # thing the tab strip replaced, and the one that loses is the one
+        # that cannot thread a reply. Visibility rather than presence: it is
+        # hidden with CSS, so it still mounts -- what must not happen is that
+        # somebody sees it or tabs into it.
+        chatter = [el for el in page.query_selector_all(
+            '.o_mailpro_record .o-mail-Form-chatter, '
+            '.o_mailpro_record .o-mail-Chatter') if el.is_visible()]
+        if chatter:
+            self.fail('the record pane still shows a chatter')
+
+        # The four readings of a conversation, in one strip over pane 3.
+        tabs = [el.inner_text().split('\n')[0].strip()
+                for el in page.query_selector_all('.o_mailpro_tab')]
+        if tabs != ['Mail', 'Everything', 'Files', 'Activities']:
+            self.fail(f'the tab strip reads {tabs}')
+        else:
+            for name in ('Everything', 'Files', 'Activities', 'Mail'):
+                tab = page.query_selector(f'.o_mailpro_tab:has-text("{name}")')
+                tab.click()
+                page.wait_for_timeout(900)
+                self.error_free(f'the {name} tab')
 
         # The screen's one primary action. A reader-only inbox is half a
         # product, and this is the click that proves it is not one.
@@ -390,6 +411,35 @@ class Checks:
             left_open = self.dialog_in_the_way()
             if left_open:
                 self.fail(f'a dialog was left over the Inbox: {left_open}')
+
+        # Log note is the other half of "this screen writes in one pane". It
+        # is the same composer with the note subtype, so the thing to prove is
+        # that it lands in the pane too and says what it will do: a button
+        # reading Send over a note is how somebody mails a customer their own
+        # internal margin.
+        note = page.query_selector('.o_mailpro_thread_head button:has-text("Log note")')
+        if not note:
+            self.fail('there is no way to log a note')
+        else:
+            note.click()
+            try:
+                page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+            except Exception:
+                self.fail('Log note opened no composer in the conversation pane')
+            else:
+                page.wait_for_timeout(600)
+                over_the_note = self.dialog_in_the_way()
+                if over_the_note:
+                    self.fail(f'a dialog opened over the note: {over_the_note}')
+                if not page.query_selector(
+                        '.o_mailpro_thread_head button:has-text("Log")'):
+                    self.fail('the note is sent by a button that says Send')
+                discard = page.query_selector(
+                    '.o_mailpro_thread_head button:has-text("Discard")')
+                if discard:
+                    discard.click()
+                    page.wait_for_selector('.o_mailpro_messages', timeout=15000)
+                    page.wait_for_timeout(600)
 
         self.panes()
 

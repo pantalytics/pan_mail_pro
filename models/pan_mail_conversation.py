@@ -114,9 +114,9 @@ class PanMailConversation(models.AbstractModel):
     def _base_domain(self, mailbox_id=None, partner_id=None, search=None):
         """Emails this user may read, optionally narrowed to one mailbox.
 
-        `message_type = 'email'` is what keeps internal notes out of a screen
-        that is about correspondence. Notes are still visible where they
-        belong, in the chatter one pane to the right.
+        `message_type = 'email'` is what keeps internal notes out of the list
+        and out of the Mail tab. They are one tab away, in Everything, which
+        is where the chatter's history went when the record pane lost it.
         """
         domain = [('message_type', '=', 'email')]
         if mailbox_id:
@@ -298,13 +298,20 @@ class PanMailConversation(models.AbstractModel):
 
     @api.model
     def read_conversation(self, model, res_id, mailbox_id=None,
-                          message_id=None, limit=50, offset=0):
-        """The messages of one conversation, oldest last, with its records.
+                          message_id=None, limit=50, offset=0, scope='mail'):
+        """One conversation, and everything the four tabs over it draw.
 
-        `records` is the chip row: every record this thread touched, newest
-        first. `rejected` is what the matcher considered and turned down, and
-        it is only looked up when nothing was filed, because that is the only
-        case anybody wants to read it.
+        `messages` is the thread, oldest last. `records` is the chip row:
+        every record this thread touched, newest first. `rejected` is what the
+        matcher considered and turned down, and it is only looked up when
+        nothing was filed, because that is the only case anybody wants to read
+        it. `files` and `activities` are the two other lists.
+
+        `scope` is which reading of the thread the reader asked for: `mail` is
+        the correspondence and nothing else, `all` interleaves the internal
+        notes and the record's own events. It changes `messages` and nothing
+        else -- a tab count that moves when you open another tab reads as a
+        bug -- so `files` and `activities` are the same on every tab.
 
         An unfiled conversation has no record to key on, so it is addressed by
         `message_id` instead.
@@ -312,26 +319,37 @@ class PanMailConversation(models.AbstractModel):
         self._check_caller()
         limit, offset = self._page(limit, offset, default=50)
         Message = self.env['mail.message']
-        domain = self._base_domain(mailbox_id)
+        base = self._base_domain(mailbox_id)
         if model:
-            domain += [('model', '=', model), ('res_id', '=', res_id)]
+            target = [('model', '=', model), ('res_id', '=', res_id)]
+            domain = Domain(base + target)
+            if scope == 'all':
+                # A note and a stage change belong to the record, not to a
+                # mailbox, and carry no direction. Running them through the
+                # correspondence clauses would empty the tab that exists to
+                # show them.
+                domain = Domain.OR([domain, Domain(
+                    target + [('message_type', 'in', ('comment', 'notification'))])])
         elif message_id:
-            domain += [('id', '=', int(message_id))]
+            domain = Domain(base + [('id', '=', int(message_id))])
         else:
             # `= 0` does not match a NULL res_id, so an unfiled conversation
             # asked for by key rather than by message has to say False.
-            domain += [('model', '=', False), ('res_id', '=', False)]
+            domain = Domain(base + [('model', '=', False), ('res_id', '=', False)])
 
         # Newest N, shown oldest first: the page you want is the end of the
         # thread, and the order you read it in is downwards.
         messages = Message.search(
             domain, order='date desc, id desc', limit=limit, offset=offset,
         )
+        records = self._records_for(messages)
         return {
             'messages': [self._message_row(m)
                          for m in messages.sorted(lambda m: (m.date, m.id))],
-            'records': self._records_for(messages),
+            'records': records,
             'rejected': [] if model else self._rejected_for(messages),
+            'files': self._files_for(model, res_id, messages),
+            'activities': self._activities_for(records),
         }
 
     @api.model
@@ -575,8 +593,9 @@ class PanMailConversation(models.AbstractModel):
         }
 
     def _message_row(self, message):
-        return {
+        row = {
             'id': message.id,
+            'kind': self._kind_of(message),
             'date': message.date,
             'subject': message.subject or '',
             'author': message.author_id.display_name or message.email_from or '',
@@ -589,6 +608,100 @@ class PanMailConversation(models.AbstractModel):
             'mailbox': message.x_mailbox_id.email or '',
             'recipients': message.partner_ids.mapped('display_name'),
         }
+        if row['kind'] == 'event':
+            # A record event usually has no body at all: what happened is in
+            # the tracking values, and without them the row is a blank line.
+            row['tracking'] = self._tracking_rows(message)
+        return row
+
+    def _kind_of(self, message):
+        """Mail, an internal note, or something the record did to itself.
+
+        Direction decides first. A reply this module sent through the chatter
+        is a `comment` that went out over the wire, and calling it a note
+        would put correspondence behind the "internal" marker -- which is the
+        one mistake on this screen a customer eventually reads about.
+        """
+        if message.x_direction or message.message_type == 'email':
+            return 'mail'
+        if message.message_type == 'notification':
+            return 'event'
+        return 'note'
+
+    def _tracking_rows(self, message):
+        """What changed, in three strings the client draws on one line.
+
+        No `sudo()`: Odoo hides the tracking of a field the reader may not see
+        by hiding the row, and that is the answer this screen wants too.
+        """
+        rows = []
+        for value in message.tracking_value_ids:
+            rows.append({
+                'field': value.field_id.field_description or value.field_id.name or '',
+                'old': self._tracking_text(value, 'old'),
+                'new': self._tracking_text(value, 'new'),
+            })
+        return rows
+
+    def _tracking_text(self, value, side):
+        """One side of a tracked change, whichever typed column holds it."""
+        for suffix in ('char', 'text', 'datetime', 'date',
+                       'monetary', 'float', 'integer'):
+            name = f'{side}_value_{suffix}'
+            if name not in value._fields:
+                continue
+            raw = value[name]
+            if raw is False or raw is None or raw == '':
+                continue
+            return str(raw)
+        return ''
+
+    def _files_for(self, model, res_id, messages):
+        """Every attachment on this conversation, newest first.
+
+        Read from the record rather than from the messages on screen, so the
+        number beside the tab is the same whichever tab is open.
+        """
+        if model:
+            source = self.env['mail.message'].search(
+                [('model', '=', model), ('res_id', '=', res_id),
+                 ('attachment_ids', '!=', False)],
+                order='date desc, id desc', limit=50,
+            )
+        else:
+            source = messages.sorted(lambda m: (m.date or datetime.min, m.id),
+                                     reverse=True)
+        rows = []
+        for message in source:
+            for attachment in message.attachment_ids:
+                rows.append({
+                    'id': attachment.id,
+                    'name': attachment.name or _('Attachment'),
+                    'mimetype': attachment.mimetype or '',
+                    'size': attachment.file_size or 0,
+                    'date': message.date,
+                    'author': (message.author_id.display_name
+                               or message.email_from or ''),
+                })
+        return rows
+
+    def _activities_for(self, records):
+        """What is still open on the records this conversation touched.
+
+        The chip row has already been through `_filtered_access`, so this asks
+        about records the reader may open and no others.
+        """
+        by_model = {}
+        for row in records:
+            by_model.setdefault(row['model'], []).append(row['res_id'])
+        activities = self.env['mail.activity']
+        for model, ids in by_model.items():
+            activities |= activities.search(
+                [('res_model', '=', model), ('res_id', 'in', ids)],
+                order='date_deadline asc', limit=20,
+            )
+        return self._activity_rows(
+            activities.sorted(lambda a: a.date_deadline or datetime.max.date())[:20])
 
     def _records_for(self, messages):
         """Every record this conversation touched, newest first.
@@ -714,13 +827,17 @@ class PanMailConversation(models.AbstractModel):
         which put somebody else's stock count under a customer's
         correspondence.
         """
-        activities = self.env['mail.activity'].search(
+        return self._activity_rows(self.env['mail.activity'].search(
             [('res_model', '=', 'res.partner'), ('res_id', '=', company.id)],
             order='date_deadline asc', limit=5,
-        )
+        ))
+
+    def _activity_rows(self, activities):
+        """One shape for an open activity, wherever it is listed."""
         return [{
             'id': activity.id,
             'summary': activity.summary or activity.activity_type_id.name or '',
+            'type': activity.activity_type_id.name or '',
             'deadline': activity.date_deadline,
             'state': activity.state,
             'user': activity.user_id.display_name or '',
