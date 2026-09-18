@@ -5,7 +5,10 @@ the conversation list, the thread and the record pane, reading through
 `pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
 Still on paper: the *screens* for door 1 (the chatter's own button and its
 more-messages-elsewhere line) and for the customer view and its timeline. Their
-read methods shipped and are tested, so what is left of each is markup.
+read methods shipped and are tested, so what is left of each is markup. Also on
+paper, and decided in this document rather than built: the tab strip over the
+thread, the composer that replaces the record pane's chatter, and the To/Cc
+block that goes with it.
 
 Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
 the inbox, an unfiled conversation, the model, the chatter with its door to the
@@ -41,9 +44,11 @@ The screen is four panes:
 3. **The thread.** Messages in order, quoted history collapsed, and a reply that
    goes out through the right mailbox with the conversation quoted underneath.
    That last part is a survey complaint in its own right: today each chatter
-   reply reaches the customer as a standalone mail.
-4. **The record.** The quote, ticket or invoice the thread is filed on, with its
-   chatter. This is the pane a mail client cannot have, and the reason to read
+   reply reaches the customer as a standalone mail. This is also the only pane
+   you write in; see [Writing happens in one pane](#writing-happens-in-one-pane).
+4. **The record.** The quote, ticket or invoice the thread is filed on. Its
+   fields, its status bar and its buttons -- not its chatter, which pane 3 now
+   is. This is the pane a mail client cannot have, and the reason to read
    mail here rather than in Outlook. It is not, however, a pane nobody else
    has: see [the competition](../research/competition.md), where a paid module
    already advertises chatter sync with document links and a free one ships the
@@ -60,36 +65,99 @@ rejected, with a one-click way to file it. An unfiled conversation is the case
 that decides whether people trust the screen, so it gets a designed state rather
 than an empty panel.
 
-### Notes in the thread
+### Writing happens in one pane
 
-**Notes are interleaved in pane 3, always, and there is no toggle.** A note
-about a mail is a reply that did not go out. It belongs under the message it
-answers, not one pane to the right and out of order. A toggle would mean the
-default is wrong for half the people using it, and that both shapes have to be
-built, styled and kept honest forever.
+**The record pane shows the record, never its chatter. Pane 3 is the only
+place on this screen where you write anything.**
 
-What comes in: `message_type = 'comment'` on the records the conversation is
-filed on, from the thread's first message onward, sorted with the mail by date.
-Drawn apart from correspondence, not as another bubble: indented, marked
-internal, no recipient line. **A note is never quoted in a reply.** That is the
-one part of this which is a test rather than a convention, because it is the
-failure a customer sees.
+Until 19.0.10 the fourth pane mounted the whole form, chatter included, so the
+screen offered two composers a divider apart. They are not the same composer:
+pane 3's reply threads under the message it answers and addresses the people
+who were on it, the chatter's does neither. That is the exact record-centric
+limitation this screen exists to fix, so the chatter is what loses.
 
-What stays out of pane 3: tracking values, activity system messages and every
-other `message_type = 'notification'` row. Those are record history, not
-conversation, and the record pane already shows them.
+What the chatter carried still has to live somewhere. It is four things, and
+they split two and two.
 
-The record pane keeps the whole chatter, unchanged, so nothing this filter
-drops becomes unreachable. Writing a note happens in the thread's own composer,
-which gets the two modes the chatter has: Send and Log note.
+**A tab strip above the thread, four positions, one control.**
 
-The cost, said out loud: a record carrying two conversations shows its notes in
-both. That is right more often than the alternative, which is a note visible on
-only one of the threads it was written about.
+| Tab | What it shows |
+|---|---|
+| **Mail** | `message_type = 'email'`. The correspondence, nothing else. The default |
+| **Everything** | The same thread with internal notes and record events interleaved by date |
+| **Files (n)** | Every attachment on the conversation's messages, newest first |
+| **Activities (n)** | `mail.activity` on the records this conversation touched, with Schedule |
 
-An earlier draft put this on a tab of the contact form. It was rejected in
-review for the right reason: nobody recognises that interface. The customer view
-is still reachable, as the same list filtered to one company.
+Mail and Everything are two readings of one list; Files and Activities are two
+other lists. One strip rather than a toggle plus a tab bar, because two pieces
+of chrome over one pane is chrome competing with content. The count is only
+drawn when it is not zero.
+
+The tab is the reader's, stored in the browser next to the pane widths, and it
+is per person rather than per conversation.
+
+**In Everything**: notes are drawn apart from correspondence -- indented,
+marked internal, no recipient line. Record events (tracking values and the
+rest of `message_type = 'notification'`) are one line each, never a card: *Stage:
+New -> Qualified, Jan, Tuesday*. **A note is never quoted in a reply**, which
+is the one part of this that is a test rather than a convention, because it is
+the failure a customer sees.
+
+This reverses what this document said before, and the reversal has a reason.
+The earlier decision was "notes are interleaved always, and there is no
+toggle", which was right while the chatter stayed in pane 4 as the complete
+history. Once pane 3 is the only surface it has to carry both readings:
+somebody clearing forty mails should not read forty stage changes on the way,
+and somebody catching up on one deal wants all of it. A mode is the cheap way
+to serve both; two built screens would not have been.
+
+**Record buttons stay on the record.** Confirm, Create Invoice, Convert to
+Opportunity: those are pane 4's remaining job and they belong next to the
+fields they change. One primary action per screen still holds -- pane 3's Send
+is the primary one, and 19.0.10.0.0 already demoted the statusbar's button row
+for saying otherwise.
+
+### To, Cc, Bcc, and the followers
+
+The composer is Odoo's own `mail.compose.message`, extended. A composer of our
+own would be a second implementation of templates, attachments, the Send From
+dropdown and `message_post`, drifting from the day it shipped.
+
+It has the two modes the chatter has, and **the visible difference between
+them is the recipient block appearing and disappearing.** That is the whole
+teaching: one of these reaches the customer, the other does not.
+
+**Send.**
+
+- **To** -- the author of the newest inbound message in this conversation.
+  Editable.
+- **Cc** -- that message's other recipients, minus our own mailbox address.
+  Editable. It travels as `mail.mail.email_cc`, which all three provider
+  clients already put on the wire. This is the survey complaint *"geen cc
+  zichtbaarheid bij ontvanger, veroorzaakt veel verwarring"* answered directly:
+  the customer can see who else is on the thread because those people are
+  addressees, not followers.
+- **Followers** -- a separate line underneath, never merged into To or Cc:
+  *Also notified in Odoo: Jan, Piet (+2)*. Read-only here; followers are
+  managed on the record, in pane 4, where the list belongs.
+
+**Log note.** No To, no Cc, no followers line. The note reaches the record's
+followers through Odoo's own note subtype, exactly as the chatter does. A
+recipient row on a note is what makes people believe a note is an email.
+
+**Nobody is subscribed by this screen.** `message_post` is called without
+`mail_post_autofollow`, and a Cc'd address goes out as an address rather than
+as a `partner_ids` entry. That is the other survey complaint -- *"the automatic
+adding of followers creates complications"* -- and it is the position this
+document already took, now with a field to hang it on.
+
+**Bcc is the case we drop.** It is not built and it is not coming back as a
+composer field. `mail.mail` has no Bcc, `normalize_headers()` refuses one off
+the wire, and two tests in `test_provider_contract.py` pin both absences on
+purpose (19.0.6.3.0). A field that exists leaks eventually -- through an
+export, the API, a report or a template -- and no respondent asked for one.
+Somebody who needs a blind copy has a mail client. If Bcc ever arrives it
+arrives as a design change with a reason, not as a third input on a form.
 
 ## What Odoo already has
 
@@ -212,11 +280,11 @@ today.
   messages elsewhere." That is the case worth an interruption. When everything
   is already on the chatter, the line would be noise and is not drawn.
 
-### Door 2: from the mail to the chatter
+### Door 2: from the mail to the record
 
-The fourth pane is the record and its chatter, live, not a summary: the same
-form Odoo renders, with its own buttons. Two things make it a door rather than
-a preview.
+The fourth pane is the record itself, live, not a summary: the same form Odoo
+renders, with its own fields and its own buttons, and without the chatter --
+pane 3 is the chatter now. Two things make it a door rather than a preview.
 
 - **A breadcrumb** that opens the record full screen, which is where you go to
   actually change something.
@@ -285,8 +353,8 @@ The company, not the person. A conversation with `jan@acme.com` and
   instead, so it cannot be wrong.
 - **Team-inbox machinery**: assignment, SLA timers, collision detection, a chat
   per thread. That is Missive and Chatwoot, and three of the 28 respondents have
-  already bought one. The chatter already holds the internal conversation, one
-  pane to the right.
+  already bought one. The internal conversation already has a home: the notes
+  in the Everything tab, one composer, same pane.
 
 An inbox does earn the app tile that 19.0.7.0.0 took away, by that release's own
 test: a tile is a promise about how often a screen is opened, and this one is
