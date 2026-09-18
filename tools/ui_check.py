@@ -542,20 +542,54 @@ class Checks:
         if '%' in text or '0.6' in text:
             self.fail(f'the suggestion shows a score: "{text}"')
 
-        # The picker is two steps, and the first one is closed until asked.
-        if page.query_selector('.o_mailpro_relink'):
-            self.fail('the model picker is open on a screen nobody asked')
+        # The picker: two steps, each a search box over a list, and nothing
+        # on screen until somebody asks for it. Worth a browser because both
+        # steps are an RPC per keystroke and a Python test sees neither the
+        # dialog nor the step it leaves behind.
+        if page.query_selector('.o_mailpro_link_dialog'):
+            self.fail('the link picker is open on a screen nobody asked')
         opener = page.query_selector('.o_mailpro_relink_toggle')
         if not opener:
             self.fail('a linked conversation offers no way to change where it went')
-        else:
-            opener.click()
-            page.wait_for_timeout(400)
-            targets = page.query_selector_all('.o_mailpro_relink .o_mailpro_chip_button')
-            if not targets:
-                self.fail('the model picker opened with nothing in it')
-            opener.click()
-            page.wait_for_timeout(400)
+            return
+        opener.click()
+        page.wait_for_timeout(800)
+        dialog = page.query_selector('.o_mailpro_link_dialog')
+        if not dialog:
+            self.fail('the link picker did not open')
+            return
+        if not dialog.query_selector('.o_mailpro_link_search'):
+            self.fail('step one of the picker has no search box')
+        models = dialog.query_selector_all('.o_mailpro_link_row')
+        if not models:
+            self.fail('step one of the picker opened with nothing in it')
+            return
+        self.shot('inbox-link-models.png')
+
+        # Step two: the records of the model just picked, seeded from the
+        # correspondent. Seeded, so the list must not be empty before anybody
+        # has typed -- an empty second step is the bug this replaced.
+        models[0].click()
+        page.wait_for_timeout(1200)
+        if not dialog.query_selector('.o_mailpro_link_search'):
+            self.fail('step two of the picker has no search box')
+        if not dialog.query_selector('.o_mailpro_link_back'):
+            self.fail('step two of the picker cannot go back to the models')
+        if not dialog.query_selector_all('.o_mailpro_link_row'):
+            self.fail('step two opened empty instead of on the correspondent')
+        self.shot('inbox-link-records.png')
+
+        # Typing searches rather than filtering what is drawn: a term that
+        # matches nothing has to reach the server and come back empty.
+        page.fill('.o_mailpro_link_search', 'zzzzgeenmatch')
+        page.wait_for_timeout(1500)
+        if dialog.query_selector_all('.o_mailpro_link_row'):
+            self.fail('the record search answers rows for a term nothing matches')
+        page.keyboard.press('Escape')
+        page.wait_for_timeout(400)
+        if page.query_selector('.o_mailpro_link_dialog'):
+            self.fail('the link picker does not close')
+        self.error_free('opening the link picker')
 
         self.shot('inbox-unlinked.png')
 

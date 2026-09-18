@@ -27,7 +27,7 @@ import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
-import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
+import { LinkDialog } from "./link_dialog";
 import { useComposer, ComposerForm } from "./use_composer";
 
 const PAGE = 30;
@@ -187,11 +187,6 @@ export class ConversationView extends Component {
             open: {},
             quotes: {},
             showRejected: false,
-            // The model row of the link picker. Closed unless somebody asked
-            // to link something, because on a correctly linked thread it is
-            // an answer to a question nobody has.
-            linking: false,
-            linkTargets: [],
             search: "",
         });
 
@@ -203,7 +198,6 @@ export class ConversationView extends Component {
 
         onWillStart(async () => {
             await this.loadMailboxes();
-            await this.loadLinkTargets();
             await this.refresh();
         });
     }
@@ -340,7 +334,6 @@ export class ConversationView extends Component {
         this.composer.close();
         this.state.selected = conversation;
         this.state.showRejected = false;
-        this.state.linking = false;
         // Nothing from the previous thread stays under the new subject.
         this.state.thread = EMPTY_THREAD();
         this.state.open = {};
@@ -827,23 +820,6 @@ export class ConversationView extends Component {
 
     // --------------------------------------------------------------- linking
 
-    /**
-     * What mail may be linked to. Read once: it is the shape of this
-     * database, not of the conversation on screen, and it changes about as
-     * often as a mailbox is configured.
-     */
-    async loadLinkTargets() {
-        try {
-            this.state.linkTargets = await this.orm.call(
-                "pan.mail.conversation", "link_targets", []
-            );
-        } catch (error) {
-            // A picker nobody can open is better than an inbox that does not
-            // load. Linking stays unavailable and everything else works.
-            console.warn("[Mail Pro] could not read link targets", error);
-        }
-    }
-
     /** Take the suggestion the matcher made. One click, the common case. */
     async acceptSuggestion() {
         const suggestion = this.state.thread.suggestion;
@@ -853,22 +829,17 @@ export class ConversationView extends Component {
     }
 
     /**
-     * Pick a record on a model, through Odoo's own list-and-search dialog.
-     * Creating from here is off: linking is about where mail belongs, and a
-     * record invented to hold it is a different decision.
+     * Open the picker: the kind of record, then the record, both searchable.
+     *
+     * It gets the correspondent so the second step can open on their own
+     * records instead of an empty search box. `pan.mail.conversation` decides
+     * what that means; this only hands over who is on the thread.
      */
-    pickTarget(target) {
-        this.state.linking = false;
-        this.dialog.add(SelectCreateDialog, {
-            resModel: target.model,
-            title: _t("Link this conversation to a %s", target.label),
-            multiSelect: false,
-            noCreate: true,
-            onSelected: (resIds) => {
-                if (resIds.length) {
-                    this.linkTo(target.model, resIds[0]);
-                }
-            },
+    openLinkDialog() {
+        this.dialog.add(LinkDialog, {
+            partnerId: this.state.selected?.partner_id || false,
+            correspondent: this.state.selected?.correspondent || "",
+            onSelect: (model, resId) => this.linkTo(model, resId),
         });
     }
 
@@ -907,7 +878,6 @@ export class ConversationView extends Component {
         this.state.selected = {
             ...this.state.selected, model: linked.model, res_id: linked.res_id,
         };
-        this.state.linking = false;
         await this.refresh({ keepSelection: true });
         if (this.state.selected && this.state.selected.model === linked.model
             && this.state.selected.res_id === linked.res_id) {
