@@ -31,50 +31,126 @@ second number is the one the heartbeat gives us.
 
 ## The Microsoft app
 
-Odoo Online ships its own Azure app and nobody there ever sees the portal;
-self-hosted customers register one each, and that is the friction. We do what
-Odoo Online does.
+Odoo's own Outlook connector makes every customer register an Azure app, on
+Odoo Online as much as on a server of their own. HubSpot and Pipedrive do not:
+they own one app and the customer presses Sign in. We do the second thing.
+
+Checked against Microsoft's documentation on 2026-09-18; the pages are listed
+at the end of this section.
 
 ### Shape
 
-- **One multi-tenant Entra app**, owned by Pantalytics, registered as a
-  *public client* (the "Mobile and desktop applications" platform). Public
-  client means **no client secret**: the module carries only the client id,
-  and the token exchange is protected by PKCE instead of a secret. A secret
-  in a public repo is no secret; PKCE needs none.
+- **One multi-tenant Entra app**, owned by Pantalytics, sign-in audience
+  "Accounts in any organizational directory". No personal accounts: a mailbox
+  we sync is a work mailbox, and the personal audience brings tighter
+  redirect rules for nothing.
+- **A public client, so no client secret.** The redirect URI is registered on
+  the *Mobile and desktop applications* platform, which is what Microsoft
+  calls a public client; a custom `https://` URI is allowed there. A public
+  client must not send a secret when it redeems a code (Microsoft refuses one
+  with AADSTS700025), and PKCE takes the secret's place. A secret in a public
+  repo is no secret; PKCE needs none.
 - **The redirect URI is ours**, one page on `app.mailpro.pantalytics.com`.
-  Azure only redirects to a URI on the app's list, and a list of every
-  customer's Odoo URL is the setup pain we are removing. The page reads the
-  Odoo callback URL out of `state` and 302s the browser there with the code.
-  It stores nothing and sees nothing usable: the code is worthless without
-  the PKCE verifier, which only the customer's Odoo holds.
+  Azure sends the code only to a URI on the app's list, the list holds 256 at
+  most, and a list of every customer's Odoo URL is the setup pain we are
+  removing. Microsoft's own answer to "many subdomains, one app" is a shared
+  redirect plus `state`, with one warning: do not put the destination URL in
+  `state`, or the page is an open redirector. So `state` carries the
+  installation id and Odoo's CSRF nonce, and the page looks the Odoo URL up
+  in `mailpro_installations`, where Connect to Pantalytics registered it. It
+  redirects nowhere it does not already know, which also makes "Connect
+  first" a mechanism rather than a rule. It stores nothing and sees nothing
+  usable: the code is worthless without the PKCE verifier, which only the
+  customer's Odoo holds.
 - **Odoo does the token exchange itself**, against Microsoft, with the
-  verifier. Refresh runs the same way, straight from Odoo to Microsoft. Our
-  site is a hop during sign-in and nothing afterwards: if it is down, nobody
-  new can sign in and everybody connected keeps working. No token, refresh or
-  access, ever touches a Pantalytics server.
-- **Consent is one click.** The admin opens the tenant-wide consent link,
-  `login.microsoftonline.com/common/adminconsent?client_id=...`, and grants
-  the same delegated scopes `graph_client.py` asks for today. After that any
-  user presses Sign in with Microsoft. Callback URL, tenant id, secret and the
-  permissions list all disappear from the customer's side.
+  verifier and no secret. Refresh runs the same way, straight from Odoo to
+  Microsoft. Our site is a hop during sign-in and nothing afterwards: if it is
+  down, nobody new can sign in and everybody connected keeps working. No
+  token, refresh or access, ever touches a Pantalytics server.
+- **Consent, two paths, the cheap one first.** In a tenant with default
+  settings a user may consent to mail permissions themselves, and Sign in
+  with Microsoft is the whole step. Where the tenant reserves that for an
+  admin (the "verified publishers, low impact only" policy leaves
+  `Mail.ReadWrite` out, and many tenants disable user consent outright),
+  Microsoft answers the sign-in with "needs admin approval", and only then
+  does the provider form show the admin consent link:
+  `login.microsoftonline.com/organizations/v2.0/adminconsent` with our
+  client id, the scopes and the same redirect page. `organizations`, never
+  `common`. Approval comes back to the redirect page as `admin_consent=True`,
+  which it forwards to Odoo like a code.
 - **Bring your own app stays**, one level down on the provider form, for the
-  IT department that requires it. It is the same code path with a different
-  client id, a secret and a per-customer redirect, and it is the fallback if
-  our app ever goes away.
+  IT department that requires it. Same code path, a different client id, a
+  secret and a per-customer redirect, and the fallback if our app ever goes
+  away.
 
-### What it costs us, once
+### The one cost of a public client
 
-- **Publisher verification** on the app: an MPN id and a verified domain.
-  Without it Microsoft blocks consent to a multi-tenant app from any tenant
-  but our own.
-- The bounce page in mail-pro-admin, and a `state` format the two sides agree
-  on: the Odoo callback URL plus the nonce Odoo already uses for CSRF.
-- In `graph_client.py`: PKCE on the authorize and token calls, a token exchange
-  that sends no secret when the provider row is the Pantalytics app, and the
-  `AUTH_URL` tenant as `organizations` instead of the customer's tenant id.
-- The provider form: a "Sign in with Microsoft" default that needs no fields,
-  with "Use my own app registration" under it.
+Microsoft revokes a public client's refresh token when the user changes
+their password; a confidential client's survives. So a user who changes their
+Microsoft password sees the "connect your mailbox" banner again and presses
+one button. Bring-your-own keeps the old behaviour. Accepted: a password
+change is rare and the banner already exists.
+
+Refresh tokens otherwise live 90 days from their last use and renew on every
+use. The daily sync keeps them alive.
+
+### Configuring the app, step by step
+
+Once, in the Pantalytics tenant. Roles needed: Application Administrator in
+Entra, admin on the Partner Center account, signed in with MFA.
+
+1. **Register.** Entra admin center, App registrations, New registration.
+   Name `Mail Pro by Pantalytics`. Supported account types: *Accounts in any
+   organizational directory (Any Microsoft Entra ID tenant, Multitenant)*.
+   Leave the redirect URI empty here.
+2. **Redirect.** Authentication, Add a platform, *Mobile and desktop
+   applications*, Custom redirect URIs:
+   `https://app.mailpro.pantalytics.com/oauth/microsoft`. Do not add a Web
+   platform and do not create a client secret; either turns the app into a
+   confidential client for that redirect. *Allow public client flows* can
+   stay off: it is for flows without a redirect (device code, ROPC).
+3. **Permissions.** API permissions, Microsoft Graph, Delegated:
+   `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Mail.ReadWrite.Shared`,
+   `Mail.Send.Shared`, `offline_access`. The same list `graph_client.py`
+   requests today, so the admin consent link with `/.default` covers exactly
+   these. Grant admin consent for the Pantalytics tenant to test against our
+   own mailboxes.
+4. **Branding.** Branding & properties: logo, home page, terms of service and
+   privacy statement URLs, and **publisher domain** `pantalytics.com`. The
+   consent screen shows all of it, and step 5 requires the domain.
+5. **Publisher verification.** Free, minutes once the prerequisites hold.
+   Prerequisites: a Microsoft AI Cloud Partner Program (formerly MPN) account
+   that has completed Partner Center's verification, its **Partner One ID**
+   for the partner global account (not a location id), the app registered by
+   a work account in a tenant tied to that partner account, and the
+   verification email's domain equal to the publisher domain or a
+   DNS-verified custom domain on the tenant. Then Branding & properties, *Add
+   Partner ID to verify publisher*, enter the id, Verify and save. Without
+   the badge, users in other tenants cannot consent to a multi-tenant app
+   registered after November 2020; admins still can. So the badge is what
+   makes the no-admin path exist.
+6. **Test from mailpro-dev.** The redirect is ours, not the instance's, so
+   the same app serves dev, staging and every customer without another
+   redirect URI. A staging copy of the redirect page would need one; there
+   are 255 left.
+
+### What changes in the code
+
+- `graph_client.py`: PKCE (`code_challenge` S256 on authorize,
+  `code_verifier` on the token call); the verifier stored next to
+  `x_pan_mail_oauth_state` on the user for the one round trip; no
+  `client_secret` on either token call when the provider row is the
+  Pantalytics app; `organizations` as the tenant in both URLs.
+- `pan.mail.provider`: a mode, `pantalytics` or `own`. The first has a
+  constant client id and no fields; the second is the form as it is today.
+- `controllers/main.py`: the callback also accepts `admin_consent=True` and
+  records that the tenant consented.
+- `pan.mail.license`: the heartbeat carries `web.base.url`, so a moved
+  database moves its redirect with it.
+- mail-pro-admin: `GET /oauth/microsoft`, the redirect page. Reads
+  `state`, looks the installation up, 302s to
+  `<odoo_url>/microsoft_oauth/callback` with the query string intact. Unknown
+  installation: a plain error page, no redirect. No session, no storage.
 
 ### Not Google, not yet
 
@@ -82,6 +158,26 @@ The Gmail scopes the module needs are *restricted* scopes. A shared Google
 app with those scopes needs Google's verification plus a yearly CASA security
 assessment, paid. Google Workspace stays bring-your-own until there are
 enough Google customers to make that a line item. IMAP/SMTP has no app at all.
+
+### Sources
+
+- [Redirect URI restrictions](https://learn.microsoft.com/en-us/entra/identity-platform/reply-url):
+  256 URIs, https only, the shared redirect plus `state` pattern and its
+  open-redirect warning
+- [Auth code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow):
+  PKCE parameters, "public clients must not use secrets", `organizations`
+- [Adding a redirect URI](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri):
+  custom URIs on the Mobile and desktop platform
+- [Admin consent endpoint](https://learn.microsoft.com/en-us/entra/identity-platform/v2-admin-consent)
+- [Refresh tokens](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens):
+  lifetimes, and the revocation table that separates public from
+  confidential clients
+- [Publisher verification](https://learn.microsoft.com/en-us/entra/identity-platform/publisher-verification-overview)
+  and [how to mark the app](https://learn.microsoft.com/en-us/entra/identity-platform/mark-app-as-publisher-verified)
+- [User consent settings](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent):
+  the default policies and what "low impact" leaves out
+- [Odoo's own Azure guide](https://www.odoo.com/documentation/19.0/applications/general/email_communication/azure_oauth.html):
+  one app per customer, on every hosting
 
 ## Installing: what the guide says and why
 
