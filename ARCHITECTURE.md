@@ -104,6 +104,72 @@ Providers disagree about sending as somebody else, which is why
 | Message id | Graph id | Gmail id | `folder:uidvalidity:uid` |
 | Send flow | draft → send | RFC822 MIME | SMTP + IMAP APPEND to Sent |
 | Message-ID | returned by the API | set by us on the MIME | set by us on the MIME |
+| Archive | its own well-known folder | the *absence* of `INBOX` | `\Archive` special-use |
+| Id after a move | a new one | unchanged (a relabel) | a new one (UID is folder-scoped) |
+| Removing the source copy | server-side | server-side | `UID MOVE`, else `UID COPY` + `UID EXPUNGE` |
+
+### The mailbox actions
+
+Sending and syncing are what Odoo needs to *run* on a mailbox. Working a
+mailbox — filing, marking, drafting — is a second surface, added in
+19.0.13.0.0, and it is deliberately the same one
+[Squirrel](https://github.com/pantalytics/squirrel-mcp) exposes as MCP tools:
+one vocabulary for "what can be done to a mailbox" across both products, so
+the two cannot drift into meaning different things by the same word.
+
+| Squirrel tool | `mail.provider.client` |
+|---|---|
+| `mail_list_folders` | `list_folders` |
+| `mail_search` | `search_messages` |
+| `mail_read` | `get_message` |
+| `mail_get_attachment` | `get_message_attachments` |
+| `mail_send` | `send_message` |
+| `mail_create_draft` | `save_draft` |
+| `mail_edit_draft` | `update_draft` |
+| `mail_send_draft` | `send_draft` |
+| `mail_move` | `move_messages` |
+| `mail_delete` | `delete_messages` |
+| `mail_flag` | `set_flagged` |
+| `mail_mark_read` | `set_seen` |
+| `mail_create_folder` | `create_folder` |
+| `mail_rename_folder` | `rename_folder` |
+| `mail_delete_folder` | `delete_folder` |
+
+`mail_list_accounts` and `mail_read_chunk` have no counterpart on purpose: the
+first is `pan.mail.account` here, and the second is a transport's answer to a
+token budget, which Odoo does not have. `tests/test_mailbox_actions.py` holds
+the table above, so a rename on either side fails a build rather than a
+customer's integration.
+
+Four rules hold the surface up, and an implementation may not trade any of
+them for a provider's convenience:
+
+- **A folder's name is not knowable; its role is.** Every folder argument is a
+  role (`inbox`, `sent`, `drafts`, `trash`, `archive`, `junk`) or an id
+  `list_folders()` handed back, never a name somebody typed: the name is
+  localized ("Prullenbak"), sometimes sits under INBOX, and "Sent Items" and
+  "Sent Messages" are both common. IMAP reads the SPECIAL-USE attribute
+  (RFC 6154); Graph and Gmail have well-known names and system labels.
+- **Delete is a move to Trash, and nothing more.** No expunge, no `\Deleted`
+  flag, and never Graph's `DELETE` or Gmail's permanent delete. The question is
+  never "is this a write", it is "could the user not get this back". Deleting
+  *out of* Trash is refused by name rather than quietly becoming an erase.
+- **Marking may not remove anybody's mail.** `set_seen` and `set_flagged`
+  issue their own `UID STORE` on IMAP rather than a helper that expunges after
+  it — another client's pending deletions are not ours to hand to the next
+  expunge, and the `\Seen` sweep is where that bites hardest, because marking
+  an inbox read touches every message in it.
+- **Deleting a folder is the one irreversible thing here**, so it refuses a
+  folder that still holds mail or sub-folders and says how many. Gmail's label
+  delete is harmless, and it refuses anyway: a caller has to be able to rely on
+  "delete_folder never loses mail" without knowing which provider is
+  underneath, and the safe rule is the one IMAP needs.
+
+A draft is a `mail.mail`, exactly as a send is — modelling it as a second dict
+shape would be a second implementation of "what is an outgoing message", and
+the two would disagree about inline images within a release. `send_draft` sends
+the stored message rather than rebuilding it from Odoo's fields, so what was
+reviewed is what leaves.
 
 ### Model map
 

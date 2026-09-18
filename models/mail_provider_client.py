@@ -86,6 +86,57 @@ Normalized send result (returned by send_message)
         'message_id': str or None,   # RFC 5322 Message-ID of the sent mail
         'thread_id':  str or None,
     }
+
+Normalized folder (returned by list_folders)
+---------------------------------------------
+    {
+        'id':   str,             # provider handle; what folder arguments take
+        'name': str,             # what the server calls it, for a human
+        'role': str or None,     # one of FOLDER_ROLES, when the folder claims one
+    }
+
+The mailbox actions
+-------------------
+Everything above is what Odoo needs to *run* on a mailbox: send a mail, read
+what came in. Everything below is what an agent or a person needs to *work* a
+mailbox, and it is deliberately the same surface Squirrel (our MCP server)
+exposes, method for method — one vocabulary for "what can be done to a
+mailbox", so the two products cannot drift into meaning different things by
+the same word:
+
+    Squirrel tool        this contract
+    -------------------  ----------------------------
+    mail_list_folders    list_folders
+    mail_search          search_messages
+    mail_read            get_message
+    mail_get_attachment  get_message_attachments
+    mail_send            send_message
+    mail_create_draft    save_draft
+    mail_edit_draft      update_draft
+    mail_send_draft      send_draft
+    mail_move            move_messages
+    mail_delete          delete_messages
+    mail_flag            set_flagged
+    mail_mark_read       set_seen
+    mail_create_folder   create_folder
+    mail_rename_folder   rename_folder
+    mail_delete_folder   delete_folder
+
+`mail_list_accounts` and `mail_read_chunk` have no counterpart on purpose: the
+first is `pan.mail.account` here, and the second is a transport's answer to a
+token budget, which Odoo does not have.
+
+Two rules the actions inherit, and neither is negotiable in an implementation:
+
+- **Delete is a move to Trash, and nothing more.** No expunge, no \\Deleted
+  flag. The question is never "is this a write", it is "could the user not get
+  this back" — and another client's pending deletions are not ours to hand to
+  the next expunge. Deleting *out of* Trash is refused by name rather than
+  quietly becoming an erase.
+- **Marking is the one mail write that undoes itself**, so `set_seen` and
+  `set_flagged` may not delete anything as a side effect. They are two methods
+  rather than one with a marker argument because they are independent states,
+  and a single call would have to be told which one it was *not* changing.
 """
 import logging
 import secrets
@@ -97,14 +148,40 @@ from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 
-# Folder identifiers Odoo cares about. Providers map these onto their own
-# vocabulary (Graph: 'Inbox'/'SentItems'; Gmail: 'INBOX'/'SENT' labels).
+# -----------------------------------------------------------------------------
+# Folder roles
+#
+# A folder's *name* is not something a caller gets to know. It is localized
+# ("Verzonden items"), it sits under INBOX on some servers, and "Sent Items"
+# and "Sent Messages" are both common — so every folder argument in this
+# contract takes a ROLE from this table, or a provider folder id that
+# `list_folders()` handed back. Never a name somebody typed.
+#
+# The value is the conventional English name, used only as the last-resort
+# fallback by a provider whose server advertises nothing. IMAP reads the
+# SPECIAL-USE attribute (RFC 6154), Graph and Gmail have well-known folder
+# names and labels of their own.
+# -----------------------------------------------------------------------------
 FOLDER_INBOX = 'inbox'
 FOLDER_SENT = 'sent'
+FOLDER_DRAFTS = 'drafts'
+FOLDER_TRASH = 'trash'
+FOLDER_ARCHIVE = 'archive'
+FOLDER_JUNK = 'junk'
+
+FOLDER_ROLES = {
+    FOLDER_INBOX: 'INBOX',
+    FOLDER_SENT: 'Sent',
+    FOLDER_DRAFTS: 'Drafts',
+    FOLDER_TRASH: 'Trash',
+    FOLDER_ARCHIVE: 'Archive',
+    FOLDER_JUNK: 'Junk',
+}
 
 # Error codes callers may branch on. Anything else is treated as an opaque
 # failure and surfaced to the user verbatim.
 ERROR_NO_RECIPIENTS = 'no_recipients'
+ERROR_UNSUPPORTED = 'unsupported'
 
 # -----------------------------------------------------------------------------
 # Headers that may cross the provider boundary
@@ -502,5 +579,236 @@ class MailProviderClient(models.AbstractModel):
 
         Attachment failures must not sink the message: implementations log and
         return an empty list rather than raising.
+        """
+        raise NotImplementedError
+
+    # -------------------------------------------------------------------------
+    # Folders
+    #
+    # A folder argument is either a role from FOLDER_ROLES or a provider folder
+    # id that `list_folders()` returned. Resolving one is the provider's job —
+    # Graph has well-known names, Gmail has system labels, IMAP reads the
+    # SPECIAL-USE attribute — so all this contract holds is the vocabulary.
+    # -------------------------------------------------------------------------
+
+    @api.model
+    def _check_folder_role(self, role):
+        """Raise unless `role` is one this contract knows."""
+        if role not in FOLDER_ROLES:
+            raise UserError(_(
+                'Unknown mail folder "%(folder)s". Use one of: %(roles)s, or a '
+                'folder id from list_folders().',
+                folder=role, roles=', '.join(sorted(FOLDER_ROLES)),
+            ))
+
+    @api.model
+    def list_folders(self, account, mailbox):
+        """List every folder in the mailbox, with the role each one claims.
+
+        This is what replaces guessing a name. A caller told that "Archief" is
+        the archive files mail there with `move_messages`; one that was not
+        would pass "Archive" and land it in a folder the server invented.
+
+        Returns:
+            list[dict]: normalized folders (see module docstring).
+        """
+        raise NotImplementedError
+
+    @api.model
+    def create_folder(self, account, mailbox, name, parent=None):
+        """Create a folder, optionally inside `parent`.
+
+        `parent` is a folder, never a path the caller assembled: the hierarchy
+        delimiter is "/" on one server and "." on the next, and a mailbox that
+        keeps everything under INBOX refuses a bare top-level name.
+
+        Creating a folder that already exists is not an error.
+
+        Returns:
+            tuple: (folder id, created) — `created` is False when it was
+            already there.
+        """
+        raise NotImplementedError
+
+    @api.model
+    def rename_folder(self, account, mailbox, folder, new_name):
+        """Rename a folder, keeping it where it is in the hierarchy.
+
+        Implementations refuse the inbox and any folder holding a role: every
+        one of them is somewhere mail is filed without anybody asking — the
+        Sent copy, the Trash a delete lands in — and renaming one breaks that
+        quietly.
+
+        Returns:
+            str: the new folder id.
+        """
+        raise NotImplementedError
+
+    @api.model
+    def delete_folder(self, account, mailbox, folder):
+        """Delete an EMPTY folder.
+
+        The one genuinely irreversible thing in this contract: deleting a
+        folder takes its mail with it and no Trash catches it, which is exactly
+        what `delete_messages` exists not to do. So implementations refuse a
+        folder that still holds mail or sub-folders and say how many. Empty it
+        the recoverable way first and the folder then goes.
+
+        Returns:
+            str: the folder id that is gone.
+        """
+        raise NotImplementedError
+
+    # -------------------------------------------------------------------------
+    # Searching
+    # -------------------------------------------------------------------------
+
+    @api.model
+    def search_messages(self, account, mailbox, folder=FOLDER_INBOX, query=None,
+                        sender=None, unread_only=False, flagged_only=False,
+                        has_attachment=False, limit=50):
+        """Search one folder, NEWEST first. The other half of `fetch_messages`.
+
+        `fetch_messages` answers "what has arrived since the cursor", which is
+        what the sync cron asks and the only question it may ask — oldest
+        first, or the cursor skips mail. This answers "find me that message",
+        which is a person's question, so it is newest first and takes terms
+        instead of a date.
+
+        The terms are structured rather than a query language on purpose.
+        Squirrel parses one string because an MCP client types one; here the
+        caller is Odoo code, and a grammar would be a parser in the middle of a
+        seam whose whole job is that each provider compiles the same question
+        into its own dialect (Graph `$search`, Gmail `q=`, IMAP SEARCH keys).
+
+        Args:
+            folder:         role or folder id (see module docstring)
+            query:          free text, matched against the whole message
+            sender:         narrow to one From address
+            unread_only:    only messages nobody has opened
+            flagged_only:   only messages somebody starred
+            has_attachment: only messages carrying a file
+            limit:          how many at most. Clamp it: this is the method an
+                            over-eager caller materializes a mailbox with.
+
+        Returns:
+            list[dict]: normalized messages, newest first. As with
+            `fetch_messages` the list form may omit 'headers' and 'body_html'.
+        """
+        raise NotImplementedError
+
+    # -------------------------------------------------------------------------
+    # Message state
+    #
+    # The two markers are siblings, and neither may delete anything. See the
+    # rule in the module docstring.
+    # -------------------------------------------------------------------------
+
+    @api.model
+    def set_seen(self, account, mailbox, provider_message_ids, seen=True):
+        """Mark messages read, or (with seen=False) put them back to unread.
+
+        Returns:
+            int: how many messages were marked.
+        """
+        raise NotImplementedError
+
+    @api.model
+    def set_flagged(self, account, mailbox, provider_message_ids, flagged=True):
+        """Star messages, or (with flagged=False) unstar them.
+
+        Returns:
+            int: how many messages were marked.
+        """
+        raise NotImplementedError
+
+    # -------------------------------------------------------------------------
+    # Filing
+    # -------------------------------------------------------------------------
+
+    @api.model
+    def move_messages(self, account, mailbox, provider_message_ids, destination):
+        """Move messages into `destination` (a role or a folder id).
+
+        Returns the messages' NEW ids, in the order they were given. A move is
+        not a no-op on the handle: IMAP renumbers the UID and the folder is
+        part of the reference, Graph mints a new message id. A caller that kept
+        the old one is holding a reference to a message that is not there.
+
+        Archiving is this call pointed at FOLDER_ARCHIVE, and un-archiving is
+        the same call back — neither gets a method of its own, because none is
+        needed once a folder's role is knowable.
+
+        Returns:
+            list[str]: the new provider_message_ids.
+        """
+        raise NotImplementedError
+
+    @api.model
+    def delete_messages(self, account, mailbox, provider_message_ids):
+        """Move messages to this mailbox's Trash.
+
+        A mail client's delete key does not erase anything, and neither does
+        this. Implementations refuse when the messages are already in Trash
+        rather than quietly escalating to an erase: emptying the trash is not
+        something this contract does.
+
+        Returns:
+            tuple: (list of new provider_message_ids, trash folder id)
+        """
+        raise NotImplementedError
+
+    # -------------------------------------------------------------------------
+    # Drafts
+    #
+    # A draft is a `mail.mail` here, exactly as a send is. Modelling it as a
+    # second dict shape would be a second implementation of "what is an
+    # outgoing message", and the two would disagree about inline images within
+    # a release.
+    # -------------------------------------------------------------------------
+
+    @api.model
+    def save_draft(self, mail_record, mailbox, account, reply_context=None):
+        """Store `mail_record` in the mailbox's Drafts folder without sending.
+
+        Everything `send_message` encodes is encoded here too — recipients, CC,
+        attachments, inline images, and the threading in `reply_context` — so
+        that what is reviewed is what leaves.
+
+        Returns:
+            str: the draft's provider_message_id.
+        """
+        raise NotImplementedError
+
+    @api.model
+    def update_draft(self, mail_record, mailbox, account, provider_message_id,
+                     reply_context=None):
+        """Replace a stored draft with `mail_record`'s current content.
+
+        Carry the threading of the draft being replaced when `reply_context` is
+        None: an edit rewrites the message, so a reviewed reply would otherwise
+        turn back into a new conversation at the moment it is sent.
+
+        Returns:
+            str: the draft's provider_message_id, which may be a new one.
+        """
+        raise NotImplementedError
+
+    @api.model
+    def send_draft(self, account, mailbox, provider_message_id):
+        """Send a stored draft as it stands, and remove it from Drafts.
+
+        The draft is already a complete message, so it is sent — not rebuilt
+        from the fields this contract happens to model. Rebuilding would
+        quietly drop the multipart/related an inline image lives in, the
+        In-Reply-To that makes it a reply, and any header another client wrote.
+        What was approved is what leaves.
+
+        Removing the draft afterwards is best-effort and never fatal: the mail
+        is with the recipient by then, so a failure there must not be reported
+        as a failed send.
+
+        Returns:
+            dict: a normalized send result (see module docstring).
         """
         raise NotImplementedError

@@ -21,7 +21,10 @@ from email.utils import getaddresses, parseaddr
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from ... import encryption_utils
-from ...mail_provider_client import ERROR_NO_RECIPIENTS, FOLDER_INBOX, FOLDER_SENT
+from ...mail_provider_client import (
+    ERROR_NO_RECIPIENTS, FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
+    FOLDER_SENT, FOLDER_TRASH,
+)
 from .. import mime_utils
 
 _logger = logging.getLogger(__name__)
@@ -66,11 +69,24 @@ class GoogleGmailClient(models.AbstractModel):
     supports_delegation = True
     supported_mailbox_types = ('personal', 'shared')
 
-    # Odoo's folder vocabulary -> Gmail's system labels.
+    # Odoo's folder roles -> Gmail's system labels.
+    #
+    # FOLDER_ARCHIVE has no entry, and that is not an omission: Gmail has no
+    # Archive label. Archiving a message there means removing INBOX from it,
+    # so the role is the *absence* of a label, which `_gmail_label_id` refuses
+    # to hand back and `move_messages` and `search_messages` handle by name.
     _LABEL_MAP = {
         FOLDER_INBOX: 'INBOX',
         FOLDER_SENT: 'SENT',
+        FOLDER_DRAFTS: 'DRAFT',
+        FOLDER_TRASH: 'TRASH',
+        FOLDER_JUNK: 'SPAM',
     }
+    _LABEL_ROLES = {label: role for role, label in _LABEL_MAP.items()}
+    # The three labels that say WHERE a message is, as opposed to what it is
+    # about. Gmail lets a message carry several labels but only one of these,
+    # so a move is "take off whichever of these it has, put on the target".
+    _LOCATION_LABELS = ('INBOX', 'TRASH', 'SPAM')
 
     @api.model
     def provider_code(self):
@@ -82,11 +98,36 @@ class GoogleGmailClient(models.AbstractModel):
 
     @api.model
     def _gmail_label(self, folder):
-        """Translate a contract folder id into a Gmail system label."""
+        """Translate a contract folder role into a Gmail system label.
+
+        Roles only, and only the two the sync reads. Everything in the actions
+        surface goes through `_gmail_label_id`, which also takes a label id.
+        """
+        self._check_folder_role(folder)
         try:
             return self._LABEL_MAP[folder]
         except KeyError:
-            raise UserError(_('Unknown mail folder: %s') % folder)
+            raise UserError(_(
+                'Gmail has no "%s" folder.'
+            ) % folder)
+
+    @api.model
+    def _gmail_label_id(self, folder):
+        """A role or a label id, resolved to the label id Gmail takes.
+
+        Refuses FOLDER_ARCHIVE: there is no label to name, and answering with
+        INBOX or with nothing would both file mail somewhere the caller did not
+        ask for. The two methods that can honour an archive do it themselves.
+        """
+        if not folder:
+            raise UserError(_('No mail folder given.'))
+        if folder == FOLDER_ARCHIVE:
+            raise UserError(_(
+                'Gmail has no Archive folder: archiving a message means taking it '
+                'out of the Inbox. Move it to another label, or archive it with '
+                'move_messages().'
+            ))
+        return self._LABEL_MAP.get(folder, folder)
 
     # -------------------------------------------------------------------------
     # Credentials
@@ -659,3 +700,415 @@ class GoogleGmailClient(models.AbstractModel):
         if err:
             return payload.get('error_description', err)
         return str(exc)
+
+    # -------------------------------------------------------------------------
+    # Mailbox actions — contract implementation
+    #
+    # Gmail's folders are labels, which changes three things and nothing else:
+    # a message is in several "folders" at once, a move is a relabel rather
+    # than a copy, and its id therefore survives one. Everything the contract
+    # promises still holds; delete still files in Trash and still refuses to
+    # empty it.
+    # -------------------------------------------------------------------------
+
+    def _api_call(self, account, method, url, json=None, params=None):
+        """One authenticated Gmail call that writes. `_api_get` is the read half."""
+        token = self.get_valid_token(account)
+        try:
+            response = requests.request(
+                method, url,
+                headers={'Authorization': f'Bearer {token}',
+                         'Content-Type': 'application/json'},
+                json=json, params=params or {}, timeout=30,
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            detail = self._error_detail(e)
+            _logger.error('[Gmail API] %s %s failed: %s', method.upper(), url, detail)
+            raise UserError(_('Gmail refused the request: %s') % detail)
+        if not (response.content or b'').strip():
+            return {}
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    @api.model
+    def _as_id_list(self, provider_message_ids):
+        """One id or many, always a list."""
+        if not provider_message_ids:
+            return []
+        if isinstance(provider_message_ids, str):
+            return [provider_message_ids]
+        return [i for i in provider_message_ids if i]
+
+    # ---- folders ------------------------------------------------------------
+
+    @api.model
+    def list_folders(self, account, mailbox):
+        """Every label in the mailbox, with the role each one claims.
+
+        Gmail nests labels by putting "/" in the name, so the hierarchy needs
+        no walking: one call returns the lot, parents and children alike.
+        """
+        data = self._api_get(
+            account, 'https://gmail.googleapis.com/gmail/v1/users/me/labels')
+        folders = []
+        for raw in data.get('labels') or []:
+            label_id = raw.get('id')
+            if not label_id:
+                continue
+            folders.append({
+                'id': label_id,
+                'name': raw.get('name') or label_id,
+                'role': self._LABEL_ROLES.get(label_id),
+            })
+        return folders
+
+    @api.model
+    def _refuse_if_load_bearing(self, folder, verb):
+        """Refuse a system label. Gmail marks them `type: system`, but the ones
+        that matter are exactly the roles this contract names, and Gmail's own
+        API refuses the write anyway — with a 400 that names nothing a person
+        can act on."""
+        label_id = self._LABEL_MAP.get(folder, folder)
+        role = self._LABEL_ROLES.get(label_id)
+        if role:
+            raise UserError(_(
+                'The %(role)s label cannot be %(verb)s: mail is filed there without '
+                'anyone asking, including by Gmail itself.',
+                role=role, verb=verb,
+            ))
+
+    @api.model
+    def create_folder(self, account, mailbox, name, parent=None):
+        """Create a label, optionally under `parent` (see contract).
+
+        Gmail's hierarchy delimiter is "/" and its labels are named by path, so
+        a child is its parent's name plus the child's — which is exactly why
+        the caller passes a parent rather than typing the path: the parent is
+        addressed by id here and its current name looked up, so a label that
+        was renamed yesterday still takes children today.
+        """
+        name = (name or '').strip()
+        if not name:
+            raise UserError(_('A folder needs a name.'))
+        existing = self.list_folders(account, mailbox)
+        if parent:
+            parent_name = next(
+                (f['name'] for f in existing
+                 if f['id'] == self._gmail_label_id(parent) or f['name'] == parent),
+                None)
+            if not parent_name:
+                raise UserError(_('No folder named "%s" to create it inside.') % parent)
+            if not name.startswith(parent_name + '/'):
+                name = f'{parent_name}/{name}'
+        for folder in existing:
+            if folder['name'].lower() == name.lower():
+                # Asked for, and already true. Not a failure.
+                return folder['id'], False
+        created = self._api_call(
+            account, 'post', 'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+            json={'name': name, 'labelListVisibility': 'labelShow',
+                  'messageListVisibility': 'show'},
+        )
+        return created.get('id'), True
+
+    @api.model
+    def rename_folder(self, account, mailbox, folder, new_name):
+        """Rename a label, keeping it where it is in the hierarchy."""
+        new_name = (new_name or '').strip()
+        if not new_name:
+            raise UserError(_('A folder needs a name.'))
+        self._refuse_if_load_bearing(folder, _('renamed'))
+        label_id = self._gmail_label_id(folder)
+        current = next((f for f in self.list_folders(account, mailbox)
+                        if f['id'] == label_id), None)
+        if not current:
+            raise UserError(_('No folder named "%s".') % folder)
+        # Keep it where it is: a bare name would move a nested label to the top.
+        if '/' in current['name'] and '/' not in new_name:
+            new_name = current['name'].rsplit('/', 1)[0] + '/' + new_name
+        self._api_call(
+            account, 'patch',
+            f'https://gmail.googleapis.com/gmail/v1/users/me/labels/{label_id}',
+            json={'name': new_name},
+        )
+        return label_id
+
+    @api.model
+    def delete_folder(self, account, mailbox, folder):
+        """Delete an EMPTY label (see contract).
+
+        Deleting a Gmail label does not delete its mail — Gmail only takes the
+        label off. The emptiness check is kept anyway, and deliberately: a
+        caller writing against this contract has to be able to rely on
+        "delete_folder never loses mail" without knowing which provider is
+        underneath, and the safe rule is the one IMAP needs.
+        """
+        self._refuse_if_load_bearing(folder, _('deleted'))
+        label_id = self._gmail_label_id(folder)
+        folders = self.list_folders(account, mailbox)
+        current = next((f for f in folders if f['id'] == label_id), None)
+        if not current:
+            raise UserError(_('No folder named "%s".') % folder)
+        children = sorted(f['name'] for f in folders
+                          if f['name'].startswith(current['name'] + '/'))
+        if children:
+            raise UserError(_(
+                '"%(name)s" still has folders inside it (%(children)s). Delete those '
+                'first, innermost one first.',
+                name=current['name'], children=', '.join(children[:5]),
+            ))
+        held = self._api_get(
+            account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages',
+            {'labelIds': label_id, 'maxResults': 1},
+        )
+        if held.get('messages'):
+            raise UserError(_(
+                '"%s" still holds mail. Empty it first: delete the messages (they go '
+                'to Trash and can be fished back out) or move them somewhere else.'
+            ) % current['name'])
+        self._api_call(
+            account, 'delete',
+            f'https://gmail.googleapis.com/gmail/v1/users/me/labels/{label_id}')
+        return label_id
+
+    # ---- searching ----------------------------------------------------------
+
+    @api.model
+    def search_messages(self, account, mailbox, folder=FOLDER_INBOX, query=None,
+                        sender=None, unread_only=False, flagged_only=False,
+                        has_attachment=False, limit=50):
+        """Search one label, newest first (see contract).
+
+        Gmail's own query language takes every term this method has, so nothing
+        is narrowed in Python here — the search operators ARE the compile
+        target. `list` answers newest first and offers no ordering control,
+        which for once is the order wanted.
+        """
+        limit = max(1, min(int(limit or 50), 200))
+        terms = ['-in:chats']
+        if query:
+            terms.append(str(query))
+        if sender:
+            terms.append('from:%s' % sender)
+        if unread_only:
+            terms.append('is:unread')
+        if flagged_only:
+            terms.append('is:starred')
+        if has_attachment:
+            terms.append('has:attachment')
+
+        params = {'maxResults': limit, 'q': ' '.join(terms)}
+        if folder == FOLDER_ARCHIVE:
+            # No label to ask for: archived is what is left once the three
+            # location labels are off.
+            params['q'] += ' -in:inbox -in:spam -in:trash'
+        else:
+            params['labelIds'] = self._gmail_label_id(folder)
+
+        data = self._api_get(
+            account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages', params)
+        messages = []
+        for entry in (data.get('messages') or [])[:limit]:
+            raw = self._gmail_get_message(
+                account, entry['id'], fmt='metadata',
+                headers=['Message-Id', 'Subject', 'From', 'To', 'Cc'])
+            messages.append(self._normalize_message(raw))
+        return messages
+
+    # ---- message state ------------------------------------------------------
+
+    @api.model
+    def set_seen(self, account, mailbox, provider_message_ids, seen=True):
+        """Mark messages read or unread (see contract). Gmail's UNREAD label is
+        the marker, so "read" is its absence."""
+        key = 'removeLabelIds' if seen else 'addLabelIds'
+        return self._modify_labels(account, provider_message_ids, {key: ['UNREAD']})
+
+    @api.model
+    def set_flagged(self, account, mailbox, provider_message_ids, flagged=True):
+        """Star messages or unstar them (see contract)."""
+        key = 'addLabelIds' if flagged else 'removeLabelIds'
+        return self._modify_labels(account, provider_message_ids, {key: ['STARRED']})
+
+    def _modify_labels(self, account, provider_message_ids, payload):
+        """Apply one label change to each message. Returns how many were changed."""
+        count = 0
+        for message_id in self._as_id_list(provider_message_ids):
+            self._api_call(
+                account, 'post',
+                f'https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify',
+                json=payload,
+            )
+            count += 1
+        return count
+
+    # ---- filing -------------------------------------------------------------
+
+    @api.model
+    def move_messages(self, account, mailbox, provider_message_ids, destination):
+        """Move messages into `destination` (see contract).
+
+        A relabel, not a copy: take off whichever location label the message
+        carries, put on the target. So the ids come back unchanged, which is
+        the honest answer here — Gmail keeps them across a move, and pretending
+        otherwise would send a caller looking for a message that never moved.
+
+        FOLDER_ARCHIVE is the case with no label to put on: archived is a
+        message with none of the three, which is why it is named here rather
+        than resolved like the others.
+        """
+        message_ids = self._as_id_list(provider_message_ids)
+        payload = {'removeLabelIds': list(self._LOCATION_LABELS)}
+        if destination != FOLDER_ARCHIVE:
+            target = self._gmail_label_id(destination)
+            payload['addLabelIds'] = [target]
+            payload['removeLabelIds'] = [label for label in self._LOCATION_LABELS
+                                         if label != target]
+        self._modify_labels(account, message_ids, payload)
+        return message_ids
+
+    @api.model
+    def delete_messages(self, account, mailbox, provider_message_ids):
+        """Move messages to Trash (see contract).
+
+        `trash`, never `delete`: Gmail's DELETE is permanent and skips the
+        Trash entirely, which is the one thing this method exists not to do.
+        """
+        message_ids = self._as_id_list(provider_message_ids)
+        for message_id in message_ids:
+            raw = self._gmail_get_message(account, message_id, fmt='minimal')
+            if 'TRASH' in (raw.get('labelIds') or []):
+                raise UserError(_(
+                    'Those messages are already in Trash. Emptying it is not something '
+                    'Mail Pro does for you: move them somewhere else, or delete them '
+                    'in Gmail.'
+                ))
+            self._api_call(
+                account, 'post',
+                f'https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/trash',
+            )
+        return message_ids, 'TRASH'
+
+    # ---- drafts -------------------------------------------------------------
+
+    @api.model
+    def save_draft(self, mail_record, mailbox, account, reply_context=None):
+        """Store `mail_record` in Drafts without sending (see contract).
+
+        The same MIME `send_message` builds, so what is reviewed is what
+        leaves. Gmail addresses drafts by a draft id of their own rather than
+        by the message id inside them, and that draft id is what comes back:
+        it is what `update_draft` and `send_draft` take, and it is opaque to
+        the caller either way.
+        """
+        payload, error = self._draft_payload(mail_record, mailbox, reply_context)
+        if error:
+            raise UserError(_('Could not save the draft: %s') % error.get('error'))
+        created = self._api_call(
+            account, 'post', 'https://gmail.googleapis.com/gmail/v1/users/me/drafts',
+            json=payload,
+        )
+        return created.get('id')
+
+    @api.model
+    def update_draft(self, mail_record, mailbox, account, provider_message_id,
+                     reply_context=None):
+        """Replace a stored draft's content (see contract).
+
+        Gmail replaces the whole message behind the draft, so the threading has
+        to be rebuilt rather than inherited. When the caller says nothing, the
+        draft's own In-Reply-To and References are read back off it first: an
+        edit rewrites the message, and a reviewed reply that quietly became a
+        new conversation is the failure this prevents.
+        """
+        if reply_context is None:
+            reply_context = self._draft_reply_context(account, provider_message_id)
+        payload, error = self._draft_payload(mail_record, mailbox, reply_context)
+        if error:
+            raise UserError(_('Could not update the draft: %s') % error.get('error'))
+        updated = self._api_call(
+            account, 'put',
+            f'https://gmail.googleapis.com/gmail/v1/users/me/drafts/{provider_message_id}',
+            json=payload,
+        )
+        return updated.get('id') or provider_message_id
+
+    @api.model
+    def send_draft(self, account, mailbox, provider_message_id):
+        """Send a stored draft as it stands (see contract).
+
+        Gmail sends the stored bytes and removes the draft itself, so what was
+        approved is what leaves and there is no cleanup to fail at.
+        """
+        raw = self._api_get(
+            account,
+            f'https://gmail.googleapis.com/gmail/v1/users/me/drafts/{provider_message_id}',
+            {'format': 'metadata', 'metadataHeaders': ['Message-Id']},
+        )
+        headers = self._headers_dict((raw.get('message') or {}).get('payload') or {})
+        sent = self._api_call(
+            account, 'post',
+            'https://gmail.googleapis.com/gmail/v1/users/me/drafts/send',
+            json={'id': provider_message_id},
+        )
+        return {
+            'success': True,
+            'error': None,
+            'error_code': None,
+            'message_id': headers.get('message-id'),
+            'thread_id': sent.get('threadId'),
+        }
+
+    @api.model
+    def _draft_payload(self, mail_record, mailbox, reply_context=None):
+        """Build the `{'message': {...}}` body a draft write takes.
+
+        Returns:
+            tuple: (payload, error) — `error` is a failed send result, and is
+            None when there is nothing wrong.
+        """
+        reply_context = reply_context or {}
+        to_addrs = mime_utils.collect_recipients(mail_record.email_to,
+                                                 mail_record.recipient_ids)
+        cc_addrs = mime_utils.collect_recipients(mail_record.email_cc)
+        if not to_addrs and not cc_addrs:
+            return None, {
+                'success': False,
+                'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
+                'error_code': ERROR_NO_RECIPIENTS,
+            }
+        message_id = mime_utils.new_message_id(mailbox.email)
+        msg = mime_utils.build_message(
+            mail_record, mailbox.email, to_addrs, cc_addrs, message_id,
+            reply_context=reply_context)
+        message = {'raw': base64.urlsafe_b64encode(msg.as_bytes()).decode()}
+        if reply_context.get('thread_id') and reply_context.get('in_reply_to'):
+            message['threadId'] = reply_context['thread_id']
+        return {'message': message}, None
+
+    @api.model
+    def _draft_reply_context(self, account, draft_id):
+        """The threading of a stored draft, for an edit that did not mention any."""
+        try:
+            raw = self._api_get(
+                account,
+                f'https://gmail.googleapis.com/gmail/v1/users/me/drafts/{draft_id}',
+                {'format': 'metadata',
+                 'metadataHeaders': ['In-Reply-To', 'References']},
+            )
+        except UserError:
+            # A draft we cannot read the headers off still gets rewritten; it
+            # just loses its place in the thread, which beats refusing the edit.
+            _logger.warning('[Gmail API] Could not read threading off draft %s', draft_id)
+            return {}
+        message = raw.get('message') or {}
+        headers = self._headers_dict(message.get('payload') or {})
+        return {
+            'in_reply_to': headers.get('in-reply-to'),
+            'references': (headers.get('references') or '').split(),
+            'thread_id': message.get('threadId'),
+            'provider_message_id': None,
+        }
