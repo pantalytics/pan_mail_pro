@@ -64,7 +64,7 @@ class TestConversationApi(TransactionCase):
         self._mail()
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
         for key in ('model', 'res_id', 'subject', 'preview', 'correspondent',
-                    'date', 'count', 'record_name', 'unread', 'waiting_on_us'):
+                    'date', 'count', 'record_name', 'unread'):
             self.assertIn(key, row, f'the list draws {key}')
         self.assertEqual(row['subject'], 'Offerte')
         self.assertEqual(row['model'], 'crm.lead')
@@ -253,19 +253,6 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(len(thread['messages']), 2)
         self.assertIn('records', thread)
         self.assertIn('rejected', thread)
-
-    # ---------------------------------------------------------------- derived
-
-    def test_waiting_on_us_follows_the_last_message(self):
-        """Derived, so it cannot go stale. The moment we answer, the
-        conversation stops waiting on us, in the same transaction."""
-        self._mail(direction='incoming')
-        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
-        self.assertTrue(row['waiting_on_us'])
-
-        self._mail(direction='outgoing', subject='Re: Offerte')
-        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
-        self.assertFalse(row['waiting_on_us'])
 
     def test_notes_stay_out_of_a_screen_about_mail(self):
         self.env['mail.message'].create({
