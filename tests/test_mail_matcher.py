@@ -19,6 +19,8 @@ from odoo.tests import TransactionCase, tagged
 from odoo.addons.pan_mail_pro.models.pan_mail_matcher import (
     AUTO_ROUTE_CONFIDENCE,
     RULE_ODOO_HEADERS,
+    RULE_ONLY_OPEN_RECORD,
+    RULE_RECORD_REFERENCE,
     RULE_REFERENCES,
     RULE_SUBJECT_PARTICIPANTS,
     RULE_THREAD_LINK,
@@ -73,6 +75,23 @@ class TestMailMatcher(TransactionCase):
             'from': {'email': self.customer.email, 'name': self.customer.name},
             'headers': headers or {},
         }
+
+    def _sale_order(self):
+        """An order whose `name` is a real sequence, which is the point.
+
+        `sale` is installed alongside the module in CI precisely so paths like
+        this one run instead of skipping themselves.
+        """
+        return self.env['sale.order'].create({'partner_id': self.customer.id})
+
+    def _route_mailbox_to(self, model):
+        """Point the mailbox at a team, the way a support address is set up."""
+        alias = self.env['mail.alias'].create({
+            'alias_name': 'matcher-fixture',
+            'alias_model_id': self.env['ir.model']._get(model).id,
+        })
+        self.mailbox.write({'alias_id': alias.id, 'route_to_team': True})
+        return alias
 
     def _post_on(self, record, message_id, subject='Question', author=None, date=None):
         """Post a message onto a record and return it, as an import would."""
@@ -273,7 +292,150 @@ class TestMailMatcher(TransactionCase):
         self.assertFalse(decision['model'])
 
     # ------------------------------------------------------------------ #
-    # Rule 4 — subject heuristics, proposal only
+    # Rule 4 — a document reference quoted in the subject
+    # ------------------------------------------------------------------ #
+
+    def test_subject_reference_routes_on_an_exact_document_number(self):
+        """The case rules 1 to 3 are silent on: a fresh mail about an order.
+
+        No References chain, no thread the provider has seen, and today it
+        falls all the way through to the contact's own chatter.
+        """
+        order = self._sale_order()
+
+        decision = self.matcher.match(
+            self._message(subject='Vraag over %s' % order.name),
+            mailbox=self.mailbox,
+            partner=self.customer,
+        )
+
+        self.assertEqual(decision['model'], 'sale.order')
+        self.assertEqual(decision['res_id'], order.id)
+        self.assertEqual(decision['rule'], RULE_RECORD_REFERENCE)
+        self.assertGreaterEqual(decision['confidence'], AUTO_ROUTE_CONFIDENCE)
+
+    def test_subject_reference_stops_being_an_answer_when_it_names_two(self):
+        """Two documents in one subject is a question, not a lookup.
+
+        The rule's whole claim is that it is exact. A subject naming an order
+        *and* an invoice is not, so both drop to proposals and the mail is
+        routed by nothing.
+        """
+        first = self._sale_order()
+        second = self._sale_order()
+
+        decision = self.matcher.match(
+            self._message(subject='%s en %s samenvoegen' % (first.name, second.name)),
+            mailbox=self.mailbox,
+            partner=self.customer,
+        )
+
+        self.assertFalse(decision['model'], 'an ambiguous reference must not route')
+        found = {(c['model'], c['res_id']) for c in decision['candidates']
+                 if c['rule'] == RULE_RECORD_REFERENCE}
+        self.assertEqual(found, {('sale.order', first.id), ('sale.order', second.id)})
+        for candidate in decision['candidates']:
+            self.assertLess(candidate['confidence'], AUTO_ROUTE_CONFIDENCE)
+
+    def test_subject_reference_ignores_words_and_dates(self):
+        """A token needs a letter and a digit, which is what keeps this cheap.
+
+        Without that, every subject would run a search per word per model on
+        a one-minute cron.
+        """
+        tokens = self.matcher._reference_tokens(
+            'Re: betaling van 2026-09-18 voor de offerte')
+        self.assertEqual(tokens, [])
+
+        self.assertEqual(
+            self.matcher._reference_tokens('Re: SO0042 en INV/2026/00017'),
+            ['SO0042', 'INV/2026/00017'],
+        )
+
+    def test_subject_reference_yields_to_an_existing_thread(self):
+        """A reply belongs on its thread, even when it still quotes the order.
+
+        Order matters here: a conversation that started from an order and
+        moved to a ticket keeps quoting the order number in every subject
+        line, and it belongs on the ticket.
+        """
+        order = self._sale_order()
+        parent = self._post_on(self.lead, '<thread@example.com>')
+
+        decision = self.matcher.match(
+            self._message(
+                subject='Re: %s' % order.name,
+                headers={'In-Reply-To': '<thread@example.com>'},
+            ),
+            mailbox=self.mailbox,
+            partner=self.customer,
+        )
+
+        self.assertEqual(decision['model'], 'crm.lead')
+        self.assertEqual(decision['res_id'], self.lead.id)
+        self.assertEqual(decision['rule'], RULE_REFERENCES)
+        self.assertEqual(decision['parent_message_id'], parent.id)
+
+    # ------------------------------------------------------------------ #
+    # Rule 5 — the sender's only open record, proposal only
+    # ------------------------------------------------------------------ #
+
+    def test_only_open_record_proposes_but_never_routes(self):
+        """Arithmetic says there is one candidate; it does not say this is it.
+
+        The customer with one open printer ticket who writes in about an
+        invoice is why this never routes on its own. What it earns is the
+        suggestion somebody confirms in one click.
+        """
+        self.lead.write({'partner_id': self.customer.id})
+        self._route_mailbox_to('crm.lead')
+
+        decision = self.matcher.match(
+            self._message(subject='Nieuwe vraag'),
+            mailbox=self.mailbox,
+            partner=self.customer,
+        )
+
+        self.assertFalse(decision['model'], 'one open record is not a decision')
+        candidate = decision['candidates'][0]
+        self.assertEqual(candidate['rule'], RULE_ONLY_OPEN_RECORD)
+        self.assertEqual(candidate['res_id'], self.lead.id)
+        self.assertLess(candidate['confidence'], AUTO_ROUTE_CONFIDENCE)
+
+    def test_only_open_record_is_silent_when_there_are_two(self):
+        """Two open records is exactly the case a person has to settle."""
+        self.lead.write({'partner_id': self.customer.id})
+        self.other_lead.write({'partner_id': self.customer.id})
+        self._route_mailbox_to('crm.lead')
+
+        decision = self.matcher.match(
+            self._message(subject='Nieuwe vraag'),
+            mailbox=self.mailbox,
+            partner=self.customer,
+        )
+
+        self.assertFalse([c for c in decision['candidates']
+                          if c['rule'] == RULE_ONLY_OPEN_RECORD])
+
+    def test_only_open_record_needs_a_mailbox_that_routes_somewhere(self):
+        """Without a target model there is no set to be alone in.
+
+        A mailbox that files to contact chatter says nothing about what its
+        mail is about, so this rule has no premise to stand on.
+        """
+        self.lead.write({'partner_id': self.customer.id})
+
+        decision = self.matcher.match(
+            self._message(subject='Nieuwe vraag'),
+            mailbox=self.mailbox,
+            partner=self.customer,
+        )
+
+        self.assertFalse([c for c in decision['candidates']
+                          if c['rule'] == RULE_ONLY_OPEN_RECORD])
+
+    # ------------------------------------------------------------------ #
+    # Rule 6 — subject heuristics, proposal only
     # ------------------------------------------------------------------ #
 
     def test_subject_match_proposes_but_never_routes(self):

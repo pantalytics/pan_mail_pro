@@ -309,6 +309,22 @@ $mailpro-warn: #c0392b;
     .o_mailpro_unfiled_title { font-size: 0.8125rem; font-weight: 600; }
     .o_mailpro_unfiled_list { margin: 0; padding-left: 1.125rem; font-size: 0.75rem; color: $mailpro-muted; }
 
+    // The suggestion sits inside the dashed block it belongs to, so "not
+    // filed" and "but it looks like this" read as one state rather than two
+    // competing announcements.
+    .o_mailpro_suggestion {
+        margin-top: 0.625rem;
+        font-size: 0.8125rem;
+    }
+
+    .o_mailpro_suggestion_text { color: $mailpro-ink-soft; }
+
+    .o_mailpro_refile_open { margin-top: 0.5rem; }
+
+    // The model row. Chips, like every other record on this screen, because
+    // picking a model here is the first half of picking a record.
+    .o_mailpro_refile { margin-top: 0.75rem; }
+
     // Mail is prose, and prose has a comfortable width. The column stops
     // well before the window does.
     .o_mailpro_messages {

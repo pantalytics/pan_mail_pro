@@ -347,7 +347,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer, one open message in a collapsed thread, the record pane stepping aside at 1280px, and the dividers dragging, folding and surviving a reload |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer, one open message in a collapsed thread, the record pane stepping aside at 1280px, the dividers dragging, folding and surviving a reload, and filing a conversation from the suggestion so the correction actually reaches the database |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
@@ -674,6 +674,31 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **Keep the grep after you delete the thing it guarded.** `anthropic` is now
   banned from the whole module rather than confined to `models/ai/`. A removal
   that leaves no check behind is a removal that comes back.
+
+### Triage and correcting a match (19.0.11.0.0)
+- **A `mail.message` with no `model` is visible to its author and almost nobody
+  else.** Odoo's `mail.message._search` filters every row down to "you wrote
+  it, you are a recipient, or you can read its document", and a message with
+  no document has none of those for anyone else — not even an administrator,
+  because the check is a rule the ORM applies rather than an ACL `sudo` would
+  lift. The Inbox's "Linked to nothing" folder is therefore empty for everybody
+  but the sender, which is invisible from the code and from every Python test
+  that reads as the author. The real fallback state is `model = 'res.partner'`,
+  the "On a contact only" folder, and that is the one triage works from.
+- **Ask what a rule is worth before making it cheap.** `record_reference` earns
+  its place above the guesses by *refusing*: the moment a subject names two
+  documents, every hit drops below the routing threshold. A rule that always
+  answers is a guess wearing a lookup's confidence.
+- **A suggestion belongs where the mail is read, not in the audit table.**
+  Settings → Technical is where you go to ask why; the screen where mail is
+  read is where it gets fixed. The queue removed in 19.0.7.0.0 was the same
+  mistake in another shape.
+- **The correction is the feature, not the model.** Filing a conversation by
+  hand writes a `pan.mail.thread.link`, so the rest of that conversation
+  matches at rule 3 from then on — exactly, for free. That is the only part of
+  triage that compounds, and it needs no AI at all.
+- **`--` is illegal inside an XML comment**, and Odoo's own loader will not
+  tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
 ### Mounting Odoo's own views inside your own screen (19.0.10.0.0)
 - **Bootstrap's display utilities carry `!important`, and Odoo's own markup wears them.** The form renderer is `d-flex flex-nowrap` in its wide layout and the statusbar's button row is `d-flex`; a plain `display: block` / `display: none` from an addon loses both times. The form then renders a chatter with no record above it, and the record's "Convert to Opportunity" stays as the loudest button on a screen whose one job is replying. Both cost a round trip in the browser to find, because nothing errors.

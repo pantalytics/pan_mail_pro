@@ -116,6 +116,35 @@ for subject, body, direction in (
         'subject': subject, 'body': body, 'author_id': customer,
         'email_from': 'bart@vandermolen.example',
         'x_direction': direction, 'x_mailbox_id': ids[2]})
+# Two conversations that landed on a contact and nowhere better: the real
+# `fallback` outcome, delivered but to a place nobody is looking. Each carries
+# the suggestion the ladder nearly picked, which is what the Inbox offers with
+# one click. Two different contacts, because mail on one contact is one
+# conversation however many messages it holds -- and filing the first has to
+# leave a second behind.
+for name, address, subject, body in (
+    ('Vandermolen Techniek B.V.', 'bart@vandermolen.example',
+     'Storing aan de pers, spoed',
+     '<p>De pers loopt vast bij het inschakelen. Kunnen jullie meekijken?</p>'),
+    ('Keersluis Onderhoud', 'inkoop@keersluis.example',
+     'Nieuwe aanvraag afdichtingen',
+     '<p>Graag een prijs voor twee sets, zelfde maat als vorig jaar.</p>'),
+):
+    sender = call('res.partner', 'create', {'name': name, 'email': address}) \
+        if address != 'bart@vandermolen.example' else customer
+    fallen_back = call('mail.message', 'create', {
+        'model': 'res.partner', 'res_id': sender,
+        'message_type': 'email', 'subject': subject, 'body': body,
+        'author_id': sender, 'email_from': address,
+        'x_direction': 'incoming', 'x_mailbox_id': ids[2]})
+    call('pan.mail.routing.log', 'create', {
+        'mailbox_id': ids[2], 'mail_message_id': fallen_back, 'outcome': 'fallback',
+        'subject': subject, 'email_from': address,
+        'reason': 'No rule reached the routing threshold (1 proposal(s))',
+        'rule': False, 'candidate_count': 1,
+        'suggested_model': 'crm.lead', 'suggested_res_id': lead,
+        'suggested_name': 'Asafdichtingen, revisie',
+        'suggested_reason': 'The only open Lead/Opportunity for %s' % name})
 call('pan.mail.license', 'unlink', [link])
 PY
 

@@ -332,6 +332,80 @@ class Checks:
         page.set_viewport_size({'width': WIDE, 'height': 1100})
         page.wait_for_timeout(400)
 
+    def filing(self):
+        """The screen where a match is corrected, and the correction sticking.
+
+        Two things here are worth a browser and nothing else can prove them.
+        That the suggestion is offered as one record and not a candidate list,
+        and that clicking it actually moves the conversation: a `refile` that
+        works over RPC and leaves the screen showing the old state is a bug a
+        green Python suite cannot see.
+
+        "On a contact only" is the folder this works from, not "Linked to
+        nothing". A mail the ladder could not place still lands somewhere, and
+        the contact is where -- delivered, to a place nobody is looking, which
+        is the whole reason the folder exists.
+        """
+        page = self.page
+        folder = page.query_selector('.o_mailpro_folder:has-text("On a contact only")')
+        if not folder:
+            self.fail('there is no "On a contact only" folder to file from')
+            return
+        folder.click()
+        page.wait_for_timeout(1500)
+
+        items = page.query_selector_all('.o_mailpro_item')
+        if len(items) < 2:
+            self.fail(f'{len(items)} contact-only conversations, expected the seeded 2')
+            return
+        items[0].click()
+        page.wait_for_timeout(1500)
+
+        # One suggestion. A list here would be the triage queue coming back in
+        # another shape, asking the reader to do the matching we could not.
+        suggestions = page.query_selector_all('.o_mailpro_suggestion')
+        if len(suggestions) != 1:
+            self.fail(f'{len(suggestions)} suggestions on screen, expected exactly 1')
+            return
+        text = suggestions[0].inner_text()
+        if 'Asafdichtingen' not in text:
+            self.fail(f'the suggestion reads "{text}" and does not name the record')
+        # The confidence is a number for the routing log, not for this screen.
+        if '%' in text or '0.6' in text:
+            self.fail(f'the suggestion shows a score: "{text}"')
+
+        # The picker is two steps, and the first one is closed until asked.
+        if page.query_selector('.o_mailpro_refile'):
+            self.fail('the model picker is open on a screen nobody asked')
+        opener = page.query_selector('.o_mailpro_refile_toggle')
+        if not opener:
+            self.fail('a filed conversation offers no way to change where it went')
+        else:
+            opener.click()
+            page.wait_for_timeout(400)
+            targets = page.query_selector_all('.o_mailpro_refile .o_mailpro_chip_button')
+            if not targets:
+                self.fail('the model picker opened with nothing in it')
+            opener.click()
+            page.wait_for_timeout(400)
+
+        self.shot('inbox-unfiled.png')
+
+        accept = page.query_selector('.o_mailpro_suggestion button')
+        if not accept:
+            self.fail('the suggestion has no button to accept it')
+            return
+        accept.click()
+        page.wait_for_timeout(2500)
+        self.error_free('filing a conversation')
+
+        # It left the folder it was in, which is the only proof from here that
+        # the move reached the database rather than the screen.
+        remaining = page.query_selector_all('.o_mailpro_item')
+        if len(remaining) != 1:
+            self.fail(f'{len(remaining)} conversations left on a contact after '
+                      f'filing one, expected 1')
+
     def panes(self):
         """The dividers move, the side panes fold, and the browser remembers.
 
@@ -622,6 +696,7 @@ def main():
         checks.settings()
         checks.menus()
         checks.conversation_view()
+        checks.filing()
         checks.provider_form()
         checks.connect_banner()
         browser.close()

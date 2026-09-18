@@ -54,6 +54,12 @@ MAX_LIMIT = 200
 # every row the reader can see, once per folder, on every click.
 COUNT_CAP = 99
 
+# How many models the "file it here" picker offers. The list is built from
+# what this database already files mail on, so it is short by construction;
+# the cap is there so a database with a long history of routing targets does
+# not turn a picker into a directory.
+MAX_REFILE_TARGETS = 12
+
 # How much of a body the one-line preview looks at. A real mail carries a
 # signature, an inline stylesheet and the whole quoted history; the preview is
 # 140 characters.
@@ -332,6 +338,7 @@ class PanMailConversation(models.AbstractModel):
                          for m in messages.sorted(lambda m: (m.date, m.id))],
             'records': self._records_for(messages),
             'rejected': [] if model else self._rejected_for(messages),
+            'suggestion': self._suggestion_for(messages),
         }
 
     @api.model
@@ -705,6 +712,85 @@ class PanMailConversation(models.AbstractModel):
             'reason': log.reason or '',
             'candidates': log.candidate_count,
         } for log in logs]
+
+    def _suggestion_for(self, messages):
+        """The one record the ladder nearly picked, if the reader may see it.
+
+        One, not a list. A screen that offers five possibilities asks the
+        reader to do the matching we failed to do; a screen that offers one
+        asks them to confirm or ignore, which is a decision a person makes in
+        a second.
+
+        Filtered through `_filtered_access` for the same reason `_rejected_for`
+        carries no target name: the suggestion was computed with sudo at
+        ingest, and naming a record somebody cannot open would tell them it
+        exists.
+        """
+        if not messages:
+            return False
+        logs = self.env['pan.mail.routing.log'].sudo().search([
+            ('mail_message_id', 'in', messages.ids),
+            ('suggested_model', '!=', False),
+        ], limit=5)
+        for log in logs:
+            if log.suggested_model not in self.env or not log.suggested_res_id:
+                continue
+            record = self.env[log.suggested_model].browse(log.suggested_res_id).exists()
+            if not record or not record._filtered_access('read'):
+                continue
+            return {
+                'model': log.suggested_model,
+                'res_id': log.suggested_res_id,
+                'name': record.display_name,
+                'reason': log.suggested_reason or '',
+                'model_label': self.env['ir.model']._get(log.suggested_model).name
+                or log.suggested_model,
+            }
+        return False
+
+    @api.model
+    def refile_targets(self):
+        """The models mail may be filed on, for the picker.
+
+        Not every model with a chatter. The list is what this database has
+        already proved it files mail on -- the mailboxes' own routing targets
+        and the models the log has seen -- plus the contact, which is where
+        unmatched mail lands anyway. It therefore grows with use and starts
+        short, instead of being a dropdown of four hundred technical names on
+        day one.
+
+        `write` is the right question: filing somebody's correspondence onto a
+        record is a change to that record, and a model the reader may only read
+        is not a place they may put mail.
+        """
+        self._check_caller()
+        names = ['res.partner']
+        names += self.env['pan.mail.mailbox'].sudo().search(
+            [('alias_id.alias_model_id', '!=', False)]
+        ).mapped('alias_id.alias_model_id.model')
+        # `_read_group` with one groupby and no aggregate yields one-tuples.
+        names += [
+            group[0]
+            for group in self.env['pan.mail.routing.log'].sudo()._read_group(
+                [('model', '!=', False)], groupby=['model'], limit=20)
+            if group[0]
+        ]
+
+        targets, seen = [], set()
+        for name in names:
+            if name in seen or name not in self.env:
+                continue
+            seen.add(name)
+            Model = self.env[name]
+            if not hasattr(Model, 'message_post') or not Model.has_access('write'):
+                continue
+            targets.append({
+                'model': name,
+                'label': self.env['ir.model']._get(name).name or name,
+            })
+            if len(targets) >= MAX_REFILE_TARGETS:
+                break
+        return targets
 
     def _next_for(self, company):
         """This customer's open activities, soonest first.

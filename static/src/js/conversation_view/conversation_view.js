@@ -23,6 +23,7 @@ import { View } from "@web/views/view";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
+import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 
 const PAGE = 30;
 
@@ -98,6 +99,8 @@ export class ConversationView extends Component {
     setup() {
         this.orm = useService("orm");
         this.action = useService("action");
+        this.dialog = useService("dialog");
+        this.notification = useService("notification");
         this.panes = usePanes();
 
         // Two request tokens, one per pane. Somebody who clicks three folders
@@ -117,13 +120,18 @@ export class ConversationView extends Component {
             limit: PAGE,
             hasMore: false,
             selected: null,
-            thread: { messages: [], records: [], rejected: [] },
+            thread: { messages: [], records: [], rejected: [], suggestion: false },
             // Which messages are open, and whose quoted history is unfolded.
             // Keyed by message id, so a thread that reloads under a reply
             // keeps nothing from the thread before it.
             open: {},
             quotes: {},
             showRejected: false,
+            // The model row of the filing picker. Closed unless somebody asked
+            // to file something, because on a correctly filed thread it is an
+            // answer to a question nobody has.
+            filing: false,
+            refileTargets: [],
             search: "",
         });
 
@@ -135,6 +143,7 @@ export class ConversationView extends Component {
 
         onWillStart(async () => {
             await this.loadMailboxes();
+            await this.loadRefileTargets();
             await this.refresh();
         });
     }
@@ -187,7 +196,9 @@ export class ConversationView extends Component {
                     await this.select(conversations[0]);
                 } else {
                     this.state.selected = null;
-                    this.state.thread = { messages: [], records: [], rejected: [] };
+                    this.state.thread = {
+                        messages: [], records: [], rejected: [], suggestion: false,
+                    };
                 }
             }
         } catch (error) {
@@ -214,8 +225,9 @@ export class ConversationView extends Component {
         const seq = ++this.threadSeq;
         this.state.selected = conversation;
         this.state.showRejected = false;
+        this.state.filing = false;
         // Nothing from the previous thread stays under the new subject.
-        this.state.thread = { messages: [], records: [], rejected: [] };
+        this.state.thread = { messages: [], records: [], rejected: [], suggestion: false };
         this.state.open = {};
         this.state.quotes = {};
         this.split.clear();
@@ -485,6 +497,98 @@ export class ConversationView extends Component {
             .filter((m) => m.direction === "incoming")
             .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
         return incoming[0] || null;
+    }
+
+    // ---------------------------------------------------------------- filing
+
+    /**
+     * Where mail may be filed. Read once: it is the shape of this database,
+     * not of the conversation on screen, and it changes about as often as a
+     * mailbox is configured.
+     */
+    async loadRefileTargets() {
+        try {
+            this.state.refileTargets = await this.orm.call(
+                "pan.mail.conversation", "refile_targets", []
+            );
+        } catch (error) {
+            // A picker nobody can open is better than an inbox that does not
+            // load. Filing stays unavailable and everything else works.
+            console.warn("[Mail Pro] could not read filing targets", error);
+        }
+    }
+
+    /** Take the suggestion the matcher made. One click, the common case. */
+    async acceptSuggestion() {
+        const suggestion = this.state.thread.suggestion;
+        if (suggestion) {
+            await this.fileOn(suggestion.model, suggestion.res_id);
+        }
+    }
+
+    /**
+     * Pick a record on a model, through Odoo's own list-and-search dialog.
+     * Creating from here is off: filing is about where mail belongs, and a
+     * record invented to hold it is a different decision.
+     */
+    pickTarget(target) {
+        this.state.filing = false;
+        this.dialog.add(SelectCreateDialog, {
+            resModel: target.model,
+            title: _t("File this conversation on a %s", target.label),
+            multiSelect: false,
+            noCreate: true,
+            onSelected: (resIds) => {
+                if (resIds.length) {
+                    this.fileOn(target.model, resIds[0]);
+                }
+            },
+        });
+    }
+
+    /**
+     * Move the conversation, and say what the move bought.
+     *
+     * The confirmation names the thread link rather than the move, because
+     * that is the part somebody would not otherwise know happened: the rest
+     * of this conversation now files itself.
+     */
+    async fileOn(model, resId) {
+        const messageIds = this.state.thread.messages.map((message) => message.id);
+        if (!messageIds.length) {
+            return;
+        }
+        let filed;
+        try {
+            filed = await this.orm.call(
+                "pan.mail.routing.log", "refile", [messageIds, model, resId]
+            );
+        } catch (error) {
+            this.notification.add(_t("Could not file this conversation."), { type: "danger" });
+            console.warn("[Mail Pro] refile failed", error);
+            return;
+        }
+        this.notification.add(
+            _t("Filed on %s. The next mail in this thread lands here too.", filed.name),
+            { type: "success" }
+        );
+        // The conversation is somewhere else now, so it is addressed by the
+        // record it moved to. `keepSelection` then does the right thing in
+        // both folders it can be filed from: in the inbox the row is still
+        // there under its new record and the reader keeps their place, and in
+        // an unfiled folder it is gone, so the screen moves on to the next
+        // one waiting -- which is what working a queue means.
+        this.state.selected = {
+            ...this.state.selected, model: filed.model, res_id: filed.res_id,
+        };
+        this.state.filing = false;
+        await this.refresh({ keepSelection: true });
+        if (this.state.selected && this.state.selected.model === filed.model
+            && this.state.selected.res_id === filed.res_id) {
+            // Still on it: re-read the thread so the chips replace the
+            // suggestion instead of the screen still offering it.
+            await this.select(this.state.selected);
+        }
     }
 
     openRecordChip(chip) {

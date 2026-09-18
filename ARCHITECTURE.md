@@ -628,7 +628,9 @@ Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
 | 2 | `references` | 1.0 | `In-Reply-To` + the full `References` chain |
 | 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread key) — every key from `thread_keys()` |
 |   | `thread_link_legacy` | 0.85 | unscoped `mail.message.x_provider_thread_id`, read-only since 19.0.6.0.0 |
-| 4 | `subject_participants` | 0.5 | normalised subject + same partner — proposal only |
+| 4 | `record_reference` | 0.85 | a document number quoted in the subject, resolving to exactly one record. Ambiguous: 0.5, proposal |
+| 5 | `only_open_record` | 0.6 | the sender's single open record in the mailbox's routing target — proposal only |
+| 6 | `subject_participants` | 0.5 | normalised subject + same partner — proposal only |
 
 Rules 1 and 2 are RFC 5322, so they behave identically on Microsoft 365, Gmail
 and IMAP. Rule 3 is the only provider concept, and it is treated as *a hint
@@ -641,6 +643,45 @@ No rung is trusted alone. Rule 2 resolves a Message-ID through the ref index
 carries. Threading is the feature that fails silently — the mail still arrives,
 just on a 0.50 guess in a review queue — so a second lookup is cheaper
 insurance than a better single one.
+
+### Rules 4 and 5: the mail nobody replied to
+
+Rules 1 to 3 all need a thread. They are silent on the case that arrives most
+often from a customer who is not thinking about threads: a fresh mail about an
+order, a new question to `support@`. Two rungs answer it, and the difference
+between them is the whole point.
+
+**Rule 4 is a lookup.** `SUBJECT_REFERENCE_FIELDS` maps a model to the field
+holding a reference people paste into a subject line — `sale.order.name`,
+`account.move.name`, `helpdesk.ticket.ticket_ref` — and a token is matched on
+equality, never `ilike`. The field has to be a *reference*: `crm.lead.name`
+and `project.task.name` are titles somebody typed, so an exact match on them
+would be a coincidence, and they are left off. Every entry is checked against
+the registry before it is searched, so an uninstalled module or a renamed
+field drops out instead of raising.
+
+It stops being a lookup the moment it is ambiguous. A subject naming two
+documents, or a token two models both claim, drops every hit to 0.5 and routes
+nothing. That refusal is the rule's whole claim to sitting above everything
+that scores on resemblance.
+
+It runs *after* rule 3 on purpose. A conversation that began on an order and
+moved to a ticket quotes the order number in every subject line thereafter,
+and it belongs on the ticket.
+
+**Rule 5 is a proposal, and never becomes anything else.** A mailbox with
+`route_to_team` says what its mail is about; when the sender has exactly one
+open record in that model, that is the only record it can sensibly be. "There
+is exactly one candidate" is arithmetic, but "this mail is about it" is still
+a guess — the customer with one open printer ticket who writes in about an
+invoice is not a rare case. So it scores 0.6 and never routes.
+
+What it earns instead is the suggestion on the inbox screen. Somebody confirms
+it in one click, that click writes a `pan.mail.thread.link`, and the rest of
+the conversation is matched by rule 3 from then on: exactly, and without
+anyone being asked again. A correction is the only part of triage that
+compounds, which is why the cheap rungs feed it rather than trying to be right
+on their own.
 
 Four things this changed, each a silent misroute before:
 
@@ -914,6 +955,13 @@ the rule, the confidence, every candidate the ladder rejected, and what the
 matcher had to work with — `reference_count`, `reference_ids` and the
 `thread_id` it keyed on.
 
+A row also carries `suggested_model` / `suggested_res_id` / `suggested_reason`:
+the single best candidate the ladder found without reaching the threshold,
+recorded only when the mail went somewhere else. One, not a list — a screen
+offering five possibilities hands the matching back to the reader, while one
+asks them to confirm or ignore. The full candidate set stays in `candidates`
+for whoever is debugging.
+
 `outcome` separates three things that look identical from inside Odoo:
 `threaded` onto something that existed, `created` something new, `fallback` to
 contact chatter. `needs_review` flags exactly two of them:
@@ -929,6 +977,48 @@ Deliberately a record of what happened, **not** a queue that holds mail back.
 Delivery is unchanged. A log that is wrong costs a confusing row; a queue that
 is wrong costs a customer an answer. A daily cron drops rows past
 `pan_mail_pro.routing_log_retention_days` (default 90) unless still flagged.
+
+### Correcting a match
+
+`pan.mail.routing.log.refile(message_ids, model, res_id)` moves a conversation
+onto another record. It is the one write in the whole reading path, and it is
+not really about the move.
+
+**The move is the small half.** What it writes is the thread link, so the next
+mail in that conversation matches at rule 3 — exactly, for free, and without
+anyone being asked again. One click buys permanent correctness for a thread,
+which is the only part of triage that compounds. The inbox says so in those
+words when it confirms.
+
+The surface is the inbox, not this log. Settings → Technical is where you go
+to ask why; the screen where mail is read is where it gets fixed. A thread
+that is filed carries a quiet `Change` next to its chips; one that is not
+carries the suggestion (rule 5, or the best proposal any rule made) with a
+`File it here`, and a `File on a record` that opens the picker: the model
+first, then Odoo's own search dialog for the record. `refile_targets()` builds
+that model list out of what this database already files mail on — the
+mailboxes' routing targets and the models the log has seen — so it starts
+short and grows with use rather than being a dropdown of four hundred
+technical names on day one.
+
+Three things it deliberately does not do:
+
+- **It subscribes nobody.** A message arriving on a ticket is not a reason to
+  put its author on that ticket's follower list, for the same reason CC never
+  creates one (§3). Filing mail must not become a way to start notifying
+  people.
+- **It posts nothing.** A correction is bookkeeping; a chatter note about it
+  would be a second copy of a fact the message itself now carries.
+- **It moves the conversation, not one message.** "This is filed wrong" is
+  never about a single mail in a thread, and leaving the rest behind splits a
+  conversation across two records.
+
+Access is checked twice, and neither check is the ACL on `mail.message`: the
+caller must be a mailbox manager, and must be allowed to *write* the
+destination — filing somebody's correspondence onto a record is a change to
+that record. The write itself is `sudo`, because `mail.message.model` and
+`res_id` are not fields an ordinary user may set, which is exactly why this
+lives in one method instead of at a dozen call sites.
 
 ### No queue for what landed nowhere
 

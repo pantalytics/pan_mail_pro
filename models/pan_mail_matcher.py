@@ -19,13 +19,21 @@ every candidate found along the way is still returned — as a *proposal*, with
     2. references            In-Reply-To + the References chain   1.0
     3. thread_link           (provider, mailbox, thread key)      0.9
        thread_link_legacy    unscoped mail.message conversation   0.85
-    4. subject_participants  normalised subject + same partner    0.5   proposal
+    4. record_reference      a document number quoted in the subject
+                                                    unambiguous   0.85
+                                                    ambiguous     0.5   proposal
+    5. only_open_record      the sender's only open record in the
+                             mailbox's target model               0.6   proposal
+    6. subject_participants  normalised subject + same partner    0.5   proposal
 
 Rules 1 and 2 are RFC 5322, so they work identically on Microsoft 365, Gmail,
 plain IMAP, and anything else that speaks email. Rule 3 is the only one that
 touches a provider concept, and it treats that concept as a *hint that is only
-valid inside one mailbox* — which is what it actually is. Rule 4 never routes
-on its own; it exists to hand a candidate set to whatever decides the residue.
+valid inside one mailbox* — which is what it actually is. Rule 4 is a lookup
+rather than a guess, and it says so by refusing to route the moment the subject
+names more than one record. Rules 5 and 6 never route on their own; they exist
+to hand a candidate set to whatever decides the residue, which today is a
+person clicking the suggestion on the inbox screen.
 
 No rung is trusted alone. Every rung that can go quiet has a second way in:
 rule 2 resolves a Message-ID through the ref index *and* through Odoo's own
@@ -72,6 +80,8 @@ RULE_ODOO_HEADERS = 'odoo_headers'
 RULE_REFERENCES = 'references'
 RULE_THREAD_LINK = 'thread_link'
 RULE_THREAD_LINK_LEGACY = 'thread_link_legacy'
+RULE_RECORD_REFERENCE = 'record_reference'
+RULE_ONLY_OPEN_RECORD = 'only_open_record'
 RULE_SUBJECT_PARTICIPANTS = 'subject_participants'
 
 # At or above this, a caller routes the mail automatically. Below it, the
@@ -87,6 +97,37 @@ AUTO_ROUTE_CONFIDENCE = 0.8
 DEFAULT_THREAD_MAX_AGE_DAYS = 180
 # Subject matching is a guess to begin with; keep its window short.
 DEFAULT_SUBJECT_MAX_AGE_DAYS = 30
+
+# Where a reference pasted into a subject line is looked up: one model and the
+# field that holds the reference people actually quote. Every entry is checked
+# against the registry before it is searched, so an uninstalled module or a
+# renamed field drops out instead of raising.
+#
+# The field has to be a *reference*, not a title. `crm.lead.name` and
+# `project.task.name` are what somebody typed, so an equality match on them
+# would be a coincidence rather than a lookup, and they are left off on
+# purpose.
+SUBJECT_REFERENCE_FIELDS = (
+    ('sale.order', 'name'),
+    ('purchase.order', 'name'),
+    ('account.move', 'name'),
+    ('stock.picking', 'name'),
+    ('mrp.production', 'name'),
+    ('repair.order', 'name'),
+    ('helpdesk.ticket', 'ticket_ref'),
+)
+
+# What a reference looks like in a subject: letters and digits, possibly with
+# separators, so `SO0042`, `INV/2026/00017` and `WH/OUT/00012` all qualify. The
+# rule itself then demands at least one letter *and* one digit, which is what
+# drops a bare year, a date and an ordinary word.
+_REFERENCE_TOKEN_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9/._-]{2,38}[A-Za-z0-9]')
+
+# How many tokens of one subject are looked up. Each one costs an indexed
+# equality search per model in the registry, and this rule only ever runs on
+# mail the deterministic rules above it could not place. Three is well past
+# any subject that quotes a document number on purpose.
+_MAX_REFERENCE_TOKENS = 3
 
 # Reply/forward prefixes, in the languages this module actually meets. The
 # optional [12] catches mailing-list counters ("Re[2]: ...").
@@ -233,6 +274,8 @@ class PanMailMatcher(models.AbstractModel):
             '_rule_odoo_headers',
             '_rule_references',
             '_rule_thread_link',
+            '_rule_record_reference',
+            '_rule_only_open_record',
             '_rule_subject_participants',
         ]
 
@@ -357,6 +400,126 @@ class PanMailMatcher(models.AbstractModel):
                 parent_message=legacy,
             ))
         return candidates
+
+    def _rule_record_reference(self, ctx):
+        """A record's own reference, quoted in the subject.
+
+        "Re: SO0042" and "vraag over INV/2026/00017" are the case the rules
+        above are silent on: somebody writes a fresh mail about a document
+        instead of replying to one, so there is no References chain and no
+        thread the provider has seen before. The reference is still exact, and
+        finding it is a lookup rather than a guess, which is why this sits
+        above everything that scores on resemblance.
+
+        It is a lookup **only while it is unambiguous**. One token that
+        resolves to one record is routed on; a subject that names two
+        documents, or a token that two models both claim, is a question and
+        not an answer, so every hit drops to a proposal and the ladder
+        continues. That is the whole difference between this rule and a
+        regular-expression guess.
+
+        It runs after `_rule_thread_link` on purpose: a mail that continues a
+        thread Odoo already filed belongs on that thread's record even when
+        the subject still quotes the order number the thread started from.
+        """
+        subject = ctx['message'].get('subject') or ''
+        if not subject:
+            return []
+
+        seen = set()
+        hits = []
+        for token in self._reference_tokens(subject):
+            for model, field in SUBJECT_REFERENCE_FIELDS:
+                if model in ctx['exclude_models'] or model not in self.env:
+                    continue
+                Model = self.env[model]
+                if field not in Model._fields:
+                    continue
+                # Two, not one: a second row means the reference does not
+                # identify a record even inside its own model.
+                records = Model.sudo().search([(field, '=', token)], limit=2)
+                if len(records) != 1:
+                    continue
+                record = records[0]
+                key = (model, record.id)
+                if key in seen:
+                    continue
+                if not self._is_routable(model, record.id, ctx['exclude_models']):
+                    continue
+                seen.add(key)
+                hits.append((model, record.id, token))
+
+        if not hits:
+            return []
+
+        # One record named, one answer. More than one and the subject is
+        # ambiguous, so the hits become a shortlist instead of a decision.
+        confidence = 0.85 if len(hits) == 1 else 0.5
+        reason_tail = '' if len(hits) == 1 else ' (the subject names %d records)' % len(hits)
+        return [
+            self._candidate(
+                model, res_id, RULE_RECORD_REFERENCE, confidence,
+                'The subject quotes %s%s' % (token, reason_tail),
+            )
+            for model, res_id, token in hits
+        ]
+
+    def _rule_only_open_record(self, ctx):
+        """The contact's single open record in the mailbox's own target model.
+
+        A mailbox that routes to a team says what its mail is about: `support@`
+        makes tickets, so mail arriving there is about a ticket. When the
+        sender has exactly one open one, that is the only record it can
+        sensibly be.
+
+        Scored as a proposal, never a routing decision, and the distinction is
+        deliberate. "There is exactly one candidate" is arithmetic; "this mail
+        is about it" is still a guess, and the customer with one open printer
+        ticket who writes in about an invoice is not a rare case. What it earns
+        is the suggestion on screen, which somebody confirms in one click --
+        and that click writes a thread link, so the rest of the conversation
+        is matched by rule 3 from then on, exactly and for free.
+
+        Nothing here is asked when the mailbox routes to nobody: without a
+        target model there is no set to be alone in.
+        """
+        partner = ctx['partner']
+        mailbox = ctx['mailbox']
+        if not partner or not mailbox or not mailbox.route_to_team:
+            return []
+
+        alias = mailbox.alias_id
+        model = alias.alias_model_id.model if alias and alias.alias_model_id else False
+        if not model or model in ctx['exclude_models'] or model not in self.env:
+            return []
+
+        Model = self.env[model]
+        if 'partner_id' not in Model._fields:
+            return []
+
+        # `active` needs no clause: an archived record is already absent from
+        # an ordinary search. A folded stage is the other half of "closed" and
+        # has to be asked for, where the model has stages at all. A record
+        # with no stage counts as open -- `stage_id.fold = False` does not
+        # match a NULL, and a lead that has not reached a stage yet is the
+        # opposite of closed.
+        domain = [('partner_id', '=', partner.id)]
+        stage = Model._fields.get('stage_id')
+        if stage is not None and stage.comodel_name in self.env \
+                and 'fold' in self.env[stage.comodel_name]._fields:
+            domain += ['|', ('stage_id', '=', False), ('stage_id.fold', '=', False)]
+
+        records = Model.sudo().search(domain, limit=2)
+        if len(records) != 1:
+            return []
+        record = records[0]
+        if not self._is_routable(model, record.id, ctx['exclude_models']):
+            return []
+
+        return [self._candidate(
+            model, record.id, RULE_ONLY_OPEN_RECORD, 0.6,
+            'The only open %s for %s' % (Model._description or model, partner.display_name),
+        )]
 
     def _rule_subject_participants(self, ctx):
         """Same normalised subject, same correspondent, recent enough.
@@ -496,6 +659,28 @@ class PanMailMatcher(models.AbstractModel):
 
         return self.env['mail.message'].sudo().search(
             [('message_id', '=', message_id)], order='id desc', limit=1)
+
+    @api.model
+    def _reference_tokens(self, subject):
+        """Tokens in a subject that could be a document reference.
+
+        A reference carries at least one letter and at least one digit. That
+        one condition is what separates `SO0042` from a bare year, a date, an
+        ordinary word and the reply prefix, without a per-format pattern for
+        every model a customer might install.
+        """
+        tokens = []
+        for token in _REFERENCE_TOKEN_RE.findall(subject or ''):
+            if not any(c.isdigit() for c in token):
+                continue
+            if not any(c.isalpha() for c in token):
+                continue
+            if token in tokens:
+                continue
+            tokens.append(token)
+            if len(tokens) >= _MAX_REFERENCE_TOKENS:
+                break
+        return tokens
 
     @api.model
     def _normalize_subject(self, subject):

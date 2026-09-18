@@ -37,6 +37,9 @@
                     <button name="action_open_target" type="object"
                             string="Open Destination" class="btn-primary"
                             invisible="not model"/>
+                    <button name="action_open_suggestion" type="object"
+                            string="Open Suggestion"
+                            invisible="not suggested_model"/>
                     <button name="action_mark_reviewed" type="object"
                             string="Mark Reviewed"
                             invisible="reviewed or not needs_review"/>
@@ -62,10 +65,15 @@
                             <field name="reviewed"/>
                             <field name="needs_review" invisible="1"/>
                             <field name="model" invisible="1"/>
+                            <field name="suggested_model" invisible="1"/>
                         </group>
                     </group>
                     <group string="Why">
                         <field name="reason" readonly="1" nolabel="1"/>
+                    </group>
+                    <group string="Suggested Instead" invisible="not suggested_model">
+                        <field name="suggested_name" readonly="1"/>
+                        <field name="suggested_reason" readonly="1"/>
                     </group>
                     <group string="References Read"
                            invisible="reference_count == 0">
