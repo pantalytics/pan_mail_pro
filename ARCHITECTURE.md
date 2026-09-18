@@ -211,7 +211,7 @@ of the comment one and no recipients, so the screen still writes in exactly
 one place. The strip steps aside while somebody is writing: the pane has one
 job then, and a tab click would drop the draft.
 
-19.0.11.2.0 adds the one pane state that is not a width: the record on the
+19.0.12.1.0 adds the one pane state that is not a width: the record on the
 whole screen. Reading a lead is not the same job as reading mail, and a pane
 sized for the fourth column is a two-column form squeezed into one. The
 control sits in the record pane's own header and doubles as the way back, a
