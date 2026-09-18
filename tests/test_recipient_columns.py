@@ -24,6 +24,7 @@ CUSTOMER = 'customer@example.com'
 COLLEAGUE = 'collega@gate-fixture.test'
 STRANGER = 'jan@anderbedrijf.test'
 INTERNET_ID = '<recipients-001@example.com>'
+REPLY_ID = '<recipients-002@company.test>'
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -61,7 +62,7 @@ class TestRecipientColumns(MailProTestCase):
                              return_value=[]):
             self.processor._process_message(self.mailbox, message, folder)
         return self.env['mail.message'].search(
-            [('message_id', '=', INTERNET_ID)], limit=1)
+            [('message_id', '=', message['message_id'])], limit=1)
 
     # ------------------------------------------------------------------ #
     # Filled
@@ -84,13 +85,26 @@ class TestRecipientColumns(MailProTestCase):
         self.assertNotIn('<', message.x_email_cc)
 
     def test_a_sent_item_carries_the_customer_as_recipient(self):
+        """On the way out the To is the customer, which is the half of the line
+        the Inbox shows for a sent item.
+
+        The fixture has to be a reply: `_gate_wanted` only lets a sent item in
+        when it answers something Odoo already holds, so a fresh outgoing mail
+        never reaches the write at all.
+        """
+        self._process()
         message = self._process(
             folder=FOLDER_SENT,
+            message_id=REPLY_ID,
+            provider_message_id='X2',
+            headers={'message-id': REPLY_ID, 'in-reply-to': INTERNET_ID},
             **{'from': {'email': self.mailbox.email, 'name': 'Sales'},
                'to': [{'email': CUSTOMER, 'name': 'External Customer'}],
                'cc': []},
         )
+        self.assertTrue(message, "the sent item should have been imported")
         self.assertEqual(message.x_email_to, CUSTOMER)
+        self.assertEqual(message.x_email_cc, '')
 
     # ------------------------------------------------------------------ #
     # And what it must never become
