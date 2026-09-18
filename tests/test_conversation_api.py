@@ -515,6 +515,19 @@ class TestConversationApi(TransactionCase):
         thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
         self.assertEqual(len(thread['records']), 2, 'both records are chips')
 
+    def test_a_record_chip_carries_the_icon_of_its_app(self):
+        """The chip shows the app's tile, resolved from the module that
+        defined the model, so a lead wears CRM's icon and never a guess."""
+        self._mail()
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        chip = thread['records'][0]
+        self.assertEqual(chip['model'], 'crm.lead')
+        self.assertEqual(chip['icon'], '/crm/static/description/icon.png')
+        self.assertEqual(self.Conversation._model_icon('res.partner'),
+                         '/base/static/description/icon.png')
+        self.assertFalse(self.Conversation._model_icon('no.such.model'),
+                         'an unknown model gets no icon, not a broken image')
+
         door = self.Conversation.record_conversations('crm.lead', self.lead.id)
         self.assertEqual(door['elsewhere'], 1, 'one message sits elsewhere')
 

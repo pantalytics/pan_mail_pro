@@ -788,7 +788,7 @@ class PanMailConversation(models.AbstractModel):
         for (model, res_id) in seen:
             by_model.setdefault(model, []).append(res_id)
 
-        names, labels = {}, {}
+        names, labels, icons = {}, {}, {}
         for model, ids in by_model.items():
             # A link outlives the module that wrote it: Helpdesk is Enterprise,
             # and a community database can hold rows naming a model it has not
@@ -799,6 +799,7 @@ class PanMailConversation(models.AbstractModel):
             for record in records._filtered_access('read'):
                 names[(model, record.id)] = record.display_name
             labels[model] = self.env['ir.model']._get(model).name or model
+            icons[model] = self._model_icon(model)
 
         rows = sorted(seen.items(),
                       key=lambda item: item[1] or datetime.min, reverse=True)
@@ -807,7 +808,29 @@ class PanMailConversation(models.AbstractModel):
             'res_id': res_id,
             'name': names[(model, res_id)],
             'model_label': labels.get(model, model),
+            'icon': icons.get(model, False),
         } for (model, res_id), _date in rows if (model, res_id) in names]
+
+    def _model_icon(self, model):
+        """The icon of the app a record belongs to, as a URL, or False.
+
+        A quotation is a Sales record and a ticket a Helpdesk one, and the
+        chip that names them reads faster with the app's own tile than with a
+        word. The tile is the module's `static/description/icon.png`, and the
+        module is the one that created the model: `ir.model.data` holds one
+        `<module>.model_<name>` per model, written by whichever module
+        defined it, so `sale.order` resolves to `sale` and `res.partner` to
+        `base`. Read with `sudo()` because the lookup is metadata (a module
+        name) and the row's own ACL is not the point; the record it decorates
+        was already put through `_filtered_access` by the caller.
+        """
+        data = self.env['ir.model.data'].sudo().search([
+            ('model', '=', 'ir.model'),
+            ('name', '=', 'model_' + model.replace('.', '_')),
+        ], limit=1)
+        if not data.module:
+            return False
+        return '/%s/static/description/icon.png' % data.module
 
     def _linked_records(self, messages):
         """The other records this thread touched, from the thread index.
