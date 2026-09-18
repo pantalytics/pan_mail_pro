@@ -1145,7 +1145,32 @@ though the feature were absent; AI must never be reachable from
 `mail.mail.send()` or `_process_message()`, which run in a one-minute cron
 inside a savepoint where a slow call stalls a mailbox and a failure rolls the
 message back; and a suggestion naming anything outside a deterministically
-built shortlist is discarded. Bring-your-own-key, envelope only, never a body.
+built shortlist is discarded.
+
+**What such a tier may read is decided ([#153](https://github.com/pantalytics/pan_mail_pro/issues/153)):
+the mail itself, body included, plus the Odoo context the shortlist is built
+from.** Envelope-only was the promise in this section until 19.0.12.0.0, and it
+is withdrawn because it cannot be kept. A subject line does not separate "reply
+to the quote" from "new problem with the same machine", which is the one case
+the tier exists for, so a tier held to the envelope is weaker than the
+deterministic rungs already shipped and not worth a key. The permission is
+therefore a real one, and the module says so rather than implying less: with AI
+triage switched on, the message's headers and its body with the quoted history
+stripped go to the AI provider the customer configured, together with the
+candidate records the deterministic rules shortlisted and the contact they
+belong to. Attachments do not. That is a hard call, not a limit waiting to be
+relaxed.
+
+Widening the Odoo context later -- what else about a contact, a ticket or an
+order helps the tier choose -- is this same permission doing its job, not a
+second decision. What is off limits is a second *purpose*: this permission
+covers deciding where a mail belongs, and nothing else.
+
+Two things it does not touch. It is one switch, off by default, per database, so
+an unconfigured database still behaves as though the feature were absent -- the
+first of the three properties above. And it is the customer's own key, so the
+content reaches their provider account and never Pantalytics: the heartbeat
+stays counts and error codes (§9.17), and nothing here changes that boundary.
 
 ---
 

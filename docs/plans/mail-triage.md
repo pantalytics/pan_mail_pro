@@ -171,19 +171,45 @@ duplicate rate, `created` with candidates, which the log already flags as
 `needs_review` and which is the expensive error: a second ticket opened on a
 conversation that was already running.
 
-### The privacy question this forces
+### The privacy question, decided ([#153](https://github.com/pantalytics/pan_mail_pro/issues/153))
 
-ARCHITECTURE.md §8 says envelope only, never a body. Triage on content cannot
-honour that. A subject line alone does not separate "reply to the quote" from
-"new problem with the same machine", which is the case the tier exists for.
+**One permission, and it is a broad one: the mail including its body, plus the
+Odoo context the tier needs to choose.** Envelope-only is withdrawn from
+ARCHITECTURE.md §8, because a subject line alone does not separate "reply to the
+quote" from "new problem with the same machine" and that is the case the tier
+exists for. A tier held to the envelope is weaker than the rungs already
+shipped, and then it is not worth a key.
 
-So it is a decision, not a PR. Either the tier stays envelope-only and is
-noticeably weaker, or a body goes out and the module says so. The
-recommendation is the second, with three limits: opt-in per database and off by
-default, the first 2000 characters after the quoted history is stripped (the
-`QUOTE_START` regex already does this for the preview), and never an
-attachment. Then the manifest's data-disclosure paragraph says exactly that,
-in the same words as the heartbeat's.
+What goes out when a database switches AI triage on:
+
+- The message: headers, and the body with the quoted history stripped (the
+  `QUOTE_START` regex `pan.mail.conversation` already uses for the preview).
+  Truncation is a cost and latency choice made in the code, not a promise made
+  here.
+- The shortlist the deterministic rules built: the candidate records, their
+  names and states, and the contact they belong to.
+- Nothing else, and never an attachment. Attachments are a hard call, not a
+  limit waiting to be relaxed.
+
+Three things hold it in place:
+
+- **Off by default, per database, one switch.** An unconfigured database
+  behaves as though the feature were absent (ARCHITECTURE.md §8).
+- **The customer's own key.** The content reaches their provider account, never
+  Pantalytics. The heartbeat stays counts and error codes, unchanged.
+- **One purpose.** This permission covers deciding where a mail belongs.
+  Widening the *context* -- what else about a contact, a ticket or an order
+  helps the tier choose -- is the same permission working as intended and needs
+  no new decision. Widening the *purpose* is a new one.
+
+The manifest's last data-disclosure bullet is true until step 4 ships and stays
+as it is. The PR that builds step 4 replaces it with:
+
+> - No AI provider is contacted unless an administrator switches on AI triage
+>   and supplies a key. Once on, each mail the deterministic rules could not
+>   file is sent to that provider: its headers, its body with the quoted reply
+>   history stripped, and the candidate records and contact the rules
+>   shortlisted. Never an attachment, and never to Pantalytics.
 
 ## Order of work
 
@@ -193,4 +219,6 @@ in the same words as the heartbeat's.
    testable without a provider, no key.
 3. The linked-to chip and relinking, writing a thread link. Useful alone.
 4. The second-pass cron, suggesting from a shortlist, capped below auto-route.
+   Ships with the switch, the key parameter and the manifest bullet above; the
+   feature and its disclosure land in the same PR.
 5. Only then: raising the bar for the classes that earned it.
