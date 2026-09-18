@@ -65,6 +65,10 @@ class Checks:
         self.js_errors = []
 
     def fail(self, message):
+        # Printed as it happens, not only in the summary: a Playwright click
+        # that times out takes the process down with it, and the failures
+        # collected before that are the ones that say why.
+        print(f'  - {message}', flush=True)
         self.failures.append(message)
 
     def dialog_in_the_way(self):
@@ -78,8 +82,16 @@ class Checks:
         modal = self.page.query_selector('.modal.o_technical_modal, .o_dialog_container .modal')
         if not modal or not modal.is_visible():
             return ''
-        text = ' '.join(modal.inner_text().split())[:300]
-        for selector in ('.btn-close', 'button:has-text("Close")', 'button:has-text("Ok")'):
+        # Odoo's error dialog says "Oops!" and keeps the stack behind a link.
+        # The stack is the whole message: without it this reads as "something
+        # went wrong somewhere in the web client".
+        details = modal.query_selector('a:has-text("technical details"), '
+                                       'button:has-text("technical details")')
+        if details:
+            details.click()
+            self.page.wait_for_timeout(300)
+        text = ' '.join(modal.inner_text().split())[:1200]
+        for selector in ('button:has-text("Close")', 'button:has-text("Ok")', '.btn-close'):
             button = modal.query_selector(selector)
             if button:
                 button.click()
@@ -332,6 +344,12 @@ class Checks:
                 if not page.query_selector('.o_mailpro_record .o_form_view'):
                     self.fail('the record pane went away while replying')
                 self.shot('inbox-reply.png')
+                # A dialog on top of the reply is this screen's failure mode:
+                # the pane renders, something throws behind it, and the next
+                # click times out thirty seconds later somewhere unrelated.
+                over_the_reply = self.dialog_in_the_way()
+                if over_the_reply:
+                    self.fail(f'a dialog opened over the reply: {over_the_reply}')
                 # Discard rather than Escape: Escape leaves the draft open,
                 # and the screenshot below is what a reviewer looks at.
                 discard = page.query_selector(
@@ -665,6 +683,10 @@ def main():
         checks = Checks(page, args.out, browser)
         page.on('pageerror', lambda error:
                 checks.js_errors.append(str(error).splitlines()[0][:300]))
+        # Odoo's error service catches what Owl throws, so the only trace of
+        # it outside the dialog is the console.
+        page.on('console', lambda message: message.type == 'error'
+                and checks.js_errors.append(message.text.splitlines()[0][:300]))
         checks.base = args.url
         checks.db = args.db
         checks.call = rpc_for(args.url, args.db)

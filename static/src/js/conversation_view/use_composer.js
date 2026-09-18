@@ -133,6 +133,15 @@ export function useComposer({ onSent }) {
                 resId: false,
                 display: { controlPanel: false },
                 context: { ...context, form_view_ref: INLINE_FORM },
+                // `FormController` calls this the moment it is mounted, to
+                // put the record id in the action's state. Its own default is
+                // a no-op, but mail's composer controller replaces
+                // `defaultProps` wholesale and loses it, and the action
+                // service is what supplies it everywhere else -- so mounted
+                // by hand it is undefined and the mount ends in an "Oops!"
+                // over a composer that otherwise rendered fine. There is no
+                // action state here; the Inbox is the screen.
+                updateActionState: () => {},
             };
             state.open = true;
             state.sending = false;
