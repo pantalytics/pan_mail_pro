@@ -1,6 +1,8 @@
 # Building the conversation view
 
-Status: **steps 1 to 3 built** in 19.0.10.0.0, the rest proposed. The screen and
+Status: **steps 1 to 3 built** in 19.0.10.0.0 and step 4's composer in
+19.0.10.5.0 -- the reply is in the pane, the tab strip and the chatter are
+still to come. The rest is proposed. The screen and
 its rules are in [conversation-view.md](conversation-view.md); this file is how
 it gets built. What shipped is the read layer, the client action with its four
 panes, and Reply through Odoo's own composer. What the browser found that no
@@ -247,6 +249,14 @@ same ones.
   raised `ValueError` in an "Oops" dialog, not a console warning.
 - **The thread read newest-first**, because that is how the query is ordered
   and nobody had looked at it. A conversation reads downwards.
+- **A form view only renders its `<footer>` inside a dialog.** `FormController`
+  cuts every footer out of the arch and the `web.FormView` template draws it
+  under `t-if="env.inDialog"`, portalled into the modal's own footer. So the
+  composer mounted in a pane came up with no Send button, no paperclip and no
+  template selector, and nothing anywhere said so. 19.0.10.5.0 answers it with
+  a primary view that moves the two widgets into the body, and with Send and
+  Discard as the pane's own buttons -- the pane is what closes, so the pane
+  owns them.
 
 ## Risks
 
