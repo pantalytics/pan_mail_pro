@@ -389,9 +389,9 @@ export class ConversationView extends Component {
         }
         this.state.folder = folder;
         // A filter is a question about the folder you are in, so switching
-        // folder keeps it: "needs reply" in Sent is a fair question, and
-        // dropping it on every click is the thing that makes a filter row
-        // feel like it undoes itself.
+        // folder keeps it: "linked to nothing" in Sent is a fair question,
+        // and dropping it on every click is the thing that makes a filter
+        // row feel like it undoes itself.
         this.state.limit = PAGE;
         await this.refresh();
     }

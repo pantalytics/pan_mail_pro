@@ -44,10 +44,12 @@ The screen is four panes:
    them as places mail sits makes the rail read as a filter panel next to the
    mail client the same person has open. 19.0.11.1.0.
 2. **The conversation list.** Sender, subject, snippet, date, and the record the
-   thread is filed on. Unread is weight, not a badge. Over it, the filter row:
-   needs reply, and the two unfiled ones (on a contact only, linked to
-   nothing). A filter is a question about the folder you are in, so it survives
-   a folder switch and a second click clears it.
+   thread is filed on. Unread is weight, not a badge, and it is the only state
+   on a row: a mailbox has read and unread, and a state of ours ("needs reply")
+   is a second inbox to keep correct. Over it, the filter row: the two unfiled
+   ones (on a contact only, linked to nothing), both about linking rather than
+   about the mail. A filter is a question about the folder you are in, so it
+   survives a folder switch and a second click clears it. 19.0.12.2.0.
 3. **The thread.** Messages in order, quoted history collapsed, and a reply that
    goes out through the right mailbox with the conversation quoted underneath.
    That last part is a survey complaint in its own right: today each chatter

@@ -95,9 +95,9 @@ class TestConversationApi(TransactionCase):
     def test_the_rail_holds_folders_and_the_list_holds_filters(self):
         """The rail is the shape every mail client has, and nothing else.
 
-        Our own states -- needs reply, the two unlinked ones -- read as a
-        filter over a list, not as places mail sits, so they come back
-        separately and only for the folder somebody has open.
+        Our own states -- the two unlinked ones -- read as a filter over a
+        list, not as places mail sits, so they come back separately and only
+        for the folder somebody has open.
         """
         self._mail()
         counts = self.Conversation.folder_counts(
@@ -105,12 +105,11 @@ class TestConversationApi(TransactionCase):
         self.assertEqual([row['id'] for row in counts['folders']],
                          ['inbox', 'sent'])
         self.assertEqual([row['id'] for row in counts['filters']],
-                         ['needs_reply', 'unlinked_contact', 'unlinked_none'])
+                         ['unlinked_contact', 'unlinked_none'])
         by_id = {row['id']: row['count']
                  for row in counts['folders'] + counts['filters']}
         self.assertEqual(by_id['inbox'], 1)
         self.assertEqual(by_id['sent'], 0)
-        self.assertEqual(by_id['needs_reply'], 1)
 
     def test_a_folded_mailbox_is_not_asked_for_filter_counts(self):
         """The filter row belongs to one list, so it costs one mailbox."""
@@ -130,37 +129,28 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(rows[0]['subject'], 'Re: Offerte',
                          'the row is the conversation, not the mail we sent')
 
-        # And the filter still asks its own question inside that folder.
-        needs = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, folder='sent', filter_name='needs_reply')
-        self.assertEqual(len(needs), 1)
+    def test_a_list_row_carries_no_state_of_our_own(self):
+        """A mail list has read and unread. Everything else we invented.
 
-    def test_an_answered_conversation_leaves_needs_reply(self):
-        """The filter is about the newest message, not about any message.
-
-        Filtering the messages instead of the conversation left a thread in
-        Needs reply forever after it was answered.
+        "Needs reply" was a state of ours derived from the direction of the
+        newest message: a second inbox to keep correct, next to the one the
+        same person already triages in Outlook.
         """
         self._mail(direction='incoming')
-        self._mail(direction='outgoing', subject='Re: Offerte')
+        row = self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id)[0]
+        self.assertNotIn('waiting_on_us', row)
+        self.assertIn('unread', row)
 
-        needs = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, filter_name='needs_reply')
-        self.assertEqual(needs, [])
-
-        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
-            mailbox_id=self.mailbox.id, folder='inbox')['filters']}
-        self.assertEqual(counts['needs_reply'], 0)
-
-    def test_the_row_describes_the_conversation_not_the_filter(self):
-        """Under a filter on direction, the subject, the date and the message
-        count still belong to the whole thread."""
+    def test_the_row_describes_the_conversation_not_the_page(self):
+        """The subject, the date and the message count belong to the whole
+        thread, whatever narrowed the list."""
         self._mail(direction='outgoing', subject='First')
         self._mail(direction='outgoing', subject='Second')
         self._mail(direction='incoming', subject='Re: Second')
 
         row = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, filter_name='needs_reply')[0]
+            mailbox_id=self.mailbox.id)[0]
         self.assertEqual(row['subject'], 'Re: Second')
         self.assertEqual(row['count'], 3, 'three messages, not one incoming')
 
