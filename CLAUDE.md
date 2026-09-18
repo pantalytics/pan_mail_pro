@@ -708,6 +708,21 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### Reusing Odoo's own menus (19.0.13.0.0)
+- **A dropdown renders in the overlay container, not inside the screen that
+  opened it.** Nest its SCSS under `.o_mailpro_conversation` and not one rule
+  applies -- the menu is a sibling of the whole web client by the time it is
+  drawn. `menuClass` plus a top-level block is the way.
+- **The filter menu is `Dropdown` + `CheckboxItem`**, the same two components
+  `web.SearchBarMenu` builds Odoo's own filter menu from, down to
+  `class="{ 'o_menu_item': true, selected: isActive }"` and
+  `closingMode="'none'"`. A full `SearchModel` would not fit: the Inbox reads
+  through `pan.mail.conversation`'s own RPC methods, not through a
+  `search_read` over a table, so there is no domain for a facet to become.
+- **A composer opened in a dialog does not close on Escape when it has a
+  draft in it**, so a browser check that presses Escape leaves a modal over
+  everything it asserts next. Click the dialog's own close button.
+
 ### Mounting Odoo's own views inside your own screen (19.0.10.0.0)
 - **Bootstrap's display utilities carry `!important`, and Odoo's own markup wears them.** The form renderer is `d-flex flex-nowrap` in its wide layout and the statusbar's button row is `d-flex`; a plain `display: block` / `display: none` from an addon loses both times. The form then renders a chatter with no record above it, and the record's "Convert to Opportunity" stays as the loudest button on a screen whose one job is replying. Both cost a round trip in the browser to find, because nothing errors.
 - **A group on a menu is not an access rule, and in 19.0 an action cannot carry one either.** `ir.actions.actions` has no group field, so a client action opens by URL for anyone who knows it, and every `@api.model` method on the model behind it answers `call_kw` from any session. The check belongs in the methods.

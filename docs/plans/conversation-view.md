@@ -44,10 +44,14 @@ The screen is four panes:
    them as places mail sits makes the rail read as a filter panel next to the
    mail client the same person has open. 19.0.11.1.0.
 2. **The conversation list.** Sender, subject, snippet, date, and the record the
-   thread is filed on. Unread is weight, not a badge. Over it, the filter row:
-   needs reply, and the two unfiled ones (on a contact only, linked to
-   nothing). A filter is a question about the folder you are in, so it survives
-   a folder switch and a second click clears it.
+   thread is filed on. Unread is weight, not a badge. Over it, a header with
+   the folder's name and, at its right, the filter menu: unread, needs reply,
+   and the two unfiled ones (on a contact only, linked to nothing). One filter
+   at a time, named on the closed button so a short list is never short for a
+   reason nobody can see. A filter is a question about the folder you are in,
+   so it survives a folder switch and a second click clears it. It is Odoo's
+   own dropdown and its own `CheckboxItem`, the components the control panel's
+   filter menu is built from. 19.0.13.0.0.
 3. **The thread.** Messages in order, quoted history collapsed, and a reply that
    goes out through the right mailbox with the conversation quoted underneath.
    That last part is a survey complaint in its own right: today each chatter
@@ -61,6 +65,14 @@ The screen is four panes:
    already advertises chatter sync with document links and a free one ships the
    same three-pane shape. What is ours is the discipline below, and the
    transport underneath.
+
+Above the panes, the bar every mail client has, in the order they all put it:
+**New Email** on the left, the **search** in the middle. Typing is the search,
+debounced; Escape gives the folder back. New Email asks which kind of record
+to write on and then which record, through Odoo's own picker, and only then
+opens Odoo's own composer in its own window. The record is not optional: a mail
+this module sends with nothing behind it is the "linked to nothing" state the
+filter menu one pane over exists to find. 19.0.13.0.0.
 
 The panes are the reader's, not ours. Every divider drags, the folder rail and
 the record pane fold away, and the widths live in the browser, so the screen

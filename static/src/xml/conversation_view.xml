@@ -19,15 +19,50 @@
         <div class="o_content o_mailpro_conversation d-flex flex-column h-100">
 
             <!--
-                No title here: the control panel above already says Mail Pro /
-                Inbox, and saying it twice is chrome competing with content.
+                The bar every mail client has, in the order they all put it:
+                the one thing you start from on the left, the one thing you
+                look for with in the middle. No title: the control panel above
+                already says Mail Pro / Inbox, and saying it twice is chrome
+                competing with content.
+
+                Writing a mail from here needs a record to write it on. This
+                module files mail on documents, and a mail filed on nothing is
+                the state the Inbox has a filter for. So New Email asks which
+                kind of record first, from the same short list the linking
+                picker offers, and Odoo's own dialog picks the record.
             -->
-            <div class="o_mailpro_topbar d-flex align-items-center justify-content-end gap-2">
-                <input type="search" id="o_mailpro_search"
-                       class="o_mailpro_search form-control form-control-sm"
-                       aria-label="Search people and subjects"
-                       placeholder="Vandermolen, offerte..."
-                       t-on-keyup="(ev) => this.onSearch(ev)"/>
+            <div class="o_mailpro_topbar d-flex align-items-center gap-2">
+                <div class="o_mailpro_topbar_start d-flex align-items-center">
+                    <Dropdown menuClass="'o_mailpro_new_menu'">
+                        <button type="button" class="btn btn-primary btn-sm o_mailpro_new">
+                            <i class="fa fa-pencil-square-o me-1" aria-hidden="true"/>New Email
+                        </button>
+                        <t t-set-slot="content">
+                            <div class="dropdown-header">Write this mail on</div>
+                            <DropdownItem t-foreach="state.linkTargets" t-as="target"
+                                          t-key="target.model"
+                                          class="'o_mailpro_new_target'"
+                                          onSelected="() => this.newEmail(target)">
+                                <t t-esc="target.label"/>
+                            </DropdownItem>
+                            <div t-if="!state.linkTargets.length" class="dropdown-item-text text-muted">
+                                Nothing to write on yet.
+                            </div>
+                        </t>
+                    </Dropdown>
+                </div>
+                <div class="o_mailpro_search_zone flex-grow-1 d-flex justify-content-center">
+                    <input type="search" id="o_mailpro_search"
+                           class="o_mailpro_search form-control form-control-sm"
+                           aria-label="Search people and subjects"
+                           placeholder="Search mail"
+                           t-att-value="state.search"
+                           t-on-input="(ev) => this.onSearchInput(ev)"
+                           t-on-keydown="(ev) => this.onSearchKey(ev)"/>
+                </div>
+                <!-- The search stays in the middle of the window, which it
+                     only does if both sides weigh the same. -->
+                <div class="o_mailpro_topbar_end" aria-hidden="true"/>
             </div>
 
             <div t-if="state.error" class="o_mailpro_error d-flex align-items-center gap-2" role="alert">
@@ -88,22 +123,41 @@
                      t-attf-style="flex-basis: {{panes.state.list}}px">
 
                     <!--
-                        The states that are ours, as a filter row over the
-                        list rather than as folders in the rail. A folder is
-                        a place mail is and the provider decides what those
-                        are; "needs reply" is a question we ask about it.
-                        A second click clears the filter.
+                        The list header, where a mail client puts it: what you
+                        are reading on the left, the filter on the right.
+
+                        The states that are ours live in that menu rather than
+                        in the rail. A folder is a place mail is and the
+                        provider decides what those are; "needs reply" is a
+                        question we ask about it. One at a time, and the
+                        active one is named on the button: a filter you cannot
+                        see from the closed menu is a list that looks short
+                        for no reason.
                     -->
-                    <div t-if="filters.length" class="o_mailpro_filters d-flex align-items-center gap-1 flex-wrap"
-                         role="group" aria-label="Filter conversations">
-                        <button t-foreach="filters" t-as="pill" t-key="pill.id"
-                                type="button" class="o_mailpro_filter"
-                                t-att-class="{ 'o_mailpro_filter_active': state.filter === pill.id }"
-                                t-att-aria-pressed="state.filter === pill.id ? 'true' : 'false'"
-                                t-on-click="() => this.setFilter(pill.id)">
-                            <span class="o_mailpro_filter_label" t-esc="pill.name"/>
-                            <span t-if="pill.count" class="o_mailpro_count" t-esc="folderCount(pill)"/>
-                        </button>
+                    <div class="o_mailpro_list_head d-flex align-items-center justify-content-between gap-2">
+                        <span class="o_mailpro_list_title text-truncate" t-esc="folderLabel"/>
+                        <Dropdown t-if="filters.length" position="'bottom-end'"
+                                  menuClass="'o_mailpro_filter_menu'">
+                            <button type="button" class="o_mailpro_filter_toggle"
+                                    t-att-class="{ 'o_mailpro_filter_toggle_active': state.filter }"
+                                    aria-label="Filter conversations">
+                                <i class="fa fa-filter" aria-hidden="true"/>
+                                <span t-if="activeFilter" class="o_mailpro_filter_label"
+                                      t-esc="activeFilter.name"/>
+                            </button>
+                            <t t-set-slot="content">
+                                <div class="o_dropdown_title px-3 pb-1">Filter By</div>
+                                <CheckboxItem t-foreach="filters" t-as="pill" t-key="pill.id"
+                                              class="{ 'o_menu_item o_mailpro_filter_item': true, selected: state.filter === pill.id }"
+                                              checked="state.filter === pill.id"
+                                              closingMode="'none'"
+                                              onSelected="() => this.setFilter(pill.id)">
+                                    <span class="o_mailpro_filter_label" t-esc="pill.name"/>
+                                    <span t-if="pill.count" class="o_mailpro_count"
+                                          t-esc="folderCount(pill)"/>
+                                </CheckboxItem>
+                            </t>
+                        </Dropdown>
                     </div>
                     <t t-if="state.loading and !state.conversations.length">
                         <div class="o_mailpro_skeleton" aria-hidden="true">

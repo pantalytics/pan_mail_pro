@@ -91,6 +91,7 @@ RAIL_FOLDERS = [
 # provider's, so they read as filters over a list rather than as folders
 # holding mail of their own -- the difference between a view and a place.
 LIST_FILTERS = [
+    ('unread', 'Unread'),
     ('needs_reply', 'Needs reply'),
     ('unlinked_contact', 'On a contact only'),
     ('unlinked_none', 'Linked to nothing'),
@@ -176,6 +177,11 @@ class PanMailConversation(models.AbstractModel):
         of the same message, so an AND of the two clauses finds nothing. The
         grouping stays wide there and the newest message decides alone.
         """
+        if filter_name == 'unread':
+            # Odoo's own needaction search, which is the same row
+            # `_unread_ids` reads to put the dot on the list. Never a flag of
+            # ours: two answers to "have I read this" is one answer too many.
+            return [('needaction', '=', True)]
         if filter_name in DIRECTION_FOLDERS:
             if folder == 'sent':
                 return []
