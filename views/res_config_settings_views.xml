@@ -39,6 +39,7 @@
                             <div invisible="x_license_state != 'not_connected'">
                                 <div class="text-muted mb-2">
                                     Mail Pro works on an Odoo instance that is connected to a Pantalytics account.
+                                    Setup starts once this one is.
                                 </div>
                                 <button name="action_license_connect" type="object"
                                         string="Connect to Pantalytics" class="btn-primary"/>
@@ -75,7 +76,8 @@
                                         string="Disconnect" class="btn-link text-danger ps-0"
                                         confirm="This Odoo instance forgets its Pantalytics key. You can connect again at any time."/>
                             </div>
-                            <div class="alert alert-warning mt-2 mb-0" role="alert" invisible="not x_license_sync_blocked">
+                            <div class="alert alert-warning mt-2 mb-0" role="alert"
+                                 invisible="not x_license_sync_blocked or x_license_state == 'not_connected'">
                                 Incoming mail is not synced and no new mailbox can be connected until this
                                 Odoo instance is connected. Sending keeps working.
                             </div>
@@ -85,6 +87,12 @@
                         </div>
                     </div>
 
+                    <!-- Nothing below this line exists on an instance that is
+                         not connected: every step of it configures a product
+                         that will not run, and a checklist you cannot finish
+                         reads as the thing that is broken. One screen, one
+                         action: connect. -->
+                    <div invisible="x_license_state != 'connected'">
                     <h2>Setup</h2>
                     <div class="row mt-3 o_settings_container">
                     <div class="col-12 o_setting_box o_mailpro_steps">
@@ -250,6 +258,7 @@
                                 </a>
                             </div>
                         </div>
+                    </div>
                     </div>
                 </app>
             </xpath>

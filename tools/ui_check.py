@@ -24,6 +24,7 @@ Exit code 1 with the failures listed is the whole interface; CI reads that.
 """
 import argparse
 import ast
+import datetime
 import os
 import sys
 import xmlrpc.client
@@ -143,16 +144,55 @@ class Checks:
         if 'Pantalytics B.V.' not in text:
             self.fail('About does not carry the copyright line')
 
-        # Pantalytics Account: on a database nobody has linked, one way in and
-        # nothing of the pending or connected states leaking onto the screen.
-        connect = [b for b in block.query_selector_all('button')
-                   if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
-        if len(connect) != 1:
-            self.fail(f'Pantalytics Account shows {len(connect)} Connect buttons, expected 1')
-        for leaked in ('Check Approval', 'Disconnect'):
+        # Pantalytics Account, connected: one way out and nothing of the
+        # not-connected or pending states leaking onto the screen.
+        for leaked in ('Connect to Pantalytics', 'Check Approval'):
             if any(b.is_visible() and b.inner_text().strip() == leaked
                    for b in block.query_selector_all('button')):
-                self.fail(f'an unlinked database shows "{leaked}"')
+                self.fail(f'a connected database shows "{leaked}"')
+        if not any(b.is_visible() and b.inner_text().strip() == 'Disconnect'
+                   for b in block.query_selector_all('button')):
+            self.fail('a connected database offers no way to disconnect')
+
+    def settings_not_connected(self):
+        """Without a Pantalytics account the page is one button and nothing else.
+
+        Every step below it configures a product that will not run, and a
+        checklist you cannot finish reads as the thing that is broken. The
+        instance is seeded connected, so this disconnects it, looks, and
+        connects it back for the checks that come after.
+        """
+        page = self.page
+        link = self.call('pan.mail.license', 'search', [])
+        self.call('pan.mail.license', 'unlink', link)
+        try:
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_timeout(1200)
+            self.shot('settings-not-connected.png')
+
+            block = page.query_selector('div.app_settings_block[data-key=pan_mail_pro]')
+            connect = [b for b in block.query_selector_all('button')
+                       if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
+            if len(connect) != 1:
+                self.fail(f'an unlinked database shows {len(connect)} Connect '
+                          f'buttons, expected 1')
+            steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
+            if steps:
+                self.fail(f'an unlinked database shows {len(steps)} setup steps, '
+                          f'expected none')
+            text = block.inner_text()
+            for leaked in ('1. Email Provider', 'Elastic License', manifest_version()):
+                if leaked in text:
+                    self.fail(f'an unlinked database still shows "{leaked}"')
+            self.error_free('Settings without a Pantalytics account')
+        finally:
+            self.call('pan.mail.license', 'create', {
+                'status': 'active',
+                'valid_until': (datetime.datetime.now(datetime.UTC)
+                                + datetime.timedelta(days=14)
+                                ).strftime('%Y-%m-%d %H:%M:%S')})
 
     # -- Every menu this module adds -----------------------------------------
 
@@ -1020,6 +1060,7 @@ def main():
         checks.db = args.db
         checks.call = rpc_for(args.url, args.db)
         checks.settings()
+        checks.settings_not_connected()
         checks.menus()
         checks.conversation_view()
         checks.linking()

@@ -81,10 +81,11 @@ call('pan.mail.provider', 'create', {
     'tenant_id': '11111111-2222-3333-4444-555555555555'})
 for name in ('example.com', 'example.odoo.com'):
     call('pan.mail.domain', 'create', {'name': name})
-# Accounts are only created on a connected Odoo instance. Connect for the
-# seeding, then disconnect, so the page shows what a new customer sees.
+# The instance stays connected: accounts are only created on a connected one,
+# and the settings page shows nothing but the Connect button until it is.
+# `tools/ui_check.py` disconnects it itself to look at that state.
 import datetime
-link = call('pan.mail.license', 'create', {
+call('pan.mail.license', 'create', {
     'status': 'active',
     'valid_until': (datetime.datetime.now(datetime.UTC)
                     + datetime.timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')})
@@ -212,7 +213,6 @@ for name, address, subject, body, when in (
         'suggested_model': 'crm.lead', 'suggested_res_id': lead,
         'suggested_name': 'Asafdichtingen, revisie',
         'suggested_reason': 'The only open Lead/Opportunity for %s' % name})
-call('pan.mail.license', 'unlink', [link])
 PY
 
 echo "http://localhost:8069 — admin / admin"
