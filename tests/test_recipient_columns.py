@@ -149,6 +149,68 @@ class TestRecipientColumns(MailProTestCase):
         self.assertEqual(row['recipients'], self.mailbox.email)
         self.assertEqual(row['cc'], '%s, %s' % (COLLEAGUE, STRANGER))
 
+    def test_the_row_names_the_sender_s_address(self):
+        """The header's From line is `Name <address>`. The name was always
+        there; the address is what tells two Jans apart."""
+        message = self._process()
+        row = self.env['pan.mail.conversation']._message_row(message)
+        self.assertEqual(row['author_email'], CUSTOMER)
+
+    def test_an_address_with_no_contact_still_has_an_address(self):
+        message = self.env['mail.message'].create({
+            'model': 'res.partner',
+            'res_id': self.external_partner.id,
+            'message_type': 'email',
+            'author_id': False,
+            'email_from': '"Someone New" <new@anderbedrijf.test>',
+        })
+        row = self.env['pan.mail.conversation']._message_row(message)
+        self.assertEqual(row['author_email'], 'new@anderbedrijf.test')
+
+    def test_an_incoming_mail_with_no_columns_arrived_on_the_mailbox(self):
+        """Everything older than the two columns has no To at all, and the
+        sync notifies nobody so there are no partners to fall back on. The
+        one To that is always true of a received mail is the mailbox."""
+        message = self.env['mail.message'].create({
+            'model': 'res.partner',
+            'res_id': self.external_partner.id,
+            'message_type': 'email',
+            'x_direction': 'incoming',
+            'x_mailbox_id': self.mailbox.id,
+        })
+        row = self.env['pan.mail.conversation']._message_row(message)
+        self.assertEqual(row['recipients'], self.mailbox.email)
+
+    def test_a_sent_mail_carries_its_to_and_cc(self):
+        """The send path stamps the same two columns the sync does, so a
+        reply written here shows its To and Cc without waiting for the Sent
+        folder to come back around -- and an IMAP mailbox with no Sent
+        sync would otherwise never show them at all."""
+        # The fixture already connected the mailbox owner; the account is
+        # unique per (user, provider), so a second connect would collide.
+        account = self.env['pan.mail.account'].sudo().search(
+            [('user_id', '=', self.salesperson.id)], limit=1)
+        self.assertTrue(account, 'the fixture connects the mailbox owner')
+        message = self.env['mail.message'].create({
+            'model': 'res.partner',
+            'res_id': self.external_partner.id,
+            'message_type': 'email',
+            'subject': 'Reply from the Inbox',
+            'partner_ids': [(6, 0, [self.external_partner.id])],
+        })
+        mail = self.env['mail.mail'].create({
+            'mail_message_id': message.id,
+            'email_to': '"Jan" <%s>' % STRANGER,
+            'email_cc': COLLEAGUE,
+            'recipient_ids': [(6, 0, [self.external_partner.id])],
+        })
+        mail._record_sent({'success': True, 'message_id': '<sent-001@company.test>',
+                           'thread_id': False}, self.mailbox, account)
+        self.assertEqual(message.x_email_to,
+                         '%s, %s' % (STRANGER, self.external_partner.email))
+        self.assertEqual(message.x_email_cc, COLLEAGUE)
+        self.assertEqual(message.x_direction, 'outgoing')
+
     def test_a_message_without_the_columns_falls_back_to_partner_ids(self):
         """Mail written from the chatter, and everything that predates the two
         columns, still shows a recipients line."""

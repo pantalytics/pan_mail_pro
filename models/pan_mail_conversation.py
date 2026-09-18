@@ -41,7 +41,7 @@ from odoo import models, api, _
 from odoo.exceptions import AccessError
 from odoo.fields import Domain
 from odoo.addons.mail.tools.discuss import Store
-from odoo.tools import html2plaintext
+from odoo.tools import email_split, html2plaintext
 
 _logger = logging.getLogger(__name__)
 
@@ -634,17 +634,25 @@ class PanMailConversation(models.AbstractModel):
             'subject': message.subject or '',
             'author': message.author_id.display_name or message.email_from or '',
             'author_id': message.author_id.id or False,
+            # The address behind the name, for the header's From line. The
+            # contact's own when there is one; otherwise what the wire said.
+            'author_email': (message.author_id.email
+                             or self._first_address(message.email_from)),
             'body': message.body or '',
             'direction': message.x_direction or '',
             'model': message.model or False,
             'res_id': message.res_id or 0,
             'record_name': message.x_document_name or message.record_name or '',
             'mailbox': message.x_mailbox_id.email or '',
-            # The mail's own To/Cc when the sync wrote them, and Odoo's
-            # notified partners for everything else (mail sent from the
-            # chatter, and every message that predates the two columns).
+            # The mail's own To/Cc when the sync or the send path wrote them,
+            # and Odoo's notified partners for everything else (mail posted
+            # from the chatter, and every message that predates the two
+            # columns). An incoming mail with neither still arrived somewhere:
+            # the mailbox it came in on is the one To that is always true.
             'recipients': message.x_email_to or ', '.join(
-                p.email or p.display_name for p in message.partner_ids),
+                p.email or p.display_name for p in message.partner_ids
+            ) or (message.x_direction == 'incoming'
+                  and message.x_mailbox_id.email or ''),
             'cc': message.x_email_cc or '',
         }
         if row['kind'] == 'event':
@@ -652,6 +660,12 @@ class PanMailConversation(models.AbstractModel):
             # the tracking values, and without them the row is a blank line.
             row['tracking'] = self._tracking_rows(message)
         return row
+
+    @staticmethod
+    def _first_address(value):
+        """The bare address out of `Name <addr>`, or '' when there is none."""
+        addresses = email_split(value or "")
+        return addresses[0] if addresses else ''
 
     def _kind_of(self, message):
         """Mail, an internal note, or something the record did to itself.

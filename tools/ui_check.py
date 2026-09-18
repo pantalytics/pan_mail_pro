@@ -457,6 +457,33 @@ class Checks:
                     closed.click()
                     page.wait_for_timeout(400)
 
+        # Who was on the open mail, the way Outlook shows it: To and Cc on
+        # one line under the sender, and the whole block -- From with its
+        # address, To, Cc, Date -- behind a click on that line. Folded by
+        # default; a header four lines tall on every open mail is the thing
+        # the fold exists to avoid.
+        meta = page.query_selector('.o_mailpro_message_open .o_mailpro_meta_toggle')
+        if meta is None:
+            self.fail('the open message has no To/Cc line')
+        elif page.query_selector('.o_mailpro_message_open .o_mailpro_meta_full'):
+            self.fail('the header details are open before anybody asked')
+        else:
+            meta.click()
+            page.wait_for_timeout(300)
+            full = page.query_selector('.o_mailpro_message_open .o_mailpro_meta_full')
+            if full is None:
+                self.fail('clicking the To/Cc line did not open the header')
+            else:
+                # text_content, not inner_text: the labels are set in
+                # capitals by CSS, and inner_text returns what is drawn.
+                labels = [dt.text_content().strip() for dt in full.query_selector_all('dt')]
+                for word in ('From', 'To', 'Date'):
+                    if word not in labels:
+                        self.fail(f'the open header has no {word} line')
+                self.shot('inbox-message-details.png')
+                meta.click()
+                page.wait_for_timeout(300)
+
         # The fourth pane is the product. If the form view cannot mount, the
         # pane falls back and this is the only place that would notice.
         if page.query_selector('.o_mailpro_record .o_form_view') is None:

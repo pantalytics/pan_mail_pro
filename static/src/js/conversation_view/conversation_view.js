@@ -223,11 +223,13 @@ export class ConversationView extends Component {
             // both what the tab draws and what tells Owl the second read
             // arrived.
             activityIds: [],
-            // Which messages are open, and whose quoted history is unfolded.
-            // Keyed by message id, so a thread that reloads under a reply
-            // keeps nothing from the thread before it.
+            // Which messages are open, whose quoted history is unfolded, and
+            // whose header shows the full From / To / Cc / Date block. Keyed
+            // by message id, so a thread that reloads under a reply keeps
+            // nothing from the thread before it.
             open: {},
             quotes: {},
+            details: {},
             showRejected: false,
             search: "",
         });
@@ -380,6 +382,7 @@ export class ConversationView extends Component {
         this.state.activityIds = [];
         this.state.open = {};
         this.state.quotes = {};
+        this.state.details = {};
         this.split.clear();
         await this.readThread();
     }
@@ -767,6 +770,30 @@ export class ConversationView extends Component {
         this.state.quotes[message.id] = !this.state.quotes[message.id];
     }
 
+    /**
+     * The header the way Outlook draws it: To and Cc on one line under the
+     * sender, and the whole block -- From with its address, To, Cc, the full
+     * date -- one click further. Folded by default, because "who was on
+     * this" is a question asked on one mail in ten and the answer is four
+     * lines tall.
+     */
+    showDetails(message) {
+        return !!this.state.details[message.id];
+    }
+
+    toggleDetails(message) {
+        this.state.details[message.id] = !this.state.details[message.id];
+    }
+
+    /** `Name <address>`, or whichever half the message has. */
+    fromLine(message) {
+        if (message.author && message.author_email
+                && message.author !== message.author_email) {
+            return `${message.author} <${message.author_email}>`;
+        }
+        return message.author || message.author_email || "";
+    }
+
     hasQuote(message) {
         return !!this.parts(message).quote;
     }
@@ -781,23 +808,6 @@ export class ConversationView extends Component {
 
     quotedBody(message) {
         return markup(this.parts(message).quote);
-    }
-
-    /**
-     * Who the open message went to, on one line.
-     *
-     * Cc is worth its own word: on a shared mailbox "was my colleague on this"
-     * is the question this line exists to answer, and a merged list cannot.
-     */
-    recipientLine(message) {
-        const parts = [];
-        if (message.recipients) {
-            parts.push(`to ${message.recipients}`);
-        }
-        if (message.cc) {
-            parts.push(`cc ${message.cc}`);
-        }
-        return parts.join(" \u00b7 ");
     }
 
     /** The one line a collapsed message shows, taken from what was written. */

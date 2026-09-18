@@ -179,6 +179,17 @@ teaching: one of these reaches the customer, the other does not.
   *Also notified in Odoo: Jan, Piet (+2)*. Read-only here; followers are
   managed on the record, in pane 4, where the list belongs.
 
+**Followers on the screen.** Pane 4 lost its chatter in 19.0.10.0.0, and the
+follower list went with it; nothing on the Inbox shows who Odoo notifies about
+this record. Decided, not built: a **Followers** button at the right end of the
+tab strip, beside Activities, opening Odoo's own follower list (the same
+dropdown the chatter's people icon opens, with its add, remove and
+subtype edits). Not a fifth tab: the four tabs are readings of the
+conversation, and a tab whose whole content is three names is an empty screen
+with a list in the corner. Not in pane 4 either: the record form has no
+chatter to hang it on, and a follower list drawn by hand there is the second
+implementation this document keeps refusing.
+
 **Log note.** No To, no Cc, no followers line. The note reaches the record's
 followers through Odoo's own note subtype, exactly as the chatter does. A
 recipient row on a note is what makes people believe a note is an email.
