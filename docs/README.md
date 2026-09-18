@@ -49,7 +49,8 @@ See [Security](security.md) for the full picture.
 
 ## Getting Started
 
-1. [Installation](getting-started/installation.md), add the module to your Odoo instance
+1. [Installation](getting-started/installation.md), add the module to your
+   Odoo instance and connect it to your Pantalytics account
 2. Set up your provider: [Microsoft 365](getting-started/azure-setup.md),
    [Google Workspace](getting-started/google-setup.md) or
    [IMAP/SMTP](getting-started/imap-setup.md)
