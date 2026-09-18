@@ -212,6 +212,10 @@ export class ConversationView extends Component {
             limit: PAGE,
             hasMore: false,
             selected: null,
+            // What a new mail is being written on, while one is: the record
+            // picked in the dialog, by model, id and name. The composer reads
+            // its target from its own context; this is for the head.
+            compose: null,
             tab: restoreTab(),
             thread: EMPTY_THREAD(),
             // The ids whose activity cards are in the mail store. A card
@@ -951,11 +955,11 @@ export class ConversationView extends Component {
     /**
      * A new mail, on a record picked first.
      *
-     * Odoo's own composer in its own dialog, the way every other screen opens
-     * it: the arch's footer is where Send lives, and a dialog is the one
-     * place `FormController` renders one. The pane composer exists because a
-     * reply has three panes worth reading behind it; a new mail has none of
-     * that context yet, so it gets the standard window and nothing of ours.
+     * The same composer, in the same pane, as a reply: one place on this
+     * screen writes mail, and a dialog over the Inbox was a second one to
+     * keep in step with it. The pane has no thread to show behind a new mail,
+     * so the head names the record instead of a subject, and the rest of the
+     * screen stays where it was.
      *
      * The record is not optional. This module files mail on documents -- a
      * mail sent from here with no record behind it is the "Linked to nothing"
@@ -967,36 +971,23 @@ export class ConversationView extends Component {
     newEmail() {
         this.dialog.add(LinkDialog, {
             title: _t("New email on"),
-            onSelect: (model, resId) => this.composeOn(model, resId),
+            onSelect: (model, resId, label) => this.composeOn(model, resId, label),
         });
     }
 
-    /** The composer dialog, and a re-read of the list once it closes. */
-    async composeOn(model, resId) {
-        await this.action.doAction(
-            {
-                type: "ir.actions.act_window",
-                res_model: "mail.compose.message",
-                views: [[false, "form"]],
-                target: "new",
-                name: _t("New Email"),
-                context: {
-                    default_model: model,
-                    default_res_ids: [resId],
-                    default_composition_mode: "comment",
-                    default_subtype_xmlid: "mail.mt_comment",
-                },
-            },
-            {
-                onClose: async () => {
-                    // Sent or discarded, we cannot tell from here and do not
-                    // need to: a re-read costs one query and a mail that went
-                    // out but is missing from the list reads as a mail that
-                    // did not.
-                    await this.refresh({ keepSelection: true });
-                },
-            }
-        );
+    /** The pane composer, on the record just picked. */
+    composeOn(model, resId, label) {
+        // The pane is hidden while the record has the screen to itself.
+        if (this.panes.state.zoom) {
+            this.panes.toggleZoom();
+        }
+        this.state.compose = { model, res_id: resId, label: label || "" };
+        this.composer.open({
+            default_model: model,
+            default_res_ids: [resId],
+            default_composition_mode: "comment",
+            default_subtype_xmlid: "mail.mt_comment",
+        }, "new");
     }
 
     /**
@@ -1007,6 +998,13 @@ export class ConversationView extends Component {
      * without leaving the tab, and it is the message that opens.
      */
     async onReplySent() {
+        if (this.composer.state.mode === "new") {
+            // A new mail belongs to no open thread. The list is re-read, and
+            // the mail shows up there if it landed in the folder on screen.
+            this.state.compose = null;
+            await this.refresh({ keepSelection: true });
+            return;
+        }
         await this.readThread({ openNewest: true });
         await this.refresh({ keepSelection: true });
     }

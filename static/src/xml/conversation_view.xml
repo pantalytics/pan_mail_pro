@@ -29,8 +29,9 @@
                 module files mail on documents, and a mail filed on nothing is
                 the state the Inbox has a filter for. So New Email opens the
                 same dialog linking opens, which asks the same two questions
-                in the same two searchable steps, and the composer opens once
-                both are answered.
+                in the same two searchable steps, and once both are answered
+                the composer opens in the conversation pane, the same one a
+                reply uses.
             -->
             <div class="o_mailpro_topbar d-flex align-items-center gap-2">
                 <div class="o_mailpro_topbar_start d-flex align-items-center">
@@ -224,7 +225,29 @@
 
                 <!-- 3. the conversation -->
                 <div t-if="!panes.state.zoom" class="o_mailpro_thread" role="region" aria-label="Conversation">
-                    <t t-if="state.selected">
+                    <!--
+                        A new mail takes the pane the way a reply does. There
+                        is no thread behind it yet, so the head names the
+                        record it is written on where a subject would go, and
+                        the buttons are the same two.
+                    -->
+                    <t t-if="composer.state.open and composer.state.mode === 'new'">
+                        <div class="o_mailpro_thread_head">
+                            <div class="d-flex align-items-start justify-content-between gap-3">
+                                <div class="min-w-0">
+                                    <h2 class="o_mailpro_thread_title">New email</h2>
+                                    <div class="o_mailpro_thread_sub">
+                                        <span t-esc="state.compose and state.compose.label"/>
+                                    </div>
+                                </div>
+                                <t t-call="pan_mail_pro.ComposerButtons"/>
+                            </div>
+                        </div>
+                        <div class="o_mailpro_composer" role="region" aria-label="New email">
+                            <ComposerForm t-props="composer.formProps"/>
+                        </div>
+                    </t>
+                    <t t-elif="state.selected">
                         <div class="o_mailpro_thread_head">
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <div class="min-w-0">
@@ -253,19 +276,7 @@
                                     <button t-if="canReply" type="button" class="btn btn-primary btn-sm"
                                             t-on-click="() => this.reply()">Reply</button>
                                 </div>
-                                <div t-if="composer.state.open"
-                                     class="d-flex align-items-center gap-2 flex-shrink-0">
-                                    <button type="button" class="btn btn-link btn-sm"
-                                            t-on-click="() => composer.close()">Discard</button>
-                                    <!-- Same button, and it says what it will
-                                         do: a note is logged, a reply is sent. -->
-                                    <button type="button" class="btn btn-primary btn-sm"
-                                            t-att-disabled="composer.state.sending"
-                                            t-on-click="() => composer.send()">
-                                        <t t-if="composer.state.mode === 'note'">Log</t>
-                                        <t t-else="">Send</t>
-                                    </button>
-                                </div>
+                                <t t-if="composer.state.open" t-call="pan_mail_pro.ComposerButtons"/>
                             </div>
                             <div t-if="state.thread.records.length" class="o_mailpro_chips d-flex align-items-center gap-2">
                                 <span class="o_mailpro_label">Linked to</span>
@@ -382,7 +393,7 @@
                             says what mounting it here costs.
                         -->
                         <div t-if="composer.state.open" class="o_mailpro_composer"
-                             role="region" aria-label="Reply">
+                             role="region" t-att-aria-label="composer.state.mode === 'note' ? 'Internal note' : 'Reply'">
                             <ComposerForm t-props="composer.formProps"/>
                         </div>
                         <t t-elif="state.tab === 'files'">
@@ -603,6 +614,25 @@
                     t-on-dblclick.stop="() => {}"
                     t-on-click.stop="() => panes.toggle(divider)">
                 <i class="fa" t-att-class="panes.chevron(divider)" aria-hidden="true"/>
+            </button>
+        </div>
+    </t>
+
+    <!--
+        Discard and Send, for whichever of the three things is being written.
+        One primary action per screen: while a composer is open this is it,
+        and the button says what it will do: a note is logged, a reply and
+        a new mail are sent.
+    -->
+    <t t-name="pan_mail_pro.ComposerButtons">
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+            <button type="button" class="btn btn-link btn-sm"
+                    t-on-click="() => composer.close()">Discard</button>
+            <button type="button" class="btn btn-primary btn-sm"
+                    t-att-disabled="composer.state.sending"
+                    t-on-click="() => composer.send()">
+                <t t-if="composer.state.mode === 'note'">Log</t>
+                <t t-else="">Send</t>
             </button>
         </div>
     </t>

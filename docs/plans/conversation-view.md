@@ -73,9 +73,10 @@ Above the panes, the bar every mail client has, in the order they all put it:
 **New Email** on the left, the **search** in the middle. Typing is the search,
 debounced; Escape gives the folder back. New Email opens the same two-step
 dialog linking opens -- which kind of record, then which record -- and only
-then opens Odoo's own composer in its own window. The record is not optional:
-a mail this module sends with nothing behind it is the "linked to nothing"
-state the filter menu one pane over exists to find. 19.0.13.0.0.
+then opens the composer, in the conversation pane like a reply. The record is
+not optional: a mail this module sends with nothing behind it is the "linked
+to nothing" state the filter menu one pane over exists to find. 19.0.13.0.0;
+the composer moved from its own window into the pane in 19.0.13.2.0.
 
 The panes are the reader's, not ours. Every divider drags, the folder rail and
 the record pane fold away, and the widths live in the browser, so the screen

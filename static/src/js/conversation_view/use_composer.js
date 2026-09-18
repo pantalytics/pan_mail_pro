@@ -104,9 +104,10 @@ export class ComposerForm extends Component {
  */
 export function useComposer({ onSent }) {
     const orm = useService("orm");
-    // `mode` is which of the two things is being written, `reply` or `note`.
-    // Only the button label reads it: the composer, the save and the post are
-    // the same, and what separates them is the subtype in the context.
+    // `mode` is which of the three things is being written: `reply`, `note`
+    // or `new`. The button label and the pane's head read it; the composer,
+    // the save and the post are the same, and what separates them is the
+    // subtype and the record in the context.
     const state = useState({ open: false, sending: false, mode: "reply" });
 
     // Where the form's controller leaves itself on mount. Not in `state`: it
@@ -130,7 +131,7 @@ export function useComposer({ onSent }) {
 
         /**
          * @param {Object} context the `default_*` values for the message
-         * @param {string} [mode] "reply" or "note"; the button label only
+         * @param {string} [mode] "reply", "note" or "new"; the label only
          */
         open(context, mode = "reply") {
             formProps.viewProps = {
