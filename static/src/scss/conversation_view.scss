@@ -393,10 +393,6 @@ $mailpro-warn: #c0392b;
 
     .o_mailpro_relink_open { margin-top: 0.5rem; }
 
-    // The model row. Chips, like every other record on this screen, because
-    // picking a model here is the first half of picking a record.
-    .o_mailpro_relink { margin-top: 0.75rem; }
-
     // The tab strip: four readings of one conversation, and the only chrome
     // between the matching row and the mail. Underline rather than a pill
     // row, so the strip weighs less than the Reply button above it.
@@ -547,8 +543,8 @@ $mailpro-warn: #c0392b;
 
     .o_mailpro_event_change { display: block; }
 
-    // The two lists that are not the thread. Same rhythm as the conversation
-    // list, so nothing on this screen has to be learned twice.
+    // The two lists that are not the thread. Both style themselves; this is
+    // only the box they sit in.
     .o_mailpro_files,
     .o_mailpro_activities {
         flex: 1 1 auto;
@@ -559,33 +555,13 @@ $mailpro-warn: #c0392b;
 
     .o_mailpro_activities_head { margin-bottom: 0.75rem; }
 
-    .o_mailpro_file,
-    .o_mailpro_activity {
-        display: block;
-        width: 100%;
-        border: 0;
-        border-bottom: 1px solid $mailpro-line-soft;
-        background: none;
-        text-align: left;
-        padding: 0.625rem 0.25rem;
-        font-size: 0.8125rem;
-        color: $mailpro-ink-soft;
-        text-decoration: none;
-        cursor: pointer;
-
-        &:hover { background: rgba(0, 29, 33, 0.03); color: $mailpro-ink; }
-
-        &:focus-visible {
-            outline: 2px solid $mailpro-accent;
-            outline-offset: -2px;
-            border-radius: 0.25rem;
-        }
-    }
-
-    .o_mailpro_file_name,
-    .o_mailpro_activity_summary { font-weight: 600; }
-
-    .o_mailpro_activity_late .o_mailpro_activity_summary { color: $mailpro-warn; }
+    // Both tabs draw Odoo's own component now -- the activity card and the
+    // attachment list -- so they take Odoo's own body colour rather than this
+    // screen's ink. The point of borrowing a component is that it looks like
+    // the one in the chatter; a colour inherited from here is the drift that
+    // would undo that.
+    .o_mailpro_activities,
+    .o_mailpro_files { color: var(--bs-body-color); }
 
     // The body lines up under the name, not under the avatar.
     .o_mailpro_body {
@@ -747,5 +723,57 @@ $mailpro-warn: #c0392b;
     @media (max-width: 1100px) {
         .o_mailpro_rail { max-width: 11rem; }
         .o_mailpro_list { max-width: 18rem; }
+    }
+}
+
+// The link picker. Outside `.o_mailpro_conversation` on purpose: a dialog is
+// portalled to the body, so nesting it under the screen that opened it styles
+// nothing. Deliberately plain -- a search box and a list of rows, twice --
+// because the two steps are the same gesture and should look like it.
+.o_mailpro_link_dialog {
+    .o_mailpro_link_back { margin-bottom: 0.5rem; }
+
+    .o_mailpro_link_search { font-size: 0.875rem; }
+
+    // Whose records these are. The micro-label from the inbox, restated here
+    // because a dialog is portalled out of the screen that opened it and
+    // inherits none of its styles -- without this it draws as another row in
+    // the list under it.
+    .o_mailpro_link_hint {
+        display: block;
+        margin-top: 0.875rem;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: $mailpro-faint;
+    }
+
+    .o_mailpro_link_list {
+        margin: 0.5rem 0 0;
+        padding: 0;
+        list-style: none;
+        max-height: 20rem;
+        overflow-y: auto;
+    }
+
+    .o_mailpro_link_row {
+        display: block;
+        width: 100%;
+        padding: 0.4375rem 0.625rem;
+        border: 0;
+        border-radius: 0.25rem;
+        background: transparent;
+        text-align: left;
+        font-size: 0.8125rem;
+        color: $mailpro-ink-soft;
+
+        &:hover { background: $mailpro-panel; color: $mailpro-accent-ink; }
+    }
+
+    .o_mailpro_link_empty {
+        margin: 0.75rem 0 0;
+        font-size: 0.8125rem;
+        color: $mailpro-muted;
     }
 }

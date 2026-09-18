@@ -236,13 +236,9 @@
                                 <!-- Secondary, and deliberately quiet: a
                                      correctly linked thread is the normal case
                                      and this is the exception next to it. -->
-                                <button t-if="state.linkTargets.length" type="button"
+                                <button type="button"
                                         class="btn btn-link btn-sm p-0 o_mailpro_relink_toggle"
-                                        t-att-aria-expanded="state.linking ? 'true' : 'false'"
-                                        t-on-click="() => state.linking = !state.linking">
-                                    <t t-if="state.linking">Cancel</t>
-                                    <t t-else="">Change</t>
-                                </button>
+                                        t-on-click="() => this.openLinkDialog()">Change</button>
                             </div>
                             <!--
                                 The suggestion is its own block, outside the
@@ -287,31 +283,19 @@
                                     </li>
                                 </ul>
                             </div>
-                            <div t-if="state.selected and state.linkTargets.length and !state.thread.records.length"
-                                 class="o_mailpro_relink_open">
-                                <button type="button" class="btn btn-link btn-sm p-0"
-                                        t-att-aria-expanded="state.linking ? 'true' : 'false'"
-                                        t-on-click="() => state.linking = !state.linking">
-                                    <t t-if="state.linking">Cancel</t>
-                                    <t t-else="">Link to a record</t>
-                                </button>
-                            </div>
                             <!--
-                                The model first, the record second. A single
-                                picker over every model in the database would
-                                be a search box that answers with four hundred
-                                technical names; two short steps are the same
-                                two decisions, asked in the order somebody
-                                already has them.
+                                The model first, the record second, both with
+                                a search box, both in one dialog. The row of
+                                model chips this replaced was fine for the
+                                four models a database files mail on and
+                                useless for the fifth, and it left the record
+                                to Odoo's own list dialog, which opens on
+                                everything and knows nothing about who wrote.
                             -->
-                            <div t-if="state.linking" class="o_mailpro_relink d-flex align-items-center flex-wrap gap-2"
-                                 role="group" aria-label="Link this conversation to">
-                                <span class="o_mailpro_label">Link to</span>
-                                <button t-foreach="state.linkTargets" t-as="target" t-key="target.model"
-                                        type="button" class="o_mailpro_chip_button"
-                                        t-on-click="() => this.pickTarget(target)">
-                                    <span t-esc="target.label"/>
-                                </button>
+                            <div t-if="state.selected and !state.thread.records.length"
+                                 class="o_mailpro_relink_open">
+                                <button type="button" class="btn btn-link btn-sm p-0 o_mailpro_relink_toggle"
+                                        t-on-click="() => this.openLinkDialog()">Link to a record</button>
                             </div>
                             <!--
                                 Four readings of one conversation, one strip.
@@ -484,27 +468,35 @@
     </t>
 
     <!--
-        The files of a conversation. Every attachment on it, newest first,
-        which is the list the chatter's paperclip used to hold. A row is a
-        link and not a preview: what people do here is open the quote they
-        were sent, and a gallery is a second screen to maintain.
+        The files of a conversation. Odoo's own attachment list over Odoo's
+        own attachment store, so a file here behaves the way it does in the
+        chatter: the same cards, the same preview on click, the same download
+        and delete on hover, and the same "Attach files" underneath. A second
+        implementation of an attachment is a second set of bugs.
     -->
     <t t-name="pan_mail_pro.ConversationFiles">
         <div class="o_mailpro_files">
-            <t t-if="state.thread.files.length">
-                <a t-foreach="state.thread.files" t-as="file" t-key="file.id"
-                   class="o_mailpro_file d-flex align-items-center justify-content-between gap-2"
-                   t-att-href="fileUrl(file)" t-att-title="file.name">
-                    <span class="o_mailpro_file_name text-truncate" t-esc="file.name"/>
-                    <span class="o_mailpro_muted flex-shrink-0">
-                        <t t-esc="fileSize(file.size)"/> &#183; <t t-esc="day(file.date)"/>
-                    </span>
-                </a>
-            </t>
+            <AttachmentList t-if="files.length"
+                            attachments="files"
+                            unlinkAttachment.bind="unlinkAttachment"/>
             <div t-else="" class="o_mailpro_empty">
                 <h3 class="o_mailpro_empty_title">No files on this conversation.</h3>
                 <p class="o_mailpro_empty_text">Attachments on its mail and its notes appear here.</p>
             </div>
+            <!--
+                An upload needs a record to land on. A conversation linked to
+                nothing has none, and a button that cannot say where the file
+                went is worse than no button.
+            -->
+            <FileUploader t-if="selectedRecord" multiUpload="true"
+                          onUploaded.bind="onFileUploaded">
+                <t t-set-slot="toggler">
+                    <button class="btn btn-link" type="button">
+                        <i class="fa fa-plus-square"/>
+                        Attach files
+                    </button>
+                </t>
+            </FileUploader>
         </div>
     </t>
 
@@ -512,6 +504,12 @@
         The follow-ups. `mail.activity` on the records this conversation
         touched, scheduled through Odoo's own wizard so it lands in the
         Activities clock the rest of the database reads.
+
+        Every card is Odoo's own `mail.Activity` component, so the icon, the
+        three state colours and Mark Done / Edit / Cancel are the chatter's
+        and cannot drift from it. What this screen adds is the one thing the
+        chatter never needs: which record the follow-up sits on, drawn only
+        when the conversation touched more than one.
     -->
     <t t-name="pan_mail_pro.ConversationActivities">
         <div class="o_mailpro_activities">
@@ -520,18 +518,14 @@
                         t-on-click="() => this.scheduleActivity()">Schedule</button>
             </div>
             <t t-if="state.thread.activities.length">
-                <button t-foreach="state.thread.activities" t-as="activity" t-key="activity.id"
-                        type="button" class="o_mailpro_activity"
-                        t-att-class="{ 'o_mailpro_activity_late': activity.state === 'overdue' }"
-                        t-on-click="() => this.openActivityRecord(activity)">
-                    <span class="d-flex justify-content-between align-items-baseline gap-2">
-                        <span class="o_mailpro_activity_summary text-truncate" t-esc="activity.summary"/>
-                        <span class="o_mailpro_date flex-shrink-0" t-esc="activity.deadline"/>
-                    </span>
-                    <span class="o_mailpro_muted d-block text-truncate">
-                        <t t-esc="activity.user"/><t t-if="activity.record_name"> &#183; <t t-esc="activity.record_name"/></t>
-                    </span>
-                </button>
+                <t t-foreach="activities" t-as="activity" t-key="activity.id">
+                    <div t-if="activityRecordName(activity)"
+                         class="o_mailpro_muted text-truncate"
+                         t-esc="activityRecordName(activity)"/>
+                    <Activity activity="activity"
+                              onActivityChanged.bind="onActivityChanged"
+                              reloadParentView.bind="onActivityChanged"/>
+                </t>
             </t>
             <div t-else="" class="o_mailpro_empty">
                 <h3 class="o_mailpro_empty_title">Nothing scheduled.</h3>
