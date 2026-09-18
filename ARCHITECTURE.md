@@ -689,11 +689,19 @@ record is not. Deleting "unused" aliases breaks routing.
 
 ### What CC and BCC do
 
-**CC is stored and acted on by nothing.** Everyone on the mail already saw it,
-so keeping it costs no confidentiality, and it is what a future reply-all would
-read. It never creates a `res.partner` and never creates a follower. The first
-would build a contact database out of other companies' colleagues; the second
-is the mechanism behind §9.10.
+**CC is stored as text and acted on by nothing.** The sync writes To and CC to
+`mail.message.x_email_to` / `x_email_cc`, two plain chars holding the addresses
+the header held. Everyone on the mail already saw them, so keeping them costs
+no confidentiality, and they are what the Inbox's recipients line reads and
+what a future reply-all would read.
+
+Text rather than a relation, and that is the whole decision. A recipient
+never creates a `res.partner` and never creates a follower: the first would
+build a contact database out of other companies' colleagues, the second is the
+mechanism behind §9.10. `partner_ids` stays what Odoo means by it -- who was
+notified -- which for an imported mail is nobody, and the Inbox falls back to
+it only for messages that carry no columns (mail written in the chatter, and
+everything older than 19.0.12.2.0).
 
 **BCC must not cross the provider boundary.** A received message carries no BCC
 list, so an inbox sync is safe by construction. The sender's own copy in Sent
@@ -1749,6 +1757,13 @@ server half lives in `pantalytics/mail-pro-admin`.
   unreadable anyway because it goes through `decrypt_value`.
 - **Check Approval is a button, not a poll loop.** The admin knows when they
   approved. Dropped: the page does not refresh itself.
+- **Until it is connected, the settings page is one button.** The checklist,
+  the users block and About are hidden while the state is anything but
+  connected: every one of them configures a product that will not sync, and a
+  checklist you cannot finish reads as the broken thing on the screen. One
+  screen, one action. `tools/ui_check.py` disconnects the seeded instance and
+  asserts exactly that, because the gate is a view modifier no Python test can
+  see.
 - **Mail Pro works on a connected Odoo instance** (19.0.9.0.0, #126).
   `sync_allowed()` gates incoming sync (the cron, which marks the mailboxes
   with the reason, and Sync Now) and creating a **new** `pan.mail.account`.
