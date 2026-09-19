@@ -114,11 +114,11 @@ they split two and two.
 | Tab | What it shows |
 |---|---|
 | **Mail** | `message_type = 'email'`. The correspondence, nothing else. The default |
-| **Everything** | The same thread with internal notes and record events interleaved by date |
+| **Mail + notes** | The same thread with internal notes and record events interleaved by date |
 | **Files (n)** | Every attachment on the conversation's messages, newest first |
 | **Activities (n)** | `mail.activity` on the records this conversation touched, with Schedule |
 
-Mail and Everything are two readings of one list; Files and Activities are two
+Mail and Mail + notes are two readings of one list; Files and Activities are two
 other lists. One strip rather than a toggle plus a tab bar, because two pieces
 of chrome over one pane is chrome competing with content. The count is only
 drawn when it is not zero.
@@ -127,14 +127,14 @@ The tab is the reader's, stored in the browser next to the pane widths, and it
 is per person rather than per conversation.
 
 **One writing action per tab, on the tab that shows what it writes.** Reply
-lives in Mail, Log note in Everything, and Files and Activities carry neither,
+lives in Mail, Log note in Mail + notes, and Files and Activities carry neither,
 because a list is not a place to write. Both buttons on every tab is what made
 a note written in Mail vanish the moment it saved, and the screen answered by
 switching tabs under the reader. Switching tabs itself re-reads in place: Mail
-and Everything are one conversation read two ways, so the pane is never
+and Mail + notes are one conversation read two ways, so the pane is never
 emptied and the messages somebody had open stay open.
 
-**In Everything**: notes are drawn apart from correspondence -- indented,
+**In Mail + notes**: notes are drawn apart from correspondence -- indented,
 marked internal, no recipient line. Record events (tracking values and the
 rest of `message_type = 'notification'`) are one line each, never a card: *Stage:
 New -> Qualified, Jan, Tuesday*. **A note is never quoted in a reply**, which
@@ -508,7 +508,7 @@ The company, not the person. A conversation with `jan@acme.com` and
 - **Team-inbox machinery**: assignment, SLA timers, collision detection, a chat
   per thread. That is Missive and Chatwoot, and three of the 28 respondents have
   already bought one. The internal conversation already has a home: the notes
-  in the Everything tab, one composer, same pane.
+  in the Mail + notes tab, one composer, same pane.
 
 An inbox does earn the app tile that 19.0.7.0.0 took away, by that release's own
 test: a tile is a promise about how often a screen is opened, and this one is

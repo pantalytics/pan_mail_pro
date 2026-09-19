@@ -68,7 +68,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
 | `models/pan_mail_conversation.py` | The read side of the Inbox: five methods, no table, no sudo for an answer |
-| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes, one client action, and the tab strip (Mail / Everything / Files / Activities) that replaced the record pane's chatter |
+| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes, one client action, and the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter |
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away, and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the record steps aside, below 768px the panes take turns and the rail is a drawer |
 | `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, and the Send that saves it and calls `action_send_mail` |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |

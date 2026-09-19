@@ -263,7 +263,7 @@ template selector back in the body, and Send saves the composer and calls
 the mail is out.
 
 19.0.11.0.0 took the chatter out of the Inbox's fourth pane and put what it
-carried into a four-position strip over the third: Mail, Everything (the notes
+carried into a four-position strip over the third: Mail, Mail + notes (the notes
 and the record's own events, interleaved), Files, Activities. The screen had
 offered two composers a divider apart, and they were not the same composer --
 pane 3's reply threads under the message it answers and addresses the people
@@ -278,11 +278,11 @@ one place. The strip steps aside while somebody is writing: the pane has one
 job then, and a tab click would drop the draft.
 
 19.0.13.1.0 gives each tab one writing action instead of both: Reply on Mail,
-Log note on Everything, and neither on Files or Activities, which are lists.
+Log note on Mail + notes, and neither on Files or Activities, which are lists.
 Each action sits on the tab that shows what it produces, so nothing has to be
 moved after saving -- a note used to be written in Mail, where a note is not
 shown, and the screen answered by switching tabs under the reader. The same
-release stopped emptying the pane when the tab changes: Mail and Everything
+release stopped emptying the pane when the tab changes: Mail and Mail + notes
 are one conversation read two ways, so the read happens in place and what was
 open stays open, rather than the header collapsing and the thread being drawn
 again.

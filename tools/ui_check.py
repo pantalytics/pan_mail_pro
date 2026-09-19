@@ -514,10 +514,10 @@ class Checks:
         # the button's text gives "Activities2" the moment there is one.
         tabs = [el.query_selector('span').inner_text().strip()
                 for el in page.query_selector_all('.o_mailpro_tab')]
-        if tabs != ['Mail', 'Everything', 'Files', 'Activities']:
+        if tabs != ['Mail', 'Mail + notes', 'Files', 'Activities']:
             self.fail(f'the tab strip reads {tabs}')
         else:
-            for name in ('Everything', 'Files', 'Activities', 'Mail'):
+            for name in ('Mail + notes', 'Files', 'Activities', 'Mail'):
                 tab = page.query_selector(f'.o_mailpro_tab:has-text("{name}")')
                 tab.click()
                 page.wait_for_timeout(900)
@@ -541,7 +541,7 @@ class Checks:
             elif not page.query_selector('.o_mailpro_activities .o-mail-Activity-markDone'):
                 self.fail('the activity card carries no Mark Done button')
             self.shot('inbox-activities.png')
-            page.query_selector('.o_mailpro_tab:has-text("Mail")').click()
+            page.query_selector('.o_mailpro_tab:text-is("Mail")').click()
             page.wait_for_timeout(600)
 
         # One writing action per tab, and each on the tab that shows what it
@@ -622,12 +622,12 @@ class Checks:
         # is the same composer with the note subtype, so the thing to prove is
         # that it lands in the pane too and says what it will do: a button
         # reading Send over a note is how somebody mails a customer their own
-        # internal margin. It lives in Everything, which is the tab that shows
+        # internal margin. It lives in Mail + notes, which is the tab that shows
         # a note once it is written.
-        page.click('.o_mailpro_tab:has-text("Everything")')
+        page.click('.o_mailpro_tab:has-text("Mail + notes")')
         page.wait_for_timeout(900)
         if page.query_selector('.o_mailpro_thread_head button:has-text("Reply")'):
-            self.fail('the Everything tab offers Reply')
+            self.fail('the Mail + notes tab offers Reply')
         note = page.query_selector('.o_mailpro_thread_head button:has-text("Log note")')
         if not note:
             self.fail('there is no way to log a note')
@@ -927,7 +927,7 @@ class Checks:
         # Reply lives on the Mail tab, and an earlier check may have left
         # the strip elsewhere; a check that skips itself on a stale tab
         # proves nothing.
-        mail_tab = page.query_selector('.o_mailpro_tab:has-text("Mail")')
+        mail_tab = page.query_selector('.o_mailpro_tab:text-is("Mail")')
         if mail_tab:
             mail_tab.click()
             page.wait_for_timeout(600)

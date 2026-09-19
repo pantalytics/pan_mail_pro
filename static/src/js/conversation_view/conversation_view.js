@@ -11,7 +11,7 @@
  * form cannot render, the pane falls back to a link and the rest of the inbox
  * keeps working. It shows the record and never its chatter: this screen writes
  * in one pane, and what the chatter carried is the strip of four tabs over the
- * thread -- Mail, Everything, Files, Activities.
+ * thread -- Mail, Mail + notes, Files, Activities.
  *
  * The panes themselves are draggable and the two outer ones fold away; that
  * lives in `use_panes.js`, because how wide a pane is has nothing to do with
@@ -66,7 +66,7 @@ const RAIL_KEY = "pan_mail_pro.rail";
 
 // Which of the four readings of a conversation this person left open. Theirs
 // rather than the conversation's: somebody clearing an inbox stays in Mail,
-// somebody catching up on a deal stays in Everything.
+// somebody catching up on a deal stays in Mail + notes.
 const TAB_KEY = "pan_mail_pro.tab";
 const TAB_IDS = ["mail", "all", "files", "activities"];
 
@@ -408,7 +408,7 @@ export class ConversationView extends Component {
      *
      * `select()` empties the pane before calling this, because another
      * conversation is coming. Everything else -- switching Mail to
-     * Everything, a reply that just went out -- is the *same* conversation
+     * Mail + notes, a reply that just went out -- is the *same* conversation
      * read again, and blanking it there is what made the pane flicker:
      * the header collapsed, the messages vanished, and the reader lost
      * which ones they had open. Here the old thread stays up until the new
@@ -651,7 +651,7 @@ export class ConversationView extends Component {
     get TABS() {
         return [
             { id: "mail", label: _t("Mail") },
-            { id: "all", label: _t("Everything") },
+            { id: "all", label: _t("Mail + notes") },
             { id: "files", label: _t("Files") },
             { id: "activities", label: _t("Activities") },
         ];
@@ -660,7 +660,7 @@ export class ConversationView extends Component {
     /**
      * The four readings of one conversation.
      *
-     * Mail and Everything are the same list read twice, so switching between
+     * Mail and Mail + notes are the same list read twice, so switching between
      * them re-reads the thread. Files and Activities came down with it, so
      * they cost nothing to open and their counts do not move when you do.
      */
@@ -687,7 +687,7 @@ export class ConversationView extends Component {
      *
      * One per tab, and each in the tab that shows what it produces: a reply
      * is correspondence and lands in Mail, a note is not and lands in
-     * Everything. Both on every tab meant a note written in Mail vanished on
+     * Mail + notes. Both on every tab meant a note written in Mail vanished on
      * save and a reply sent from Files landed on a screen that shows no mail
      * at all.
      */
@@ -1073,7 +1073,7 @@ export class ConversationView extends Component {
      * It went out: show it in the thread, and recount the folders.
      *
      * Each of the two is written from the tab that shows it -- a reply in
-     * Mail, a note in Everything -- so what was just written is on screen
+     * Mail, a note in Mail + notes -- so what was just written is on screen
      * without leaving the tab, and it is the message that opens.
      */
     async onReplySent() {
