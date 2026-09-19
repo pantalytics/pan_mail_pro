@@ -240,7 +240,8 @@
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 3. the conversation -->
-                <div t-if="showThread" class="o_mailpro_thread" role="region" aria-label="Conversation">
+                <div t-if="showThread" class="o_mailpro_thread" role="region" aria-label="Conversation"
+                     t-att-class="{ 'o_mailpro_thread_composing': composer.state.open }">
                     <!--
                         A new mail takes the pane the way a reply does. There
                         is no thread behind it yet, so the head names the
@@ -699,7 +700,10 @@
         marks the conversation, and a second tap opens it again.
     -->
     <t t-name="pan_mail_pro.BackToList">
-        <button t-if="panes.state.small" type="button"
+        <!-- Not while writing: the composer has the screen then, and
+             Discard is its way out. A back arrow that drops a draft is a
+             trap. -->
+        <button t-if="panes.state.small and !composer.state.open" type="button"
                 class="o_mailpro_back flex-shrink-0"
                 aria-label="Back to the list"
                 t-on-click="() => this.backToList()">

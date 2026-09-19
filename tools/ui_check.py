@@ -921,6 +921,29 @@ class Checks:
                 if not self.visible('.o_mailpro_thread'):
                     self.fail('Back to the Inbox did not bring the conversation back on a phone')
 
+        # Writing takes the whole phone: the composer is as wide as the
+        # screen, the conversation's chips are gone from above it, and the
+        # back arrow with them -- Discard is the way out of a draft.
+        reply = page.query_selector('.o_mailpro_thread_head button:has-text("Reply")')
+        if reply:
+            reply.click()
+            try:
+                page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+                page.wait_for_timeout(600)
+                composer = page.query_selector('.o_mailpro_composer')
+                if composer.bounding_box()['width'] < 370:
+                    self.fail('the phone composer takes %dpx of a 390px screen'
+                              % composer.bounding_box()['width'])
+                if self.visible('.o_mailpro_chips'):
+                    self.fail('the Linked-to chips stay above the phone composer')
+                if self.visible('.o_mailpro_back'):
+                    self.fail('the back arrow offers to drop the draft on a phone')
+                self.shot('inbox-phone-compose.png')
+                page.click('.o_mailpro_thread_head button:has-text("Discard")')
+                page.wait_for_timeout(500)
+            except Exception as exc:
+                self.fail(f'Reply on a phone opened no composer: {exc}')
+
         back = page.query_selector('.o_mailpro_back')
         if not back:
             self.fail('the phone conversation has no way back to the list')

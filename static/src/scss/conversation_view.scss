@@ -892,6 +892,23 @@ $mailpro-warn: #c0392b;
 
         .o_mailpro_thread_head { padding-left: 0.5rem; }
 
+        // Writing takes the whole phone. The head keeps the subject and the
+        // two buttons that end it; the chips, the suggestion and the
+        // subtitle are the conversation's, and the conversation is not what
+        // is on screen while somebody types. The 48rem cap on the composer
+        // is for a wide pane, not a phone.
+        .o_mailpro_thread_composing {
+            .o_mailpro_thread_head { padding: 0.5rem; }
+
+            .o_mailpro_thread_sub,
+            .o_mailpro_chips,
+            .o_mailpro_suggestion,
+            .o_mailpro_unlinked,
+            .o_mailpro_relink_open { display: none; }
+
+            .o_mailpro_composer { max-width: none; }
+        }
+
         // The form is a phone wide now, so the zoom's two columns would be
         // two half-columns: the single column the pane draws is right here.
         .o_mailpro_zoomed .o_mailpro_record .o_inner_group {
