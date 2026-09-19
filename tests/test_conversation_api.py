@@ -603,7 +603,8 @@ class TestConversationApi(TransactionCase):
             self.Conversation.with_user(stranger).new_mail_recipients(
                 'crm.lead', self.lead.id)
         with self.assertRaises(AccessError):
-            self.Conversation.new_mail_recipients('ir.cron', 1)
+            # No chatter, so no place for a mail: the model step refuses it.
+            self.Conversation.new_mail_recipients('ir.config_parameter', 1)
 
     def test_customer_timeline_merges_and_orders(self):
         self._mail(subject='Oldest')
