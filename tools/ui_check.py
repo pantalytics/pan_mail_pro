@@ -518,7 +518,7 @@ class Checks:
             self.fail(f'the tab strip reads {tabs}')
         else:
             for name in ('Mail + notes', 'Files', 'Activities', 'Mail'):
-                tab = page.query_selector(f'.o_mailpro_tab:has-text("{name}")')
+                tab = page.query_selector(f'.o_mailpro_tab:has(span:text-is("{name}"))')
                 tab.click()
                 page.wait_for_timeout(900)
                 self.error_free(f'the {name} tab')
@@ -541,7 +541,7 @@ class Checks:
             elif not page.query_selector('.o_mailpro_activities .o-mail-Activity-markDone'):
                 self.fail('the activity card carries no Mark Done button')
             self.shot('inbox-activities.png')
-            page.query_selector('.o_mailpro_tab:text-is("Mail")').click()
+            page.query_selector('.o_mailpro_tab:has(span:text-is("Mail"))').click()
             page.wait_for_timeout(600)
 
         # One writing action per tab, and each on the tab that shows what it
@@ -927,7 +927,7 @@ class Checks:
         # Reply lives on the Mail tab, and an earlier check may have left
         # the strip elsewhere; a check that skips itself on a stale tab
         # proves nothing.
-        mail_tab = page.query_selector('.o_mailpro_tab:text-is("Mail")')
+        mail_tab = page.query_selector('.o_mailpro_tab:has(span:text-is("Mail"))')
         if mail_tab:
             mail_tab.click()
             page.wait_for_timeout(600)
