@@ -25,6 +25,7 @@ import { browser } from "@web/core/browser/browser";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
 import { Dropdown } from "@web/core/dropdown/dropdown";
+import { useDropdownState } from "@web/core/dropdown/dropdown_hooks";
 import { CheckboxItem } from "@web/core/dropdown/checkbox_item";
 import { useDebounced } from "@web/core/utils/timing";
 import { _t } from "@web/core/l10n/translation";
@@ -40,6 +41,7 @@ import { useComposer, ComposerForm } from "./use_composer";
 // and Mark Done / Edit / Cancel identical to the chatter, for free and
 // forever: a change Odoo makes to it arrives here with the upgrade.
 import { Activity } from "@mail/core/web/activity";
+import { FollowerList } from "@mail/core/web/follower_list";
 import { compareDatetime } from "@mail/utils/common/misc";
 
 const PAGE = 30;
@@ -159,7 +161,7 @@ export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
     static components = {
         RecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
-        Dropdown, CheckboxItem,
+        Dropdown, CheckboxItem, FollowerList,
     };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
@@ -178,6 +180,10 @@ export class ConversationView extends Component {
         // that lands on the record rather than in a copy of it.
         this.mailStore = useService("mail.store");
         this.attachmentUploader = useAttachmentUploader();
+        // The follower list is Odoo's own, in the dropdown the chatter's
+        // people icon opens: Follow, Unfollow, Add Followers, the subtype
+        // edit. The Inbox adds the button and nothing else.
+        this.followerListDropdown = useDropdownState();
         this.panes = usePanes();
         this.composer = useComposer({ onSent: () => this.onReplySent() });
         // Typing is the search, the way it is in every mail client. Debounced
@@ -457,6 +463,7 @@ export class ConversationView extends Component {
             }
             this.state.open = open;
             this.loadActivities(seq);
+            this.loadFollowers();
         } catch (error) {
             if (seq === this.threadSeq) {
                 this.state.error = _t("Could not open that conversation.");
@@ -730,12 +737,51 @@ export class ConversationView extends Component {
             .filter(Boolean);
     }
 
-    /** The record an upload lands on: the one the chatter would have used. */
-    get uploadThread() {
+    /**
+     * The conversation's record as the mail store knows it: the thread the
+     * chatter would have drawn. An upload lands on it, and its followers are
+     * the people Odoo notifies about this record.
+     */
+    get recordThread() {
         const record = this.selectedRecord;
         return record
             ? this.mailStore.Thread.insert({ model: record.model, id: record.res_id })
             : null;
+    }
+
+    /** The record an upload lands on: the one the chatter would have used. */
+    get uploadThread() {
+        return this.recordThread;
+    }
+
+    // ------------------------------------------------------- the followers
+
+    /**
+     * Who Odoo notifies about this record, from the same request the chatter
+     * makes: the count on the button, whether you are one of them, and the
+     * read and write access the list needs to offer Add Followers.
+     */
+    loadFollowers() {
+        this.recordThread?.fetchThreadData(["followers"]);
+    }
+
+    get followersLabel() {
+        const thread = this.recordThread;
+        return thread?.selfFollower ? _t("Following") : _t("Followers");
+    }
+
+    /** The wizard closed: whoever it added is on the list now. */
+    onAddFollowers() {
+        this.loadFollowers();
+    }
+
+    /**
+     * Follow, Unfollow or an edited subscription. The subscribe routes answer
+     * with the new follower data themselves, so a re-read here would only
+     * race the answer that is already on its way; the list just closes.
+     */
+    onFollowerChanged() {
+        this.followerListDropdown.close();
     }
 
     /** Delete, through Odoo's own route. The dialog is the list's own. */

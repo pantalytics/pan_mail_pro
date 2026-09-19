@@ -75,7 +75,8 @@
             </div>
 
             <div class="o_mailpro_panes d-flex flex-grow-1"
-                 t-att-class="{'o_mailpro_zoomed': panes.state.zoom}">
+                 t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom,
+                                'o_mailpro_record_folded': panes.toggleSide('record') === 'left' }">
 
                 <!--
                     1. where you are: the mailbox, and inside it the folder.
@@ -134,7 +135,7 @@
 
                 <!-- 2. what is waiting -->
                 <div t-if="showList" class="o_mailpro_list" role="region" aria-label="Conversations"
-                     t-att-class="{ 'o_mailpro_folded': panes.folded('list') }"
+                     t-att-class="'o_mailpro_lead_' + panes.lead('list') + (panes.folded('list') ? ' o_mailpro_folded' : '')"
                      t-att-inert="panes.folded('list')"
                      t-attf-style="flex-basis: {{panes.state.list}}px">
 
@@ -252,8 +253,9 @@
 
                 <!-- 3. the conversation -->
                 <div t-if="showThread" class="o_mailpro_thread" role="region" aria-label="Conversation"
-                     t-att-class="{ 'o_mailpro_thread_composing': composer.state.open,
-                                    'o_mailpro_folded': panes.folded('thread') }"
+                     t-att-class="'o_mailpro_lead_' + panes.lead('thread')
+                                  + (composer.state.open ? ' o_mailpro_thread_composing' : '')
+                                  + (panes.folded('thread') ? ' o_mailpro_folded' : '')"
                      t-att-inert="panes.folded('thread')">
                     <!--
                         A new mail takes the pane the way a reply does. There
@@ -415,6 +417,34 @@
                                     <span t-if="tabCount(tab.id)" class="o_mailpro_tab_count"
                                           t-esc="tabCount(tab.id)"/>
                                 </button>
+                                <!--
+                                    Who Odoo notifies about this record, at the
+                                    right end of the strip. Not a fifth tab: the
+                                    tabs are readings of the conversation, and a
+                                    tab whose whole content is three names is an
+                                    empty screen with a list in the corner. The
+                                    list itself is the chatter's own dropdown.
+                                -->
+                                <Dropdown t-if="recordThread" position="'bottom-end'"
+                                          menuClass="'o-mail-Followers-dropdown ' + mailStore.discussDropdownMenuClass(this)"
+                                          state="followerListDropdown">
+                                    <button type="button" class="o_mailpro_followers ms-auto"
+                                            t-att-class="{ 'o_mailpro_followers_following': recordThread.selfFollower }"
+                                            t-att-disabled="recordThread.hasReadAccess === false"
+                                            t-att-title="followersLabel">
+                                        <i class="fa fa-fw" aria-hidden="true"
+                                           t-att-class="recordThread.selfFollower ? 'fa-user' : 'fa-user-o'"/>
+                                        <span t-esc="followersLabel"/>
+                                        <span t-if="recordThread.followersCount" class="o_mailpro_tab_count"
+                                              t-esc="recordThread.followersCount"/>
+                                    </button>
+                                    <t t-set-slot="content">
+                                        <FollowerList onAddFollowers.bind="onAddFollowers"
+                                                      onFollowerChanged.bind="onFollowerChanged"
+                                                      thread="recordThread"
+                                                      dropdown="followerListDropdown"/>
+                                    </t>
+                                </Dropdown>
                             </div>
                         </div>
                         <!--
@@ -565,7 +595,7 @@
 
                 <!-- 4. the record: the pane a mail client cannot have -->
                 <div t-if="showRecord" class="o_mailpro_record"
-                     t-att-class="{ 'o_mailpro_folded': panes.folded('record') }"
+                     t-att-class="'o_mailpro_lead_' + panes.lead('record') + (panes.folded('record') ? ' o_mailpro_folded' : '')"
                      t-att-inert="panes.folded('record')"
                      role="region" aria-label="Record"
                      t-attf-style="flex-basis: {{panes.state.record}}px">
@@ -675,21 +705,20 @@
 
     <!--
         One divider, three call sites. It is a separator with a value, so a
-        screen reader reads a width rather than a decoration, and the chevron
-        is a real button: the fold has to be reachable without a mouse and
-        without knowing that double-click resets.
+        screen reader reads a width rather than a decoration, and the button
+        on it is a real button: the fold has to be reachable without a mouse
+        and without knowing that double-click resets.
 
-        A folded pane leaves its divider as a strip instead of a line: wide
-        enough for a finger, named after the pane it brings back, and the
-        whole of it is the button. On a tablet the record's divider is always
-        that strip, and a tap swaps the conversation and the record in the
-        column they share.
+        The button is round and floats on the divider, the way a sidebar's
+        does in the apps people already use. Beside an open pane it is a
+        chevron and folds it; beside a folded one it is that pane's icon and
+        slides it back. On a tablet the record's divider serves two panes and
+        the button swaps them in the column they share.
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
         <div t-if="panes.splitterVisible(divider)" class="o_mailpro_split"
              t-att-class="'o_mailpro_split_' + divider
-                          + (panes.folded(divider) ? ' o_mailpro_split_folded' : '')
-                          + (panes.sliver(divider) ? ' o_mailpro_split_sliver' : '')"
+                          + (panes.toggleSide(divider) !== 'center' ? ' o_mailpro_split_folded' : '')"
              role="separator" aria-orientation="vertical" tabindex="0"
              t-att-aria-label="panes.label(divider)"
              t-att-aria-valuenow="panes.folded(divider) ? 0 : panes.state[divider]"
@@ -698,24 +727,17 @@
              t-on-pointerdown="(ev) => panes.startDrag(divider, ev)"
              t-on-keydown="(ev) => panes.onKey(divider, ev)"
              t-on-dblclick="() => panes.reset(divider)">
-            <button t-if="panes.sliver(divider)" type="button"
-                    class="o_mailpro_sliver_button"
-                    t-att-aria-label="panes.toggleLabel(divider)"
-                    t-att-aria-expanded="panes.folded(divider) ? 'false' : 'true'"
-                    t-on-pointerdown.stop="() => {}"
-                    t-on-dblclick.stop="() => {}"
-                    t-on-click.stop="() => panes.toggle(divider)">
-                <i class="fa" t-att-class="panes.chevron(divider)" aria-hidden="true"/>
-                <span class="o_mailpro_sliver_label" t-esc="panes.sliverLabel(divider)"/>
-            </button>
-            <button t-elif="panes.collapsible(divider)" type="button"
+            <button t-if="panes.collapsible(divider)" type="button"
                     class="o_mailpro_split_toggle"
+                    t-att-class="'o_mailpro_split_toggle_' + panes.toggleSide(divider)"
+                    t-att-style="panes.toggleStyle(divider)"
                     t-att-aria-label="panes.toggleLabel(divider)"
+                    t-att-title="panes.toggleLabel(divider)"
                     t-att-aria-expanded="panes.folded(divider) ? 'false' : 'true'"
                     t-on-pointerdown.stop="() => {}"
                     t-on-dblclick.stop="() => {}"
                     t-on-click.stop="() => panes.toggle(divider)">
-                <i class="fa" t-att-class="panes.chevron(divider)" aria-hidden="true"/>
+                <i class="fa" t-att-class="panes.toggleIcon(divider)" aria-hidden="true"/>
             </button>
         </div>
     </t>
