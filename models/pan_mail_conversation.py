@@ -25,7 +25,9 @@ the attachments of messages the search already cleared.
 scheduling a follow-up are Odoo's own methods called on the record itself. A
 wrapper would be a second implementation of a decision Odoo already made, and
 the reply path (followers, notifications, the routing log) has to behave
-exactly as the chatter does.
+exactly as the chatter does. The one write in here, the contact a lead's bare
+address becomes when a new mail is addressed to it, is Odoo's own
+find-or-create, the same one the chatter's suggestion runs.
 
 The grouping, stated plainly because it is the one approximation in here: a
 conversation is the mail on one record, merged with the mail on any other
@@ -1086,6 +1088,39 @@ class PanMailConversation(models.AbstractModel):
             'rows': [{'id': record.id, 'name': record.display_name}
                      for record in records],
         }
+
+    @api.model
+    def new_mail_recipients(self, model, res_id):
+        """Who a new mail on this record goes to: the record's own contact.
+
+        The composer fills "To" from nothing on its own -- the chatter asks the
+        record for its suggested recipients and hands them over, and the pane
+        has to do the same or a new mail opens addressed to nobody. The answer
+        is Odoo's own: `_message_get_default_recipients`, the rule every mail
+        template sends by. A contact is its own recipient, a quote or a ticket
+        gives its `partner_id`, a lead with only an `email_from` gives that
+        address, and that address becomes a contact the way it does when the
+        chatter's suggestion is accepted, through the same find-or-create.
+        Followers are not asked: `message_post` reaches them on its own, and
+        a "To" that repeats the follower list is the note-versus-mail
+        confusion the composer exists to avoid.
+        """
+        self._check_caller()
+        try:
+            res_id = int(res_id)
+        except (TypeError, ValueError):
+            return []
+        record = self._link_model(model).browse(res_id).exists()
+        if not record:
+            return []
+        record.check_access('read')
+        defaults = record._message_get_default_recipients()[record.id]
+        if defaults['partner_ids']:
+            return defaults['partner_ids']
+        if defaults['email_to']:
+            return record._partner_find_from_emails_single(
+                defaults['email_to'].split(',')).ids
+        return []
 
     def _link_model(self, model):
         """The model step two may read, or an error.
