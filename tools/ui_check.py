@@ -1387,8 +1387,11 @@ class Checks:
         """Who Odoo notifies about the record, from the end of the tab strip.
 
         The button is ours; the list it opens is the chatter's own, so Follow
-        has to change the count on the button the way it changes the chatter's,
-        and Unfollow has to take it back.
+        and Unfollow have to move the count on the button the way they move
+        the chatter's. The seeded record may already count the admin among
+        its followers (whoever creates a record follows it), so the check
+        starts from whichever of the two the list offers and ends where it
+        began.
         """
         button = page.query_selector('.o_mailpro_followers')
         if not button or not button.is_visible():
@@ -1402,40 +1405,44 @@ class Checks:
             el = page.query_selector('.o_mailpro_followers .o_mailpro_tab_count')
             return int(el.inner_text().strip()) if el else 0
 
+        def open_list():
+            page.query_selector('.o_mailpro_followers').click()
+            page.wait_for_timeout(600)
+            menu = page.query_selector('.o-mail-Followers-dropdown')
+            return menu if menu and menu.is_visible() else None
+
         before = count()
-        button.click()
-        page.wait_for_timeout(600)
-        menu = page.query_selector('.o-mail-Followers-dropdown')
-        if not menu or not menu.is_visible():
+        menu = open_list()
+        if not menu:
             self.fail('the Followers button opened no list')
-            return
-        if not menu.query_selector('.o-mail-FollowerList-followBtn'):
-            self.fail('the follower list offers no Follow: the admin is already '
-                      'following the seeded record, or the list is not Odoo\'s')
-            page.keyboard.press('Escape')
             return
         if not page.query_selector('.o-mail-Followers-dropdown a:has-text("Add Followers")'):
             self.fail('the follower list offers no Add Followers to an admin')
+        following = bool(menu.query_selector('.o-mail-FollowerList-unfollowBtn'))
+        first = '.o-mail-FollowerList-unfollowBtn' if following else '.o-mail-FollowerList-followBtn'
+        second = '.o-mail-FollowerList-followBtn' if following else '.o-mail-FollowerList-unfollowBtn'
+        step = -1 if following else 1
         self.shot('inbox-followers.png')
-        menu.query_selector('.o-mail-FollowerList-followBtn').click()
+        menu.query_selector(first).click()
         page.wait_for_timeout(900)
-        if count() != before + 1:
-            self.fail('Follow left the followers count at %d, expected %d'
-                      % (count(), before + 1))
-        if 'following' not in page.query_selector('.o_mailpro_followers').inner_text().lower():
-            self.fail('the button does not say Following after Follow')
+        if count() != before + step:
+            self.fail('%s left the followers count at %d, expected %d'
+                      % ('Unfollow' if following else 'Follow', count(), before + step))
+        label = page.query_selector('.o_mailpro_followers').inner_text().lower()
+        if ('following' in label) == following:
+            self.fail('the button still reads %r after %s'
+                      % (label, 'Unfollow' if following else 'Follow'))
         # Leave the record the way it was found.
-        page.query_selector('.o_mailpro_followers').click()
-        page.wait_for_timeout(600)
-        unfollow = page.query_selector('.o-mail-Followers-dropdown .o-mail-FollowerList-unfollowBtn')
-        if not unfollow:
-            self.fail('the follower list offers no Unfollow to a follower')
+        menu = open_list()
+        if not menu or not menu.query_selector(second):
+            self.fail('the follower list offers no way back after %s'
+                      % ('Unfollow' if following else 'Follow'))
             page.keyboard.press('Escape')
             return
-        unfollow.click()
+        menu.query_selector(second).click()
         page.wait_for_timeout(900)
         if count() != before:
-            self.fail('Unfollow left the followers count at %d, expected %d'
+            self.fail('the followers count is %d after a round trip, expected %d'
                       % (count(), before))
 
     def check_files_tab(self, page):
