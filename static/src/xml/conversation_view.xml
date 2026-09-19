@@ -16,7 +16,8 @@
         fold with Enter.
     -->
     <t t-name="pan_mail_pro.ConversationView">
-        <div class="o_content o_mailpro_conversation d-flex flex-column h-100">
+        <div class="o_content o_mailpro_conversation d-flex flex-column h-100"
+             t-att-class="{ 'o_mailpro_small': panes.state.small, 'o_mailpro_narrow': panes.state.narrow }">
 
             <!--
                 The bar every mail client has, in the order they all put it:
@@ -34,6 +35,19 @@
                 reply uses.
             -->
             <div class="o_mailpro_topbar d-flex align-items-center gap-2">
+                <!--
+                    The rail from a button, where the chevron on a 5px
+                    divider is too small to touch: on a phone it opens the
+                    rail as a drawer over the list, on a tablet it folds the
+                    pane. Hidden on a wide screen, where the divider is the
+                    control and a second one is chrome.
+                -->
+                <button type="button" class="o_mailpro_rail_button flex-shrink-0"
+                        t-att-aria-expanded="showRail ? 'true' : 'false'"
+                        t-att-aria-label="showRail ? 'Hide mailboxes' : 'Show mailboxes'"
+                        t-on-click="() => panes.toggleRail()">
+                    <i class="fa fa-bars" aria-hidden="true"/>
+                </button>
                 <div class="o_mailpro_topbar_start d-flex align-items-center">
                     <button type="button" class="btn btn-primary btn-sm o_mailpro_new"
                             t-on-click="() => this.newEmail()">
@@ -71,7 +85,9 @@
                     itself. A folded mailbox is not counted, so a rail of six
                     accounts costs what the ones you actually watch cost.
                 -->
-                <nav t-if="!panes.state.collapsed.rail and !panes.state.zoom" class="o_mailpro_rail"
+                <div t-if="showRail and panes.state.small" class="o_mailpro_rail_backdrop"
+                     t-on-click="() => panes.closeRail()"/>
+                <nav t-if="showRail" class="o_mailpro_rail"
                      aria-label="Mailboxes and folders"
                      t-attf-style="flex-basis: {{panes.state.rail}}px">
                     <t t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id">
@@ -108,7 +124,7 @@
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 2. what is waiting -->
-                <div t-if="!panes.state.zoom" class="o_mailpro_list" role="region" aria-label="Conversations"
+                <div t-if="showList" class="o_mailpro_list" role="region" aria-label="Conversations"
                      t-attf-style="flex-basis: {{panes.state.list}}px">
 
                     <!--
@@ -181,7 +197,7 @@
                                         and sameConversation(conversation, state.selected),
                                     'o_mailpro_item_unread': conversation.unread }"
                                 t-att-aria-current="state.selected and sameConversation(conversation, state.selected) ? 'true' : undefined"
-                                t-on-click="() => this.select(conversation)">
+                                t-on-click="() => this.pick(conversation)">
                             <span t-if="conversation.unread" class="visually-hidden">Unread. </span>
                             <!--
                                 The contact's own picture, the way every mail
@@ -224,7 +240,7 @@
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 3. the conversation -->
-                <div t-if="!panes.state.zoom" class="o_mailpro_thread" role="region" aria-label="Conversation">
+                <div t-if="showThread" class="o_mailpro_thread" role="region" aria-label="Conversation">
                     <!--
                         A new mail takes the pane the way a reply does. There
                         is no thread behind it yet, so the head names the
@@ -234,7 +250,8 @@
                     <t t-if="composer.state.open and composer.state.mode === 'new'">
                         <div class="o_mailpro_thread_head">
                             <div class="d-flex align-items-start justify-content-between gap-3">
-                                <div class="min-w-0">
+                                <t t-call="pan_mail_pro.BackToList"/>
+                                <div class="min-w-0 flex-grow-1">
                                     <h2 class="o_mailpro_thread_title">New email</h2>
                                     <div class="o_mailpro_thread_sub">
                                         <span t-esc="state.compose and state.compose.label"/>
@@ -250,7 +267,8 @@
                     <t t-elif="state.selected">
                         <div class="o_mailpro_thread_head">
                             <div class="d-flex align-items-start justify-content-between gap-3">
-                                <div class="min-w-0">
+                                <t t-call="pan_mail_pro.BackToList"/>
+                                <div class="min-w-0 flex-grow-1">
                                     <h2 class="o_mailpro_thread_title" t-esc="state.selected.subject"/>
                                     <div class="o_mailpro_thread_sub">
                                         <span t-esc="state.selected.correspondent"/>
@@ -269,8 +287,14 @@
                                     Activities are lists, and neither is a
                                     place to write.
                                 -->
-                                <div t-if="!composer.state.open and (canReply or canLogNote)"
+                                <div t-if="!composer.state.open and (canReply or canLogNote or showRecordButton)"
                                      class="d-flex align-items-center gap-2 flex-shrink-0">
+                                    <button t-if="showRecordButton" type="button"
+                                            class="btn btn-secondary btn-sm o_mailpro_record_button"
+                                            t-att-title="selectedRecord.name"
+                                            t-on-click="() => this.showRecordScreen()">
+                                        <i class="fa fa-cube me-1" aria-hidden="true"/>Record
+                                    </button>
                                     <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm"
                                             t-on-click="() => this.logNote()">Log note</button>
                                     <button t-if="canReply" type="button" class="btn btn-primary btn-sm"
@@ -526,7 +550,7 @@
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 4. the record: the pane a mail client cannot have -->
-                <div t-if="!panes.state.collapsed.record or panes.state.zoom" class="o_mailpro_record"
+                <div t-if="showRecord" class="o_mailpro_record"
                      role="region" aria-label="Record"
                      t-attf-style="flex-basis: {{panes.state.record}}px">
                     <RecordPane t-if="selectedRecord" record="selectedRecord"
@@ -640,7 +664,7 @@
         without knowing that double-click resets.
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
-        <div t-if="!panes.state.zoom" class="o_mailpro_split"
+        <div t-if="panes.splitterVisible(divider)" class="o_mailpro_split"
              t-att-class="'o_mailpro_split_' + divider
                           + (panes.state.collapsed[divider] ? ' o_mailpro_split_folded' : '')"
              role="separator" aria-orientation="vertical" tabindex="0"
@@ -669,6 +693,20 @@
         and the button says what it will do: a note is logged, a reply and
         a new mail are sent.
     -->
+    <!--
+        The step back from a conversation to the list, on a phone, where the
+        two do not fit side by side. Nothing is deselected: the list still
+        marks the conversation, and a second tap opens it again.
+    -->
+    <t t-name="pan_mail_pro.BackToList">
+        <button t-if="panes.state.small" type="button"
+                class="o_mailpro_back flex-shrink-0"
+                aria-label="Back to the list"
+                t-on-click="() => this.backToList()">
+            <i class="fa fa-arrow-left" aria-hidden="true"/>
+        </button>
+    </t>
+
     <t t-name="pan_mail_pro.ComposerButtons">
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
             <button type="button" class="btn btn-link btn-sm"

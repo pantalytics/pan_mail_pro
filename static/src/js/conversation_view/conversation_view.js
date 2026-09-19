@@ -343,7 +343,10 @@ export class ConversationView extends Component {
             const stillThere = keepSelection && this.state.selected
                 && conversations.some((row) => this.sameConversation(row, this.state.selected));
             if (!stillThere) {
-                if (conversations.length) {
+                if (conversations.length && !this.panes.state.small) {
+                    // A phone lands on the list, the way every mail client
+                    // does: opening the first mail unasked is a screen the
+                    // reader has to back out of before they have read it.
                     await this.select(conversations[0]);
                 } else {
                     this.state.selected = null;
@@ -368,6 +371,19 @@ export class ConversationView extends Component {
         return left.model === right.model
             && left.res_id === right.res_id
             && left.message_id === right.message_id;
+    }
+
+    /** A conversation picked from the list: on a phone, that is also a step. */
+    async pick(conversation) {
+        this.panes.showThread();
+        await this.select(conversation);
+    }
+
+    /** The step back, on a phone. Nothing is deselected: the list marks it. */
+    backToList() {
+        this.composer.close();
+        this.state.compose = null;
+        this.panes.showList();
     }
 
     async select(conversation) {
@@ -462,6 +478,7 @@ export class ConversationView extends Component {
         this.saveExpanded();
         }
         this.state.folder = folder;
+        this.panes.closeRail();
         // A filter is a question about the folder you are in, so switching
         // folder keeps it: "linked to nothing" in Sent is a fair question,
         // and dropping it on every click is the thing that makes a filter
@@ -523,6 +540,7 @@ export class ConversationView extends Component {
 
     /** Open another mailbox, from the rail. Folders are per mailbox. */
     async setMailbox(mailboxId) {
+        this.panes.closeRail();
         if (mailboxId === this.state.mailboxId) {
             return;
         }
@@ -571,6 +589,56 @@ export class ConversationView extends Component {
     get selectedRecord() {
         const chips = this.state.thread.records || [];
         return chips.length ? chips[0] : null;
+    }
+
+    // Which panes are on screen. Wide: all four, minus the folded ones.
+    // Narrow: the record steps aside and the thread head offers it on the
+    // whole screen. Small: one at a time -- the list or the conversation,
+    // the record over either, and the rail as a drawer.
+
+    get showRail() {
+        const panes = this.panes.state;
+        if (panes.zoom) {
+            return false;
+        }
+        return panes.small ? panes.railOpen : !panes.collapsed.rail;
+    }
+
+    /** On a phone, the conversation has the screen once there is one. */
+    get threadOpen() {
+        return this.panes.state.stage === "thread"
+            && Boolean(this.state.selected || this.composer.state.open);
+    }
+
+    get showList() {
+        const panes = this.panes.state;
+        return !panes.zoom && (!panes.small || !this.threadOpen);
+    }
+
+    get showThread() {
+        const panes = this.panes.state;
+        return !panes.zoom && (!panes.small || this.threadOpen);
+    }
+
+    get showRecord() {
+        const panes = this.panes.state;
+        return panes.zoom || (!panes.small && !panes.narrow && !panes.collapsed.record);
+    }
+
+    /**
+     * The record, where the pane for it does not fit: a button in the
+     * thread head that gives it the whole screen, and the screen's own
+     * "Back to the Inbox" brings the conversation back.
+     */
+    get showRecordButton() {
+        const panes = this.panes.state;
+        return (panes.small || panes.narrow) && !panes.zoom && Boolean(this.selectedRecord);
+    }
+
+    showRecordScreen() {
+        if (!this.panes.state.zoom) {
+            this.panes.toggleZoom();
+        }
     }
 
     // ----------------------------------------------------------- the tabs
@@ -991,6 +1059,7 @@ export class ConversationView extends Component {
         if (this.panes.state.zoom) {
             this.panes.toggleZoom();
         }
+        this.panes.showThread();
         this.state.compose = { model, res_id: resId, label: label || "" };
         this.composer.open({
             default_model: model,

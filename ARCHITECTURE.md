@@ -302,6 +302,22 @@ other panes are hidden, so the widths are where you left them when you return.
 It is the one pane state the browser does not remember: a reading mode you
 have to notice you left on is a screen that lost its mail.
 
+19.0.13.4.0 makes the screen fit a tablet and a phone. Two breakpoints in
+`use_panes.js`, read from the browser's own media queries. Below 1400px the
+record pane steps aside, as it already did, and the thread head grows a
+Record button that gives the record the whole screen -- the zoom above, with
+its own "Back to the Inbox" -- so the record is one tap away instead of
+unreachable; the top bar grows a button that folds the rail, because the
+chevron on a 5px divider is not something a finger can hit. Below 768px, the
+width Odoo itself calls small, the panes stop sitting side by side: the list
+or the conversation has the screen, an arrow in the thread head steps back
+to the list without deselecting anything, the record takes the screen over
+either, and the rail is a drawer over whichever pane is open that closes on
+the folder you pick. Every pane is still the same template; the width only
+decides which of them are let through, so nothing is drawn twice for two
+kinds of screen. A phone lands on the list rather than in the first
+conversation, the way every mail client does.
+
 19.0.12.3.0 did the same to Files. `read_conversation` hands back the
 attachments in the shape the web client's attachment store reads, the tab
 mounts `AttachmentList`, and a file there behaves the way it does in the
