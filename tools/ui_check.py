@@ -694,11 +694,46 @@ class Checks:
         record = page.query_selector('.o_mailpro_record')
         if record and record.is_visible():
             self.fail('the record pane still takes space at 1280px')
-        # The pane stepped aside; the record did not. The thread head offers
-        # it on the whole screen, and the rail folds from the top bar, where
-        # a finger can reach it.
-        if not page.query_selector('.o_mailpro_record_button'):
-            self.fail('at 1280px the thread head offers no way to the record')
+        # The pane stepped aside; the record did not. Its divider is a strip
+        # a finger can hit: a tap slides the record into the conversation's
+        # column and folds the conversation to the same strip, and a second
+        # tap gives the conversation back. No button in the thread head: the
+        # strip is the control, and it is always on screen.
+        if page.query_selector('.o_mailpro_record_button'):
+            self.fail('at 1280px the thread head still carries a Record button')
+        strip = page.query_selector('.o_mailpro_split_sliver .o_mailpro_sliver_button')
+        if not strip or not strip.is_visible():
+            self.fail('at 1280px there is no strip to open the record from')
+        elif strip.bounding_box()['width'] < 32:
+            self.fail('the record strip is %dpx wide, too thin for a finger'
+                      % strip.bounding_box()['width'])
+        else:
+            # inner_text() is the rendered text, and the label is set in
+            # uppercase, so the comparison has to be case-blind.
+            if 'record' not in strip.inner_text().lower():
+                self.fail('the record strip does not say what it opens: %r'
+                          % strip.inner_text())
+            strip.click()
+            page.wait_for_timeout(600)
+            record = page.query_selector('.o_mailpro_record')
+            if not record or not record.is_visible():
+                self.fail('tapping the strip did not open the record at 1280px')
+            elif record.bounding_box()['width'] < 500:
+                self.fail('the record opened %dpx wide at 1280px, not the column'
+                          % record.bounding_box()['width'])
+            if self.visible('.o_mailpro_thread'):
+                self.fail('the conversation stayed open next to the record at 1280px')
+            self.shot('inbox-narrow-record.png')
+            strip = page.query_selector('.o_mailpro_split_sliver .o_mailpro_sliver_button')
+            if not strip or 'conversation' not in strip.inner_text().lower():
+                self.fail('with the record open, the strip does not offer the conversation')
+            else:
+                strip.click()
+                page.wait_for_timeout(600)
+                if not self.visible('.o_mailpro_thread'):
+                    self.fail('tapping the strip again did not bring the conversation back')
+                if self.visible('.o_mailpro_record'):
+                    self.fail('the record stayed open next to the conversation at 1280px')
         button = page.query_selector('.o_mailpro_rail_button')
         if not button or not button.is_visible():
             self.fail('at 1280px the top bar has no button for the rail')
@@ -1036,7 +1071,7 @@ class Checks:
         if divider:
             divider.dblclick(position={'x': 2, 'y': 200})
         page.wait_for_timeout(500)
-        if page.query_selector('.o_mailpro_record') is None:
+        if not self.visible('.o_mailpro_record'):
             self.fail('the record pane did not come back when unfolded')
 
     def zoom(self):

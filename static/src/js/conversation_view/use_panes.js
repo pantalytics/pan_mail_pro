@@ -18,10 +18,16 @@
  * lost its mail.
  *
  * The window's shape is the other thing that is not stored. Below `narrow`
- * the record pane steps aside; below `small` the panes stop sitting side by
- * side and the screen shows one at a time, with the rail as a drawer. Both
- * come from the browser's own media queries, so a phone turned sideways
- * gets the layout its width earns without a reload.
+ * the conversation and the record share one column and take turns in it;
+ * below `small` the panes stop sitting side by side and the screen shows one
+ * at a time, with the rail as a drawer. Both come from the browser's own
+ * media queries, so a phone turned sideways gets the layout its width earns
+ * without a reload.
+ *
+ * A folded pane is not removed, it is drawn at no width, so folding and
+ * unfolding are a transition the stylesheet animates rather than a pane that
+ * blinks out. `folded(name)` is the one answer the template asks, whichever
+ * of the three shapes decided it.
  */
 
 import { onWillDestroy, useState } from "@odoo/owl";
@@ -31,12 +37,13 @@ import { _t } from "@web/core/l10n/translation";
 const KEY = "pan_mail_pro.panes";
 
 // px. Where the screen changes shape rather than size. Below `narrow` the
-// record pane steps aside and the thread head offers it on the whole screen
-// instead; below `small` -- a phone, and Odoo's own mobile breakpoint -- the
-// panes stop sitting side by side at all: the list, then the conversation,
-// then the record, one at a time, and the rail is a drawer over whichever one
-// is open. A tablet in portrait is `narrow`, not `small`: three panes fit,
-// the fourth does not.
+// record pane and the conversation share the third column: one of them is
+// open, the other is a strip on the divider that a tap swaps in. Below
+// `small` -- a phone, and Odoo's own mobile breakpoint -- the panes stop
+// sitting side by side at all: the list, then the conversation, then the
+// record, one at a time, and the rail is a drawer over whichever one is
+// open. A tablet in portrait is `narrow`, not `small`: three panes fit, the
+// fourth does not.
 const BREAKPOINTS = { small: 767.98, narrow: 1400 };
 
 // px. Minimums are where a pane stops being readable rather than where it
@@ -55,7 +62,12 @@ const THREAD_MIN = 360;
 const STEP = 16;
 
 function paneLabel(name) {
-    return { rail: _t("Mailboxes"), list: _t("Conversations"), record: _t("Record") }[name];
+    return {
+        rail: _t("Mailboxes"),
+        list: _t("Conversations"),
+        thread: _t("Conversation"),
+        record: _t("Record"),
+    }[name];
 }
 
 function clamp(value, min, max) {
@@ -73,6 +85,8 @@ function defaults() {
         small: false,
         narrow: false,
         railOpen: false,
+        // A phone shows the list or the conversation; a tablet the
+        // conversation or the record. Three positions, one word.
         stage: "list",
     };
 }
@@ -112,6 +126,33 @@ export function usePanes() {
         }
     }
 
+    /**
+     * Whether a pane is drawn at no width right now. Three shapes, three
+     * reasons: a wide screen folds what the chevron folded, a tablet folds
+     * whichever of the conversation and the record is not on, and a phone
+     * folds the rail until the drawer is asked for.
+     */
+    function isFolded(name) {
+        if (state.zoom) {
+            return false;
+        }
+        if (state.small) {
+            return name === "rail" && !state.railOpen;
+        }
+        if (state.narrow && name === "record") {
+            return state.stage !== "record";
+        }
+        if (state.narrow && name === "thread") {
+            return state.stage === "record";
+        }
+        return Boolean(state.collapsed[name]);
+    }
+
+    /** On a tablet the record's divider is a strip, not a line. */
+    function isSliver(name) {
+        return name === "record" && state.narrow && !state.small && !state.zoom;
+    }
+
     /** The widest this pane may get before the thread drops below its floor. */
     function ceiling(name, total) {
         const spec = PANES[name];
@@ -120,7 +161,7 @@ export function usePanes() {
         }
         let others = 0;
         for (const other of Object.keys(PANES)) {
-            if (other !== name && !state.collapsed[other]) {
+            if (other !== name && !isFolded(other)) {
                 others += state[other];
             }
         }
@@ -171,21 +212,34 @@ export function usePanes() {
             return COLLAPSIBLE.includes(name);
         },
 
+        folded(name) {
+            return isFolded(name);
+        },
+
+        sliver(name) {
+            return isSliver(name);
+        },
+
+        /** What the strip brings back: the pane on its other side. */
+        sliverLabel(name) {
+            return isFolded(name) ? paneLabel(name) : paneLabel("thread");
+        },
+
         /** The chevron points where the divider is about to go. */
         chevron(name) {
-            const folded = state.collapsed[name];
+            const folded = isFolded(name);
             const rightwards = name === "record" ? !folded : folded;
             return rightwards ? "fa-chevron-right" : "fa-chevron-left";
         },
 
         toggleLabel(name) {
-            return state.collapsed[name]
+            return isFolded(name)
                 ? _t("Show %s", paneLabel(name))
                 : _t("Hide %s", paneLabel(name));
         },
 
         startDrag(name, ev) {
-            if (ev.button !== 0 || state.collapsed[name]) {
+            if (ev.button !== 0 || isFolded(name) || isSliver(name)) {
                 return; // Nothing to drag; the chevron is the control.
             }
             const handle = ev.currentTarget;
@@ -227,7 +281,7 @@ export function usePanes() {
                 return;
             }
             ev.preventDefault();
-            if (state.collapsed[name]) {
+            if (isFolded(name) || isSliver(name)) {
                 return;
             }
             const step = (ev.key === "ArrowRight" ? STEP : -STEP) * direction(name);
@@ -247,8 +301,17 @@ export function usePanes() {
             state.zoom = !state.zoom;
         },
 
+        /**
+         * The fold. On a tablet the record has no width of its own to fold:
+         * it takes the conversation's column or gives it back, and that is
+         * a step, not a preference, so it is not stored.
+         */
         toggle(name) {
             if (!COLLAPSIBLE.includes(name)) {
+                return;
+            }
+            if (isSliver(name)) {
+                state.stage = state.stage === "record" ? "thread" : "record";
                 return;
             }
             state.collapsed[name] = !state.collapsed[name];
@@ -273,7 +336,11 @@ export function usePanes() {
             state.railOpen = false;
         },
 
-        /** On a phone, the conversation or the list; elsewhere both. */
+        /**
+         * The conversation: on a phone instead of the list, on a tablet
+         * instead of the record. A conversation just picked is the thing
+         * to look at, whichever pane had the column before.
+         */
         showThread() {
             state.stage = "thread";
         },
@@ -284,14 +351,14 @@ export function usePanes() {
 
         /** Whether a divider has two panes to sit between. */
         splitterVisible(name) {
-            if (state.zoom || state.small) {
-                return false;
-            }
-            return name !== "record" || !state.narrow;
+            return !state.zoom && !state.small;
         },
 
         /** Double-click is the way back from a width you regret. */
         reset(name) {
+            if (isSliver(name)) {
+                return; // No width to regret; a double tap is two taps.
+            }
             state[name] = PANES[name].start;
             state.collapsed[name] = false;
             save();

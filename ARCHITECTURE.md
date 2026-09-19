@@ -322,6 +322,20 @@ decides which of them are let through, so nothing is drawn twice for two
 kinds of screen. A phone lands on the list rather than in the first
 conversation, the way every mail client does.
 
+19.0.13.5.0 makes the fold a motion and gives the tablet its record back
+without a button. A folded pane is no longer removed: it stays in the DOM at
+no width, inert and invisible, so `flex-basis` and `flex-grow` are numbers
+the stylesheet can interpolate and the rail, the record and the phone's
+drawer slide instead of blinking out. Below 1400px the Record button in the
+thread head is gone; the conversation and the record share the third column
+and take turns in it, and the divider between them is a strip wide enough
+for a finger that names the pane it brings back. A tap slides the record
+into the column and folds the conversation to the strip, a second tap gives
+the conversation back, and picking another conversation from the list does
+the same, because the mail just picked is the thing to look at. Which of
+the two has the column is a step, like the phone's, not a preference: it
+is the same `stage` word and the browser does not remember it.
+
 19.0.12.3.0 did the same to Files. `read_conversation` hands back the
 attachments in the shape the web client's attachment store reads, the tab
 mounts `AttachmentList`, and a file there behaves the way it does in the

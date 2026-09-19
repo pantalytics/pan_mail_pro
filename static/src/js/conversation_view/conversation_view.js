@@ -591,17 +591,15 @@ export class ConversationView extends Component {
         return chips.length ? chips[0] : null;
     }
 
-    // Which panes are on screen. Wide: all four, minus the folded ones.
-    // Narrow: the record steps aside and the thread head offers it on the
-    // whole screen. Small: one at a time -- the list or the conversation,
-    // the record over either, and the rail as a drawer.
+    // Which panes are in the DOM. A folded pane stays, at no width, so the
+    // fold can animate: `panes.folded(name)` says which ones are folded, and
+    // these say which ones exist at all. Wide: all four. Narrow: all four,
+    // the conversation and the record taking turns in the third column.
+    // Small: one at a time -- the list or the conversation, the record over
+    // either, and the rail as a drawer over whichever is open.
 
     get showRail() {
-        const panes = this.panes.state;
-        if (panes.zoom) {
-            return false;
-        }
-        return panes.small ? panes.railOpen : !panes.collapsed.rail;
+        return !this.panes.state.zoom;
     }
 
     /** On a phone, the conversation has the screen once there is one. */
@@ -622,17 +620,18 @@ export class ConversationView extends Component {
 
     get showRecord() {
         const panes = this.panes.state;
-        return panes.zoom || (!panes.small && !panes.narrow && !panes.collapsed.record);
+        return panes.zoom || !panes.small;
     }
 
     /**
-     * The record, where the pane for it does not fit: a button in the
+     * The record, on a phone, where no pane for it fits: a button in the
      * thread head that gives it the whole screen, and the screen's own
-     * "Back to the Inbox" brings the conversation back.
+     * "Back to the Inbox" brings the conversation back. A tablet needs no
+     * button: the record's divider is the strip that swaps it in.
      */
     get showRecordButton() {
         const panes = this.panes.state;
-        return (panes.small || panes.narrow) && !panes.zoom && Boolean(this.selectedRecord);
+        return panes.small && !panes.zoom && Boolean(this.selectedRecord);
     }
 
     showRecordScreen() {
