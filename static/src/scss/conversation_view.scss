@@ -904,11 +904,13 @@ $mailpro-warn: #c0392b;
         .o_mailpro_thread_composing {
             .o_mailpro_thread_head { padding: 0.5rem; }
 
+            // The chips and the suggestion wear Bootstrap's `d-flex`, which
+            // carries !important; a plain `display: none` loses to it.
             .o_mailpro_thread_sub,
             .o_mailpro_chips,
             .o_mailpro_suggestion,
             .o_mailpro_unlinked,
-            .o_mailpro_relink_open { display: none; }
+            .o_mailpro_relink_open { display: none !important; }
 
             .o_mailpro_composer { max-width: none; }
         }
