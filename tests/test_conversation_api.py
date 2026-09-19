@@ -8,6 +8,8 @@ is the reason this file exists; the rest guards the shapes the client depends
 on, because a missing key here is a blank pane in the browser and an empty
 server log.
 """
+from unittest.mock import patch
+
 from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, tagged
 
@@ -519,15 +521,22 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(door['elsewhere'], 1, 'one message sits elsewhere')
 
     def test_a_record_chip_carries_the_icon_of_its_app(self):
-        """The chip shows the app's tile, resolved from the module that
-        defined the model, so a lead wears CRM's icon and never a guess."""
+        """The chip shows the tile of the app whose menu opens the model:
+        a lead wears CRM's icon, and a contact wears Contacts', not the cube
+        of `base`, the module that happens to define it."""
         self._mail()
         thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
         chip = thread['records'][0]
         self.assertEqual(chip['model'], 'crm.lead')
         self.assertEqual(chip['icon'], '/crm/static/description/icon.png')
         self.assertEqual(self.Conversation._model_icon('res.partner'),
-                         '/base/static/description/icon.png')
+                         '/contacts/static/description/icon.png',
+                         "a contact is a Contacts record to the reader, not base's")
+        # A base model with no app around it would show base's cube, and no
+        # icon reads better than one that names nothing.
+        with patch.object(type(self.Conversation), '_app_icon_by_menu',
+                          return_value=False):
+            self.assertFalse(self.Conversation._model_icon('res.partner'))
         self.assertFalse(self.Conversation._model_icon('no.such.model'),
                          'an unknown model gets no icon, not a broken image')
 

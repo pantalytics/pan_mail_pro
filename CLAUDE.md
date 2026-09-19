@@ -731,6 +731,12 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **A composer opened in a dialog does not close on Escape when it has a
   draft in it**, so a browser check that presses Escape leaves a modal over
   everything it asserts next. Click the dialog's own close button.
+- **The module that defines a model is not the app that shows it.** The
+  Linked-to chip resolved its tile from `_original_module`, so a contact wore
+  `base`'s icon: a teal cube nobody recognises, and a browser check that only
+  asserts "the image loaded" is happy with it. The tile the reader knows is
+  the root menu's `web_icon` of the app that opens the model (Contacts for a
+  contact, `sale_management` for a sale order, which `sale` itself never is).
 
 ### Mounting Odoo's own views inside your own screen (19.0.10.0.0)
 - **Bootstrap's display utilities carry `!important`, and Odoo's own markup wears them.** The form renderer is `d-flex flex-nowrap` in its wide layout and the statusbar's button row is `d-flex`; a plain `display: block` / `display: none` from an addon loses both times. The form then renders a chatter with no record above it, and the record's "Convert to Opportunity" stays as the loudest button on a screen whose one job is replying. Both cost a round trip in the browser to find, because nothing errors.
