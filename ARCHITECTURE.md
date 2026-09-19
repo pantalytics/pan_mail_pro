@@ -336,6 +336,17 @@ the same, because the mail just picked is the thing to look at. Which of
 the two has the column is a step, like the phone's, not a preference: it
 is the same `stage` word and the browser does not remember it.
 
+19.0.13.8.0 replaces the strip with the shape every sidebar toggle has in
+the apps people already use: a round button floating on the divider. Beside
+an open pane it is a chevron and folds it; beside a folded one it is that
+pane's icon (the menu for the mailboxes, the list, the envelope, the cube
+the record chips wear) and slides it back. It sits centred on the line
+between two open panes and wholly inside the open neighbour of a folded
+one, whose header leaves it room; when two neighbouring panes are folded
+their buttons stand side by side rather than on one spot. A strip had a
+name on it and cost 2.5rem of every folded pane; a button costs nothing
+until you look for it, and its icon is the name.
+
 19.0.13.7.0 puts the followers back on the screen. The chatter left the
 record pane in 19.0.10.0.0 and took the follower list with it, so nothing on
 the Inbox said who Odoo notifies about this record. A Followers button now
