@@ -548,6 +548,7 @@ class Checks:
             self.shot('inbox-activities.png')
             page.query_selector('.o_mailpro_tab:has(span:text-is("Mail"))').click()
             page.wait_for_timeout(600)
+            self.check_followers(page)
 
         # One writing action per tab, and each on the tab that shows what it
         # writes. Both everywhere is how a note written in Mail vanishes on
@@ -1341,6 +1342,61 @@ class Checks:
         self.page.wait_for_selector('.o_form_view', timeout=30000)
         self.page.wait_for_timeout(1200)
         return self.page.inner_text('.o_form_view')
+
+    def check_followers(self, page):
+        """Who Odoo notifies about the record, from the end of the tab strip.
+
+        The button is ours; the list it opens is the chatter's own, so Follow
+        has to change the count on the button the way it changes the chatter's,
+        and Unfollow has to take it back.
+        """
+        button = page.query_selector('.o_mailpro_followers')
+        if not button or not button.is_visible():
+            self.fail('the tab strip offers no Followers button')
+            return
+        if 'follow' not in button.inner_text().lower():
+            self.fail('the followers button does not say what it opens: %r'
+                      % button.inner_text())
+
+        def count():
+            el = page.query_selector('.o_mailpro_followers .o_mailpro_tab_count')
+            return int(el.inner_text().strip()) if el else 0
+
+        before = count()
+        button.click()
+        page.wait_for_timeout(600)
+        menu = page.query_selector('.o-mail-Followers-dropdown')
+        if not menu or not menu.is_visible():
+            self.fail('the Followers button opened no list')
+            return
+        if not menu.query_selector('.o-mail-FollowerList-followBtn'):
+            self.fail('the follower list offers no Follow: the admin is already '
+                      'following the seeded record, or the list is not Odoo\'s')
+            page.keyboard.press('Escape')
+            return
+        if not page.query_selector('.o-mail-Followers-dropdown a:has-text("Add Followers")'):
+            self.fail('the follower list offers no Add Followers to an admin')
+        self.shot('inbox-followers.png')
+        menu.query_selector('.o-mail-FollowerList-followBtn').click()
+        page.wait_for_timeout(900)
+        if count() != before + 1:
+            self.fail('Follow left the followers count at %d, expected %d'
+                      % (count(), before + 1))
+        if 'following' not in page.query_selector('.o_mailpro_followers').inner_text().lower():
+            self.fail('the button does not say Following after Follow')
+        # Leave the record the way it was found.
+        page.query_selector('.o_mailpro_followers').click()
+        page.wait_for_timeout(600)
+        unfollow = page.query_selector('.o-mail-Followers-dropdown .o-mail-FollowerList-unfollowBtn')
+        if not unfollow:
+            self.fail('the follower list offers no Unfollow to a follower')
+            page.keyboard.press('Escape')
+            return
+        unfollow.click()
+        page.wait_for_timeout(900)
+        if count() != before:
+            self.fail('Unfollow left the followers count at %d, expected %d'
+                      % (count(), before))
 
     def check_files_tab(self, page):
         """The Files tab is Odoo's own attachment list, or it is a copy.

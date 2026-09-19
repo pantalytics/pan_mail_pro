@@ -336,6 +336,17 @@ the same, because the mail just picked is the thing to look at. Which of
 the two has the column is a step, like the phone's, not a preference: it
 is the same `stage` word and the browser does not remember it.
 
+19.0.13.7.0 puts the followers back on the screen. The chatter left the
+record pane in 19.0.10.0.0 and took the follower list with it, so nothing on
+the Inbox said who Odoo notifies about this record. A Followers button now
+sits at the right end of the tab strip, beside Activities, and opens the
+chatter's own dropdown: `FollowerList` over the record's thread in the mail
+store, with Follow, Unfollow, Add Followers and the subtype edit exactly as
+the chatter has them. It is not a fifth tab, because the tabs are readings of
+the conversation and three names are not a reading. The count on the button
+comes from the same `followers` request the chatter makes, so the module adds
+a button and a fetch and no list of its own.
+
 19.0.13.6.0 makes that strip the one way a pane comes back, and the chevron
 on the divider the one way it goes: the rail, the list and the record fold
 alike, and each leaves its divider as a strip named after it. The list folds

@@ -415,6 +415,34 @@
                                     <span t-if="tabCount(tab.id)" class="o_mailpro_tab_count"
                                           t-esc="tabCount(tab.id)"/>
                                 </button>
+                                <!--
+                                    Who Odoo notifies about this record, at the
+                                    right end of the strip. Not a fifth tab: the
+                                    tabs are readings of the conversation, and a
+                                    tab whose whole content is three names is an
+                                    empty screen with a list in the corner. The
+                                    list itself is the chatter's own dropdown.
+                                -->
+                                <Dropdown t-if="recordThread" position="'bottom-end'"
+                                          menuClass="'o-mail-Followers-dropdown ' + mailStore.discussDropdownMenuClass(this)"
+                                          state="followerListDropdown">
+                                    <button type="button" class="o_mailpro_followers ms-auto"
+                                            t-att-class="{ 'o_mailpro_followers_following': recordThread.selfFollower }"
+                                            t-att-disabled="recordThread.hasReadAccess === false"
+                                            t-att-title="followersLabel">
+                                        <i class="fa fa-fw" aria-hidden="true"
+                                           t-att-class="recordThread.selfFollower ? 'fa-user' : 'fa-user-o'"/>
+                                        <span t-esc="followersLabel"/>
+                                        <span t-if="recordThread.followersCount" class="o_mailpro_tab_count"
+                                              t-esc="recordThread.followersCount"/>
+                                    </button>
+                                    <t t-set-slot="content">
+                                        <FollowerList onAddFollowers.bind="onAddFollowers"
+                                                      onFollowerChanged.bind="onFollowerChanged"
+                                                      thread="recordThread"
+                                                      dropdown="followerListDropdown"/>
+                                    </t>
+                                </Dropdown>
                             </div>
                         </div>
                         <!--
