@@ -924,8 +924,17 @@ class Checks:
         # Writing takes the whole phone: the composer is as wide as the
         # screen, the conversation's chips are gone from above it, and the
         # back arrow with them -- Discard is the way out of a draft.
+        # Reply lives on the Mail tab, and an earlier check may have left
+        # the strip elsewhere; a check that skips itself on a stale tab
+        # proves nothing.
+        mail_tab = page.query_selector('.o_mailpro_tab:has-text("Mail")')
+        if mail_tab:
+            mail_tab.click()
+            page.wait_for_timeout(600)
         reply = page.query_selector('.o_mailpro_thread_head button:has-text("Reply")')
-        if reply:
+        if not reply:
+            self.fail('the phone conversation has no Reply button on the Mail tab')
+        else:
             reply.click()
             try:
                 page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
