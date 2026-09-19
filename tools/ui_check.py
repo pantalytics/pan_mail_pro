@@ -708,7 +708,9 @@ class Checks:
             self.fail('the record strip is %dpx wide, too thin for a finger'
                       % strip.bounding_box()['width'])
         else:
-            if 'Record' not in strip.inner_text():
+            # inner_text() is the rendered text, and the label is set in
+            # uppercase, so the comparison has to be case-blind.
+            if 'record' not in strip.inner_text().lower():
                 self.fail('the record strip does not say what it opens: %r'
                           % strip.inner_text())
             strip.click()
@@ -723,7 +725,7 @@ class Checks:
                 self.fail('the conversation stayed open next to the record at 1280px')
             self.shot('inbox-narrow-record.png')
             strip = page.query_selector('.o_mailpro_split_sliver .o_mailpro_sliver_button')
-            if not strip or 'Conversation' not in strip.inner_text():
+            if not strip or 'conversation' not in strip.inner_text().lower():
                 self.fail('with the record open, the strip does not offer the conversation')
             else:
                 strip.click()
