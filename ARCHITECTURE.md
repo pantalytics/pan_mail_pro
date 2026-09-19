@@ -336,6 +336,15 @@ the same, because the mail just picked is the thing to look at. Which of
 the two has the column is a step, like the phone's, not a preference: it
 is the same `stage` word and the browser does not remember it.
 
+19.0.13.6.0 makes that strip the one way a pane comes back, and the chevron
+on the divider the one way it goes: the rail, the list and the record fold
+alike, and each leaves its divider as a strip named after it. The list folds
+now too, because on a tablet a long mail is worth more than the list beside
+it and the strip is a tap away; the conversation is still the one pane that
+never folds on its own. The chevron grew to a finger's size, so the top bar's
+rail button is the phone's drawer only, where the rail is not a pane with a
+divider. Two controls for one fold was the inconsistency this removes.
+
 19.0.12.3.0 did the same to Files. `read_conversation` hands back the
 attachments in the shape the web client's attachment store reads, the tab
 mounts `AttachmentList`, and a file there behaves the way it does in the
