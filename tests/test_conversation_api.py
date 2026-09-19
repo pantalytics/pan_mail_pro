@@ -560,6 +560,51 @@ class TestConversationApi(TransactionCase):
         self.assertEqual([row['model'] for row in thread['records']],
                          ['res.partner'])
 
+    # ------------------------------------------------------- a new mail's To
+
+    def test_a_new_mail_on_a_contact_goes_to_that_contact(self):
+        """The composer fills "To" from nothing; the pane has to."""
+        self.assertEqual(
+            self.Conversation.new_mail_recipients('res.partner', self.customer.id),
+            [self.customer.id])
+
+    def test_a_new_mail_on_a_record_goes_to_its_customer(self):
+        self.assertEqual(
+            self.Conversation.new_mail_recipients('crm.lead', self.lead.id),
+            [self.customer.id])
+
+    def test_a_new_mail_on_a_lead_with_only_an_address_makes_the_contact(self):
+        """What accepting the chatter's suggestion does, without the click."""
+        lead = self.env['crm.lead'].create({
+            'name': 'Koelinstallatie',
+            'email_from': 'Piet de Vries <piet@devries.test>',
+        })
+        ids = self.Conversation.new_mail_recipients('crm.lead', lead.id)
+        self.assertEqual(len(ids), 1)
+        partner = self.env['res.partner'].browse(ids)
+        self.assertEqual(partner.email_normalized, 'piet@devries.test')
+        # Asked twice, the same contact: no second Piet.
+        self.assertEqual(self.Conversation.new_mail_recipients('crm.lead', lead.id), ids)
+
+    def test_a_new_mail_on_a_record_with_nobody_goes_to_nobody(self):
+        """An empty "To" the writer sees beats a guess they do not."""
+        lead = self.env['crm.lead'].create({'name': 'Anoniem'})
+        self.assertEqual(self.Conversation.new_mail_recipients('crm.lead', lead.id), [])
+        self.assertEqual(self.Conversation.new_mail_recipients('crm.lead', 0), [])
+
+    def test_a_new_mail_s_to_is_for_people_who_may_open_the_record(self):
+        stranger = self.env['res.users'].create({
+            'name': 'Nina Nobody',
+            'login': 'nina.to@company.test',
+            'email': 'nina.to@company.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        with self.assertRaises(AccessError):
+            self.Conversation.with_user(stranger).new_mail_recipients(
+                'crm.lead', self.lead.id)
+        with self.assertRaises(AccessError):
+            self.Conversation.new_mail_recipients('ir.cron', 1)
+
     def test_customer_timeline_merges_and_orders(self):
         self._mail(subject='Oldest')
         self._mail(subject='Newest')

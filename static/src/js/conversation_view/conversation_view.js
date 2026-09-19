@@ -986,17 +986,24 @@ export class ConversationView extends Component {
     }
 
     /** The pane composer, on the record just picked. */
-    composeOn(model, resId, label) {
+    async composeOn(model, resId, label) {
         // The pane is hidden while the record has the screen to itself.
         if (this.panes.state.zoom) {
             this.panes.toggleZoom();
         }
         this.state.compose = { model, res_id: resId, label: label || "" };
+        // The record's own contact, the way a reply takes the last sender:
+        // the composer fills "To" from nothing by itself, and a new mail that
+        // opens addressed to nobody is a mail that is sent to nobody.
+        const partnerIds = await this.orm.call(
+            "pan.mail.conversation", "new_mail_recipients", [model, resId]
+        );
         this.composer.open({
             default_model: model,
             default_res_ids: [resId],
             default_composition_mode: "comment",
             default_subtype_xmlid: "mail.mt_comment",
+            default_partner_ids: partnerIds,
         }, "new");
     }
 
