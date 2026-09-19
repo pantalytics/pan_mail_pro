@@ -548,6 +548,7 @@ class Checks:
             self.shot('inbox-activities.png')
             page.query_selector('.o_mailpro_tab:has(span:text-is("Mail"))').click()
             page.wait_for_timeout(600)
+            self.check_followers(page)
 
         # One writing action per tab, and each on the tab that shows what it
         # writes. Both everywhere is how a note written in Mail vanishes on
@@ -694,74 +695,85 @@ class Checks:
         record = page.query_selector('.o_mailpro_record')
         if record and record.is_visible():
             self.fail('the record pane still takes space at 1280px')
-        # The pane stepped aside; the record did not. Its divider is a strip
-        # a finger can hit: a tap slides the record into the conversation's
-        # column and folds the conversation to the same strip, and a second
-        # tap gives the conversation back. No button in the thread head: the
-        # strip is the control, and it is always on screen.
+        # The pane stepped aside; the record did not. A round button floats
+        # on its divider, at the conversation's right edge: a tap slides the
+        # record into the conversation's column and folds the conversation,
+        # and the same button, now at the record's left edge, gives the
+        # conversation back. No button in the thread head: the one on the
+        # divider is the control, and it is always on screen.
         if page.query_selector('.o_mailpro_record_button'):
             self.fail('at 1280px the thread head still carries a Record button')
-        strip = page.query_selector('.o_mailpro_split_sliver .o_mailpro_sliver_button')
-        if not strip or not strip.is_visible():
-            self.fail('at 1280px there is no strip to open the record from')
-        elif strip.bounding_box()['width'] < 32:
-            self.fail('the record strip is %dpx wide, too thin for a finger'
-                      % strip.bounding_box()['width'])
+        toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        if not toggle or not toggle.is_visible():
+            self.fail('at 1280px there is no button to open the record from')
         else:
-            # inner_text() is the rendered text, and the label is set in
-            # uppercase, so the comparison has to be case-blind.
-            if 'record' not in strip.inner_text().lower():
-                self.fail('the record strip does not say what it opens: %r'
-                          % strip.inner_text())
-            strip.click()
+            box = toggle.bounding_box()
+            if box['width'] < 32 or abs(box['width'] - box['height']) > 2:
+                self.fail('the fold button is %dx%dpx, not a finger-sized circle'
+                          % (box['width'], box['height']))
+            if box['x'] + box['width'] > 1280:
+                self.fail('the record button hangs off the right edge at 1280px')
+            if 'record' not in (toggle.get_attribute('aria-label') or '').lower():
+                self.fail('the record button does not say what it opens: %r'
+                          % toggle.get_attribute('aria-label'))
+            toggle.click()
             page.wait_for_timeout(600)
             record = page.query_selector('.o_mailpro_record')
             if not record or not record.is_visible():
-                self.fail('tapping the strip did not open the record at 1280px')
+                self.fail('tapping the button did not open the record at 1280px')
             elif record.bounding_box()['width'] < 500:
                 self.fail('the record opened %dpx wide at 1280px, not the column'
                           % record.bounding_box()['width'])
             if self.visible('.o_mailpro_thread'):
                 self.fail('the conversation stayed open next to the record at 1280px')
             self.shot('inbox-narrow-record.png')
-            strip = page.query_selector('.o_mailpro_split_sliver .o_mailpro_sliver_button')
-            if not strip or 'conversation' not in strip.inner_text().lower():
-                self.fail('with the record open, the strip does not offer the conversation')
+            toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+            label = (toggle.get_attribute('aria-label') or '').lower() if toggle else ''
+            if 'conversation' not in label:
+                self.fail('with the record open, the button does not offer the conversation')
             else:
-                strip.click()
+                # It floats over the record's header, which leaves it room.
+                head = page.query_selector('.o_mailpro_record .o_mailpro_record_head')
+                if head and toggle.bounding_box()['x'] + toggle.bounding_box()['width'] > \
+                        head.bounding_box()['x'] + float(
+                            page.evaluate('el => getComputedStyle(el).paddingLeft',
+                                          head).rstrip('px')):
+                    self.fail('the conversation button sits over the record header text')
+                toggle.click()
                 page.wait_for_timeout(600)
                 if not self.visible('.o_mailpro_thread'):
-                    self.fail('tapping the strip again did not bring the conversation back')
+                    self.fail('tapping the button again did not bring the conversation back')
                 if self.visible('.o_mailpro_record'):
                     self.fail('the record stayed open next to the conversation at 1280px')
-        # The rail folds the way every pane folds: the chevron on its divider,
-        # and the strip it leaves brings it back. No second button in the
-        # top bar for it: that one is the phone's drawer.
+        # The rail folds the way every pane folds: the button on its divider,
+        # a chevron while the rail is open, the menu icon once it is folded.
+        # No second button in the top bar for it: that one is the phone's
+        # drawer.
         if self.visible('.o_mailpro_rail_button'):
             self.fail('at 1280px the top bar still carries a rail button')
         fold = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
         if not fold:
-            self.fail('at 1280px the rail divider has no chevron to fold with')
+            self.fail('at 1280px the rail divider has no button to fold with')
         else:
-            box = fold.bounding_box()
-            if box['width'] < 20 or box['height'] < 36:
-                self.fail('the fold chevron is %dx%dpx, too small for a finger'
-                          % (box['width'], box['height']))
+            if not fold.query_selector('.fa-chevron-left'):
+                self.fail('the rail button beside the open rail is not a chevron')
             fold.click()
             page.wait_for_timeout(400)
             if self.visible('.o_mailpro_rail'):
-                self.fail('the chevron did not fold the rail at 1280px')
-            strip = page.query_selector('.o_mailpro_split_rail .o_mailpro_sliver_button')
-            if not strip or not strip.is_visible():
-                self.fail('the folded rail left no strip to bring it back')
-            elif 'mailboxes' not in strip.inner_text().lower():
-                self.fail('the rail strip does not say what it opens: %r'
-                          % strip.inner_text())
+                self.fail('the button did not fold the rail at 1280px')
+            fold = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
+            if not fold or not fold.is_visible():
+                self.fail('the folded rail left no button to bring it back')
+            elif fold.bounding_box()['x'] < 0:
+                self.fail('the folded rail\'s button hangs off the left edge')
+            elif not fold.query_selector('.fa-bars'):
+                self.fail('the folded rail\'s button is not the menu icon')
             else:
-                strip.click()
+                self.shot('inbox-narrow-rail-folded.png')
+                fold.click()
                 page.wait_for_timeout(400)
                 if not self.visible('.o_mailpro_rail'):
-                    self.fail('the strip did not bring the rail back at 1280px')
+                    self.fail('the button did not bring the rail back at 1280px')
         self.shot('inbox-narrow.png')
 
         self.phone()
@@ -1079,12 +1091,14 @@ class Checks:
             self.fail('the list width was %dpx before the reload and %dpx after'
                       % (widened, kept))
 
-        # The strip the fold left is the way back.
-        strip = page.query_selector('.o_mailpro_split_record .o_mailpro_sliver_button')
-        if not strip:
-            self.fail('the folded record pane left no strip to bring it back')
+        # The same button, now at the screen's right edge, is the way back.
+        toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        if not toggle or not toggle.is_visible():
+            self.fail('the folded record pane left no button to bring it back')
         else:
-            strip.click()
+            if toggle.bounding_box()['x'] + toggle.bounding_box()['width'] > WIDE:
+                self.fail('the folded record\'s button hangs off the right edge')
+            toggle.click()
         divider = page.query_selector('.o_mailpro_split_list')
         if divider:
             divider.dblclick(position={'x': 2, 'y': 200})
@@ -1107,15 +1121,42 @@ class Checks:
         if thread_after - thread_before < 100:
             self.fail('folding the list gave the conversation %dpx, not the list\'s width'
                       % (thread_after - thread_before))
+        # The button floats over the conversation's header, which makes
+        # room: the title starts to the right of it.
+        toggle = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+        title = page.query_selector('.o_mailpro_thread_title')
+        if toggle and title and title.bounding_box()['x'] < \
+                toggle.bounding_box()['x'] + toggle.bounding_box()['width']:
+            self.fail('the folded list\'s button sits over the conversation title')
         self.shot('inbox-list-folded.png')
-        strip = page.query_selector('.o_mailpro_split_list .o_mailpro_sliver_button')
-        if not strip or 'conversations' not in strip.inner_text().lower():
-            self.fail('the folded list left no strip named after it')
+        # Both left panes folded: two buttons, side by side, neither over
+        # the other, and the title after both.
+        page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle').click()
+        page.wait_for_timeout(400)
+        rail_btn = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
+        list_btn = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+        title = page.query_selector('.o_mailpro_thread_title')
+        if not rail_btn or not list_btn:
+            self.fail('folding rail and list together lost a button')
         else:
-            strip.click()
+            a, b = rail_btn.bounding_box(), list_btn.bounding_box()
+            if b['x'] < a['x'] + a['width']:
+                self.fail('the rail and list buttons overlap when both are folded')
+            elif title and title.bounding_box()['x'] < b['x'] + b['width']:
+                self.fail('two folded panes\' buttons sit over the conversation title')
+            self.shot('inbox-two-folded.png')
+            rail_btn.click()
+            page.wait_for_timeout(400)
+            if not self.visible('.o_mailpro_rail'):
+                self.fail('the menu button did not bring the rail back')
+        toggle = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+        if not toggle or not toggle.query_selector('.fa-list-ul'):
+            self.fail('the folded list left no list button to bring it back')
+        else:
+            toggle.click()
             page.wait_for_timeout(400)
             if not self.visible('.o_mailpro_list'):
-                self.fail('the strip did not bring the list back')
+                self.fail('the button did not bring the list back')
 
     def zoom(self):
         """The record on the whole screen, and the way back out of it.
@@ -1341,6 +1382,68 @@ class Checks:
         self.page.wait_for_selector('.o_form_view', timeout=30000)
         self.page.wait_for_timeout(1200)
         return self.page.inner_text('.o_form_view')
+
+    def check_followers(self, page):
+        """Who Odoo notifies about the record, from the end of the tab strip.
+
+        The button is ours; the list it opens is the chatter's own, so Follow
+        and Unfollow have to move the count on the button the way they move
+        the chatter's. The seeded record may already count the admin among
+        its followers (whoever creates a record follows it), so the check
+        starts from whichever of the two the list offers and ends where it
+        began.
+        """
+        button = page.query_selector('.o_mailpro_followers')
+        if not button or not button.is_visible():
+            self.fail('the tab strip offers no Followers button')
+            return
+        if 'follow' not in button.inner_text().lower():
+            self.fail('the followers button does not say what it opens: %r'
+                      % button.inner_text())
+
+        def count():
+            el = page.query_selector('.o_mailpro_followers .o_mailpro_tab_count')
+            return int(el.inner_text().strip()) if el else 0
+
+        def open_list():
+            page.query_selector('.o_mailpro_followers').click()
+            page.wait_for_timeout(600)
+            menu = page.query_selector('.o-mail-Followers-dropdown')
+            return menu if menu and menu.is_visible() else None
+
+        before = count()
+        menu = open_list()
+        if not menu:
+            self.fail('the Followers button opened no list')
+            return
+        if not page.query_selector('.o-mail-Followers-dropdown a:has-text("Add Followers")'):
+            self.fail('the follower list offers no Add Followers to an admin')
+        following = bool(menu.query_selector('.o-mail-FollowerList-unfollowBtn'))
+        first = '.o-mail-FollowerList-unfollowBtn' if following else '.o-mail-FollowerList-followBtn'
+        second = '.o-mail-FollowerList-followBtn' if following else '.o-mail-FollowerList-unfollowBtn'
+        step = -1 if following else 1
+        self.shot('inbox-followers.png')
+        menu.query_selector(first).click()
+        page.wait_for_timeout(900)
+        if count() != before + step:
+            self.fail('%s left the followers count at %d, expected %d'
+                      % ('Unfollow' if following else 'Follow', count(), before + step))
+        label = page.query_selector('.o_mailpro_followers').inner_text().lower()
+        if ('following' in label) == following:
+            self.fail('the button still reads %r after %s'
+                      % (label, 'Unfollow' if following else 'Follow'))
+        # Leave the record the way it was found.
+        menu = open_list()
+        if not menu or not menu.query_selector(second):
+            self.fail('the follower list offers no way back after %s'
+                      % ('Unfollow' if following else 'Follow'))
+            page.keyboard.press('Escape')
+            return
+        menu.query_selector(second).click()
+        page.wait_for_timeout(900)
+        if count() != before:
+            self.fail('the followers count is %d after a round trip, expected %d'
+                      % (count(), before))
 
     def check_files_tab(self, page):
         """The Files tab is Odoo's own attachment list, or it is a copy.
