@@ -291,7 +291,11 @@ again.
 own window, which was a second composer to keep in step with the one the pane
 already has; now the two-step record dialog hands the record to the pane
 composer, and the head names that record where a subject would go. One place
-on the screen writes mail.
+on the screen writes mail. 19.0.13.3.1 fills its "To": the composer fills
+nothing on its own, so `new_mail_recipients` asks the record for its default
+recipients the way a mail template does -- the contact itself, a `partner_id`,
+or an `email_from` made into a contact -- and a reply and a new mail open
+addressed to somebody alike.
 
 19.0.12.1.0 adds the one pane state that is not a width: the record on the
 whole screen. Reading a lead is not the same job as reading mail, and a pane

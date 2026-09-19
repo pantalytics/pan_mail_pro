@@ -338,6 +338,11 @@ class Checks:
                 return
             if page.query_selector('.modal .o_mail_composer_form'):
                 self.fail('New Email opened the composer in a dialog')
+            # Step two picked a contact, and a contact is its own recipient:
+            # the tag has to be in "To" before anyone types, the same
+            # assertion Reply makes further down.
+            if not page.query_selector('.o_mailpro_composer [name="partner_ids"] .o_tag'):
+                self.fail('New Email opened a composer with nobody in To')
             head = page.query_selector('.o_mailpro_thread_head .o_mailpro_thread_title')
             if not head or head.inner_text().strip() != 'New email':
                 self.fail('the pane head does not say a new email is being written')
