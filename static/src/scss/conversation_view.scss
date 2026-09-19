@@ -869,9 +869,13 @@ $mailpro-warn: #c0392b;
             bottom: 0;
             left: 0;
             z-index: 3;
-            width: min(80%, 20rem);
+            // Two properties, not `min(80%, 20rem)`: Odoo compiles with
+            // libsass, which reads that as Sass's own min() and refuses the
+            // mixed units -- and a bundle that fails to compile takes every
+            // other stylesheet in it down with it.
+            width: 80%;
+            max-width: 20rem;
             flex-basis: auto !important;
-            max-width: none;
             box-shadow: 0.25rem 0 1rem rgba(0, 29, 33, 0.18);
         }
 

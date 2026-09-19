@@ -708,6 +708,15 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### Small screens (19.0.13.4.0)
+- **Odoo compiles SCSS with libsass, and libsass reads `min()` / `max()` as
+  Sass's own functions.** `width: min(80%, 20rem)` fails on the mixed units,
+  and a stylesheet that fails to compile takes the whole `web.assets_backend`
+  CSS bundle down with it: every UI assertion went red at once, including the
+  setup checklist's, which the change never touched. Two properties (`width`
+  + `max-width`) say the same thing. `pip install libsass` and
+  `sass.compile(string=...)` on the file is the ten-second local check.
+
 ### Reusing Odoo's own menus (19.0.13.0.0)
 - **A dropdown renders in the overlay container, not inside the screen that
   opened it.** Nest its SCSS under `.o_mailpro_conversation` and not one rule
