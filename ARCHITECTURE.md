@@ -263,7 +263,7 @@ template selector back in the body, and Send saves the composer and calls
 the mail is out.
 
 19.0.11.0.0 took the chatter out of the Inbox's fourth pane and put what it
-carried into a four-position strip over the third: Mail, Everything (the notes
+carried into a four-position strip over the third: Mail, Mail + notes (the notes
 and the record's own events, interleaved), Files, Activities. The screen had
 offered two composers a divider apart, and they were not the same composer --
 pane 3's reply threads under the message it answers and addresses the people
@@ -278,11 +278,11 @@ one place. The strip steps aside while somebody is writing: the pane has one
 job then, and a tab click would drop the draft.
 
 19.0.13.1.0 gives each tab one writing action instead of both: Reply on Mail,
-Log note on Everything, and neither on Files or Activities, which are lists.
+Log note on Mail + notes, and neither on Files or Activities, which are lists.
 Each action sits on the tab that shows what it produces, so nothing has to be
 moved after saving -- a note used to be written in Mail, where a note is not
 shown, and the screen answered by switching tabs under the reader. The same
-release stopped emptying the pane when the tab changes: Mail and Everything
+release stopped emptying the pane when the tab changes: Mail and Mail + notes
 are one conversation read two ways, so the read happens in place and what was
 open stays open, rather than the header collapsing and the thread being drawn
 again.
@@ -305,6 +305,22 @@ double-click on that header does the same, and nothing is collapsed -- the
 other panes are hidden, so the widths are where you left them when you return.
 It is the one pane state the browser does not remember: a reading mode you
 have to notice you left on is a screen that lost its mail.
+
+19.0.13.4.0 makes the screen fit a tablet and a phone. Two breakpoints in
+`use_panes.js`, read from the browser's own media queries. Below 1400px the
+record pane steps aside, as it already did, and the thread head grows a
+Record button that gives the record the whole screen -- the zoom above, with
+its own "Back to the Inbox" -- so the record is one tap away instead of
+unreachable; the top bar grows a button that folds the rail, because the
+chevron on a 5px divider is not something a finger can hit. Below 768px, the
+width Odoo itself calls small, the panes stop sitting side by side: the list
+or the conversation has the screen, an arrow in the thread head steps back
+to the list without deselecting anything, the record takes the screen over
+either, and the rail is a drawer over whichever pane is open that closes on
+the folder you pick. Every pane is still the same template; the width only
+decides which of them are let through, so nothing is drawn twice for two
+kinds of screen. A phone lands on the list rather than in the first
+conversation, the way every mail client does.
 
 19.0.12.3.0 did the same to Files. `read_conversation` hands back the
 attachments in the shape the web client's attachment store reads, the tab

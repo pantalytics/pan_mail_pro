@@ -519,11 +519,11 @@ class Checks:
         # the button's text gives "Activities2" the moment there is one.
         tabs = [el.query_selector('span').inner_text().strip()
                 for el in page.query_selector_all('.o_mailpro_tab')]
-        if tabs != ['Mail', 'Everything', 'Files', 'Activities']:
+        if tabs != ['Mail', 'Mail + notes', 'Files', 'Activities']:
             self.fail(f'the tab strip reads {tabs}')
         else:
-            for name in ('Everything', 'Files', 'Activities', 'Mail'):
-                tab = page.query_selector(f'.o_mailpro_tab:has-text("{name}")')
+            for name in ('Mail + notes', 'Files', 'Activities', 'Mail'):
+                tab = page.query_selector(f'.o_mailpro_tab:has(span:text-is("{name}"))')
                 tab.click()
                 page.wait_for_timeout(900)
                 self.error_free(f'the {name} tab')
@@ -546,7 +546,7 @@ class Checks:
             elif not page.query_selector('.o_mailpro_activities .o-mail-Activity-markDone'):
                 self.fail('the activity card carries no Mark Done button')
             self.shot('inbox-activities.png')
-            page.query_selector('.o_mailpro_tab:has-text("Mail")').click()
+            page.query_selector('.o_mailpro_tab:has(span:text-is("Mail"))').click()
             page.wait_for_timeout(600)
 
         # One writing action per tab, and each on the tab that shows what it
@@ -627,12 +627,12 @@ class Checks:
         # is the same composer with the note subtype, so the thing to prove is
         # that it lands in the pane too and says what it will do: a button
         # reading Send over a note is how somebody mails a customer their own
-        # internal margin. It lives in Everything, which is the tab that shows
+        # internal margin. It lives in Mail + notes, which is the tab that shows
         # a note once it is written.
-        page.click('.o_mailpro_tab:has-text("Everything")')
+        page.click('.o_mailpro_tab:has-text("Mail + notes")')
         page.wait_for_timeout(900)
         if page.query_selector('.o_mailpro_thread_head button:has-text("Reply")'):
-            self.fail('the Everything tab offers Reply')
+            self.fail('the Mail + notes tab offers Reply')
         note = page.query_selector('.o_mailpro_thread_head button:has-text("Log note")')
         if not note:
             self.fail('there is no way to log a note')
@@ -694,9 +694,34 @@ class Checks:
         record = page.query_selector('.o_mailpro_record')
         if record and record.is_visible():
             self.fail('the record pane still takes space at 1280px')
+        # The pane stepped aside; the record did not. The thread head offers
+        # it on the whole screen, and the rail folds from the top bar, where
+        # a finger can reach it.
+        if not page.query_selector('.o_mailpro_record_button'):
+            self.fail('at 1280px the thread head offers no way to the record')
+        button = page.query_selector('.o_mailpro_rail_button')
+        if not button or not button.is_visible():
+            self.fail('at 1280px the top bar has no button for the rail')
+        else:
+            button.click()
+            page.wait_for_timeout(400)
+            if self.visible('.o_mailpro_rail'):
+                self.fail('the rail button did not fold the rail at 1280px')
+            button.click()
+            page.wait_for_timeout(400)
+            if not self.visible('.o_mailpro_rail'):
+                self.fail('the rail button did not bring the rail back at 1280px')
         self.shot('inbox-narrow.png')
+
+        self.phone()
+
         page.set_viewport_size({'width': WIDE, 'height': 1100})
-        page.wait_for_timeout(400)
+        page.wait_for_timeout(600)
+        for selector, name in (('.o_mailpro_rail', 'the mailbox rail'),
+                               ('.o_mailpro_list', 'the conversation list'),
+                               ('.o_mailpro_thread', 'the conversation')):
+            if not self.visible(selector):
+                self.fail(f'{name} did not come back at {WIDE}px')
 
     def linking(self):
         """The screen where a match is corrected, and the correction sticking.
@@ -811,6 +836,136 @@ class Checks:
         if len(remaining) != 1:
             self.fail(f'{len(remaining)} conversations left on a contact after '
                       f'linking one, expected 1')
+
+    def visible(self, selector):
+        el = self.page.query_selector(selector)
+        return bool(el and el.is_visible())
+
+    def phone(self):
+        """One pane at a time, the way a phone reads mail.
+
+        The list, then the conversation with a way back, then the record over
+        it with a way back; and the rail as a drawer that closes on the
+        folder you picked. Asserted on what is on screen, because every pane
+        is still in the same template and the difference is entirely which
+        of them the width lets through.
+        """
+        page = self.page
+        page.set_viewport_size({'width': 390, 'height': 844})
+        page.wait_for_timeout(600)
+
+        # Shrinking the window mid-conversation keeps the conversation; the
+        # check starts from the list either way.
+        back = page.query_selector('.o_mailpro_back')
+        if back:
+            back.click()
+            page.wait_for_timeout(400)
+        if not self.visible('.o_mailpro_list'):
+            self.fail('a phone does not open on the conversation list')
+            return
+        if self.visible('.o_mailpro_thread'):
+            self.fail('the conversation sits next to the list on a phone')
+        list_width = page.query_selector('.o_mailpro_list').bounding_box()['width']
+        if list_width < 370:
+            self.fail('the list takes %dpx of a 390px phone' % list_width)
+
+        # The rail is a drawer: absent until asked for, over the list while
+        # open, gone again once a folder is picked.
+        if self.visible('.o_mailpro_rail'):
+            self.fail('the rail takes space on a phone before it is asked for')
+        button = page.query_selector('.o_mailpro_rail_button')
+        if not button or not button.is_visible():
+            self.fail('a phone has no button for the rail')
+            return
+        button.click()
+        page.wait_for_timeout(400)
+        if not self.visible('.o_mailpro_rail'):
+            self.fail('the rail button opened nothing on a phone')
+        else:
+            rail = page.query_selector('.o_mailpro_rail').bounding_box()
+            if rail['width'] > 340:
+                self.fail('the rail drawer covers the whole phone')
+            self.shot('inbox-phone-rail.png')
+            folder = page.query_selector('.o_mailpro_folder')
+            if folder:
+                folder.click()
+                page.wait_for_timeout(800)
+            if self.visible('.o_mailpro_rail'):
+                self.fail('picking a folder left the rail drawer open')
+
+        item = page.query_selector('.o_mailpro_item')
+        if not item:
+            self.fail('no conversation to open on the phone')
+            return
+        item.click()
+        page.wait_for_timeout(1200)
+        if not self.visible('.o_mailpro_thread'):
+            self.fail('opening a conversation on a phone showed nothing')
+            return
+        if self.visible('.o_mailpro_list'):
+            self.fail('the list stayed on screen under the conversation on a phone')
+        self.shot('inbox-phone.png')
+
+        # The record, over the conversation, and the way back from it.
+        button = page.query_selector('.o_mailpro_record_button')
+        if not button:
+            self.fail('the phone thread head offers no way to the record')
+        else:
+            button.click()
+            page.wait_for_timeout(800)
+            record = page.query_selector('.o_mailpro_record')
+            if not record or not record.is_visible():
+                self.fail('the Record button showed no record on a phone')
+            else:
+                share = record.bounding_box()['width'] / 390
+                if share < 0.9:
+                    self.fail('the phone record takes %d%% of the screen' % (share * 100))
+                self.shot('inbox-phone-record.png')
+                page.query_selector('.o_mailpro_record_zoom').click()
+                page.wait_for_timeout(500)
+                if not self.visible('.o_mailpro_thread'):
+                    self.fail('Back to the Inbox did not bring the conversation back on a phone')
+
+        # Writing takes the whole phone: the composer is as wide as the
+        # screen, the conversation's chips are gone from above it, and the
+        # back arrow with them -- Discard is the way out of a draft.
+        # Reply lives on the Mail tab, and an earlier check may have left
+        # the strip elsewhere; a check that skips itself on a stale tab
+        # proves nothing.
+        mail_tab = page.query_selector('.o_mailpro_tab:has(span:text-is("Mail"))')
+        if mail_tab:
+            mail_tab.click()
+            page.wait_for_timeout(600)
+        reply = page.query_selector('.o_mailpro_thread_head button:has-text("Reply")')
+        if not reply:
+            self.fail('the phone conversation has no Reply button on the Mail tab')
+        else:
+            reply.click()
+            try:
+                page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+                page.wait_for_timeout(600)
+                composer = page.query_selector('.o_mailpro_composer')
+                if composer.bounding_box()['width'] < 370:
+                    self.fail('the phone composer takes %dpx of a 390px screen'
+                              % composer.bounding_box()['width'])
+                if self.visible('.o_mailpro_chips'):
+                    self.fail('the Linked-to chips stay above the phone composer')
+                if self.visible('.o_mailpro_back'):
+                    self.fail('the back arrow offers to drop the draft on a phone')
+                self.shot('inbox-phone-compose.png')
+                page.click('.o_mailpro_thread_head button:has-text("Discard")')
+                page.wait_for_timeout(500)
+            except Exception as exc:
+                self.fail(f'Reply on a phone opened no composer: {exc}')
+
+        back = page.query_selector('.o_mailpro_back')
+        if not back:
+            self.fail('the phone conversation has no way back to the list')
+            return
+        back.click()
+        page.wait_for_timeout(400)
+        if not self.visible('.o_mailpro_list'):
+            self.fail('Back did not bring the list back on a phone')
 
     def panes(self):
         """The dividers move, the side panes fold, and the browser remembers.

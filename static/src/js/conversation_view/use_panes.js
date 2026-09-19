@@ -16,13 +16,28 @@
  * takes the whole screen while you read it, and the next open is the Inbox
  * again. A reading mode you have to remember you left on is a screen that
  * lost its mail.
+ *
+ * The window's shape is the other thing that is not stored. Below `narrow`
+ * the record pane steps aside; below `small` the panes stop sitting side by
+ * side and the screen shows one at a time, with the rail as a drawer. Both
+ * come from the browser's own media queries, so a phone turned sideways
+ * gets the layout its width earns without a reload.
  */
 
-import { useState } from "@odoo/owl";
+import { onWillDestroy, useState } from "@odoo/owl";
 import { browser } from "@web/core/browser/browser";
 import { _t } from "@web/core/l10n/translation";
 
 const KEY = "pan_mail_pro.panes";
+
+// px. Where the screen changes shape rather than size. Below `narrow` the
+// record pane steps aside and the thread head offers it on the whole screen
+// instead; below `small` -- a phone, and Odoo's own mobile breakpoint -- the
+// panes stop sitting side by side at all: the list, then the conversation,
+// then the record, one at a time, and the rail is a drawer over whichever one
+// is open. A tablet in portrait is `narrow`, not `small`: three panes fit,
+// the fourth does not.
+const BREAKPOINTS = { small: 767.98, narrow: 1400 };
 
 // px. Minimums are where a pane stops being readable rather than where it
 // stops being visible: a folder name that wraps, a subject line with two
@@ -54,6 +69,11 @@ function defaults() {
         record: PANES.record.start,
         collapsed: { rail: false, record: false },
         zoom: false,
+        // Not stored: they describe the window, not a preference.
+        small: false,
+        narrow: false,
+        railOpen: false,
+        stage: "list",
     };
 }
 
@@ -85,7 +105,7 @@ export function usePanes() {
 
     function save() {
         try {
-            const { zoom, ...stored } = state;
+            const { zoom, small, narrow, railOpen, stage, ...stored } = state;
             browser.localStorage.setItem(KEY, JSON.stringify(stored));
         } catch {
             // A width nobody can store is still a width you can drag today.
@@ -121,6 +141,23 @@ export function usePanes() {
     function resize(name, width, total) {
         state[name] = clamp(width, PANES[name].min, ceiling(name, total));
     }
+
+    // The window's shape, kept current by the browser rather than polled.
+    // A phone rotated into landscape crosses `small` without a reload, and
+    // the drawer must not stay open over a rail that is now a pane.
+    const queries = Object.entries(BREAKPOINTS).map(([name, px]) => {
+        const query = window.matchMedia(`(max-width: ${px}px)`);
+        const apply = () => {
+            state[name] = query.matches;
+            if (name === "small" && !query.matches) {
+                state.railOpen = false;
+            }
+        };
+        apply();
+        query.addEventListener("change", apply);
+        return () => query.removeEventListener("change", apply);
+    });
+    onWillDestroy(() => queries.forEach((off) => off()));
 
     return {
         state,
@@ -216,6 +253,41 @@ export function usePanes() {
             }
             state.collapsed[name] = !state.collapsed[name];
             save();
+        },
+
+        /**
+         * The rail from the top bar: the drawer on a phone, the fold
+         * everywhere else. One button, one meaning -- show me the mailboxes
+         * -- and the screen decides what that costs.
+         */
+        toggleRail() {
+            if (state.small) {
+                state.railOpen = !state.railOpen;
+            } else {
+                this.toggle("rail");
+            }
+        },
+
+        /** A folder was picked: the drawer has done its job. */
+        closeRail() {
+            state.railOpen = false;
+        },
+
+        /** On a phone, the conversation or the list; elsewhere both. */
+        showThread() {
+            state.stage = "thread";
+        },
+
+        showList() {
+            state.stage = "list";
+        },
+
+        /** Whether a divider has two panes to sit between. */
+        splitterVisible(name) {
+            if (state.zoom || state.small) {
+                return false;
+            }
+            return name !== "record" || !state.narrow;
         },
 
         /** Double-click is the way back from a width you regret. */
