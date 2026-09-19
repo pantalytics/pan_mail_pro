@@ -36,15 +36,16 @@
             -->
             <div class="o_mailpro_topbar d-flex align-items-center gap-2">
                 <!--
-                    The rail from a button, where the chevron on a 5px
-                    divider is too small to touch: on a phone it opens the
-                    rail as a drawer over the list, on a tablet it folds the
-                    pane. Hidden on a wide screen, where the divider is the
-                    control and a second one is chrome.
+                    The rail from a button, on a phone only, where the rail
+                    is a drawer over the list rather than a pane with a
+                    divider. Everywhere else the divider is the control: its
+                    chevron folds the pane and the strip it leaves brings it
+                    back, the same for all three panes, and a second control
+                    for one of them is chrome.
                 -->
                 <button type="button" class="o_mailpro_rail_button flex-shrink-0"
-                        t-att-aria-expanded="showRail ? 'true' : 'false'"
-                        t-att-aria-label="showRail ? 'Hide mailboxes' : 'Show mailboxes'"
+                        t-att-aria-expanded="panes.folded('rail') ? 'false' : 'true'"
+                        t-att-aria-label="panes.folded('rail') ? 'Show mailboxes' : 'Hide mailboxes'"
                         t-on-click="() => panes.toggleRail()">
                     <i class="fa fa-bars" aria-hidden="true"/>
                 </button>
@@ -133,6 +134,8 @@
 
                 <!-- 2. what is waiting -->
                 <div t-if="showList" class="o_mailpro_list" role="region" aria-label="Conversations"
+                     t-att-class="{ 'o_mailpro_folded': panes.folded('list') }"
+                     t-att-inert="panes.folded('list')"
                      t-attf-style="flex-basis: {{panes.state.list}}px">
 
                     <!--
@@ -676,10 +679,11 @@
         is a real button: the fold has to be reachable without a mouse and
         without knowing that double-click resets.
 
-        On a tablet the record's divider is a strip instead of a line: wide
+        A folded pane leaves its divider as a strip instead of a line: wide
         enough for a finger, named after the pane it brings back, and the
-        whole of it is the button. A tap swaps the conversation and the
-        record in the column they share.
+        whole of it is the button. On a tablet the record's divider is always
+        that strip, and a tap swaps the conversation and the record in the
+        column they share.
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
         <div t-if="panes.splitterVisible(divider)" class="o_mailpro_split"

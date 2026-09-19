@@ -1,12 +1,16 @@
 /** @odoo-module */
 /**
- * Pane sizing for the Inbox: drag the dividers, collapse the two side panes,
- * and find the screen tomorrow the way you left it tonight.
+ * Pane sizing for the Inbox: drag the dividers, fold the three panes around
+ * the conversation, and find the screen tomorrow the way you left it tonight.
  *
  * Three stored widths, not four. The thread is whatever is left over, so it
  * has no width of its own -- it has a floor, and that floor is what a drag
- * runs into instead of eating the mail. The same reason the list cannot be
- * collapsed: a screen with no conversations on it is not this screen.
+ * runs into instead of eating the mail. It is also the one pane that never
+ * folds on its own: a screen with no mail on it is not this screen.
+ *
+ * One control, everywhere: the chevron on a divider folds the pane beside
+ * it, and a folded pane is a strip on that divider, named after the pane,
+ * that a tap brings back. No button elsewhere says the same thing.
  *
  * Widths live in the browser, not the database. It is a per-monitor
  * preference, the same person has a laptop and a desk, and a table for it
@@ -27,7 +31,8 @@
  * A folded pane is not removed, it is drawn at no width, so folding and
  * unfolding are a transition the stylesheet animates rather than a pane that
  * blinks out. `folded(name)` is the one answer the template asks, whichever
- * of the three shapes decided it.
+ * of the three shapes decided it; `sliver(name)` says whether its divider
+ * is drawn as the strip.
  */
 
 import { onWillDestroy, useState } from "@odoo/owl";
@@ -55,8 +60,10 @@ const PANES = {
     record: { start: 448, min: 300, max: 720 },
 };
 
-// Only the two outer panes fold away. Outlook folds the same two.
-const COLLAPSIBLE = ["rail", "record"];
+// Everything but the conversation folds away. Outlook folds the two outer
+// ones; the list goes too, because on a tablet a long mail is worth more
+// than the list beside it, and the strip brings the list back in a tap.
+const COLLAPSIBLE = ["rail", "list", "record"];
 
 const THREAD_MIN = 360;
 const STEP = 16;
@@ -79,7 +86,7 @@ function defaults() {
         rail: PANES.rail.start,
         list: PANES.list.start,
         record: PANES.record.start,
-        collapsed: { rail: false, record: false },
+        collapsed: { rail: false, list: false, record: false },
         zoom: false,
         // Not stored: they describe the window, not a preference.
         small: false,
@@ -148,9 +155,16 @@ export function usePanes() {
         return Boolean(state.collapsed[name]);
     }
 
-    /** On a tablet the record's divider is a strip, not a line. */
+    /**
+     * Whether a divider is drawn as the strip: beside every folded pane, and
+     * on a tablet always between the conversation and the record, because
+     * one of those two is folded at any time.
+     */
     function isSliver(name) {
-        return name === "record" && state.narrow && !state.small && !state.zoom;
+        if (state.small || state.zoom) {
+            return false;
+        }
+        return isFolded(name) || (name === "record" && state.narrow);
     }
 
     /** The widest this pane may get before the thread drops below its floor. */
@@ -310,7 +324,7 @@ export function usePanes() {
             if (!COLLAPSIBLE.includes(name)) {
                 return;
             }
-            if (isSliver(name)) {
+            if (name === "record" && state.narrow && !state.small) {
                 state.stage = state.stage === "record" ? "thread" : "record";
                 return;
             }
@@ -319,9 +333,9 @@ export function usePanes() {
         },
 
         /**
-         * The rail from the top bar: the drawer on a phone, the fold
-         * everywhere else. One button, one meaning -- show me the mailboxes
-         * -- and the screen decides what that costs.
+         * The rail from the top bar. On a phone that is the drawer; the
+         * button is hidden everywhere else, where the divider is the
+         * control, but a keyboard or a test may still reach it.
          */
         toggleRail() {
             if (state.small) {

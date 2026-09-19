@@ -79,9 +79,6 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         }
     }
 
-    // A tablet has room for three panes and a divider too thin to touch.
-    &.o_mailpro_narrow .o_mailpro_rail_button { display: flex; }
-
     .o_mailpro_search {
         width: 100%;
         max-width: 34rem;
@@ -119,13 +116,6 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         &:hover,
         &.o_mailpro_split_dragging { background-color: $mailpro-accent; }
 
-        // Nothing to drag when the pane it borders is folded away; the
-        // chevron is the only control left on it.
-        &.o_mailpro_split_folded {
-            cursor: default;
-
-            &:hover { background-color: $mailpro-line; }
-        }
 
         &:focus-visible {
             outline: 2px solid $mailpro-accent;
@@ -135,14 +125,16 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     // The fold, on the divider itself: the pane it belongs to may be gone,
     // and a button inside a collapsed pane is a button nobody can press.
+    // Taller and wider than the 5px strip it sits on, so a finger on a
+    // tablet hits it: it is the only way to fold a pane there.
     .o_mailpro_split_toggle {
         position: absolute;
         top: 0.5rem;
         left: 50%;
         transform: translateX(-50%);
         z-index: 1;
-        width: 1rem;
-        height: 1.5rem;
+        width: 1.5rem;
+        height: 2.5rem;
         padding: 0;
         display: flex;
         align-items: center;
@@ -162,18 +154,52 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         }
     }
 
-    // A folded pane puts its divider against the window edge, where half a
-    // centred button is off the screen -- and it is the button that brings
-    // the pane back.
-    .o_mailpro_split_rail.o_mailpro_split_folded .o_mailpro_split_toggle {
-        left: 0;
-        transform: none;
+    // A folded pane leaves its divider as a strip: wide enough for a
+    // finger, named after the pane, the whole of it the button that brings
+    // the pane back. One shape for all three panes and for the tablet's
+    // record, so there is one thing to learn.
+    .o_mailpro_split_sliver {
+        flex-basis: 2.5rem;
+        border: 0;
+        border-left: 1px solid $mailpro-line;
+        border-right: 1px solid $mailpro-line;
+        background: $mailpro-panel;
+        background-clip: border-box;
+        cursor: default;
+
+        &:hover { background-color: $mailpro-panel; }
     }
 
-    .o_mailpro_split_record.o_mailpro_split_folded .o_mailpro_split_toggle {
-        left: auto;
-        right: 0;
-        transform: none;
+    .o_mailpro_sliver_button {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        padding: 0.875rem 0 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        border: 0;
+        background: none;
+        color: $mailpro-muted;
+        font-size: 0.625rem;
+        cursor: pointer;
+
+        &:hover { color: $mailpro-accent-ink; }
+
+        &:focus-visible {
+            outline: 2px solid $mailpro-accent;
+            outline-offset: -2px;
+        }
+    }
+
+    .o_mailpro_sliver_label {
+        writing-mode: vertical-rl;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        white-space: nowrap;
     }
 
     // 1. the rail
@@ -832,6 +858,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // what keeps a screen reader and Playwright honest about what is on
     // screen without a frame of empty pane.
     .o_mailpro_rail,
+    .o_mailpro_list,
     .o_mailpro_thread,
     .o_mailpro_record {
         transition: flex-basis $mailpro-fold, flex-grow $mailpro-fold,
@@ -839,6 +866,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     }
 
     .o_mailpro_rail.o_mailpro_folded,
+    .o_mailpro_list.o_mailpro_folded,
     .o_mailpro_thread.o_mailpro_folded,
     .o_mailpro_record.o_mailpro_folded {
         flex-basis: 0 !important;
@@ -856,6 +884,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     @media (prefers-reduced-motion: reduce) {
         .o_mailpro_rail,
+        .o_mailpro_list,
         .o_mailpro_thread,
         .o_mailpro_record,
         .o_mailpro_rail_backdrop { transition: none !important; }
@@ -877,59 +906,13 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     // A tablet: the conversation and the record share the third column
     // rather than squeezing four into a laptop. One of them has the column,
-    // the other is folded, and the divider between them is a strip wide
-    // enough for a finger that names the one it brings back. Both grow
-    // from a zero basis, so the swap is one slide: the record's dragged
+    // the other is folded, and the divider between them is the strip. Both
+    // grow from a zero basis, so the swap is one slide: the record's dragged
     // width is an inline style and has to be shouted down here.
     &.o_mailpro_narrow .o_mailpro_record {
         flex-basis: 0 !important;
         flex-grow: 1;
         flex-shrink: 1;
-    }
-
-    &.o_mailpro_narrow .o_mailpro_split_sliver {
-        flex-basis: 2.5rem;
-        border: 0;
-        border-left: 1px solid $mailpro-line;
-        border-right: 1px solid $mailpro-line;
-        background: $mailpro-panel;
-        background-clip: border-box;
-        cursor: default;
-
-        &:hover { background-color: $mailpro-panel; }
-    }
-
-    // The whole strip is the button, so nothing on it is too small to hit.
-    .o_mailpro_sliver_button {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        padding: 0.875rem 0 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.75rem;
-        border: 0;
-        background: none;
-        color: $mailpro-muted;
-        font-size: 0.625rem;
-        cursor: pointer;
-
-        &:hover { color: $mailpro-accent-ink; }
-
-        &:focus-visible {
-            outline: 2px solid $mailpro-accent;
-            outline-offset: -2px;
-        }
-    }
-
-    .o_mailpro_sliver_label {
-        writing-mode: vertical-rl;
-        font-size: 0.6875rem;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        white-space: nowrap;
     }
 
     // A dragged width is an inline style, so the narrow-window cap has to be

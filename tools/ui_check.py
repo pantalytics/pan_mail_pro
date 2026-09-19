@@ -734,18 +734,34 @@ class Checks:
                     self.fail('tapping the strip again did not bring the conversation back')
                 if self.visible('.o_mailpro_record'):
                     self.fail('the record stayed open next to the conversation at 1280px')
-        button = page.query_selector('.o_mailpro_rail_button')
-        if not button or not button.is_visible():
-            self.fail('at 1280px the top bar has no button for the rail')
+        # The rail folds the way every pane folds: the chevron on its divider,
+        # and the strip it leaves brings it back. No second button in the
+        # top bar for it: that one is the phone's drawer.
+        if self.visible('.o_mailpro_rail_button'):
+            self.fail('at 1280px the top bar still carries a rail button')
+        fold = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
+        if not fold:
+            self.fail('at 1280px the rail divider has no chevron to fold with')
         else:
-            button.click()
+            box = fold.bounding_box()
+            if box['width'] < 20 or box['height'] < 36:
+                self.fail('the fold chevron is %dx%dpx, too small for a finger'
+                          % (box['width'], box['height']))
+            fold.click()
             page.wait_for_timeout(400)
             if self.visible('.o_mailpro_rail'):
-                self.fail('the rail button did not fold the rail at 1280px')
-            button.click()
-            page.wait_for_timeout(400)
-            if not self.visible('.o_mailpro_rail'):
-                self.fail('the rail button did not bring the rail back at 1280px')
+                self.fail('the chevron did not fold the rail at 1280px')
+            strip = page.query_selector('.o_mailpro_split_rail .o_mailpro_sliver_button')
+            if not strip or not strip.is_visible():
+                self.fail('the folded rail left no strip to bring it back')
+            elif 'mailboxes' not in strip.inner_text().lower():
+                self.fail('the rail strip does not say what it opens: %r'
+                          % strip.inner_text())
+            else:
+                strip.click()
+                page.wait_for_timeout(400)
+                if not self.visible('.o_mailpro_rail'):
+                    self.fail('the strip did not bring the rail back at 1280px')
         self.shot('inbox-narrow.png')
 
         self.phone()
@@ -1063,16 +1079,43 @@ class Checks:
             self.fail('the list width was %dpx before the reload and %dpx after'
                       % (widened, kept))
 
-        # Leave the screen the way the next check expects to find it.
-        fold = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
-        if fold:
-            fold.click()
+        # The strip the fold left is the way back.
+        strip = page.query_selector('.o_mailpro_split_record .o_mailpro_sliver_button')
+        if not strip:
+            self.fail('the folded record pane left no strip to bring it back')
+        else:
+            strip.click()
         divider = page.query_selector('.o_mailpro_split_list')
         if divider:
             divider.dblclick(position={'x': 2, 'y': 200})
         page.wait_for_timeout(500)
         if not self.visible('.o_mailpro_record'):
             self.fail('the record pane did not come back when unfolded')
+
+        # The list folds too, the same way, and the conversation takes the
+        # room it leaves.
+        thread_before = page.query_selector('.o_mailpro_thread').bounding_box()['width']
+        fold = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+        if not fold:
+            self.fail('the conversation list cannot be folded away')
+            return
+        fold.click()
+        page.wait_for_timeout(400)
+        if self.visible('.o_mailpro_list'):
+            self.fail('the conversation list did not fold away')
+        thread_after = page.query_selector('.o_mailpro_thread').bounding_box()['width']
+        if thread_after - thread_before < 100:
+            self.fail('folding the list gave the conversation %dpx, not the list\'s width'
+                      % (thread_after - thread_before))
+        self.shot('inbox-list-folded.png')
+        strip = page.query_selector('.o_mailpro_split_list .o_mailpro_sliver_button')
+        if not strip or 'conversations' not in strip.inner_text().lower():
+            self.fail('the folded list left no strip named after it')
+        else:
+            strip.click()
+            page.wait_for_timeout(400)
+            if not self.visible('.o_mailpro_list'):
+                self.fail('the strip did not bring the list back')
 
     def zoom(self):
         """The record on the whole screen, and the way back out of it.
