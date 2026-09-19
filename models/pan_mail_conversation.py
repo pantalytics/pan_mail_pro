@@ -830,21 +830,49 @@ class PanMailConversation(models.AbstractModel):
     def _model_icon(self, model):
         """The icon of the app a record belongs to, as a URL, or False.
 
-        A quotation is a Sales record and a ticket a Helpdesk one, and the
-        chip that names them reads faster with the app's own tile than with a
-        word. The tile is the module's `static/description/icon.png`, and the
-        module is the one that *defined* the model, which the registry keeps
-        as `_original_module`: `sale.order` resolves to `sale`, `res.partner`
-        to `base`. Not `ir.model.data`: every module that extends a model
-        writes its own `<module>.model_<name>` xml id there, so a contact
-        would come back wearing Accounting's tile as readily as base's.
+        The app is the one whose menu opens the model: the tile the reader
+        knows from the app switcher. That is not always the module that
+        defined the model. `res.partner` is base's, and base's own tile is a
+        teal cube nobody recognises, while the Contacts app is what shows a
+        contact; `sale.order` is sale's, and the Sales tile is
+        sale_management's. When several apps open the model, the first in
+        the switcher wins (Contacts before Sales for a contact). A model no
+        menu opens falls back to the module that defined it, except base,
+        whose cube is worse than no icon at all.
         """
         if model not in self.env:
             return False
+        icon = self._app_icon_by_menu(model)
+        if icon:
+            return icon
         module = self.env[model]._original_module
-        if not module:
+        if not module or module == 'base':
             return False
         return '/%s/static/description/icon.png' % module
+
+    def _app_icon_by_menu(self, model):
+        """The `web_icon` of the first app whose menu opens `model`, or False.
+
+        `sudo` because the question is which tile, not whether the reader
+        may open it: the chip carries the name of a record they can already
+        read. An archived root (Sales without sale_management) is skipped,
+        which is what the search does on its own.
+        """
+        actions = self.env['ir.actions.act_window'].sudo().search(
+            [('res_model', '=', model)])
+        if not actions:
+            return False
+        Menu = self.env['ir.ui.menu'].sudo()
+        menus = Menu.search([
+            ('action', 'in', ['ir.actions.act_window,%d' % a.id for a in actions]),
+        ])
+        root_ids = {int(menu.parent_path.split('/')[0]) for menu in menus}
+        roots = Menu.search([('id', 'in', list(root_ids)), ('web_icon', '!=', False)],
+                            order='sequence, id', limit=1)
+        module, _sep, path = (roots.web_icon or '').partition(',')
+        if not module or not path:
+            return False
+        return '/%s/%s' % (module, path)
 
     def _linked_records(self, messages):
         """The other records this thread touched, from the thread index.
