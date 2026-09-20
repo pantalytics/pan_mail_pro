@@ -153,4 +153,5 @@
     'application': True,
     'auto_install': False,
     'post_init_hook': '_disable_smtp_servers',
+    'uninstall_hook': '_restore_smtp_servers',
 }

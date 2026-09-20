@@ -583,7 +583,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         This is the standard approach for attachments under 3MB.
         """
         url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/attachments'
-        response = requests.post(url, headers=headers, json=attachment_dict, timeout=30)
+        response = self._request_with_retry('post', url, headers, timeout=30, json=attachment_dict)
         response.raise_for_status()
         _logger.info(f"[Graph API] Added attachment '{attachment_dict['name']}' to draft")
 
@@ -621,7 +621,8 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'isInline': is_inline,
             }
         }
-        session_response = requests.post(session_url, headers=headers, json=session_payload, timeout=30)
+        session_response = self._request_with_retry(
+            'post', session_url, headers, timeout=30, json=session_payload)
         session_response.raise_for_status()
         upload_url = session_response.json()['uploadUrl']
 
@@ -669,16 +670,15 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         if reply_to_provider_id:
             try:
-                reply_response = requests.post(
-                    f'{base_url}/{reply_to_provider_id}/createReply',
-                    headers=headers, timeout=30,
+                reply_response = self._request_with_retry(
+                    'post', f'{base_url}/{reply_to_provider_id}/createReply',
+                    headers, timeout=30,
                 )
                 reply_response.raise_for_status()
                 draft_id = reply_response.json().get('id')
                 if draft_id:
-                    patch_response = requests.patch(
-                        f'{base_url}/{draft_id}',
-                        headers=headers, json=message, timeout=30,
+                    patch_response = self._request_with_retry(
+                        'patch', f'{base_url}/{draft_id}', headers, timeout=30, json=message,
                     )
                     patch_response.raise_for_status()
                     _logger.info(
@@ -695,7 +695,11 @@ class MicrosoftGraphClient(models.AbstractModel):
                     f"sending unthreaded"
                 )
 
-        response = requests.post(base_url, headers=headers, json=message, timeout=30)
+        # Through the retry helper: Exchange Online throttles bursts (a batch
+        # of invitations from notifications@ is exactly one), and a 429 on
+        # the draft used to park the mail in `exception`, which the queue
+        # never retries.
+        response = self._request_with_retry('post', base_url, headers, timeout=30, json=message)
         response.raise_for_status()
         return response.json()
 
@@ -923,7 +927,7 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             # Step 3: Send the draft
             send_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/send'
-            send_response = requests.post(send_url, headers=headers, timeout=30)
+            send_response = self._request_with_retry('post', send_url, headers, timeout=30)
             send_response.raise_for_status()
 
             _logger.info("[Graph API] Successfully sent email %s", microsoft_message_id)

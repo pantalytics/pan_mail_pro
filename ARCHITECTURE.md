@@ -1918,6 +1918,14 @@ through `mail.alias`, past every control in §3. Closing the outbound door and
 leaving the inbound one open is not a smaller version of the same act; it is
 the half that lets mail in.
 
+**And it is undone on uninstall.** The takeover records the ids of the servers
+it disabled (`pan_mail_pro.smtp_takeover_disabled_ids`); the module's
+`uninstall_hook` (`_restore_smtp_servers`) re-enables exactly those, retires
+the placeholder server and sets `base_setup.default_external_email_server`
+back. A server somebody switched off on purpose stays off. Before this a
+database that trialled Mail Pro and removed it was left with no outgoing mail
+and no hint why.
+
 ## 11. Conventions
 
 ### Field naming

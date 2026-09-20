@@ -108,19 +108,30 @@
                                 <span class="o_mailpro_step_value" invisible="not x_setup_provider_done">
                                     <field name="x_active_provider_id" nolabel="1" readonly="1" options="{'no_open': True}"/>
                                 </span>
-                                <span class="o_mailpro_step_value" invisible="x_setup_provider_done">Not set up yet</span>
+                                <span class="o_mailpro_step_value" invisible="x_setup_provider_done">
+                                    <field name="x_setup_provider_todo" nolabel="1" readonly="1"/>
+                                </span>
                             </div>
                             <!-- Only while the step is open. Once it is answered
                                  the answer beside the name explains the step
                                  better than any sentence could, and a hint that
                                  stays is the one people learn to skip. -->
-                            <div class="o_mailpro_step_msg" invisible="x_setup_provider_done">
+                            <div class="o_mailpro_step_msg" invisible="x_setup_provider_done or x_setup_provider_needs_account">
                                 Where your company's email lives. Mail Pro sends and receives through it.
                             </div>
+                            <div class="o_mailpro_step_msg" invisible="not x_setup_provider_needs_account">
+                                Each IMAP/SMTP address is an account with its own server, login and password.
+                            </div>
                         </div>
+                        <field name="x_setup_provider_needs_account" invisible="1"/>
                         <button type="action" name="%(action_pan_mail_provider)d"
                                 icon="oi-arrow-right" title="Providers"
-                                class="oe_link o_mailpro_step_edit"/>
+                                class="oe_link o_mailpro_step_edit"
+                                invisible="x_setup_provider_needs_account"/>
+                        <button type="action" name="%(action_pan_mail_account)d"
+                                icon="oi-arrow-right" title="Email Accounts"
+                                class="oe_link o_mailpro_step_edit"
+                                invisible="not x_setup_provider_needs_account"/>
                     </div>
 
                     <div class="o_mailpro_step">

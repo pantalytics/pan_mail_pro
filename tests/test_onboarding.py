@@ -54,6 +54,26 @@ class TestSmtpTakeover(TransactionCase):
                          "customer SMTP must be disabled once routing is live")
         self.assertTrue(self.placeholder.active)
 
+    def test_uninstall_gives_smtp_back(self):
+        """A tester who trials Mail Pro and removes it must not be left
+        without outgoing mail and without a hint why."""
+        from odoo.addons.pan_mail_pro import _restore_smtp_servers
+        on_purpose = self.MailServer.create({
+            'name': 'Switched off by the admin', 'smtp_host': 'old.example.com',
+            'smtp_port': 25, 'sequence': 20, 'active': False,
+        })
+        self.Mailbox.create({'email': 'info@takeover.test'})
+        self.assertFalse(self.customer_smtp.active)
+
+        _restore_smtp_servers(self.env)
+
+        self.assertTrue(self.customer_smtp.active)
+        self.assertFalse(on_purpose.active, 'a server off on purpose stays off')
+        self.assertFalse(self.placeholder.active)
+        params = self.env['ir.config_parameter'].sudo()
+        self.assertFalse(params.get_param('pan_mail_pro.smtp_takeover_done'))
+        self.assertEqual(params.get_param('base_setup.default_external_email_server'), 'True')
+
     def test_takeover_runs_once(self):
         """A second mailbox must not re-disable a server an admin re-enabled."""
         self.Mailbox.create({'email': 'info@takeover.test'})

@@ -38,6 +38,39 @@ class TestComposeResPartner(MailProTestCase):
             "Salesperson with default mailbox must not fall back to notifications@",
         )
 
+    def test_the_inbox_hands_the_composer_the_mailbox_being_read(self):
+        """The Inbox passes the rail's mailbox as a default. It is used while
+        the person may send from it; a mailbox they may only read falls back
+        to their own default; and a composer with a sender has no warning."""
+        Composer = self.env['mail.compose.message'].with_user(self.salesperson)
+        given = Composer.with_context(
+            default_x_send_from_mailbox_id=self.shared_mailbox.id).default_get(
+            ['x_send_from_mailbox_id'])
+        self.assertEqual(given['x_send_from_mailbox_id'], self.shared_mailbox.id)
+
+        # A colleague's personal mailbox: readable in the Inbox by a manager,
+        # never a sender for the salesperson.
+        colleagues = self.env['pan.mail.mailbox'].create({
+            'email': self.notif_owner.email, 'owner_user_id': self.notif_owner.id})
+        self.assertEqual(colleagues.mailbox_type, 'personal')
+        not_mine = Composer.with_context(
+            default_x_send_from_mailbox_id=colleagues.id).default_get(
+            ['x_send_from_mailbox_id'])
+        self.assertEqual(not_mine['x_send_from_mailbox_id'],
+                         self.salesperson.x_default_mailbox_id.id)
+
+        # `false` from the browser means "no rail selection": the user's default.
+        nothing = Composer.with_context(default_x_send_from_mailbox_id=False).default_get(
+            ['x_send_from_mailbox_id'])
+        self.assertEqual(nothing['x_send_from_mailbox_id'],
+                         self.salesperson.x_default_mailbox_id.id)
+
+        with_sender = Composer.new({'x_send_from_mailbox_id': self.shared_mailbox.id})
+        self.assertFalse(with_sender.x_setup_warning)
+        self.salesperson.x_default_mailbox_id = False
+        without = Composer.new({})
+        self.assertIn('Pick a default mailbox', without.x_setup_warning)
+
     def test_composer_dialog_dropdown_wins(self):
         """Full composer with explicit personal_mailbox in the dropdown."""
         with self.mock_graph() as calls:

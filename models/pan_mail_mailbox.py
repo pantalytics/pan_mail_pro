@@ -732,6 +732,10 @@ class PanMailMailbox(models.Model):
         others = MailServer.search([('active', '=', True)])
         if placeholder:
             others -= placeholder
+        # Remembered, empty or not, so an uninstall can give exactly these
+        # back and not every server somebody switched off on purpose.
+        IrConfigParameter.set_param(
+            'pan_mail_pro.smtp_takeover_disabled_ids', ','.join(map(str, others.ids)) or ' ')
         if others:
             others.write({'active': False})
             for server in others:

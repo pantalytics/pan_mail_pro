@@ -73,8 +73,8 @@ table where it is answered:
 2. **Internal domains** - your own email domains. Required: no mailbox can sync
    until this is answered. Odoo suggests them from your mailboxes, company
    email and alias domains.
-3. **Mailboxes** - create the notification mailbox (one button, owned by you)
-   and configure sending and incoming sync.
+3. **Mailboxes** - create the first mailbox, tick it as the notification
+   mailbox, and configure sending and incoming sync.
 
 Below the checklist, **Users** shows who has connected a mailbox and invites
 the rest. A database runs on one provider; switching means editing that row,
@@ -210,7 +210,7 @@ finally subject plus participants, which never acts alone.
 Open the mail's row under **Settings → Technical → Email → Mail Pro → Mail
 Routing**: it records the rule that placed it and every candidate it rejected.
 The usual cause is that the original message was never synced, so there was
-nothing to thread onto — set an earlier **Start from** on the mailbox.
+nothing to thread onto — set an earlier **Import from** on the mailbox.
 
 ### Emails not syncing
 

@@ -99,7 +99,7 @@ answer:
 
 **Solution:** Open the mail's row under **Settings → Technical → Email → Mail
 Pro → Mail Routing**. It records which rule placed it and every candidate it
-rejected. To thread onto older conversations, set a **Start from** date on the
+rejected. To thread onto older conversations, set a **Import from** date on the
 mailbox that predates them.
 
 ### Duplicate emails created
