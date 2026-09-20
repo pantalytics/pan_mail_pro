@@ -284,6 +284,18 @@ class TestConversationApi(TransactionCase):
         self.assertIn('records', thread)
         self.assertIn('rejected', thread)
 
+    def test_the_thread_reads_newest_first(self):
+        """The message you came for is the newest one, and it is the one the
+        pane opens. Below fifty collapsed headers it is an open message
+        nobody sees, so the thread is drawn top down."""
+        old = self._mail(subject='First')
+        new = self._mail(subject='Second')
+        old.write({'date': '2026-09-18 08:00:00'})
+        new.write({'date': '2026-09-19 08:00:00'})
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual([m['subject'] for m in thread['messages']],
+                         ['Second', 'First'])
+
     def test_notes_stay_out_of_a_screen_about_mail(self):
         self.env['mail.message'].create({
             'model': 'crm.lead',

@@ -455,7 +455,7 @@ export class ConversationView extends Component {
                     open[message.id] = true;
                 }
             }
-            const newest = thread.messages[thread.messages.length - 1];
+            const newest = thread.messages[0];
             // The newest message is the one you came for. The rest of the
             // thread is context, one line each, a click away.
             if (newest && (openNewest || !Object.keys(open).length)) {

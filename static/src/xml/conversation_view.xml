@@ -448,12 +448,12 @@
                             </div>
                         </div>
                         <!--
-                            The thread is a stack, the way every mail client
-                            draws one: the message you came for is open and
-                            the history above it is one line each. A thread of
-                            nine mails that opens nine full bodies is a page
-                            you have to scroll to find the end of, and the end
-                            is the only part anybody reads first.
+                            The thread is a stack, newest at the top: the
+                            message you came for is open and the history under
+                            it is one line each. A thread of nine mails that
+                            opens nine full bodies is a page you have to
+                            scroll, and the newest message is the only part
+                            anybody reads first.
 
                             The header is the toggle and it is a button, so
                             the whole history is reachable with a keyboard.

@@ -440,13 +440,16 @@ class Checks:
         if not messages:
             self.fail('the thread pane shows no messages')
         elif len(messages) > 1:
-            # A thread is a stack, the way every mail client draws one: the
-            # message you came for is open and the history above it is one
-            # line each. Nine open bodies is a page you have to scroll to find
-            # the end of, and the end is the part anybody reads first.
+            # A thread is a stack, newest at the top: the message you came
+            # for is open and the history under it is one line each. Nine
+            # open bodies is a page you have to scroll, and the newest
+            # message is the part anybody reads first.
             opened = page.query_selector_all('.o_mailpro_message_open')
             if len(opened) != 1:
                 self.fail(f'{len(opened)} messages are open, expected 1')
+            elif not messages[0].evaluate(
+                    'el => el.classList.contains("o_mailpro_message_open")'):
+                self.fail('the open message is not the top one')
             closed = page.query_selector(
                 '.o_mailpro_message:not(.o_mailpro_message_open)'
                 ' .o_mailpro_message_head')
