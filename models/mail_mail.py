@@ -355,6 +355,20 @@ class MailMail(models.Model):
         keep the first line of the original for the ticket; the server log has
         the whole of it.
         """
+        if isinstance(error, str):
+            # A client's own summary of a transport failure. The words are
+            # `requests`' and `ssl`'s, so the same two sentences apply.
+            first_line = error.splitlines()[0][:200] if error.strip() else error
+            if 'CERTIFICATE_VERIFY_FAILED' in error or 'SSLError' in error:
+                return _('The mail provider could not be reached from this server: a '
+                         'certificate check failed. Ask whoever runs this server about '
+                         'its outgoing connections. (%s)') % first_line
+            if 'HTTPSConnectionPool' in error or 'Max retries exceeded' in error \
+                    or 'Connection refused' in error or 'timed out' in error:
+                return _('The mail provider could not be reached from this server. The '
+                         'mail can be retried from the chatter once the connection is '
+                         'back. (%s)') % first_line
+            return error
         text = str(error) or error.__class__.__name__
         first_line = text.splitlines()[0][:200] if text.strip() else text
         if isinstance(error, requests.exceptions.SSLError) or 'SSL' in error.__class__.__name__:
@@ -502,7 +516,9 @@ class MailMail(models.Model):
             self._sync_notifications()
             return None
 
-        return self._fail(result.get('error') or _('Failed to send email.'))
+        # The client caught the transport error itself and handed back its
+        # text: the same sentence-making applies as to one that escaped.
+        return self._fail(self._readable_reason(result.get('error') or _('Failed to send email.')))
 
     def _sync_notifications(self):
         """Bring the `mail.notification` rows in line with the mail's state.

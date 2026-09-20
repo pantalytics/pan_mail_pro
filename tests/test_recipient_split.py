@@ -226,6 +226,21 @@ class TestAfterTheSend(MailProTestCase):
                 self.assertRaises(MailDeliveryException):
             mail.send(raise_exception=True)
 
+    def test_a_transport_error_the_client_caught_reads_as_a_sentence_too(self):
+        """The Graph client catches requests' exceptions itself and hands back
+        their text; the dialog and the failure reason must not show the pool
+        dump either way."""
+        def caught(client_self, mail_record, mailbox, account, reply_context=None):
+            return {'success': False, 'error': (
+                "HTTPSConnectionPool(host='graph.microsoft.com', port=443): Max retries "
+                "exceeded with url: /v1.0/users/x/messages (Caused by SSLError("
+                "SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] ...')))")}
+        mail = self._mail()
+        with patch.object(type(self.env['microsoft.graph.client']), 'send_message', caught):
+            mail.send()
+        self.assertIn('certificate check failed', mail.failure_reason)
+        self.assertNotIn('SSLCertVerificationError', mail.failure_reason.split('(')[0])
+
     def test_a_transport_error_reads_as_a_sentence(self):
         import requests
 
