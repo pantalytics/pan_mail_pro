@@ -344,7 +344,7 @@ class PanMailConversation(models.AbstractModel):
                           message_id=None, limit=50, offset=0, scope='mail'):
         """One conversation, and everything the four tabs over it draw.
 
-        `messages` is the thread, oldest last. `records` is the chip row:
+        `messages` is the thread, newest first. `records` is the chip row:
         every record this thread touched, newest first. `rejected` is what the
         matcher considered and turned down, and it is only looked up when
         nothing was filed, because that is the only case anybody wants to read
@@ -380,15 +380,17 @@ class PanMailConversation(models.AbstractModel):
             # nothing, asked for by key rather than by message, has to say False.
             domain = Domain(base + [('model', '=', False), ('res_id', '=', False)])
 
-        # Newest N, shown oldest first: the page you want is the end of the
-        # thread, and the order you read it in is downwards.
+        # Newest first, on the screen as well as in the query. The message
+        # you came for is the last one, so it belongs where the eye lands and
+        # not at the far end of a thread nobody scrolls to. It is also the
+        # one the pane opens, and an open message below fifty collapsed
+        # headers is an open message nobody sees.
         messages = Message.search(
             domain, order='date desc, id desc', limit=limit, offset=offset,
         )
         records = self._records_for(messages)
         return {
-            'messages': [self._message_row(m)
-                         for m in messages.sorted(lambda m: (m.date, m.id))],
+            'messages': [self._message_row(m) for m in messages],
             'records': records,
             'rejected': [] if model else self._rejected_for(messages),
             'suggestion': self._suggestion_for(messages),
