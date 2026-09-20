@@ -183,9 +183,14 @@ class Checks:
                 self.fail(f'an unlinked database shows {len(steps)} setup steps, '
                           f'expected none')
             text = block.inner_text()
-            for leaked in ('1. Email Provider', 'Elastic License', manifest_version()):
+            # About (the version and the licence line) stays: a support mail
+            # and the documentation link are wanted before connecting too.
+            for leaked in ('1. Email Provider', '2. Internal Domains', 'Connect Mailbox'):
                 if leaked in text:
                     self.fail(f'an unlinked database still shows "{leaked}"')
+            for wanted in ('Elastic License', manifest_version(), 'Documentation'):
+                if wanted not in text:
+                    self.fail(f'an unlinked database no longer shows "{wanted}"')
             self.error_free('Settings without a Pantalytics account')
         finally:
             self.call('pan.mail.license', 'create', {

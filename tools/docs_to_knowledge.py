@@ -28,6 +28,9 @@ BASE = "https://pantalytics.odoo.com/knowledge/article/"
 PAGES = {
     "README.md": 116,
     "getting-started/installation.md": 117,
+    # No article yet: create it in Knowledge and put its id here. Until then
+    # rendering a page that links to it stops with a message, on purpose.
+    "getting-started/connect-pantalytics.md": None,
     "getting-started/azure-setup.md": 118,
     "getting-started/google-setup.md": 128,
     "getting-started/imap-setup.md": 129,
@@ -74,6 +77,9 @@ def rewrite_links(text, src):
         target = posixpath.normpath(posixpath.join(posixpath.dirname(src), match.group(1)))
         if target not in PAGES:
             sys.exit(f"{src}: link to {match.group(1)}, which is not in PAGES")
+        if PAGES[target] is None:
+            sys.exit(f"{src}: link to {match.group(1)}, which has no knowledge article yet; "
+                     "create one and put its id in PAGES")
         return f"]({BASE}{PAGES[target]})"
     return LINK.sub(repl, text)
 
@@ -89,7 +95,7 @@ def convert(src):
 def main():
     wanted = sys.argv[1:]
     for src, article in PAGES.items():
-        if wanted and str(article) not in wanted:
+        if article is None or (wanted and str(article) not in wanted):
             continue
         print(f"===== {article}  {src}  {BASE}{article}")
         print(convert(src))

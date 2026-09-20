@@ -156,8 +156,13 @@ class PanMailMatcher(models.AbstractModel):
     # ------------------------------------------------------------------ #
 
     @api.model
-    def match(self, message, mailbox=None, partner=None, exclude_models=None):
+    def _match(self, message, mailbox=None, partner=None, exclude_models=None):
         """Decide where `message` belongs.
+
+        Private on purpose: every caller is Python, and the rules below search
+        as sudo across every document model. Reachable over RPC, that is a way
+        for any user to learn which record a reference or Message-ID belongs
+        to, past the ACLs the index tables carry for exactly that reason.
 
         Args:
             message:        normalized message dict (see mail_provider_client).
@@ -653,7 +658,7 @@ class PanMailMatcher(models.AbstractModel):
             return self.env['mail.message'].browse()
         message_id = message_id.strip()
 
-        parent = self.env['pan.mail.message.ref'].lookup(message_id)
+        parent = self.env['pan.mail.message.ref']._lookup(message_id)
         if parent:
             return parent
 

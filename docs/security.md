@@ -128,7 +128,12 @@ User → Odoo → Microsoft Graph API / Gmail API / IMAP+SMTP host
 4. Call made to the provider
 5. Response processed in Odoo
 
-Nothing goes to Pantalytics.
+The one exception is the daily heartbeat to `app.mailpro.pantalytics.com`, the
+whole of which is: the database id, the Mail Pro and Odoo version, how many
+accounts are connected and whether sync is healthy; plus the Odoo URL once,
+when the instance is connected, so the approval page can name it. Never an
+address, a subject, a body or a name. See
+[Connect to Pantalytics](getting-started/connect-pantalytics.md).
 
 ## Audit Trail
 

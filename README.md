@@ -59,9 +59,11 @@ git push
 
 ## Setup
 
-After installing the module, go to **Settings** → scroll to **Mail Pro**.
+After installing the module, go to **Settings** → scroll to **Mail Pro** and
+press **Connect to Pantalytics** (see
+[docs/getting-started/connect-pantalytics.md](docs/getting-started/connect-pantalytics.md)).
 
-The page is a checklist of three steps; the arrow on each line opens the
+The page is then a checklist of three steps; the arrow on each line opens the
 table where it is answered:
 
 1. **Email provider** - where your mail is hosted (Microsoft 365, Google
@@ -107,7 +109,7 @@ filed there, so it shows up in your own mail client too.
 
 ### Connect your mailbox
 
-1. Go to **My Profile** → **Preferences** → **Mail Pro**
+1. Go to **My Preferences** → **Mail Pro**
 2. Click **Connect Mailbox**
 3. Sign in and grant permissions
 4. A personal mailbox is created for the address you signed in with, and set as
@@ -120,7 +122,7 @@ straight on the consent screen.
 Until you connect, a banner sits above every screen with a button that goes
 straight to the consent screen. It is only shown where that button would work:
 an internal user, a provider that has a consent screen, and not on a staging
-copy. Once connected, **Send Test Email** on **My Profile → Mail Pro** proves
+copy. Once connected, **Send Test Email** on **My Preferences → Mail Pro** proves
 the address really sends. Every mailbox form has the same button.
 
 **Note:** until your account is connected and a Send from mailbox is set, the
@@ -213,7 +215,7 @@ nothing to thread onto — set an earlier **Start from** on the mailbox.
 ### Emails not syncing
 
 1. Check **Settings** → **Technical** → **Scheduled Actions** → "Mail Pro: Fetch Incoming Mail"
-2. Verify the mailbox has usable credentials, and that **Sync Other Email** is on if the mail you are missing is not a reply
+2. Verify the mailbox's **Sync level** includes new email if the mail you are missing is not a reply
 3. Verify the mailbox has usable credentials — its **Status** column says so
 4. Check logs for `[Incoming Mail]` entries
 

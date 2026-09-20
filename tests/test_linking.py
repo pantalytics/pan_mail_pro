@@ -97,7 +97,7 @@ class TestLinkTo(TransactionCase):
         message, _log = self._fallback_mail()
         self.Log.link_to([message.id], 'crm.lead', self.lead.id)
 
-        decision = self.env['pan.mail.matcher'].match(
+        decision = self.env['pan.mail.matcher']._match(
             {
                 'message_id': '<second@vandermolen.test>',
                 'thread_id': None,

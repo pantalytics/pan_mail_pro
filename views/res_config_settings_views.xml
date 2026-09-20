@@ -39,7 +39,8 @@
                             <div invisible="x_license_state != 'not_connected'">
                                 <div class="text-muted mb-2">
                                     Mail Pro works on an Odoo instance that is connected to a Pantalytics account.
-                                    Setup starts once this one is.
+                                    Setup starts once this one is. The button opens a Pantalytics tab where you
+                                    sign in, or create an account, and approve a code. Free during the beta.
                                 </div>
                                 <button name="action_license_connect" type="object"
                                         string="Connect to Pantalytics" class="btn-primary"/>
@@ -231,6 +232,7 @@
                             </div>
                         </div>
                     </div>
+                    </div>
 
                     <h2>About</h2>
                     <!-- No left/right pane: an empty left pane draws a divider
@@ -258,7 +260,6 @@
                                 </a>
                             </div>
                         </div>
-                    </div>
                     </div>
                 </app>
             </xpath>

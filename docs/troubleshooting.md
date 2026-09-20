@@ -17,13 +17,24 @@
 **Cause:** The user has not connected their account yet.
 
 **Solution:**
-1. Go to **My Profile → Mail Pro** tab
+1. Go to **My Preferences → Mail Pro** tab
 2. Click **Connect Mailbox** and complete the sign-in
 3. Press **Send Test Email** to confirm
 
 On IMAP/SMTP there is nothing for the user to press: an administrator enters
 the server, login and password on the account. The banner is not shown at all
 on an IMAP/SMTP database.
+
+### "Connect this Odoo instance to Pantalytics"
+
+**Cause:** The instance is not connected to a Pantalytics account, or its
+connection lapsed. Incoming sync and new mailbox connections need one; sending
+does not.
+
+**Solution:** An administrator connects it under **Settings → Mail Pro**, see
+[Connect to Pantalytics](getting-started/connect-pantalytics.md). The message
+names the state it is in (waiting for approval, key refused, replaced) and
+what to press. Existing accounts can still reconnect meanwhile.
 
 ### Email stuck in outbox
 
@@ -57,7 +68,7 @@ this only affects the copy in your own mail client.
 ### Emails not syncing
 
 **Checklist:**
-1. If the missing mail is not a reply, **Sync Other Email** is on
+1. If the missing mail is not a reply, the mailbox's **Sync level** includes new email (the third or fourth option)
 2. Mailbox **Owner** is set
 3. On Microsoft 365: the owner has connected; on Gmail and IMAP/SMTP: the address has its own account with **Test Connection** green
 4. **Notification mailbox** exists (required for incoming sync)
@@ -68,9 +79,9 @@ this only affects the copy in your own mail client.
 
 **Cause:** Mailbox configuration incomplete.
 
-**Solution:** Switch on **Sync Other Email** or **Sync Sent Items**. On
-Microsoft 365 also set the Owner; on Gmail and IMAP/SMTP the address has its own
-account and needs no owner.
+**Solution:** No mailbox has usable credentials. On Microsoft 365 the owner
+connects their account; on Gmail and IMAP/SMTP the address has its own account
+and needs no owner. The mailbox's **Sync level** decides how much is read.
 
 ### Reply threading not working
 
@@ -120,7 +131,7 @@ mailbox that predates them.
 **Cause:** The refresh token expired (Microsoft: 90 days of inactivity) or the
 user revoked access.
 
-**Solution:** The user reconnects their account under **My Profile → Mail Pro**.
+**Solution:** The user reconnects their account under **My Preferences → Mail Pro**.
 
 Google only issues a refresh token on the first consent. If an account stops
 working an hour after connecting, it was authorized without one — disconnect and

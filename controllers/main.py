@@ -78,6 +78,11 @@ class MailProOAuthController(http.Controller):
         user = request.env.user
         client = get_provider_client(request.env, provider)
 
+        if user.share:
+            _logger.warning('[OAuth] Portal user %s reached the %s callback', user.id, provider)
+            return _result_page(False, _('Connection Failed'),
+                                _('Only internal users connect a mailbox.'))
+
         error = kwargs.get('error')
         if error:
             _logger.error('[OAuth] %s returned %s - %s',

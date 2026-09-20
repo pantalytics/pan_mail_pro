@@ -1,10 +1,18 @@
 # -*- coding: utf-8 -*-
 import logging
+import smtplib
+
+import requests
+
 from odoo import fields, models, api, tools, _
+from odoo.addons.base.models.ir_mail_server import MailDeliveryException
 from odoo.exceptions import AccessError, UserError
 
 from .mail_provider_client import ERROR_NO_RECIPIENTS
 from .neutralization import database_is_neutralized
+
+# Set by the composer around its send: this batch is the thing the person did.
+INTERACTIVE_SEND = 'pan_mail_interactive_send'
 
 _logger = logging.getLogger(__name__)
 
@@ -230,13 +238,23 @@ class MailMail(models.Model):
             awaiting.write({'failure_reason': NOTIFICATION_PENDING_REASON})
             mails -= awaiting
 
+        mails = mails._one_send_per_recipient()
+
         failures = []
+        failed_messages = set()
         for mail in mails:
             reason = mail._send_one(raise_exception=raise_exception,
                                     post_send_callback=post_send_callback)
             if reason:
-                failures.append(reason)
-            elif mail.state == 'sent':
+                # One reason per message the person wrote, not per send it
+                # was split into: "3 more emails" for two mails is a lie.
+                key = mail.mail_message_id.id or mail.id
+                if key not in failed_messages:
+                    failed_messages.add(key)
+                    failures.append(reason)
+            elif not mail.exists() or mail.state == 'sent':
+                # Gone means sent: `_record_sent` deletes an `auto_delete`
+                # mail the way Odoo's own path does.
                 delivered += 1
             if auto_commit:
                 # The mail queue asks for this, and now it matters: the failure
@@ -247,11 +265,112 @@ class MailMail(models.Model):
         # affordable while there is nothing to roll back — or when the caller
         # asked for the exception explicitly and owns that trade-off, which is
         # what `raise_exception` means in Odoo's own signature. Either way the
-        # chatter already carries the failure; see `_fail`.
-        if failures and (auto_commit or raise_exception or not delivered):
+        # chatter already carries the failure; see `_fail`. (A chatter reply
+        # sends after the commit, on a cursor of its own: the raise reaches
+        # the browser, the message stays, and the queue records the reason a
+        # minute later.)
+        #
+        # And only when the mail *is* the action. A notification is a side
+        # effect of something else: creating a user, posting a note, a stage
+        # change. Raising there unwound the user, the note and the stage
+        # change along with the mail, so an expired token on notifications@
+        # stopped a beta tester from creating a user at all, with a raw
+        # exception as the dialog. Those mails keep their reason and their
+        # red envelope in the chatter, as Odoo's own path leaves them.
+        if failures and raise_exception:
+            # The exception Odoo's own SMTP path raises, because that is the
+            # one the callers who ask for it know how to catch: auth_signup
+            # creates the user anyway and shows its own sentence, where a
+            # UserError here killed the user along with the mail.
+            raise MailDeliveryException(self._batch_failure_message(failures))
+        if failures and (auto_commit or (not delivered and mails._is_the_action())):
             raise UserError(self._batch_failure_message(failures))
 
         return True
+
+    def _is_the_action(self):
+        """Is sending these mails what the person just did, rather than a side
+        effect of it? The composer (the dialog and the Inbox's pane) says so
+        with a context key; nothing else does. `message_type` cannot tell:
+        every `mail.mail` created directly is `email_outgoing`, a password
+        reset included."""
+        return bool(self.env.context.get(INTERACTIVE_SEND))
+
+    def _one_send_per_recipient(self):
+        """One provider send per recipient partner, as Odoo's own path sends.
+
+        Odoo creates one `mail.mail` for a chatter post with every notified
+        partner in `recipient_ids`, and `_prepare_outgoing_list` then builds
+        one message per partner, so two customers following the same lead never
+        see each other's address. The provider clients read `recipient_ids`
+        straight into one To header, which put every follower's address in
+        every recipient's client (#96). The split is here, before any client
+        sees the mail, in the shape core's `_split_by_mail_server` uses: a copy
+        per partner with its notification moved along. Addresses typed into
+        `email_to` stay together on the original, as core keeps them, and
+        `email_cc` goes with them once.
+        """
+        result = self.env['mail.mail']
+        for mail in self:
+            partners = mail.recipient_ids
+            if not mail.is_notification or not partners or (
+                    len(partners) == 1 and not mail.email_to):
+                # Only notifications are split: those are the follower mails
+                # the leak is about, and deleting one after the send deletes
+                # that one row. A mail that is *not* a notification (a
+                # template's) cascades its message and every sibling with it
+                # when the first copy is auto-deleted, so it keeps its one To
+                # header as before. Named dropped case: a template addressed
+                # to several partners still puts them in one header.
+                result |= mail
+                continue
+            keep = partners.browse() if mail.email_to else partners[:1]
+            singles = partners - keep
+            notifications = self.env['mail.notification'].sudo().search([
+                ('mail_mail_id', '=', mail.id),
+                ('res_partner_id', 'in', singles.ids),
+            ])
+            for partner in singles:
+                copy = mail.with_user(mail.create_uid).sudo().copy({
+                    'headers': mail.headers,
+                    'mail_message_id': mail.mail_message_id.id,
+                    'recipient_ids': [(6, 0, partner.ids)],
+                    'email_to': False,
+                    'email_cc': False,
+                })
+                notifications.filtered(
+                    lambda n: n.res_partner_id == partner).write({'mail_mail_id': copy.id})
+                result |= copy
+            mail.write({'recipient_ids': [(6, 0, keep.ids)]})
+            result |= mail
+        return result
+
+    @staticmethod
+    def _readable_reason(error):
+        """What the person sees for an exception on the way to the provider.
+
+        A `requests` failure prints as a connection pool, a host, a port and
+        an SSL stack: true, and useless in a dialog. Name what it means and
+        keep the first line of the original for the ticket; the server log has
+        the whole of it.
+        """
+        text = str(error) or error.__class__.__name__
+        first_line = text.splitlines()[0][:200] if text.strip() else text
+        if isinstance(error, requests.exceptions.SSLError) or 'SSL' in error.__class__.__name__:
+            return _('The mail provider could not be reached from this server: a '
+                     'certificate check failed. Ask whoever runs this server about '
+                     'its outgoing connections. (%s)') % first_line
+        if isinstance(error, smtplib.SMTPException):
+            # Before OSError: SMTPException is one since Python 3.4.
+            return _('The mail server refused the message: %s') % first_line
+        if isinstance(error, (requests.exceptions.ConnectionError,
+                              requests.exceptions.Timeout, OSError)):
+            # OSError covers the sockets IMAP/SMTP speak over: refused,
+            # unreachable, name not known, timed out.
+            return _('The mail provider could not be reached from this server. The '
+                     'mail can be retried from the chatter once the connection is '
+                     'back. (%s)') % first_line
+        return first_line
 
     @staticmethod
     def _batch_failure_message(failures):
@@ -348,7 +467,7 @@ class MailMail(models.Model):
             return self._fail(str(e))
         except Exception as e:
             _logger.exception(f"[Outgoing Mail] Exception sending mail {self.id}")
-            reason = self._fail(str(e))
+            reason = self._fail(self._readable_reason(e))
             if raise_exception:
                 raise
             return reason
@@ -456,13 +575,30 @@ class MailMail(models.Model):
                 # received one: addresses, as text. A chatter reply carries
                 # its recipients as partners and a template mail as
                 # `email_to`; either way the Inbox's To line reads one column.
-                'x_email_to': self._addresses(self.email_to, self.recipient_ids),
-                'x_email_cc': self._addresses(self.email_cc),
+                # Merged, not replaced: a message split into one send per
+                # recipient reaches this line once per send.
+                'x_email_to': self._addresses(
+                    ', '.join(filter(None, [self.mail_message_id.x_email_to, self.email_to])),
+                    self.recipient_ids),
+                'x_email_cc': self._addresses(
+                    ', '.join(filter(None, [self.mail_message_id.x_email_cc, self.email_cc]))),
             })
 
         self._index_sent_message(mailbox, message_id, thread_id, reply_context)
         _logger.info(f"[Outgoing Mail] Mail {self.id} sent from {mailbox.email} "
                      f"(message {message_id}, thread {thread_id})")
+
+        # Odoo's own post-send bookkeeping, last, because it may delete the
+        # mail: the notification rows turn `sent` (the chatter's envelope
+        # stops saying "pending" for good) and an `auto_delete` mail leaves
+        # the table with its body and attachments, as it does after SMTP.
+        # Both were skipped on this path, so every provider-sent chatter mail
+        # showed as pending forever and stayed in mail_mail forever.
+        self._sync_notifications()
+        self._postprocess_sent_message(
+            success_pids=self.recipient_ids,
+            success_emails=tools.email_split(self.email_to or ''),
+        )
 
 
     @staticmethod
@@ -507,7 +643,7 @@ class MailMail(models.Model):
             'provider_message_id': None,
         }
 
-        link = self.env['pan.mail.thread.link'].find_for_record(
+        link = self.env['pan.mail.thread.link']._find_for_record(
             mailbox, self.model, self.res_id)
         if link:
             reply_context['thread_id'] = link.thread_id
@@ -728,8 +864,13 @@ class MailMail(models.Model):
             return self._notification_route()
 
         if not author_user.x_default_mailbox_id:
+            if not author_user.x_pan_mail_connected:
+                raise RoutingError(_(
+                    'User "%s" has not connected an email account yet. Open My '
+                    'Preferences, Mail Pro, and press Connect Mailbox.'
+                ) % author_user.name)
             raise RoutingError(_(
-                'User "%s" has no default mailbox. Open My Profile → Mail Pro '
+                'User "%s" has no default mailbox. Open My Preferences, Mail Pro, '
                 'and pick the address to send from.'
             ) % author_user.name)
 

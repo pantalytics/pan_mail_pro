@@ -2,6 +2,8 @@
 from odoo import fields, models, api, _
 from odoo.exceptions import ValidationError
 
+from .mail_mail import INTERACTIVE_SEND
+
 
 class MailComposeMessage(models.TransientModel):
     """Extend the composer with the "Send From" mailbox choice."""
@@ -39,6 +41,13 @@ class MailComposeMessage(models.TransientModel):
                     mailbox=mailbox.email,
                 ))
 
+    def _action_send_mail(self, auto_commit=False):
+        """The one place a send *is* what the person did. `mail.mail.send()`
+        raises the failure at them here, and records it silently everywhere
+        else (see `_is_the_action`)."""
+        return super(MailComposeMessage, self.with_context(
+            **{INTERACTIVE_SEND: True}))._action_send_mail(auto_commit=auto_commit)
+
     @api.depends_context('uid')
     def _compute_setup_warning(self):
         """Check if the user still needs to connect an email account.
@@ -49,9 +58,9 @@ class MailComposeMessage(models.TransientModel):
         user = self.env.user
         for record in self:
             if not user.x_pan_mail_account_ids.filtered('connected'):
-                record.x_setup_warning = "Connect your email account in My Preferences → Mail Pro tab."
+                record.x_setup_warning = _("Connect your email account: My Preferences, Mail Pro, Connect Mailbox.")
             elif not user.x_default_mailbox_id:
-                record.x_setup_warning = "Select a default mailbox in My Preferences → Mail Pro tab."
+                record.x_setup_warning = _("Pick a default mailbox: My Preferences, Mail Pro, Send from.")
             else:
                 record.x_setup_warning = False
 

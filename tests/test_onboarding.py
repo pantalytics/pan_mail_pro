@@ -130,10 +130,13 @@ class TestNotificationGapQueuesMail(TransactionCase):
 
         self.assertFalse(mail._is_awaiting_notification_mailbox())
 
-        with self.assertRaises(UserError):
-            mail.send()
-
+        # Recorded, not held: the reason names the chosen mailbox, and the
+        # composer's own send raises it at the person.
+        mail.send()
+        self.assertEqual(mail.state, 'exception')
         self.assertNotEqual(mail.failure_reason, NOTIFICATION_PENDING_REASON)
+        with self.assertRaises(UserError):
+            mail.with_context(pan_mail_interactive_send=True).send()
 
     def test_external_mail_still_fails_loudly(self):
         """Only internal notifications get the benefit of the doubt.
@@ -148,8 +151,11 @@ class TestNotificationGapQueuesMail(TransactionCase):
             'email_to': 'customer@example.com',
         })
 
+        mail.send()
+        self.assertEqual(mail.state, 'exception')
+        self.assertTrue(mail.failure_reason)
         with self.assertRaises(UserError):
-            mail.send()
+            mail.with_context(pan_mail_interactive_send=True).send()
 
         self.assertNotEqual(mail.failure_reason, NOTIFICATION_PENDING_REASON)
 

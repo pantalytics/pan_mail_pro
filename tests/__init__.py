@@ -46,6 +46,8 @@ from . import test_imap_live
 from . import test_mailbox_test_send
 from . import test_mailbox_type
 from . import test_license
+from . import test_rpc_surface
+from . import test_recipient_split
 from . import test_conversation_api
 from . import test_oauth_routes
 from . import test_mailbox_actions

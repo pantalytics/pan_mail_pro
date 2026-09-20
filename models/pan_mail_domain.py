@@ -24,7 +24,7 @@ import logging
 import re
 
 from odoo import SUPERUSER_ID, _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -126,7 +126,16 @@ class PanMailDomain(models.Model):
 
     @api.model
     def set_domains(self, domains):
-        """Replace the whole list. The one writer that is not a person."""
+        """Replace the whole list. The one writer that is not a person.
+
+        A manager's act, whoever calls it: the method is reachable over RPC
+        by any logged-in user and every write below runs as sudo, so without
+        this line a plain user could remove the company's own domain and let
+        internal mail into Odoo, which is the leak this list exists to stop.
+        """
+        if not self.env.su and not self.env.user.has_group(
+                'pan_mail_pro.group_mail_mailbox_manager'):
+            raise AccessError(_('Only a mailbox manager can change the internal domains.'))
         wanted = self._parse(', '.join(domains))
         existing = self.sudo().search([])
         (existing.filtered(lambda d: d.name not in wanted)).unlink()

@@ -221,6 +221,25 @@ class TestOAuthCallback(HttpCase):
         self.assertIn('Connection Failed', response.text)
         self.assertFalse(self._accounts())
 
+    def test_a_portal_user_is_refused_at_the_callback(self):
+        """A customer with a portal login and the callback URL: no account."""
+        portal = self.env['res.users'].create({
+            'name': 'Customer',
+            'login': 'customer@example.test',
+            'password': 'customer@example.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+        })
+        portal.sudo().x_pan_mail_oauth_state = 'nonce-portal'
+        self.authenticate('customer@example.test', 'customer@example.test')
+        tokens = {'access_token': 'at', 'refresh_token': 'rt',
+                  'token_expiry': '2030-01-01 00:00:00'}
+        with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
+             patch(f'{GRAPH}.get_user_email', return_value='customer@example.test'):
+            response = self._callback(code='authcode', state='nonce-portal')
+        self.assertIn('Only internal users', response.text)
+        self.assertFalse(self.env['pan.mail.account'].sudo().search(
+            [('user_id', '=', portal.id)]))
+
     def test_a_shared_mailbox_is_never_repurposed(self):
         """Somebody configured `info@` on purpose. A personal grant for that
         address connects the account and leaves the mailbox alone."""

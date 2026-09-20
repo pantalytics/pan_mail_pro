@@ -27,7 +27,7 @@ A database runs on one provider.
 | Feature | Description |
 |---------|-------------|
 | Send From dropdown | Choose which mailbox to send from in the composer |
-| Test send | One button on every mailbox and on My Profile, so a broken address is found before a customer finds it |
+| Test send | One button on every mailbox and on My Preferences, so a broken address is found before a customer finds it |
 | 2-way sync | Inbox and Sent Items sync automatically, every minute |
 | Reply threading | Replies attach to the correct record |
 | Personal mailboxes | Auto-created when users connect |
@@ -50,11 +50,12 @@ See [Security](security.md) for the full picture.
 ## Getting Started
 
 1. [Installation](getting-started/installation.md), add the module to your Odoo instance
-2. Set up your provider: [Microsoft 365](getting-started/azure-setup.md),
+2. [Connect to Pantalytics](getting-started/connect-pantalytics.md), one button, free during the beta
+3. Set up your provider: [Microsoft 365](getting-started/azure-setup.md),
    [Google Workspace](getting-started/google-setup.md) or
    [IMAP/SMTP](getting-started/imap-setup.md)
-3. [User Setup](getting-started/user-setup.md), connect accounts
-4. [Mailboxes](configuration/mailboxes.md), configure sending and sync
+4. [User Setup](getting-started/user-setup.md), connect accounts
+5. [Mailboxes](configuration/mailboxes.md), configure sending and sync
 
 Once mail is flowing, [Where Mail Lands](configuration/where-mail-lands.md)
 explains how to check it is going where you expect.

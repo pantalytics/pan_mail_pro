@@ -97,7 +97,7 @@ class TestThreadKeys(TransactionCase):
             model='crm.lead', res_id=self.lead.id, message=message,
         )
 
-        decision = self.matcher.match({
+        decision = self.matcher._match({
             'message_id': '<reply@example.com>',
             'thread_id': 'CONV-IN',
             'subject': 'Re: Question',
@@ -137,7 +137,7 @@ class TestThreadKeys(TransactionCase):
             model='crm.lead', res_id=self.lead.id,
         )
 
-        link = self.env['pan.mail.thread.link'].find_for_record(
+        link = self.env['pan.mail.thread.link']._find_for_record(
             self.mailbox, 'crm.lead', self.lead.id)
 
         self.assertEqual(link.thread_id, 'CONV-OUT')
@@ -150,7 +150,7 @@ class TestThreadKeys(TransactionCase):
             model='crm.lead', res_id=self.lead.id,
         )
 
-        link = self.env['pan.mail.thread.link'].find_for_record(
+        link = self.env['pan.mail.thread.link']._find_for_record(
             self.mailbox, 'crm.lead', self.lead.id)
 
         self.assertEqual(link.thread_id, '<root@company.test>')
@@ -169,7 +169,7 @@ class TestRoutingLogEvidence(TransactionCase):
         })
 
     def _log(self, message):
-        match = self.env['pan.mail.matcher'].match(message, mailbox=self.mailbox)
+        match = self.env['pan.mail.matcher']._match(message, mailbox=self.mailbox)
         return self.env['pan.mail.routing.log'].log_decision(
             mailbox=self.mailbox, match=match, outcome='fallback',
             subject=message.get('subject'), email_from='customer@example.com',
@@ -362,7 +362,7 @@ class TestSentCopyReindexes(TransactionCase):
         """End to end: the case that produced a 0.50 guess in production."""
         self._gate(self._sent_copy())
 
-        decision = self.env['pan.mail.matcher'].match({
+        decision = self.env['pan.mail.matcher']._match({
             'message_id': '<reply@example.com>',
             'thread_id': 'CONV-DIFFERENT',
             'subject': 'Re: Question',

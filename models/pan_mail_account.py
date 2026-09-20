@@ -231,6 +231,14 @@ class PanMailAccount(models.Model):
             vals['refresh_token'] = refresh_token
 
         if account:
+            if email and account.email and email.lower() != account.email.lower():
+                # The person consented as somebody else. Writing B's tokens onto
+                # A's row splits one identity over two personal mailboxes and
+                # sends from A with B's token. Refuse, and name the way out.
+                raise UserError(_(
+                    'This Odoo user is connected as %(current)s. To connect '
+                    '%(new)s instead, first press Disconnect under My Preferences, '
+                    'Mail Pro.', current=account.email, new=email))
             if email and not account.email:
                 vals['email'] = email
             account.write(vals)

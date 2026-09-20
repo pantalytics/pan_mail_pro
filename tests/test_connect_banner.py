@@ -6,7 +6,11 @@ worth guarding: it is shown on every screen, so every case where the button
 would not work is a case where the module nags about something the reader
 cannot do.
 """
+from datetime import timedelta
+
+from odoo import fields
 from odoo.addons.pan_mail_pro.controllers.main import SETTINGS_URL
+from odoo.exceptions import AccessError, UserError
 from odoo.tests import HttpCase, TransactionCase, tagged
 
 
@@ -77,6 +81,30 @@ class TestConnectBanner(TransactionCase):
         self._set_up_provider()
         self.env['ir.config_parameter'].sudo().set_param('database.is_neutralized', 'True')
         self.assertFalse(self.user._pan_mail_should_prompt_connect())
+
+    def test_an_unconnected_instance_asks_nobody(self):
+        """A new account is refused until the instance is connected to
+        Pantalytics, so the button would end in a refusal after the consent
+        screen. The banner stays away, and the button refuses first."""
+        self._set_up_provider()
+        real_gate = self.user.with_context(pan_mail_pro_real_gate=True)
+        self.assertFalse(real_gate._pan_mail_should_prompt_connect())
+        with self.assertRaisesRegex(UserError, 'Connect this Odoo instance'):
+            real_gate.action_connect_mailbox('gmail')
+        self.env['pan.mail.license'].sudo().create({
+            'status': 'active', 'valid_until': fields.Datetime.now() + timedelta(days=1)})
+        self.assertTrue(real_gate._pan_mail_should_prompt_connect())
+        self.assertEqual(real_gate.action_connect_mailbox('gmail')['type'], 'ir.actions.act_url')
+
+    def test_a_portal_user_may_not_connect_a_mailbox(self):
+        portal = self.env['res.users'].create({
+            'name': 'Customer',
+            'login': 'customer-connect@example.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+        })
+        self._set_up_provider()
+        with self.assertRaises(AccessError):
+            portal.action_connect_mailbox('gmail')
 
     def test_a_portal_user_is_not_asked(self):
         portal = self.env['res.users'].create({
