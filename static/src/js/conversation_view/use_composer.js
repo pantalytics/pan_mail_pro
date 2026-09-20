@@ -163,7 +163,11 @@ export function useComposer({ onSent }) {
          *
          * A save that fails says which field is missing, in the form, next to
          * the field. A send that fails raises, which is Odoo's own error
-         * dialog, and leaves the reply open to try again.
+         * dialog -- and by then the reply is already posted: the chatter sends
+         * after its commit, so the raise reaches the browser with the message
+         * in the thread and the failure on its envelope. Leaving the composer
+         * open would let a second Send post the same reply again, so it
+         * closes and the thread refreshes before the dialog shows.
          */
         async send() {
             const controller = handle.controller;
@@ -172,16 +176,20 @@ export function useComposer({ onSent }) {
             }
             state.sending = true;
             const record = controller.model.root;
+            let sent = false;
             try {
                 if (!(await record.save({ reload: false }))) {
                     return;
                 }
+                sent = true;
                 await orm.call("mail.compose.message", "action_send_mail", [[record.resId]]);
             } finally {
                 state.sending = false;
+                if (sent) {
+                    close();
+                    await onSent();
+                }
             }
-            close();
-            await onSent();
         },
     };
 }

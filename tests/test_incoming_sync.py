@@ -61,6 +61,16 @@ class TestCronProgress(MailProTestCase):
             [c.args[0] for c in process.call_args_list],
             [self.notification_mailbox, self.shared_mailbox, self.personal_mailbox])
 
+    def test_the_license_retry_runs_before_the_setup_gate(self):
+        """Setup is when a first heartbeat can meet a bad minute, and setup is
+        when the cron has nothing else to do and returns early."""
+        fetcher = self.env['pan.mail.fetcher']
+        License = type(self.env['pan.mail.license'])
+        with patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=False), \
+                patch.object(License, '_retry_if_stuck') as retry:
+            fetcher._cron_fetch_incoming_mail()
+        retry.assert_called_once()
+
     def test_outside_the_cron_nothing_is_committed(self):
         process, progress = self._run({})
         self.assertEqual(process.call_count, 3)

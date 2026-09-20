@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import smtplib
+from datetime import timedelta
 
 import requests
 
@@ -8,7 +9,7 @@ from odoo import fields, models, api, tools, _
 from odoo.addons.base.models.ir_mail_server import MailDeliveryException
 from odoo.exceptions import AccessError, UserError
 
-from .mail_provider_client import ERROR_NO_RECIPIENTS
+from .mail_provider_client import ERROR_NO_RECIPIENTS, ERROR_THROTTLED
 from .neutralization import database_is_neutralized
 
 # Set by the composer around its send: this batch is the thing the person did.
@@ -476,6 +477,19 @@ class MailMail(models.Model):
             self._record_sent(result, mailbox, account, reply_context)
             if post_send_callback:
                 post_send_callback(self)
+            return None
+
+        if result.get('error_code') == ERROR_THROTTLED:
+            # The provider asked for a pause. The mail stays `outgoing` with a
+            # scheduled date, and the queue sends it then: `exception` is the
+            # state the queue never picks up again, and a burst of invitations
+            # that met a Retry-After used to end there, one Retry click each.
+            wait = int(result.get('retry_after') or 60)
+            self.write({
+                'failure_reason': result.get('error'),
+                'scheduled_date': fields.Datetime.now() + timedelta(seconds=wait),
+            })
+            _logger.warning("[Outgoing Mail] Mail %s waits %ss: provider throttled", self.id, wait)
             return None
 
         if result.get('error_code') == ERROR_NO_RECIPIENTS:

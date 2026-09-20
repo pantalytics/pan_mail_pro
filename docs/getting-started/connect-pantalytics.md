@@ -20,7 +20,10 @@ in with the same email domain later can be added to the same workspace.
    **Status: Active** and the setup checklist appears below it
 
 No tab opened? The Settings page shows the link under the code. Approved but
-Odoo still says it is waiting? Press **Check Approval**.
+Odoo still says it is waiting? Press **Check Approval**. Connected, but the
+page still says incoming mail is not synced? Press **Check again**: the
+instance asks Pantalytics once more, which it also does by itself every ten
+minutes.
 
 Only an administrator of the Pantalytics workspace can approve. If the page
 says the Odoo instance is already connected to a workspace you do not

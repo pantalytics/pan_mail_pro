@@ -73,6 +73,10 @@
                                 <div class="text-muted" invisible="not x_license_valid_until">
                                     Valid until <field name="x_license_valid_until" nolabel="1" readonly="1"/>
                                 </div>
+                                <div class="mt-2" invisible="not x_license_sync_blocked">
+                                    <button name="action_license_check" type="object"
+                                            string="Check again" class="btn-secondary"/>
+                                </div>
                                 <button name="action_license_disconnect" type="object"
                                         string="Disconnect" class="btn-link text-danger ps-0"
                                         confirm="This Odoo instance forgets its Pantalytics key. You can connect again at any time."/>

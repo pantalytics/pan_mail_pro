@@ -86,6 +86,15 @@ class TestGoogleProvider(TransactionCase):
             self.client._api_get(account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1')
         sleep.assert_not_called()
 
+    def test_a_send_is_never_repeated_after_a_timeout(self):
+        with patch(GMAIL_POST, side_effect=requests.exceptions.Timeout('slow')) as post, \
+                patch(GMAIL_SLEEP):
+            with self.assertRaises(requests.exceptions.Timeout):
+                self.client._request_with_retry(
+                    'post', 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+                    idempotent=False, json={}, timeout=30)
+        self.assertEqual(post.call_count, 1)
+
     def test_a_server_error_is_retried_and_then_reported(self):
         account = self._google_account(access_token='t', token_expiry=fields.Datetime.now() + timedelta(hours=1))
         with patch(GMAIL_GET, return_value=self._status(503)) as get, patch(GMAIL_SLEEP):

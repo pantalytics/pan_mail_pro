@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
+import logging
+
 from odoo import fields, models, api, _
 from odoo.exceptions import UserError, ValidationError
 
 from . import encryption_utils
 from .mail_provider_client import PROVIDER_SELECTION, get_provider_client
+
+_logger = logging.getLogger(__name__)
 
 # Hosts we can fill in for the admin. Keyed on the mail domain, because that is
 # what an admin types first. Deliberately tiny: this is a convenience, not a
@@ -232,13 +236,21 @@ class PanMailAccount(models.Model):
 
         if account:
             if email and account.email and email.lower() != account.email.lower():
-                # The person consented as somebody else. Writing B's tokens onto
-                # A's row splits one identity over two personal mailboxes and
-                # sends from A with B's token. Refuse, and name the way out.
-                raise UserError(_(
-                    'This Odoo user is connected as %(current)s. To connect '
-                    '%(new)s instead, first press Disconnect under My Preferences, '
-                    'Mail Pro.', current=account.email, new=email))
+                if account.connected:
+                    # The person consented as somebody else while A still
+                    # works. Writing B's tokens onto A's row splits one
+                    # identity over two personal mailboxes and sends from A
+                    # with B's token. Refuse, and name the way out.
+                    raise UserError(_(
+                        'This Odoo user is connected as %(current)s. To connect '
+                        '%(new)s instead, first press Disconnect under My '
+                        'Preferences, Mail Pro.', current=account.email, new=email))
+                # Disconnected, and back as another address: the address
+                # changed (a rename at the provider, a wrong first consent).
+                # The row follows the person; the personal mailbox of the old
+                # address retires, so nothing sends from A with B's token.
+                self._retire_personal_mailbox(user, account.email)
+                vals['email'] = email
             if email and not account.email:
                 vals['email'] = email
             account.write(vals)
@@ -246,6 +258,21 @@ class PanMailAccount(models.Model):
             vals.update({'provider': provider, 'user_id': user.id, 'email': email})
             account = self.create(vals)
         return account
+
+    @api.model
+    def _retire_personal_mailbox(self, user, email):
+        """Archive the user's own personal mailbox for an address they no
+        longer sign in with, and forget it as their default."""
+        Mailbox = self.env['pan.mail.mailbox'].sudo()
+        old = Mailbox.search([
+            ('owner_user_id', '=', user.id), ('email', '=ilike', email),
+            ('mailbox_type', '=', 'personal'), ('is_notification_mailbox', '=', False),
+        ])
+        if old:
+            old.write({'active': False})
+            if user.x_default_mailbox_id in old:
+                user.sudo().write({'x_default_mailbox_id': False})
+            _logger.info('[OAuth] Retired personal mailbox %s of %s', email, user.login)
 
     @api.model_create_multi
     def create(self, vals_list):

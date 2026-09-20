@@ -12,8 +12,10 @@ not: the notification rows turn `sent`, an `auto_delete` mail leaves the
 table, and a failure only raises at the person when the send *is* what they
 did (the composer), never out of the action it rode along with.
 """
+from datetime import timedelta
 from unittest.mock import patch
 
+from odoo import fields
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -197,6 +199,22 @@ class TestAfterTheSend(MailProTestCase):
         with patch.object(type(self.env['microsoft.graph.client']), 'send_message', self._send_fail), \
                 self.assertRaisesRegex(UserError, 'provider said no'):
             mail.with_context(pan_mail_interactive_send=True).send()
+
+    def test_a_throttled_send_waits_instead_of_failing(self):
+        """A Retry-After too long to sleep is a pause, not a failure: the mail
+        stays outgoing with a scheduled date the queue honours."""
+        from odoo.addons.pan_mail_pro.models.mail_provider_client import ERROR_THROTTLED
+
+        def throttled(client_self, mail_record, mailbox, account, reply_context=None):
+            return {'success': False, 'error': 'Microsoft asked to wait 120 seconds',
+                    'error_code': ERROR_THROTTLED, 'retry_after': 120}
+        mail = self._mail()
+        before = fields.Datetime.now()
+        with patch.object(type(self.env['microsoft.graph.client']), 'send_message', throttled):
+            mail.with_context(pan_mail_interactive_send=True).send()  # no raise either
+        self.assertEqual(mail.state, 'outgoing')
+        self.assertIn('asked to wait', mail.failure_reason)
+        self.assertGreater(mail.scheduled_date, before + timedelta(seconds=60))
 
     def test_a_caller_who_asks_for_the_exception_gets_odoos_own(self):
         """auth_signup sends the invitation with raise_exception=True and

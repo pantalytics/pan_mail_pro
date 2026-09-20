@@ -26,6 +26,8 @@ from ... import encryption_utils
 from ...mail_provider_client import (
     ERROR_NO_RECIPIENTS, FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
     FOLDER_SENT, FOLDER_TRASH,
+    ERROR_THROTTLED,
+    ThrottledError,
 )
 from .. import mime_utils
 
@@ -352,17 +354,17 @@ class GoogleGmailClient(models.AbstractModel):
         url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send'
         try:
             response = self._request_with_retry(
-                'post', url,
+                'post', url, idempotent=False,
                 headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
                 json=payload,
                 timeout=30,
             )
             response.raise_for_status()
             sent = response.json()
-        except UserError as e:
-            # The retry helper's refusal of a long Retry-After: a normalized
-            # failure like any other, as the contract asks.
-            return {'success': False, 'error': str(e), 'error_code': None}
+        except ThrottledError as e:
+            # Not a failure: the mail waits for the pause Google asked for.
+            return {'success': False, 'error': str(e), 'error_code': ERROR_THROTTLED,
+                    'retry_after': e.wait}
         except requests.exceptions.RequestException as e:
             return {'success': False, 'error': self._error_detail(e),
                     'error_code': self._error_code(e)}
@@ -375,7 +377,7 @@ class GoogleGmailClient(models.AbstractModel):
             'thread_id': sent.get('threadId'),  # Gmail's thread handle
         }
 
-    def _request_with_retry(self, method, url, **kwargs):
+    def _request_with_retry(self, method, url, idempotent=True, **kwargs):
         """One request, retried on 429 and 5xx with a capped backoff.
 
         Gmail answers `rateLimitExceeded` routinely under a burst, and a first
@@ -392,21 +394,24 @@ class GoogleGmailClient(models.AbstractModel):
             try:
                 response = getattr(requests, method)(url, timeout=timeout, **kwargs)
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
-                if attempt >= MAX_RETRIES:
+                if attempt >= MAX_RETRIES or not idempotent:
+                    # A send whose answer was lost may have been carried out:
+                    # retrying it is a customer mailed twice.
                     raise
                 time.sleep(backoff)
                 backoff *= 2
                 continue
-            if response.status_code in (429, 500, 502, 503, 504) and attempt < MAX_RETRIES:
+            if attempt < MAX_RETRIES and (response.status_code == 429 or (
+                    idempotent and response.status_code in (500, 502, 503, 504))):
                 retry_after = response.headers.get('Retry-After') if response.status_code == 429 else None
                 try:
                     wait = int(retry_after) if retry_after else backoff
                 except ValueError:
                     wait = backoff
                 if wait > MAX_RETRY_AFTER_SECONDS:
-                    raise UserError(_(
+                    raise ThrottledError(_(
                         'Google asked to wait %s seconds before more requests for '
-                        'this mailbox. Try again in a minute.') % wait)
+                        'this mailbox. Try again in a minute.') % wait, wait)
                 _logger.warning('[Gmail API] %s from %s, retrying in %ss (%s/%s)',
                                 response.status_code, url, wait, attempt + 1, MAX_RETRIES)
                 time.sleep(wait)

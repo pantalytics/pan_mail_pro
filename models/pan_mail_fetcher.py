@@ -17,7 +17,7 @@ from markupsafe import Markup
 from odoo import models, api, fields, _
 from odoo.exceptions import UserError
 
-from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT, ThrottledError
 from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
@@ -120,6 +120,11 @@ class PanMailFetcher(models.AbstractModel):
         if database_is_neutralized(self.env):
             _logger.info('[Incoming Mail] Database is neutralized - skipping sync')
             return
+        # Before every other gate: during setup there are no mailboxes and the
+        # setup gate returns, and setup is exactly when a first heartbeat can
+        # meet a bad minute. The retry must not wait for a state it unblocks.
+        License = self.env['pan.mail.license']
+        License._retry_if_stuck()
         # Deliberately not filtered on an owner: whether a mailbox needs one is
         # the provider's business. A Gmail or IMAP shared mailbox is its own
         # account with nobody behind it, and requiring an owner here silently
@@ -155,8 +160,6 @@ class PanMailFetcher(models.AbstractModel):
 
         # Not connected to Pantalytics: the same
         # shape as setup, so the stop is on the mailboxes where people look.
-        License = self.env['pan.mail.license']
-        License._retry_if_stuck()
         if not License.sync_allowed():
             reason = License.not_allowed_error()
             _logger.info('[License] %s', reason)
@@ -196,6 +199,13 @@ class PanMailFetcher(models.AbstractModel):
                     mailbox.write({'state': 'error', 'error_message': stall})
                 else:
                     mailbox._record_sync_success()
+            except ThrottledError as e:
+                # The provider asked for a pause longer than a run may sleep.
+                # Said on the mailbox, not counted as a failure: a throttled
+                # mailbox is a healthy one being polite, and five polite
+                # minutes must not turn its badge red.
+                _logger.info("[Incoming Mail] Mailbox %s throttled: %s", mailbox.id, e)
+                mailbox.write({'error_message': str(e)})
             except Exception as e:
                 # Savepoint rolled back: the cursor is usable again, so the
                 # error write below won't hit "current transaction is aborted".

@@ -230,6 +230,29 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
                 self.client._request_with_retry('get', 'https://graph.microsoft.com/v1.0/me', {})
         sleep.assert_not_called()
 
+    def test_a_send_is_never_repeated_after_a_timeout(self):
+        """The answer to /send was lost, not the send: Microsoft may well have
+        delivered it. Retrying it is a customer mailed twice; a 429, which
+        means refused, is still retried."""
+        with patch(GRAPH_POST, side_effect=requests.exceptions.Timeout('slow')) as post, \
+                patch('odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.time.sleep'):
+            with self.assertRaises(requests.exceptions.Timeout):
+                self.client._request_with_retry(
+                    'post', 'https://graph.microsoft.com/v1.0/me/messages/x/send', {},
+                    idempotent=False)
+        self.assertEqual(post.call_count, 1)
+        refused = MagicMock()
+        refused.status_code = 429
+        refused.headers = {'Retry-After': '1'}
+        fine = MagicMock()
+        fine.status_code = 202
+        with patch(GRAPH_POST, side_effect=[refused, fine]) as post, \
+                patch('odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.time.sleep'):
+            response = self.client._request_with_retry(
+                'post', 'https://graph.microsoft.com/v1.0/me/messages/x/send', {},
+                idempotent=False)
+        self.assertIs(response, fine)
+
     def test_a_short_retry_after_is_honoured(self):
         throttled = MagicMock()
         throttled.status_code = 429
