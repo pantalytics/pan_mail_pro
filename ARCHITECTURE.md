@@ -1300,8 +1300,8 @@ The surface is the inbox, not this log. Settings → Technical is where you go
 to ask why; the screen where mail is read is where it gets fixed. A thread
 that is linked carries a quiet `Change` next to its chips; one that is not
 carries the suggestion (rule 5, or the best proposal any rule made) with a
-`Link it here`, and a `Link to a record`. Both open the same picker: one
-dialog, one search box, two steps behind it.
+`Link it here`, and a `Link to a record`. Both open the same picker: the kind
+of record, then the record.
 
 **Step one, the kind of record.** `link_targets(search)` starts from what this
 database already links mail to — the mailboxes' routing targets and the models
@@ -1310,19 +1310,27 @@ dropdown of four hundred technical names on day one. A search widens it to
 every model with a chatter, the already-linked ones first, which is the way out
 for the model nobody has filed mail on yet.
 
-**Step two, the record.** `link_candidates(model, search, partner_id)` opens on
-the correspondent's own records instead of an empty box: mail from
-`bart@vandermolen.test`, on a quote, offers Vandermolen's quotes. Two relations
-count and only two — a `partner_id` at a contact, or an `email_from` — read
-against the *commercial* partner, because mail from one employee is about the
-company's records. A model relating to a contact through anything else gets the
-most recent records and the search box; a third guess would be a rule nobody
-could predict from the screen. Typing replaces the list with a plain
-`name_search`, so the seeding is a head start and never a filter to escape.
+**Step two, the record.** Odoo's own `SelectCreateDialog`: the list view with a
+search bar, filters and a pager that every many2one on this database opens, so
+a quote is found here the way quotes are found everywhere else. A picker of our
+own was a second implementation of that screen and a worse one.
+`link_candidate_domain(model, partner_id)` supplies the one thing that dialog
+cannot know — whose records matter — as a **default search facet**: mail from
+`bart@vandermolen.test`, on a quote, opens on Vandermolen's quotes. Two
+relations count and only two, a `partner_id` at a contact or an `email_from`,
+read against the *commercial* partner, because mail from one employee is about
+the company's records. A model relating to a contact through anything else gets
+no facet and the dialog's own default; a third guess would be a rule nobody
+could predict from the screen. The head start is a facet rather than a fixed
+domain, so dropping it is one click and never something to escape. Creating a
+record from the dialog stays off: linking is about where mail belongs, and a
+record invented to hold it is a different decision.
 
 Both steps take the model from the caller, so both check it the same way:
 a chatter to carry the mail, and `write` on the model, because putting
-somebody's correspondence on a record is a change to that record.
+somebody's correspondence on a record is a change to that record. The records
+themselves are read by Odoo's own list view, under its own ACLs and record
+rules.
 
 Three things it deliberately does not do:
 

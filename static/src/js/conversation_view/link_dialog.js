@@ -2,24 +2,27 @@
 /**
  * Linking a conversation, in the two steps the question actually has.
  *
- * "Where does this mail belong" is a model and then a record, and both halves
- * need a search box: a chip row is fine for the four models a database files
- * mail on and useless for the fifth, and a record is never picked from a list
- * of twelve. So: one dialog, one search input, two steps behind it.
+ * "Where does this mail belong" is a model and then a record. The first half
+ * is this dialog: a search box over the models this database files mail on,
+ * because a chip row is fine for four models and useless for the fifth.
  *
- * The second step opens on the correspondent's own records rather than on an
- * empty box. `link_candidates` decides what "their own" means (a `partner_id`
- * or an `email_from`, and nothing cleverer); this side only draws the list and
- * says whose it is. Typing replaces it with a plain `name_search`, so the
- * seeding is a head start and never a filter somebody has to escape.
+ * The second half is Odoo's own `SelectCreateDialog` -- the list view with a
+ * search bar, filters and a pager that every many2one on this database opens.
+ * A picker of our own was a second implementation of that screen, and a worse
+ * one: no pager, no filters, twelve rows and a box.
  *
- * Creating a record from here stays off, as it was in the dialog this
- * replaced: linking is about where mail belongs, and a record invented to
- * hold it is a different decision.
+ * The head start survives the move. `link_candidate_domain` says which records
+ * are the correspondent's own, and that goes in as a default search facet --
+ * so the list still opens on Vandermolen's quotes, and dropping it is the same
+ * click as dropping any other facet.
+ *
+ * Creating a record from here stays off (`noCreate`): linking is about where
+ * mail belongs, and a record invented to hold it is a different decision.
  */
 
 import { Component, useState, useRef, onWillStart } from "@odoo/owl";
 import { Dialog } from "@web/core/dialog/dialog";
+import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 import { useService } from "@web/core/utils/hooks";
 import { useDebounced } from "@web/core/utils/timing";
 import { _t } from "@web/core/l10n/translation";
@@ -28,10 +31,9 @@ export class LinkDialog extends Component {
     static template = "pan_mail_pro.LinkDialog";
     static components = { Dialog };
     static props = {
-        // The correspondent, for the head start on step two. Both optional:
-        // a conversation with no contact behind it still has to be linkable.
+        // The correspondent, for the head start on step two. Optional: a
+        // conversation with no contact behind it still has to be linkable.
         partnerId: { type: [Number, Boolean], optional: true },
-        correspondent: { type: String, optional: true },
         // What the dialog is for, when it is not linking an existing
         // conversation. New Email asks the same two questions.
         title: { type: String, optional: true },
@@ -41,14 +43,14 @@ export class LinkDialog extends Component {
 
     setup() {
         this.orm = useService("orm");
+        // Step two outlives this component: it opens as this one closes, and
+        // a service bound with `useService` never settles once its component
+        // is gone. The env's own services do, which is what that step needs.
+        this.services = this.env.services;
         this.searchRef = useRef("search");
         this.state = useState({
-            step: "model",
             search: "",
-            target: null,      // the model chosen in step one
             rows: [],
-            related: false,    // is this list the correspondent's own records
-            partner: "",
             loading: true,
         });
         // Every keystroke is a query. The sequence number is what keeps a slow
@@ -62,77 +64,80 @@ export class LinkDialog extends Component {
     }
 
     get title() {
-        const opening = this.props.title || _t("Link this conversation");
-        return this.state.target
-            ? `${opening}: ${this.state.target.label}`
-            : opening;
+        return this.props.title || _t("Link this conversation");
     }
 
-    get placeholder() {
-        return this.state.target
-            ? _t("Search %s...", this.state.target.label)
-            : _t("Search for a kind of record...");
-    }
-
-    /** The list under the box, for whichever step is open. */
+    /** The models, for whatever has been typed. */
     async load() {
         const sequence = ++this.sequence;
         this.state.loading = true;
-        let result;
+        let rows;
         try {
-            result = this.state.target
-                ? await this.orm.call("pan.mail.conversation", "link_candidates", [], {
-                      model: this.state.target.model,
-                      search: this.state.search,
-                      partner_id: this.props.partnerId || false,
-                  })
-                : { rows: await this.orm.call("pan.mail.conversation", "link_targets", [], {
-                      search: this.state.search,
-                  }) };
+            rows = await this.orm.call("pan.mail.conversation", "link_targets", [], {
+                search: this.state.search,
+            });
         } catch {
             // An empty list and a working dialog beats a traceback over the
-            // inbox: the reader can still change the search or step back.
-            result = { rows: [] };
+            // inbox: the reader can still change the search.
+            rows = [];
         }
         if (sequence !== this.sequence) {
             return; // A later search already answered.
         }
-        this.state.rows = (result.rows || []).map((row) => ({
-            key: row.model || row.id,
-            label: row.label || row.name,
+        this.state.rows = (rows || []).map((row) => ({
+            key: row.model,
+            label: row.label,
+            icon: row.icon || "",
             row,
         }));
-        this.state.related = Boolean(result.related);
-        this.state.partner = result.partner || "";
         this.state.loading = false;
     }
 
-    /** A row: the model in step one, the destination in step two. */
+    /** A model: hand the second question to Odoo's own dialog. */
     async choose(entry) {
-        if (this.state.target) {
-            this.props.onSelect(this.state.target.model, entry.row.id, entry.label);
-            this.props.close();
-            return;
+        const target = entry.row;
+        let seed = {};
+        try {
+            seed = await this.orm.call(
+                "pan.mail.conversation", "link_candidate_domain", [], {
+                    model: target.model,
+                    partner_id: this.props.partnerId || false,
+                }
+            );
+        } catch {
+            seed = {}; // No head start is a working dialog; a traceback is not.
         }
-        this.state.target = entry.row;
-        this.state.step = "record";
-        this.state.search = "";
-        if (this.searchRef.el) {
-            this.searchRef.el.value = "";
-            this.searchRef.el.focus();
-        }
-        await this.load();
+        this.services.dialog.add(SelectCreateDialog, {
+            resModel: target.model,
+            // The question stays on screen: this dialog was opened to link a
+            // conversation or to write a new mail, and "Search: Contact"
+            // alone forgets which.
+            title: `${this.title}: ${target.label}`,
+            multiSelect: false,
+            noCreate: true,
+            dynamicFilters: seed.domain
+                ? [{ description: seed.description, domain: seed.domain }]
+                : [],
+            onSelected: (resIds) => this.selected(target, resIds),
+        });
+        this.props.close();
     }
 
-    /** Back to the models, with the search cleared: it was a model search. */
-    async back() {
-        this.state.target = null;
-        this.state.step = "model";
-        this.state.search = "";
-        if (this.searchRef.el) {
-            this.searchRef.el.value = "";
-            this.searchRef.el.focus();
+    /** What came back: one id, and the name the caller shows for it. */
+    async selected(target, resIds) {
+        const resId = Array.isArray(resIds) ? resIds[0] : resIds;
+        if (!resId) {
+            return;
         }
-        await this.load();
+        let label = "";
+        try {
+            const [record] = await this.services.orm.read(
+                target.model, [resId], ["display_name"]
+            );
+            label = record?.display_name || "";
+        } catch {
+            label = target.label; // The kind of record, when the name is not readable.
+        }
+        this.props.onSelect(target.model, resId, label);
     }
 }

@@ -63,12 +63,11 @@ MAX_LIMIT = 200
 # every row the reader can see, once per folder, on every click.
 COUNT_CAP = 99
 
-# How many rows either step of the link picker hands back. Both steps have a
-# search box, so the list is the head of an answer and not the answer: a
-# database with four hundred models or ten thousand quotes shows twelve and
-# lets the reader type.
+# How many rows step one of the link picker hands back. It has a search box, so
+# the list is the head of an answer and not the answer: a database with four
+# hundred models shows twelve and lets the reader type. Step two is Odoo's own
+# search dialog and pages itself.
 MAX_LINK_TARGETS = 12
-MAX_LINK_CANDIDATES = 12
 
 # How much of a body the one-line preview looks at. A real mail carries a
 # signature, an inline stylesheet and the whole quoted history; the preview is
@@ -1064,60 +1063,46 @@ class PanMailConversation(models.AbstractModel):
             rows.append({
                 'model': name,
                 'label': self.env['ir.model']._get(name).name or name,
+                # The app's own tile, the same one the Linked-to chip wears:
+                # a row of names all ending in "Order" is read by its icons
+                # before it is read by its words.
+                'icon': self._model_icon(name),
             })
             if len(rows) >= MAX_LINK_TARGETS:
                 break
         return rows
 
     @api.model
-    def link_candidates(self, model, search=None, partner_id=None,
-                        limit=MAX_LINK_CANDIDATES):
-        """Step two: which record of that kind.
+    def link_candidate_domain(self, model, partner_id=None):
+        """Step two's head start, as a filter the reader can drop.
 
-        With a search, `name_search` -- the same lookup every many2one on this
-        database uses, so a quote is found here the way people already find
-        quotes everywhere else.
+        The record itself is picked in Odoo's own search dialog: a list view
+        with the search bar, the filters and the pager every record in this
+        database is already picked with. What that dialog cannot know is whose
+        records matter here, so this answers that and nothing else -- a domain
+        for the correspondent's own records, handed over as a default search
+        facet. A facet rather than a fixed domain, because the head start has
+        to be one click away from being dropped.
 
-        Without one, the records that already belong to the correspondent.
-        That is the whole of the smart half: mail from bart@vandermolen.test,
-        on a quote, opens on Vandermolen's quotes rather than on an empty
-        search box. Two ways in, and only two: a `partner_id` pointing at a
-        contact, or an `email_from`. A model that relates to a contact through
-        anything else -- a `partner_ids`, a field of its own -- gets the most
-        recent records and the search box. Guessing at a third relation would
-        be a rule nobody could predict from the screen.
+        Two relations count and only two: a `partner_id` at a contact, or an
+        `email_from`. Nothing when the correspondent is unknown or relates to
+        the model through anything else -- the dialog then opens on the
+        model's own default, which is a list and a search box. Guessing at a
+        third relation would be a rule nobody could predict from the screen.
         """
         self._check_caller()
         Model = self._link_model(model)
-        try:
-            limit = int(limit or MAX_LINK_CANDIDATES)
-        except (TypeError, ValueError):
-            limit = MAX_LINK_CANDIDATES
-        limit = max(min(limit, MAX_LINK_CANDIDATES), 1)
-
-        if search and search.strip():
-            found = Model.name_search(search.strip(), limit=limit)
-            return {
-                'related': False,
-                'partner': '',
-                'rows': [{'id': row[0], 'name': row[1]} for row in found],
-            }
-
         partner = self.env['res.partner']
         if partner_id:
             partner = partner.browse(int(partner_id)).exists()
         domain = self._candidate_domain(Model, partner)
-        records = Model.search(domain or [], limit=limit, order='id desc')
-        # The company, not the person who wrote: it is whose records these are,
-        # and a list of the company's quotes under one employee's name reads
-        # as a mistake.
+        if domain is None:
+            return {}
+        # The company, not the person who wrote: it is whose records these
+        # are, and a facet reading one employee's name over the company's
+        # quotes reads as a mistake.
         family = partner.commercial_partner_id or partner
-        return {
-            'related': domain is not None,
-            'partner': family.display_name if domain is not None else '',
-            'rows': [{'id': record.id, 'name': record.display_name}
-                     for record in records],
-        }
+        return {'domain': domain, 'description': family.display_name}
 
     @api.model
     def new_mail_recipients(self, model, res_id):
