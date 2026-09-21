@@ -714,6 +714,25 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### The record picker is Odoo's (19.0.21.0.0)
+
+- **A picker with one search box is a worse copy of a control the reader
+  already knows.** Step two of the link picker was a `name_search` over twelve
+  rows: no filters, no columns, no paging, and a search that could not tell
+  a company from its contact person. `SelectCreateDialog` is one import and
+  five props, and it arrives with the model's own list view, search bar and
+  filter menu -- the dialog every many2one on the database already opens.
+  Same lesson as the Inbox's search bar: ask what Odoo's control consumes
+  before building an imitation of it.
+- **A head start is a facet, not a domain.** Passing the correspondent's
+  records as `domain` makes it a wall; passing them as `dynamicFilters`
+  makes it a chip the reader takes off with one click. Same data, and only
+  one of the two keeps the promise that the seeding never has to be escaped.
+- **The tile a model wears was already computed for the chips.**
+  `_model_icon` answered "which app opens this model" for the Linked-to
+  chips; step one of the picker asked the same question and had no icon.
+  Reuse the answer before resolving it a second way.
+
 ### A bar on a phone, and the class it borrowed (19.0.20.2.0)
 
 - **A `display: none` an addon can outrank is not a decision, it is a

@@ -2,16 +2,19 @@
 /**
  * Linking a conversation, in the two steps the question actually has.
  *
- * "Where does this mail belong" is a model and then a record, and both halves
- * need a search box: a chip row is fine for the four models a database files
- * mail on and useless for the fifth, and a record is never picked from a list
- * of twelve. So: one dialog, one search input, two steps behind it.
+ * "Where does this mail belong" is a model and then a record. The first half
+ * is ours: a searchable list of the kinds of record this database files mail
+ * on, each with the tile of the app it belongs to. The second half is Odoo's
+ * own `SelectCreateDialog` over that model's list view -- the search bar, the
+ * filters, the paging and the columns every many2one on this database already
+ * opens -- because a record picker with one search box and twelve rows was a
+ * worse copy of a control the reader already knows.
  *
- * The second step opens on the correspondent's own records rather than on an
- * empty box. `link_candidates` decides what "their own" means (a `partner_id`
- * or an `email_from`, and nothing cleverer); this side only draws the list and
- * says whose it is. Typing replaces it with a plain `name_search`, so the
- * seeding is a head start and never a filter somebody has to escape.
+ * The second step opens on the correspondent's own records rather than on the
+ * whole table. `link_scope` decides what "their own" means (a `partner_id` or
+ * an `email_from`, and nothing cleverer); this side turns the answer into a
+ * filter facet, on by default and one click to remove, so the seeding is a
+ * head start and never a filter somebody has to escape.
  *
  * Creating a record from here stays off, as it was in the dialog this
  * replaced: linking is about where mail belongs, and a record invented to
@@ -20,6 +23,7 @@
 
 import { Component, useState, useRef, onWillStart } from "@odoo/owl";
 import { Dialog } from "@web/core/dialog/dialog";
+import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 import { useService } from "@web/core/utils/hooks";
 import { useDebounced } from "@web/core/utils/timing";
 import { _t } from "@web/core/l10n/translation";
@@ -41,18 +45,15 @@ export class LinkDialog extends Component {
 
     setup() {
         this.orm = useService("orm");
+        this.dialog = useService("dialog");
         this.searchRef = useRef("search");
         this.state = useState({
-            step: "model",
             search: "",
-            target: null,      // the model chosen in step one
             rows: [],
-            related: false,    // is this list the correspondent's own records
-            partner: "",
             loading: true,
         });
         // Every keystroke is a query. The sequence number is what keeps a slow
-        // answer to "vand" from landing on top of a fast one to "vanderm".
+        // answer to "lea" from landing on top of a fast one to "lead".
         this.sequence = 0;
         this.onSearch = useDebounced((event) => {
             this.state.search = event.target.value;
@@ -62,81 +63,62 @@ export class LinkDialog extends Component {
     }
 
     get title() {
-        const opening = this.props.title || _t("Link this conversation");
-        return this.state.target
-            ? `${opening}: ${this.state.target.label}`
-            : opening;
+        return this.props.title || _t("Link this conversation");
     }
 
-    get placeholder() {
-        return this.state.target
-            ? _t("Search %s...", this.state.target.label)
-            : _t("Search for a kind of record...");
-    }
-
-    /** The list under the box, for whichever step is open. */
+    /** The kinds of record under the box. */
     async load() {
         const sequence = ++this.sequence;
         this.state.loading = true;
-        let result;
+        let rows;
         try {
-            result = this.state.target
-                ? await this.orm.call("pan.mail.conversation", "link_candidates", [], {
-                      model: this.state.target.model,
-                      search: this.state.search,
-                      partner_id: this.props.partnerId || false,
-                  })
-                : { rows: await this.orm.call("pan.mail.conversation", "link_targets", [], {
-                      search: this.state.search,
-                  }) };
+            rows = await this.orm.call("pan.mail.conversation", "link_targets", [], {
+                search: this.state.search,
+            });
         } catch {
             // An empty list and a working dialog beats a traceback over the
-            // inbox: the reader can still change the search or step back.
-            result = { rows: [] };
+            // inbox: the reader can still change the search.
+            rows = [];
         }
         if (sequence !== this.sequence) {
             return; // A later search already answered.
         }
-        this.state.rows = (result.rows || []).map((row) => ({
-            key: row.model || row.id,
-            label: row.label || row.name,
-            row,
-        }));
-        this.state.related = Boolean(result.related);
-        this.state.partner = result.partner || "";
+        this.state.rows = rows || [];
         this.state.loading = false;
     }
 
-    /** A row: the model in step one, the destination in step two. */
-    async choose(entry) {
-        if (this.state.target) {
-            // The model's own label comes along: the caller shows the record
-            // in a pane whose head names the model above the record.
-            this.props.onSelect(
-                this.state.target.model, entry.row.id, entry.label, this.state.target.label
-            );
-            this.props.close();
-            return;
+    /**
+     * A kind of record picked: hand over to Odoo's own picker for the record.
+     *
+     * This dialog closes first, so the picker is the only thing on screen;
+     * closing that one is the way back, the same as everywhere else in Odoo.
+     */
+    async choose(target) {
+        this.props.close();
+        let scope = { domain: false, partner: "" };
+        try {
+            scope = await this.orm.call("pan.mail.conversation", "link_scope", [], {
+                model: target.model,
+                partner_id: this.props.partnerId || false,
+            });
+        } catch {
+            // No head start, then: the picker still opens on the whole list.
         }
-        this.state.target = entry.row;
-        this.state.step = "record";
-        this.state.search = "";
-        if (this.searchRef.el) {
-            this.searchRef.el.value = "";
-            this.searchRef.el.focus();
-        }
-        await this.load();
-    }
-
-    /** Back to the models, with the search cleared: it was a model search. */
-    async back() {
-        this.state.target = null;
-        this.state.step = "model";
-        this.state.search = "";
-        if (this.searchRef.el) {
-            this.searchRef.el.value = "";
-            this.searchRef.el.focus();
-        }
-        await this.load();
+        this.dialog.add(SelectCreateDialog, {
+            resModel: target.model,
+            title: `${this.title}: ${target.label}`,
+            multiSelect: false,
+            noCreate: true,
+            // Whose records these are, as a facet the reader can take off.
+            dynamicFilters: scope.domain
+                ? [{ description: scope.partner, domain: scope.domain }]
+                : [],
+            onSelected: async ([resId]) => {
+                // The record's name and the model's own label come along: the
+                // caller shows the record in a pane whose head names both.
+                const [record] = await this.orm.read(target.model, [resId], ["display_name"]);
+                this.props.onSelect(target.model, resId, record.display_name, target.label);
+            },
+        });
     }
 }

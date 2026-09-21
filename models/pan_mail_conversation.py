@@ -76,7 +76,6 @@ COUNT_CAP = 99
 # database with four hundred models or ten thousand quotes shows twelve and
 # lets the reader type.
 MAX_LINK_TARGETS = 12
-MAX_LINK_CANDIDATES = 12
 
 # How many thread links door 1 reads to count the threads on one record. The
 # number decides one thing -- open the conversation, or let the reader pick --
@@ -1629,60 +1628,48 @@ class PanMailConversation(models.AbstractModel):
             rows.append({
                 'model': name,
                 'label': self.env['ir.model']._get(name).name or name,
+                # The app's tile, the same one the Linked-to chips wear, so
+                # "Lead" in this list looks like Lead in the app switcher.
+                'icon': self._model_icon(name),
             })
             if len(rows) >= MAX_LINK_TARGETS:
                 break
         return rows
 
     @api.model
-    def link_candidates(self, model, search=None, partner_id=None,
-                        limit=MAX_LINK_CANDIDATES):
-        """Step two: which record of that kind.
+    def link_scope(self, model, partner_id=None):
+        """Step two: the head start for Odoo's own record picker.
 
-        With a search, `name_search` -- the same lookup every many2one on this
-        database uses, so a quote is found here the way people already find
-        quotes everywhere else.
+        The picker itself is Odoo's `SelectCreateDialog` over the model's own
+        list view, with its search bar, its filters and its paging: the same
+        control every many2one on this database opens, so a quote is found
+        here the way people already find quotes everywhere else. What this
+        method adds is whose records to open on. Mail from
+        bart@vandermolen.test, on a quote, opens on Vandermolen's quotes
+        rather than on every quote in the database. Two ways in, and only
+        two: a `partner_id` pointing at a contact, or an `email_from`. A
+        model that relates to a contact through anything else -- a
+        `partner_ids`, a field of its own -- opens on the plain list.
+        Guessing at a third relation would be a rule nobody could predict
+        from the screen.
 
-        Without one, the records that already belong to the correspondent.
-        That is the whole of the smart half: mail from bart@vandermolen.test,
-        on a quote, opens on Vandermolen's quotes rather than on an empty
-        search box. Two ways in, and only two: a `partner_id` pointing at a
-        contact, or an `email_from`. A model that relates to a contact through
-        anything else -- a `partner_ids`, a field of its own -- gets the most
-        recent records and the search box. Guessing at a third relation would
-        be a rule nobody could predict from the screen.
+        The answer is a domain and a name, and the client hands both to the
+        dialog as a filter facet: on by default, one click to remove, so the
+        seeding is a head start and never a filter somebody has to escape.
         """
         self._check_caller()
         Model = self._link_model(model)
-        try:
-            limit = int(limit or MAX_LINK_CANDIDATES)
-        except (TypeError, ValueError):
-            limit = MAX_LINK_CANDIDATES
-        limit = max(min(limit, MAX_LINK_CANDIDATES), 1)
-
-        if search and search.strip():
-            found = Model.name_search(search.strip(), limit=limit)
-            return {
-                'related': False,
-                'partner': '',
-                'rows': [{'id': row[0], 'name': row[1]} for row in found],
-            }
-
         partner = self.env['res.partner']
         if partner_id:
             partner = partner.browse(int(partner_id)).exists()
         domain = self._candidate_domain(Model, partner)
-        records = Model.search(domain or [], limit=limit, order='id desc')
+        if domain is None:
+            return {'domain': False, 'partner': ''}
         # The company, not the person who wrote: it is whose records these are,
-        # and a list of the company's quotes under one employee's name reads
-        # as a mistake.
+        # and a facet reading one employee's name over the company's quotes
+        # reads as a mistake.
         family = partner.commercial_partner_id or partner
-        return {
-            'related': domain is not None,
-            'partner': family.display_name if domain is not None else '',
-            'rows': [{'id': record.id, 'name': record.display_name}
-                     for record in records],
-        }
+        return {'domain': domain, 'partner': family.display_name}
 
     @api.model
     def new_mail_recipients(self, model, res_id):

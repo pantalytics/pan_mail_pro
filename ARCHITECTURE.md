@@ -1675,25 +1675,31 @@ The surface is the inbox, not this log. Settings → Technical is where you go
 to ask why; the screen where mail is read is where it gets fixed. A thread
 that is linked carries a quiet `Change` next to its chips; one that is not
 carries the suggestion (rule 5, or the best proposal any rule made) with a
-`Link it here`, and a `Link to a record`. Both open the same picker: one
-dialog, one search box, two steps behind it.
+`Link it here`, and a `Link to a record`. Both open the same picker, in two
+steps: a short list of the kinds of record, then Odoo's own record picker.
 
 **Step one, the kind of record.** `link_targets(search)` starts from what this
 database already links mail to — the mailboxes' routing targets and the models
 the log has seen — so the list is short and grows with use rather than being a
 dropdown of four hundred technical names on day one. A search widens it to
 every model with a chatter, the already-linked ones first, which is the way out
-for the model nobody has filed mail on yet.
+for the model nobody has filed mail on yet. Each row wears the tile of the app
+that opens the model, the same one the Linked-to chips carry.
 
-**Step two, the record.** `link_candidates(model, search, partner_id)` opens on
-the correspondent's own records instead of an empty box: mail from
-`bart@vandermolen.test`, on a quote, offers Vandermolen's quotes. Two relations
-count and only two — a `partner_id` at a contact, or an `email_from` — read
-against the *commercial* partner, because mail from one employee is about the
-company's records. A model relating to a contact through anything else gets the
-most recent records and the search box; a third guess would be a rule nobody
-could predict from the screen. Typing replaces the list with a plain
-`name_search`, so the seeding is a head start and never a filter to escape.
+**Step two, the record.** Odoo's own `SelectCreateDialog` over the model's list
+view: the search bar, the filters, the columns and the paging every many2one
+on the database already opens, so a quote is found here the way quotes are
+found everywhere else. `link_scope(model, partner_id)` adds the head start: a
+domain for the correspondent's own records, which the client hands the dialog
+as a filter facet, on by default and one click to remove. Mail from
+`bart@vandermolen.test`, on a quote, opens on Vandermolen's quotes. Two
+relations count and only two — a `partner_id` at a contact, or an `email_from`
+— read against the *commercial* partner, because mail from one employee is
+about the company's records. A model relating to a contact through anything
+else opens on the plain list; a third guess would be a rule nobody could
+predict from the screen. Creating a record from the picker stays off: linking
+is about where mail belongs, and a record invented to hold it is a different
+decision.
 
 Both steps take the model from the caller, so both check it the same way:
 a chatter to carry the mail, and `write` on the model, because putting

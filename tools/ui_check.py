@@ -46,6 +46,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The width a real desk monitor has. The layout bug that started all this was
 # invisible at 1440 and obvious here.
 WIDE = 2000
+# Odoo's own record picker (`SelectCreateDialog`), which step two of the
+# link picker and New Email open: the modal that holds its list.
+ODOO_PICKER = '.modal:has(.o_select_create_dialog_content)'
 # A step is a name, an answer and the way to change it. Wider than this and it
 # stops being one line the eye can cross.
 MAX_STEP_WIDTH = 800
@@ -401,14 +404,15 @@ class Checks:
         else:
             self.shot('inbox-new-email.png')
             rows[0].click()          # step one: the kind of record
-            page.wait_for_timeout(1500)
-            records = page.query_selector_all(
-                '.o_mailpro_link_dialog .o_mailpro_link_row')
-            if not records:
+            # Step two is Odoo's own record picker over the model's list.
+            try:
+                page.wait_for_selector(ODOO_PICKER + ' .o_data_row', timeout=15000)
+            except Exception:
                 self.fail('New Email step two offers no records')
                 return
+            records = page.query_selector_all(ODOO_PICKER + ' .o_data_row')
             picked = records[0].inner_text().strip()
-            records[0].click()       # step two: the record itself
+            records[0].query_selector('.o_data_cell').click()  # step two: the record
             # The composer opens in the conversation pane, the same one a
             # reply uses. A regression here is New Email having gone back to
             # being a popup over the Inbox.
@@ -1241,10 +1245,10 @@ class Checks:
         if '%' in text or '0.6' in text:
             self.fail(f'the suggestion shows a score: "{text}"')
 
-        # The picker: two steps, each a search box over a list, and nothing
-        # on screen until somebody asks for it. Worth a browser because both
-        # steps are an RPC per keystroke and a Python test sees neither the
-        # dialog nor the step it leaves behind.
+        # The picker: our own list of the kinds of record, then Odoo's own
+        # record picker, and nothing on screen until somebody asks for it.
+        # Worth a browser because a Python test sees neither dialog nor the
+        # facet the second one opens with.
         if page.query_selector('.o_mailpro_link_dialog'):
             self.fail('the link picker is open on a screen nobody asked')
         opener = page.query_selector('.o_mailpro_relink_toggle')
@@ -1263,31 +1267,44 @@ class Checks:
         if not models:
             self.fail('step one of the picker opened with nothing in it')
             return
+        # The kinds of record wear the tile of the app that opens them, the
+        # way the Linked-to chips do. A contact is always on the list and
+        # Contacts always has a tile, so at least one row must carry one.
+        if not dialog.query_selector('.o_mailpro_link_icon img'):
+            self.fail('no kind of record in the picker wears an app icon')
         self.shot('inbox-link-models.png')
 
-        # Step two: the records of the model just picked, seeded from the
-        # correspondent. Seeded, so the list must not be empty before anybody
-        # has typed -- an empty second step is the bug this replaced.
+        # Step two: Odoo's own record picker over the model just picked, with
+        # its search bar and filters, opened on the correspondent's records
+        # through a facet the reader can take off. Seeded, so the list must
+        # not be empty before anybody has typed -- an empty second step is
+        # the bug the previous picker had.
         models[0].click()
-        page.wait_for_timeout(1200)
-        if not dialog.query_selector('.o_mailpro_link_search'):
-            self.fail('step two of the picker has no search box')
-        if not dialog.query_selector('.o_mailpro_link_back'):
-            self.fail('step two of the picker cannot go back to the models')
-        if not dialog.query_selector_all('.o_mailpro_link_row'):
+        try:
+            page.wait_for_selector(ODOO_PICKER + ' .o_data_row', timeout=15000)
+        except Exception:
             self.fail('step two opened empty instead of on the correspondent')
+            return
+        if page.query_selector('.o_mailpro_link_dialog'):
+            self.fail('step one is still open under step two')
+        picker = page.query_selector(ODOO_PICKER)
+        if not picker.query_selector('.o_searchview input'):
+            self.fail('step two of the picker has no search bar')
+        if not picker.query_selector('.o_searchview_facet'):
+            self.fail('step two opened without the correspondent as a facet')
         self.shot('inbox-link-records.png')
 
         # Typing searches rather than filtering what is drawn: a term that
         # matches nothing has to reach the server and come back empty.
-        page.fill('.o_mailpro_link_search', 'zzzzgeenmatch')
+        page.fill(ODOO_PICKER + ' .o_searchview input', 'zzzzgeenmatch')
+        page.keyboard.press('Enter')
         page.wait_for_timeout(1500)
-        if dialog.query_selector_all('.o_mailpro_link_row'):
+        if page.query_selector_all(ODOO_PICKER + ' .o_data_row'):
             self.fail('the record search answers rows for a term nothing matches')
-        page.keyboard.press('Escape')
+        page.click(ODOO_PICKER + ' .o_form_button_cancel')
         page.wait_for_timeout(400)
-        if page.query_selector('.o_mailpro_link_dialog'):
-            self.fail('the link picker does not close')
+        if page.query_selector(ODOO_PICKER):
+            self.fail('the record picker does not close')
         self.error_free('opening the link picker')
 
         self.shot('inbox-unlinked.png')
