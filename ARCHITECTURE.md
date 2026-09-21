@@ -298,7 +298,7 @@ drift from the chatter. The screen it serves is designed in
 a clause on every list query -- the folders, the counts, the rows -- and on
 none of the pane's. Both mailboxes on a thread sync it, and the Message-ID
 dedup leaves each message in whichever one fetched it first, so a thread two
-colleagues are on lands half in each; 19.0.15.1.0 stopped `read_conversation`
+colleagues are on lands half in each; 19.0.15.2.0 stopped `read_conversation`
 filtering by mailbox, which had been cutting that thread along a line the
 reader cannot see. Nothing is widened by it: the pane runs without `sudo()`,
 so every message it adds is one the reader may read anyway. A thread that
