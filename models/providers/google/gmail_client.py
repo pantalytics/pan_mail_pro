@@ -610,6 +610,7 @@ class GoogleGmailClient(models.AbstractModel):
         payload = raw.get('payload') or {}
         headers = self._headers_dict(payload)
         body_html, body_is_html = self._extract_body(payload)
+        body_html, body_is_html = self.normalize_body(body_html, body_is_html)
         label_ids = raw.get('labelIds') or []
 
         return {
