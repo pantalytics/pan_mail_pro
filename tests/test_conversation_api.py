@@ -474,6 +474,74 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(thread['files'], {'ids': [], 'store': {}})
         self.assertEqual(thread['activities'], [])
 
+    # -------------------------------------------------- the reply we sent
+
+    def _sent_reply(self, subject='Re: Offerte', message_type='comment',
+                    is_internal=False):
+        """A reply written on this screen: a chatter post that went out.
+
+        Odoo types every chatter post `comment`, or `auto_comment` when a
+        template wrote it. Nothing gives it `message_type = 'email'` -- the
+        sync reserves that for what it imported -- so `x_direction`, stamped
+        by `mail.mail` once the provider accepted it, is the only column that
+        says this mail left the building.
+        """
+        return self.env['mail.message'].create({
+            'model': 'crm.lead',
+            'res_id': self.lead.id,
+            'message_type': message_type,
+            'is_internal': is_internal,
+            'subject': subject,
+            'body': '<p>De levertijd is drie weken.</p>',
+            'x_direction': 'outgoing',
+            'x_mailbox_id': self.mailbox.id,
+        })
+
+    def test_a_reply_this_screen_sent_is_in_the_conversation(self):
+        """The one message the reader looks for after pressing Send."""
+        self._mail()
+        self._sent_reply()
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual([m['subject'] for m in thread['messages']],
+                         ['Re: Offerte', 'Offerte'])
+        self.assertEqual([m['kind'] for m in thread['messages']],
+                         ['mail', 'mail'])
+
+    def test_a_reply_this_screen_sent_is_in_sent(self):
+        """Sent is where somebody looks when the conversation does not show
+        it, so it has to be the same answer."""
+        self._sent_reply()
+        rows = self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id, folder='sent')
+        self.assertEqual([row['subject'] for row in rows], ['Re: Offerte'])
+        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id)['folders']}
+        self.assertEqual(counts['sent'], 1)
+
+    def test_a_template_mail_is_correspondence_too(self):
+        """A quote sent from the record is an `auto_comment`, and the customer
+        reads it as mail like any other."""
+        self._sent_reply(subject='Offerte S00031', message_type='auto_comment')
+        rows = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)
+        self.assertEqual([row['subject'] for row in rows], ['Offerte S00031'])
+
+    def test_a_note_that_was_mailed_to_followers_is_still_a_note(self):
+        """Odoo mails an internal note to the followers, so it goes out too --
+        and an assignment notification with it. Neither is correspondence."""
+        self._mail()
+        self._sent_reply(subject='Marge is krap', is_internal=True)
+        self._sent_reply(subject='Toegewezen', message_type='user_notification')
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual([m['subject'] for m in thread['messages']], ['Offerte'])
+
+    def test_door_1_counts_the_reply_it_sent(self):
+        """Open in mail reads the same definition, or the button disagrees
+        with the screen it opens."""
+        self._mail()
+        self._sent_reply()
+        door = self.Conversation.record_conversations('crm.lead', self.lead.id)
+        self.assertEqual(door['here'], 2)
+
     # ----------------------------------------------------------------- access
 
     def _mailbox_manager(self, login):

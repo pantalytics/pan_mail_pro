@@ -127,6 +127,12 @@ ROUTING_RULES = {
     'subject_participants': 'The same subject and the same people',
 }
 
+# The chatter posts that are correspondence once they have gone out. A reply
+# written on this screen is Odoo's own chatter post, so it is a `comment`, or
+# an `auto_comment` when a template wrote it. Nothing else a chatter produces
+# is a mail somebody typed.
+SENT_TYPES = ('comment', 'auto_comment')
+
 
 class PanMailConversation(models.AbstractModel):
     """Queries behind the conversation view. No table, no stored fact."""
@@ -138,14 +144,34 @@ class PanMailConversation(models.AbstractModel):
     # The domain every folder is built from
     # ------------------------------------------------------------------
 
-    def _base_domain(self, mailbox_id=None, partner_id=None, search=None):
-        """Emails this user may read, optionally narrowed to one mailbox.
+    def _mail_domain(self):
+        """What this screen counts as correspondence.
 
-        `message_type = 'email'` is what keeps internal notes out of the list
-        and out of the Mail tab. They are one tab away, in Everything, which
-        is where the chatter's history went when the record pane lost it.
+        `message_type = 'email'` is the mail the sync imported, and it is what
+        keeps internal notes out of the list and out of the Mail tab. They are
+        one tab away, in Everything, which is where the chatter's history went
+        when the record pane lost it.
+
+        It is not the whole answer, because a reply written here never gets
+        that type: it is a chatter post, and Odoo types every chatter post
+        `comment` (or `auto_comment` for a template). The only column that
+        says it left the building is `x_direction`, which `mail.mail` stamps
+        once the provider accepted it. Asking for the type alone hid every
+        answer this module sent from the conversation it was sent in, from the
+        Sent folder, and from every count on this screen.
+
+        `is_internal` is what keeps the notes out of the second branch: a note
+        posted to followers is mailed to them, so it is outgoing too, and it
+        is not correspondence.
         """
-        domain = [('message_type', '=', 'email')]
+        return ['|', ('message_type', '=', 'email'),
+                '&', '&', ('x_direction', '=', 'outgoing'),
+                ('message_type', 'in', SENT_TYPES),
+                ('is_internal', '=', False)]
+
+    def _base_domain(self, mailbox_id=None, partner_id=None, search=None):
+        """Mail this user may read, optionally narrowed to one mailbox."""
+        domain = self._mail_domain()
         if mailbox_id:
             domain.append(('x_mailbox_id', '=', mailbox_id))
         if partner_id:
@@ -538,8 +564,7 @@ class PanMailConversation(models.AbstractModel):
         """
         self._check_caller()
         Message = self.env['mail.message']
-        base = [
-            ('message_type', '=', 'email'),
+        base = self._mail_domain() + [
             ('model', '=', model),
             ('res_id', '=', res_id),
         ]
@@ -724,9 +749,9 @@ class PanMailConversation(models.AbstractModel):
         """How many emails sit on these records, in one grouped query."""
         wanted = {(row['model'], row['res_id']) for row in records}
         groups = self.env['mail.message']._read_group(
-            [('message_type', '=', 'email'),
-             ('model', 'in', list({row['model'] for row in records})),
-             ('res_id', 'in', list({row['res_id'] for row in records}))],
+            self._mail_domain() + [
+                ('model', 'in', list({row['model'] for row in records})),
+                ('res_id', 'in', list({row['res_id'] for row in records}))],
             groupby=['model', 'res_id'], aggregates=['__count'],
         )
         # The two `in` clauses are a cross product, so only the pairs actually
