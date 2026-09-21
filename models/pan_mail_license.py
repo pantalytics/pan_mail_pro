@@ -31,10 +31,16 @@ per-folder cursor catches up afterwards, so no mail is lost.
 
 **What leaves the database** is `_heartbeat_body()`, and the whole list is in
 that one method: the database id, two version strings, how many accounts are
-connected, whether sync is healthy, and for the last 24 hours the four link
-coverage counts, per matching rule how often it decided and how often a person
-overruled it, and how many conversations were linked by hand. Counts and rule
-names. No address, subject, body or name.
+connected, whether sync is healthy, and for the last 24 hours how many mails
+were sent and received, the four link coverage counts, per matching rule how
+often it decided and how often a person overruled it, and how many
+conversations were linked by hand. Counts and rule names. No address, subject,
+body or name.
+
+**Usage and billing are read at Pantalytics, not here.** `dashboard_url()` is
+the link the settings page offers, and there is no usage screen in Odoo: a
+second place to read the number is a second number to keep true, and the one
+that decides the invoice is the one our own server counted.
 
 **What the answer carries besides the licence** is the workspace's "Help
 improve Mail Pro" switch: `improve`, the `improve_host` our proxy answers on,
@@ -84,6 +90,11 @@ ENV_URL = 'PAN_MAIL_PRO_LICENSE_URL'
 ENV_PUBLIC_KEY = 'PAN_MAIL_PRO_LICENSE_PUBLIC_KEY'
 
 TIMEOUT = 15
+
+# Where usage and billing are read. The page that carries the counts this
+# heartbeat sends, so the link lands on the number rather than on a home page
+# somebody then has to navigate from.
+DASHBOARD_PATH = '/instances'
 
 # The server accepts this many rule rows; the ladder has six, so the cap only
 # guards against a rule name that is somehow not one of ours.
@@ -575,9 +586,19 @@ class PanMailLicense(models.Model):
     def _heartbeat_body(self):
         """Everything this database tells Pantalytics. The whole list.
 
-        Counts, flags and rule names only. Sent and received counts and error
-        codes are left out until there is a dashboard that shows them: a
-        number nobody reads is still a number that left the customer's server.
+        Counts, flags and rule names only.
+
+        **Sent and received are two numbers, not a list of mail.** They are
+        what the plan is metered on and what the Odoo instances page draws a
+        fortnight of, so the customer and we read the same number. They are
+        counted off `mail.message.x_direction`, which is set on every mail
+        this module carried and on nothing else: a note, a system log and mail
+        from before Mail Pro are all invisible to it. One message is one mail
+        here, while the limit is metered per `mail.mail` (one per recipient),
+        so a mail to three people counts once in this number and three times
+        against the cap -- the throttle keeps its own counter for that
+        (mail-pro-admin `docs/plans/mail-pro-paid.md`), and this is the trend,
+        not the meter.
 
         The coverage counts and the rule counts are the two numbers a decision
         does wait on: whether linking gets better per release, and which rule
@@ -589,12 +610,17 @@ class PanMailLicense(models.Model):
         mailboxes = Mailbox.search_count([])
         since = fields.Datetime.now() - timedelta(hours=24)
         rules = self.env['pan.mail.routing.log'].rule_counts_since(since)
+        Message = self.env['mail.message'].sudo()
         return {
             'db_uuid': self._db_uuid(),
             'module_version': self._module_version(),
             'odoo_version': release.major_version,
             'mailboxes_connected': self.env['pan.mail.account'].sudo().search_count(
                 [('connected', '=', True)]),
+            'mails_sent_24h': Message.search_count(
+                [('x_direction', '=', 'outgoing'), ('date', '>=', since)]),
+            'mails_received_24h': Message.search_count(
+                [('x_direction', '=', 'incoming'), ('date', '>=', since)]),
             'sync_ok': (not Mailbox.search_count([('state', '=', 'error')])
                         if mailboxes else None),
             'coverage': self.env['pan.mail.coverage'].counts_since(since),
@@ -627,6 +653,14 @@ class PanMailLicense(models.Model):
         if database_is_neutralized(self.env):
             raise UserError(_('This Odoo instance is a neutralized copy. It cannot be '
                               'linked to a Pantalytics account.'))
+
+    @api.model
+    def dashboard_url(self):
+        """The Pantalytics page that carries this instance's usage and its
+        plan. One link, always the same, whether or not this Odoo is connected
+        yet: a person who lost their way back needs it most when the status
+        line here says nothing."""
+        return _server_url() + DASHBOARD_PATH
 
     @api.model
     def _db_uuid(self):

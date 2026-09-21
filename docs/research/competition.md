@@ -112,6 +112,13 @@ Chatwoot once, Brevo once as a sending workaround.
 | [Front](https://front.com) | $25 Starter (max 10 seats), $65 Professional, $105 Enterprise |
 | [Chatwoot](https://www.chatwoot.com/pricing) | $0 Hacker, $19 Startups, $39 Business, $99 Enterprise. Self-hosted community edition is free |
 
+Re-checked 2026-09-21: the three figures above are unchanged. What the check
+added is the free end, which is what our own Free tier is priced against.
+Missive runs an unadvertised free plan (3 users, 15 days of history), Chatwoot's
+Hacker plan is free for 2 agents with 500 conversations a month, and Brevo still
+gives away 300 sends a day. Free tiers in this category are sized to carry one
+or two people doing real work, not to be a demo.
+
 Read that against the store table. A five-person sales team on Missive
 Productive is $120 a month, about $1,440 a year, every year. The most expensive
 module in the Odoo store is $449 once. **The people with this problem are
