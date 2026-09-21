@@ -1452,13 +1452,21 @@ class Checks:
                 self.fail(f'a conversation of {said} has no chevron')
 
         group = None
-        for row in rows:
+        group_at = -1
+        for index, row in enumerate(rows):
             if row.query_selector('.o_mailpro_twist:not(.o_mailpro_twist_blank)'):
-                group = row
+                group, group_at = row, index
                 break
         if not group:
             self.fail('no seeded conversation holds more than one mail')
             return
+
+        # Opening a conversation unfolds it, and earlier steps in this run
+        # have opened one. Start from folded, or the first click below is a
+        # fold and everything after it reads backwards.
+        if group.query_selector('.o_mailpro_child'):
+            group.query_selector('.o_mailpro_twist').click()
+            page.wait_for_timeout(600)
 
         expected = int(group.query_selector('.o_mailpro_muted')
                        .inner_text().strip().split()[0])
@@ -1507,6 +1515,51 @@ class Checks:
         page.wait_for_timeout(600)
         if group.query_selector_all('.o_mailpro_child'):
             self.fail('the chevron did not fold the conversation back')
+
+        # And the click that opens a conversation unfolds it too, the way
+        # Outlook does: the thread you are reading is the one on screen. The
+        # chevron is then only the way to look without opening.
+        group.query_selector('.o_mailpro_item').click()
+        try:
+            page.wait_for_selector('.o_mailpro_child', timeout=15000)
+        except Exception:
+            self.fail('opening a conversation did not unfold it')
+            return
+        page.wait_for_timeout(600)
+        children = group.query_selector_all('.o_mailpro_child')
+        if len(children) != expected:
+            self.fail(f'opening a conversation unfolded {len(children)} mails, '
+                      f'the row says {expected}')
+
+        # They start where the sender's name starts on the row above: past
+        # the chevron and past the picture, so the thread reads as one column
+        # and not as a second list shifted left.
+        if children:
+            name = group.query_selector('.o_mailpro_item .o_mailpro_from')
+            child_name = children[0].query_selector('.o_mailpro_from')
+            if name and child_name:
+                head_x = name.bounding_box()['x']
+                child_x = child_name.bounding_box()['x']
+                if abs(head_x - child_x) > 2:
+                    self.fail(f'an unfolded mail starts at {child_x:.0f}px, '
+                              f'the sender above it at {head_x:.0f}px')
+        self.shot('inbox-unfolded-on-open.png')
+
+        # One at a time: opening the next conversation folds this one, or the
+        # list grows a row for every thread the reader has ever looked at.
+        other = None
+        # By position, not by handle: two handles on the same element do not
+        # compare equal, so a handle test would pick the row it just left.
+        for index, row in enumerate(page.query_selector_all('.o_mailpro_group')):
+            if index != group_at and row.query_selector(
+                    '.o_mailpro_twist:not(.o_mailpro_twist_blank)'):
+                other = row
+                break
+        if other:
+            other.query_selector('.o_mailpro_item').click()
+            page.wait_for_timeout(1200)
+            if group.query_selector_all('.o_mailpro_child'):
+                self.fail('opening another conversation left the first unfolded')
         self.error_free('unfolding a conversation')
 
     def panes(self):
