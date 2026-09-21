@@ -1180,11 +1180,32 @@ class Checks:
             self.fail('the list stayed on screen under the conversation on a phone')
         self.shot('inbox-phone.png')
 
-        # The record, over the conversation, and the way back from it.
+        # The head is chrome and the mail is the screen. It ran to three
+        # lines of subject, two of correspondent and two of Linked-to, which
+        # left the mail a third of a phone -- so what it may take is pinned
+        # here rather than left to the next screenshot somebody looks at.
+        head = page.query_selector('.o_mailpro_conversation_head')
+        if not head:
+            self.fail('the phone conversation has no head')
+        else:
+            share = head.bounding_box()['height'] / 844
+            if share > 0.3:
+                self.fail('the phone conversation head takes %d%% of the screen'
+                          % (share * 100))
+            title = page.query_selector('.o_mailpro_conversation_title')
+            if title and title.bounding_box()['height'] > 30:
+                self.fail('the phone subject wraps instead of truncating')
+
+        # The record, over the conversation, and the way back from it. It
+        # wears the chevron the record's own divider wears on a wider screen,
+        # pointing the way the boundary moves to bring the record in.
         button = page.query_selector('.o_mailpro_odoo_record_button')
         if not button:
             self.fail('the phone conversation head offers no way to the record')
         else:
+            if not button.query_selector('.fa-chevron-left'):
+                self.fail('the way to the record on a phone is not the '
+                          "divider's own chevron")
             button.click()
             page.wait_for_timeout(800)
             record = page.query_selector('.o_mailpro_odoo_record')
@@ -1452,13 +1473,21 @@ class Checks:
                 self.fail(f'a conversation of {said} has no chevron')
 
         group = None
-        for row in rows:
+        group_at = -1
+        for index, row in enumerate(rows):
             if row.query_selector('.o_mailpro_twist:not(.o_mailpro_twist_blank)'):
-                group = row
+                group, group_at = row, index
                 break
         if not group:
             self.fail('no seeded conversation holds more than one mail')
             return
+
+        # Opening a conversation unfolds it, and earlier steps in this run
+        # have opened one. Start from folded, or the first click below is a
+        # fold and everything after it reads backwards.
+        if group.query_selector('.o_mailpro_child'):
+            group.query_selector('.o_mailpro_twist').click()
+            page.wait_for_timeout(600)
 
         expected = int(group.query_selector('.o_mailpro_muted')
                        .inner_text().strip().split()[0])
@@ -1507,6 +1536,51 @@ class Checks:
         page.wait_for_timeout(600)
         if group.query_selector_all('.o_mailpro_child'):
             self.fail('the chevron did not fold the conversation back')
+
+        # And the click that opens a conversation unfolds it too, the way
+        # Outlook does: the thread you are reading is the one on screen. The
+        # chevron is then only the way to look without opening.
+        group.query_selector('.o_mailpro_item').click()
+        try:
+            page.wait_for_selector('.o_mailpro_child', timeout=15000)
+        except Exception:
+            self.fail('opening a conversation did not unfold it')
+            return
+        page.wait_for_timeout(600)
+        children = group.query_selector_all('.o_mailpro_child')
+        if len(children) != expected:
+            self.fail(f'opening a conversation unfolded {len(children)} mails, '
+                      f'the row says {expected}')
+
+        # They start where the sender's name starts on the row above: past
+        # the chevron and past the picture, so the thread reads as one column
+        # and not as a second list shifted left.
+        if children:
+            name = group.query_selector('.o_mailpro_item .o_mailpro_from')
+            child_name = children[0].query_selector('.o_mailpro_from')
+            if name and child_name:
+                head_x = name.bounding_box()['x']
+                child_x = child_name.bounding_box()['x']
+                if abs(head_x - child_x) > 2:
+                    self.fail(f'an unfolded mail starts at {child_x:.0f}px, '
+                              f'the sender above it at {head_x:.0f}px')
+        self.shot('inbox-unfolded-on-open.png')
+
+        # One at a time: opening the next conversation folds this one, or the
+        # list grows a row for every thread the reader has ever looked at.
+        other = None
+        # By position, not by handle: two handles on the same element do not
+        # compare equal, so a handle test would pick the row it just left.
+        for index, row in enumerate(page.query_selector_all('.o_mailpro_group')):
+            if index != group_at and row.query_selector(
+                    '.o_mailpro_twist:not(.o_mailpro_twist_blank)'):
+                other = row
+                break
+        if other:
+            other.query_selector('.o_mailpro_item').click()
+            page.wait_for_timeout(1200)
+            if group.query_selector_all('.o_mailpro_child'):
+                self.fail('opening another conversation left the first unfolded')
         self.error_free('unfolding a conversation')
 
     def panes(self):
@@ -1753,10 +1827,10 @@ class Checks:
         """Read and unread, and the correction reaching the database.
 
         Three things a Python test cannot see. That opening a conversation
-        marks it read without anybody clicking anything, that Mark unread puts
-        the dot back on the row the reader is looking at rather than
-        reshuffling the list under them, and that both of those are a column
-        in the database afterwards and not a class on a div.
+        marks it read without anybody clicking anything, that the read-state
+        button puts a visible dot back on the row the reader is looking at
+        rather than reshuffling the list under them, and that both of those
+        are a column in the database afterwards and not a class on a div.
         """
         action = dict(module_menu_actions(self.call)).get('Inbox')
         if not action:
@@ -1783,10 +1857,13 @@ class Checks:
         if active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
             self.fail('the conversation that is open still reads as unread')
 
-        button = page.query_selector('.o_mailpro_mark_unread')
+        button = page.query_selector('.o_mailpro_read_toggle')
         if not button:
             self.fail('an open conversation offers no way to mark it unread')
             return
+        if button.get_attribute('title') != 'Mark unread':
+            self.fail('the read-state button does not offer to mark a read '
+                      'conversation unread')
         before = unread_in_db()
         button.click()
         page.wait_for_timeout(1500)
@@ -1796,21 +1873,31 @@ class Checks:
             return
         if not active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
             self.fail('marking unread left the row reading as read')
+        # The class is not the point: the reader has to see it. A dot, because
+        # the row they marked is also the highlighted one and one font weight
+        # of difference on a highlighted row is invisible.
+        if not active.query_selector('.o_mailpro_unread_dot'):
+            self.fail('the row marked unread shows no unread dot')
         after = unread_in_db()
         if after <= before:
             self.fail('marking unread wrote nothing to the database')
         self.shot('inbox-unread.png')
 
-        # Opening it again is how it becomes read: there is one button here
-        # and not a toggle, because reading a mail is what reads a mail.
-        active.click()
+        # The same button is the way back, and it says so. A button whose
+        # second click does nothing is the bug this replaced.
+        button = page.query_selector('.o_mailpro_read_toggle')
+        if not button or button.get_attribute('title') != 'Mark read':
+            self.fail('the read-state button does not offer to read an unread '
+                      'conversation again')
+            return
+        button.click()
         page.wait_for_timeout(1500)
         active = page.query_selector('.o_mailpro_item_active')
         if active and active.evaluate(
                 'el => el.classList.contains("o_mailpro_item_unread")'):
-            self.fail('re-opening the conversation did not mark it read again')
+            self.fail('marking it read again left the row reading as unread')
         if unread_in_db() != before:
-            self.fail('re-opening the conversation did not clear it in the database')
+            self.fail('marking it read again did not clear it in the database')
         self.error_free('Inbox read state')
 
     # -- The provider form ----------------------------------------------------
@@ -1874,6 +1961,91 @@ class Checks:
                        + self.MICROSOFT_FIELDS + self.GOOGLE_ONLY):
             if hidden in text:
                 self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
+
+    # -- Status by absence ----------------------------------------------------
+
+    def mailbox_status(self):
+        """A working mailbox offers nothing, a stopped one explains itself.
+
+        The form used to carry Sync Now and Send Test Email in its header on
+        every mailbox, and its one status counter read `last_sync_date` under
+        the label "Last synced" -- the fetch cursor, which on a quiet mailbox
+        stands still for weeks while every run completes. So the screen could
+        not tell the reader it was fine, and had two buttons where the answer
+        belonged.
+
+        Both halves are the check, and the Inbox half is counted rather than
+        merely found: absence is the whole interface, so a mark that is always
+        drawn would pass a test that only looks for one.
+        """
+        action = dict(module_menu_actions(self.call)).get('Mailboxes')
+        inbox = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            self.fail('there is no Mailboxes menu')
+            return
+        rows = self.call('pan.mail.mailbox', 'search_read',
+                         [('is_notification_mailbox', '=', False)],
+                         fields=['email', 'state', 'last_check_date'], limit=1)
+        if not rows:
+            self.fail('the seed has no mailbox to inspect')
+            return
+        mailbox_id, was = rows[0]['id'], rows[0]['state']
+        url = f'{self.base}/odoo/action-{action}/{mailbox_id}'
+
+        def marks():
+            """How many mailboxes the Inbox is currently marking."""
+            if not inbox:
+                return None
+            page = self.page
+            page.goto(f'{self.base}/odoo/action-{inbox}', wait_until='domcontentloaded')
+            try:
+                page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
+            except Exception:
+                self.fail('the Inbox did not render for the status check')
+                return None
+            page.wait_for_timeout(2500)
+            return len(page.query_selector_all('.o_mailpro_mailbox_alert'))
+
+        try:
+            # Healthy: a run finished a moment ago and nothing is wrong.
+            self.call('pan.mail.mailbox', 'write', [mailbox_id],
+                      {'state': 'active', 'error_message': False,
+                       'sync_failure_count': 0,
+                       'last_check_date': datetime.datetime.now(
+                           datetime.UTC).strftime('%Y-%m-%d %H:%M:%S')})
+            quiet = marks()
+            text = self.form_text(url)
+            self.shot('mailbox-healthy.png')
+            for gone in ('Sync Now', 'Send Test Email', 'Try again'):
+                if gone in text:
+                    self.fail(f'a working mailbox still offers "{gone}"')
+            if 'Last checked' not in text:
+                self.fail('the mailbox form does not say when it was last checked')
+            if 'Last synced' in text:
+                self.fail('the form still labels the fetch cursor "Last synced"')
+
+            # Stale: the heartbeat is old enough that nobody is reading this
+            # mailbox, with no error recorded anywhere. That combination used
+            # to be completely invisible on every screen in the module.
+            self.call('pan.mail.mailbox', 'write', [mailbox_id],
+                      {'last_check_date': '2020-01-01 00:00:00'})
+            text = self.form_text(url)
+            self.shot('mailbox-stale.png')
+            if 'Try again' not in text:
+                self.fail('a mailbox that stopped being read offers no way back')
+            if 'not being read' not in text:
+                self.fail('a mailbox that stopped being read does not say so')
+
+            loud = marks()
+            if quiet is not None and loud is not None:
+                if loud != quiet + 1:
+                    self.fail(
+                        f'the Inbox marked {quiet} mailbox(es) while this one was '
+                        f'healthy and {loud} once it stopped, expected one more')
+                self.shot('inbox-mailbox-stale.png')
+        finally:
+            self.call('pan.mail.mailbox', 'write', [mailbox_id],
+                      {'state': was, 'last_check_date': False})
 
     # -- The connect banner ---------------------------------------------------
 
@@ -2401,6 +2573,7 @@ def main():
         checks.read_state()
         checks.improve()
         checks.provider_form()
+        checks.mailbox_status()
         checks.connect_banner()
         browser.close()
 

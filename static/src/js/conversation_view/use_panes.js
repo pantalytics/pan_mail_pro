@@ -191,13 +191,21 @@ export function usePanes() {
      * Whether a pane is drawn at no width right now. Three shapes, three
      * reasons: a wide screen folds what a button folded, a tablet folds
      * whichever of the conversation and the record is not on, and a phone
-     * folds the mailbox list until the drawer is asked for.
+     * folds the mailbox list until the drawer is asked for and the record
+     * until it is zoomed.
      */
     function isFolded(name) {
         if (state.zoom) {
             return false;
         }
         if (state.small) {
+            // A phone shows one pane, so the mailbox list is folded until the
+            // drawer is asked for and the Odoo record is folded until it is
+            // zoomed -- which is what the head's chevron reads to know which
+            // way it points.
+            if (name === "odoo_record") {
+                return true;
+            }
             return name === "mailbox_list" && !state.mailboxListOpen;
         }
         if (state.narrow && name === "odoo_record") {
