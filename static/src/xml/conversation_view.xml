@@ -35,21 +35,30 @@
                 reply uses.
             -->
             <div class="o_mailpro_topbar d-flex align-items-center gap-2">
-                <!--
-                    The mailbox list from a button, on a phone only, where the mailbox list
-                    is a drawer over the list rather than a pane with a
-                    divider. Everywhere else the divider is the control: its
-                    chevron folds the pane and the strip it leaves brings it
-                    back, the same for all three panes, and a second control
-                    for one of them is chrome.
-                -->
-                <button type="button" class="o_mailpro_mailbox_list_button flex-shrink-0"
-                        t-att-aria-expanded="panes.folded('mailbox_list') ? 'false' : 'true'"
-                        t-att-aria-label="panes.folded('mailbox_list') ? 'Show mailboxes' : 'Hide mailboxes'"
-                        t-on-click="() => panes.toggleMailboxList()">
-                    <i class="fa fa-bars" aria-hidden="true"/>
-                </button>
-                <div class="o_mailpro_topbar_start d-flex align-items-center">
+                <div class="o_mailpro_topbar_start d-flex align-items-center gap-2">
+                    <!--
+                        Which panes are showing: the mailboxes, the list, the
+                        record, in the order they sit. Pressed is showing.
+                        They live here rather than on the dividers, where
+                        they used to float over the conversation's own
+                        header: a row of buttons over a header that already
+                        carries a title, a chip and a tab strip is a second
+                        menu bar stacked on the first. Top left is also where
+                        every mail client has kept the mailboxes since there
+                        were mail clients. The divider stays what it looks
+                        like: a width to drag.
+                    -->
+                    <div class="o_mailpro_pane_toggles d-flex align-items-center flex-shrink-0">
+                        <button t-foreach="panes.toggles()" t-as="pane" t-key="pane"
+                                type="button"
+                                t-attf-class="o_mailpro_pane_toggle o_mailpro_pane_toggle_{{pane}} {{ panes.folded(pane) ? '' : 'o_mailpro_pane_toggle_on' }}"
+                                t-att-aria-pressed="panes.folded(pane) ? 'false' : 'true'"
+                                t-att-aria-label="panes.toggleLabel(pane)"
+                                t-att-title="panes.toggleLabel(pane)"
+                                t-on-click="() => panes.togglePane(pane)">
+                            <i class="fa" t-att-class="panes.paneIcon(pane)" aria-hidden="true"/>
+                        </button>
+                    </div>
                     <button type="button" class="btn btn-primary btn-sm o_mailpro_new"
                             t-on-click="() => this.newEmail()">
                         <i class="fa fa-pencil-square-o me-1" aria-hidden="true"/>New Email
@@ -75,8 +84,7 @@
             </div>
 
             <div class="o_mailpro_panes d-flex flex-grow-1"
-                 t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom,
-                                'o_mailpro_odoo_record_folded': panes.toggleSide('odoo_record') === 'left' }">
+                 t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom }">
 
                 <!--
                     1. where you are: the mailbox, and inside it the folder.
@@ -135,7 +143,7 @@
 
                 <!-- 2. what is waiting -->
                 <div t-if="showConversationList" class="o_mailpro_conversation_list" role="region" aria-label="Conversations"
-                     t-att-class="'o_mailpro_lead_' + panes.lead('conversation_list') + (panes.folded('conversation_list') ? ' o_mailpro_folded' : '')"
+                     t-att-class="{ 'o_mailpro_folded': panes.folded('conversation_list') }"
                      t-att-inert="panes.folded('conversation_list')"
                      t-attf-style="flex-basis: {{panes.state.conversation_list}}px">
 
@@ -253,9 +261,8 @@
 
                 <!-- 3. the conversation -->
                 <div t-if="showConversation" class="o_mailpro_conversation" role="region" aria-label="Conversation"
-                     t-att-class="'o_mailpro_lead_' + panes.lead('conversation')
-                                  + (composer.state.open ? ' o_mailpro_conversation_composing' : '')
-                                  + (panes.folded('conversation') ? ' o_mailpro_folded' : '')"
+                     t-att-class="{ 'o_mailpro_conversation_composing': composer.state.open,
+                                    'o_mailpro_folded': panes.folded('conversation') }"
                      t-att-inert="panes.folded('conversation')">
                     <!--
                         A new mail takes the pane the way a reply does. There
@@ -596,7 +603,7 @@
 
                 <!-- 4. the record: the pane a mail client cannot have -->
                 <div t-if="showOdooRecord" class="o_mailpro_odoo_record"
-                     t-att-class="'o_mailpro_lead_' + panes.lead('odoo_record') + (panes.folded('odoo_record') ? ' o_mailpro_folded' : '')"
+                     t-att-class="{ 'o_mailpro_folded': panes.folded('odoo_record') }"
                      t-att-inert="panes.folded('odoo_record')"
                      role="region" aria-label="Odoo record"
                      t-attf-style="flex-basis: {{panes.state.odoo_record}}px">
@@ -706,41 +713,25 @@
 
     <!--
         One divider, three call sites. It is a separator with a value, so a
-        screen reader reads a width rather than a decoration, and the button
-        on it is a real button: the fold has to be reachable without a mouse
-        and without knowing that double-click resets.
+        screen reader reads a width rather than a decoration, and the arrow
+        keys move it: a width has to be settable without a mouse.
 
-        The button is round and floats on the divider, the way a sidebar's
-        does in the apps people already use. Beside an open pane it is a
-        chevron and folds it; beside a folded one it is that pane's icon and
-        slides it back. On a tablet the record's divider serves two panes and
-        the button swaps them in the column they share.
+        It is a width and nothing else. What shows and what folds is the row
+        of buttons in the top bar, which is on screen whatever is folded, so
+        a divider beside a folded pane has no width to offer and is not
+        drawn at all.
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
-        <div t-if="panes.splitterVisible(divider)" class="o_mailpro_split"
-             t-att-class="'o_mailpro_split_' + divider
-                          + (panes.toggleSide(divider) !== 'center' ? ' o_mailpro_split_folded' : '')"
+        <div t-if="panes.splitterVisible(divider)"
+             t-attf-class="o_mailpro_split o_mailpro_split_{{divider}}"
              role="separator" aria-orientation="vertical" tabindex="0"
              t-att-aria-label="panes.label(divider)"
-             t-att-aria-valuenow="panes.folded(divider) ? 0 : panes.state[divider]"
+             t-att-aria-valuenow="panes.state[divider]"
              t-att-aria-valuemin="panes.panes[divider].min"
              t-att-aria-valuemax="panes.panes[divider].max"
              t-on-pointerdown="(ev) => panes.startDrag(divider, ev)"
              t-on-keydown="(ev) => panes.onKey(divider, ev)"
-             t-on-dblclick="() => panes.reset(divider)">
-            <button t-if="panes.collapsible(divider)" type="button"
-                    class="o_mailpro_split_toggle"
-                    t-att-class="'o_mailpro_split_toggle_' + panes.toggleSide(divider)"
-                    t-att-style="panes.toggleStyle(divider)"
-                    t-att-aria-label="panes.toggleLabel(divider)"
-                    t-att-title="panes.toggleLabel(divider)"
-                    t-att-aria-expanded="panes.folded(divider) ? 'false' : 'true'"
-                    t-on-pointerdown.stop="() => {}"
-                    t-on-dblclick.stop="() => {}"
-                    t-on-click.stop="() => panes.toggle(divider)">
-                <i class="fa" t-att-class="panes.toggleIcon(divider)" aria-hidden="true"/>
-            </button>
-        </div>
+             t-on-dblclick="() => panes.reset(divider)"/>
     </t>
 
     <!--

@@ -12,6 +12,8 @@ from ... import encryption_utils
 from ...mail_provider_client import (
     ERROR_NO_RECIPIENTS, FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
     FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH,
+    ERROR_THROTTLED,
+    ThrottledError,
 )
 
 _logger = logging.getLogger(__name__)
@@ -53,6 +55,8 @@ AADSTS_HINTS = {
 
 # Rate limiting configuration
 MAX_RETRIES = 3
+# Longer than this, the cron does not wait: see _request_with_retry.
+MAX_RETRY_AFTER_SECONDS = 15
 INITIAL_BACKOFF_SECONDS = 2
 
 # Attachment size threshold: Graph API allows max 3MB per direct attachment upload.
@@ -347,10 +351,24 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             _logger.error(f"Failed to refresh token for {account.email}: {error_code} - {error_description}")
 
-            # Check for permanent failures that require re-authentication
-            # invalid_grant: token revoked, expired, or user changed password
-            # invalid_client: app credentials changed
-            permanent_errors = ('invalid_grant', 'invalid_client', 'unauthorized_client')
+            # invalid_client / unauthorized_client: the *application's* secret
+            # is wrong or expired (AADSTS7000222 is the usual one). That is
+            # the admin's problem, not this user's: clearing every user's
+            # refresh token for it disconnected the whole company and made
+            # everybody re-consent after the secret was fixed. Say what is
+            # wrong, keep the tokens.
+            if error_code in ('invalid_client', 'unauthorized_client'):
+                aadsts = re.search(r'AADSTS\d+', error_description or '')
+                hint = AADSTS_HINTS.get(aadsts.group(0)) if aadsts else None
+                raise UserError(_(
+                    'Microsoft refused the application credentials (%s). An '
+                    'administrator checks the Client Secret under Settings, '
+                    'Mail Pro. Your own connection is unchanged.') % (
+                        hint or error_code))
+
+            # invalid_grant: token revoked, expired, or user changed password.
+            # This one is the user's, and only a new consent fixes it.
+            permanent_errors = ('invalid_grant',)
             if error_code in permanent_errors:
                 _logger.warning(f"[OAuth] Permanent token failure for {account.email}, clearing tokens")
                 # Clear invalid tokens so user can reconnect
@@ -567,7 +585,8 @@ class MicrosoftGraphClient(models.AbstractModel):
         This is the standard approach for attachments under 3MB.
         """
         url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/attachments'
-        response = requests.post(url, headers=headers, json=attachment_dict, timeout=30)
+        response = self._request_with_retry(
+            'post', url, headers, timeout=30, json=attachment_dict, idempotent=False)
         response.raise_for_status()
         _logger.info(f"[Graph API] Added attachment '{attachment_dict['name']}' to draft")
 
@@ -605,7 +624,8 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'isInline': is_inline,
             }
         }
-        session_response = requests.post(session_url, headers=headers, json=session_payload, timeout=30)
+        session_response = self._request_with_retry(
+            'post', session_url, headers, timeout=30, json=session_payload)
         session_response.raise_for_status()
         upload_url = session_response.json()['uploadUrl']
 
@@ -653,16 +673,15 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         if reply_to_provider_id:
             try:
-                reply_response = requests.post(
-                    f'{base_url}/{reply_to_provider_id}/createReply',
-                    headers=headers, timeout=30,
+                reply_response = self._request_with_retry(
+                    'post', f'{base_url}/{reply_to_provider_id}/createReply',
+                    headers, timeout=30, idempotent=False,
                 )
                 reply_response.raise_for_status()
                 draft_id = reply_response.json().get('id')
                 if draft_id:
-                    patch_response = requests.patch(
-                        f'{base_url}/{draft_id}',
-                        headers=headers, json=message, timeout=30,
+                    patch_response = self._request_with_retry(
+                        'patch', f'{base_url}/{draft_id}', headers, timeout=30, json=message,
                     )
                     patch_response.raise_for_status()
                     _logger.info(
@@ -679,7 +698,12 @@ class MicrosoftGraphClient(models.AbstractModel):
                     f"sending unthreaded"
                 )
 
-        response = requests.post(base_url, headers=headers, json=message, timeout=30)
+        # Through the retry helper: Exchange Online throttles bursts (a batch
+        # of invitations from notifications@ is exactly one), and a 429 on
+        # the draft used to park the mail in `exception`, which the queue
+        # never retries.
+        response = self._request_with_retry(
+            'post', base_url, headers, timeout=30, json=message, idempotent=False)
         response.raise_for_status()
         return response.json()
 
@@ -907,7 +931,8 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             # Step 3: Send the draft
             send_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/send'
-            send_response = requests.post(send_url, headers=headers, timeout=30)
+            send_response = self._request_with_retry(
+                'post', send_url, headers, timeout=30, idempotent=False)
             send_response.raise_for_status()
 
             _logger.info("[Graph API] Successfully sent email %s", microsoft_message_id)
@@ -919,6 +944,10 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'microsoft_conversation_id': microsoft_conversation_id,
             }
 
+        except ThrottledError as e:
+            # Not a failure: the mail waits for the pause Microsoft asked for.
+            return {'success': False, 'error': str(e), 'error_code': ERROR_THROTTLED,
+                    'retry_after': e.wait}
         except requests.exceptions.RequestException as e:
             error_detail = str(e)
             if hasattr(e, 'response') and e.response is not None:
@@ -1249,9 +1278,15 @@ class MicrosoftGraphClient(models.AbstractModel):
                 pass
         return error_detail
 
-    def _request_with_retry(self, method, url, headers, timeout=30, **kwargs):
+    def _request_with_retry(self, method, url, headers, timeout=30, idempotent=True, **kwargs):
         """
         Execute HTTP request with rate limiting and exponential backoff.
+
+        `idempotent=False` is for a request the server may have carried out
+        before the answer was lost (sending a message, creating a draft or
+        an attachment): it is retried on a 429 only, because a 429 means
+        the request was refused. A timeout on `/send` retried three times
+        is a customer mailed four times.
 
         Handles Microsoft Graph API rate limiting (HTTP 429) by:
         - Reading Retry-After header when present
@@ -1281,10 +1316,20 @@ class MicrosoftGraphClient(models.AbstractModel):
                 # Check for rate limiting
                 if response.status_code == 429:
                     retry_after = response.headers.get('Retry-After')
-                    if retry_after:
-                        wait_time = int(retry_after)
-                    else:
+                    try:
+                        wait_time = int(retry_after) if retry_after else backoff
+                    except ValueError:
+                        # An HTTP-date rather than seconds: back off, do not crash.
                         wait_time = backoff
+                    if wait_time > MAX_RETRY_AFTER_SECONDS:
+                        # Sleeping this long inside the one-minute cron holds
+                        # every other mailbox's turn hostage and, past the
+                        # worker's time limit, rolls the whole run back. The
+                        # mailbox records the throttle instead and the next
+                        # run tries again.
+                        raise ThrottledError(_(
+                            'Microsoft asked to wait %s seconds before more requests '
+                            'for this mailbox. Try again in a minute.') % wait_time, wait_time)
 
                     if attempt < MAX_RETRIES:
                         _logger.warning(f"[Graph API] Rate limited (429), waiting {wait_time}s before retry {attempt + 1}/{MAX_RETRIES}")
@@ -1295,7 +1340,7 @@ class MicrosoftGraphClient(models.AbstractModel):
                         response.raise_for_status()  # Raise on final attempt
 
                 # Check for other server errors that might be transient
-                if response.status_code in (500, 502, 503, 504) and attempt < MAX_RETRIES:
+                if response.status_code in (500, 502, 503, 504) and attempt < MAX_RETRIES and idempotent:
                     _logger.warning(f"[Graph API] Server error ({response.status_code}), retrying in {backoff}s ({attempt + 1}/{MAX_RETRIES})")
                     time.sleep(backoff)
                     backoff *= 2
@@ -1305,7 +1350,7 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             except requests.exceptions.Timeout as e:
                 last_exception = e
-                if attempt < MAX_RETRIES:
+                if attempt < MAX_RETRIES and idempotent:
                     _logger.warning(f"[Graph API] Request timeout, retrying in {backoff}s ({attempt + 1}/{MAX_RETRIES})")
                     time.sleep(backoff)
                     backoff *= 2
@@ -1314,7 +1359,7 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             except requests.exceptions.ConnectionError as e:
                 last_exception = e
-                if attempt < MAX_RETRIES:
+                if attempt < MAX_RETRIES and idempotent:
                     _logger.warning(f"[Graph API] Connection error, retrying in {backoff}s ({attempt + 1}/{MAX_RETRIES})")
                     time.sleep(backoff)
                     backoff *= 2

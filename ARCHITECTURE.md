@@ -80,11 +80,11 @@ that name is the same word in the code, the CSS class, the label and the prose.
 | 3 | **conversation** | `conversation` | `o_mailpro_conversation` | Conversation | the open conversation: its messages, the tab strip, the composer |
 | 4 | **Odoo record** | `odoo_record` | `o_mailpro_odoo_record` | Odoo record | the record the conversation is linked to, as its own form view |
 
-The names are keys, not just labels: `ORDER`, `ICONS`, `PANES`, `paneLabel()`,
-`folded(name)`, `lead(name)` and `stage` in `use_panes.js` all take one of
-these four words, the divider left of a pane is `o_mailpro_split_<pane>`
-(there is none left of the mailbox list), and everything inside a pane keeps
-the pane's own prefix: `o_mailpro_conversation_head` is part of pane 3,
+The names are keys, not just labels: `ICONS`, `PANES`, `COLLAPSIBLE`,
+`paneLabel()`, `folded(name)`, `togglePane(name)` and `stage` in
+`use_panes.js` all take one of these four words, the divider left of a pane
+is `o_mailpro_split_<pane>`, and everything inside a pane keeps the pane's
+own prefix: `o_mailpro_conversation_head` is part of pane 3,
 `o_mailpro_odoo_record_zoom` part of pane 4.
 
 Three panes have a stored width; the conversation is what the other three
@@ -97,9 +97,9 @@ Two words are deliberately not pane names:
 - **thread** is the mail thread the matcher keys on -- `pan.mail.thread.index`,
   `pan.mail.thread.link`, the `References` root, and Odoo's own `Thread` store
   model (`recordThread` is the record's chatter thread). Pane 3 was called
-  `thread` until 19.0.13.10.0, which is why the prose and the code disagreed
+  `thread` until 19.0.14.1.0, which is why the prose and the code disagreed
   about it.
-- **rail** was pane 1 until 19.0.13.11.0. It described where the pane sits
+- **rail** was pane 1 until 19.0.14.1.0. It described where the pane sits
   rather than what is in it, which is what made the other three hard to name
   next to it.
 
@@ -390,6 +390,23 @@ one, whose header leaves it room; when two neighbouring panes are folded
 their buttons stand side by side rather than on one spot. A strip had a
 name on it and cost 2.5rem of every folded pane; a button costs nothing
 until you look for it, and its icon is the name.
+
+19.0.13.10.0 takes those buttons off the dividers and puts them in the top
+bar, left of New Email: one round button per pane that folds, in the order
+the panes sit, pressed while its pane is showing. Floating them on the
+divider meant that folding the mailbox list and the conversation list put
+two buttons beside the
+conversation's own header, which already carries a subject, a Linked-to chip
+and a tab strip -- a second row of controls stacked on the screen's first,
+which is what it read as. In the top bar there is one row, always in the
+same place whatever is folded, where every mail client has kept the
+mailboxes since there were mail clients. The divider goes back to being the
+one thing it looks like, a width to drag, and is not drawn at all beside a
+folded pane, which has no width to offer. The phone's mailbox-list button is no
+longer a special case: it is this row, with the two panes that take turns
+there left out of it. Gone with the buttons: the header padding that made
+room for them (`lead()`), the inline offset that stopped two of them
+stacking, and the second meaning Enter had on a divider.
 
 19.0.13.7.0 puts the followers back on the screen. The chatter left the
 record pane in 19.0.10.0.0 and took the follower list with it, so nothing on
@@ -969,7 +986,7 @@ them:
    when the provider's has moved. A message that starts a thread is its own root.
 
 `pan.mail.thread.link.key_type` records which of the two a row is. It is not
-cosmetic: `find_for_record()` hands the stored value straight back to the
+cosmetic: `_find_for_record()` hands the stored value straight back to the
 provider on the next send, and Gmail rejects a `threadId` it did not mint, so
 only a `provider` row may be used for sending. On IMAP the two keys are the same
 value and collapse into one row.
@@ -1106,7 +1123,7 @@ Pre-filters: duplicate, Odoo-originated, internal domain, block list, sync mode
   (a refusal is one log line naming the gate; nothing is stored — see §3)
       │
       ▼
-pan.mail.matcher.match(message, mailbox, partner)
+pan.mail.matcher._match(message, mailbox, partner)
       │
       ├── model set  → message_post onto that record          → outcome 'threaded'
       ├── sent item  → message_post onto the correspondent    → outcome 'sent_item'
@@ -1867,8 +1884,10 @@ stay there; the relicence applies from `19.0.7.14.0` onwards.
 ### 9.17 Connecting to Pantalytics, and working only when connected
 
 Settings → Mail Pro → Pantalytics Account. The admin presses **Connect to
-Pantalytics**, gets a short code and a link, approves on our site with their
-Pantalytics account, and presses **Check Approval**; Odoo collects its key.
+Pantalytics**, which opens our site with the code already in the link; they
+approve there with their Pantalytics account and press the button back to
+their Odoo, which collects the key (**Check Approval** does the same by hand). The entitlement
+carries `daily_send_limit`, the number the plan is metered on.
 That is the device flow's shape: no redirect URI per customer database, so it
 works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
 server half lives in `pantalytics/mail-pro-admin`.
@@ -1884,13 +1903,14 @@ server half lives in `pantalytics/mail-pro-admin`.
   unreadable anyway because it goes through `decrypt_value`.
 - **Check Approval is a button, not a poll loop.** The admin knows when they
   approved. Dropped: the page does not refresh itself.
-- **Until it is connected, the settings page is one button.** The checklist,
-  the users block and About are hidden while the state is anything but
+- **Until it is connected, the settings page is one button and About.** The
+  checklist and the users block are hidden while the state is anything but
   connected: every one of them configures a product that will not sync, and a
   checklist you cannot finish reads as the broken thing on the screen. One
-  screen, one action. `tools/ui_check.py` disconnects the seeded instance and
-  asserts exactly that, because the gate is a view modifier no Python test can
-  see.
+  screen, one action. About stays, because the version and the documentation
+  link are what a support mail and a first-time admin need before they can
+  connect. `tools/ui_check.py` disconnects the seeded instance and asserts
+  exactly that, because the gate is a view modifier no Python test can see.
 - **Mail Pro works on a connected Odoo instance** (19.0.9.0.0, #126).
   `sync_allowed()` gates incoming sync (the cron, which marks the mailboxes
   with the reason, and Sync Now) and creating a **new** `pan.mail.account`.
@@ -1943,7 +1963,7 @@ For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 | Authentication | OAuth 2.0 (Microsoft Entra ID, Google) — or login + password on IMAP |
 | Token storage | Encrypted at rest (Fernet) |
 | Token refresh | Automatic |
-| Data egress | Provider APIs only. Nothing goes to Pantalytics |
+| Data egress | Provider APIs, plus one daily heartbeat to Pantalytics: counts and versions only (§9.17) |
 
 ---
 
@@ -1958,6 +1978,14 @@ An inbound server left enabled means Odoo fetches mail itself and routes it
 through `mail.alias`, past every control in §3. Closing the outbound door and
 leaving the inbound one open is not a smaller version of the same act; it is
 the half that lets mail in.
+
+**And it is undone on uninstall.** The takeover records the ids of the servers
+it disabled (`pan_mail_pro.smtp_takeover_disabled_ids`); the module's
+`uninstall_hook` (`_restore_smtp_servers`) re-enables exactly those, retires
+the placeholder server and sets `base_setup.default_external_email_server`
+back. A server somebody switched off on purpose stays off. Before this a
+database that trialled Mail Pro and removed it was left with no outgoing mail
+and no hint why.
 
 ## 11. Conventions
 

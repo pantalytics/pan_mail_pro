@@ -182,6 +182,23 @@ FOLDER_ROLES = {
 # failure and surfaced to the user verbatim.
 ERROR_NO_RECIPIENTS = 'no_recipients'
 ERROR_UNSUPPORTED = 'unsupported'
+# The provider asked for a pause longer than a cron run may sleep. A send
+# result with this code carries `retry_after` (seconds); `mail.mail` keeps the
+# mail outgoing until then instead of failing it.
+ERROR_THROTTLED = 'throttled'
+
+
+class ThrottledError(UserError):
+    """Raised by a client's retry helper when Retry-After is too long to sleep.
+
+    A `UserError`, so every place that shows a client's refusal to a person
+    keeps working; the type is what lets the fetch cron and the send path treat
+    it as "later", not "broken".
+    """
+
+    def __init__(self, message, wait):
+        super().__init__(message)
+        self.wait = wait
 
 # -----------------------------------------------------------------------------
 # Headers that may cross the provider boundary

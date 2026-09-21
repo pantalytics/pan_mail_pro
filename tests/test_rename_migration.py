@@ -137,7 +137,7 @@ class TestRenameMigration(TransactionCase):
         self.assertFalse(self._column_exists('mail_message', 'x_microsoft_message_id'))
         self.assertFalse(self._column_exists('mail_mail', 'x_microsoft_message_id'))
         self.assertEqual(
-            self.env['pan.mail.message.ref'].lookup('<minted-by-graph@outlook.com>'), message)
+            self.env['pan.mail.message.ref']._lookup('<minted-by-graph@outlook.com>'), message)
         self.assertEqual(
             self.env['pan.mail.matcher']._resolve_message_id('<minted-by-graph@outlook.com>'),
             message)

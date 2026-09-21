@@ -1,8 +1,6 @@
 /** @odoo-module */
 /**
- * The Inbox: the mailbox list, the conversation list, the conversation
- * and the Odoo record. ARCHITECTURE.md section 1 is where those four names
- * are fixed; nothing here calls a pane anything else.
+ * The conversation view: folders, conversations, the conversation, and the record.
  *
  * Everything on this screen is read through `pan.mail.conversation`, which
  * stores nothing. Every action is Odoo's own method on the record underneath,
@@ -233,8 +231,8 @@ export class ConversationView extends Component {
             activityIds: [],
             // Which messages are open, whose quoted history is unfolded, and
             // whose header shows the full From / To / Cc / Date block. Keyed
-            // by message id, so a conversation that reloads under a reply
-            // keeps nothing from the one before it.
+            // by message id, so a thread that reloads under a reply keeps
+            // nothing from the conversation before it.
             open: {},
             quotes: {},
             details: {},
@@ -740,7 +738,7 @@ export class ConversationView extends Component {
     }
 
     /**
-     * The conversation's record as the mail store knows it: the thread the
+     * The conversation's record as the mail store knows it: the conversation the
      * chatter would have drawn. An upload lands on it, and its followers are
      * the people Odoo notifies about this record.
      */
@@ -982,7 +980,7 @@ export class ConversationView extends Component {
         return `/web/image/res.partner/${message.author_id}/avatar_128`;
     }
 
-    /** The same picture for the list, from the contact the thread is with. */
+    /** The same picture for the list, from the contact the conversation is with. */
     partnerAvatar(conversation) {
         return `/web/image/res.partner/${conversation.partner_id}/avatar_128`;
     }
@@ -1062,6 +1060,10 @@ export class ConversationView extends Component {
             default_res_ids: [conversation.res_id],
             default_composition_mode: "comment",
             default_subtype_xmlid: "mail.mt_comment",
+            // Send from the mailbox being read, when one is selected in the
+            // mailbox list. The composer drops it again if this person may not send
+            // from it and falls back to their own default.
+            default_x_send_from_mailbox_id: this.state.mailboxId || false,
             // The chatter fills "To" from the record's suggested recipients;
             // the composer itself fills nothing, and since 18.2 the customer
             // is no longer a follower by default. A reply with an empty "To"
@@ -1119,6 +1121,10 @@ export class ConversationView extends Component {
             default_res_ids: [resId],
             default_composition_mode: "comment",
             default_subtype_xmlid: "mail.mt_comment",
+            // Send from the mailbox being read, when one is selected in the
+            // mailbox list. The composer drops it again if this person may not send
+            // from it and falls back to their own default.
+            default_x_send_from_mailbox_id: this.state.mailboxId || false,
             default_partner_ids: partnerIds,
         }, "new");
     }
@@ -1220,7 +1226,7 @@ export class ConversationView extends Component {
      *
      * It gets the correspondent so the second step can open on their own
      * records instead of an empty search box. `pan.mail.conversation` decides
-     * what that means; this only hands over who is on the thread.
+     * what that means; this only hands over who is on the conversation.
      */
     openLinkDialog() {
         this.dialog.add(LinkDialog, {
@@ -1233,7 +1239,7 @@ export class ConversationView extends Component {
     /**
      * Move the conversation, and say what the move bought.
      *
-     * The confirmation names the thread link rather than the move, because
+     * The confirmation names the conversation link rather than the move, because
      * that is the part somebody would not otherwise know happened: the rest
      * of this conversation now files itself.
      */
@@ -1268,7 +1274,7 @@ export class ConversationView extends Component {
         await this.refresh({ keepSelection: true });
         if (this.state.selected && this.state.selected.model === linked.model
             && this.state.selected.res_id === linked.res_id) {
-            // Still on it: re-read the thread so the chips replace the
+            // Still on it: re-read the conversation so the chips replace the
             // suggestion instead of the screen still offering it.
             await this.select(this.state.selected);
         }

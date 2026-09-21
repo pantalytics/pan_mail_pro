@@ -50,11 +50,23 @@ class TestInboxPanes(TransactionCase):
         self.scss = read('static', 'src', 'scss', 'conversation_view.scss')
         self.architecture = read('ARCHITECTURE.md')
 
-    def test_use_panes_orders_the_four_names(self):
-        match = re.search(r'const ORDER = \[([^\]]*)\]', self.panes_js)
-        self.assertTrue(match, 'use_panes.js no longer declares ORDER')
-        found = re.findall(r'"([a-z_]+)"', match.group(1))
-        self.assertEqual(found, PANES, 'ORDER is the left-to-right pane list')
+    def test_use_panes_knows_the_four_names(self):
+        """The three lists a pane name has to be on to exist at all."""
+        for const in ('ICONS', 'PANES'):
+            block = re.search(r'const %s = \{(.*?)\n\};' % const,
+                              self.panes_js, re.S)
+            self.assertTrue(block, 'use_panes.js no longer declares %s' % const)
+            found = re.findall(r'\n    ([a-z_]+):', block.group(1))
+            expected = PANES if const == 'ICONS' else [
+                name for name in PANES if name != 'conversation']
+            self.assertEqual(found, expected,
+                             '%s does not list the panes, in order' % const)
+        folds = re.search(r'const COLLAPSIBLE = \[([^\]]*)\]', self.panes_js)
+        self.assertTrue(folds, 'use_panes.js no longer declares COLLAPSIBLE')
+        self.assertEqual(
+            re.findall(r'"([a-z_]+)"', folds.group(1)),
+            [name for name in PANES if name != 'conversation'],
+            'the conversation is the one pane that never folds')
 
     def test_every_pane_has_an_icon_and_a_label(self):
         for name in PANES:

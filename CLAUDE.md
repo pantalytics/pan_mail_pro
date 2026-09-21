@@ -69,7 +69,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
 | `models/pan_mail_conversation.py` | The read side of the Inbox: the RPC methods behind the screen, no table, no sudo for an answer |
 | `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, and the Followers button at its end that opens the chatter's own follower list |
-| `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (one round button floating on each divider: a chevron folds the pane beside it, the pane's icon brings it back, the same for the mailbox list, the conversation list and the Odoo record), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the strip between them; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
+| `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (one round button per pane in the top bar, left of New Email, pressed while its pane is showing -- the dividers are widths to drag and nothing else), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from that same button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
 | `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, and the Send that saves it and calls `action_send_mail` |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
@@ -708,7 +708,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
-### Naming the panes (19.0.13.10.0, 19.0.13.11.0)
+### Naming the panes (19.0.14.1.0)
 
 - **One idea, two words, and the loaded one reaches the code.** Pane 3 was
   `thread` in the code and "the conversation pane" in every sentence about it,

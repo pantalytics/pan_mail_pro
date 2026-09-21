@@ -75,8 +75,8 @@ MAX_LINK_CANDIDATES = 12
 # 140 characters.
 PREVIEW_SOURCE = 8000
 # Where the quoted history starts, as the mail clients people write to us
-# from mark it. The same list the conversation pane folds, so the snippet and the
-# open message end "what they wrote" at the same place.
+# from mark it. The same list the conversation pane folds, so the snippet and
+# the open message end "what they wrote" at the same place.
 QUOTE_START = re.compile(
     r'<blockquote\b|class="[^"]*\b(?:gmail_quote|moz-cite-prefix|OutlookMessageHeader)\b'
     r'|data-o-mail-quote|id="(?:divRplyFwdMsg|appendonsend)"',
@@ -84,9 +84,9 @@ QUOTE_START = re.compile(
 
 # The mailbox list, in the order it is drawn. A mailbox and the two folders
 # every mail client has, because that pane is the part of this screen people
-# know how to read. Our own states are not folders and do not belong here;
+# already know how to read. Our own states are not folders and do not belong here;
 # they filter the list, one pane to the right.
-RAIL_FOLDERS = [
+MAILBOX_FOLDERS = [
     ('inbox', 'Inbox'),
     ('sent', 'Sent'),
 ]
@@ -106,7 +106,7 @@ LIST_FILTERS = [
     ('unlinked_none', 'Linked to nothing'),
 ]
 
-KINDS = ({value: 'folder' for value, _label in RAIL_FOLDERS}
+KINDS = ({value: 'folder' for value, _label in MAILBOX_FOLDERS}
          | {value: 'filter' for value, _label in LIST_FILTERS})
 
 # The matcher's rule names, in words. The screen shows why a mail was not
@@ -233,19 +233,19 @@ class PanMailConversation(models.AbstractModel):
         aggregating every row the reader can see, once per entry, on every
         click. The cap costs a "+" on the label and saves the scan.
 
-        It takes the same `partner_id` and `search` the list takes, so the counts
-        and the list always describe the same mail.
+        It takes the same `partner_id` and `search` the list takes, so the two
+        panes always describe the same mail.
 
         `folder` is the one the reader has open. The filters are counted
         inside it and only for that mailbox, because they are a filter row
-        over one list rather than a second pass: a mailbox standing open in
+        over one list rather than a second pane: a mailbox standing open in
         the mailbox list costs its two folders, not four.
         """
         self._check_caller()
         base = self._base_domain(mailbox_id, partner_id, search)
         folders = [self._count_entry(base, value, label,
                                      self._folder_domain(value))
-                   for value, label in RAIL_FOLDERS]
+                   for value, label in MAILBOX_FOLDERS]
         filters = []
         if folder:
             within = base + self._folder_domain(folder)

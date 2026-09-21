@@ -39,26 +39,27 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         border-bottom: 1px solid $mailpro-line;
     }
 
-    // The bar reads left to right the way every mail client's does: the one
-    // thing you start from, then the one thing you look for with. The search
-    // is centred in the window, which only holds if both sides weigh the
-    // same, so the spacer on the right is the width of the button on the left.
+    // The bar reads left to right the way every mail client's does: which
+    // panes are showing, the one thing you start from, then the one thing
+    // you look for with. The search is centred in the window, which only
+    // holds if both sides weigh the same, so the spacer on the right is as
+    // wide as the toggles and New Email together.
     .o_mailpro_topbar_start,
     .o_mailpro_topbar_end {
-        flex: 0 0 11rem;
+        flex: 0 0 18rem;
     }
 
     .o_mailpro_new {
         white-space: nowrap;
     }
 
-    // The two icon buttons a small screen adds: the mailbox list from the top bar
-    // and the step back from a conversation. Sized for a thumb, drawn as
-    // quietly as the fold chevron they stand in for. Both are hidden on a
-    // wide screen, where the dividers are the controls.
-    .o_mailpro_mailbox_list_button,
+    // The pane toggles, and the step back from a conversation a phone adds.
+    // Sized for a thumb, drawn quietly: they say which panes are showing,
+    // they are not what the screen is for. The back arrow is the phone's
+    // alone and stays hidden until the panes start taking turns.
+    .o_mailpro_pane_toggle,
     .o_mailpro_back {
-        display: none;
+        display: flex;
         width: 2.25rem;
         height: 2.25rem;
         padding: 0;
@@ -77,6 +78,15 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
             outline: 2px solid $mailpro-accent;
             outline-offset: 1px;
         }
+    }
+
+    .o_mailpro_back { display: none; }
+
+    // Showing. A pressed toggle is the pane that is on screen, so the row
+    // reads as the layout it controls without anybody clicking to find out.
+    .o_mailpro_pane_toggle_on {
+        background: $mailpro-panel;
+        color: $mailpro-accent-ink;
     }
 
     .o_mailpro_search {
@@ -116,81 +126,11 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         &:hover,
         &.o_mailpro_split_dragging { background-color: $mailpro-accent; }
 
-        // Nothing to drag beside a folded pane; the button is the control.
-        &.o_mailpro_split_folded {
-            cursor: default;
-
-            &:hover { background-color: $mailpro-line; }
-        }
-
         &:focus-visible {
             outline: 2px solid $mailpro-accent;
             outline-offset: 0;
         }
     }
-
-    // The fold: a round button floating on the divider, the shape every
-    // sidebar toggle has in the apps people already use. A finger's size.
-    // Centred on the line between two open panes; wholly inside the open
-    // neighbour of a folded one, where `use_panes.js` also leaves it room
-    // in that pane's header. Above the list's sticky header, which it
-    // otherwise disappears under.
-    .o_mailpro_split_toggle {
-        position: absolute;
-        top: 0.625rem;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 2;
-        width: 2.25rem;
-        height: 2.25rem;
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid $mailpro-line;
-        border-radius: 50%;
-        background: #fff;
-        box-shadow: 0 1px 3px rgba(0, 29, 33, 0.12);
-        color: $mailpro-muted;
-        font-size: 0.875rem;
-        cursor: pointer;
-        transition: left $mailpro-fold, right $mailpro-fold;
-
-        &:hover { color: $mailpro-accent-ink; border-color: $mailpro-accent; }
-
-        &:focus-visible {
-            outline: 2px solid $mailpro-accent;
-            outline-offset: 1px;
-        }
-    }
-
-    // Inside the neighbour on the right (a folded mailbox list, conversation list or, on a
-    // tablet, conversation), or on the left (a folded record). The inline
-    // `left` moves a button along when the pane before its own is folded
-    // too, so two folds are two buttons side by side.
-    .o_mailpro_split_toggle_right {
-        left: 0.375rem;
-        transform: none;
-    }
-
-    .o_mailpro_split_toggle_left {
-        left: auto;
-        right: 0.375rem;
-        transform: none;
-    }
-
-    // The room those buttons take in the header they float over: one step
-    // per folded pane before this one, so the title starts after the last
-    // button rather than under it.
-    @each $n in 1, 2, 3 {
-        .o_mailpro_lead_#{$n} .o_mailpro_conversation_list_head,
-        .o_mailpro_lead_#{$n} .o_mailpro_conversation_head,
-        .o_mailpro_lead_#{$n} .o_mailpro_odoo_record_head {
-            padding-left: #{0.5 + $n * 2.625}rem;
-        }
-    }
-
-    .o_mailpro_odoo_record_folded .o_mailpro_conversation_head { padding-right: 3.125rem; }
 
     // 1. the mailbox list
     .o_mailpro_mailbox_list {
@@ -305,7 +245,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     // The picture is what makes a list or a stack scannable at a glance: you
     // find the line you want by who it is with, long before you read a name.
-    // Shared by the list and the conversation.
+    // Shared by the conversation list and the conversation.
     .o_mailpro_avatar {
         width: 2rem;
         height: 2rem;
@@ -952,7 +892,6 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
             gap: 0.25rem !important;
         }
 
-        .o_mailpro_mailbox_list_button,
         .o_mailpro_back { display: flex; }
 
         // The bar no longer centres the search: there is no room to weigh

@@ -66,7 +66,7 @@ class TestLicense(TransactionCase):
             'db_uuid': self.db_uuid,
             'status': 'active',
             'plan': 'standard',
-            'seats_allowed': 5,
+            'daily_send_limit': 25,
             'issued_at': '2026-09-15T12:00:00+00:00',
             'valid_until': (datetime.now(timezone.utc) + timedelta(days=14)).replace(
                 microsecond=0).isoformat(),
@@ -156,7 +156,7 @@ class TestLicense(TransactionCase):
         self.assertTrue(heartbeat['url'].endswith('/api/v1/license/heartbeat'))
         self.assertEqual(heartbeat['headers']['Authorization'], 'Bearer mpk_live_key')
         self.assertTrue(link.is_entitled())
-        self.assertEqual(link.seats_allowed, 5)
+        self.assertEqual(link.daily_send_limit, 25)
 
     def test_checking_before_approval_changes_nothing(self):
         with patch(POST, side_effect=self.server(
@@ -175,6 +175,76 @@ class TestLicense(TransactionCase):
         self.assertEqual(link.status, 'not_connected')
         self.assertFalse(link.user_code)
 
+    def test_a_bad_minute_on_our_side_keeps_the_pairing(self):
+        """A 502 from the proxy during a deploy is not a verdict on the code.
+        The device token stays, and the admin is told to try again."""
+        with patch(POST, side_effect=self.server(poll=_response(502, {}))):
+            link = self.License.action_connect()
+            action = link.action_check_approval()
+        self.assertEqual(link.status, 'pending')
+        self.assertEqual(link.user_code, 'ABCD-EFGH')
+        self.assertTrue(link.device_token_encrypted)
+        self.assertEqual(action['params']['type'], 'warning')
+        self.assertIn('502', action['params']['message'])
+
+    def test_a_failed_first_heartbeat_keeps_the_key_and_is_retried(self):
+        """The key arrives, the heartbeat behind it hits a 503: the instance
+        is connected but not yet entitled, and says so rather than 'connect'.
+        The fetch cron asks again after RETRY_MINUTES, not after a day."""
+        link = self.connected(heartbeat=_response(503, {}))
+        self.assertEqual(link.status, 'active')
+        self.assertTrue(link.key_encrypted)
+        self.assertFalse(link.is_entitled())
+        self.assertTrue(link.last_error)
+        self.assertIn('failed', self.License.not_allowed_error())
+        self.assertNotIn('Connect this Odoo instance', self.License.not_allowed_error())
+
+        with patch(POST, side_effect=self.server()):
+            self.License._retry_if_stuck()  # too soon after the last check
+            self.assertFalse(link.is_entitled())
+            link.last_check = fields.Datetime.now() - timedelta(
+                minutes=pan_mail_license.RETRY_MINUTES + 1)
+            self.License._retry_if_stuck()
+        self.assertTrue(link.is_entitled())
+        self.assertFalse(link.last_error)
+
+    def test_a_heartbeat_that_crashes_never_loses_the_key(self):
+        """The server hands the key over exactly once. Whatever the heartbeat
+        riding on that response does, the key survives it."""
+        broken = _response(200, {'entitlement': 'not a dict', 'signature': 'x'})
+        link = self.connected(heartbeat=broken)
+        self.assertEqual(link.status, 'active')
+        self.assertTrue(link.key_encrypted)
+        self.assertTrue(link.last_error)
+
+    def test_a_key_paired_for_another_database_is_refused(self):
+        """A copy of the database carries the key and another uuid."""
+        link = self.connected(heartbeat=_response(403, {'status': 'wrong_database'}))
+        self.assertEqual(link.status, 'invalid')
+        self.assertFalse(link.is_entitled())
+        self.assertIn('another Odoo database', link.last_error)
+        self.assertIn('no longer recognises', self.License.not_allowed_error())
+
+    def test_the_refusal_names_the_state_it_is_in(self):
+        License = self.License
+        self.assertIn('Connect this Odoo instance', License.not_allowed_error())
+        with patch(POST, side_effect=self.server()):
+            link = License.action_connect()
+        self.assertIn('waiting for approval', License.not_allowed_error())
+        link.status = 'revoked'
+        self.assertIn('replaced or revoked', License.not_allowed_error())
+        link.status = 'canceled'
+        self.assertIn('no Mail Pro subscription', License.not_allowed_error())
+
+    def test_an_entitled_instance_is_not_reconnected_by_accident(self):
+        """Connecting again would revoke the live key on the server. Disconnect
+        is the deliberate step."""
+        link = self.connected()
+        with patch(POST, side_effect=self.server()), self.assertRaisesRegex(
+                UserError, 'already connected'):
+            self.License.action_connect()
+        self.assertTrue(link.is_entitled())
+
     def test_there_is_one_link_per_database(self):
         with patch(POST, side_effect=self.server()):
             first = self.License.action_connect()
@@ -191,18 +261,18 @@ class TestLicense(TransactionCase):
     # --- trust --------------------------------------------------------------
 
     def test_an_answer_signed_by_somebody_else_is_not_stored(self):
-        forged = self.signed(self.entitlement(seats_allowed=999),
+        forged = self.signed(self.entitlement(daily_send_limit=999),
                              key=Ed25519PrivateKey.generate())
         link = self.connected(heartbeat=_response(200, forged))
-        self.assertNotEqual(link.seats_allowed, 999)
+        self.assertNotEqual(link.daily_send_limit, 999)
         self.assertFalse(link.is_entitled())
         self.assertTrue(link.last_error)
 
     def test_an_edited_answer_is_not_stored(self):
         body = self.signed(self.entitlement())
-        body['entitlement']['seats_allowed'] = 999
+        body['entitlement']['daily_send_limit'] = 999
         link = self.connected(heartbeat=_response(200, body))
-        self.assertNotEqual(link.seats_allowed, 999)
+        self.assertNotEqual(link.daily_send_limit, 999)
 
     def test_an_answer_for_another_database_is_not_stored(self):
         other = self.signed(self.entitlement(db_uuid='someone-else'))

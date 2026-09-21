@@ -29,6 +29,8 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
 # Patch requests.post specifically, not the whole module — the client catches
 # requests.exceptions.RequestException, which must stay a real class.
 GMAIL_POST = 'odoo.addons.pan_mail_pro.models.providers.google.gmail_client.requests.post'
+GMAIL_GET = 'odoo.addons.pan_mail_pro.models.providers.google.gmail_client.requests.get'
+GMAIL_SLEEP = 'odoo.addons.pan_mail_pro.models.providers.google.gmail_client.time.sleep'
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -55,6 +57,53 @@ class TestGoogleProvider(TransactionCase):
         base = {'email': 'gmail_user@test.local', 'provider': 'gmail', 'user_id': self.user.id}
         base.update(vals)
         return self.Account.create(base)
+
+    # ------------------------------------------------------------------ #
+    # Retries: a first sync is a burst, and Gmail answers bursts with 429
+    # ------------------------------------------------------------------ #
+    def _status(self, code, headers=None, body=None):
+        response = MagicMock()
+        response.status_code = code
+        response.headers = headers or {}
+        response.json.return_value = body if body is not None else {}
+        response.raise_for_status.return_value = None
+        return response
+
+    def test_a_rate_limited_get_is_retried_and_answered(self):
+        account = self._google_account(access_token='t', token_expiry=fields.Datetime.now() + timedelta(hours=1))
+        with patch(GMAIL_GET, side_effect=[
+                self._status(429, {'Retry-After': '2'}), self._status(200, body={'id': 'm1'})]), \
+                patch(GMAIL_SLEEP) as sleep:
+            data = self.client._api_get(account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1')
+        self.assertEqual(data, {'id': 'm1'})
+        sleep.assert_called_once_with(2)
+
+    def test_a_long_retry_after_is_not_slept_inside_the_cron(self):
+        account = self._google_account(access_token='t', token_expiry=fields.Datetime.now() + timedelta(hours=1))
+        with patch(GMAIL_GET, return_value=self._status(429, {'Retry-After': '90'})), \
+                patch(GMAIL_SLEEP) as sleep, \
+                self.assertRaisesRegex(UserError, 'asked to wait'):
+            self.client._api_get(account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1')
+        sleep.assert_not_called()
+
+    def test_a_send_is_never_repeated_after_a_timeout(self):
+        with patch(GMAIL_POST, side_effect=requests.exceptions.Timeout('slow')) as post, \
+                patch(GMAIL_SLEEP):
+            with self.assertRaises(requests.exceptions.Timeout):
+                self.client._request_with_retry(
+                    'post', 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+                    idempotent=False, json={}, timeout=30)
+        self.assertEqual(post.call_count, 1)
+
+    def test_a_server_error_is_retried_and_then_reported(self):
+        account = self._google_account(access_token='t', token_expiry=fields.Datetime.now() + timedelta(hours=1))
+        with patch(GMAIL_GET, return_value=self._status(503)) as get, patch(GMAIL_SLEEP):
+            with self.assertRaises(UserError):
+                # The final answer is still a 503; raise_for_status is what
+                # turns it into the UserError, so make the fake do its job.
+                get.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError('503')
+                self.client._api_get(account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1')
+        self.assertEqual(get.call_count, 4)  # 1 + MAX_RETRIES
 
     # ------------------------------------------------------------------ #
     # Dispatch

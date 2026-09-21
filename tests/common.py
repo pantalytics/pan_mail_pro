@@ -37,7 +37,10 @@ def send_and_capture(mails):
     `auto_commit` has already committed them. See `mail.mail.send`.)
     """
     try:
-        mails.send()
+        # As the composer sends: the failure is raised at the person. A send
+        # without this key is a side effect of something else and only
+        # records its reason (see `mail.mail._is_the_action`).
+        mails.with_context(pan_mail_interactive_send=True).send()
     except UserError as error:
         return error
     return None
