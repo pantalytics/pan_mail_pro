@@ -158,6 +158,33 @@ Prevent errors instead of reporting them afterwards.
 | Link | Navigation, cancel | `btn-link` |
 | Danger | Destructive actions | `btn-danger` (sparingly) |
 
+### Icon buttons that move a boundary
+
+One shape, one size, one place. Every control that folds a pane, opens a
+drawer or steps between two panes is the same circle -- `$mailpro-control` in
+`conversation_view.scss`, with the `mailpro-control` mixin -- whether it sits
+in the top bar, in a pane header or on a divider. Two finishes and no third:
+flat where it is in a bar or a header, raised where it floats over a pane.
+
+It never sits on the line it moves. A circle centred on a divider is half over
+each neighbour, and what is under those halves is a scrollbar on one side and
+a header's first line on the other. It sits wholly inside one pane, and the
+header it lands in keeps the room for it (`$mailpro-band-gutter`) whenever it
+is there -- not only when a neighbour is folded, because a gutter that comes
+and goes is a title that jumps.
+
+Everything in a pane header sits on one band (`$mailpro-band`), so a folder
+name, a subject and a fold button line up across the screen.
+
+One chevron family. `fa-chevron-*` is unfold, fold and "move the boundary this
+way", in the mailbox list, in the conversation list, on the dividers and on a
+phone. A caret for the same gesture in one list and a chevron in the next is
+the drift this rule exists to stop.
+
+Motion is two lengths and no more: `$mailpro-fold` for a pane or a drawer
+moving, `$mailpro-tap` for a pointer being answered. Both are off under
+`prefers-reduced-motion`.
+
 ### Messages
 
 ```python

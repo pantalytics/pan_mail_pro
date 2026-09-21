@@ -668,6 +668,40 @@ button ever floats into a header, from one side, and `o_mailpro_lead_*` /
 `o_mailpro_trail_*` on the pane row is the room that header leaves for it, so
 a title starts beside the button rather than under it.
 
+19.0.20.1.0 takes that button off the line. Centred on a 5px divider it was
+half over each neighbour, and neither half was over nothing: on the left the
+scrollbar the conversation list runs down its own edge, on the right the first
+line of the conversation's header. So the round control everybody liked read
+as debris dropped between two panes -- a timestamp half covered, a subject
+starting under it, a scrollbar thumb sliding out from behind it.
+
+It sits inside a pane now, never on the boundary, and both of the two sit in
+the same one: the conversation, at the end nearest the pane each folds. That
+is the pane that never folds, so neither button can vanish with what it
+controls, and the two share a header, a height and a horizontal line across
+the screen. Only on a tablet, where the conversation and the record take
+turns in one column, does a button step into the neighbour on its other
+side -- `toggleSide()` is that one choice, `null` on a phone where there are
+no dividers to carry anything.
+
+Three things follow. The header gutter is kept whenever the button is there
+rather than only when a neighbour is folded, because a gutter that comes and
+goes is a title that jumps. The conversation list's header stops being a
+sticky block inside a pane that scrolls as one and becomes a row above a body
+that scrolls (`o_mailpro_conversation_list_body`), so the scrollbar starts
+below the header instead of running the full height of the edge the button is
+on. And every pane header keeps the same band at its top (`$mailpro-band`), so
+a folder name, a subject and a fold button line up across the screen rather
+than each starting wherever its own padding left off.
+
+The control itself is one thing in five places: the mailboxes button in the
+top bar, the two on the dividers, the phone's way back to the list and its way
+through to the record. One diameter, one icon size, one focus ring, one press,
+and two finishes with no third -- flat where it sits in a bar or a header,
+raised where it floats over a pane. The chevron is one family too: the mailbox
+rows unfolded with a caret while the conversation rows beside them used a
+chevron, which is one gesture drawn two ways.
+
 19.0.17.2.0 makes Expand a movement. The record used to take the screen by
 the other three panes leaving it: they were dropped from the screen, the
 record grew into the space in the same frame, and the way back rebuilt the

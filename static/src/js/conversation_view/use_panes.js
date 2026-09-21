@@ -28,6 +28,18 @@
  * A control on the other side of the screen from the pane it folds is a
  * control you hunt for, and nothing else says what either of these says.
  *
+ * That button never sits *on* the line. A circle centred on a 5px divider is
+ * half over each neighbour, and what is under those halves is not empty: on
+ * the left the scrollbar the pane runs down its own edge, on the right the
+ * first line of the pane's header. So it sits wholly inside one neighbour --
+ * the conversation, for both dividers that carry one, which is why the two
+ * buttons line up with each other and with the head they sit in. It moves to
+ * the other neighbour only when the conversation is the pane that is folded,
+ * which on a tablet is the column swap. `toggleSide(name)` is that choice,
+ * and the header it lands in reserves the room for it, always, rather than
+ * only when a neighbour is folded: a gutter that appears and disappears is a
+ * title that jumps.
+ *
  * Widths live in the browser, not the database. It is a per-monitor
  * preference, the same person has a laptop and a desk, and a table for it
  * would have to be read on every open.
@@ -372,13 +384,34 @@ export function usePanes() {
         },
 
         /**
-         * Where that button sits: centred on the divider between two open
-         * panes, or wholly inside the open neighbour of a folded one, where
-         * there is room for it and a finger can find it.
+         * Which neighbour the button sits inside: never the line itself.
+         * Both dividers that carry one put it in the conversation, at the
+         * end nearest the pane they fold, so the two buttons share a header
+         * and a height whatever the widths around them are doing. When the
+         * conversation is the folded pane -- the tablet, where it and the
+         * record take turns in one column -- each button steps into the
+         * neighbour that is still open, which is the pane on its other side.
+         *
+         * `null` on a phone: there are no dividers there, so there is no
+         * button to place and no header that has to keep room for one.
          */
         toggleSide(name) {
-            const side = foldedSide(name);
-            return side === "left" ? "right" : side === "right" ? "left" : "center";
+            if (state.small) {
+                return null;
+            }
+            const inConversation = name === "odoo_record" ? "left" : "right";
+            const elsewhere = inConversation === "left" ? "right" : "left";
+            return isFolded("conversation") ? elsewhere : inConversation;
+        },
+
+        /**
+         * Whether this divider still has a width to offer. Beside a folded
+         * pane it does not: it is drawn only to carry that pane's button,
+         * and a drag, a double click or an arrow key there has nothing to
+         * set. The cursor says so too.
+         */
+        resizable(name) {
+            return !foldedSide(name);
         },
 
         /**
