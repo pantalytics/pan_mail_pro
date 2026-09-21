@@ -90,14 +90,25 @@ QUOTE_START = re.compile(
     r'|data-o-mail-quote|id="(?:divRplyFwdMsg|appendonsend)"',
     re.IGNORECASE)
 
-# The mailbox list, in the order it is drawn. A mailbox and the two folders
+# The mailbox list, in the order it is drawn. A mailbox and the three folders
 # every mail client has, because that pane is the part of this screen people
 # already know how to read. Our own states are not folders and do not belong here;
 # they filter the list, one pane to the right.
+#
+# Drafts is the third, and it is the one folder that is not mail: it lists
+# `pan.mail.draft` rows, which nobody but their author can see. It sits in the
+# mailbox list anyway, because that is where a mail client keeps unsent mail
+# and a Drafts folder somewhere else is a Drafts folder nobody opens.
 MAILBOX_FOLDERS = [
     ('inbox', 'Inbox'),
     ('sent', 'Sent'),
+    ('drafts', 'Drafts'),
 ]
+
+# The folder that is read from another table. Every query in this file is a
+# `WHERE` over `mail.message`; this one is not, so each entry point says so
+# once at the top rather than growing a branch halfway down.
+DRAFTS = 'drafts'
 
 # The states worth filtering a folder down to. These are ours, not the
 # provider's, so they read as filters over a list rather than as folders
@@ -298,9 +309,14 @@ class PanMailConversation(models.AbstractModel):
         base = self._base_domain(mailbox_id, partner_id, search)
         folders = [self._count_entry(base, value, label,
                                      self._folder_domain(value))
+                   if value != DRAFTS
+                   else self._draft_entry(value, label, mailbox_id, search)
                    for value, label in MAILBOX_FOLDERS]
         filters = []
-        if folder:
+        # Every filter in the row is a question about mail that arrived or
+        # went out. None of them is a question about your own unsent answer,
+        # so Drafts carries no filter row at all.
+        if folder and folder != DRAFTS:
             within = base + self._folder_domain(folder)
             filters = [
                 self._count_entry(within, value, label,
@@ -331,6 +347,18 @@ class PanMailConversation(models.AbstractModel):
             'capped': total > COUNT_CAP,
         }
 
+    def _draft_entry(self, value, label, mailbox_id, search):
+        """The Drafts number, counted in the table that holds them."""
+        counted = self.env['pan.mail.draft'].folder_count(
+            mailbox_id=mailbox_id, search=search, cap=COUNT_CAP)
+        return {
+            'id': value,
+            'name': label,
+            'kind': KINDS[value],
+            'count': counted['count'],
+            'capped': counted['capped'],
+        }
+
     @api.model
     def search_conversations(self, mailbox_id=None, folder='inbox',
                              filter_name=None, partner_id=None, search=None,
@@ -356,6 +384,14 @@ class PanMailConversation(models.AbstractModel):
         """
         self._check_caller()
         limit, offset = self._page(limit, offset)
+        if folder == DRAFTS:
+            # Another table, the same row shape. A draft is on a record from
+            # the moment it is saved, so it needs no grouping: there is one
+            # draft per row and it already knows where it belongs.
+            return self.env['pan.mail.draft'].folder_rows(
+                mailbox_id=mailbox_id, search=search,
+                record_model=record_model, record_id=record_id,
+                limit=limit, offset=offset)
         base = self._base_domain(mailbox_id, partner_id, search)
         if record_model and record_id:
             base = base + [('model', '=', record_model),
@@ -450,6 +486,10 @@ class PanMailConversation(models.AbstractModel):
             'suggestion': self._suggestion_for(messages),
             'files': self._files_for(model, res_id, messages),
             'activities': self._activities_for(records),
+            # Your own unsent answers on this record, above the thread. Yours
+            # only: the record rule on `pan.mail.draft` is what decides that,
+            # and nothing here lifts it.
+            'drafts': self.env['pan.mail.draft'].rows_for(model, res_id),
         }
 
     @api.model
@@ -782,7 +822,7 @@ class PanMailConversation(models.AbstractModel):
             'res_id': newest.res_id or 0,
             'message_id': newest.id,
             'subject': newest.subject or _('(no subject)'),
-            'preview': self._preview(newest),
+            'preview': self._preview(newest.body),
             'correspondent': (newest.author_id.display_name
                               or newest.email_from or ''),
             'partner_id': newest.author_id.commercial_partner_id.id or False,
@@ -809,7 +849,7 @@ class PanMailConversation(models.AbstractModel):
             'author': message.author_id.display_name or message.email_from or '',
             'author_id': message.author_id.id or False,
             'date': message.date,
-            'preview': self._preview(message),
+            'preview': self._preview(message.body),
             'unread': not message.x_is_read,
         }
 
@@ -1396,8 +1436,12 @@ class PanMailConversation(models.AbstractModel):
             'mine': activity.user_id == self.env.user,
         } for activity in activities]
 
-    def _preview(self, message):
-        """The snippet line: the body as text, cut to one line.
+    def _preview(self, body):
+        """The snippet line: a body as text, cut to one line.
+
+        Takes the html rather than the message, because a draft has a body and
+        no message: the Drafts folder previews what was typed the way the
+        other folders preview what arrived.
 
         The slice comes first. A real mail carries a signature, an inline
         stylesheet and the whole quoted history, and stripping all of that
@@ -1405,7 +1449,7 @@ class PanMailConversation(models.AbstractModel):
         `html2plaintext` also drops what is *inside* a `<style>` block, which
         hand-rolled tag stripping leaves behind as a line of CSS.
         """
-        body = str(message.body or '')[:PREVIEW_SOURCE]
+        body = str(body or '')[:PREVIEW_SOURCE]
         # A short answer on top of a long quote previews as the answer and
         # then the quote's first line, which reads as if the customer wrote
         # both. Cut at the first quote marker; the conversation pane folds the same
