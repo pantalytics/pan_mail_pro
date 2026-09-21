@@ -735,6 +735,31 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         }
     }
 
+    // Writing, Outlook's way round: the reply on top, the conversation it
+    // answers under it, and one scrollbar over both. Two scroll areas a
+    // border apart is how the sentence somebody is answering ends up
+    // unreachable from the box they are answering it in, so the two blocks
+    // give their own scrolling up to this wrapper.
+    .o_mailpro_composing {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden auto;
+
+        > .o_mailpro_composer,
+        .o_mailpro_messages {
+            flex: 0 0 auto;
+            overflow: visible;
+        }
+
+        // One column, so the rule is what says where the writing stops and
+        // the history starts.
+        .o_mailpro_messages {
+            border-top: 1px solid $mailpro-line;
+        }
+    }
+
     // Mail is prose, and prose has a comfortable width. The column stops
     // well before the window does.
     .o_mailpro_messages {
