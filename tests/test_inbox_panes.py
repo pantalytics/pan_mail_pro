@@ -89,6 +89,19 @@ class TestInboxPanes(TransactionCase):
                           '%s is not in the pane table in ARCHITECTURE.md' % name)
         self.assertIn('`%s`' % ROOT_CLASS, self.architecture)
 
+    def test_the_browser_check_names_real_panes(self):
+        """The class the top bar builds is `o_mailpro_pane_toggle_<pane>`.
+
+        Nothing errors when a selector names a pane that no longer exists:
+        `query_selector` just answers None and the check reports the button
+        as missing. That is exactly how the rename reached 19.0 red.
+        """
+        ui_check = read('tools', 'ui_check.py')
+        for name in set(re.findall(r'o_mailpro_pane_toggle_([a-z_]+)', ui_check)):
+            self.assertIn(name, PANES,
+                          'ui_check.py looks for the toggle of "%s", '
+                          'which is not a pane' % name)
+
     def test_the_old_names_are_gone(self):
         """A rename that leaves no check behind is a rename that comes back."""
         # `LEGACY` is the one line allowed to spell the old keys: it reads a
