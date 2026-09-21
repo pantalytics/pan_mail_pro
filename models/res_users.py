@@ -57,17 +57,44 @@ class ResUsers(models.Model):
         copy=False,
     )
 
+    # The one mailbox setting a user owns. Everything else about a mailbox is
+    # the workspace's (which address, whose credentials, which team an alias
+    # routes to); how much of their own inbox Odoo reads back is theirs, and
+    # asking an administrator for it makes a privacy decision somebody else's.
+    # It is the mailbox's own `sync_level`, read and written through here so
+    # there is one ladder and not a second copy of it.
+    x_pan_mail_personal_mailbox_id = fields.Many2one(
+        'pan.mail.mailbox',
+        string='My Mailbox',
+        compute='_compute_pan_mail_personal_mailbox',
+        help='This user\'s own address. Shared mailboxes are the workspace\'s '
+             'and are configured under Settings.',
+    )
+
+    x_pan_mail_sync_level = fields.Selection(
+        selection=lambda self: self.env['pan.mail.mailbox']._fields['sync_level'].selection,
+        string='Sync level',
+        compute='_compute_pan_mail_sync_level',
+        inverse='_inverse_pan_mail_sync_level',
+        help='How much of this mailbox Odoo reads back. Replies to mail Odoo '
+             'sent always land on their record; each level adds one more kind '
+             'of mail on top of that.',
+    )
+
     @property
     def SELF_READABLE_FIELDS(self):
         return super().SELF_READABLE_FIELDS + [
             'x_default_mailbox_id',
             'x_pan_mail_connected',
+            'x_pan_mail_personal_mailbox_id',
+            'x_pan_mail_sync_level',
         ]
 
     @property
     def SELF_WRITEABLE_FIELDS(self):
         return super().SELF_WRITEABLE_FIELDS + [
             'x_default_mailbox_id',
+            'x_pan_mail_sync_level',
         ]
 
     @api.depends('x_pan_mail_account_ids.connected')
@@ -75,6 +102,54 @@ class ResUsers(models.Model):
         for user in self:
             user.x_pan_mail_connected = any(
                 account.connected for account in user.x_pan_mail_account_ids)
+
+    # Not the mailbox's own fields: a dependency on a path through an unstored
+    # many2one makes the ORM search `res.users` by that field to find whose
+    # value to invalidate, and an unstored field cannot go in a WHERE clause.
+    # Every write to any mailbox raises then. Connecting is the moment the row
+    # appears, which is the only change of this answer the ORM can see.
+    @api.depends('x_pan_mail_connected')
+    def _compute_pan_mail_personal_mailbox(self):
+        """The mailbox for this user's own address, if they have one.
+
+        Searched rather than related: a personal mailbox is one whose owner
+        signed in with that very address (`_compute_mailbox_type`), so the link
+        runs the other way and there is no field on `res.users` to follow.
+        Unstored for the same reason the mailbox cron stopped caching this kind
+        of answer: a stored compute over a searched relation needs invalidation
+        written by hand, and the hand-written half is what goes stale.
+
+        The notification mailbox is excluded. It carries the system email, its
+        Sync Settings tab is hidden on its own form, and it is the workspace's
+        even when an administrator happens to own it.
+        """
+        Mailbox = self.env['pan.mail.mailbox'].sudo()
+        for user in self:
+            user.x_pan_mail_personal_mailbox_id = Mailbox.search([
+                ('owner_user_id', '=', user.id),
+                ('mailbox_type', '=', 'personal'),
+                ('is_notification_mailbox', '=', False),
+            ], limit=1)
+
+    @api.depends('x_pan_mail_personal_mailbox_id')
+    def _compute_pan_mail_sync_level(self):
+        for user in self:
+            user.x_pan_mail_sync_level = (
+                user.x_pan_mail_personal_mailbox_id.sync_level or False)
+
+    def _inverse_pan_mail_sync_level(self):
+        """Write the ladder onto the mailbox itself.
+
+        `sudo()` because the ACL gives write on `pan.mail.mailbox` to mailbox
+        managers only, and this is the one field an ordinary user decides. The row is their own
+        by construction of the compute, and `_check_mailbox_is_mine` is what
+        stops the same write being aimed at a colleague over RPC.
+        """
+        for user in self:
+            user._check_mailbox_is_mine()
+            mailbox = user.x_pan_mail_personal_mailbox_id
+            if mailbox and user.x_pan_mail_sync_level:
+                mailbox.sudo().sync_level = user.x_pan_mail_sync_level
 
     # -------------------------------------------------------------------------
     # Connecting a mailbox
@@ -84,18 +159,20 @@ class ResUsers(models.Model):
     # connecting and where they come back to.
     # -------------------------------------------------------------------------
 
-    def _check_connection_is_mine(self):
-        """Refuse to rewrite somebody else's stored credentials.
+    def _check_mailbox_is_mine(self):
+        """Refuse to change somebody else's mailbox from their user record.
 
-        These are public methods on `res.users`, so they are reachable over RPC
-        for any id the caller can browse — and an internal user can browse every
-        other user. Without this check, one employee could call
-        `action_disconnect_mailbox()` on a colleague and wipe their tokens: that
-        person cannot send until they walk through consent again, and aimed at
-        whoever owns notifications@ it stops every system mail in the database.
-        `action_connect_mailbox` is the same hole from the other side — it
-        overwrites the CSRF nonce, which cancels a consent round somebody else
-        is in the middle of.
+        These are public methods and self-writeable fields on `res.users`, so
+        they are reachable over RPC for any id the caller can browse — and an
+        internal user can browse every other user. Without this check, one
+        employee could call `action_disconnect_mailbox()` on a colleague and
+        wipe their tokens: that person cannot send until they walk through
+        consent again, and aimed at whoever owns notifications@ it stops every
+        system mail in the database. `action_connect_mailbox` is the same hole
+        from the other side — it overwrites the CSRF nonce, which cancels a
+        consent round somebody else is in the middle of. `x_pan_mail_sync_level`
+        is the third: its inverse writes a colleague's mailbox under `sudo()`,
+        so nothing below it would object.
 
         Administrators are exempt because reconnecting a mailbox on a user's
         behalf is a real support task, and so is `sudo()` for the setup flow.
@@ -106,16 +183,16 @@ class ResUsers(models.Model):
         if self.env.user.has_group('base.group_system'):
             return
         _logger.warning(
-            "[OAuth] User %s (id=%s) tried to change the mailbox connection of %s",
+            "[Mail Pro] User %s (id=%s) tried to change the mailbox of %s",
             self.env.user.login, self.env.user.id, self.login,
         )
         raise AccessError(_(
-            'Only %(user)s can change that mailbox connection.', user=self.name))
+            'Only %(user)s can change that mailbox.', user=self.name))
 
     def action_connect_mailbox(self, provider=None):
         """Send this user to their provider's consent screen."""
         self.ensure_one()
-        self._check_connection_is_mine()
+        self._check_mailbox_is_mine()
         if self.share:
             # A portal login is a customer. Nothing in the OAuth round trip
             # asks who consented, so this is where a customer's Gmail is kept
@@ -203,7 +280,7 @@ class ResUsers(models.Model):
         clears below — counts every provider, not the configured one.
         """
         self.ensure_one()
-        self._check_connection_is_mine()
+        self._check_mailbox_is_mine()
 
         domain = [('user_id', '=', self.id)]
         if provider:
