@@ -842,7 +842,7 @@ class Checks:
         is the whole reason the filter exists.
         """
         page = self.page
-        page.click('.o_mailpro_filter_toggle')
+        page.click('.o_mailpro_searchview_toggle')
         page.wait_for_timeout(800)
         pill = page.query_selector(
             '.o_mailpro_filter_item:has(.o_mailpro_filter_label:text-is('
