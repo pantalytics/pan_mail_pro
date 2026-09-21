@@ -74,7 +74,7 @@ Both are repository settings, not code, and both have to be set once:
    **GitHub Actions** actor. Without it the bump is refused and the release job
    fails with a message saying so. Nothing else can push to `19.0`.
 2. **The merge queue is on for `19.0`**, with `Lint and Odoo 19 checklist`,
-   `Manifest version`, `Tests`, `UI checks`, `Scan for secrets` and both
+   `Manifest version bumped`, `Tests`, `UI checks`, `Scan for secrets` and both
    `Upgrade from …` jobs required. The queue builds each pull request on top of
    the real base and merges only if that is green, which is also the fix for
    the auto-merge racing the slow jobs (#193).
