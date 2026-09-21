@@ -19,7 +19,7 @@
  * over the screen; that lives in `use_composer.js`.
  */
 
-import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
+import { Component, useState, useSubEnv, useRef, onWillStart, onError, markup } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useBus, useService } from "@web/core/utils/hooks";
@@ -228,6 +228,9 @@ export class ConversationView extends Component {
         });
         useSubEnv({ searchModel: this.searchModel });
         useBus(this.searchModel, "update", () => this.onSearch());
+        // The pane row, so Expand can measure where the record's own pane
+        // starts before it slides over the other three.
+        this.panesRef = useRef("panes");
 
         // Door 1: the chatter's Open in mail names the record it came from,
         // and whether one conversation is the answer or the reader has to
@@ -1067,10 +1070,10 @@ export class ConversationView extends Component {
     // the conversation and the record taking turns in the third column.
     // Small: one at a time -- the list or the conversation, the record over
     // either, and the mailbox list as a drawer over whichever is open.
-
-    get showMailboxList() {
-        return !this.panes.state.zoom;
-    }
+    //
+    // Zoom takes nothing out. The record slides over the other three rather
+    // than replacing them, so they stay where they were, covered and inert,
+    // and the way back reveals the screen instead of rebuilding it.
 
     /** On a phone, the conversation has the screen once there is one. */
     get conversationOpen() {
@@ -1080,17 +1083,17 @@ export class ConversationView extends Component {
 
     get showConversationList() {
         const panes = this.panes.state;
-        return !panes.zoom && (!panes.small || !this.conversationOpen);
+        return !panes.small || !this.conversationOpen;
     }
 
     get showConversation() {
         const panes = this.panes.state;
-        return !panes.zoom && (!panes.small || this.conversationOpen);
+        return !panes.small || this.conversationOpen;
     }
 
     get showOdooRecord() {
         const panes = this.panes.state;
-        return panes.zoom || !panes.small;
+        return panes.zoom || panes.zoomLeaving || !panes.small;
     }
 
     /**
@@ -1106,8 +1109,34 @@ export class ConversationView extends Component {
 
     showOdooRecordScreen() {
         if (!this.panes.state.zoom) {
-            this.panes.toggleZoom();
+            this.toggleZoom();
         }
+    }
+
+    /**
+     * Expand, and the way back. The record does not replace the screen, it
+     * slides over it, so it has to be told where it starts: the left edge of
+     * its own pane, inside the pane row. Only the browser knows that -- three
+     * of the widths in front of it are widths the reader dragged -- so it is
+     * measured at the press rather than computed from the stored numbers,
+     * which would have to add up the folds and the dividers as well.
+     *
+     * With no record pane in flow -- a phone, where the fourth pane is only
+     * ever the whole screen -- it comes in from the edge instead.
+     */
+    toggleZoom() {
+        if (this.panes.state.zoom) {
+            this.panes.toggleZoom(); // The way back retraces the way in.
+            return;
+        }
+        const row = this.panesRef.el;
+        if (!row) {
+            this.panes.toggleZoom();
+            return;
+        }
+        const box = row.getBoundingClientRect();
+        const record = row.querySelector(".o_mailpro_odoo_record");
+        this.panes.toggleZoom(record ? record.getBoundingClientRect().left - box.left : box.width);
     }
 
     // ----------------------------------------------------------- the tabs

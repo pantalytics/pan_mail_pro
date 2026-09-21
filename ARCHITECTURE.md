@@ -97,7 +97,8 @@ is the one pane that reads better for it. With the record folded away, or open
 with no document in it yet, the conversation takes that room back. The
 conversation is also the one pane that never folds -- a screen with no mail on
 it is not this screen. Pane 4 has a state that is not a width: zoom, the record
-on the whole screen.
+on the whole screen, which it takes by sliding over the other three rather than
+replacing them.
 
 Two words are deliberately not pane names:
 
@@ -588,6 +589,37 @@ button ever floats into a header, from one side, and `o_mailpro_lead_*` /
 `o_mailpro_trail_*` on the pane row is the room that header leaves for it, so
 a title starts beside the button rather than under it.
 
+19.0.17.2.0 makes Expand a movement. The record used to take the screen by
+the other three panes leaving it: they were dropped from the screen, the
+record grew into the space in the same frame, and the way back rebuilt the
+Inbox from nothing. Nothing said where the record had come from or where the
+mail had gone, which is the whole job of the animation every pane fold on
+this screen already has.
+
+It slides now. The record leaves the flex line for as long as it has the
+screen -- an overlay the size of the pane row -- and travels from the left
+edge its own pane had to the row's, over the three panes it covers. They stay
+exactly where they were, at the widths the reader dragged, inert and
+answering no pointer, so the way back is the same slide in reverse revealing
+a screen rather than assembling one. Three things make it work:
+
+- **The starting edge is measured, not computed.** Three dragged widths, two
+  folds and up to three dividers decide where pane 4 begins; the screen reads
+  it off the DOM at the press and hands it to the stylesheet as
+  `--mailpro-zoom-from`. The way back reuses the number the way in came from,
+  because a slide that returns somewhere else is two animations.
+- **Keyframes, not a transition.** The class that takes the record out of the
+  flex line arrives in the same frame as the class that moves it home, so
+  there is no first frame to transition from. An animation does not need one.
+- **The overlay outlives the state.** `zoomLeaving` holds it for exactly one
+  slide after zoom is off, because a class that is gone is a class that does
+  not animate.
+
+Under it, zoom stopped touching the layout at all: it no longer unfolds what
+was folded, no longer removes the dividers, no longer decides which panes
+exist. What was open or folded before Expand is what is underneath it and
+what comes back, which is what 19.0.14.2.0 promised and did by rebuilding.
+
 19.0.17.1.0 gives the phone the same sentence and the mail the room the head
 was taking. The one place the cube survived was the phone's way to the Odoo
 record, in the conversation head, where the record has no divider to hang a
@@ -614,7 +646,8 @@ the Inbox is a link with the external arrow on it rather than a second
 button -- because that is what it is: another URL, another breadcrumb, and
 an arrow says so without a word of explanation. What Expand does is
 unchanged: the other panes are hidden rather than folded, so whatever was
-open or folded before is what comes back.
+open or folded before is what comes back. 19.0.17.2.0 makes that literal --
+they stay on the screen, under the record, while it slides over them.
 
 19.0.13.7.0 puts the followers back on the screen. The chatter left the
 record pane in 19.0.10.0.0 and took the follower list with it, so nothing on

@@ -109,6 +109,12 @@ const DIVIDER_TOGGLES = ["conversation_list", "odoo_record"];
 const ODOO_RECORD_MIN = 320;
 const STEP = 16;
 
+// ms. How long the record takes to slide over the panes and back. The same
+// 0.28s the folds use, and `$mailpro-fold` in the stylesheet is the other
+// copy: the overlay has to outlive its own animation, so the number is in
+// both places on purpose.
+const ZOOM_MS = 280;
+
 function paneLabel(name) {
     return {
         mailbox_list: _t("Mailboxes"),
@@ -116,6 +122,10 @@ function paneLabel(name) {
         conversation: _t("Conversation"),
         odoo_record: _t("Odoo record"),
     }[name];
+}
+
+function reducedMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 function clamp(value, min, max) {
@@ -129,6 +139,15 @@ function defaults() {
         conversation: PANES.conversation.start,
         collapsed: { mailbox_list: false, conversation_list: false, odoo_record: false },
         zoom: false,
+        // Where the record's own pane starts, in px from the left of the
+        // pane row: the place the zoom slides out of and back into. Measured
+        // by the screen at the moment the button is pressed, because three
+        // of the widths in front of it are widths the reader dragged.
+        zoomFrom: 0,
+        // The slide back, while it is still running. A class that is gone is
+        // a class that does not animate, so the overlay outlives the state
+        // that put it there by exactly one transition.
+        zoomLeaving: false,
         // Not stored: they describe the window, not a preference.
         small: false,
         narrow: false,
@@ -177,10 +196,13 @@ function restore() {
 
 export function usePanes() {
     const state = useState(restore());
+    let leaving = null;
+    onWillDestroy(() => browser.clearTimeout(leaving));
 
     function save() {
         try {
-            const { zoom, small, narrow, mailboxListOpen, stage, ...stored } = state;
+            const { zoom, zoomFrom, zoomLeaving, small, narrow, mailboxListOpen, stage,
+                    ...stored } = state;
             browser.localStorage.setItem(KEY, JSON.stringify(stored));
         } catch {
             // A width nobody can store is still a width you can drag today.
@@ -195,8 +217,8 @@ export function usePanes() {
      * until it is zoomed.
      */
     function isFolded(name) {
-        if (state.zoom) {
-            return false;
+        if (state.zoom && name === "odoo_record") {
+            return false; // The overlay has the screen; nothing folds it.
         }
         if (state.small) {
             // A phone shows one pane, so the mailbox list is folded until the
@@ -224,7 +246,7 @@ export function usePanes() {
      * those two is always folded.
      */
     function foldedSide(name) {
-        if (state.small || state.zoom) {
+        if (state.small) {
             return null;
         }
         if (name === "odoo_record") {
@@ -442,11 +464,37 @@ export function usePanes() {
         },
 
         /**
-         * The record on its own. Nothing else is collapsed, only hidden: the
-         * widths are where you left them when you come back.
+         * The record on its own. Nothing else is collapsed, only covered:
+         * the overlay slides over the panes from where the record's own pane
+         * starts, and the way back retraces it. The widths, the folds and
+         * the dividers underneath are untouched, which is what lets the
+         * slide reveal the screen exactly as it was left rather than rebuild
+         * it in the frame the animation ends.
+         *
+         * `from` is that starting edge in px, which only the screen can
+         * measure; the way back reuses the one the way in came from, because
+         * a slide that returns somewhere else is two animations.
          */
-        toggleZoom() {
-            state.zoom = !state.zoom;
+        toggleZoom(from) {
+            if (state.zoom) {
+                state.zoom = false;
+                // The overlay is held for the slide back, and a reader who
+                // asked for no motion has no slide to wait through: holding
+                // it anyway is the Inbox arriving a third of a second late
+                // for the one person who least wants that.
+                if (!reducedMotion()) {
+                    state.zoomLeaving = true;
+                    browser.clearTimeout(leaving);
+                    leaving = browser.setTimeout(() => (state.zoomLeaving = false), ZOOM_MS);
+                }
+                return;
+            }
+            if (Number.isFinite(from)) {
+                state.zoomFrom = Math.max(0, from);
+            }
+            browser.clearTimeout(leaving);
+            state.zoomLeaving = false;
+            state.zoom = true;
         },
 
         /**
@@ -502,7 +550,7 @@ export function usePanes() {
          * way back. The mailbox list's divider carries none and goes.
          */
         splitterVisible(name) {
-            if (state.zoom || state.small) {
+            if (state.small) {
                 return false;
             }
             return !foldedSide(name) || DIVIDER_TOGGLES.includes(name);

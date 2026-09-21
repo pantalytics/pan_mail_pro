@@ -137,7 +137,11 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         color: $mailpro-faint;
     }
 
-    .o_mailpro_panes { min-height: 0; }
+    // The pane row is the zoom's containing block: the record leaves the
+    // flex line and covers it while it has the screen. It is also what clips
+    // the slide -- an overlay the width of the whole row, parked one row to
+    // the right, is a horizontal scrollbar on everything that does not.
+    .o_mailpro_panes { min-height: 0; position: relative; overflow: hidden; }
 
     // The dividers.
     //
@@ -1093,23 +1097,18 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         }
     }
 
-    // Zoom: the record alone. The dragged width is an inline style, so taking
-    // the screen has to shout back at it.
-    .o_mailpro_zoomed .o_mailpro_odoo_record {
-        flex: 1 1 auto !important;
-        display: block;
-    }
-
     // The form is a pane's width by default (one column, no chatter). On the
     // whole screen it may have the room it was designed for again -- but the
     // chatter stays gone: pane 3's reply is this screen's composer.
-    .o_mailpro_zoomed .o_mailpro_odoo_record .o_form_sheet {
+    .o_mailpro_zoomed .o_mailpro_odoo_record .o_form_sheet,
+    .o_mailpro_zoom_leaving .o_mailpro_odoo_record .o_form_sheet {
         max-width: 60rem !important;
         margin: 0 auto;
         padding: 1.5rem;
     }
 
-    .o_mailpro_zoomed .o_mailpro_odoo_record .o_inner_group {
+    .o_mailpro_zoomed .o_mailpro_odoo_record .o_inner_group,
+    .o_mailpro_zoom_leaving .o_mailpro_odoo_record .o_inner_group {
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 
@@ -1147,12 +1146,70 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
                     visibility 0s linear 0.28s;
     }
 
+
+    // Expand: the record takes the screen by sliding over the other three
+    // panes, not by replacing them. It leaves the flex line for as long as it
+    // has the screen -- an overlay the size of the whole row -- and starts at
+    // the left edge its own pane had, which is a number three dragged widths
+    // and two folds decide, so the screen measures it and hands it in as
+    // `--mailpro-zoom-from`.
+    //
+    // Keyframes rather than a transition: the class that moves the record out
+    // of the flex line arrives in the same frame as the class that moves it
+    // home, so there is no first frame to transition from. An animation does
+    // not need one.
+    //
+    // Nothing underneath changes. The widths, the folds and the dividers are
+    // where they were, so the way back reveals the screen rather than
+    // rebuilding it in the frame the slide ends -- and the record is only
+    // ever one pane wide in the layout, whatever it is on the glass.
+    .o_mailpro_zoomed .o_mailpro_odoo_record,
+    .o_mailpro_zoom_leaving .o_mailpro_odoo_record {
+        position: absolute;
+        inset: 0;
+        z-index: 4;
+        display: block;
+        min-width: 0;
+        max-width: none;
+        // A phone folds the record away the moment the zoom is over; the
+        // overlay outlives that by one slide, so it keeps itself visible.
+        opacity: 1;
+        visibility: visible;
+        transition: none;
+    }
+
+    .o_mailpro_zoomed .o_mailpro_odoo_record { animation: o_mailpro_zoom_in $mailpro-fold; }
+
+    .o_mailpro_zoom_leaving .o_mailpro_odoo_record {
+        animation: o_mailpro_zoom_out $mailpro-fold both;
+    }
+
+    // What it slides over. Covered is not gone: they keep their widths so the
+    // way back has a screen to return to, and they stop answering a pointer
+    // at once. Visibility waits for the slide, the same delay the fold uses,
+    // which is what keeps a screen reader and a browser check honest about
+    // what is on screen once the record has it.
+    .o_mailpro_zoomed {
+        .o_mailpro_mailbox_list,
+        .o_mailpro_mailbox_list_backdrop,
+        .o_mailpro_conversation_list,
+        .o_mailpro_conversation,
+        .o_mailpro_split {
+            pointer-events: none;
+            visibility: hidden;
+            transition: visibility 0s linear 0.28s;
+        }
+    }
+
     @media (prefers-reduced-motion: reduce) {
         .o_mailpro_mailbox_list,
         .o_mailpro_conversation_list,
         .o_mailpro_conversation,
         .o_mailpro_odoo_record,
         .o_mailpro_mailbox_list_backdrop { transition: none !important; }
+
+        .o_mailpro_zoomed .o_mailpro_odoo_record,
+        .o_mailpro_zoom_leaving .o_mailpro_odoo_record { animation: none !important; }
     }
 
     .o_mailpro_empty { padding: 2rem 1.375rem; }
@@ -1204,8 +1261,6 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         .o_mailpro_topbar_start { flex: 0 0 auto; }
         .o_mailpro_topbar_end { display: none; }
         .o_mailpro_search_zone { min-width: 0; }
-
-        .o_mailpro_panes { position: relative; }
 
         // The drawer slides in from the edge rather than folding: it is over
         // the screen, not part of it, so it keeps its width and moves. The
@@ -1327,7 +1382,8 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
             grid-template-columns: minmax(0, 1fr) !important;
         }
 
-        .o_mailpro_zoomed .o_mailpro_odoo_record .o_form_sheet { padding: 1rem; }
+        .o_mailpro_zoomed .o_mailpro_odoo_record .o_form_sheet,
+    .o_mailpro_zoom_leaving .o_mailpro_odoo_record .o_form_sheet { padding: 1rem; }
     }
 }
 
@@ -1381,4 +1437,17 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         font-size: 0.8125rem;
         color: $mailpro-muted;
     }
+}
+
+// The zoom's two halves. `--mailpro-zoom-from` is where the record's own pane
+// starts, so the record slides in from its own edge and back out to it rather
+// than in from the window's -- it is the same pane, arriving.
+@keyframes o_mailpro_zoom_in {
+    from { transform: translateX(var(--mailpro-zoom-from, 0px)); }
+    to { transform: translateX(0); }
+}
+
+@keyframes o_mailpro_zoom_out {
+    from { transform: translateX(0); }
+    to { transform: translateX(var(--mailpro-zoom-from, 0px)); }
 }
