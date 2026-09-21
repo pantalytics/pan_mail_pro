@@ -749,6 +749,7 @@ class ImapSmtpClient(models.AbstractModel):
         msg = message_from_bytes(item['raw'], policy=policy.default)
         headers = {name.lower(): str(value) for name, value in msg.items()}
         body_html, body_is_html = self._extract_body(msg)
+        body_html, body_is_html = self.normalize_body(body_html, body_is_html)
         message_id = headers.get('message-id')
 
         return {

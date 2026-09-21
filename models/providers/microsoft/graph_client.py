@@ -1107,6 +1107,8 @@ class MicrosoftGraphClient(models.AbstractModel):
         if body_html is None:
             # List responses carry only a preview; get_message() has the body.
             body_html = raw.get('bodyPreview') or ''
+        body_html, body_is_html = self.normalize_body(
+            body_html, (body.get('contentType') or '').lower() == 'html')
 
         return {
             'provider_message_id': raw.get('id'),
@@ -1118,7 +1120,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             'cc': self._normalize_recipients(raw.get('ccRecipients')),
             'date': date,
             'body_html': body_html,
-            'body_is_html': (body.get('contentType') or '').lower() == 'html',
+            'body_is_html': body_is_html,
             'has_attachments': bool(raw.get('hasAttachments')),
             'headers': self.normalize_headers(headers),
             'is_read': bool(raw.get('isRead')),

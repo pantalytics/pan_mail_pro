@@ -7,6 +7,7 @@ resolves to a client, that the client declares what it can service, and that
 Graph payloads are translated into the normalized shapes every caller depends
 on. A second provider (Gmail) has to satisfy the same assertions.
 """
+import base64
 from datetime import datetime
 
 from odoo.exceptions import UserError
@@ -433,6 +434,82 @@ class TestHeaderAllowlist(TransactionCase):
         for name in ('in-reply-to', 'references',
                      'x-odoo-model', 'x-odoo-record-id', 'x-odoo-mail-id'):
             self.assertIn(name, HEADER_ALLOWLIST)
+
+
+@tagged('post_install', '-at_install', 'pan_mail_pro')
+class TestBodyNormalization(TransactionCase):
+    """A body a provider calls HTML while handing back plain text.
+
+    Outlook sends a mail as plain text, Graph answers `contentType: html` and
+    returns the text unchanged. Nothing errors: it is valid HTML, and HTML
+    collapses newlines, so the reader gets the whole mail as one block.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = get_provider_client(self.env, DEFAULT_PROVIDER)
+
+    def test_text_a_provider_calls_html_keeps_its_line_breaks(self):
+        body, is_html = self.client.normalize_body(
+            '<html><body>Hoi Boris,\r\n\r\nDank je wel.\r\n</body></html>', True)
+        self.assertEqual(body, 'Hoi Boris,<br><br>Dank je wel.')
+        self.assertTrue(is_html)
+
+    def test_real_html_is_left_alone(self):
+        """Its line structure is whatever the sender's client wrote."""
+        source = '<div>Hoi Boris,</div>\n<div>Dank je wel.</div>'
+        self.assertEqual(self.client.normalize_body(source, True), (source, True))
+
+    def test_one_line_of_text_is_left_alone(self):
+        self.assertEqual(
+            self.client.normalize_body('Short preview', True),
+            ('Short preview', True))
+
+    def test_a_plain_text_body_is_the_callers_own_business(self):
+        """`body_is_html` False already means "run it through plaintext2html"."""
+        self.assertEqual(
+            self.client.normalize_body('Line\nLine', False), ('Line\nLine', False))
+
+    def test_every_client_normalizes_the_body_it_returns(self):
+        """The fix is on the seam, so a new provider inherits it -- but only if
+        it calls the helper. These are the same three raw shapes as the header
+        allowlist above, each carrying text a provider labelled HTML."""
+        builders = {
+            'outlook': lambda client: client._normalize_message({
+                'id': 'graph-1',
+                'body': {'contentType': 'html', 'content': 'Hoi,\r\n\r\nDank.'},
+            }),
+            'gmail': lambda client: client._normalize_message({
+                'id': 'gmail-1',
+                'payload': {
+                    'mimeType': 'text/html',
+                    'headers': [{'name': 'Subject', 'value': 'Quote'}],
+                    'body': {'data': base64.urlsafe_b64encode(
+                        b'Hoi,\r\n\r\nDank.').decode()},
+                },
+            }),
+            'imap': lambda client: client._normalize_message(
+                {
+                    'uid': b'7',
+                    'raw': (
+                        b'Message-ID: <imap-1@client.test>\r\n'
+                        b'Content-Type: text/html; charset="utf-8"\r\n'
+                        b'Subject: Quote\r\n\r\nHoi,\r\n\r\nDank.\r\n'
+                    ),
+                    'flags': [],
+                },
+                FOLDER_SENT, 1,
+            ),
+        }
+        self.assertEqual(
+            set(builders), set(PROVIDER_CLIENTS),
+            'a provider was registered without a case here; add its raw shape',
+        )
+        for code, build in builders.items():
+            with self.subTest(provider=code):
+                msg = build(get_provider_client(self.env, code))
+                self.assertIn('<br>', msg['body_html'])
+                self.assertTrue(msg['body_is_html'])
 
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')

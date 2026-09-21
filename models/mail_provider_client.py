@@ -54,6 +54,10 @@ Two details that are easy to get wrong and fail silently:
 
 - `date` is NAIVE UTC. It is compared against `last_sync_date` to advance the
   sync cursor, which is naive; a tz-aware value raises at runtime instead.
+- `body_html` passes through `normalize_body()` on the way out, next to
+  `normalize_headers()`. A provider that calls plain text HTML hands back a
+  body with newlines and no markup, which reads as one block; the helper turns
+  those newlines into line breaks and leaves a real HTML body untouched.
 - `headers` is an allowlist, not a copy of the message's headers. Clients build
   the full dict, use what they need locally, and hand the result to
   `normalize_headers()` on the way out. Keys are lowercased; the X-Odoo-* loop
@@ -139,6 +143,7 @@ Two rules the actions inherit, and neither is negotiable in an implementation:
   and a single call would have to be told which one it was *not* changing.
 """
 import logging
+import re
 import secrets
 
 from odoo import models, api, _
@@ -230,6 +235,16 @@ class ThrottledError(UserError):
 # of what a message needs (from, to, cc, subject, date, message-id) is already
 # a normalized field of its own and does not come from here.
 # -----------------------------------------------------------------------------
+# The wrapper a provider puts around a body it calls HTML. Nothing in here
+# says anything about the content, so it does not count as markup when we ask
+# whether a body really is HTML.
+BODY_WRAPPER = re.compile(
+    r'</?(?:!doctype|html|head|body|meta|title|o:p)\b[^>]*>', re.IGNORECASE)
+# Anything else that opens a tag or a comment.
+BODY_MARKUP = re.compile(r'<[a-zA-Z/!]')
+BODY_NEWLINE = re.compile(r'\r\n|\r|\n')
+
+
 HEADER_ALLOWLIST = frozenset({
     'in-reply-to',
     'references',
@@ -389,6 +404,37 @@ class MailProviderClient(models.AbstractModel):
             for name, value in (headers or {}).items()
             if name and name.lower() in HEADER_ALLOWLIST
         }
+
+    @api.model
+    def normalize_body(self, content, is_html):
+        """Fix a body a provider calls HTML while handing back plain text.
+
+        Graph answers `contentType: html` for a mail that was sent as plain
+        text, and the content is the text itself: newlines, no markup, at most
+        an `<html><body>` wrapper around it. Stored as HTML that is one
+        paragraph, so the reader gets the whole mail as a single block -- and
+        nothing errors, because the body is valid HTML. It is just wrong.
+
+        The other two providers read a MIME content type, which cannot lie the
+        same way, but a text part labelled text/html has exactly this shape. So
+        the check lives on the seam and every client calls it, the way they all
+        call `normalize_headers()`.
+
+        A body with any markup of its own is left alone: its line structure is
+        whatever the sender's client wrote, and second-guessing that is how a
+        signature ends up double spaced.
+
+        Returns:
+            tuple: (content, is_html) for the normalized message.
+        """
+        if not is_html or not content:
+            return content, is_html
+        body = BODY_WRAPPER.sub('', content)
+        if BODY_MARKUP.search(body) or not BODY_NEWLINE.search(body):
+            return content, is_html
+        # Still HTML: the provider escaped its entities when it called it HTML,
+        # so the text stays as it is and only the line breaks are added.
+        return BODY_NEWLINE.sub('<br>', body.strip('\r\n')), True
 
     # -------------------------------------------------------------------------
     # Credential resolution
