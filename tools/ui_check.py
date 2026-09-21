@@ -230,7 +230,7 @@ class Checks:
     # and its folders. Our own states are not folders and do not go here --
     # a mailbox list of invented names reads as a filter panel wearing a mailbox list's
     # clothes, which is what people notice first and trust least.
-    FOLDERS = ('Inbox', 'Sent')
+    FOLDERS = ('Inbox', 'Sent', 'Drafts')
 
     # Those states, in the filter menu on the end of the search bar: one
     # control for both ways of narrowing the list, the way Odoo's own
@@ -502,6 +502,25 @@ class Checks:
             selected = page.query_selector_all('.o_mailpro_item_active')
             if len(selected) != 1:
                 self.fail(f'{len(selected)} conversations look selected, expected 1')
+            # And a line of the mail under the subject, the way every mail
+            # client draws a list. It is the one part of the row that can go
+            # empty without going wrong: the snippet stops where the quoted
+            # history starts, so a mail that opens with a quote previews as
+            # an empty span, which is invisible rather than visibly broken.
+            blank = []
+            echoes = []
+            for el in items:
+                snippet = el.query_selector('.o_mailpro_preview')
+                text = snippet.inner_text().strip() if snippet else ''
+                subject = el.query_selector('.o_mailpro_subject')
+                if not text:
+                    blank.append(el)
+                elif subject and text == subject.inner_text().strip():
+                    echoes.append(el)
+            if blank:
+                self.fail(f'{len(blank)} conversation rows show no preview line')
+            if echoes:
+                self.fail(f'{len(echoes)} previews are a second copy of the subject')
 
         messages = page.query_selector_all('.o_mailpro_message')
         if not messages:
@@ -750,6 +769,8 @@ class Checks:
                     page.wait_for_selector('.o_mailpro_messages', timeout=15000)
                     page.wait_for_timeout(600)
 
+        self.unfolding()
+        self.drafts(page)
         self.panes()
         self.zoom()
 
@@ -1219,6 +1240,274 @@ class Checks:
         page.wait_for_timeout(400)
         if not self.visible('.o_mailpro_conversation_list'):
             self.fail('Back did not bring the list back on a phone')
+
+
+    def drafts(self, page):
+        """Save draft, and the unsent mail that comes back.
+
+        The round trip is the point, and it is checked with a word typed into
+        the reply rather than with "is there anything there": the composer
+        recomputes its own body while a form mounts, so a draft can come back
+        as a perfectly good empty composer that nothing reports. The marker
+        has to survive the server -- it shows in the strip's preview -- and
+        the form, where it is in the editor when the draft is reopened, and
+        the failure says which of the two lost it.
+
+        It ends where it started: the draft is deleted and the Inbox folder is
+        open again, because every check after this one reads the seeded mail.
+        """
+        marker = 'Levertijdmarkering'
+        tabs = page.query_selector_all('.o_mailpro_tab')
+        if not tabs:
+            self.fail('the conversation has no tab strip to write from')
+            return
+        tabs[0].click()  # Mail: where a reply is written, and where it lands.
+        page.wait_for_timeout(900)
+
+        reply = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
+        if not reply:
+            self.fail('there is no Reply button to write a draft from')
+            return
+        reply.click()
+        try:
+            page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+        except Exception:
+            self.fail('Reply opened no composer to save as a draft')
+            return
+        page.wait_for_timeout(600)
+        editor = page.query_selector('.o_mailpro_composer .odoo-editor-editable')
+        if not editor:
+            self.fail('the composer has no editor to write a draft in')
+            return
+        editor.click()
+        page.keyboard.type(marker)
+        page.wait_for_timeout(600)
+
+        save = page.query_selector(
+            '.o_mailpro_conversation_head button:has-text("Save draft")')
+        if not save:
+            self.fail('an open reply cannot be saved as a draft')
+            return
+        save.click()
+        try:
+            # The strip above the thread: the unsent answer, where it was left.
+            page.wait_for_selector('.o_mailpro_draft', timeout=15000)
+        except Exception:
+            self.fail('Save draft stored nothing on the conversation')
+            return
+        page.wait_for_timeout(600)
+        if page.query_selector('.o_mailpro_composer .o_form_view'):
+            self.fail('Save draft left the composer open over the stored copy')
+        # The server's own reading of what was typed, on the strip. A marker
+        # missing here means the words never reached the table, which is a
+        # different bug from a form that draws them and then forgets them.
+        strip = page.inner_text('.o_mailpro_draft')
+        if marker not in strip:
+            self.fail(f'the stored draft does not preview what was typed: {strip!r}')
+        self.shot('inbox-draft.png')
+
+        # The third folder in the mailbox list, and the draft in it.
+        drafts_folder = page.query_selector('.o_mailpro_folder:has-text("Drafts")')
+        if not drafts_folder:
+            self.fail('the mailbox list has no Drafts folder')
+            return
+        drafts_folder.click()
+        page.wait_for_timeout(1500)
+        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
+        if not rows:
+            self.fail('the Drafts folder is empty after saving a draft')
+            return
+        # One click on a draft is "carry on writing it", so the composer opens
+        # with the conversation behind it rather than a list row to click again.
+        rows[0].click()
+        try:
+            page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+        except Exception:
+            self.fail('a draft row did not reopen its composer')
+            return
+        page.wait_for_timeout(900)
+        body = page.query_selector('.o_mailpro_composer .odoo-editor-editable')
+        if not body:
+            self.fail('a reopened draft has no editor at all')
+        elif marker not in body.inner_text():
+            # Both halves in the message: the subject says whether this is the
+            # draft's own wizard at all, the editor says what it is holding.
+            subject = page.query_selector('.o_mailpro_composer [name="subject"] input')
+            self.fail('a reopened draft came back without what was typed'
+                      f' (subject: {subject.input_value() if subject else None!r},'
+                      f' editor: {body.inner_text()[:120]!r})')
+        close = page.query_selector(
+            '.o_mailpro_conversation_head button:has-text("Close")')
+        if not close:
+            self.fail('an open draft says Discard, which reads as "delete it"')
+        else:
+            close.click()
+            page.wait_for_timeout(900)
+
+        # And it can be thrown away, which is the only destructive thing on
+        # this screen. The seeded database goes back to what it was.
+        delete = page.query_selector('.o_mailpro_draft_delete')
+        if not delete:
+            self.fail('a stored draft cannot be deleted from the conversation')
+        else:
+            delete.click()
+            page.wait_for_timeout(900)
+            # It asks first: there is no Trash for a draft, so this is the one
+            # click on this screen that destroys something for good.
+            confirm = page.query_selector('.modal footer button.btn-primary')
+            if not confirm:
+                self.fail('deleting a draft destroys it without asking')
+            else:
+                confirm.click()
+                page.wait_for_timeout(1500)
+                if page.query_selector('.o_mailpro_draft'):
+                    self.fail('the deleted draft is still on the conversation')
+                left_open = self.dialog_in_the_way()
+                if left_open:
+                    self.fail(f'a dialog was left over the Inbox: {left_open}')
+
+        inbox = page.query_selector('.o_mailpro_folder:has-text("Inbox")')
+        if inbox:
+            inbox.click()
+            page.wait_for_timeout(1500)
+        self.error_free('drafts')
+        self.draft_on_leaving(page)
+
+    def draft_on_leaving(self, page):
+        """Walking away from a half-written answer keeps it.
+
+        The silent loss this feature exists for: somebody types two lines,
+        clicks the next conversation, and the words are gone with no warning.
+        Only the browser can prove this one -- it is the editor's own late
+        change notification that has to reach the save.
+        """
+        reply = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
+        if not reply:
+            self.fail('there is no Reply button to leave a draft behind')
+            return
+        reply.click()
+        try:
+            page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+        except Exception:
+            self.fail('Reply opened no composer to walk away from')
+            return
+        page.wait_for_timeout(600)
+        editor = page.query_selector('.o_mailpro_composer .odoo-editor-editable')
+        if not editor:
+            self.fail('the composer has no editor to type in')
+            return
+        editor.click()
+        page.keyboard.type('Nog even nakijken')
+        page.wait_for_timeout(600)
+
+        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
+        if not rows:
+            self.fail('no conversation to click away to')
+            return
+        rows[0].click()
+        try:
+            page.wait_for_selector('.o_mailpro_draft', timeout=15000)
+        except Exception:
+            self.fail('clicking away from a written reply lost it')
+            return
+        page.wait_for_timeout(600)
+
+        delete = page.query_selector('.o_mailpro_draft_delete')
+        if delete:
+            delete.click()
+            page.wait_for_timeout(900)
+            confirm = page.query_selector('.modal footer button.btn-primary')
+            if confirm:
+                confirm.click()
+                page.wait_for_timeout(1200)
+        left_open = self.dialog_in_the_way()
+        if left_open:
+            self.fail(f'a dialog was left over the Inbox: {left_open}')
+        self.error_free('draft on leaving')
+    def unfolding(self):
+        """The chevron: a conversation unfolds into the mails it is made of.
+
+        Three things a browser proves and no Python test can. That the
+        chevron is only offered where there is something behind it -- a
+        one-mail conversation that unfolds into one mail is a control that
+        lies. That it unfolds as many rows as the row above it says it has.
+        And that clicking one of them opens the conversation pane *on that
+        mail*, which is the whole reason the rows are clickable and the part
+        that is a seeded `state.open` rather than a method anybody can call.
+        """
+        page = self.page
+        rows = page.query_selector_all('.o_mailpro_group')
+        if not rows:
+            self.fail('the conversation list draws no rows to unfold')
+            return
+
+        # The chevron is a claim about the row it sits on, so read the claim.
+        for row in rows:
+            count = row.query_selector('.o_mailpro_muted')
+            said = count.inner_text().strip() if count else ''
+            twist = row.query_selector('.o_mailpro_twist:not(.o_mailpro_twist_blank)')
+            if said == '1 message' and twist:
+                self.fail('a one-mail conversation offers a chevron')
+            if said.endswith('messages') and not twist:
+                self.fail(f'a conversation of {said} has no chevron')
+
+        group = None
+        for row in rows:
+            if row.query_selector('.o_mailpro_twist:not(.o_mailpro_twist_blank)'):
+                group = row
+                break
+        if not group:
+            self.fail('no seeded conversation holds more than one mail')
+            return
+
+        expected = int(group.query_selector('.o_mailpro_muted')
+                       .inner_text().strip().split()[0])
+        group.query_selector('.o_mailpro_twist').click()
+        try:
+            page.wait_for_selector('.o_mailpro_child', timeout=15000)
+        except Exception:
+            self.fail('the chevron unfolded nothing')
+            return
+        page.wait_for_timeout(600)
+        children = group.query_selector_all('.o_mailpro_child')
+        if len(children) != expected:
+            self.fail(f'the chevron unfolded {len(children)} mails, '
+                      f'the row says {expected}')
+        # Same three things as the row above them, about one mail each.
+        for child in children:
+            if child.evaluate('el => el.tagName') != 'BUTTON':
+                self.fail('an unfolded mail is not a button')
+            author = child.query_selector('.o_mailpro_from')
+            snippet = child.query_selector('.o_mailpro_preview')
+            if not author or not author.inner_text().strip():
+                self.fail('an unfolded mail names no sender')
+            if not snippet or not snippet.inner_text().strip():
+                self.fail('an unfolded mail shows no preview line')
+        self.shot('inbox-unfolded.png')
+
+        # The bottom one is the oldest, so it is the one the pane does *not*
+        # open by itself. Clicking it has to move the pane, or the rows are
+        # decoration.
+        if len(children) > 1:
+            children[-1].click()
+            page.wait_for_timeout(2000)
+            opened = page.query_selector_all('.o_mailpro_message_open')
+            if len(opened) != 1:
+                self.fail(f'{len(opened)} messages open after picking one, expected 1')
+            else:
+                stack = page.query_selector_all('.o_mailpro_message')
+                if stack and stack[0].evaluate(
+                        'el => el.classList.contains("o_mailpro_message_open")'):
+                    self.fail('picking the oldest mail opened the newest one')
+
+        # And it folds back: a chevron that only opens is a chevron that
+        # leaves the list longer every time somebody looks at a thread.
+        twist = group.query_selector('.o_mailpro_twist')
+        twist.click()
+        page.wait_for_timeout(600)
+        if group.query_selector_all('.o_mailpro_child'):
+            self.fail('the chevron did not fold the conversation back')
+        self.error_free('unfolding a conversation')
 
     def panes(self):
         """The dividers move, the side panes fold, and the browser remembers.

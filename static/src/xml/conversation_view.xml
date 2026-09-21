@@ -276,53 +276,104 @@
                         </div>
                         <div t-else="" class="o_mailpro_empty">
                             <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="listLabel"/> yet.</h3>
-                            <p class="o_mailpro_empty_text">
+                            <p t-if="state.folder === 'drafts'" class="o_mailpro_empty_text">
+                                Mail you save instead of sending appears here.
+                            </p>
+                            <p t-else="" class="o_mailpro_empty_text">
                                 New mail appears here as it arrives.
                             </p>
                         </div>
                     </t>
                     <t t-else="">
-                        <button t-foreach="state.conversations" t-as="conversation"
-                                t-key="conversation.message_id"
-                                type="button"
-                                class="o_mailpro_item"
-                                t-att-class="{
-                                    'o_mailpro_item_active': state.selected
-                                        and sameConversation(conversation, state.selected),
-                                    'o_mailpro_item_unread': conversation.unread }"
-                                t-att-aria-current="state.selected and sameConversation(conversation, state.selected) ? 'true' : undefined"
-                                t-on-click="() => this.pick(conversation)">
-                            <span t-if="conversation.unread" class="visually-hidden">Unread. </span>
+                        <div t-foreach="state.conversations" t-as="conversation"
+                             t-key="conversation.draft_id ? 'draft-' + conversation.draft_id : conversation.message_id"
+                             class="o_mailpro_group">
                             <!--
-                                The contact's own picture, the way every mail
-                                client draws a list: you find the conversation
-                                you want by who it is with, before you read a
-                                word. A partner without a photo gets Odoo's own
-                                letter circle; a sender who is nobody in the
-                                database gets initials from the name on the
-                                mail.
+                                The chevron sits outside the row it belongs to,
+                                because a button inside a button is not a thing a
+                                browser will draw. So the selection is painted on
+                                the pair rather than on the row, or the chevron
+                                column stays white next to the mail you have open.
                             -->
-                            <div class="d-flex align-items-start gap-2">
-                                <img t-if="conversation.partner_id" class="o_mailpro_avatar flex-shrink-0"
-                                     alt="" t-att-src="partnerAvatar(conversation)"/>
-                                <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
-                                      aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
-                                <span class="flex-grow-1 min-w-0">
-                                    <span class="d-flex justify-content-between align-items-baseline gap-2">
-                                        <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
-                                        <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
-                                              t-esc="day(conversation.date)"/>
-                                    </span>
-                                    <span class="o_mailpro_subject d-block text-truncate" t-esc="conversation.subject"/>
-                                    <span class="o_mailpro_preview d-block text-truncate" t-esc="conversation.preview"/>
-                                    <span class="o_mailpro_meta d-flex align-items-center gap-2">
-                                        <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
-                                              t-esc="conversation.record_name"/>
-                                        <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
-                                    </span>
-                                </span>
+                            <div class="o_mailpro_group_head d-flex align-items-start"
+                                 t-att-class="{ 'o_mailpro_group_head_active': state.selected
+                                     and sameConversation(conversation, state.selected) }">
+                                <!--
+                                    The chevron, and only where there is something
+                                    behind it: a one-mail conversation that offers to
+                                    unfold into one mail is a control that lies. The
+                                    rows without one still line up, because the blank
+                                    keeps the column.
+                                -->
+                                <button t-if="conversation.count &gt; 1" type="button"
+                                        class="o_mailpro_twist flex-shrink-0"
+                                        t-att-aria-expanded="isUnfolded(conversation) ? 'true' : 'false'"
+                                        t-att-aria-label="isUnfolded(conversation) ? 'Fold this conversation' : 'Unfold this conversation'"
+                                        t-on-click="() => this.toggleUnfold(conversation)">
+                                    <i class="fa fa-fw" aria-hidden="true"
+                                       t-att-class="isUnfolded(conversation) ? 'fa-chevron-down' : 'fa-chevron-right'"/>
+                                </button>
+                                <span t-else="" class="o_mailpro_twist o_mailpro_twist_blank flex-shrink-0" aria-hidden="true"/>
+                                <button type="button"
+                                        class="o_mailpro_item flex-grow-1 min-w-0"
+                                        t-att-class="{
+                                            'o_mailpro_item_active': state.selected
+                                                and sameConversation(conversation, state.selected),
+                                            'o_mailpro_item_unread': conversation.unread }"
+                                        t-att-aria-current="state.selected and sameConversation(conversation, state.selected) ? 'true' : undefined"
+                                        t-on-click="() => this.pick(conversation)">
+                                    <span t-if="conversation.unread" class="visually-hidden">Unread. </span>
+                                    <!--
+                                        The contact's own picture, the way every mail
+                                        client draws a list: you find the conversation
+                                        you want by who it is with, before you read a
+                                        word. A partner without a photo gets Odoo's own
+                                        letter circle; a sender who is nobody in the
+                                        database gets initials from the name on the
+                                        mail.
+                                    -->
+                                    <div class="d-flex align-items-start gap-2">
+                                        <img t-if="conversation.partner_id" class="o_mailpro_avatar flex-shrink-0"
+                                             alt="" t-att-src="partnerAvatar(conversation)"/>
+                                        <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
+                                              aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
+                                        <span class="flex-grow-1 min-w-0">
+                                            <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                                <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
+                                                <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
+                                                      t-esc="day(conversation.date)"/>
+                                            </span>
+                                            <span class="o_mailpro_subject d-block text-truncate" t-esc="conversation.subject"/>
+                                            <span class="o_mailpro_preview d-block text-truncate" t-esc="conversation.preview"/>
+                                            <span class="o_mailpro_meta d-flex align-items-center gap-2">
+                                                <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
+                                                      t-esc="conversation.record_name"/>
+                                                <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
+                                            </span>
+                                        </span>
+                                    </div>
+                                </button>
                             </div>
-                        </button>
+                            <t t-if="isUnfolded(conversation)">
+                                <div t-if="isThreadLoading(conversation)" class="o_mailpro_thread_loading">
+                                    <span class="visually-hidden" role="status">Loading this conversation</span>
+                                    <div class="o_mailpro_skeleton_row" aria-hidden="true"/>
+                                </div>
+                                <button t-foreach="threadOf(conversation)" t-as="message"
+                                        t-key="message.id" type="button"
+                                        class="o_mailpro_child"
+                                        t-att-class="{ 'o_mailpro_child_unread': message.unread }"
+                                        t-on-click="() => this.pickMessage(conversation, message)">
+                                    <span t-if="message.unread" class="visually-hidden">Unread. </span>
+                                    <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                        <span class="o_mailpro_from text-truncate" t-esc="message.author"/>
+                                        <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
+                                              t-esc="day(message.date)"/>
+                                    </span>
+                                    <span class="o_mailpro_preview d-block text-truncate" t-esc="message.preview"/>
+                                </button>
+                            </t>
+                        </div>
                         <div t-if="state.hasMore" class="o_mailpro_more">
                             <button type="button" class="btn btn-link btn-sm"
                                     t-on-click="() => this.loadMore()">Load more</button>
@@ -624,6 +675,31 @@
             written above the mail it answers instead of in place of it.
         -->
         <div class="o_mailpro_messages">
+            <!--
+                The unsent answers, above the thread they answer. A draft is
+                not a message: nobody received it, so it never wears a
+                message's card. One line with the word on it, and the two
+                things anybody does with one.
+            -->
+            <div t-foreach="drafts" t-as="draft" t-key="draft.draft_id"
+                 class="o_mailpro_draft d-flex align-items-center gap-2">
+                <button type="button"
+                        class="o_mailpro_draft_open flex-grow-1 min-w-0 d-flex align-items-baseline gap-2 text-start"
+                        t-on-click="() => this.openDraft(draft.draft_id)">
+                    <span class="o_mailpro_draft_tag flex-shrink-0">Draft</span>
+                    <span class="o_mailpro_draft_subject text-truncate" t-esc="draft.subject"/>
+                    <span class="o_mailpro_draft_preview text-truncate flex-grow-1"
+                          t-esc="draft.preview"/>
+                </button>
+                <span class="o_mailpro_date flex-shrink-0"
+                      t-att-title="fullDate(draft.date)" t-esc="day(draft.date)"/>
+                <button type="button" class="o_mailpro_draft_delete flex-shrink-0"
+                        title="Delete draft"
+                        t-on-click="() => this.deleteDraft(draft.draft_id)">
+                    <i class="fa fa-trash-o" aria-hidden="true"/>
+                    <span class="visually-hidden">Delete draft</span>
+                </button>
+            </div>
             <t t-foreach="state.conversation.messages" t-as="message" t-key="message.id">
             <!--
                 A record event is one line, never a card:
@@ -883,8 +959,27 @@
 
     <t t-name="pan_mail_pro.ComposerButtons">
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
+            <!--
+                The two ways out, and the button says which one this is. On a
+                stored draft it is Close and it keeps the edits, the same as
+                clicking another conversation does. Otherwise it is Discard,
+                and Discard still throws the answer away: somebody saying so
+                is the one case where losing it is the point.
+            -->
             <button type="button" class="btn btn-link btn-sm"
-                    t-on-click="() => composer.close()">Discard</button>
+                    t-on-click="() => composer.state.draftId ? this.leaveComposer() : composer.close()">
+                <t t-if="composer.state.draftId">Close</t>
+                <t t-else="">Discard</t>
+            </button>
+            <!--
+                Put it away instead of sending it. Not on a note: a note is
+                two lines to the followers, written in one sitting, and a
+                Drafts folder filling up with half-written notes is a second
+                inbox for something that was never mail.
+            -->
+            <button t-if="canSaveDraft" type="button" class="btn btn-secondary btn-sm"
+                    t-att-disabled="composer.state.saving or composer.state.sending"
+                    t-on-click="() => composer.saveDraft()">Save draft</button>
             <button type="button" class="btn btn-primary btn-sm"
                     t-att-disabled="composer.state.sending"
                     t-on-click="() => composer.send()">

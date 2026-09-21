@@ -70,11 +70,12 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `tests/test_improve.py` | What the session carries once the workspace said yes: a host, a token, a pseudonym, nothing that names anyone |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement: the screen, and `counts_since()`, whose last 24 hours ride the heartbeat |
-| `models/pan_mail_conversation.py` | The read side of the Inbox: the RPC methods behind the screen, no table, no sudo for an answer |
-| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, and the Followers button at its end that opens the chatter's own follower list |
+| `models/pan_mail_draft.py` | The one thing the Inbox stores: a saved composer, on the record its mail will be sent from, private to its author. Not the provider's draft -- see ARCHITECTURE.md §1 |
+| `models/pan_mail_conversation.py` | The read side of the Inbox: the RPC methods behind the screen, no table, no sudo for an answer. `conversation_messages()` is the one the chevron in the conversation list unfolds, and it returns three fields per mail rather than a body |
+| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, the Followers button at its end that opens the chatter's own follower list, and the chevron in the conversation list that unfolds a conversation into its own mails and opens the pane on the one you pick |
 | `static/src/js/chatter_door.js` | Door 1: **Open in mail** in Odoo's own chatter, on a record that carries an emailed message. Counts the record's threads, then opens the Inbox on the conversation or on the record's list |
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (the mailbox list from a round button in the top bar left of New Email, the conversation list and the Odoo record from a round button on their own divider), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the record's divider button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
-| `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, and the Send that saves it and calls `action_send_mail` |
+| `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, the Send that saves it and calls `action_send_mail`, and the Save draft beside it that stores the same wizard as a `pan.mail.draft` |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
 | `tests/test_read_state.py` | Who decides whether a mail is read: the provider, mirrored onto `mail.message`, and the one way Odoo's own bell is cleared |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
@@ -713,7 +714,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
-### A user's own setting over somebody else's model (19.0.15.6.0)
+### A user's own setting over somebody else's model (19.0.17.1.0)
 
 - **An unstored many2one cannot carry a `@api.depends` path.** `res.users
   .x_pan_mail_personal_mailbox_id` is searched, not related, so
