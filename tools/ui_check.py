@@ -709,17 +709,14 @@ class Checks:
         record = page.query_selector('.o_mailpro_odoo_record')
         if record and record.is_visible():
             self.fail('the record pane still takes space at 1280px')
-        # The pane stepped aside; the record did not. Its button is in the
-        # top bar with the other two, where it is on screen whatever is
-        # folded: nothing floats over the conversation's own header, which
-        # already carries a title, a chip row and a tab strip.
+        # The pane stepped aside; the record did not. The way back rides the
+        # divider it left behind, at the edge the record went behind rather
+        # than across the screen in the top bar.
         if page.query_selector('.o_mailpro_odoo_record_button'):
             self.fail('at 1280px the conversation head still carries a Record button')
-        if page.query_selector('.o_mailpro_split_toggle'):
-            self.fail('a fold button still floats on a divider')
-        toggle = page.query_selector('.o_mailpro_pane_toggle_odoo_record')
+        toggle = page.query_selector('.o_mailpro_split_odoo_record .o_mailpro_split_toggle')
         if not toggle or not toggle.is_visible():
-            self.fail('at 1280px there is no button to open the record from')
+            self.fail('at 1280px the record divider carries no button to open it from')
         else:
             box = toggle.bounding_box()
             if box['width'] < 32 or abs(box['width'] - box['height']) > 2:
@@ -728,8 +725,8 @@ class Checks:
             if 'odoo record' not in (toggle.get_attribute('aria-label') or '').lower():
                 self.fail('the record button does not say what it opens: %r'
                           % toggle.get_attribute('aria-label'))
-            if toggle.get_attribute('aria-pressed') != 'false':
-                self.fail('the record is folded but its button reads pressed')
+            if toggle.get_attribute('aria-expanded') != 'false':
+                self.fail('the record is folded but its button reads expanded')
             toggle.click()
             page.wait_for_timeout(600)
             record = page.query_selector('.o_mailpro_odoo_record')
@@ -741,18 +738,21 @@ class Checks:
             if self.visible('.o_mailpro_conversation'):
                 self.fail('the conversation stayed open next to the record at 1280px')
             self.shot('inbox-narrow-record.png')
-            toggle = page.query_selector('.o_mailpro_pane_toggle_odoo_record')
-            if toggle.get_attribute('aria-pressed') != 'true':
-                self.fail('the record is open but its button does not read pressed')
+            # The record has the column now, so the same divider offers the
+            # pane that is not showing: the conversation, by name.
+            toggle = page.query_selector('.o_mailpro_split_odoo_record .o_mailpro_split_toggle')
+            if 'conversation' not in (toggle.get_attribute('aria-label') or '').lower():
+                self.fail('with the record open its divider does not offer the '
+                          'conversation back: %r' % toggle.get_attribute('aria-label'))
             toggle.click()
             page.wait_for_timeout(600)
             if not self.visible('.o_mailpro_conversation'):
                 self.fail('tapping the button again did not bring the conversation back')
             if self.visible('.o_mailpro_odoo_record'):
                 self.fail('the record stayed open next to the conversation at 1280px')
-        # The mailbox list folds the way every pane folds: its own button in the top
-        # bar, the menu icon whether it is open or shut, pressed while it is
-        # open. There is no second control for it anywhere else.
+        # The mailbox list is the one pane that folds from the top bar: the
+        # menu icon whether it is open or shut, pressed while it is open,
+        # and the phone's drawer control too. No second control anywhere.
         fold = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
         if not fold or not fold.is_visible():
             self.fail('at 1280px the top bar has no button for the mailbox list')
@@ -938,9 +938,8 @@ class Checks:
         # open, gone again once a folder is picked.
         if self.visible('.o_mailpro_mailbox_list'):
             self.fail('the mailbox list takes space on a phone before it is asked for')
-        if page.query_selector('.o_mailpro_pane_toggle_conversation_list') or \
-                page.query_selector('.o_mailpro_pane_toggle_odoo_record'):
-            self.fail('a phone shows toggles for panes that take turns anyway')
+        if page.query_selector('.o_mailpro_split'):
+            self.fail('a phone draws a divider between panes that take turns anyway')
         button = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
         if not button or not button.is_visible():
             self.fail('a phone has no button for the mailbox list')
@@ -1067,7 +1066,7 @@ class Checks:
             self.fail('dragging the divider 90px moved the list %dpx'
                       % (widened - before))
 
-        fold = page.query_selector('.o_mailpro_pane_toggle_odoo_record')
+        fold = page.query_selector('.o_mailpro_split_odoo_record .o_mailpro_split_toggle')
         if not fold:
             self.fail('the record pane cannot be folded away')
             return
@@ -1096,14 +1095,18 @@ class Checks:
             self.fail('the list width was %dpx before the reload and %dpx after'
                       % (widened, kept))
 
-        # The same button, in the same place, is the way back: a control that
-        # moves when the thing it controls folds is a control you hunt for.
-        toggle = page.query_selector('.o_mailpro_pane_toggle_odoo_record')
+        # The divider stays drawn with no width to offer, because the button
+        # on it is the way back: a folded pane whose control goes with it is
+        # a pane you hunt for.
+        toggle = page.query_selector('.o_mailpro_split_odoo_record .o_mailpro_split_toggle')
         if not toggle or not toggle.is_visible():
             self.fail('the folded record pane left no button to bring it back')
         else:
-            if toggle.get_attribute('aria-pressed') != 'false':
-                self.fail('the record is folded but its button still reads pressed')
+            if toggle.get_attribute('aria-expanded') != 'false':
+                self.fail('the record is folded but its button still reads expanded')
+            if not toggle.query_selector('.fa-chevron-left'):
+                self.fail('the folded record\'s button does not point at the room '
+                          'it would take back')
             toggle.click()
         divider = page.query_selector('.o_mailpro_split_conversation_list')
         if divider:
@@ -1115,7 +1118,7 @@ class Checks:
         # The list folds too, the same way, and the conversation takes the
         # room it leaves.
         thread_before = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
-        fold = page.query_selector('.o_mailpro_pane_toggle_conversation_list')
+        fold = page.query_selector('.o_mailpro_split_conversation_list .o_mailpro_split_toggle')
         if not fold:
             self.fail('the conversation list cannot be folded away')
             return
@@ -1129,40 +1132,49 @@ class Checks:
                       % (thread_after - thread_before))
         self.shot('inbox-list-folded.png')
 
-        # Both left panes folded. This is the shape the buttons used to be
-        # read in: two of them floating over the conversation's header,
-        # beside its title, its chip row and its tab strip -- a second menu
-        # bar on top of the screen's first. Nothing floats there now, the
-        # conversation starts at its own pane's edge, and both buttons are
-        # where they always are.
+        # Both left panes folded, each from its own control: the mailbox
+        # list from the top bar, the conversation list from its divider.
+        # That leaves exactly one button floating beside the conversation's
+        # header -- the list's own, wearing the list icon -- and the title
+        # starts beside it rather than under it. The mailbox list's divider
+        # goes with the pane: it has no width to offer and no button to hold.
         page.query_selector('.o_mailpro_pane_toggle_mailbox_list').click()
         page.wait_for_timeout(400)
         if self.visible('.o_mailpro_mailbox_list'):
             self.fail('the mailbox list did not fold away')
-        if page.query_selector('.o_mailpro_split_toggle'):
-            self.fail('a fold button still floats over a pane')
-        conversation = page.query_selector('.o_mailpro_conversation')
+        if page.query_selector('.o_mailpro_split_mailbox_list'):
+            self.fail('the folded mailbox list left its divider on the screen')
+        floating = page.query_selector_all('.o_mailpro_split_toggle')
+        if len(floating) != 2:
+            self.fail('%d fold buttons on the dividers, not the conversation '
+                      "list's and the record's" % len(floating))
+        back = page.query_selector('.o_mailpro_split_conversation_list .o_mailpro_split_toggle')
         title = page.query_selector('.o_mailpro_conversation_title')
-        if conversation and title and \
-                title.bounding_box()['x'] - conversation.bounding_box()['x'] > 40:
-            self.fail('the conversation title still starts %dpx into its pane'
-                      % (title.bounding_box()['x'] - conversation.bounding_box()['x']))
+        if not back:
+            self.fail('the folded conversation list left no button to bring it back')
+            return
+        if not back.query_selector('.fa-chevron-right'):
+            self.fail('the folded list\'s button does not point at the room it '
+                      'would take back')
+        if title:
+            edge = back.bounding_box()['x'] + back.bounding_box()['width']
+            if title.bounding_box()['x'] < edge:
+                self.fail('the conversation title starts %dpx under the fold button'
+                          % (edge - title.bounding_box()['x']))
         mailbox_list_btn = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
-        conversation_list_btn = page.query_selector('.o_mailpro_pane_toggle_conversation_list')
         new_btn = page.query_selector('.o_mailpro_new')
-        if not mailbox_list_btn or not conversation_list_btn or not new_btn:
-            self.fail('folding the mailbox list and the conversation list together lost a button')
+        if not mailbox_list_btn or not new_btn:
+            self.fail('folding the mailbox list lost its own button')
         elif mailbox_list_btn.bounding_box()['x'] > new_btn.bounding_box()['x']:
-            self.fail('the pane toggles sit to the right of New Email')
+            self.fail('the mailboxes button sits to the right of New Email')
         else:
             self.shot('inbox-two-folded.png')
             mailbox_list_btn.click()
             page.wait_for_timeout(400)
             if not self.visible('.o_mailpro_mailbox_list'):
                 self.fail('the menu button did not bring the mailbox list back')
-            if not conversation_list_btn.query_selector('.fa-list-ul'):
-                self.fail('the list button is not the list icon')
-            conversation_list_btn.click()
+            page.query_selector(
+                '.o_mailpro_split_conversation_list .o_mailpro_split_toggle').click()
             page.wait_for_timeout(400)
             if not self.visible('.o_mailpro_conversation_list'):
                 self.fail('the button did not bring the list back')
