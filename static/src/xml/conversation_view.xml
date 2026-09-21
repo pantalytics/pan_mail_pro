@@ -37,16 +37,13 @@
             <div class="o_mailpro_topbar d-flex align-items-center gap-2">
                 <div class="o_mailpro_topbar_start d-flex align-items-center gap-2">
                     <!--
-                        Which panes are showing: the mailboxes, the list, the
-                        record, in the order they sit. Pressed is showing.
-                        They live here rather than on the dividers, where
-                        they used to float over the conversation's own
-                        header: a row of buttons over a header that already
-                        carries a title, a chip and a tab strip is a second
-                        menu bar stacked on the first. Top left is also where
-                        every mail client has kept the mailboxes since there
-                        were mail clients. The divider stays what it looks
-                        like: a width to drag.
+                        The mailboxes: showing or not, pressed while showing.
+                        Top left, where every mail client has kept them since
+                        there were mail clients, and where a phone needs it
+                        anyway because there the mailbox list is a drawer and
+                        has no divider to carry a button. The other two panes
+                        fold from their own divider, at the edge they went
+                        behind.
                     -->
                     <div class="o_mailpro_pane_toggles d-flex align-items-center flex-shrink-0">
                         <button t-foreach="panes.toggles()" t-as="pane" t-key="pane"
@@ -160,8 +157,17 @@
                 <button class="btn btn-sm btn-link p-0" t-on-click="() => this.refresh()">Try again</button>
             </div>
 
+            <!--
+                The three `lead` / `trail` classes are the room a header
+                leaves for the button that floats into it from a folded
+                neighbour, so the title starts beside it rather than under
+                it. At most one arrives from each side.
+            -->
             <div class="o_mailpro_panes d-flex flex-grow-1"
-                 t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom }">
+                 t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom,
+                                'o_mailpro_lead_conversation': panes.folded('conversation_list'),
+                                'o_mailpro_trail_conversation': panes.toggleSide('odoo_record') === 'left',
+                                'o_mailpro_lead_odoo_record': panes.toggleSide('odoo_record') === 'right' }">
 
                 <!--
                     1. where you are: the mailbox, and inside it the folder.
@@ -770,22 +776,39 @@
         screen reader reads a width rather than a decoration, and the arrow
         keys move it: a width has to be settable without a mouse.
 
-        It is a width and nothing else. What shows and what folds is the row
-        of buttons in the top bar, which is on screen whatever is folded, so
-        a divider beside a folded pane has no width to offer and is not
-        drawn at all.
+        Two of the three also carry their pane's fold: a round button that
+        floats on the line, the shape every sidebar toggle has in the apps
+        people already use, so the control for a pane is at the edge that
+        pane went behind. It wears the chevron pointing where the divider is
+        about to go, open or folded, and the divider stays drawn with no
+        width to offer because the button on it is the way back. The
+        mailbox list's divider carries none: its control is the menu icon in
+        the top bar, which a phone needs there anyway. On a tablet the
+        record's divider serves two panes and swaps them in the column they
+        share.
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
         <div t-if="panes.splitterVisible(divider)"
-             t-attf-class="o_mailpro_split o_mailpro_split_{{divider}}"
+             t-attf-class="o_mailpro_split o_mailpro_split_{{divider}} {{ panes.toggleSide(divider) === 'center' ? '' : 'o_mailpro_split_folded' }}"
              role="separator" aria-orientation="vertical" tabindex="0"
              t-att-aria-label="panes.label(divider)"
-             t-att-aria-valuenow="panes.state[divider]"
+             t-att-aria-valuenow="panes.folded(divider) ? 0 : panes.state[divider]"
              t-att-aria-valuemin="panes.panes[divider].min"
              t-att-aria-valuemax="panes.panes[divider].max"
              t-on-pointerdown="(ev) => panes.startDrag(divider, ev)"
              t-on-keydown="(ev) => panes.onKey(divider, ev)"
-             t-on-dblclick="() => panes.reset(divider)"/>
+             t-on-dblclick="() => panes.reset(divider)">
+            <button t-if="panes.collapsible(divider)" type="button"
+                    t-attf-class="o_mailpro_split_toggle o_mailpro_split_toggle_{{panes.toggleSide(divider)}}"
+                    t-att-aria-label="panes.toggleLabel(divider)"
+                    t-att-title="panes.toggleLabel(divider)"
+                    t-att-aria-expanded="panes.folded(divider) ? 'false' : 'true'"
+                    t-on-pointerdown.stop="() => {}"
+                    t-on-dblclick.stop="() => {}"
+                    t-on-click.stop="() => panes.toggle(divider)">
+                <i class="fa" t-att-class="panes.toggleIcon(divider)" aria-hidden="true"/>
+            </button>
+        </div>
     </t>
 
     <!--
