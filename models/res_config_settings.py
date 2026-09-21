@@ -141,14 +141,16 @@ class ResConfigSettings(models.TransientModel):
     def _compute_module_version(self):
         """The version the database is actually on, not the one in the source.
 
-        `installed_version` is what `ir.module.module` recorded at the last
-        upgrade. On an instance that pulled new code without a version bump the
-        two differ, and the one that explains the behaviour on screen is this
-        one. It is also the first thing to ask for in a support mail, which is
-        why it is on the page rather than three clicks into Apps.
+        `latest_version` is what `ir.module.module` recorded at the last
+        upgrade. On an instance that pulled new code without upgrading, that
+        differs from the manifest on disk -- which Odoo, confusingly, calls
+        `installed_version` -- and the one that explains the behaviour on
+        screen is the database's. It is also the first thing to ask for in a
+        support mail, which is why it is on the page rather than three clicks
+        into Apps.
         """
         version = self.env['ir.module.module'].sudo().search(
-            [('name', '=', 'pan_mail_pro')], limit=1).installed_version
+            [('name', '=', 'pan_mail_pro')], limit=1).latest_version
         for record in self:
             record.x_module_version = version or ''
 

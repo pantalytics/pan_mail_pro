@@ -193,14 +193,10 @@ class TestDrafts(TransactionCase):
         """The mailbox list's third folder, read from its own table."""
         self._save(self._composer())
         as_user = self.Conversation.with_user(self.user)
-        counts = as_user.folder_counts(mailbox_id=self.mailbox.id,
-                                       folder='drafts')
-        drafts = [entry for entry in counts['folders'] if entry['id'] == 'drafts']
+        folders = as_user.folder_counts(mailbox_id=self.mailbox.id)
+        drafts = [entry for entry in folders if entry['id'] == 'drafts']
         self.assertEqual(len(drafts), 1)
         self.assertEqual(drafts[0]['count'], 1)
-        # Every filter in the row is a question about mail that arrived or
-        # went out, and none of them is one about your own unsent answer.
-        self.assertEqual(counts['filters'], [])
 
         rows = as_user.search_conversations(mailbox_id=self.mailbox.id,
                                             folder='drafts')

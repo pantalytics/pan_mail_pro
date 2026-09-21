@@ -57,12 +57,14 @@ The screen is four panes:
    and nothing else. The filters -- unread, and the two unfiled ones (on a
    contact only, linked to nothing) -- live in the search bar at the top,
    behind the arrow on its end, where Odoo's control panel keeps both ways of
-   narrowing a list. One filter at a time, named in the bar as a facet so a
-   short list is never short for a reason nobody can see, and removed where it
-   is named. A filter is a question about the folder you are in, so it
-   survives a folder switch. It is Odoo's own dropdown and its own
-   `CheckboxItem`, the components the control panel's filter menu is built
-   from. 19.0.13.0.0; merged into the search bar in 19.0.15.1.0.
+   narrowing a list. Each one is named in the bar as a facet, so a short list
+   is never short for a reason nobody can see, and removed where it is named.
+   A filter is a question about the folder you are in, so it survives a folder
+   switch. 19.0.13.0.0 built that bar; 19.0.15.1.0 merged the two controls
+   into one; 19.0.18.0.0 replaced the imitation with Odoo's own `SearchBar`
+   over a search view on `mail.message`, which is where the filters now live
+   -- and with it came autocomplete per field, several filters at once, a date
+   filter and a custom one.
 3. **The thread.** Messages in order, quoted history collapsed, and a reply that
    goes out through the right mailbox with the conversation quoted underneath.
    That last part is a survey complaint in its own right: today each chatter

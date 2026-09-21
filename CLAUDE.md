@@ -61,7 +61,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_license.py` | Link to a Pantalytics account: Connect, the signed entitlement, the daily heartbeat, and `sync_allowed()`: incoming sync and new accounts need a connected instance |
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
-| `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, and whether to nudge them |
+| `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, whether to nudge them, and the one mailbox setting they own: the sync level of their own address, on My Preferences |
 | `models/res_config_settings.py` | The Settings page: the three checklist steps and the users block |
 | `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
 | `models/ir_http.py` | Three session flags: does this user still have to connect a mailbox, may they open the Inbox at all, and may the Inbox report how it is used |
@@ -72,7 +72,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_coverage.py` | Link-coverage measurement: the screen, and `counts_since()`, whose last 24 hours ride the heartbeat |
 | `models/pan_mail_draft.py` | The one thing the Inbox stores: a saved composer, on the record its mail will be sent from, private to its author. Not the provider's draft -- see ARCHITECTURE.md §1 |
 | `models/pan_mail_conversation.py` | The read side of the Inbox: the RPC methods behind the screen, no table, no sudo for an answer. `conversation_messages()` is the one the chevron in the conversation list unfolds, and it returns three fields per mail rather than a body |
-| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, the Followers button at its end that opens the chatter's own follower list, and the chevron in the conversation list that unfolds a conversation into its own mails and opens the pane on the one you pick |
+| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, the Followers button at its end that opens the chatter's own follower list, the chevron in the conversation list that unfolds a conversation into its own mails and opens the pane on the one you pick, and Odoo's own `SearchBar` over the top: the filters are a search view (`view_pan_mail_inbox_search`), what it produces is a domain over `mail.message` |
 | `static/src/js/chatter_door.js` | Door 1: **Open in mail** in Odoo's own chatter, on a record that carries an emailed message. Counts the record's threads, then opens the Inbox on the conversation or on the record's list |
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (the mailbox list from a round button in the top bar left of New Email, the conversation list and the Odoo record from a round button on their own divider), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the record's divider button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
 | `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, the Send that saves it and calls `action_send_mail`, and the Save draft beside it that stores the same wizard as a `pan.mail.draft` |
@@ -356,7 +356,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, and linking a conversation from the suggestion so the correction actually reaches the database |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, and the sync ladder on My Preferences saving as a plain user |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
@@ -714,6 +714,51 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### A user's own setting over somebody else's model (19.0.18.2.0)
+
+- **An unstored many2one cannot carry a `@api.depends` path.** `res.users
+  .x_pan_mail_personal_mailbox_id` is searched, not related, so
+  `@api.depends('x_pan_mail_personal_mailbox_id.sync_level')` makes the ORM
+  answer "whose value do I invalidate" with
+  `res.users.search([('x_pan_mail_personal_mailbox_id', 'in', ids)])` -- and an
+  unstored field cannot go in a WHERE clause. Every write to any mailbox then
+  raises `Cannot convert ... to SQL because it is not stored`, nowhere near
+  the field that caused it. Depend on the unstored field itself (same model,
+  no reverse search) and on whatever stored field marks the moment the row
+  appears.
+- **A user may have one account per provider, so the seeded admin cannot get a
+  second address.** A browser check that needs a personal mailbox needs a user
+  of its own -- which is the better check anyway: the save only proves the
+  inverse's `sudo()` when the person saving is not a mailbox manager.
+- **Widening the ACL is not the way to give a user one field.** `base.group_user`
+  with write on `pan.mail.mailbox` reaches every shared mailbox too, because the
+  record rule that hides personal mailboxes deliberately shows the shared ones.
+  One inverse under `sudo()`, guarded by "is this record mine", is the narrow
+  version of the same permission.
+
+### Borrowing a control instead of imitating it (19.0.18.0.0)
+
+- **"There is no table behind this screen" is not a reason to build your own
+  search.** Every folder, every filter and every typed word in the Inbox was
+  already a domain over `mail.message` -- the RPC methods take clauses and
+  group what is left. So the seam Odoo's `SearchModel` needs was there the
+  whole time, and what was missing was a search *view*, not a table. Ask what
+  the component actually consumes (a domain) before concluding it does not fit.
+- **An imitation costs more the better it looks.** The hand-built bar was a
+  facet, a cross, a debounce, a dropdown, ~150 lines of SCSS and eight browser
+  assertions, and it still had one filter at a time, no autocomplete, no date
+  filter and no way for a customer to add one. Odoo's own is `<SearchBar/>`
+  plus a `<search>` view, and it arrives with all four.
+- **`SearchModel` is instantiable on its own.** `new SearchModel(env, {orm,
+  view, field, name, dialog, treeProcessor})`, `useSubEnv({searchModel})`,
+  `useBus(searchModel, "update", ...)` -- that is the whole mount, and
+  `WithSearch` is only needed when the search state has to survive a
+  breadcrumb. It wants `env.config`, which a client action has.
+- **A filter can carry what a domain cannot.** "Linked to nothing" also means
+  "stop grouping", and a domain has no way to say that. `context="{...}"` on
+  the `<filter>` reaches the client as `searchModel.context`, so the rule stays
+  declared in the view instead of becoming a special case in the read method.
+
 ### Which pane takes the slack (19.0.15.2.0)
 
 - **The elastic pane is the one whose divider stops doing anything.** Capping
@@ -775,12 +820,14 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   opened it.** Nest its SCSS under the screen's root (`.o_mailpro_inbox`) and not one
   rule applies -- the menu is a sibling of the whole web client by the time it is
   drawn. `menuClass` plus a top-level block is the way.
-- **The filter menu is `Dropdown` + `CheckboxItem`**, the same two components
-  `web.SearchBarMenu` builds Odoo's own filter menu from, down to
-  `class="{ 'o_menu_item': true, selected: isActive }"` and
-  `closingMode="'none'"`. A full `SearchModel` would not fit: the Inbox reads
-  through `pan.mail.conversation`'s own RPC methods, not through a
-  `search_read` over a table, so there is no domain for a facet to become.
+- **The filter menu was `Dropdown` + `CheckboxItem`**, the same two components
+  `web.SearchBarMenu` builds Odoo's own filter menu from. The argument for
+  building it was that a full `SearchModel` would not fit, because the Inbox
+  reads through `pan.mail.conversation`'s own RPC methods rather than a
+  `search_read` over a table, so there was no domain for a facet to become.
+  That was wrong, and 19.0.18.0.0 replaced the whole thing with Odoo's own
+  `SearchBar` -- see the lesson under *Borrowing a control instead of
+  imitating it*.
 - **A composer opened in a dialog does not close on Escape when it has a
   draft in it**, so a browser check that presses Escape leaves a modal over
   everything it asserts next. Click the dialog's own close button.
