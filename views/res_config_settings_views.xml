@@ -73,6 +73,14 @@
                                 <div class="text-muted" invisible="not x_license_valid_until">
                                     Valid until <field name="x_license_valid_until" nolabel="1" readonly="1"/>
                                 </div>
+                                <!-- Usage and the invoice live at Pantalytics. A link, not a
+                                     copy of the numbers: the count that decides the invoice is
+                                     the one that server kept. -->
+                                <div class="mt-2">
+                                    <field name="x_license_dashboard_url" widget="url" nolabel="1"
+                                           readonly="1" options="{'website_path': False}"
+                                           text="Usage and billing"/>
+                                </div>
                                 <!-- Help improve Mail Pro. Switched on at Pantalytics, for
                                      the workspace; this page can only refuse it for this
                                      instance. Shown only while it is on: a checkbox that

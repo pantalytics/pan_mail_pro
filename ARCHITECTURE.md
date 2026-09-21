@@ -2087,9 +2087,18 @@ That is the device flow's shape: no redirect URI per customer database, so it
 works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
 server half lives in `pantalytics/mail-pro-admin`.
 
+- **Usage and billing are read there, not here.** The settings page carries
+  one link (`dashboard_url()`, the Odoo instances page), and this module has
+  no usage screen of its own: the number that decides an invoice is the one
+  our server counted from the heartbeats, and a second copy in Odoo is a
+  second number to keep true.
+
 - **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
   `_heartbeat_body()` and nothing else: database id, module and Odoo version,
-  connected accounts, whether sync is healthy, and for the last 24 hours the
+  connected accounts, whether sync is healthy, and for the last 24 hours how
+  many mails were sent and received (off `mail.message.x_direction`, so one
+  message is one mail while the cap meters `mail.mail`, one per recipient:
+  this is the trend, not the meter), the
   four link coverage counts (`pan.mail.coverage.counts_since`), per matching
   rule how often it decided and how often a person overruled it
   (`pan.mail.routing.log.rule_counts_since`, off `corrected_at`, which

@@ -92,6 +92,7 @@
           linked, the database reports once a day: its database id, the
           module and Odoo version, how many accounts are connected, whether
           sync is healthy, and for the last 24 hours how many mails were
+          sent and received, how many were
           linked to a document, to a contact only, or to nothing, per
           matching rule how often it decided and how often a person
           overruled it, and how many conversations were linked by hand.
@@ -110,7 +111,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.17.1.0',
+    'version': '19.0.17.2.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
