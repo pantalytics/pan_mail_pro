@@ -75,7 +75,7 @@ MAX_LINK_CANDIDATES = 12
 # 140 characters.
 PREVIEW_SOURCE = 8000
 # Where the quoted history starts, as the mail clients people write to us
-# from mark it. The same list the thread pane folds, so the snippet and the
+# from mark it. The same list the conversation pane folds, so the snippet and the
 # open message end "what they wrote" at the same place.
 QUOTE_START = re.compile(
     r'<blockquote\b|class="[^"]*\b(?:gmail_quote|moz-cite-prefix|OutlookMessageHeader)\b'
@@ -1225,7 +1225,7 @@ class PanMailConversation(models.AbstractModel):
         body = str(message.body or '')[:PREVIEW_SOURCE]
         # A short answer on top of a long quote previews as the answer and
         # then the quote's first line, which reads as if the customer wrote
-        # both. Cut at the first quote marker; the thread pane folds the same
+        # both. Cut at the first quote marker; the conversation pane folds the same
         # markers (QUOTE_MARKERS in conversation_view.js), so the line here
         # and the open message agree on where "what they wrote" ends.
         quote = QUOTE_START.search(body)

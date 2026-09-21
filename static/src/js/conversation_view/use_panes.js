@@ -3,7 +3,7 @@
  * Pane sizing for the Inbox: drag the dividers, fold the three panes around
  * the conversation, and find the screen tomorrow the way you left it tonight.
  *
- * Three stored widths, not four. The thread is whatever is left over, so it
+ * Three stored widths, not four. The conversation is whatever is left over, so it
  * has no width of its own -- it has a floor, and that floor is what a drag
  * runs into instead of eating the mail. It is also the one pane that never
  * folds on its own: a screen with no mail on it is not this screen.
@@ -55,13 +55,13 @@ const KEY = "pan_mail_pro.panes";
 const BREAKPOINTS = { small: 767.98, narrow: 1400 };
 
 // The panes in the order they sit, left to right. `lead()` walks it.
-const ORDER = ["rail", "list", "thread", "record"];
+const ORDER = ["rail", "list", "conversation", "record"];
 
 // What a folded pane's button shows: the thing it brings back.
 const ICONS = {
     rail: "fa-bars",
     list: "fa-list-ul",
-    thread: "fa-envelope-o",
+    conversation: "fa-envelope-o",
     record: "fa-cube",
 };
 
@@ -85,14 +85,14 @@ const PANES = {
 // than the list beside it, and the strip brings the list back in a tap.
 const COLLAPSIBLE = ["rail", "list", "record"];
 
-const THREAD_MIN = 360;
+const CONVERSATION_MIN = 360;
 const STEP = 16;
 
 function paneLabel(name) {
     return {
         rail: _t("Mailboxes"),
         list: _t("Conversations"),
-        thread: _t("Conversation"),
+        conversation: _t("Conversation"),
         record: _t("Record"),
     }[name];
 }
@@ -169,7 +169,7 @@ export function usePanes() {
         if (state.narrow && name === "record") {
             return state.stage !== "record";
         }
-        if (state.narrow && name === "thread") {
+        if (state.narrow && name === "conversation") {
             return state.stage === "record";
         }
         return Boolean(state.collapsed[name]);
@@ -186,7 +186,7 @@ export function usePanes() {
             return null;
         }
         if (name === "record") {
-            return isFolded("record") ? "right" : isFolded("thread") ? "left" : null;
+            return isFolded("record") ? "right" : isFolded("conversation") ? "left" : null;
         }
         return isFolded(name) ? "left" : null;
     }
@@ -200,7 +200,7 @@ export function usePanes() {
         return count;
     }
 
-    /** The widest this pane may get before the thread drops below its floor. */
+    /** The widest this pane may get before the conversation drops below its floor. */
     function ceiling(name, total) {
         const spec = PANES[name];
         if (!total) {
@@ -212,7 +212,7 @@ export function usePanes() {
                 others += state[other];
             }
         }
-        return clamp(total - others - THREAD_MIN, spec.min, spec.max);
+        return clamp(total - others - CONVERSATION_MIN, spec.min, spec.max);
     }
 
     function containerWidth(handle) {
@@ -282,7 +282,7 @@ export function usePanes() {
             if (this.toggleSide(name) !== "right") {
                 return "";
             }
-            const pane = name === "record" ? "thread" : name;
+            const pane = name === "record" ? "conversation" : name;
             const index = foldedRun(pane);
             return `left: ${TOGGLE_INSET + index * TOGGLE_STEP}rem`;
         },
@@ -315,14 +315,14 @@ export function usePanes() {
             if (!side) {
                 return this.chevron(name);
             }
-            return ICONS[name === "record" && side === "left" ? "thread" : name];
+            return ICONS[name === "record" && side === "left" ? "conversation" : name];
         },
 
         /** The pane the button acts on: on a tablet the divider serves two. */
         toggleLabel(name) {
             const side = foldedSide(name);
             if (name === "record" && side === "left") {
-                return _t("Show %s", paneLabel("thread"));
+                return _t("Show %s", paneLabel("conversation"));
             }
             return isFolded(name)
                 ? _t("Show %s", paneLabel(name))
@@ -402,7 +402,7 @@ export function usePanes() {
                 return;
             }
             if (name === "record" && state.narrow && !state.small) {
-                state.stage = state.stage === "record" ? "thread" : "record";
+                state.stage = state.stage === "record" ? "conversation" : "record";
                 return;
             }
             state.collapsed[name] = !state.collapsed[name];
@@ -432,8 +432,8 @@ export function usePanes() {
          * instead of the record. A conversation just picked is the thing
          * to look at, whichever pane had the column before.
          */
-        showThread() {
-            state.stage = "thread";
+        showConversation() {
+            state.stage = "conversation";
         },
 
         showList() {

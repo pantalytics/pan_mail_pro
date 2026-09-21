@@ -1,6 +1,6 @@
 /** @odoo-module */
 /**
- * The conversation view: folders, conversations, the thread, and the record.
+ * The Inbox: the rail, the list, the conversation and the record.
  *
  * Everything on this screen is read through `pan.mail.conversation`, which
  * stores nothing. Every action is Odoo's own method on the record underneath,
@@ -11,7 +11,7 @@
  * form cannot render, the pane falls back to a link and the rest of the inbox
  * keeps working. It shows the record and never its chatter: this screen writes
  * in one pane, and what the chatter carried is the strip of four tabs over the
- * thread -- Mail, Mail + notes, Files, Activities.
+ * conversation -- Mail, Mail + notes, Files, Activities.
  *
  * The panes themselves are draggable and the two outer ones fold away; that
  * lives in `use_panes.js`, because how wide a pane is has nothing to do with
@@ -54,7 +54,7 @@ const SEARCH_DELAY = 400;
 // What a pane with nothing selected holds. A function rather than a constant:
 // four lists shared between two selections is one stale thread away from a
 // reply landing under the wrong subject.
-const EMPTY_THREAD = () => ({
+const EMPTY_CONVERSATION = () => ({
     messages: [], records: [], rejected: [], activities: [], suggestion: false,
     // The attachments as the mail store holds them: the ids in order, the
     // records themselves in `store`. See `files` below.
@@ -195,7 +195,7 @@ export class ConversationView extends Component {
         // in a second starts three reads, and without these the slowest answer
         // wins the screen -- which need not be the one they asked for last.
         this.listSeq = 0;
-        this.threadSeq = 0;
+        this.conversationSeq = 0;
 
         this.state = useState({
             loading: true,
@@ -223,7 +223,7 @@ export class ConversationView extends Component {
             // its target from its own context; this is for the head.
             compose: null,
             tab: restoreTab(),
-            thread: EMPTY_THREAD(),
+            conversation: EMPTY_CONVERSATION(),
             // The ids whose activity cards are in the mail store. A card
             // lives in the store rather than in this state, so this list is
             // both what the tab draws and what tells Owl the second read
@@ -231,8 +231,8 @@ export class ConversationView extends Component {
             activityIds: [],
             // Which messages are open, whose quoted history is unfolded, and
             // whose header shows the full From / To / Cc / Date block. Keyed
-            // by message id, so a thread that reloads under a reply keeps
-            // nothing from the thread before it.
+            // by message id, so a conversation that reloads under a reply
+            // keeps nothing from the one before it.
             open: {},
             quotes: {},
             details: {},
@@ -356,7 +356,7 @@ export class ConversationView extends Component {
                     await this.select(conversations[0]);
                 } else {
                     this.state.selected = null;
-                    this.state.thread = EMPTY_THREAD();
+                    this.state.conversation = EMPTY_CONVERSATION();
                 }
             }
         } catch (error) {
@@ -381,7 +381,7 @@ export class ConversationView extends Component {
 
     /** A conversation picked from the list: on a phone, that is also a step. */
     async pick(conversation) {
-        this.panes.showThread();
+        this.panes.showConversation();
         await this.select(conversation);
     }
 
@@ -395,18 +395,18 @@ export class ConversationView extends Component {
     async select(conversation) {
         // A reply belongs to the conversation it answers, and this is another
         // one. The draft goes with it: nothing was stored yet, and a composer
-        // left open over the wrong thread is worse than retyping two lines.
+        // left open over the wrong conversation is worse than retyping two lines.
         this.composer.close();
         this.state.selected = conversation;
         this.state.showRejected = false;
-        // Nothing from the previous thread stays under the new subject.
-        this.state.thread = EMPTY_THREAD();
+        // Nothing from the previous conversation stays under the new subject.
+        this.state.conversation = EMPTY_CONVERSATION();
         this.state.activityIds = [];
         this.state.open = {};
         this.state.quotes = {};
         this.state.details = {};
         this.split.clear();
-        await this.readThread();
+        await this.readConversation();
     }
 
     /**
@@ -417,17 +417,17 @@ export class ConversationView extends Component {
      * Mail + notes, a reply that just went out -- is the *same* conversation
      * read again, and blanking it there is what made the pane flicker:
      * the header collapsed, the messages vanished, and the reader lost
-     * which ones they had open. Here the old thread stays up until the new
+     * which ones they had open. Here the old conversation stays up until the new
      * one arrives, and what was open stays open.
      */
-    async readThread({ openNewest = false } = {}) {
+    async readConversation({ openNewest = false } = {}) {
         const conversation = this.state.selected;
         if (!conversation) {
             return;
         }
-        const seq = ++this.threadSeq;
+        const seq = ++this.conversationSeq;
         try {
-            const thread = await this.orm.call(
+            const data = await this.orm.call(
                 "pan.mail.conversation", "read_conversation", [], {
                     model: conversation.model,
                     res_id: conversation.res_id,
@@ -438,24 +438,24 @@ export class ConversationView extends Component {
                     scope: this.state.tab === "all" ? "all" : "mail",
                 }
             );
-            if (seq !== this.threadSeq) {
+            if (seq !== this.conversationSeq) {
                 return;
             }
             // The attachments go into the mail store, which is where the
             // rest of the client reads them from, and this screen keeps
             // their ids.
-            this.mailStore.insert(thread.files?.store || {});
-            this.state.thread = thread;
+            this.mailStore.insert(data.files?.store || {});
+            this.state.conversation = data;
             // Keep the reader's place: a message that was open before this
             // read is still open after it, and one that is gone from this
             // reading takes its entry with it.
             const open = {};
-            for (const message of thread.messages) {
+            for (const message of data.messages) {
                 if (this.state.open[message.id]) {
                     open[message.id] = true;
                 }
             }
-            const newest = thread.messages[0];
+            const newest = data.messages[0];
             // The newest message is the one you came for. The rest of the
             // thread is context, one line each, a click away.
             if (newest && (openNewest || !Object.keys(open).length)) {
@@ -465,7 +465,7 @@ export class ConversationView extends Component {
             this.loadActivities(seq);
             this.loadFollowers();
         } catch (error) {
-            if (seq === this.threadSeq) {
+            if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that conversation.");
             }
             console.warn("[Mail Pro] conversation failed to open", error);
@@ -594,7 +594,7 @@ export class ConversationView extends Component {
     // --------------------------------------------------------------- render
 
     get selectedRecord() {
-        const chips = this.state.thread.records || [];
+        const chips = this.state.conversation.records || [];
         return chips.length ? chips[0] : null;
     }
 
@@ -610,19 +610,19 @@ export class ConversationView extends Component {
     }
 
     /** On a phone, the conversation has the screen once there is one. */
-    get threadOpen() {
-        return this.panes.state.stage === "thread"
+    get conversationOpen() {
+        return this.panes.state.stage === "conversation"
             && Boolean(this.state.selected || this.composer.state.open);
     }
 
     get showList() {
         const panes = this.panes.state;
-        return !panes.zoom && (!panes.small || !this.threadOpen);
+        return !panes.zoom && (!panes.small || !this.conversationOpen);
     }
 
-    get showThread() {
+    get showConversation() {
         const panes = this.panes.state;
-        return !panes.zoom && (!panes.small || this.threadOpen);
+        return !panes.zoom && (!panes.small || this.conversationOpen);
     }
 
     get showRecord() {
@@ -632,7 +632,7 @@ export class ConversationView extends Component {
 
     /**
      * The record, on a phone, where no pane for it fits: a button in the
-     * thread head that gives it the whole screen, and the screen's own
+     * conversation head that gives it the whole screen, and the screen's own
      * "Back to the Inbox" brings the conversation back. A tablet needs no
      * button: the record's divider is the strip that swaps it in.
      */
@@ -667,7 +667,7 @@ export class ConversationView extends Component {
      * The four readings of one conversation.
      *
      * Mail and Mail + notes are the same list read twice, so switching between
-     * them re-reads the thread. Files and Activities came down with it, so
+     * them re-reads the conversation. Files and Activities came down with it, so
      * they cost nothing to open and their counts do not move when you do.
      */
     async setTab(tab) {
@@ -684,7 +684,7 @@ export class ConversationView extends Component {
         if (reread && this.state.selected) {
             // In place: the same conversation read another way is not a
             // reason to empty the pane and draw it again.
-            await this.readThread();
+            await this.readConversation();
         }
     }
 
@@ -711,7 +711,7 @@ export class ConversationView extends Component {
             return this.fileIds.length;
         }
         if (tab === "activities") {
-            return (this.state.thread.activities || []).length;
+            return (this.state.conversation.activities || []).length;
         }
         return 0;
     }
@@ -720,7 +720,7 @@ export class ConversationView extends Component {
 
     /** The order the server read them in, newest first. */
     get fileIds() {
-        return this.state.thread.files?.ids || [];
+        return this.state.conversation.files?.ids || [];
     }
 
     /**
@@ -791,7 +791,7 @@ export class ConversationView extends Component {
         // own removal.
         const id = attachment.id;
         await this.attachmentUploader.unlink(attachment);
-        this.state.thread.files.ids = this.fileIds.filter((other) => other !== id);
+        this.state.conversation.files.ids = this.fileIds.filter((other) => other !== id);
     }
 
     /**
@@ -807,7 +807,7 @@ export class ConversationView extends Component {
         }
         const attachment = await this.attachmentUploader.uploadData(data, { thread });
         if (attachment && !this.fileIds.includes(attachment.id)) {
-            this.state.thread.files.ids = [attachment.id, ...this.fileIds];
+            this.state.conversation.files.ids = [attachment.id, ...this.fileIds];
         }
     }
 
@@ -822,7 +822,7 @@ export class ConversationView extends Component {
      * popover makes, ACLs and all, so the ids are the only thing we add.
      */
     async loadActivities(seq) {
-        const ids = (this.state.thread.activities || []).map((row) => row.id);
+        const ids = (this.state.conversation.activities || []).map((row) => row.id);
         if (!ids.length) {
             return;
         }
@@ -833,7 +833,7 @@ export class ConversationView extends Component {
             return;
         }
         const data = await this.orm.silent.call("mail.activity", "activity_format", [ids]);
-        if (seq === this.threadSeq) {
+        if (seq === this.conversationSeq) {
             this.mailStore.insert(data);
             this.state.activityIds = ids;
         }
@@ -855,7 +855,7 @@ export class ConversationView extends Component {
      * and then "call back" without a name on it is half an instruction.
      */
     activityRecordName(activity) {
-        const rows = this.state.thread.activities || [];
+        const rows = this.state.conversation.activities || [];
         if (new Set(rows.map((row) => `${row.model},${row.res_id}`)).size < 2) {
             return "";
         }
@@ -1080,7 +1080,7 @@ export class ConversationView extends Component {
      *
      * The same composer, in the same pane, as a reply: one place on this
      * screen writes mail, and a dialog over the Inbox was a second one to
-     * keep in step with it. The pane has no thread to show behind a new mail,
+     * keep in step with it. The pane has nothing to show behind a new mail,
      * so the head names the record instead of a subject, and the rest of the
      * screen stays where it was.
      *
@@ -1104,7 +1104,7 @@ export class ConversationView extends Component {
         if (this.panes.state.zoom) {
             this.panes.toggleZoom();
         }
-        this.panes.showThread();
+        this.panes.showConversation();
         this.state.compose = { model, res_id: resId, label: label || "" };
         // The record's own contact, the way a reply takes the last sender:
         // the composer fills "To" from nothing by itself, and a new mail that
@@ -1122,7 +1122,7 @@ export class ConversationView extends Component {
     }
 
     /**
-     * It went out: show it in the thread, and recount the folders.
+     * It went out: show it in the conversation, and recount the folders.
      *
      * Each of the two is written from the tab that shows it -- a reply in
      * Mail, a note in Mail + notes -- so what was just written is on screen
@@ -1136,7 +1136,7 @@ export class ConversationView extends Component {
             await this.refresh({ keepSelection: true });
             return;
         }
-        await this.readThread({ openNewest: true });
+        await this.readConversation({ openNewest: true });
         await this.refresh({ keepSelection: true });
     }
 
@@ -1197,7 +1197,7 @@ export class ConversationView extends Component {
         // Newest by date, and by id when two share a second: an import
         // stamps a whole thread in one go, and the answer still has to go
         // under the last message and not the first.
-        const incoming = (this.state.thread.messages || [])
+        const incoming = (this.state.conversation.messages || [])
             .filter((m) => m.direction === "incoming")
             .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
         return incoming[0] || null;
@@ -1207,7 +1207,7 @@ export class ConversationView extends Component {
 
     /** Take the suggestion the matcher made. One click, the common case. */
     async acceptSuggestion() {
-        const suggestion = this.state.thread.suggestion;
+        const suggestion = this.state.conversation.suggestion;
         if (suggestion) {
             await this.linkTo(suggestion.model, suggestion.res_id);
         }
@@ -1236,7 +1236,7 @@ export class ConversationView extends Component {
      * of this conversation now files itself.
      */
     async linkTo(model, resId) {
-        const messageIds = this.state.thread.messages.map((message) => message.id);
+        const messageIds = this.state.conversation.messages.map((message) => message.id);
         if (!messageIds.length) {
             return;
         }

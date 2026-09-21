@@ -3,7 +3,7 @@
  * The reply, in the pane instead of on top of it.
  *
  * A dialog over the Inbox hides the three things somebody looks at while
- * answering: the list, the thread and the record. So the composer takes the
+ * answering: the list, the conversation and the record. So the composer takes the
  * conversation pane, the way every mail client does it, and the rest of the
  * screen stays where it was.
  *

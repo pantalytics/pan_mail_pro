@@ -67,6 +67,42 @@ time the module was an Outlook-only add-on. The rename was deliberately one
 mechanical release rather than a series of partial ones, so every stored id
 migrated once; `migrations/19.0.6.0.0/` is the record of what moved where.
 
+### The Inbox and its panes
+
+The screen is the **Inbox**: one client action, root class `o_mailpro_inbox`.
+It holds four panes, left to right, and each one has exactly one name -- the
+same word in the code, the CSS class, the label and the prose.
+
+| # | Pane | Code | CSS class | Label | What is in it |
+|---|------|------|-----------|-------|----------------|
+| 1 | **rail** | `rail` | `o_mailpro_rail` | Mailboxes | the mailboxes and their folders |
+| 2 | **list** | `list` | `o_mailpro_list` | Conversations | the conversations in the chosen folder |
+| 3 | **conversation** | `conversation` | `o_mailpro_conversation` | Conversation | the open conversation: its messages, the tab strip, the composer |
+| 4 | **record** | `record` | `o_mailpro_record` | Record | the linked Odoo record, as its own form view |
+
+The names are the keys, not just labels: `ORDER`, `ICONS`, `paneLabel()`,
+`folded(name)`, `lead(name)` and `stage` in `use_panes.js` all take one of
+these four words, and the divider left of a pane is `o_mailpro_split_<pane>`
+(there is none left of the rail). Widths are stored for three of them; the
+conversation is what the other three leave over, so it has a floor and no
+width of its own.
+
+Two words are reserved and never name a pane:
+
+- **thread** is the mail thread the matcher keys on -- `pan.mail.thread.index`,
+  `pan.mail.thread.link`, the `References` root, and Odoo's own `Thread` store
+  model (`recordThread` is the record's chatter thread, not a pane). Pane 3 was
+  called `thread` until 19.0.13.10.0, which is why the prose and the code
+  disagreed about it.
+- **conversation** on its own is the object: a `pan.mail.conversation` row in
+  the list, opened in the conversation pane. The pane is always "the
+  conversation pane" when the pane is what is meant.
+
+Pane 3 never folds -- a screen with no mail on it is not this screen -- and the
+record pane has a fifth state that is not a width: zoom, the record on the
+whole screen. Sizing, folding and the three window shapes are in
+`static/src/js/conversation_view/use_panes.js`.
+
 ### Provider abstraction
 
 Everything wire-specific — how a mail is sent, how remote messages are listed

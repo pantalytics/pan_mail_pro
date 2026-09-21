@@ -241,7 +241,7 @@ class Checks:
         page = self.page
         page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
         try:
-            page.wait_for_selector('.o_mailpro_conversation', timeout=30000)
+            page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
         except Exception:
             self.fail('the Inbox did not render at all')
             return
@@ -343,17 +343,17 @@ class Checks:
             # assertion Reply makes further down.
             if not page.query_selector('.o_mailpro_composer [name="partner_ids"] .o_tag'):
                 self.fail('New Email opened a composer with nobody in To')
-            head = page.query_selector('.o_mailpro_thread_head .o_mailpro_thread_title')
+            head = page.query_selector('.o_mailpro_conversation_head .o_mailpro_conversation_title')
             if not head or head.inner_text().strip() != 'New email':
                 self.fail('the pane head does not say a new email is being written')
             if not page.query_selector(
-                    '.o_mailpro_thread_head button:has-text("Send")'):
+                    '.o_mailpro_conversation_head button:has-text("Send")'):
                 self.fail('the New Email composer has no Send button')
             self.shot('inbox-new-email-composer.png')
             # Discard rather than Escape: Escape leaves the draft open, and
             # an open composer takes every check after this one down with it.
             discard = page.query_selector(
-                '.o_mailpro_thread_head button:has-text("Discard")')
+                '.o_mailpro_conversation_head button:has-text("Discard")')
             if not discard:
                 self.fail('an open New Email cannot be discarded')
             else:
@@ -438,9 +438,9 @@ class Checks:
 
         messages = page.query_selector_all('.o_mailpro_message')
         if not messages:
-            self.fail('the thread pane shows no messages')
+            self.fail('the conversation pane shows no messages')
         elif len(messages) > 1:
-            # A thread is a stack, newest at the top: the message you came
+            # A conversation is a stack, newest at the top: the message you came
             # for is open and the history under it is one line each. Nine
             # open bodies is a page you have to scroll, and the newest
             # message is the part anybody reads first.
@@ -556,14 +556,14 @@ class Checks:
         # One writing action per tab, and each on the tab that shows what it
         # writes. Both everywhere is how a note written in Mail vanishes on
         # save, and how a reply gets sent from a screen showing no mail.
-        if page.query_selector('.o_mailpro_thread_head button:has-text("Log note")'):
+        if page.query_selector('.o_mailpro_conversation_head button:has-text("Log note")'):
             self.fail('the Mail tab offers Log note')
 
         # The screen's one primary action. A reader-only inbox is half a
         # product, and this is the click that proves it is not one.
-        reply = page.query_selector('.o_mailpro_thread_head button.btn-primary')
+        reply = page.query_selector('.o_mailpro_conversation_head button.btn-primary')
         if not reply:
-            self.fail('the thread has no Reply button')
+            self.fail('the conversation has no Reply button')
         else:
             reply.click()
             try:
@@ -581,12 +581,12 @@ class Checks:
                     self.fail('Reply opened the composer in a dialog')
                 # The chatter fills "To" from the record; the composer on its
                 # own fills nothing, and a reply to nobody is the one bug a
-                # green suite cannot see. The seeded thread has a customer,
+                # green suite cannot see. The seeded conversation has a customer,
                 # so their tag has to be there before anyone types.
                 if not page.query_selector('.o_mailpro_composer [name="partner_ids"] .o_tag'):
                     self.fail('Reply opened a composer with nobody in To')
                 # And it answers the mail, not the record: the subject is the
-                # thread's, so the customer's client files it where they read
+                # conversation's, so the customer's client files it where they read
                 # the question. The record's name here means the reply left
                 # as a new conversation.
                 subject = page.query_selector('.o_mailpro_composer [name="subject"] input')
@@ -594,7 +594,7 @@ class Checks:
                 # "offerte revisie" is in the mail's subject and not in the
                 # lead's name, so the record-name fallback cannot pass this.
                 if 'offerte revisie' not in value.lower():
-                    self.fail(f'Reply subject is "{value}", not the thread subject')
+                    self.fail(f'Reply subject is "{value}", not the conversation subject')
                 # The arch's footer is cut out of every form that is not in a
                 # dialog, so without the inline view there is no way to attach
                 # a file to a reply -- and nothing errors, the paperclip is
@@ -616,7 +616,7 @@ class Checks:
                 # Discard rather than Escape: Escape leaves the draft open,
                 # and the screenshot below is what a reviewer looks at.
                 discard = page.query_selector(
-                    '.o_mailpro_thread_head button:has-text("Discard")')
+                    '.o_mailpro_conversation_head button:has-text("Discard")')
                 if not discard:
                     self.fail('an open reply cannot be discarded')
                 else:
@@ -635,9 +635,9 @@ class Checks:
         # a note once it is written.
         page.click('.o_mailpro_tab:has-text("Mail + notes")')
         page.wait_for_timeout(900)
-        if page.query_selector('.o_mailpro_thread_head button:has-text("Reply")'):
+        if page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")'):
             self.fail('the Mail + notes tab offers Reply')
-        note = page.query_selector('.o_mailpro_thread_head button:has-text("Log note")')
+        note = page.query_selector('.o_mailpro_conversation_head button:has-text("Log note")')
         if not note:
             self.fail('there is no way to log a note')
         else:
@@ -652,10 +652,10 @@ class Checks:
                 if over_the_note:
                     self.fail(f'a dialog opened over the note: {over_the_note}')
                 if not page.query_selector(
-                        '.o_mailpro_thread_head button:has-text("Log")'):
+                        '.o_mailpro_conversation_head button:has-text("Log")'):
                     self.fail('the note is sent by a button that says Send')
                 discard = page.query_selector(
-                    '.o_mailpro_thread_head button:has-text("Discard")')
+                    '.o_mailpro_conversation_head button:has-text("Discard")')
                 if discard:
                     discard.click()
                     page.wait_for_selector('.o_mailpro_messages', timeout=15000)
@@ -686,7 +686,7 @@ class Checks:
                 if 'Inbox' not in crumbs:
                     self.fail(f'the breadcrumb above the record reads "{crumbs}", not Inbox')
                 page.go_back()
-                page.wait_for_selector('.o_mailpro_conversation', timeout=15000)
+                page.wait_for_selector('.o_mailpro_inbox', timeout=15000)
                 page.wait_for_timeout(600)
             except Exception as exc:
                 self.fail(f'the Filed-on chip did not open the record: {exc}')
@@ -702,10 +702,10 @@ class Checks:
         # on its divider, at the conversation's right edge: a tap slides the
         # record into the conversation's column and folds the conversation,
         # and the same button, now at the record's left edge, gives the
-        # conversation back. No button in the thread head: the one on the
+        # conversation back. No button in the conversation head: the one on the
         # divider is the control, and it is always on screen.
         if page.query_selector('.o_mailpro_record_button'):
-            self.fail('at 1280px the thread head still carries a Record button')
+            self.fail('at 1280px the conversation head still carries a Record button')
         toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
         if not toggle or not toggle.is_visible():
             self.fail('at 1280px there is no button to open the record from')
@@ -727,7 +727,7 @@ class Checks:
             elif record.bounding_box()['width'] < 500:
                 self.fail('the record opened %dpx wide at 1280px, not the column'
                           % record.bounding_box()['width'])
-            if self.visible('.o_mailpro_thread'):
+            if self.visible('.o_mailpro_conversation'):
                 self.fail('the conversation stayed open next to the record at 1280px')
             self.shot('inbox-narrow-record.png')
             toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
@@ -744,7 +744,7 @@ class Checks:
                     self.fail('the conversation button sits over the record header text')
                 toggle.click()
                 page.wait_for_timeout(600)
-                if not self.visible('.o_mailpro_thread'):
+                if not self.visible('.o_mailpro_conversation'):
                     self.fail('tapping the button again did not bring the conversation back')
                 if self.visible('.o_mailpro_record'):
                     self.fail('the record stayed open next to the conversation at 1280px')
@@ -785,7 +785,7 @@ class Checks:
         page.wait_for_timeout(600)
         for selector, name in (('.o_mailpro_rail', 'the mailbox rail'),
                                ('.o_mailpro_list', 'the conversation list'),
-                               ('.o_mailpro_thread', 'the conversation')):
+                               ('.o_mailpro_conversation', 'the conversation')):
             if not self.visible(selector):
                 self.fail(f'{name} did not come back at {WIDE}px')
 
@@ -929,7 +929,7 @@ class Checks:
         if not self.visible('.o_mailpro_list'):
             self.fail('a phone does not open on the conversation list')
             return
-        if self.visible('.o_mailpro_thread'):
+        if self.visible('.o_mailpro_conversation'):
             self.fail('the conversation sits next to the list on a phone')
         list_width = page.query_selector('.o_mailpro_list').bounding_box()['width']
         if list_width < 370:
@@ -965,7 +965,7 @@ class Checks:
             return
         item.click()
         page.wait_for_timeout(1200)
-        if not self.visible('.o_mailpro_thread'):
+        if not self.visible('.o_mailpro_conversation'):
             self.fail('opening a conversation on a phone showed nothing')
             return
         if self.visible('.o_mailpro_list'):
@@ -975,7 +975,7 @@ class Checks:
         # The record, over the conversation, and the way back from it.
         button = page.query_selector('.o_mailpro_record_button')
         if not button:
-            self.fail('the phone thread head offers no way to the record')
+            self.fail('the phone conversation head offers no way to the record')
         else:
             button.click()
             page.wait_for_timeout(800)
@@ -989,7 +989,7 @@ class Checks:
                 self.shot('inbox-phone-record.png')
                 page.query_selector('.o_mailpro_record_zoom').click()
                 page.wait_for_timeout(500)
-                if not self.visible('.o_mailpro_thread'):
+                if not self.visible('.o_mailpro_conversation'):
                     self.fail('Back to the Inbox did not bring the conversation back on a phone')
 
         # Writing takes the whole phone: the composer is as wide as the
@@ -1002,7 +1002,7 @@ class Checks:
         if mail_tab:
             mail_tab.click()
             page.wait_for_timeout(600)
-        reply = page.query_selector('.o_mailpro_thread_head button:has-text("Reply")')
+        reply = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
         if not reply:
             self.fail('the phone conversation has no Reply button on the Mail tab')
         else:
@@ -1019,7 +1019,7 @@ class Checks:
                 if self.visible('.o_mailpro_back'):
                     self.fail('the back arrow offers to drop the draft on a phone')
                 self.shot('inbox-phone-compose.png')
-                page.click('.o_mailpro_thread_head button:has-text("Discard")')
+                page.click('.o_mailpro_conversation_head button:has-text("Discard")')
                 page.wait_for_timeout(500)
             except Exception as exc:
                 self.fail(f'Reply on a phone opened no composer: {exc}')
@@ -1111,7 +1111,7 @@ class Checks:
 
         # The list folds too, the same way, and the conversation takes the
         # room it leaves.
-        thread_before = page.query_selector('.o_mailpro_thread').bounding_box()['width']
+        conversation_before = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
         fold = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
         if not fold:
             self.fail('the conversation list cannot be folded away')
@@ -1120,14 +1120,14 @@ class Checks:
         page.wait_for_timeout(400)
         if self.visible('.o_mailpro_list'):
             self.fail('the conversation list did not fold away')
-        thread_after = page.query_selector('.o_mailpro_thread').bounding_box()['width']
-        if thread_after - thread_before < 100:
+        conversation_after = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
+        if conversation_after - conversation_before < 100:
             self.fail('folding the list gave the conversation %dpx, not the list\'s width'
-                      % (thread_after - thread_before))
+                      % (conversation_after - conversation_before))
         # The button floats over the conversation's header, which makes
         # room: the title starts to the right of it.
         toggle = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
-        title = page.query_selector('.o_mailpro_thread_title')
+        title = page.query_selector('.o_mailpro_conversation_title')
         if toggle and title and title.bounding_box()['x'] < \
                 toggle.bounding_box()['x'] + toggle.bounding_box()['width']:
             self.fail('the folded list\'s button sits over the conversation title')
@@ -1138,7 +1138,7 @@ class Checks:
         page.wait_for_timeout(400)
         rail_btn = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
         list_btn = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
-        title = page.query_selector('.o_mailpro_thread_title')
+        title = page.query_selector('.o_mailpro_conversation_title')
         if not rail_btn or not list_btn:
             self.fail('folding rail and list together lost a button')
         else:
@@ -1192,7 +1192,7 @@ class Checks:
         page.wait_for_timeout(500)
 
         for selector, name in (('.o_mailpro_list', 'the conversation list'),
-                               ('.o_mailpro_thread', 'the conversation'),
+                               ('.o_mailpro_conversation', 'the conversation'),
                                ('.o_mailpro_rail', 'the mailbox rail'),
                                ('.o_mailpro_split_list', 'a divider')):
             pane = page.query_selector(selector)
@@ -1215,7 +1215,7 @@ class Checks:
         page.query_selector('.o_mailpro_record_zoom').click()
         page.wait_for_timeout(500)
         for selector, name in (('.o_mailpro_list', 'the conversation list'),
-                               ('.o_mailpro_thread', 'the conversation')):
+                               ('.o_mailpro_conversation', 'the conversation')):
             pane = page.query_selector(selector)
             if not pane or not pane.is_visible():
                 self.fail(f'{name} did not come back when the zoom was closed')

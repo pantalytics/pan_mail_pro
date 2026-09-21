@@ -81,7 +81,7 @@ healthy mailboxes, heartbeat today.
   followers at different customers see each other's addresses. An address
   leak on the default path. Fix before Juffermans, not after.
 - **#149**: "Linked to nothing" is empty for everyone but the sender.
-- **#140**: attachments invisible in the thread pane.
+- **#140**: attachments invisible in the conversation pane.
 - **#134**: Cloudpepper never runs `-u`. Not only on mailpro-dev: production
   Pantalytics sits on 12.5.0 in the database with 13.1.0 on disk right now.
   Until this is understood, every version bump is a manual Upgrade click on
