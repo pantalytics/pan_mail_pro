@@ -110,23 +110,17 @@ MAILBOX_FOLDERS = [
 # once at the top rather than growing a branch halfway down.
 DRAFTS = 'drafts'
 
-# The states worth filtering a folder down to. These are ours, not the
-# provider's, so they read as filters over a list rather than as folders
-# holding mail of their own -- the difference between a view and a place.
+# The search bar over the list is Odoo's own, so every state worth filtering a
+# folder down to is a `<filter>` in `views/pan_mail_conversation_views.xml`
+# rather than a list here: it produces a domain over `mail.message`, and a
+# domain is the whole contract between that bar and this file.
 #
-# They are all about *linking*, never about the mail itself. A mailbox has
-# read and unread, and that is the whole vocabulary of a mail list; a state
-# like "needs reply" is one we made up, and it was ours to keep correct on a
-# screen that reads mail somebody already triages in Outlook. Read status is
-# Odoo's, and it is enough.
-LIST_FILTERS = [
-    ('unread', 'Unread'),
-    ('unlinked_contact', 'On a contact only'),
-    ('unlinked_none', 'Linked to nothing'),
-]
+# `pan_mail_ungrouped` is the one thing a domain cannot say. Mail linked to
+# nothing is not one conversation, so the filter that asks for it carries that
+# key in its context and the client passes it on as `ungrouped`.
+UNGROUPED_KEY = 'pan_mail_ungrouped'
 
-KINDS = ({value: 'folder' for value, _label in MAILBOX_FOLDERS}
-         | {value: 'filter' for value, _label in LIST_FILTERS})
+KINDS = {value: 'folder' for value, _label in MAILBOX_FOLDERS}
 
 # The matcher's rule names, in words. The screen shows why a mail was not
 # filed, and `subject_participants` is not why anything happened.
@@ -180,11 +174,16 @@ class PanMailConversation(models.AbstractModel):
                 ('message_type', 'in', SENT_TYPES),
                 ('is_internal', '=', False)]
 
-    def _base_domain(self, mailbox_id=None, partner_id=None, search=None):
-        """Mail this user may read, optionally narrowed to one mailbox."""
-        domain = self._mail_domain()
+    def _base_domain(self, mailbox_id=None, partner_id=None, domain=None):
+        """Mail this user may read, optionally narrowed to one mailbox.
+
+        `domain` is the search bar's, and it is the only thing the bar hands
+        over: a facet, a typed word and a filter all arrive here as clauses on
+        `mail.message`.
+        """
+        base = self._mail_domain()
         if mailbox_id:
-            domain.append(('x_mailbox_id', '=', mailbox_id))
+            base.append(('x_mailbox_id', '=', mailbox_id))
         if partner_id:
             partner = self.env['res.partner'].browse(partner_id)
             # The company, not the person: jan@acme and inkoop@acme are one
@@ -193,13 +192,16 @@ class PanMailConversation(models.AbstractModel):
             # the sibling contacts first pastes a few thousand ids into every
             # clause of every query a large customer's timeline makes.
             company = partner.commercial_partner_id or partner
-            domain += ['|',
-                       ('author_id.commercial_partner_id', '=', company.id),
-                       ('partner_ids.commercial_partner_id', '=', company.id)]
-        if search:
-            domain += ['|', ('subject', 'ilike', search),
-                       ('email_from', 'ilike', search)]
-        return domain
+            base += ['|',
+                     ('author_id.commercial_partner_id', '=', company.id),
+                     ('partner_ids.commercial_partner_id', '=', company.id)]
+        if domain:
+            # What the search bar asked for, over `mail.message`. Parsed
+            # rather than pasted: `Domain` refuses anything that is not a
+            # domain, and what a domain may ask of this model is what a
+            # `search_read` from the same session may ask of it anyway.
+            base += list(Domain(domain))
+        return base
 
     def _folder_domain(self, folder):
         """The extra clauses the chosen folder adds to the grouping query.
@@ -210,25 +212,6 @@ class PanMailConversation(models.AbstractModel):
         """
         if folder == 'sent':
             return [('x_direction', '=', 'outgoing')]
-        return []
-
-    def _filter_domain(self, filter_name):
-        """The extra clauses a list filter adds to the grouping query.
-
-        Every filter here is a clause on the message, so the grouping query
-        is the whole answer.
-        """
-        if filter_name == 'unread':
-            # The mailbox's own read state, mirrored from the provider, which
-            # is the same column the dot on the row reads. Never Odoo's
-            # `needaction`: that row is per user and says whether an Odoo
-            # notification still wants you, which is a different question with
-            # a screen of its own (ARCHITECTURE.md section 9.18).
-            return [('x_is_read', '=', False)]
-        if filter_name == 'unlinked_contact':
-            return [('model', '=', 'res.partner')]
-        if filter_name == 'unlinked_none':
-            return [('model', '=', False)]
         return []
 
     def _conversation_domain(self, model, res_id, message_id=None,
@@ -288,54 +271,92 @@ class PanMailConversation(models.AbstractModel):
     # ------------------------------------------------------------------
 
     @api.model
-    def folder_counts(self, mailbox_id=None, folder=None,
-                      partner_id=None, search=None):
-        """The numbers on the mailbox list, and on the filters of one folder.
+    def failure_remedy(self):
+        """What to do about the read that just failed, in one sentence.
+
+        The banner can repeat what the server said; it cannot know what to do
+        about it, and "Could not load your conversations" sends the reader to
+        a log for a line the browser already had. One cause is common enough
+        to be worth naming: code deployed without the module being upgraded.
+        The registry then holds fields the database has no columns for, every
+        query in here fails on a missing column, and nothing on screen says
+        so. Cloudpepper restarts on a push and never upgrades (issue #134),
+        so this is the normal shape of an inbox that broke by itself.
+
+        Nothing here reads a `pan_mail_*` table. This method has to answer on
+        exactly the databases where those are what is broken.
+        """
+        self._check_caller()
+        module = self.env['ir.module.module'].sudo().search(
+            [('name', '=', 'pan_mail_pro')], limit=1)
+        # Odoo's two version fields are named the other way round from how
+        # they read: `installed_version` is computed from the manifest on
+        # disk, `latest_version` is the string the last upgrade wrote into
+        # the database. The gap between them is the whole diagnosis.
+        on_disk = module.installed_version or ''
+        in_database = module.latest_version or ''
+        if module.state == 'to upgrade' or (on_disk and in_database and on_disk != in_database):
+            return _(
+                "Mail Pro %(on_disk)s is on the server, this database still "
+                "runs %(in_database)s. Open Apps, search for Mail Pro and "
+                "press Upgrade.",
+                on_disk=on_disk, in_database=in_database,
+            )
+        # Every other failure: the line the server gave is what there is. A
+        # remedy we cannot name is worse than none, because it sends the
+        # reader somewhere that is not where the problem is.
+        return ''
+
+    @api.model
+    def inbox_search_view_id(self):
+        """The search view the Inbox's search bar is built from.
+
+        The bar is Odoo's own `SearchBar` over `mail.message`, and a search
+        bar needs the id of a view rather than a name. Asked for here rather
+        than pinned in the client action's context so an inherited view is all
+        it takes to add a filter of your own.
+        """
+        self._check_caller()
+        return self.env['ir.model.data']._xmlid_to_res_id(
+            'pan_mail_pro.view_pan_mail_inbox_search')
+
+    @api.model
+    def folder_counts(self, mailbox_id=None, partner_id=None,
+                      domain=None, search=None, ungrouped=False):
+        """The numbers on the mailbox list, one per folder.
 
         Counted on every read, capped at `COUNT_CAP`. A stored counter would be
         one more fact that can disagree with the messages; an exact count means
         aggregating every row the reader can see, once per entry, on every
         click. The cap costs a "+" on the label and saves the scan.
 
-        It takes the same `partner_id` and `search` the list takes, so the two
-        panes always describe the same mail.
+        It takes the same `partner_id`, `domain` and `search` the list takes,
+        so the two panes always describe the same mail: narrow the search and
+        the numbers beside Inbox, Sent and Drafts narrow with it.
 
-        `folder` is the one the reader has open. The filters are counted
-        inside it and only for that mailbox, because they are a filter row
-        over one list rather than a second pane: a mailbox standing open in
-        the mailbox list costs its two folders, not four.
+        The search bar's filters are counted nowhere. Odoo's own filter menu
+        carries no numbers either, and a count per filter is a grouping query
+        per filter on every click.
         """
         self._check_caller()
-        base = self._base_domain(mailbox_id, partner_id, search)
-        folders = [self._count_entry(base, value, label,
-                                     self._folder_domain(value))
-                   if value != DRAFTS
-                   else self._draft_entry(value, label, mailbox_id, search)
-                   for value, label in MAILBOX_FOLDERS]
-        filters = []
-        # Every filter in the row is a question about mail that arrived or
-        # went out. None of them is a question about your own unsent answer,
-        # so Drafts carries no filter row at all.
-        if folder and folder != DRAFTS:
-            within = base + self._folder_domain(folder)
-            filters = [
-                self._count_entry(within, value, label,
-                                  self._filter_domain(value))
-                for value, label in LIST_FILTERS
-            ]
-        return {'folders': folders, 'filters': filters}
+        base = self._base_domain(mailbox_id, partner_id, domain)
+        return [self._count_entry(base, value, label,
+                                  self._folder_domain(value), ungrouped)
+                if value != DRAFTS
+                else self._draft_entry(value, label, mailbox_id, search)
+                for value, label in MAILBOX_FOLDERS]
 
-    def _count_entry(self, domain, value, label, extra):
-        """One number for the mailbox list or the filter row, capped."""
+    def _count_entry(self, domain, value, label, extra, ungrouped=False):
+        """One number beside a folder in the mailbox list, capped."""
         groups = self.env['mail.message']._read_group(
             domain + extra, groupby=['model', 'res_id'],
             aggregates=['__count', 'date:max'],
             order='date:max DESC, model ASC, res_id ASC',
             limit=COUNT_CAP + 1,
         )
-        if value == 'unlinked_none':
-            # Unfiled mail does not group: every row is its own conversation,
-            # and grouping on (model, res_id) counts the whole pile as one.
+        if ungrouped:
+            # The list is not grouping either, so the number has to count
+            # what the list will show: messages, not conversations.
             total = sum(count for _model, _res_id, count, _date in groups)
         else:
             total = len(groups)
@@ -361,15 +382,23 @@ class PanMailConversation(models.AbstractModel):
 
     @api.model
     def search_conversations(self, mailbox_id=None, folder='inbox',
-                             filter_name=None, partner_id=None, search=None,
+                             partner_id=None, domain=None, search=None,
+                             ungrouped=False,
                              record_model=None, record_id=None,
                              limit=DEFAULT_LIMIT, offset=0):
         """One page of conversations, newest first.
 
-        Two dimensions: the folder from the mailbox list, and the filter over it. A
-        folder is a place mail is, a filter is a question about it, and the
-        screen keeps them apart because the mailbox list is the part people already
-        know how to read.
+        Two dimensions: the folder from the mailbox list, and whatever the
+        search bar asks on top of it. A folder is a place mail is, a search is
+        a question about it, and the screen keeps them apart because the
+        mailbox list is the part people already know how to read.
+
+        `domain` is the search bar's, over `mail.message`. `ungrouped` is the
+        one thing it cannot say: the filter that asks for mail linked to
+        nothing carries `pan_mail_ungrouped` in its context, and the client
+        passes it on here. `search` is the words the reader typed, which is
+        the only part of that bar Drafts can use: those live in a table of
+        their own, so a domain over `mail.message` means nothing to them.
 
         `record_model` / `record_id` narrow the list to one record. That is
         door 1 arriving from a chatter: the reader came from a record rather
@@ -388,11 +417,16 @@ class PanMailConversation(models.AbstractModel):
             # Another table, the same row shape. A draft is on a record from
             # the moment it is saved, so it needs no grouping: there is one
             # draft per row and it already knows where it belongs.
+            #
+            # It takes `search` and not `domain`: the search bar's domain is
+            # over `mail.message`, and a draft is not one. What carries across
+            # the two tables is the words somebody typed, so that is what the
+            # client sends beside the domain.
             return self.env['pan.mail.draft'].folder_rows(
                 mailbox_id=mailbox_id, search=search,
                 record_model=record_model, record_id=record_id,
                 limit=limit, offset=offset)
-        base = self._base_domain(mailbox_id, partner_id, search)
+        base = self._base_domain(mailbox_id, partner_id, domain)
         if record_model and record_id:
             base = base + [('model', '=', record_model),
                            ('res_id', '=', int(record_id))]
@@ -401,15 +435,14 @@ class PanMailConversation(models.AbstractModel):
         # Mail nobody filed is not one conversation. Grouping it on
         # (model, res_id) would collapse every unmatched message in the
         # database into a single row belonging to nobody, which is the exact
-        # opposite of the state this filter exists to make reviewable.
-        if filter_name == 'unlinked_none':
-            return self._unlinked_rows(narrowed, limit, offset)
+        # opposite of the state that filter exists to make reviewable.
+        if ungrouped:
+            return self._ungrouped_rows(narrowed, limit, offset)
 
         Message = self.env['mail.message']
-        domain = narrowed + self._filter_domain(filter_name)
 
         groups = Message._read_group(
-            domain,
+            narrowed,
             groupby=['model', 'res_id'],
             aggregates=['__count', 'date:max'],
             # The tiebreaker is not decoration: LIMIT/OFFSET over an ambiguous
@@ -719,15 +752,18 @@ class PanMailConversation(models.AbstractModel):
     # Batch helpers: one query for the page, never one per row
     # ------------------------------------------------------------------
 
-    def _unlinked_rows(self, domain, limit, offset):
-        """One row per unlinked message, because that is what it is.
+    def _ungrouped_rows(self, domain, limit, offset):
+        """One row per message, because that is what the reader asked for.
 
         Nothing groups these: they are the mails the matcher could not place,
-        and the whole point of the filter is to look at them one at a time.
+        and the whole point of that filter is to look at them one at a time.
+        The domain is the search bar's, so a reader who combines that filter
+        with another one gets every matching message on its own row -- the
+        one case this drops rather than handles, because a page that is half
+        conversations and half messages cannot be paged.
         """
         messages = self.env['mail.message'].search(
-            domain + [('model', '=', False)],
-            order='date desc, id desc', limit=limit, offset=offset,
+            domain, order='date desc, id desc', limit=limit, offset=offset,
         )
         rows = []
         for message in messages:

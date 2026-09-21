@@ -155,6 +155,53 @@ shifted left. The indent is those widths added up in
 `static/src/scss/conversation_view.scss`, which is why the row's own padding is
 written there instead of left to the browser's button default.
 
+### The search bar
+
+The bar over the list is Odoo's own `SearchBar`, on a `SearchModel` this screen
+instantiates over **`mail.message`**: the same box, the same autocomplete, the
+same facets, the same filter menu the rest of the web client has. 19.0.13.0.0
+built one of ours in that shape; 19.0.18.0.0 stopped imitating and mounted the
+real one.
+
+The seam is a domain. Every conversation in pane 2 is a group of `mail.message`
+rows, so what the bar produces -- a typed word, a facet, a filter -- is exactly
+what `search_conversations(domain=...)` and `folder_counts(domain=...)` want,
+and the list and the numbers beside Inbox and Sent narrow together.
+
+Drafts are the exception, because they are a table of their own
+(`pan.mail.draft`) and a domain over `mail.message` means nothing there. What
+does carry across is the words somebody typed, so the client sends those as
+`search=` beside the domain and the drafts table narrows on them alone.
+
+What the reader may ask for lives in a search view,
+`view_pan_mail_inbox_search`, so a customer adds a filter with an inherited
+view rather than a patched component:
+
+| | What it asks |
+|---|---|
+| Subject or sender | the first field, so Enter searches it: `subject` or `email_from` |
+| Contact, From | `author_id`, `email_from`, each with Odoo's own autocomplete |
+| Unread | `x_is_read = False`, the mailbox's own read state (§9.18) |
+| On a contact only | `model = res.partner` |
+| Linked to nothing | `model = False`, and `pan_mail_ungrouped` in its context |
+| Date | Odoo's standard month / quarter / year filter |
+
+Group By and Favourites are off (`searchMenuTypes: ["filter"]`): the grouping
+is the conversation, and a favourite would be a saved search per model rather
+than per screen.
+
+`pan_mail_ungrouped` is the one thing a domain cannot say. Mail filed on
+nothing is not one conversation -- grouping it on `(model, res_id)` would
+collapse every unmatched message in the database into a single row belonging to
+nobody -- so that filter carries the key in its context, the client passes it on
+as `ungrouped=True`, and the list returns one row per message. A reader who
+combines it with another filter gets messages rather than conversations for the
+whole list; that is the case this drops, because a page that is half
+conversations and half messages cannot be paged.
+
+The mailbox and the folder are not filters. They are pane 1, and a filter
+saying the same thing twice is two controls that can disagree.
+
 ### Provider abstraction
 
 Everything wire-specific — how a mail is sent, how remote messages are listed
@@ -1473,8 +1520,8 @@ anyone being asked again. One click buys permanent correctness for a thread,
 which is the only part of triage that compounds. The inbox says so in those
 words when it confirms.
 
-The word is **linked**, everywhere: the chip row reads `Linked to`, the mailbox list
-already had `Linked to nothing`, and the report in §7 is called link coverage.
+The word is **linked**, everywhere: the chip row reads `Linked to`, the search
+bar's own filter says `Linked to nothing`, and the report in §7 is called link coverage.
 "Filed" was the technical word for the same idea and it was the only place the
 vocabulary drifted.
 
