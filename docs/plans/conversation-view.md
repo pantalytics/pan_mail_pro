@@ -13,7 +13,7 @@ read method (`customer_timeline`) shipped and is tested, so what is left of it
 is markup. Drafts ship in 19.0.17.0.0: a third
 folder in the mailbox list, a **Save draft** beside Send, and the unsent answer
 on the conversation it belongs to. *All mailboxes*, the one folder that spans
-them, ships in 19.0.18.3.0: the row, the mailbox on every list row that needs
+them, ships in 19.0.18.4.0: the row, the mailbox on every list row that needs
 one, and the reply that answers from the conversation's mailbox rather than the
 folder's. Also still on paper: the composer's
 **Cc/followers block**. Reply opens Odoo's own composer with To filled from
@@ -105,7 +105,7 @@ watches rather than one per mailbox that exists. 19.0.10.4.0.
 
 **Decision: one row at the top of the mailbox list, *All mailboxes*, with the
 same Inbox and Sent under it. Not a drop-down, and not a tick-list of
-mailboxes.** 19.0.18.3.0.
+mailboxes.** 19.0.18.4.0.
 
 Apple Mail puts All Inboxes behind a chevron because its sidebar keeps the
 accounts folded away underneath it. Ours already draws every mailbox in the
