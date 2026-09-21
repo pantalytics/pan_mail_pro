@@ -66,7 +66,7 @@
 
         Documentation:
         --------------
-        Full setup guide: https://pantalytics.odoo.com/knowledge/article/116
+        Full setup guide: https://odoo.pantalytics.com/knowledge/article/116
 
         Setup Instructions:
         -------------------
@@ -110,7 +110,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.17.0.0',
+    'version': '19.0.17.0.1',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
