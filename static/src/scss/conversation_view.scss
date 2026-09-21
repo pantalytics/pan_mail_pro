@@ -134,14 +134,23 @@ $mailpro-band-gutter: 3.5rem;
     // `!important`, so a bar that wore it could not be hidden on a phone by
     // any rule at all. Every display in this block is plain CSS for that
     // reason.
+    // What it gives back is `!important` because what it is giving back is
+    // `!important`: a theme paints the navbar as a bar -- its height, its
+    // padding, its border and its shadow -- and every one of those lands on
+    // this zone the moment it wears the class. Ours is a zone inside a bar,
+    // 52px tall, with the bar's own border under it; without these it is a
+    // second bar drawn inside the first, four pixels taller than the one it
+    // sits in.
     .o_mailpro_topbar_end.o_main_navbar {
         display: flex;
         align-items: center;
         justify-content: flex-end;
-        height: auto;
-        padding: 0;
-        border-bottom: 0;
-        background: transparent;
+        height: auto !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        border-bottom: 0 !important;
+        box-shadow: none !important;
+        background: transparent !important;
     }
 
     // The way out, and the only one: this action is fullscreen, so there is no
@@ -626,8 +635,23 @@ $mailpro-band-gutter: 3.5rem;
     .o_mailpro_date { font-size: 0.6875rem; color: $mailpro-muted; white-space: nowrap; }
     .o_mailpro_subject { margin-top: 0.125rem; font-size: 0.8125rem; font-weight: 500; }
     .o_mailpro_preview { margin-top: 0.125rem; font-size: 0.75rem; color: $mailpro-muted; }
-    .o_mailpro_meta { margin-top: 0.4375rem; }
-    .o_mailpro_muted { font-size: 0.6875rem; color: $mailpro-muted; }
+    // One line, whatever the list's width. The row is a flex line that does
+    // not wrap, so a squeeze is taken out of the items themselves -- and a
+    // span of text takes it by breaking, which is how "5 messages" became two
+    // lines on a phone and made every row in the list taller. The chip is
+    // what may shrink (it truncates), the count is what may not.
+    .o_mailpro_meta {
+        margin-top: 0.4375rem;
+        min-width: 0;
+
+        .o_mailpro_chip { min-width: 0; }
+    }
+
+    .o_mailpro_muted {
+        font-size: 0.6875rem;
+        color: $mailpro-muted;
+        white-space: nowrap;
+    }
 
     // Which mailbox a row is in, drawn only while the list spans more than
     // one. Quieter than the record chip beside it: the record is what the
@@ -644,6 +668,9 @@ $mailpro-band-gutter: 3.5rem;
         white-space: nowrap;
     }
 
+    // A chip is one line. Whatever is in it -- a record name, a state -- it
+    // truncates rather than breaking: the row it sits on has four lines
+    // already, and a chip that wraps adds a fifth to every row in the list.
     .o_mailpro_chip {
         padding: 0.125rem 0.4375rem;
         border-radius: 0.25rem;
@@ -651,6 +678,9 @@ $mailpro-band-gutter: 3.5rem;
         color: $mailpro-accent-ink;
         font-size: 0.6875rem;
         font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     // A row from the mailbox itself that Odoo does not have. Quiet on
@@ -1403,13 +1433,28 @@ $mailpro-band-gutter: 3.5rem;
         .o_mailpro_back { display: flex; }
 
         // The bar no longer centres the search: there is no room to weigh
-        // both sides, and the search takes what New Email leaves. The systray
-        // goes with it -- a phone has room for the mail or for the chrome, and
-        // the counters, the company and the user menu are all one tap away
-        // through the icon on the left, on a screen built to show them.
+        // both sides, and the search takes what the compose button leaves.
+        // The systray goes entirely -- a phone has room for the mail or for
+        // the chrome, and the counters, the company and the user menu are all
+        // one tap away through the icon on the left, on a screen built to
+        // show them. It is left out by the template rather than hidden here:
+        // a theme that writes `.o_main_navbar { display: flex !important }`
+        // outranks any rule this file can write.
         .o_mailpro_topbar_start { flex: 0 0 auto; }
-        .o_mailpro_topbar_end.o_main_navbar { display: none; }
         .o_mailpro_search_zone { flex: 1 1 auto; min-width: 0; }
+
+        // The pencil alone. The label is the widest thing in the bar and the
+        // icon says the same word on a screen this size.
+        .o_mailpro_new_label { display: none; }
+
+        // Odoo's search bar is an `input-group`, which is `flex-wrap: wrap`:
+        // squeezed, it puts the filter caret on a second line, out of a bar
+        // that is 3.25rem tall. One line, and an input that may shrink --
+        // an `<input>`'s min-content width is its size attribute, so without
+        // this it refuses to be narrower than about 180px and pushes the
+        // caret off the end.
+        .o_cp_searchview { flex-wrap: nowrap; }
+        .o_searchview_input { min-width: 0; }
 
         // The drawer slides in from the edge rather than folding: it is over
         // the screen, not part of it, so it keeps its width and moves. The

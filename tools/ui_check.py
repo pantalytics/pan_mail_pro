@@ -1339,6 +1339,32 @@ class Checks:
         if list_width < 370:
             self.fail('the list takes %dpx of a 390px phone' % list_width)
 
+        # The row's last line is one line. It holds the mailbox, the record
+        # and the message count, and each of those is a span of text:
+        # squeezed, a flex line that does not wrap takes it out of the items
+        # themselves, so "5 messages" broke in two and every row in the list
+        # grew a line. Asked per item and in its own line-heights, because
+        # how tall a line is belongs to the font and how many of them there
+        # are is the thing being asserted.
+        lines = page.evaluate("""
+            () => {
+                const meta = document.querySelector('.o_mailpro_item .o_mailpro_meta');
+                if (!meta) { return []; }
+                return [...meta.children].map((el) => {
+                    const cs = getComputedStyle(el);
+                    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+                    const box = el.getBoundingClientRect().height
+                        - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+                        - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth);
+                    return { text: el.textContent.trim().slice(0, 24), lines: box / lh };
+                });
+            }
+        """)
+        for entry in lines:
+            if entry['lines'] > 1.5:
+                self.fail('"%s" wraps to %.1f lines on a phone, so every row is taller'
+                          % (entry['text'], entry['lines']))
+
         # The mailbox list is a drawer: absent until asked for, over the list while
         # open, gone again once a folder is picked.
         if self.visible('.o_mailpro_mailbox_list'):
@@ -1349,8 +1375,32 @@ class Checks:
         # A phone has room for the mail or for the chrome. The systray is the
         # chrome and stays behind the icon on the left, which is the one piece
         # of it a phone keeps: without it this screen has no way out at all.
-        if self.visible('.o_mailpro_topbar_end'):
-            self.fail('the systray takes room from a 390px bar')
+        # Not rendered, rather than hidden: the zone wears `o_main_navbar` to
+        # borrow web's styling, and a theme that writes
+        # `.o_main_navbar { display: flex !important }` puts it back on the
+        # screen -- which is how a phone ended up with a systray, a 55px
+        # search box and a filter caret on a second line out of the bar.
+        if page.query_selector('.o_mailpro_topbar_end'):
+            self.fail('a phone still renders the systray zone, so a theme can show it')
+
+        # What is left fits the bar: the compose button is a pencil without
+        # its label, and the search takes the rest of the row. Odoo's search
+        # bar is an `input-group`, so a squeeze wraps the filter caret onto a
+        # second line and out of a bar that is 52px tall -- which is a shape
+        # to assert, not a rule to trust.
+        bar = page.query_selector('.o_mailpro_topbar').bounding_box()
+        label = page.query_selector('.o_mailpro_new_label')
+        if label and label.is_visible():
+            self.fail('New Email keeps its label on a phone, which is a third of the bar')
+        search = page.query_selector('.o_mailpro_topbar .o_cp_searchview')
+        if not search:
+            self.fail('a phone has no search bar in the Inbox')
+        else:
+            box = search.bounding_box()
+            if box['width'] < 150:
+                self.fail('the search box is %dpx wide on a 390px phone' % box['width'])
+            if box['height'] > bar['height'] or box['y'] + box['height'] > bar['y'] + bar['height']:
+                self.fail('the search bar does not fit the bar it is in on a phone')
         home = page.query_selector('.o_mailpro_home')
         if not home or not home.is_visible():
             self.fail('a phone has no way back to Odoo from the Inbox')
