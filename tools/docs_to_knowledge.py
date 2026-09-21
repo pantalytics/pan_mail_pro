@@ -28,9 +28,7 @@ BASE = "https://odoo.pantalytics.com/knowledge/article/"
 PAGES = {
     "README.md": 116,
     "getting-started/installation.md": 117,
-    # No article yet: create it in Knowledge and put its id here. Until then
-    # rendering a page that links to it stops with a message, on purpose.
-    "getting-started/connect-pantalytics.md": None,
+    "getting-started/connect-pantalytics.md": 131,
     "getting-started/azure-setup.md": 118,
     "getting-started/google-setup.md": 128,
     "getting-started/imap-setup.md": 129,

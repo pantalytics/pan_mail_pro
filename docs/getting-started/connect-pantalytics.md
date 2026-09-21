@@ -6,8 +6,11 @@ through Odoo's own mail server keeps working, incoming mail is not synced and
 no mailbox can be connected.
 
 You need a Pantalytics account. If you do not have one yet, you create it on
-the page the button opens, with your work email address. Colleagues who sign
-in with the same email domain later can be added to the same workspace.
+the page the button opens, or beforehand at
+<a href="https://app.mailpro.pantalytics.com/start" target="_blank">app.mailpro.pantalytics.com/start</a>,
+with your work email address. Forgotten password and the verification mail
+are handled on that sign-in page. Colleagues can be added to the same
+workspace afterwards, under **Members**.
 
 ## Connect
 
@@ -31,10 +34,12 @@ administer, ask an administrator of that workspace to approve instead.
 
 ## What it means
 
-- **Status: Active, plan free.** During the beta every connected instance is
-  on the free plan and no sending limit is enforced. The intended limits are
-  100 mails a day on Free, 1,000 on Pro and 5,000 on Max; you will hear before
-  any of them takes effect.
+- **Status: Active, plan free.** A connected instance starts on Free: 100
+  mails a day. Pro is 1,000 a day and Max 5,000, one button on the
+  **Billing** page of your workspace at `app.mailpro.pantalytics.com`; every
+  Odoo instance in the workspace gets the plan's limit within a day. Over the
+  limit, mail waits until the next day, it is never refused. The limit is not
+  enforced by this version of the module yet; you will hear before it is.
 - **Once a day** the instance reports in and receives a signed answer. If
   Pantalytics cannot be reached, the last answer stays valid for 14 days;
   after that, incoming sync pauses until the next successful check. Sending

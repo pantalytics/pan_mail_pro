@@ -49,13 +49,17 @@ See [Security](security.md) for the full picture.
 
 ## Getting Started
 
-1. [Installation](getting-started/installation.md), add the module to your Odoo instance
-2. [Connect to Pantalytics](getting-started/connect-pantalytics.md), one button, free during the beta
-3. Set up your provider: [Microsoft 365](getting-started/azure-setup.md),
+1. Create your Pantalytics account at
+   <a href="https://app.mailpro.pantalytics.com/start" target="_blank">app.mailpro.pantalytics.com/start</a>.
+   Free up to 100 mails a day per Odoo instance
+2. [Installation](getting-started/installation.md), add the module to your Odoo
+   instance: Odoo.sh, Cloudpepper or your own server
+3. [Connect to Pantalytics](getting-started/connect-pantalytics.md), one button in Odoo
+4. Set up your provider: [Microsoft 365](getting-started/azure-setup.md),
    [Google Workspace](getting-started/google-setup.md) or
    [IMAP/SMTP](getting-started/imap-setup.md)
-4. [User Setup](getting-started/user-setup.md), connect accounts
-5. [Mailboxes](configuration/mailboxes.md), configure sending and sync
+5. [User Setup](getting-started/user-setup.md), connect accounts
+6. [Mailboxes](configuration/mailboxes.md), configure sending and sync
 
 Once mail is flowing, [Where Mail Lands](configuration/where-mail-lands.md)
 explains how to check it is going where you expect.
