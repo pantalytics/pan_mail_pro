@@ -116,7 +116,7 @@
                     in the scss): there is room for the mail or for the
                     chrome, and the way to all of it is the icon on the left.
                 -->
-                <div class="o_mailpro_topbar_end o_main_navbar d-flex align-items-center justify-content-end">
+                <div class="o_mailpro_topbar_end o_main_navbar">
                     <div class="o_menu_systray d-flex align-items-center" role="menu">
                         <t t-foreach="systrayItems" t-as="item" t-key="item.key">
                             <ErrorHandler onError="(error) => this.systrayFailed(error, item)">
