@@ -19,7 +19,8 @@
  * over the screen; that lives in `use_composer.js`.
  */
 
-import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
+import { Component, useState, useSubEnv, onWillStart, onError, markup, useRef, useEffect }
+    from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useService } from "@web/core/utils/hooks";
@@ -236,6 +237,12 @@ export class ConversationView extends Component {
             open: {},
             quotes: {},
             details: {},
+            // Whether the selected row is opened into the mail it holds.
+            // One flag, not one per conversation: only the conversation that
+            // is open has its messages read, so the others have nothing to
+            // show, and a list where six rows stand open is the pane one
+            // column to the right in a narrower column.
+            listOpen: true,
             showRejected: false,
             search: "",
         });
@@ -245,6 +252,22 @@ export class ConversationView extends Component {
         // state. Outside `state` on purpose: it is derived from a message that
         // cannot change, so it is a cache and not a fact.
         this.split = new Map();
+
+        // Clicking a mail in the list opens it in the conversation pane, and a
+        // message that opens below the fold of a long thread reads as a click
+        // that did nothing. The id is handed to the next patch, which is the
+        // first moment the row it names exists.
+        this.messagesRef = useRef("messages");
+        this.scrollTo = null;
+        useEffect(() => {
+            if (!this.scrollTo) {
+                return;
+            }
+            const selector = `[data-message-id="${this.scrollTo}"]`;
+            const message = this.messagesRef.el?.querySelector(selector);
+            this.scrollTo = null;
+            message?.scrollIntoView({ block: "start", behavior: "smooth" });
+        }, () => [this.scrollTo]);
 
         onWillStart(async () => {
             await this.loadMailboxes();
@@ -377,6 +400,55 @@ export class ConversationView extends Component {
         return left.model === right.model
             && left.res_id === right.res_id
             && left.message_id === right.message_id;
+    }
+
+    // ------------------------------------------- the mail under a list row
+
+    /**
+     * The open conversation's mail, as the list draws it under its row.
+     *
+     * Mail only: an internal note and a stage change belong to the record and
+     * are read in the pane, where the tab strip says which of them you asked
+     * for. A list row is about correspondence.
+     */
+    get listMessages() {
+        return (this.state.conversation.messages || [])
+            .filter((message) => message.kind === "mail");
+    }
+
+    /**
+     * Does this row stand open? Only the selected one can: its mail is the
+     * only mail this screen has read.
+     */
+    showsMessages(conversation) {
+        return this.state.listOpen
+            && !!this.state.selected
+            && this.sameConversation(conversation, this.state.selected)
+            && this.listMessages.length > 1;
+    }
+
+    /** The caret: open this row, which on another row means select it first. */
+    async toggleMessages(conversation) {
+        if (this.state.selected
+                && this.sameConversation(conversation, this.state.selected)) {
+            this.state.listOpen = !this.state.listOpen;
+            return;
+        }
+        // The caret asks what is in a conversation, not to go and read it, so
+        // this is `select` and not `pick`: on a phone the list keeps the screen.
+        this.state.listOpen = true;
+        await this.select(conversation);
+    }
+
+    /**
+     * A mail picked from that overview. The list says which mail you want;
+     * the pane is still where a body is read, so this opens it there and
+     * closes the rest -- the thread you are in has one message you came for.
+     */
+    openFromList(message) {
+        this.state.open = { [message.id]: true };
+        this.scrollTo = message.id;
+        this.panes.showConversation();
     }
 
     /** A conversation picked from the list: on a phone, that is also a step. */

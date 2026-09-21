@@ -76,7 +76,7 @@ that name is the same word in the code, the CSS class, the label and the prose.
 | # | Pane | Code key | CSS class | Label | What is in it |
 |---|------|----------|-----------|-------|----------------|
 | 1 | **mailbox list** | `mailbox_list` | `o_mailpro_mailbox_list` | Mailboxes | the mailboxes and, under each, its folders |
-| 2 | **conversation list** | `conversation_list` | `o_mailpro_conversation_list` | Conversations | the conversations in the chosen folder, one row each |
+| 2 | **conversation list** | `conversation_list` | `o_mailpro_conversation_list` | Conversations | the conversations in the chosen folder, one row each; the open one expands into its mail, one line each |
 | 3 | **conversation** | `conversation` | `o_mailpro_conversation` | Conversation | the open conversation: its messages, the tab strip, the composer |
 | 4 | **Odoo record** | `odoo_record` | `o_mailpro_odoo_record` | Odoo record | the record the conversation is linked to, as its own form view |
 

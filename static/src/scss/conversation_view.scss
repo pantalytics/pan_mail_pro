@@ -230,6 +230,8 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     .o_mailpro_folder,
     .o_mailpro_filter_toggle,
     .o_mailpro_item,
+    .o_mailpro_item_toggle,
+    .o_mailpro_item_message,
     .o_mailpro_chip_button,
     .o_mailpro_message_head,
     .o_mailpro_quote_toggle,
@@ -314,16 +316,86 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         background: rgba(93, 91, 214, 0.1);
     }
 
+    // A conversation and the mail under it are one row. The line between
+    // rows belongs to the group rather than to the conversation line, so an
+    // open conversation reads as one block and not as a row with strays
+    // under it.
+    .o_mailpro_row {
+        position: relative;
+        border-bottom: 1px solid $mailpro-line-soft;
+    }
+
     .o_mailpro_item {
         display: block;
         width: 100%;
+        // The caret's column. Held open on every row, including the ones
+        // with nothing to open: a column that appears when a row is selected
+        // moves the whole list sideways under the cursor.
+        padding-left: 1.125rem;
         border: 0;
-        border-bottom: 1px solid $mailpro-line-soft;
         background: none;
         text-align: left;
         cursor: pointer;
 
         &:hover { background: rgba(0, 29, 33, 0.02); }
+    }
+
+    // Over the row's left edge rather than inside the button: the row is one
+    // button already, and a button inside a button is not a thing.
+    .o_mailpro_item_toggle {
+        position: absolute;
+        top: 0.4375rem;
+        left: 0.0625rem;
+        width: 1rem;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: $mailpro-faint;
+        font-size: 0.8125rem;
+        line-height: 1;
+        cursor: pointer;
+
+        &:hover { color: $mailpro-ink; }
+    }
+
+    // The mail in the open conversation, one line each, indented to the
+    // column the conversation's own text starts at.
+    .o_mailpro_item_messages {
+        padding-bottom: 0.25rem;
+    }
+
+    .o_mailpro_item_message {
+        display: block;
+        width: 100%;
+        padding: 0.25rem 0.625rem 0.25rem 3.625rem;
+        border: 0;
+        background: none;
+        text-align: left;
+        cursor: pointer;
+
+        &:hover { background: rgba(0, 29, 33, 0.04); }
+    }
+
+    // Which of them you are reading in the pane, in the colour the list uses
+    // for "this one" one row above.
+    .o_mailpro_item_message_open {
+        background: rgba(93, 91, 214, 0.12);
+
+        &:hover { background: rgba(93, 91, 214, 0.12); }
+    }
+
+    // Our own mail, marked the way Outlook marks it in a thread: the name on
+    // the line is the sender, so without this every second row reads as a
+    // mail that came in.
+    .o_mailpro_sent_tag {
+        padding: 0.0625rem 0.375rem;
+        border-radius: 0.25rem;
+        background: rgba(0, 29, 33, 0.06);
+        color: $mailpro-faint;
+        font-size: 0.625rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
     }
 
     .o_mailpro_item_active {

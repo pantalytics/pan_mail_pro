@@ -497,6 +497,8 @@ class Checks:
                 meta.click()
                 page.wait_for_timeout(300)
 
+        self.list_messages(page)
+
         # The fourth pane is the product. If the form view cannot mount, the
         # pane falls back and this is the only place that would notice.
         if page.query_selector('.o_mailpro_odoo_record .o_form_view') is None:
@@ -781,6 +783,64 @@ class Checks:
                                ('.o_mailpro_conversation', 'the conversation')):
             if not self.visible(selector):
                 self.fail(f'{name} did not come back at {WIDE}px')
+
+    def list_messages(self, page):
+        """The open conversation, opened into its mail in the list itself.
+
+        Outlook expands a thread where it sits, and this is that: a caret on
+        every conversation holding more than one mail, the mail one line each
+        under the row, and a click that opens the one you picked in the
+        conversation pane rather than a second reader in the list.
+        """
+        # The caret of the row that is open: the only row whose mail this
+        # screen has read, and so the only one that can stand open.
+        caret = '.o_mailpro_row:has(.o_mailpro_item_active) .o_mailpro_item_toggle'
+        if page.query_selector(caret) is None:
+            print('  . the open conversation holds one mail; '
+                  'the list overview is unchecked', flush=True)
+            return
+
+        rows = page.query_selector_all('.o_mailpro_item_message')
+        if not rows:
+            self.fail('the selected conversation does not open into its mail')
+            return
+        divs = [el for el in rows if el.evaluate('el => el.tagName') != 'BUTTON']
+        if divs:
+            self.fail(f'{len(divs)} mail rows in the list are not buttons')
+
+        # The mail the pane has open is marked in the list too: two panes
+        # showing one conversation must not disagree about which mail it is.
+        if len(page.query_selector_all('.o_mailpro_item_message_open')) != 1:
+            self.fail('the list does not mark exactly one mail as the open one')
+
+        self.shot('inbox-list-messages.png')
+
+        # A mail picked in the list opens in the pane, and nothing else stays
+        # open behind it: the list says which mail, the pane is where a body
+        # is read.
+        closed = page.query_selector(
+            '.o_mailpro_item_message:not(.o_mailpro_item_message_open)')
+        if closed is None:
+            self.fail('every mail in the list row is already open')
+        else:
+            closed.click()
+            page.wait_for_timeout(600)
+            if len(page.query_selector_all('.o_mailpro_message_open')) != 1:
+                self.fail('picking a mail in the list left two open in the pane')
+            if len(page.query_selector_all('.o_mailpro_item_message_open')) != 1:
+                self.fail('the list lost track of which mail is open')
+
+        # The caret closes the overview and brings it back. Re-queried
+        # after every click: the row is redrawn, and the handle from before
+        # points at an element that is no longer on the page.
+        page.click(caret)
+        page.wait_for_timeout(500)
+        if page.query_selector_all('.o_mailpro_item_message'):
+            self.fail('the caret left the mail on screen')
+        page.click(caret)
+        page.wait_for_timeout(500)
+        if not page.query_selector_all('.o_mailpro_item_message'):
+            self.fail('the caret did not bring the mail back')
 
     def linking(self):
         """The screen where a match is corrected, and the correction sticking.

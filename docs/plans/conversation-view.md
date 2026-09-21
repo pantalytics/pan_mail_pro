@@ -56,7 +56,12 @@ The screen is four panes:
    is a question about the folder you are in, so it survives a folder switch
    and a second click clears it. It is Odoo's own dropdown and its own
    `CheckboxItem`, the components the control panel's filter menu is built
-   from. 19.0.13.0.0.
+   from. 19.0.13.0.0. The conversation you are reading opens in place, the way
+   Outlook expands a thread: a caret on every row holding more than one mail,
+   the mail one line each underneath -- who wrote it, when, and a Sent marker
+   on ours -- and a click that opens that one in pane 3. Only the open row can
+   expand, because its mail is the only mail the screen has read, and a body is
+   still read in one place. 19.0.14.3.0.
 3. **The thread.** Messages in order, quoted history collapsed, and a reply that
    goes out through the right mailbox with the conversation quoted underneath.
    That last part is a survey complaint in its own right: today each chatter

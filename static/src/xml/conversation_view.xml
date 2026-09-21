@@ -208,9 +208,26 @@
                         </div>
                     </t>
                     <t t-else="">
-                        <button t-foreach="state.conversations" t-as="conversation"
-                                t-key="conversation.message_id"
-                                type="button"
+                        <!--
+                            One row per conversation, and the one you are
+                            reading opens into the mail it holds, the way
+                            Outlook expands a thread in place. The caret is a
+                            column of its own over the row's left edge: a
+                            conversation of one mail has nothing to open, and a
+                            caret that appears only once a row is selected
+                            moves the whole list under the cursor.
+                        -->
+                        <div t-foreach="state.conversations" t-as="conversation"
+                             t-key="conversation.message_id" class="o_mailpro_row">
+                        <button t-if="conversation.count > 1" type="button"
+                                class="o_mailpro_item_toggle"
+                                t-att-aria-expanded="showsMessages(conversation) ? 'true' : 'false'"
+                                t-attf-aria-label="{{ showsMessages(conversation) ? 'Hide the mail in' : 'Show the mail in' }} {{ conversation.subject }}"
+                                t-on-click="() => this.toggleMessages(conversation)">
+                            <i class="fa" aria-hidden="true"
+                               t-att-class="showsMessages(conversation) ? 'fa-caret-down' : 'fa-caret-right'"/>
+                        </button>
+                        <button type="button"
                                 class="o_mailpro_item"
                                 t-att-class="{
                                     'o_mailpro_item_active': state.selected
@@ -249,6 +266,32 @@
                                 </span>
                             </div>
                         </button>
+                        <!--
+                            The same mail the conversation pane draws, one
+                            line each: who wrote it, when, and whether it went
+                            out from here. Clicking one opens that mail in the
+                            pane rather than a second reader in the list, so
+                            there is one place a body is read.
+                        -->
+                        <div t-if="showsMessages(conversation)" class="o_mailpro_item_messages">
+                            <button t-foreach="listMessages" t-as="message" t-key="message.id"
+                                    type="button" class="o_mailpro_item_message"
+                                    t-att-class="{ 'o_mailpro_item_message_open': isOpen(message) }"
+                                    t-att-aria-current="isOpen(message) ? 'true' : undefined"
+                                    t-on-click="() => this.openFromList(message)">
+                                <span class="d-flex align-items-baseline gap-2">
+                                    <span class="o_mailpro_from flex-grow-1 min-w-0 text-truncate"
+                                          t-esc="message.author"/>
+                                    <span t-if="message.direction === 'outgoing'"
+                                          class="o_mailpro_sent_tag flex-shrink-0">Sent</span>
+                                    <span class="o_mailpro_date flex-shrink-0"
+                                          t-att-title="fullDate(message.date)" t-esc="day(message.date)"/>
+                                </span>
+                                <span class="o_mailpro_preview d-block text-truncate"
+                                      t-esc="snippet(message)"/>
+                            </button>
+                        </div>
+                        </div>
                         <div t-if="state.hasMore" class="o_mailpro_more">
                             <button type="button" class="btn btn-link btn-sm"
                                     t-on-click="() => this.loadMore()">Load more</button>
@@ -484,7 +527,7 @@
                         <t t-elif="state.tab === 'activities'">
                             <t t-call="pan_mail_pro.ConversationActivities"/>
                         </t>
-                        <div t-else="" class="o_mailpro_messages">
+                        <div t-else="" class="o_mailpro_messages" t-ref="messages">
                             <t t-foreach="state.conversation.messages" t-as="message" t-key="message.id">
                             <!--
                                 A record event is one line, never a card:
@@ -507,6 +550,7 @@
                                       t-esc="day(message.date)"/>
                             </div>
                             <article t-else=""
+                                     t-att-data-message-id="message.id"
                                      class="o_mailpro_message"
                                      t-att-class="{
                                         'o_mailpro_message_open': isOpen(message),
