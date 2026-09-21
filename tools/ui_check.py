@@ -719,7 +719,10 @@ class Checks:
             if box['width'] < 32 or abs(box['width'] - box['height']) > 2:
                 self.fail('the record toggle is %dx%dpx, not a finger-sized square'
                           % (box['width'], box['height']))
-            if 'odoo_record' not in (toggle.get_attribute('aria-label') or '').lower():
+            # The label is prose ("Show Odoo record"), not the pane key: the
+            # two are the same name in two of its four spellings, and asking
+            # for the key here is what made this fail on a correct screen.
+            if 'odoo record' not in (toggle.get_attribute('aria-label') or '').lower():
                 self.fail('the record button does not say what it opens: %r'
                           % toggle.get_attribute('aria-label'))
             if toggle.get_attribute('aria-pressed') != 'false':
@@ -792,11 +795,18 @@ class Checks:
         because hiding one without adding the other is just as wrong.
         """
         page = self.page
-        page.goto(f'{self.base}/odoo/my-preferences', wait_until='domcontentloaded')
+        # With no record the action opens an empty *new* user, which has no
+        # mailbox and no level and would pass this check by being blank.
+        uid = self.call('res.users', 'search', [('login', '=', 'admin')])[0]
+        page.goto(f'{self.base}/odoo/my-preferences/{uid}',
+                  wait_until='domcontentloaded')
         try:
             page.wait_for_selector('.o_form_view', timeout=30000)
         except Exception:
             self.fail('My Preferences did not render')
+            return
+        if 'New' in (page.query_selector('.o_breadcrumb') or page).inner_text():
+            self.fail('My Preferences opened an empty new user, not the admin')
             return
         page.wait_for_timeout(1200)
         self.shot('my-preferences.png')
