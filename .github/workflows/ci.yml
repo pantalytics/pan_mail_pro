@@ -58,11 +58,16 @@ jobs:
           tools/ci_lint.sh
 
   # ---------------------------------------------------------------------------
+  # That the version is *untouched*, not that it was raised: the mainline
+  # raises it after the merge (.github/workflows/release.yml), so a branch that
+  # writes it is a merge conflict waiting for whoever merges second. The one
+  # exception is a branch adding a migration, which has to name its version.
+  #
   # Kept as its own job because it is a required status check by name.
   # Local equivalent: tools/ci_version_bump.sh origin/19.0
   # ---------------------------------------------------------------------------
   version-bump:
-    name: Manifest version bumped
+    name: Manifest version
     runs-on: ubuntu-latest
     # Skipped on the mainline itself, where there is nothing to compare against.
     if: github.ref_name != github.event.repository.default_branch

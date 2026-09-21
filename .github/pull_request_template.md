@@ -8,7 +8,8 @@ CI enforces the first four automatically; the rest need a human.
 
 - [ ] No `attrs` in views — `invisible` / `readonly` / `required` directly
 - [ ] No `numbercall` on cron jobs
-- [ ] `version` bumped in `__manifest__.py` (`19.0.X.Y.Z`)
+- [ ] `version` in `__manifest__.py` left alone — `19.0` raises it after the merge
+      (label `bump:patch` / `bump:major` to change the step; see [docs/release.md](../docs/release.md))
 - [ ] New data/asset files added to `__manifest__.py`
 - [ ] Stored computed fields have `@api.depends`
 - [ ] Field access controlled with `groups` where it holds credentials
@@ -22,5 +23,6 @@ CI enforces the first four automatically; the rest need a human.
 
 ## Migration
 
-- [ ] No schema change, **or** a script exists in `migrations/<version>/`
+- [ ] No schema change, **or** a script exists in `migrations/<version>/` **and**
+      `__manifest__.py` says that exact version (the one case a PR sets it)
 - [ ] Migration is idempotent and rehearsed against a restored backup

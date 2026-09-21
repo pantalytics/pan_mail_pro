@@ -266,8 +266,8 @@ if [ -n "${BASE_REF:-}" ]; then
             echo "OK: model changes are accompanied by tests."
         fi
 
-        step "Manifest version bumped (vs $BASE_REF)"
-        tools/ci_version_bump.sh "$BASE_REF" || fail "Module code changed without a version bump."
+        step "Manifest version left alone (vs $BASE_REF)"
+        tools/ci_version_bump.sh "$BASE_REF" || fail "The branch writes a version the mainline decides."
     fi
 else
     echo
