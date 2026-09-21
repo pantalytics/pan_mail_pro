@@ -11,6 +11,74 @@
         for the people the module is for. The diagnostics stay where that
         release put them, under Settings -> Technical -> Email.
     -->
+    <!--
+        The Inbox's search bar.
+
+        The bar itself is Odoo's own `SearchBar`: the same box, the same
+        autocomplete, the same facets and the same filter menu the rest of the
+        web client has. This view is the only thing about it that is ours, and
+        it is where a customer adds a filter of their own: an inherited view,
+        not a patched component.
+
+        Every conversation on that screen is a group of `mail.message` rows, so
+        the search is a domain over `mail.message` and the model behind the
+        view is `mail.message`. That is the whole seam: the search bar produces
+        a domain, `pan.mail.conversation` groups whatever the domain leaves.
+
+        The mailbox and the folder are deliberately absent. They are the pane
+        on the left, and a filter that says the same thing twice is two
+        controls that can disagree.
+    -->
+    <record id="view_pan_mail_inbox_search" model="ir.ui.view">
+        <field name="name">pan.mail.inbox.search</field>
+        <field name="model">mail.message</field>
+        <field name="arch" type="xml">
+            <search string="Mail">
+                <!-- First, so Enter searches it: one box that asks the
+                     question people actually type, which is a name or a word
+                     out of a subject and never which column it sits in. -->
+                <field name="subject" string="Subject or sender"
+                       filter_domain="['|', ('subject', 'ilike', self), ('email_from', 'ilike', self)]"/>
+                <field name="author_id" string="Contact"/>
+                <field name="email_from" string="From"/>
+                <!-- Last, and never the default: the body is not indexed, so
+                     an `ilike` over it is a scan of every mail in the
+                     database. Worth having one arrow-down away, not worth
+                     running on every Enter. -->
+                <field name="body" string="Content"/>
+
+                <!--
+                    The mailbox's own read state, mirrored from the provider,
+                    which is the same column the dot on the row reads. Never
+                    Odoo's `needaction`: that row is per user and says whether
+                    an Odoo notification still wants you, which is a different
+                    question with a screen of its own (ARCHITECTURE.md 9.18).
+                -->
+                <filter name="unread" string="Unread"
+                        domain="[('x_is_read', '=', False)]"/>
+                <separator/>
+                <!--
+                    The two states the link coverage report counts, as the
+                    filters that show you the mail behind the number. Their own
+                    group, so the reader can ask for either or for both.
+
+                    `pan_mail_ungrouped` is what the Inbox reads to stop
+                    grouping: mail that is filed on nothing is not one
+                    conversation, and grouping it on (model, res_id) would
+                    collapse every unmatched message in the database into a
+                    single row belonging to nobody.
+                -->
+                <filter name="on_contact" string="On a contact only"
+                        domain="[('model', '=', 'res.partner')]"/>
+                <filter name="unlinked" string="Linked to nothing"
+                        domain="[('model', '=', False)]"
+                        context="{'pan_mail_ungrouped': True}"/>
+                <separator/>
+                <filter name="date" string="Date" date="date"/>
+            </search>
+        </field>
+    </record>
+
     <record id="action_pan_mail_conversation" model="ir.actions.client">
         <field name="name">Inbox</field>
         <field name="tag">pan_mail_conversation_view</field>
