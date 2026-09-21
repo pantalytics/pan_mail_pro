@@ -530,7 +530,7 @@ button ever floats into a header, from one side, and `o_mailpro_lead_*` /
 `o_mailpro_trail_*` on the pane row is the room that header leaves for it, so
 a title starts beside the button rather than under it.
 
-19.0.16.1.0 gives the phone the same sentence and the mail the room the head
+19.0.17.1.0 gives the phone the same sentence and the mail the room the head
 was taking. The one place the cube survived was the phone's way to the Odoo
 record, in the conversation head, where the record has no divider to hang a
 button on -- so it is the chevron that divider wears when the record is off
