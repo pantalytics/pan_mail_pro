@@ -1499,6 +1499,11 @@ export class ConversationView extends Component {
         try {
             const composerId = await this.orm.call(
                 "pan.mail.draft", "open_composer", [draftId]);
+            if (!composerId) {
+                // Without an id the form would open on a new, empty composer
+                // and look like a draft that lost its words. Say so instead.
+                throw new Error("pan.mail.draft.open_composer returned nothing");
+            }
             this.composer.open({}, "reply", draftId, composerId);
         } catch (error) {
             this.notification.add(_t("Could not open that draft."), { type: "danger" });

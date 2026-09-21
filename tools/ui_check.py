@@ -1204,16 +1204,18 @@ class Checks:
     def drafts(self, page):
         """Save draft, and the unsent mail that comes back.
 
-        The round trip is the point. A draft is stored from the composer and
-        handed back to a new one as `default_` values, and `_compute_body`
-        resets the body whenever no template is chosen -- so a draft that came
-        back through anything else would reopen empty, in the browser, with
-        nothing in the server log. `tests/test_drafts.py` proves the values;
-        this proves the form.
+        The round trip is the point, and it is checked with a word typed into
+        the reply rather than with "is there anything there": the composer
+        recomputes its own body while a form mounts, so a draft can come back
+        as a perfectly good empty composer that nothing reports. The marker
+        has to survive the server -- it shows in the strip's preview -- and
+        the form, where it is in the editor when the draft is reopened, and
+        the failure says which of the two lost it.
 
         It ends where it started: the draft is deleted and the Inbox folder is
         open again, because every check after this one reads the seeded mail.
         """
+        marker = 'Levertijdmarkering'
         tabs = page.query_selector_all('.o_mailpro_tab')
         if not tabs:
             self.fail('the conversation has no tab strip to write from')
@@ -1232,6 +1234,13 @@ class Checks:
             self.fail('Reply opened no composer to save as a draft')
             return
         page.wait_for_timeout(600)
+        editor = page.query_selector('.o_mailpro_composer .odoo-editor-editable')
+        if not editor:
+            self.fail('the composer has no editor to write a draft in')
+            return
+        editor.click()
+        page.keyboard.type(marker)
+        page.wait_for_timeout(600)
 
         save = page.query_selector(
             '.o_mailpro_conversation_head button:has-text("Save draft")')
@@ -1248,6 +1257,12 @@ class Checks:
         page.wait_for_timeout(600)
         if page.query_selector('.o_mailpro_composer .o_form_view'):
             self.fail('Save draft left the composer open over the stored copy')
+        # The server's own reading of what was typed, on the strip. A marker
+        # missing here means the words never reached the table, which is a
+        # different bug from a form that draws them and then forgets them.
+        strip = page.inner_text('.o_mailpro_draft')
+        if marker not in strip:
+            self.fail(f'the stored draft does not preview what was typed: {strip!r}')
         self.shot('inbox-draft.png')
 
         # The third folder in the mailbox list, and the draft in it.
@@ -1270,10 +1285,16 @@ class Checks:
             self.fail('a draft row did not reopen its composer')
             return
         page.wait_for_timeout(900)
-        body = page.query_selector('.o_mailpro_composer .note-editable, '
-                                   '.o_mailpro_composer [name="body"] .odoo-editor-editable')
-        if body and not body.inner_text().strip():
-            self.fail('a reopened draft came back with an empty body')
+        body = page.query_selector('.o_mailpro_composer .odoo-editor-editable')
+        if not body:
+            self.fail('a reopened draft has no editor at all')
+        elif marker not in body.inner_text():
+            # Both halves in the message: the subject says whether this is the
+            # draft's own wizard at all, the editor says what it is holding.
+            subject = page.query_selector('.o_mailpro_composer [name="subject"] input')
+            self.fail('a reopened draft came back without what was typed'
+                      f' (subject: {subject.input_value() if subject else None!r},'
+                      f' editor: {body.inner_text()[:120]!r})')
         close = page.query_selector(
             '.o_mailpro_conversation_head button:has-text("Close")')
         if not close:
