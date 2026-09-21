@@ -725,9 +725,9 @@
         Two of the three also carry their pane's fold: a round button that
         floats on the line, the shape every sidebar toggle has in the apps
         people already use, so the control for a pane is at the edge that
-        pane went behind. Beside an open pane it is a chevron; beside a
-        folded one it is that pane's icon, and the divider stays drawn with
-        no width to offer because the button on it is the way back. The
+        pane went behind. It wears the chevron pointing where the divider is
+        about to go, open or folded, and the divider stays drawn with no
+        width to offer because the button on it is the way back. The
         mailbox list's divider carries none: its control is the menu icon in
         the top bar, which a phone needs there anyway. On a tablet the
         record's divider serves two panes and swaps them in the column they

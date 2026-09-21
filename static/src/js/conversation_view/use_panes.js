@@ -13,10 +13,10 @@
  * kept the mailboxes since there were mail clients -- and where a phone's
  * drawer has to be, because there the mailbox list is not a pane with a
  * divider at all. The conversation list and the Odoo record fold from a
- * round button on their own divider: a chevron beside the open pane, that
- * pane's icon beside the folded one. A control on the other side of the
- * screen from the pane it folds is a control you hunt for, and nothing else
- * says what either of these says.
+ * round button on their own divider, wearing the chevron that points where
+ * that divider is about to go -- open or folded, the arrow is the sentence.
+ * A control on the other side of the screen from the pane it folds is a
+ * control you hunt for, and nothing else says what either of these says.
  *
  * Widths live in the browser, not the database. It is a per-monitor
  * preference, the same person has a laptop and a desk, and a table for it
@@ -58,9 +58,12 @@ const KEY = "pan_mail_pro.panes";
 // fourth does not.
 const BREAKPOINTS = { small: 767.98, narrow: 1400 };
 
-// What a folded pane's button shows: the thing it brings back. The
-// conversation never folds on its own, but a tablet folds it to give the
-// record the column they share, and the record's divider brings it back.
+// The icon a pane is known by. Only the mailbox list wears one today: its
+// button sits in the top bar, where there is no divider and so no direction
+// to point in. The dividers wear a chevron instead -- an icon says which
+// pane, which you can see from where the button is, and the arrow says which
+// way it goes, which you cannot. The four stay listed because this is the
+// vocabulary `tests/test_inbox_panes.py` reads.
 const ICONS = {
     mailbox_list: "fa-bars",
     conversation_list: "fa-list-ul",
@@ -294,25 +297,16 @@ export function usePanes() {
             return side === "left" ? "right" : side === "right" ? "left" : "center";
         },
 
-        /** The chevron points where the divider is about to go. */
-        chevron(name) {
+        /**
+         * What the button on a divider wears: the chevron pointing where
+         * that divider is about to go. It reads the same open or folded,
+         * and on a tablet, where the record's divider swaps two panes in one
+         * column, it is still the direction the boundary moves.
+         */
+        toggleIcon(name) {
             const folded = isFolded(name);
             const rightwards = name === "odoo_record" ? !folded : folded;
             return rightwards ? "fa-chevron-right" : "fa-chevron-left";
-        },
-
-        /**
-         * A chevron beside an open pane, that pane's own icon beside a
-         * folded one: the list for the conversations, the cube the record
-         * chips already wear, and the envelope for a conversation a tablet
-         * folded away to give the record their column.
-         */
-        toggleIcon(name) {
-            const side = foldedSide(name);
-            if (!side) {
-                return this.chevron(name);
-            }
-            return ICONS[name === "odoo_record" && side === "left" ? "conversation" : name];
         },
 
         /** The pane the button acts on: on a tablet the divider serves two. */

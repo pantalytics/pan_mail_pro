@@ -1104,6 +1104,9 @@ class Checks:
         else:
             if toggle.get_attribute('aria-expanded') != 'false':
                 self.fail('the record is folded but its button still reads expanded')
+            if not toggle.query_selector('.fa-chevron-left'):
+                self.fail('the folded record\'s button does not point at the room '
+                          'it would take back')
             toggle.click()
         divider = page.query_selector('.o_mailpro_split_conversation_list')
         if divider:
@@ -1150,8 +1153,9 @@ class Checks:
         if not back:
             self.fail('the folded conversation list left no button to bring it back')
             return
-        if not back.query_selector('.fa-list-ul'):
-            self.fail('the folded list\'s button is not the list icon')
+        if not back.query_selector('.fa-chevron-right'):
+            self.fail('the folded list\'s button does not point at the room it '
+                      'would take back')
         if title:
             edge = back.bounding_box()['x'] + back.bounding_box()['width']
             if title.bounding_box()['x'] < edge:
