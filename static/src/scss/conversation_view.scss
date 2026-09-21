@@ -407,6 +407,13 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     .o_mailpro_mailbox_name { min-width: 0; }
 
+    // The only colour in this pane, and it appears on a mailbox that is not
+    // being read. Nothing marks a mailbox that works.
+    .o_mailpro_mailbox_alert {
+        color: $mailpro-warn;
+        font-size: 0.75rem;
+    }
+
     .o_mailpro_mailbox_active { color: $mailpro-ink; }
 
     // The folders belong to the mailbox above them, and the indent is what

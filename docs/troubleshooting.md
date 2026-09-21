@@ -75,6 +75,21 @@ this only affects the copy in your own mail client.
 5. **Internal domains** are configured — nothing syncs until that list has an entry
 6. The sender is not on the **block list**, and the mail is not between your own domains
 
+### "This mailbox is not being read"
+
+**Cause:** The mailbox has not completed a sync run in fifteen minutes. Its
+credentials are fine and nothing failed; the sync is simply not happening. The
+usual reason is that Odoo has deactivated the scheduled action, which it does
+when a job keeps running out of time.
+
+**Solution:** Press **Try again** on the mailbox. If that works, the mailbox
+itself is healthy and the schedule is the problem: re-enable **Mail Pro: Fetch
+Incoming Email** under Settings → Technical → Scheduled Actions.
+
+The mailbox form shows **Last checked** under the address, which is the run
+rather than the newest mail read. A mailbox nobody writes to has an old
+**Newest Mail Read** and a fresh **Last checked**, and that is healthy.
+
 ### "0 mailbox(es)" in logs
 
 **Cause:** Mailbox configuration incomplete.

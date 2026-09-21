@@ -206,6 +206,16 @@
                                     t-att-aria-current="mailbox.id === state.mailboxId ? 'true' : undefined"
                                     t-on-click="() => this.setMailbox(mailbox.id)">
                                 <span class="o_mailpro_mailbox_name text-truncate" t-esc="mailbox.email"/>
+                                <!-- Status by absence: nothing here while the
+                                     mailbox is being read, which is almost
+                                     always. The one case worth a mark is mail
+                                     that is not arriving, and this is the
+                                     screen where that is noticed. -->
+                                <i t-if="mailbox.status_message"
+                                   class="fa fa-exclamation-circle o_mailpro_mailbox_alert flex-shrink-0"
+                                   t-att-title="mailbox.status_message"
+                                   role="img"
+                                   t-attf-aria-label="Not syncing: {{ mailbox.status_message }}"/>
                             </button>
                         </div>
                         <div t-if="isExpanded(mailbox.id)" class="o_mailpro_folders">
