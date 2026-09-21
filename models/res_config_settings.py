@@ -114,6 +114,10 @@ class ResConfigSettings(models.TransientModel):
     x_license_valid_until = fields.Datetime(string='Valid Until', compute='_compute_license')
     x_license_last_error = fields.Char(compute='_compute_license')
     x_license_sync_blocked = fields.Boolean(compute='_compute_license')
+    # Usage and the invoice are read at Pantalytics. This page carries the
+    # way there and no copy of the numbers.
+    x_license_dashboard_url = fields.Char(
+        string='Usage and billing', compute='_compute_license')
 
     # Help improve Mail Pro, as the Pantalytics workspace decided it. This
     # page can only say no: the yes lives where the contract was signed.
@@ -175,6 +179,7 @@ class ResConfigSettings(models.TransientModel):
         else:
             state = 'connected'
         blocked = not self.env['pan.mail.license'].sync_allowed()
+        dashboard = self.env['pan.mail.license'].dashboard_url()
         for record in self:
             record.x_license_sync_blocked = blocked
             record.x_license_state = state
@@ -184,6 +189,7 @@ class ResConfigSettings(models.TransientModel):
             record.x_license_message = link.message
             record.x_license_valid_until = link.valid_until
             record.x_license_last_error = link.last_error
+            record.x_license_dashboard_url = dashboard
             record.x_improve_on = bool(
                 link.improve and link.improve_host and link.improve_token)
 
