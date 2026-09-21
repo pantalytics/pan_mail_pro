@@ -541,6 +541,22 @@ button ever floats into a header, from one side, and `o_mailpro_lead_*` /
 `o_mailpro_trail_*` on the pane row is the room that header leaves for it, so
 a title starts beside the button rather than under it.
 
+19.0.17.1.0 gives the phone the same sentence and the mail the room the head
+was taking. The one place the cube survived was the phone's way to the Odoo
+record, in the conversation head, where the record has no divider to hang a
+button on -- so it is the chevron that divider wears when the record is off
+screen, pointing the way the boundary moves to bring it in, and unlabelled
+like the back arrow at the other end of the same row. `isFolded()` now says
+what was already true, that a phone's record is folded until it is zoomed,
+which is what the chevron reads to know its direction. The two words it
+dropped are half the fix: the head ran to three lines of subject, two of
+correspondent and two of Linked-to on a 390px screen, leaving the mail a
+third of the phone. Each of those is one line now -- the subject truncated
+rather than wrapped, because it is in the list above and the mail below, and
+the Linked-to label dropped, because the chip says what it is. The browser
+check pins what the head may take, so the next thing added to it argues with
+a failing assertion.
+
 19.0.14.2.0 finishes that row. Expand was the one control on the screen
 still wearing a label and a grey Bootstrap button, in a header whose whole
 job is to stay quiet, and it does the same thing to the same panes as the

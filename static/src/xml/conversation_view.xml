@@ -485,11 +485,24 @@
                                            aria-hidden="true"/>
                                         <span class="visually-hidden" t-esc="readToggleLabel"/>
                                     </button>
+                                    <!--
+                                        The way to the Odoo record, on a phone
+                                        where it has no divider to carry its
+                                        button. It wears the same chevron that
+                                        divider wears when the record is off
+                                        screen, pointing the way the boundary
+                                        moves to bring it in. A labelled
+                                        button here cost the subject two lines
+                                        of a head that is already most of the
+                                        screen.
+                                    -->
                                     <button t-if="showOdooRecordButton" type="button"
-                                            class="btn btn-secondary btn-sm o_mailpro_odoo_record_button"
+                                            class="o_mailpro_odoo_record_button flex-shrink-0"
                                             t-att-title="selectedRecord.name"
+                                            t-att-aria-label="panes.toggleLabel('odoo_record')"
                                             t-on-click="() => this.showOdooRecordScreen()">
-                                        <i class="fa fa-cube me-1" aria-hidden="true"/>Record
+                                        <i class="fa" t-att-class="panes.toggleIcon('odoo_record')"
+                                           aria-hidden="true"/>
                                     </button>
                                     <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm"
                                             t-on-click="() => this.logNote()">Log note</button>

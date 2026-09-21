@@ -1180,11 +1180,32 @@ class Checks:
             self.fail('the list stayed on screen under the conversation on a phone')
         self.shot('inbox-phone.png')
 
-        # The record, over the conversation, and the way back from it.
+        # The head is chrome and the mail is the screen. It ran to three
+        # lines of subject, two of correspondent and two of Linked-to, which
+        # left the mail a third of a phone -- so what it may take is pinned
+        # here rather than left to the next screenshot somebody looks at.
+        head = page.query_selector('.o_mailpro_conversation_head')
+        if not head:
+            self.fail('the phone conversation has no head')
+        else:
+            share = head.bounding_box()['height'] / 844
+            if share > 0.3:
+                self.fail('the phone conversation head takes %d%% of the screen'
+                          % (share * 100))
+            title = page.query_selector('.o_mailpro_conversation_title')
+            if title and title.bounding_box()['height'] > 30:
+                self.fail('the phone subject wraps instead of truncating')
+
+        # The record, over the conversation, and the way back from it. It
+        # wears the chevron the record's own divider wears on a wider screen,
+        # pointing the way the boundary moves to bring the record in.
         button = page.query_selector('.o_mailpro_odoo_record_button')
         if not button:
             self.fail('the phone conversation head offers no way to the record')
         else:
+            if not button.query_selector('.fa-chevron-left'):
+                self.fail('the way to the record on a phone is not the '
+                          "divider's own chevron")
             button.click()
             page.wait_for_timeout(800)
             record = page.query_selector('.o_mailpro_odoo_record')
