@@ -385,6 +385,18 @@ export class ConversationView extends Component {
         return this.showAllMailboxes && !this.state.mailboxId;
     }
 
+    /**
+     * Is the list All mailboxes, rather than door 1's "wherever it arrived".
+     *
+     * Both have no mailbox, and they want opposite things from that. The
+     * folder wants what its label says: the mail that is in a mailbox, all of
+     * them. Door 1 wants one record's correspondence including the mail no
+     * mailbox owns, which is what the chatter sent before this module existed.
+     */
+    get allMailboxes() {
+        return this.spansMailboxes && !this.state.record;
+    }
+
     /** The mailbox on a row, short: `sales` rather than sales@example.com. */
     mailboxLocal(address) {
         return (address || "").split("@")[0];
@@ -468,6 +480,7 @@ export class ConversationView extends Component {
             const args = {
                 mailbox_id: this.state.mailboxId,
                 search: this.state.search || null,
+                in_a_mailbox: this.allMailboxes,
             };
             const record = this.state.record
                 ? { record_model: this.state.record.model,
@@ -482,6 +495,9 @@ export class ConversationView extends Component {
                     "pan.mail.conversation", "folder_counts", [], {
                         ...args,
                         mailbox_id: key || null,
+                        // The All mailboxes row counts what clicking it
+                        // shows, whichever mailbox the list is in.
+                        in_a_mailbox: !key && this.showAllMailboxes,
                         // The filter row belongs to the list, so it is
                         // counted for the mailbox the list is showing and
                         // nowhere else.
@@ -880,6 +896,7 @@ export class ConversationView extends Component {
                 "pan.mail.conversation", "folder_counts", [], {
                     mailbox_id: key || null,
                     search: this.state.search || null,
+                    in_a_mailbox: !key && this.showAllMailboxes,
                 });
         } catch (error) {
             // A mailbox list that cannot count is a mailbox list without numbers, not an

@@ -277,8 +277,8 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(theirs[0]['subject'], 'Via support')
 
     def test_no_mailbox_is_every_mailbox(self):
-        """All mailboxes is `_base_domain(None)`, which is the query the
-        screen already had: a row and a label, not a second read path."""
+        """All mailboxes spans the mailboxes, and says which one each row is
+        in. `in_a_mailbox` is what its label promises."""
         other = self.env['pan.mail.mailbox'].create({
             'email': 'support@company.test',
             'provider': 'imap',
@@ -290,14 +290,31 @@ class TestConversationApi(TransactionCase):
         self._mail()
         self._mail(subject='Via support', record=second).x_mailbox_id = other
 
-        rows = self.Conversation.search_conversations()
-        mine = {row['res_id']: row for row in rows if row['model'] == 'crm.lead'}
-        self.assertEqual(set(mine), {self.lead.id, second.id},
+        rows = self.Conversation.search_conversations(in_a_mailbox=True)
+        self.assertEqual({row['res_id'] for row in rows},
+                         {self.lead.id, second.id},
                          'All mailboxes spans both')
         self.assertEqual(
-            {row['mailbox'] for row in mine.values()},
+            {row['mailbox'] for row in rows},
             {'sales@company.test', 'support@company.test'},
             'every row says which mailbox it is in')
+
+    def test_all_mailboxes_is_the_mailboxes_and_not_everything(self):
+        """Mail no mailbox owns -- the chatter's, from before this module --
+        is not in any mailbox, so a row labelled All mailboxes must not show
+        it. Door 1 asks the same method without the flag and still gets it,
+        because one record's correspondence includes that mail."""
+        self._mail()
+        loose = self._mail(subject='Posted from the chatter')
+        loose.x_mailbox_id = False
+
+        subjects = {row['subject'] for row
+                    in self.Conversation.search_conversations(in_a_mailbox=True)}
+        self.assertNotIn('Posted from the chatter', subjects)
+
+        everything = {row['subject'] for row
+                      in self.Conversation.search_conversations()}
+        self.assertIn('Posted from the chatter', everything)
 
     def test_the_row_carries_the_mailbox_the_reply_answers_from(self):
         """The silent one. Under All mailboxes the screen has no mailbox of

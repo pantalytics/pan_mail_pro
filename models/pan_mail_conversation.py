@@ -180,11 +180,26 @@ class PanMailConversation(models.AbstractModel):
                 ('message_type', 'in', SENT_TYPES),
                 ('is_internal', '=', False)]
 
-    def _base_domain(self, mailbox_id=None, partner_id=None, search=None):
-        """Mail this user may read, optionally narrowed to one mailbox."""
+    def _base_domain(self, mailbox_id=None, partner_id=None, search=None,
+                     in_a_mailbox=False):
+        """Mail this user may read, optionally narrowed to one mailbox.
+
+        `in_a_mailbox` is the All mailboxes folder asking for what its own
+        label promises: the mail that is *in* a mailbox, all of them at once.
+        Without it the query also returns mail no mailbox owns -- what the
+        chatter sent before this module was installed, and Odoo's own -- which
+        under a row that says "All mailboxes" is neither true nor useful.
+
+        It is off by default, because the other caller of "no mailbox" wants
+        exactly the opposite: door 1 opens the Inbox on one record's mail
+        wherever it arrived, and mail this module never handled is still that
+        record's correspondence.
+        """
         domain = self._mail_domain()
         if mailbox_id:
             domain.append(('x_mailbox_id', '=', mailbox_id))
+        elif in_a_mailbox:
+            domain.append(('x_mailbox_id', '!=', False))
         if partner_id:
             partner = self.env['res.partner'].browse(partner_id)
             # The company, not the person: jan@acme and inkoop@acme are one
@@ -289,7 +304,7 @@ class PanMailConversation(models.AbstractModel):
 
     @api.model
     def folder_counts(self, mailbox_id=None, folder=None,
-                      partner_id=None, search=None):
+                      partner_id=None, search=None, in_a_mailbox=False):
         """The numbers on the mailbox list, and on the filters of one folder.
 
         Counted on every read, capped at `COUNT_CAP`. A stored counter would be
@@ -306,7 +321,7 @@ class PanMailConversation(models.AbstractModel):
         the mailbox list costs its two folders, not four.
         """
         self._check_caller()
-        base = self._base_domain(mailbox_id, partner_id, search)
+        base = self._base_domain(mailbox_id, partner_id, search, in_a_mailbox)
         folders = [self._count_entry(base, value, label,
                                      self._folder_domain(value))
                    if value != DRAFTS
@@ -363,7 +378,7 @@ class PanMailConversation(models.AbstractModel):
     def search_conversations(self, mailbox_id=None, folder='inbox',
                              filter_name=None, partner_id=None, search=None,
                              record_model=None, record_id=None,
-                             limit=DEFAULT_LIMIT, offset=0):
+                             limit=DEFAULT_LIMIT, offset=0, in_a_mailbox=False):
         """One page of conversations, newest first.
 
         Two dimensions: the folder from the mailbox list, and the filter over it. A
@@ -392,7 +407,7 @@ class PanMailConversation(models.AbstractModel):
                 mailbox_id=mailbox_id, search=search,
                 record_model=record_model, record_id=record_id,
                 limit=limit, offset=offset)
-        base = self._base_domain(mailbox_id, partner_id, search)
+        base = self._base_domain(mailbox_id, partner_id, search, in_a_mailbox)
         if record_model and record_id:
             base = base + [('model', '=', record_model),
                            ('res_id', '=', int(record_id))]

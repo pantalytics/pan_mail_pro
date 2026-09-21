@@ -722,12 +722,15 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   19.0.10 meaning "no mailbox is configured yet". With mailboxes it means all
   of them, and the same key carries the counts and the folds. A feature that
   needs no read path is a feature to check for before designing one.
-- **"Every mailbox" also means every mail with no mailbox.** All mailboxes
-  shows email-type messages that no `pan.mail.mailbox` owns -- chatter mail
-  from before the module was installed, Odoo's own. That is what the domain
-  says and it is honest, but it is why the row tag is empty on some rows and
-  why the UI check asserts the two seeded threads by name rather than counting
-  tags against rows.
+- **"No mailbox" meant two opposite things, and reusing the key hid it.**
+  `_base_domain(mailbox_id=None)` was door 1's question -- one record's mail
+  *wherever it arrived*, chatter mail included -- and All mailboxes borrowed
+  it. But a row labelled All mailboxes that lists mail no mailbox owns is
+  false to its own label, and on a database that used the chatter before Mail
+  Pro it buries the real mail. `in_a_mailbox` is the difference, off by
+  default so door 1 keeps what it needs. The seeded instance found it: Odoo's
+  own "Welcome to Odoo!" on a discuss channel became the conversation the
+  Inbox opened on.
 - **The reply's sender was the silent half.** The composer defaulted
   `x_send_from_mailbox_id` to the folder's mailbox, which under All mailboxes
   is null: the reply then fell through to `_resolve_route()` and could answer
@@ -738,6 +741,11 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   seeded mail was in one mailbox, so All mailboxes rendered identically to the
   mailbox under it and would have passed with the tag code deleted. The seed
   grew a thread in the second mailbox before the assertion was worth writing.
+- **The failure landed three steps away from its cause.** Changing where the
+  Inbox opens changed which conversation every later step works on, so the
+  draft and divider checks went red while the All mailboxes step passed. A
+  check that starts from "whatever is selected" inherits every earlier
+  decision about what that is.
 
 ### Which pane takes the slack (19.0.15.2.0)
 

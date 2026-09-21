@@ -82,9 +82,13 @@ that name is the same word in the code, the CSS class, the label and the prose.
 
 **All mailboxes** is the row above them, drawn only where there is more than
 one mailbox. It is not a read path of its own: the mailbox key `0` already
-meant "no mailbox" -- the reader's own mail before any mailbox exists -- and
-`_base_domain(mailbox_id=None)` is that query. With mailboxes it means all of
-them, counts and folds under the same key. Which mailbox a conversation is in
+meant "no mailbox", and `_base_domain(mailbox_id=None)` is that query, with
+counts and folds under the same key. It asks for it with `in_a_mailbox`,
+which adds `x_mailbox_id != False`: the row promises the mailboxes, and mail
+no mailbox owns -- what the chatter sent before this module was installed --
+is in none of them. The flag is off by default because door 1 wants the
+opposite from the same key: one record's correspondence *wherever it
+arrived*, that mail included. Which mailbox a conversation is in
 is drawn only where it can be more than one: its local part in the list row's
 meta line while the list spans more than one mailbox, its full address in the
 conversation head, always. There is no colour per mailbox and no way to pick a
