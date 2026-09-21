@@ -37,16 +37,13 @@
             <div class="o_mailpro_topbar d-flex align-items-center gap-2">
                 <div class="o_mailpro_topbar_start d-flex align-items-center gap-2">
                     <!--
-                        Which panes are showing: the mailboxes, the list, the
-                        record, in the order they sit. Pressed is showing.
-                        They live here rather than on the dividers, where
-                        they used to float over the conversation's own
-                        header: a row of buttons over a header that already
-                        carries a title, a chip and a tab strip is a second
-                        menu bar stacked on the first. Top left is also where
-                        every mail client has kept the mailboxes since there
-                        were mail clients. The divider stays what it looks
-                        like: a width to drag.
+                        The mailboxes: showing or not, pressed while showing.
+                        Top left, where every mail client has kept them since
+                        there were mail clients, and where a phone needs it
+                        anyway because there the mailbox list is a drawer and
+                        has no divider to carry a button. The other two panes
+                        fold from their own divider, at the edge they went
+                        behind.
                     -->
                     <div class="o_mailpro_pane_toggles d-flex align-items-center flex-shrink-0">
                         <button t-foreach="panes.toggles()" t-as="pane" t-key="pane"
@@ -65,13 +62,90 @@
                     </button>
                 </div>
                 <div class="o_mailpro_search_zone flex-grow-1 d-flex justify-content-center">
-                    <input type="search" id="o_mailpro_search"
-                           class="o_mailpro_search form-control form-control-sm"
-                           aria-label="Search people and subjects"
-                           placeholder="Search mail"
-                           t-att-value="state.search"
-                           t-on-input="(ev) => this.onSearchInput(ev)"
-                           t-on-keydown="(ev) => this.onSearchKey(ev)"/>
+                    <!--
+                        The shape Odoo's own control panel search has: one
+                        bordered box, the magnifier inside it on the left, the
+                        text starting where the magnifier ends, and a cross
+                        that gives the whole folder back. The box is the
+                        target, not the input: clicking the border or the
+                        padding focuses the field, which is what a text
+                        cursor over the whole thing promises.
+
+                        The cross is why the field is a plain text input.
+                        `type="search"` draws a clear button of the browser's
+                        own, in the browser's own place, and two crosses a
+                        few pixels apart is the one thing worse than none.
+                    -->
+                    <div class="o_mailpro_searchview_group d-flex align-items-stretch">
+                        <div class="o_mailpro_searchview d-flex align-items-center gap-2"
+                             role="search"
+                             t-on-click="() => this.focusSearch()">
+                            <i class="fa fa-search o_mailpro_search_icon" aria-hidden="true"/>
+                            <!--
+                                The filter in use, as the facet Odoo's own
+                                search bar shows it: named where the reader is
+                                looking, and removed where it is named. It sits
+                                before the field because that is the order the
+                                query reads in.
+                            -->
+                            <div t-if="activeFilter" class="o_mailpro_facet d-flex align-items-center">
+                                <i class="fa fa-filter o_mailpro_facet_icon" aria-hidden="true"/>
+                                <span class="o_mailpro_facet_label" t-esc="activeFilter.name"/>
+                                <button type="button" class="o_mailpro_facet_remove"
+                                        t-attf-aria-label="Remove the {{activeFilter.name}} filter"
+                                        t-on-click.stop="() => this.setFilter(activeFilter.id)">
+                                    <i class="fa fa-times" aria-hidden="true"/>
+                                </button>
+                            </div>
+                            <input type="text" id="o_mailpro_search"
+                                   class="o_mailpro_search" t-ref="search"
+                                   autocomplete="off"
+                                   aria-label="Search people and subjects"
+                                   placeholder="Search mail"
+                                   t-att-value="state.search"
+                                   t-on-input="(ev) => this.onSearchInput(ev)"
+                                   t-on-keydown="(ev) => this.onSearchKey(ev)"/>
+                            <button t-if="state.search" type="button"
+                                    class="o_mailpro_search_clear"
+                                    aria-label="Clear the search"
+                                    title="Clear the search"
+                                    t-on-click="() => this.clearSearch()">
+                                <i class="fa fa-times" aria-hidden="true"/>
+                            </button>
+                        </div>
+                        <!--
+                            The arrow on the end of the box, where Odoo puts
+                            it, opening the one panel this screen has to put
+                            in it. Odoo's own has three columns; ours has
+                            Filters, because Group By and Favourites are
+                            questions about a list over a table and this list
+                            is a mailbox: the grouping is the conversation and
+                            the folder is the saved search.
+                        -->
+                        <Dropdown t-if="filters.length" position="'bottom-end'"
+                                  menuClass="'o_mailpro_filter_menu'">
+                            <button type="button" class="o_mailpro_searchview_toggle"
+                                    t-att-class="{ 'o_mailpro_searchview_toggle_active': state.filter }"
+                                    aria-label="Filter conversations"
+                                    title="Filters">
+                                <i class="fa fa-caret-down" aria-hidden="true"/>
+                            </button>
+                            <t t-set-slot="content">
+                                <div class="o_dropdown_title o_mailpro_filter_title px-3 pb-1">
+                                    <i class="fa fa-filter me-1" aria-hidden="true"/>Filters
+                                </div>
+                                <CheckboxItem t-foreach="filters" t-as="pill" t-key="pill.id"
+                                              class="{ 'o_menu_item o_mailpro_filter_item': true, selected: state.filter === pill.id }"
+                                              checked="state.filter === pill.id"
+                                              closingMode="'none'"
+                                              onSelected="() => this.setFilter(pill.id)">
+                                    <span class="o_mailpro_filter_label" t-esc="pill.name"/>
+                                    <span t-if="pill.count" class="o_mailpro_count"
+                                          t-esc="folderCount(pill)"/>
+                                </CheckboxItem>
+                            </t>
+                        </Dropdown>
+                    </div>
                 </div>
                 <!-- The search stays in the middle of the window, which it
                      only does if both sides weigh the same. -->
@@ -83,8 +157,17 @@
                 <button class="btn btn-sm btn-link p-0" t-on-click="() => this.refresh()">Try again</button>
             </div>
 
+            <!--
+                The three `lead` / `trail` classes are the room a header
+                leaves for the button that floats into it from a folded
+                neighbour, so the title starts beside it rather than under
+                it. At most one arrives from each side.
+            -->
             <div class="o_mailpro_panes d-flex flex-grow-1"
-                 t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom }">
+                 t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom,
+                                'o_mailpro_lead_conversation': panes.folded('conversation_list'),
+                                'o_mailpro_trail_conversation': panes.toggleSide('odoo_record') === 'left',
+                                'o_mailpro_lead_odoo_record': panes.toggleSide('odoo_record') === 'right' }">
 
                 <!--
                     1. where you are: the mailbox, and inside it the folder.
@@ -148,41 +231,32 @@
                      t-attf-style="flex-basis: {{panes.state.conversation_list}}px">
 
                     <!--
-                        The list header, where a mail client puts it: what you
-                        are reading on the left, the filter on the right.
-
-                        The states that are ours live in that menu rather than
-                        in the mailbox list. A folder is a place mail is and the
-                        provider decides what those are; "linked to nothing"
-                        is a question we ask about it. One at a time, a second
-                        click clears it, and the active one is named on the
-                        button: a filter you cannot see from the closed menu
-                        is a list that looks short for no reason.
+                        The list header says which folder is open, and nothing
+                        else. The filter moved into the search bar, where Odoo
+                        keeps both: one place to narrow a list, one place that
+                        says how it is narrowed. The states that are ours are
+                        filters rather than folders. A folder is a place mail
+                        is and the provider decides what those are, while
+                        "linked to nothing" is a question we ask about it, so
+                        the mailbox list never grew them and the facet names
+                        the one in use.
                     -->
                     <div class="o_mailpro_conversation_list_head d-flex align-items-center justify-content-between gap-2">
-                        <span class="o_mailpro_conversation_list_title text-truncate" t-esc="folderLabel"/>
-                        <Dropdown t-if="filters.length" position="'bottom-end'"
-                                  menuClass="'o_mailpro_filter_menu'">
-                            <button type="button" class="o_mailpro_filter_toggle"
-                                    t-att-class="{ 'o_mailpro_filter_toggle_active': state.filter }"
-                                    aria-label="Filter conversations">
-                                <i class="fa fa-filter" aria-hidden="true"/>
-                                <span t-if="activeFilter" class="o_mailpro_filter_label"
-                                      t-esc="activeFilter.name"/>
+                        <div class="d-flex align-items-center gap-1 min-w-0">
+                            <span class="o_mailpro_conversation_list_title text-truncate" t-esc="folderLabel"/>
+                            <!-- Arrived from a record's chatter: the list is
+                                 that record's mail, and this is the way back
+                                 to the whole mailbox. Escapable, because a
+                                 list that is short for a reason nobody can
+                                 see is a list that reads as broken. -->
+                            <button t-if="state.record" type="button"
+                                    class="o_mailpro_record_clear flex-shrink-0"
+                                    aria-label="Show the whole mailbox"
+                                    title="Show the whole mailbox"
+                                    t-on-click="() => this.showWholeMailbox()">
+                                <i class="fa fa-times" aria-hidden="true"/>
                             </button>
-                            <t t-set-slot="content">
-                                <div class="o_dropdown_title px-3 pb-1">Filter By</div>
-                                <CheckboxItem t-foreach="filters" t-as="pill" t-key="pill.id"
-                                              class="{ 'o_menu_item o_mailpro_filter_item': true, selected: state.filter === pill.id }"
-                                              checked="state.filter === pill.id"
-                                              closingMode="'none'"
-                                              onSelected="() => this.setFilter(pill.id)">
-                                    <span class="o_mailpro_filter_label" t-esc="pill.name"/>
-                                    <span t-if="pill.count" class="o_mailpro_count"
-                                          t-esc="folderCount(pill)"/>
-                                </CheckboxItem>
-                            </t>
-                        </Dropdown>
+                        </div>
                     </div>
                     <t t-if="state.loading and !state.conversations.length">
                         <div class="o_mailpro_skeleton" aria-hidden="true">
@@ -283,15 +357,17 @@
                 <!-- 3. the conversation -->
                 <div t-if="showConversation" class="o_mailpro_conversation" role="region" aria-label="Conversation"
                      t-att-class="{ 'o_mailpro_conversation_composing': composer.state.open,
+                                    'o_mailpro_conversation_fills': panes.conversationFills(showOdooRecord and selectedRecord),
                                     'o_mailpro_folded': panes.folded('conversation') }"
-                     t-att-inert="panes.folded('conversation')">
+                     t-att-inert="panes.folded('conversation')"
+                     t-attf-style="flex-basis: {{panes.state.conversation}}px">
                     <!--
                         A new mail takes the pane the way a reply does. There
                         is no conversation behind it yet, so the head names the
                         record it is written on where a subject would go, and
                         the buttons are the same two.
                     -->
-                    <t t-if="composer.state.open and composer.state.mode === 'new'">
+                    <t t-if="composingNew">
                         <div class="o_mailpro_conversation_head">
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <t t-call="pan_mail_pro.BackToList"/>
@@ -664,8 +740,7 @@
                 <div t-if="showOdooRecord" class="o_mailpro_odoo_record"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('odoo_record') }"
                      t-att-inert="panes.folded('odoo_record')"
-                     role="region" aria-label="Odoo record"
-                     t-attf-style="flex-basis: {{panes.state.odoo_record}}px">
+                     role="region" aria-label="Odoo record">
                     <OdooRecordPane t-if="selectedRecord" record="selectedRecord"
                                 zoomed="panes.state.zoom"
                                 zoomLabel="panes.zoomLabel()"
@@ -775,22 +850,39 @@
         screen reader reads a width rather than a decoration, and the arrow
         keys move it: a width has to be settable without a mouse.
 
-        It is a width and nothing else. What shows and what folds is the row
-        of buttons in the top bar, which is on screen whatever is folded, so
-        a divider beside a folded pane has no width to offer and is not
-        drawn at all.
+        Two of the three also carry their pane's fold: a round button that
+        floats on the line, the shape every sidebar toggle has in the apps
+        people already use, so the control for a pane is at the edge that
+        pane went behind. It wears the chevron pointing where the divider is
+        about to go, open or folded, and the divider stays drawn with no
+        width to offer because the button on it is the way back. The
+        mailbox list's divider carries none: its control is the menu icon in
+        the top bar, which a phone needs there anyway. On a tablet the
+        record's divider serves two panes and swaps them in the column they
+        share.
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
         <div t-if="panes.splitterVisible(divider)"
-             t-attf-class="o_mailpro_split o_mailpro_split_{{divider}}"
+             t-attf-class="o_mailpro_split o_mailpro_split_{{divider}} {{ panes.toggleSide(divider) === 'center' ? '' : 'o_mailpro_split_folded' }}"
              role="separator" aria-orientation="vertical" tabindex="0"
              t-att-aria-label="panes.label(divider)"
-             t-att-aria-valuenow="panes.state[divider]"
-             t-att-aria-valuemin="panes.panes[divider].min"
-             t-att-aria-valuemax="panes.panes[divider].max"
+             t-att-aria-valuenow="panes.folded(divider) ? 0 : panes.width(divider)"
+             t-att-aria-valuemin="panes.bounds(divider).min"
+             t-att-aria-valuemax="panes.bounds(divider).max"
              t-on-pointerdown="(ev) => panes.startDrag(divider, ev)"
              t-on-keydown="(ev) => panes.onKey(divider, ev)"
-             t-on-dblclick="() => panes.reset(divider)"/>
+             t-on-dblclick="() => panes.reset(divider)">
+            <button t-if="panes.collapsible(divider)" type="button"
+                    t-attf-class="o_mailpro_split_toggle o_mailpro_split_toggle_{{panes.toggleSide(divider)}}"
+                    t-att-aria-label="panes.toggleLabel(divider)"
+                    t-att-title="panes.toggleLabel(divider)"
+                    t-att-aria-expanded="panes.folded(divider) ? 'false' : 'true'"
+                    t-on-pointerdown.stop="() => {}"
+                    t-on-dblclick.stop="() => {}"
+                    t-on-click.stop="() => panes.toggle(divider)">
+                <i class="fa" t-att-class="panes.toggleIcon(divider)" aria-hidden="true"/>
+            </button>
+        </div>
     </t>
 
     <!--

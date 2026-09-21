@@ -78,6 +78,11 @@ COUNT_CAP = 99
 MAX_LINK_TARGETS = 12
 MAX_LINK_CANDIDATES = 12
 
+# How many thread links door 1 reads to count the threads on one record. The
+# number decides one thing -- open the conversation, or let the reader pick --
+# and "more than this" and "more than two" lead to the same answer.
+THREAD_CAP = 50
+
 # How much of a body the one-line preview looks at. A real mail carries a
 # signature, an inline stylesheet and the whole quoted history; the preview is
 # 140 characters.
@@ -289,6 +294,7 @@ class PanMailConversation(models.AbstractModel):
     @api.model
     def search_conversations(self, mailbox_id=None, folder='inbox',
                              filter_name=None, partner_id=None, search=None,
+                             record_model=None, record_id=None,
                              limit=DEFAULT_LIMIT, offset=0):
         """One page of conversations, newest first.
 
@@ -296,6 +302,11 @@ class PanMailConversation(models.AbstractModel):
         folder is a place mail is, a filter is a question about it, and the
         screen keeps them apart because the mailbox list is the part people already
         know how to read.
+
+        `record_model` / `record_id` narrow the list to one record. That is
+        door 1 arriving from a chatter: the reader came from a record rather
+        than from a mailbox, so the list says what is on it and the mailbox
+        is not the question.
 
         A fixed number of queries, whatever the page size: the grouping, the
         newest message of each group, the message counts, the unread rows, and
@@ -306,6 +317,9 @@ class PanMailConversation(models.AbstractModel):
         self._check_caller()
         limit, offset = self._page(limit, offset)
         base = self._base_domain(mailbox_id, partner_id, search)
+        if record_model and record_id:
+            base = base + [('model', '=', record_model),
+                           ('res_id', '=', int(record_id))]
         narrowed = base + self._folder_domain(folder)
 
         # Mail nobody filed is not one conversation. Grouping it on
@@ -413,6 +427,12 @@ class PanMailConversation(models.AbstractModel):
         `elsewhere` is the reason the extra line exists. When it is zero the
         client draws nothing, because a line that says "everything is already
         on this page" is noise.
+
+        `threads` and `conversations` count two different things and the
+        button needs the first. `threads` is how many email threads are filed
+        *on this record*, which is what decides whether Open in mail can open
+        one; `conversations` is how many records the recent mail touched,
+        which is what the messages-elsewhere line talks about.
         """
         self._check_caller()
         Message = self.env['mail.message']
@@ -423,7 +443,7 @@ class PanMailConversation(models.AbstractModel):
         ]
         here_count = Message.search_count(base)
         if not here_count:
-            return {'conversations': 0, 'here': 0, 'elsewhere': 0,
+            return {'conversations': 0, 'threads': 0, 'here': 0, 'elsewhere': 0,
                     'partner_id': False, 'partner_name': ''}
 
         # Enough of the thread to find the records it touched, not all of it.
@@ -440,11 +460,35 @@ class PanMailConversation(models.AbstractModel):
 
         return {
             'conversations': len(records) or 1,
+            'threads': self._thread_count(model, res_id),
             'here': here_count,
             'elsewhere': elsewhere,
             'partner_id': self._correspondent(here).id or False,
             'partner_name': self._correspondent(here).display_name or '',
         }
+
+    def _thread_count(self, model, res_id):
+        """How many email threads are filed on this record. At least one.
+
+        Counted on the References root, the key that means the same thing in
+        every mailbox: one conversation seen by sales@ and support@ is one
+        thread, not two. `pan.mail.thread.link` writes a row per handle a
+        conversation carries, so the provider's own handle is skipped here --
+        it is the same conversation under its mailbox-local name. A provider
+        that mints no handle of its own (IMAP) stores the root as its
+        provider key, and those rows are the fallback when there is no `rfc`
+        row at all.
+
+        `sudo` buys the lookup and not the answer, as everywhere in this
+        file: the caller already read messages on this record, so the count
+        says nothing the reader could not see by scrolling the chatter.
+        """
+        links = self.env['pan.mail.thread.link'].sudo().search(
+            [('model', '=', model), ('res_id', '=', res_id)], limit=THREAD_CAP)
+        keys = {link.thread_id for link in links if link.key_type == 'rfc'}
+        if not keys:
+            keys = {link.thread_id for link in links}
+        return len(keys) or 1
 
     @api.model
     def customer_timeline(self, partner_id, kinds=None, limit=40, offset=0):

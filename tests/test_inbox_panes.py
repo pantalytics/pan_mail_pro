@@ -51,14 +51,19 @@ class TestInboxPanes(TransactionCase):
         self.architecture = read('ARCHITECTURE.md')
 
     def test_use_panes_knows_the_four_names(self):
-        """The three lists a pane name has to be on to exist at all."""
+        """The three lists a pane name has to be on to exist at all.
+
+        `PANES` holds the three panes with a stored width, which is every
+        pane but the Odoo record: the record is what the other three leave
+        over, so it has a floor and no width of its own.
+        """
         for const in ('ICONS', 'PANES'):
             block = re.search(r'const %s = \{(.*?)\n\};' % const,
                               self.panes_js, re.S)
             self.assertTrue(block, 'use_panes.js no longer declares %s' % const)
             found = re.findall(r'\n    ([a-z_]+):', block.group(1))
             expected = PANES if const == 'ICONS' else [
-                name for name in PANES if name != 'conversation']
+                name for name in PANES if name != 'odoo_record']
             self.assertEqual(found, expected,
                              '%s does not list the panes, in order' % const)
         folds = re.search(r'const COLLAPSIBLE = \[([^\]]*)\]', self.panes_js)

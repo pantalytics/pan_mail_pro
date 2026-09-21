@@ -144,6 +144,28 @@ class TestConnectBannerSession(HttpCase):
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
 
         self.assertTrue(info['pan_mail_connect_prompt'])
+        # Door 1's button rides the same payload. An employee who may not
+        # open the Inbox never gets one, so the chatter never calls the read
+        # layer to be refused by it.
+        self.assertFalse(info['pan_mail_inbox'])
+
+    def test_the_session_says_who_may_open_the_inbox(self):
+        self.env['pan.mail.domain'].set_domains(['company.test'])
+        self.env['res.users'].create({
+            'name': 'Mira Manager',
+            'login': 'mira@company.test',
+            'password': 'mira@company.test',
+            'email': 'mira@company.test',
+            'group_ids': [(6, 0, [
+                self.env.ref('base.group_user').id,
+                self.env.ref('pan_mail_pro.group_mail_mailbox_manager').id,
+            ])],
+        })
+        self.authenticate('mira@company.test', 'mira@company.test')
+
+        info = self.make_jsonrpc_request('/web/session/get_session_info', {})
+
+        self.assertTrue(info['pan_mail_inbox'])
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

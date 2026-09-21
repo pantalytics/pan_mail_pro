@@ -87,10 +87,15 @@ is `o_mailpro_split_<pane>`, and everything inside a pane keeps the pane's
 own prefix: `o_mailpro_conversation_head` is part of pane 3,
 `o_mailpro_odoo_record_zoom` part of pane 4.
 
-Three panes have a stored width; the conversation is what the other three
-leave over, so it has a floor and no width of its own. It is also the one pane
-that never folds -- a screen with no mail on it is not this screen. Pane 4 has
-a state that is not a width: zoom, the record on the whole screen.
+Three panes have a stored width; the Odoo record is what the other three leave
+over, so it has a floor and no width of its own. The conversation is the pane
+that stops rather than stretches -- mail is prose and prose has a comfortable
+measure -- so on a wide monitor the room in the middle goes to the form, which
+is the one pane that reads better for it. With the record folded away, or open
+with no document in it yet, the conversation takes that room back. The
+conversation is also the one pane that never folds -- a screen with no mail on
+it is not this screen. Pane 4 has a state that is not a width: zoom, the record
+on the whole screen.
 
 Two words are deliberately not pane names:
 
@@ -347,6 +352,22 @@ template selector back in the body, and Send saves the composer and calls
 `action_send_mail` itself, from the pane, because the pane is what closes when
 the mail is out.
 
+19.0.15.3.0 opens door 1: **Open in mail**, in every chatter on a record that
+carries an emailed message. The chatter shows what is filed on one record and
+the conversation may be larger, so the button is the way across. It is drawn by
+inheriting Odoo's own `mail.Chatter` template
+(`static/src/js/chatter_door.js`), asks
+`pan.mail.conversation.record_conversations()` how many threads the record
+carries, and opens the Inbox with the record in the action's context. One
+thread and that conversation opens; more than one and the Inbox lists the
+record's mail with nothing selected, because newest is a guess. The list
+narrowed that way spans every mailbox the reader may see -- they arrived from a
+record, not from a mailbox -- and the × next to the record's name gives the
+mailbox back. Who may see the button is `session_info`'s `pan_mail_inbox`, not
+an RPC per record: the Inbox is for mailbox managers, and an AccessError per
+form open is not a way to find that out. The per-message "messages elsewhere"
+line of the same door is not built.
+
 19.0.11.0.0 took the chatter out of the Inbox's fourth pane and put what it
 carried into a four-position strip over the third: Mail, Mail + notes (the notes
 and the record's own events, interleaved), Files, Activities. The screen had
@@ -448,6 +469,23 @@ longer a special case: it is this row, with the two panes that take turns
 there left out of it. Gone with the buttons: the header padding that made
 room for them (`lead()`), the inline offset that stopped two of them
 stacking, and the second meaning Enter had on a divider.
+
+19.0.15.1.0 splits that row in two, by what each button folds. The mailbox
+list keeps its place in the top bar: it is top left in every mail client, and
+on a phone the mailbox list is a drawer with no divider to hang anything on,
+so that button has to be there anyway. The conversation list and the Odoo
+record go back to a round button on their own divider, because a control for a
+pane belongs at the edge that pane went behind, not across the screen from it.
+It wears the chevron pointing where the divider is about to go and nothing
+else: which pane it folds you read off where the button is, which way it goes
+you cannot, and the cube the record chips wear said the first and not the
+second.
+A divider beside a folded pane is drawn again, with no width to drag and the
+button on it as the one way back; the mailbox list's, which carries no button,
+still goes with its pane. What 19.0.13.10.0 was right about survives: only one
+button ever floats into a header, from one side, and `o_mailpro_lead_*` /
+`o_mailpro_trail_*` on the pane row is the room that header leaves for it, so
+a title starts beside the button rather than under it.
 
 19.0.14.2.0 finishes that row. Expand was the one control on the screen
 still wearing a label and a grey Bootstrap button, in a header whose whole
