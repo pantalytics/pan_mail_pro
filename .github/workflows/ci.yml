@@ -77,11 +77,17 @@ jobs:
   # writes it is a merge conflict waiting for whoever merges second. The one
   # exception is a branch adding a migration, which has to name its version.
   #
-  # Kept as its own job because it is a required status check by name.
+  # Kept as its own job because it is a required status check by name -- and
+  # that name is why this one is wrong. The job asserts the version is
+  # *untouched*, so "bumped" describes the opposite; but branch protection on
+  # `19.0` matches the string, and a check that no longer reports under the
+  # name the rule names blocks every merge until somebody edits a repository
+  # setting. The honest name is one settings change away, and it is not worth
+  # holding a merge for.
   # Local equivalent: tools/ci_version_bump.sh origin/19.0
   # ---------------------------------------------------------------------------
   version-bump:
-    name: Manifest version
+    name: Manifest version bumped
     runs-on: ubuntu-latest
     # Skipped on the mainline itself, where there is nothing to compare against.
     if: github.ref_name != github.event.repository.default_branch

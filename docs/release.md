@@ -24,7 +24,7 @@ a customer on `19.0.17.1.0` had different code.
 
 | Step | Where | What it does |
 |------|-------|--------------|
-| Pull request | `tools/ci_version_bump.sh`, job **Manifest version** | Fails if the branch writes a version |
+| Pull request | `tools/ci_version_bump.sh`, job **Manifest version bumped** | Fails if the branch writes a version |
 | Merge queue | branch protection on `19.0` | Tests each pull request against the real merged result, one at a time |
 | After the merge | `tools/release_bump.sh`, in `release.yml` | Raises the version, commits it to `19.0` |
 | Same run | `release.yml` | Tags `v<version>`, publishes the release with generated notes |
@@ -90,9 +90,11 @@ Both are repository settings, not code, and both have to be set once:
    only doubled the odds of a flake blocking a merge. A branch pushed before
    its pull request exists now has no run, which is what `tools/ci.sh` is for.
 
-The required check was renamed from *Manifest version bumped* to
-**Manifest version** when it inverted, so the required-checks list has to be
-updated to match or it will wait forever for a check that no longer reports.
+**The required check is still called `Manifest version bumped`.** That name
+describes the opposite of what the job now does, and it is kept anyway:
+branch protection matches on the string, so renaming the job without editing
+the rule in the same breath blocks every merge on a check that never reports.
+Rename both together when somebody is in the settings anyway.
 
 ## Running it yourself
 

@@ -653,10 +653,13 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   the tagging to a second workflow listening for it, because nothing will ever
   listen. Bump and tag in one job. It is also what makes the loop impossible
   without a guard.
-- **Inverting a check renames it, and branch protection matches on the name.**
-  "Manifest version bumped" now asserts the opposite, so it is "Manifest
-  version" — and the required-checks list has to be edited by hand or it waits
-  forever for a check that no longer reports under that name.
+- **Branch protection matches a check on its name, so a rename is a merge
+  freeze.** Inverting the version check earned it a better name, and renaming
+  the job to "Manifest version" made every merge fail with `Required status
+  check "Manifest version bumped" is expected` -- a check that no longer
+  reports under the name the rule names, fixable only from a repository
+  setting nothing in the repo can reach. The job kept the old, now wrong name.
+  Rename the job and the rule in the same sitting or not at all.
 - **"The newest tag that is not HEAD" meant "the previous release" only because
   every branch carried a higher version than the mainline.** Once they stop,
   the upgrade job can install a tag *above* the branch it is upgrading to,
