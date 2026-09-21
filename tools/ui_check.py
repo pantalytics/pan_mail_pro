@@ -317,8 +317,8 @@ class Checks:
 
         # New Email asks which record to write on before it opens anything:
         # a mail this module sends with nothing behind it is the state the
-        # filter menu one line up exists to find. It is the same two-step
-        # dialog linking uses, which is the point -- one thing to learn.
+        # filter menu one line up exists to find. It is the same picker
+        # linking uses, which is the point -- one thing to learn.
         page.click('.o_mailpro_new')
         try:
             page.wait_for_selector('.o_mailpro_link_dialog', timeout=15000)
@@ -331,13 +331,17 @@ class Checks:
         else:
             self.shot('inbox-new-email.png')
             rows[0].click()          # step one: the kind of record
-            page.wait_for_timeout(1500)
-            records = page.query_selector_all(
-                '.o_mailpro_link_dialog .o_mailpro_link_row')
-            if not records:
-                self.fail('New Email step two offers no records')
+            # Step two is Odoo's own search dialog, not a list of ours: the
+            # whole point of the change is that this is the list view with a
+            # search bar and a pager everybody already picks records in.
+            try:
+                page.wait_for_selector('.modal .o_select_create_dialog_content '
+                                       '.o_list_view .o_data_row', timeout=15000)
+            except Exception:
+                self.fail('New Email step two is not Odoo\'s own search dialog')
                 return
-            records[0].click()       # step two: the record itself
+            self.shot('inbox-new-email-records.png')
+            page.click('.modal .o_select_create_dialog_content .o_data_row')
             # The composer opens in the conversation pane, the same one a
             # reply uses. A regression here is New Email having gone back to
             # being a popup over the Inbox.
@@ -836,10 +840,10 @@ class Checks:
         if '%' in text or '0.6' in text:
             self.fail(f'the suggestion shows a score: "{text}"')
 
-        # The picker: two steps, each a search box over a list, and nothing
-        # on screen until somebody asks for it. Worth a browser because both
-        # steps are an RPC per keystroke and a Python test sees neither the
-        # dialog nor the step it leaves behind.
+        # The picker: the kind of record in a dialog of ours, then the record
+        # in Odoo's own search dialog. Worth a browser because step one is an
+        # RPC per keystroke and step two is a dialog handed to another
+        # component, and a Python test sees neither.
         if page.query_selector('.o_mailpro_link_dialog'):
             self.fail('the link picker is open on a screen nobody asked')
         opener = page.query_selector('.o_mailpro_relink_toggle')
@@ -858,31 +862,42 @@ class Checks:
         if not models:
             self.fail('step one of the picker opened with nothing in it')
             return
+        # The app tiles: a row of models is scanned by its icons. An <img>
+        # that failed to load is the bug worth catching here, so this asks
+        # the browser whether it has pixels rather than whether the tag is
+        # on the page.
+        loaded = page.evaluate(
+            "() => [...document.querySelectorAll("
+            "'.o_mailpro_link_dialog .o_mailpro_link_icon')]"
+            ".filter((img) => img.naturalWidth > 0).length"
+        )
+        if not loaded:
+            self.fail('the model list shows no app tiles')
         self.shot('inbox-link-models.png')
 
-        # Step two: the records of the model just picked, seeded from the
-        # correspondent. Seeded, so the list must not be empty before anybody
-        # has typed -- an empty second step is the bug this replaced.
+        # Step two: Odoo's own search dialog on the model just picked. Its
+        # list, its search bar, its pager -- the screen every record in this
+        # database is already picked in.
         models[0].click()
-        page.wait_for_timeout(1200)
-        if not dialog.query_selector('.o_mailpro_link_search'):
-            self.fail('step two of the picker has no search box')
-        if not dialog.query_selector('.o_mailpro_link_back'):
-            self.fail('step two of the picker cannot go back to the models')
-        if not dialog.query_selector_all('.o_mailpro_link_row'):
-            self.fail('step two opened empty instead of on the correspondent')
+        try:
+            page.wait_for_selector('.modal .o_select_create_dialog_content '
+                                   '.o_list_view .o_data_row', timeout=15000)
+        except Exception:
+            self.fail('step two of the picker is not Odoo\'s own search dialog')
+            return
+        if page.query_selector('.o_mailpro_link_dialog'):
+            self.fail('step one stayed open behind the search dialog')
+        # The head start, as a facet: the correspondent's own records, one
+        # click away from being dropped. A fixed domain nobody can drop is
+        # the bug this shape avoids.
+        if not page.query_selector('.modal .o_searchview_facet'):
+            self.fail('step two opened on everything instead of on the correspondent')
         self.shot('inbox-link-records.png')
 
-        # Typing searches rather than filtering what is drawn: a term that
-        # matches nothing has to reach the server and come back empty.
-        page.fill('.o_mailpro_link_search', 'zzzzgeenmatch')
-        page.wait_for_timeout(1500)
-        if dialog.query_selector_all('.o_mailpro_link_row'):
-            self.fail('the record search answers rows for a term nothing matches')
         page.keyboard.press('Escape')
         page.wait_for_timeout(400)
-        if page.query_selector('.o_mailpro_link_dialog'):
-            self.fail('the link picker does not close')
+        if page.query_selector('.modal .o_select_create_dialog_content'):
+            self.fail('the record dialog does not close')
         self.error_free('opening the link picker')
 
         self.shot('inbox-unlinked.png')

@@ -1097,9 +1097,10 @@ export class ConversationView extends Component {
      * The record is not optional. This module files mail on documents -- a
      * mail sent from here with no record behind it is the "Linked to nothing"
      * state the Inbox has a filter for, arriving by our own hand. So the same
-     * dialog linking uses asks the same two questions, in the same two
-     * searchable steps, and the composer only opens once both are answered.
-     * One dialog for "where does this mail belong" is one thing to learn.
+     * picker linking uses asks the same two questions -- the kind of record
+     * here, then the record in Odoo's own search dialog -- and the composer
+     * only opens once both are answered. One way to say "where does this mail
+     * belong" is one thing to learn.
      */
     newEmail() {
         this.dialog.add(LinkDialog, {
@@ -1229,16 +1230,16 @@ export class ConversationView extends Component {
     }
 
     /**
-     * Open the picker: the kind of record, then the record, both searchable.
+     * Open the picker: the kind of record here, then the record in Odoo's own
+     * search dialog.
      *
-     * It gets the correspondent so the second step can open on their own
-     * records instead of an empty search box. `pan.mail.conversation` decides
-     * what that means; this only hands over who is on the conversation.
+     * It gets the correspondent so that dialog opens on their own records,
+     * as a search facet anybody can drop. `pan.mail.conversation` decides
+     * what "their own" means; this only hands over who is on the conversation.
      */
     openLinkDialog() {
         this.dialog.add(LinkDialog, {
             partnerId: this.state.selected?.partner_id || false,
-            correspondent: this.state.selected?.correspondent || "",
             onSelect: (model, resId) => this.linkTo(model, resId, "picker"),
         });
     }
