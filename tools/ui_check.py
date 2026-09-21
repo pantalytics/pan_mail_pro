@@ -844,6 +844,95 @@ class Checks:
             if not self.visible(selector):
                 self.fail(f'{name} did not come back at {WIDE}px')
 
+    def chatter_door(self):
+        """Door 1: a record's chatter has a way into the Inbox, and it works.
+
+        Everything about this button lives in the browser -- it is added by
+        inheriting Odoo's own chatter template, drawn from a count over RPC,
+        and it opens a client action with the record in its context. A wrong
+        xpath, a patch that lands after Odoo copied its components, or a
+        context key nothing reads all leave a chatter that looks right and a
+        door that is not there.
+        """
+        page = self.page
+        lead = self.call('crm.lead', 'search',
+                         [('name', '=', 'Asafdichtingen, revisie')], limit=1)
+        if not lead:
+            self.fail('the seeded lead is gone, so door 1 cannot be checked')
+            return
+        page.goto(f'{self.base}/odoo/m-crm.lead/{lead[0]}',
+                  wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o-mail-Chatter', timeout=30000)
+        except Exception:
+            self.fail('the lead form drew no chatter')
+            return
+        page.wait_for_timeout(1500)
+        door = page.query_selector('.o_mailpro_door')
+        if not door or not door.is_visible():
+            self.fail('a record with mail has no Open in mail button')
+            self.error_free('the chatter')
+            return
+        if 'open in mail' not in door.inner_text().strip().lower():
+            self.fail(f'the door reads "{door.inner_text().strip()}"')
+        self.shot('chatter-open-in-mail.png')
+
+        door.click()
+        try:
+            page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
+        except Exception:
+            self.fail('Open in mail did not open the Inbox')
+            return
+        page.wait_for_timeout(2500)
+        # One thread on the record, so it opens on that conversation rather
+        # than on a list to pick from.
+        if not page.query_selector('.o_mailpro_messages .o_mailpro_message'):
+            self.fail('the Inbox opened on no conversation')
+        title = page.query_selector('.o_mailpro_conversation_list_title')
+        # Uppercased by the stylesheet, so read it the way the eye does.
+        heading = title.inner_text().strip() if title else ''
+        if 'asafdichtingen' not in heading.lower():
+            self.fail(f'the narrowed list is headed "{heading}", not the record')
+        rows = page.query_selector_all('.o_mailpro_item')
+        if len(rows) != 1:
+            self.fail(f'the list narrowed to the record shows {len(rows)} conversations')
+        self.shot('inbox-from-chatter.png')
+
+        # And a way back out of it: a list that is short for a reason nobody
+        # can see is the bug the filter button already answers.
+        clear = page.query_selector('.o_mailpro_record_clear')
+        if not clear:
+            self.fail('the narrowed list has no way back to the mailbox')
+        else:
+            clear.click()
+            page.wait_for_timeout(2500)
+            if len(page.query_selector_all('.o_mailpro_item')) <= 1:
+                self.fail('leaving the record did not give the mailbox back')
+        self.error_free('the chatter door')
+
+        # A record without mail gets no button: the door is a place, not a
+        # decoration on every form in the database.
+        company = self.call('ir.model.data', 'search_read',
+                            [('module', '=', 'base'), ('name', '=', 'main_partner')],
+                            fields=['res_id'])
+        if company:
+            page.goto(f"{self.base}/odoo/m-res.partner/{company[0]['res_id']}",
+                      wait_until='domcontentloaded')
+            try:
+                page.wait_for_selector('.o-mail-Chatter', timeout=30000)
+            except Exception:
+                self.fail('the contact form drew no chatter')
+                return
+            page.wait_for_timeout(1500)
+            if page.query_selector('.o_mailpro_door'):
+                self.fail('a record without mail carries an Open in mail button')
+
+        # Back on the Inbox, the way the check after this one is handed it.
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
+        page.wait_for_timeout(2500)
+
     def linking(self):
         """The screen where a match is corrected, and the correction sticking.
 
@@ -1906,6 +1995,7 @@ def main():
         checks.settings_not_connected()
         checks.menus()
         checks.conversation_view()
+        checks.chatter_door()
         checks.linking()
         checks.improve()
         checks.provider_form()

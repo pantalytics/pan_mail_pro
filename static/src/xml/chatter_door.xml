@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- Open in mail, next to the chatter's own controls: after the spacer
+         that ends Send message / Log note / Activity, so it sits with Search,
+         Attach and the followers rather than competing with the two buttons
+         the chatter is there for.
+
+         A plain button, never a component tag: this template is Odoo's. See
+         static/src/js/chatter_door.js. -->
+    <t t-name="pan_mail_pro.ChatterDoor" t-inherit="mail.Chatter" t-inherit-mode="extension">
+        <xpath expr="//span[hasclass('o-mail-Chatter-topbarGrow')]" position="after">
+            <button t-if="mailPro.threads" type="button"
+                    class="btn btn-link text-action text-nowrap o_mailpro_door"
+                    title="Read this conversation in the Mail Pro inbox"
+                    t-on-click="() => this.openInMail()">
+                <i class="fa fa-envelope-o me-1" aria-hidden="true"/>Open in mail
+            </button>
+        </xpath>
+    </t>
+
+</templates>
