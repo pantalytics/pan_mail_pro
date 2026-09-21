@@ -87,6 +87,16 @@ function restoreTab() {
     }
 }
 
+// What the server said, for the banner. An RPC failure carries the reason the
+// call refused -- a missing column after a deploy that never upgraded, a model
+// that is not there, an access error -- and hiding it behind "something went
+// wrong" turns a one-line answer into a log-reading session. One line, never
+// the traceback: the details dialog is Odoo's job, not this banner's.
+function serverReason(error) {
+    const reason = error?.data?.message || error?.message || "";
+    return String(reason).split("\n")[0].trim().slice(0, 300);
+}
+
 /** Stored state is somebody else's data by the time we read it back. */
 function restoreExpanded() {
     try {
@@ -225,6 +235,8 @@ export class ConversationView extends Component {
         this.state = useState({
             loading: true,
             error: "",
+            // The banner says what broke, not only that something did.
+            errorReason: "",
             folder: "inbox",
             // Two dimensions, two controls: the mailbox list says where you are, the
             // filter row says what you are looking for in there. Naming our
@@ -396,6 +408,7 @@ export class ConversationView extends Component {
         const seq = ++this.listSeq;
         this.state.loading = true;
         this.state.error = "";
+        this.state.errorReason = "";
         if (!keepSelection) {
             // Another folder, filter or search is another list, and an
             // unfolded thread from the previous one would reopen under
@@ -466,6 +479,7 @@ export class ConversationView extends Component {
             // retry rather than clearing the pane.
             if (seq === this.listSeq) {
                 this.state.error = _t("Could not load your conversations.");
+                this.state.errorReason = serverReason(error);
             }
             console.warn("[Mail Pro] conversation list failed", error);
         } finally {
@@ -807,6 +821,7 @@ export class ConversationView extends Component {
         } catch (error) {
             if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that conversation.");
+                this.state.errorReason = serverReason(error);
             }
             console.warn("[Mail Pro] conversation failed to open", error);
         }

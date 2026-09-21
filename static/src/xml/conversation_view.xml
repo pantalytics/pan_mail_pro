@@ -154,7 +154,20 @@
 
             <div t-if="state.error" class="o_mailpro_error d-flex align-items-center gap-2" role="alert">
                 <span t-esc="state.error"/>
-                <button class="btn btn-sm btn-link p-0" t-on-click="() => this.refresh()">Try again</button>
+                <!-- The reason, in the server's own words. Without it the
+                     banner sends the reader to the log for the one line the
+                     browser already had. -->
+                <span t-if="state.errorReason" class="o_mailpro_error_reason"
+                      t-esc="state.errorReason"/>
+                <!-- Disabled while the retry runs: a failure that comes back
+                     in twenty milliseconds repaints the same banner, and a
+                     button that never changes reads as a button that does
+                     nothing. -->
+                <button class="btn btn-sm btn-link p-0" t-att-disabled="state.loading"
+                        t-on-click="() => this.refresh()">
+                    <t t-if="state.loading">Trying...</t>
+                    <t t-else="">Try again</t>
+                </button>
             </div>
 
             <!--

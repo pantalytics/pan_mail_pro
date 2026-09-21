@@ -267,6 +267,17 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         font-size: 0.8125rem;
     }
 
+    // The server's own words, quieter than the line above them and on one
+    // line: a reason worth reading is short, and a wall of it pushes the
+    // retry off the screen.
+    .o_mailpro_error_reason {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: $mailpro-faint;
+    }
+
     .o_mailpro_panes { min-height: 0; }
 
     // The dividers.
