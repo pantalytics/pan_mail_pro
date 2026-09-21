@@ -13,6 +13,9 @@ each of which would be a quiet regression rather than a failure: it must not
 subscribe anybody to the destination, it must not accept a caller who cannot
 write that destination, and it must not move a note.
 """
+from datetime import timedelta
+
+from odoo import fields
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import TransactionCase, tagged
 
@@ -123,7 +126,30 @@ class TestLinkTo(TransactionCase):
         self.Log.link_to([message.id], 'crm.lead', self.lead.id)
 
         self.assertTrue(log.reviewed)
+        self.assertTrue(log.corrected_at)
         self.assertFalse(log.suggested_model)
+
+    def test_a_correction_is_counted_against_the_rule_it_overruled(self):
+        """What the heartbeat reports per rule: decided, and overruled by hand."""
+        message, log = self._fallback_mail()
+        log.write({'rule': 'subject_participants'})
+        since = fields.Datetime.now() - timedelta(hours=1)
+        before = {r['rule']: r for r in self.Log.rule_counts_since(since)}
+        self.assertEqual(before['subject_participants']['corrected'], 0)
+
+        self.Log.link_to([message.id], 'crm.lead', self.lead.id)
+
+        after = {r['rule']: r for r in self.Log.rule_counts_since(since)}
+        self.assertEqual(after['subject_participants']['wins'], 1)
+        self.assertEqual(after['subject_participants']['corrected'], 1)
+        for row in after.values():
+            self.assertEqual(set(row), {'rule', 'wins', 'corrected'})
+
+    def test_a_fallback_counts_under_none(self):
+        self._fallback_mail()
+        since = fields.Datetime.now() - timedelta(hours=1)
+        rows = {r['rule']: r for r in self.Log.rule_counts_since(since)}
+        self.assertGreaterEqual(rows['none']['wins'], 1)
 
     def test_link_to_moves_the_whole_conversation_it_is_given(self):
         """Leaving half a thread behind splits it across two records."""

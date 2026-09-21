@@ -7,11 +7,13 @@ built one, this measurement said almost everything files itself correctly,
 and 19.0.7.0.0 removed it. The same question will be asked of the next
 feature that proposes to catch what the matcher misses.
 
-Deliberately measured inside Odoo and nowhere else. Sending usage telemetry
-out would contradict the module's own data disclosure ("No data is sent to the
-module author or any third party"), and would need to be opt-in, aggregated and
-documented before it could be honest. A number the customer can read on their
-own screen needs none of that.
+Measured inside Odoo, and the last 24 hours of it ride the daily heartbeat to
+Pantalytics as four counts (`pan_mail_license._heartbeat_body`). That is the
+one number the product is steered by across every installation, so it goes
+with the counts the heartbeat already carries; it is documented in the
+manifest's Data Disclosure like the rest of them. Counts only, and the same
+four the customer reads on this screen: nothing leaves that they cannot see
+themselves.
 
 A TransientModel rather than a stored report: this is a question you ask, not a
 history you keep. Nothing is written, so nothing has to be cleaned up, and the
@@ -37,6 +39,7 @@ class PanMailCoverage(models.TransientModel):
     unlinked_count = fields.Integer(string='Linked to nothing', compute='_compute_coverage')
     unlinked_ratio = fields.Float(string='Not linked', compute='_compute_coverage')
 
+    @api.model
     def _contact_only_domain(self):
         """Linked to a contact and nothing else.
 
@@ -50,34 +53,54 @@ class PanMailCoverage(models.TransientModel):
         since = fields.Datetime.now() - relativedelta(days=int(self.period_days))
         return [('x_direction', '!=', False), ('date', '>=', since)]
 
+    @api.model
+    def counts(self, domain):
+        """The four counts for the mail `domain` selects: total, linked,
+        contact_only, unlinked. The screen and the heartbeat both read this,
+        so they cannot disagree about what "linked" means.
+
+        sudo on purpose: this is an aggregate about the database, not a
+        window onto anyone's correspondence. No subject, sender or body is
+        exposed, only counts. The lens itself stays ACL-bound, so a user who
+        clicks through still sees only what they may see, and may find fewer
+        rows than the count promised. That is the honest trade: an
+        ACL-filtered denominator would make the ratio meaningless.
+        """
+        Message = self.env['mail.message'].sudo()
+        domain = list(domain)
+        total = Message.search_count(domain)
+        unlinked = Message.search_count(
+            domain + ['|', ('model', '=', False), ('res_id', '=', False)]
+        )
+        contact_only = Message.search_count(domain + self._contact_only_domain())
+        # The three rows are disjoint and sum to the total: a message is
+        # linked to a document, on a contact only, or linked to nothing.
+        # Counting the contacts inside the documents made the two rows on
+        # the screen look like a sum that does not add up.
+        return {
+            'total': total,
+            'linked': total - unlinked - contact_only,
+            'contact_only': contact_only,
+            'unlinked': unlinked,
+        }
+
+    @api.model
+    def counts_since(self, since):
+        """The heartbeat's slice: every synced mail dated after `since`."""
+        return self.counts([('x_direction', '!=', False), ('date', '>=', since)])
+
     @api.depends('period_days')
     def _compute_coverage(self):
-        Message = self.env['mail.message']
         for record in self:
-            domain = record._period_domain()
-            # sudo on purpose: this is an aggregate about the database, not a
-            # window onto anyone's correspondence. No subject, sender or body is
-            # exposed — only counts. The lens itself stays ACL-bound, so a user
-            # who clicks through still sees only what they may see, and may find
-            # fewer rows than the count promised. That is the honest trade: an
-            # ACL-filtered denominator would make the ratio meaningless.
-            total = Message.sudo().search_count(domain)
-            unlinked = Message.sudo().search_count(
-                domain + ['|', ('model', '=', False), ('res_id', '=', False)]
-            )
-            contact_only = Message.sudo().search_count(
-                domain + record._contact_only_domain()
-            )
-            record.total_count = total
-            record.unlinked_count = unlinked
-            record.contact_only_count = contact_only
-            # The three rows are disjoint and sum to the total: a message is
-            # linked to a document, on a contact only, or linked to nothing.
-            # Counting the contacts inside the documents made the two rows on
-            # the screen look like a sum that does not add up.
-            record.linked_count = total - unlinked - contact_only
+            counts = record.counts(record._period_domain())
+            record.total_count = counts['total']
+            record.unlinked_count = counts['unlinked']
+            record.contact_only_count = counts['contact_only']
+            record.linked_count = counts['linked']
             # A fraction: the `percentage` widget multiplies by 100 itself.
-            record.unlinked_ratio = (unlinked / total) if total else 0.0
+            record.unlinked_ratio = (
+                (counts['unlinked'] / counts['total']) if counts['total'] else 0.0
+            )
 
     # -- drill-down -------------------------------------------------------- #
 

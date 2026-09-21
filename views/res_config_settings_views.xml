@@ -73,6 +73,25 @@
                                 <div class="text-muted" invisible="not x_license_valid_until">
                                     Valid until <field name="x_license_valid_until" nolabel="1" readonly="1"/>
                                 </div>
+                                <!-- Help improve Mail Pro. Switched on at Pantalytics, for
+                                     the workspace; this page can only refuse it for this
+                                     instance. Shown only while it is on: a checkbox that
+                                     refuses something that is not happening is a puzzle. -->
+                                <div class="mt-3" invisible="not x_improve_on">
+                                    <div>
+                                        <span class="o_form_label">Help improve Mail Pro</span>
+                                    </div>
+                                    <div class="text-muted">
+                                        Switched on for your Pantalytics workspace: the Mail Pro inbox reports which
+                                        screens, tabs and buttons are used and records the session with every word
+                                        and every field masked. Never a mail, an address, a name or a subject.
+                                        Switch it off for every Odoo instance at app.mailpro.pantalytics.com, Settings.
+                                    </div>
+                                    <div class="mt-1">
+                                        <field name="x_improve_refused"/>
+                                        <label for="x_improve_refused" class="ms-1"/>
+                                    </div>
+                                </div>
                                 <div class="mt-2" invisible="not x_license_sync_blocked">
                                     <button name="action_license_check" type="object"
                                             string="Check again" class="btn-secondary"/>

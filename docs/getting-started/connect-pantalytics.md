@@ -45,10 +45,27 @@ administer, ask an administrator of that workspace to approve instead.
 ## What leaves your server
 
 One request a day to `app.mailpro.pantalytics.com`, carrying: the database
-id, the Mail Pro and Odoo version, how many accounts are connected and
-whether sync is healthy. When you connect, the Odoo URL is sent too so the
-approval page can name this instance. Never an address, a subject, a body or a
-name. See [Security](../security.md).
+id, the Mail Pro and Odoo version, how many accounts are connected, whether
+sync is healthy, and for the last 24 hours how many mails were linked to a
+document, to a contact only, or to nothing, per matching rule how often it
+decided and how often somebody overruled it, and how many conversations were
+linked by hand. Counts and rule names. When you connect, the Odoo URL is sent
+too so the approval page can name this instance. Never an address, a subject,
+a body or a name. See [Security](../security.md).
+
+## Help improve Mail Pro
+
+Off unless an administrator of your Pantalytics workspace turns it on, under
+**Settings** at `app.mailpro.pantalytics.com`. When it is on, the Mail Pro
+inbox in the browser reports which screens, tabs and buttons are used and
+records the session with every word, every field and every attribute masked:
+a wireframe, never a mail, an address, a name or a subject. It covers Mail
+Pro's own screens and nothing else in your Odoo, and it goes to Pantalytics
+only, never to a third party directly. Recordings are kept 30 days.
+
+An Odoo administrator can refuse it for one instance under **Settings, Mail
+Pro, Pantalytics Account**, with **Not on this Odoo instance**. Telling the
+people who use your Odoo is your part.
 
 ## Problems
 

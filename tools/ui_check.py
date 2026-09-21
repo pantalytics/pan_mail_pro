@@ -24,9 +24,15 @@ Exit code 1 with the failures listed is the whole interface; CI reads that.
 """
 import argparse
 import ast
+import base64
 import datetime
+import gzip
+import http.server
+import json
 import os
 import sys
+import threading
+import urllib.parse
 import xmlrpc.client
 
 try:
@@ -1478,12 +1484,184 @@ class Checks:
         if not page.query_selector('.o_mailpro_files input[type="file"]'):
             self.fail('the Files tab has no way to attach a file')
 
+    # -- Help improve Mail Pro: what reaches the wire is wireframe -----------
+
+    # Everything the seed puts on the Inbox screen. None of it may reach the
+    # sink: not in a replay chunk, not in an event, not in an attribute.
+    SEEDED = (
+        'Asafdichtingen', 'Vandermolen', 'bart@vandermolen.example',
+        'Offerte revisie', 'levertijd', 'Storing aan de pers', 'Keersluis',
+        'inkoop@keersluis.example', 'Nieuwe aanvraag afdichtingen',
+        'asafdichting.png',
+    )
+
+    def improve(self):
+        """Help improve Mail Pro switched on, and the recording read back.
+
+        The promise on the settings page is that a recording carries no word,
+        no field and no attribute of the screen. A Python test cannot see what
+        rrweb serialises, so this points the Inbox at a sink on this machine,
+        opens a conversation, switches a tab, and reads every byte posthog-js
+        sent: replay chunks, events, the lot. A seeded subject or address in
+        any of it is the failure this check exists for. It also asserts the
+        SDK fetched nothing (the recorder is in the bundle) and that the
+        person is the server's `u:` pseudonym.
+        """
+        page = self.page
+        sink = start_sink()
+        link = self.call('pan.mail.license', 'search', [])
+        if not link:
+            self.fail('no Pantalytics link row to switch Help improve Mail Pro on')
+            return
+        self.call('pan.mail.license', 'write', link, {
+            'improve': True, 'improve_host': sink.host,
+            'improve_token': 'phc_ui_check', 'replay_sample': 1.0,
+        })
+        try:
+            action = dict(module_menu_actions(self.call)).get('Inbox')
+            # A full page load: the config rides in session_info.
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
+            page.wait_for_timeout(2000)
+            items = page.query_selector_all('.o_mailpro_item')
+            if items:
+                items[0].click()
+                page.wait_for_timeout(1500)
+            tab = page.query_selector('.o_mailpro_tab:has-text("Files")')
+            if tab:
+                tab.click()
+                page.wait_for_timeout(800)
+            # Replay is batched; give it long enough to flush more than once.
+            for _ in range(25):
+                page.wait_for_timeout(1000)
+                if sink.saw('/s/') and sink.saw('/e/', 'inbox_opened'):
+                    break
+            self.shot('inbox-improve.png')
+            self.error_free('Inbox with Help improve Mail Pro on')
+
+            if not sink.saw('/e/', 'inbox_opened'):
+                self.fail('inbox_opened never reached the sink '
+                          f'(got {sorted({p for p, _ in sink.received})})')
+            if not sink.saw('/s/'):
+                self.fail('no replay chunk reached the sink in 25s')
+            if not sink.saw('/e/', 'conversation_opened') and items:
+                self.fail('opening a conversation sent no conversation_opened')
+            wire = '\n'.join(text for _, text in sink.received)
+            for secret in self.SEEDED:
+                if secret in wire:
+                    self.fail(f'"{secret}" reached the wire: the masking does not hold')
+            if '"distinct_id":"u:' not in wire.replace(' ', ''):
+                self.fail('the person on the wire is not the server\'s u: pseudonym')
+            if 'admin' in wire.lower().replace('/odoo/', ''):
+                # The login of the user driving this check must not travel.
+                self.fail('the login reached the wire')
+            if sink.fetched:
+                self.fail(f'posthog-js fetched {sink.fetched}: nothing may be loaded '
+                          'from the host, the recorder is in the bundle')
+        finally:
+            self.call('pan.mail.license', 'write', link, {
+                'improve': False, 'improve_host': False, 'improve_token': False,
+                'replay_sample': 0.0,
+            })
+            sink.stop()
+
     def error_free(self, where):
         dialog = self.page.query_selector('.o_error_dialog, .o_dialog_error')
         if dialog:
             self.fail(f'{where} opened an error dialog: {dialog.inner_text()[:200]}')
         if not self.page.query_selector('.o_content'):
             self.fail(f'{where} rendered no view')
+
+
+class _Sink(http.server.BaseHTTPRequestHandler):
+    """Stands in for the proxy: answers posthog-js and keeps what it sent."""
+
+    received = []   # (path, decoded text)
+    fetched = []    # GET paths: nothing should ever be fetched
+    CORS = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+    }
+
+    def log_message(self, *args):
+        pass
+
+    def _reply(self, status, body=b'', content_type='application/json'):
+        self.send_response(status)
+        for name, value in self.CORS.items():
+            self.send_header(name, value)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self._reply(204)
+
+    def do_GET(self):
+        type(self).fetched.append(self.path.split('?')[0])
+        self._reply(404, b'{}')
+
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length') or 0)
+        body = self.rfile.read(length) if length else b''
+        type(self).received.append((self.path.split('?')[0], _decode(self.path, body)))
+        if self.path.startswith('/flags'):
+            # What PostHog answers when recording is on for the project.
+            self._reply(200, json.dumps({
+                'featureFlags': {}, 'sessionRecording': {'endpoint': '/s/'},
+                'supportedCompression': ['gzip-js'],
+            }).encode())
+        else:
+            self._reply(200, b'{"status": 1}')
+
+
+def _decode(path, body):
+    """What posthog-js sent, as text: gzip for batches, base64 for beacons."""
+    try:
+        if 'compression=gzip-js' in path:
+            return gzip.decompress(body).decode('utf-8', 'replace')
+        if body.startswith(b'data='):
+            raw = urllib.parse.unquote_plus(body[5:].decode())
+            return base64.b64decode(raw + '=' * (-len(raw) % 4)).decode('utf-8', 'replace')
+        return body.decode('utf-8', 'replace')
+    except Exception as error:  # noqa: BLE001 - keep the bytes rather than lose them
+        return f'{error!r}: {body!r}'
+
+
+class _RunningSink:
+    def __init__(self, server, thread):
+        self.server = server
+        self.thread = thread
+        self.host = f'http://127.0.0.1:{server.server_address[1]}'
+        _Sink.received = []
+        _Sink.fetched = []
+
+    @property
+    def received(self):
+        return list(_Sink.received)
+
+    @property
+    def fetched(self):
+        return list(_Sink.fetched)
+
+    def saw(self, path_prefix, text=''):
+        return any(p.startswith(path_prefix) and text in t for p, t in _Sink.received)
+
+    def stop(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+
+def start_sink():
+    """The stand-in proxy, on a free port on this machine, in a thread."""
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), _Sink)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return _RunningSink(server, thread)
 
 
 def rpc_for(url, db):
@@ -1552,6 +1730,7 @@ def main():
         checks.menus()
         checks.conversation_view()
         checks.linking()
+        checks.improve()
         checks.provider_form()
         checks.connect_banner()
         browser.close()
