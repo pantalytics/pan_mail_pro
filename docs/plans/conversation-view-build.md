@@ -66,8 +66,8 @@ That is the whole API. Each returns plain dicts, and each is paginated.
 
 | Method | Takes | Returns |
 |---|---|---|
-| `folder_counts` | `mailbox_id`, `folder` | `folders`: one row per mailbox-list folder with its count. `filters`: the same for the filter row over `folder`, and only when one is given |
-| `search_conversations` | `mailbox_id`, `folder`, `filter_name`, `partner_id`, `search`, `limit`, `offset` | list rows: `model`, `res_id`, `message_id`, `subject`, `preview`, `correspondent`, `partner_id`, `date`, `count`, `record_name`, `unread`, `mailbox` |
+| `folder_counts` | `mailbox_id`, `partner_id`, `domain`, `ungrouped` | one row per mailbox-list folder with its count, narrowed by the same search the list is |
+| `search_conversations` | `mailbox_id`, `folder`, `partner_id`, `domain`, `ungrouped`, `limit`, `offset` | list rows: `model`, `res_id`, `message_id`, `subject`, `preview`, `correspondent`, `partner_id`, `date`, `count`, `record_name`, `unread`, `mailbox` |
 | `read_conversation` | `model`, `res_id`, `mailbox_id`, `message_id`, `limit`, `offset`, `scope` | the messages (`scope` picks Mail or Everything), the record chips, the files, the open activities, and for an unfiled one what the matcher rejected |
 | `customer_timeline` | `partner_id`, `kinds`, `limit`, `offset` | the merged axis: messages, done activities, record events |
 | `record_conversations` | `model`, `res_id` | what door 1 needs: how many conversations touch this record, and how many of their messages sit elsewhere |

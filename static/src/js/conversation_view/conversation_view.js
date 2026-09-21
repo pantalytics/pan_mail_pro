@@ -19,16 +19,22 @@
  * over the screen; that lives in `use_composer.js`.
  */
 
-import { Component, useState, useSubEnv, useRef, onWillStart, onError, markup } from "@odoo/owl";
+import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
-import { useService } from "@web/core/utils/hooks";
+import { useBus, useService } from "@web/core/utils/hooks";
+// The search bar is Odoo's own, over `mail.message`: the same box, the same
+// autocomplete, the same facets, the same filter menu. What it produces is a
+// domain, and a domain is all `pan.mail.conversation` ever wanted -- every
+// conversation on this screen is a group of `mail.message` rows. The filters
+// live in a search view (`view_pan_mail_inbox_search`), so adding one is an
+// inherited view rather than a patched component.
+import { SearchModel } from "@web/search/search_model";
+import { SearchBar } from "@web/search/search_bar/search_bar";
 import { View } from "@web/views/view";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { Dropdown } from "@web/core/dropdown/dropdown";
 import { useDropdownState } from "@web/core/dropdown/dropdown_hooks";
-import { CheckboxItem } from "@web/core/dropdown/checkbox_item";
-import { useDebounced } from "@web/core/utils/timing";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
@@ -48,10 +54,11 @@ import { compareDatetime } from "@mail/utils/common/misc";
 
 const PAGE = 30;
 
-// How long the search waits after the last keystroke. Long enough that typing
-// a name is one query instead of eight, short enough that it still reads as
-// the list following along.
-const SEARCH_DELAY = 400;
+// The context key the "Linked to nothing" filter carries. Mail filed on
+// nothing is not one conversation, and that is the one thing its domain
+// cannot say. Kept in step with `UNGROUPED_KEY` in
+// `models/pan_mail_conversation.py`.
+const UNGROUPED_KEY = "pan_mail_ungrouped";
 
 // What a pane with nothing selected holds. A function rather than a constant:
 // four lists shared between two selections is one stale thread away from a
@@ -176,7 +183,7 @@ export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
     static components = {
         OdooRecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
-        Dropdown, CheckboxItem, FollowerList,
+        Dropdown, FollowerList, SearchBar,
     };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
@@ -207,11 +214,20 @@ export class ConversationView extends Component {
         // Help improve Mail Pro: a no-op unless the session says otherwise.
         // Every `capture` below names a screen or a button, never content.
         this.improve = useImprove();
-        // Typing is the search, the way it is in every mail client. Debounced
-        // rather than bound to Enter: a list that only moves when you press a
-        // key you were not told about reads as a search box that is broken.
-        this.applySearch = useDebounced(() => this.runSearch(), SEARCH_DELAY);
-        this.searchRef = useRef("search");
+        // Odoo's own search model, over `mail.message`. `useSubEnv` is how
+        // `SearchBar` finds it, the same way every view in the web client
+        // hands it to its control panel. Everything the reader types, picks
+        // or removes comes back out of it as one domain.
+        this.searchModel = new SearchModel(this.env, {
+            orm: this.orm,
+            view: useService("view"),
+            field: useService("field"),
+            name: useService("name"),
+            dialog: this.dialog,
+            treeProcessor: useService("tree_processor"),
+        });
+        useSubEnv({ searchModel: this.searchModel });
+        useBus(this.searchModel, "update", () => this.onSearch());
 
         // Door 1: the chatter's Open in mail names the record it came from,
         // and whether one conversation is the answer or the reader has to
@@ -240,11 +256,11 @@ export class ConversationView extends Component {
             errorReason: "",
             errorRemedy: "",
             folder: "inbox",
-            // Two dimensions, two controls: the mailbox list says where you are, the
-            // filter row says what you are looking for in there. Naming our
-            // own states as folders made the mailbox list read like a filter panel
-            // next to the mail client everybody also has open.
-            filter: null,
+            // Two dimensions, two controls: the mailbox list says where you
+            // are, the search bar says what you are looking for in there.
+            // Naming our own states as folders made the mailbox list read
+            // like a filter panel next to the mail client everybody also has
+            // open, so they are filters in the search view instead.
             mailboxes: [],
             mailboxId: null,
             // The mailbox list, the way Outlook draws it: every mailbox can stand
@@ -255,8 +271,8 @@ export class ConversationView extends Component {
             counts: {},
             conversations: [],
             // Door 1's narrowing: while it is set the list is the mail on one
-            // record rather than the mail in one mailbox. Any folder, mailbox,
-            // filter or search click leaves it, because each of those is a
+            // record rather than the mail in one mailbox. Any folder,
+            // mailbox or search leaves it, because each of those is a
             // question about a mailbox.
             record: null,
             limit: PAGE,
@@ -288,7 +304,6 @@ export class ConversationView extends Component {
             quotes: {},
             details: {},
             showRejected: false,
-            search: "",
         });
 
         // Splitting a body into "what was written" and "what was quoted" is a
@@ -298,7 +313,20 @@ export class ConversationView extends Component {
         this.split = new Map();
 
         onWillStart(async () => {
-            await this.loadMailboxes();
+            const [, searchViewId] = await Promise.all([
+                this.loadMailboxes(),
+                this.orm.call("pan.mail.conversation", "inbox_search_view_id", []),
+            ]);
+            await this.searchModel.load({
+                resModel: "mail.message",
+                searchViewId,
+                // Filters, and nothing else. Group By is a question about a
+                // list over a table and this list is a mailbox: the grouping
+                // is the conversation. A favourite would be a saved search
+                // per model rather than per screen, which is a promise this
+                // one cannot keep.
+                searchMenuTypes: ["filter"],
+            });
             if (this.openedOn) {
                 this.state.record = {
                     model: this.openedOn.model,
@@ -423,7 +451,7 @@ export class ConversationView extends Component {
         try {
             const args = {
                 mailbox_id: this.state.mailboxId,
-                search: this.state.search || null,
+                ...this.searchArgs(),
             };
             const record = this.state.record
                 ? { record_model: this.state.record.model,
@@ -438,16 +466,11 @@ export class ConversationView extends Component {
                     "pan.mail.conversation", "folder_counts", [], {
                         ...args,
                         mailbox_id: key || null,
-                        // The filter row belongs to the list, so it is
-                        // counted for the mailbox the list is showing and
-                        // nowhere else.
-                        folder: key === this.mailboxKey() ? this.state.folder : null,
                     }))),
                 this.orm.call("pan.mail.conversation", "search_conversations", [], {
                     ...args,
                     ...record,
                     folder: this.state.folder,
-                    filter_name: this.state.filter,
                     limit: this.state.limit,
                 }),
             ]);
@@ -870,25 +893,13 @@ export class ConversationView extends Component {
         this.saveExpanded();
         }
         this.state.folder = folder;
-        // Every filter is a question about mail that arrived or went out.
-        // None of them is a question about your own unsent answer, so Drafts
-        // has no filter row and carries none in from the folder before it.
-        if (folder === "drafts") {
-            this.state.filter = null;
-        }
         this.panes.closeMailboxList();
-        // A filter is a question about the folder you are in, so switching
+        // The search is a question about the folder you are in, so switching
         // folder keeps it: "linked to nothing" in Sent is a fair question,
-        // and dropping it on every click is the thing that makes a filter
-        // row feel like it undoes itself.
-        this.state.limit = PAGE;
-        await this.refresh();
-    }
-
-    /** Narrow the folder you are in, or clear the filter with a second click. */
-    async setFilter(filter) {
-        this.leaveRecord();
-        this.state.filter = this.state.filter === filter ? null : filter;
+        // and dropping it on every click is the thing that makes a search
+        // bar feel like it undoes itself. Drafts live in another table, so
+        // the filters over `mail.message` simply do not reach them -- only
+        // the words somebody typed do.
         this.state.limit = PAGE;
         await this.refresh();
     }
@@ -913,7 +924,7 @@ export class ConversationView extends Component {
             this.state.counts[key] = await this.orm.call(
                 "pan.mail.conversation", "folder_counts", [], {
                     mailbox_id: key || null,
-                    search: this.state.search || null,
+                    ...this.searchArgs(),
                 });
         } catch (error) {
             // A mailbox list that cannot count is a mailbox list without numbers, not an
@@ -924,17 +935,7 @@ export class ConversationView extends Component {
     }
 
     foldersFor(mailboxId) {
-        return (this.state.counts[this.mailboxKey(mailboxId)] || {}).folders || [];
-    }
-
-    /** The filter menu over the list, counted inside the open folder. */
-    get filters() {
-        return (this.state.counts[this.mailboxKey()] || {}).filters || [];
-    }
-
-    /** The one in use, named on the button so a closed menu still says so. */
-    get activeFilter() {
-        return this.filters.find((pill) => pill.id === this.state.filter) || null;
+        return this.state.counts[this.mailboxKey(mailboxId)] || [];
     }
 
     /** Open another mailbox, from the mailbox list. Folders are per mailbox. */
@@ -948,7 +949,7 @@ export class ConversationView extends Component {
         // Opening a mailbox unfolds it: the folders are where you go next.
         this.state.expanded[this.mailboxKey()] = true;
         this.saveExpanded();
-        // The folder and the filter carry over. Every mailbox has the same
+        // The folder and the search carry over. Every mailbox has the same
         // two folders, and landing back in Inbox on every switch loses the
         // one thing somebody switching mailboxes is usually doing: working
         // one view across all of them.
@@ -959,45 +960,41 @@ export class ConversationView extends Component {
         this.refreshReadState();
     }
 
-    onSearchInput(event) {
-        this.state.search = event.target.value;
-        this.applySearch();
+    /**
+     * What the search bar is asking for, as the two arguments every read of
+     * the list takes.
+     *
+     * The domain is the whole of it, bar two things a domain cannot say.
+     * Mail filed on nothing is not one conversation, so the filter that asks
+     * for it carries `pan_mail_ungrouped` in its own context and the list
+     * stops grouping -- a search view attribute, not a special case in here.
+     * And Drafts are a table of their own, so a domain over `mail.message`
+     * means nothing to them; what does carry across is the words somebody
+     * typed, which is every text facet in the bar.
+     */
+    searchArgs() {
+        return {
+            domain: this.searchModel.domain,
+            search: this.searchText(),
+            ungrouped: !!this.searchModel.context[UNGROUPED_KEY],
+        };
     }
 
-    /** Enter does not wait, and Escape gives the whole folder back. */
-    onSearchKey(event) {
-        if (event.key === "Enter") {
-            this.applySearch.cancel();
-            this.runSearch();
-        } else if (event.key === "Escape" && this.state.search) {
-            this.clearSearch();
-        }
+    /** What the reader typed, as one string: the bar's text facets. */
+    searchText() {
+        const typed = this.searchModel.facets
+            .filter((facet) => facet.type === "field")
+            .flatMap((facet) => facet.values);
+        return typed.join(" ") || null;
     }
 
     /**
-     * The whole box is the search field, the way Odoo's own search bar is:
-     * the magnifier, the padding and the border all land in the input.
+     * The search changed: a word typed, a facet removed, a filter picked.
+     *
+     * Back to the whole mailbox and to the first page, because a search is a
+     * question about a mailbox rather than about the record door 1 opened on.
      */
-    focusSearch() {
-        this.searchRef.el?.focus();
-    }
-
-    /**
-     * The cross, and Escape: the folder back, in one click. The field is
-     * written to by hand because `t-att-value` sets the attribute and the
-     * browser is showing the property somebody typed into.
-     */
-    clearSearch() {
-        if (this.searchRef.el) {
-            this.searchRef.el.value = "";
-        }
-        this.state.search = "";
-        this.applySearch.cancel();
-        this.focusSearch();
-        return this.runSearch();
-    }
-
-    async runSearch() {
+    async onSearch() {
         this.leaveRecord();
         this.state.limit = PAGE;
         await this.refresh();
@@ -1498,15 +1495,9 @@ export class ConversationView extends Component {
         return (folders.find((e) => e.id === this.state.folder) || {}).name || "";
     }
 
-    /** What the list is showing, in words: the folder, narrowed by the filter. */
-    get listLabel() {
-        if (this.state.record) {
-            return this.folderLabel;
-        }
-        const named = (entries, id) => (entries.find((e) => e.id === id) || {}).name;
-        const folder = named(this.foldersFor(), this.state.folder) || "";
-        const filter = this.state.filter && named(this.filters, this.state.filter);
-        return filter ? `${folder} / ${filter}` : folder;
+    /** Is the search bar asking for anything? The empty state reads it. */
+    get searching() {
+        return this.searchModel.facets.length > 0;
     }
 
     folderCount(folder) {
