@@ -10,7 +10,7 @@ record that carries mail, opening the Inbox on that conversation or, when the
 record carries more than one thread, on its list. Still on paper: door 1's
 more-messages-elsewhere line, and the customer view with its timeline, whose
 read method (`customer_timeline`) shipped and is tested, so what is left of it
-is markup. Drafts ship in 19.0.16.0.0: a third
+is markup. Drafts ship in 19.0.17.0.0: a third
 folder in the mailbox list, a **Save draft** beside Send, and the unsent answer
 on the conversation it belongs to. Also still on paper: the composer's
 **Cc/followers block**, and *All mailboxes*, the one folder that spans
@@ -332,7 +332,7 @@ conversation compounds from there.
 
 **The cases we drop.**
 
-- ~~**Drafts.**~~ Shipped in 19.0.16.0.0, and the refusal above is the reason
+- ~~**Drafts.**~~ Shipped in 19.0.17.0.0, and the refusal above is the reason
   the shape is as small as it is. One table, `pan.mail.draft`, private to its
   author, on the record the mail will be sent from -- so sending it changes
   nothing about where the conversation lives. No drafts of internal notes.

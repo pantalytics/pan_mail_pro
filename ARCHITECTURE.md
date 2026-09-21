@@ -116,6 +116,34 @@ documents, so "record" without a qualifier reads as either side. Pane 4 is the
 Sizing, folding and the three window shapes are in
 `static/src/js/conversation_view/use_panes.js`.
 
+#### A row in the conversation list, and what unfolds under it
+
+One row per conversation, not per mail: who it is with, the subject, one line
+of the newest mail, the record it is linked to, and how many mails are in it.
+The snippet is `pan.mail.conversation._preview()`, and it stops where the
+quoted history starts -- the same markers the conversation pane folds -- so a
+two-line answer on top of last week's thread previews as the answer.
+
+A row of more than one mail carries a **chevron**. Unfolding it asks
+`conversation_messages()` and draws one line per mail underneath: sender, date,
+snippet. Three things it deliberately is not:
+
+- **Not a second read of the conversation.** `read_conversation()` carries a
+  body per message because the pane renders them; a list needs three fields,
+  so the rows come from `_thread_row()` and a thread's worth of HTML does not
+  cross the wire to draw ten lines of text.
+- **Not a second way to open a conversation.** The chevron unfolds and nothing
+  else. The row above it is still what opens the conversation, so asking "how
+  many of these are from her" never costs the reader the conversation they had
+  open.
+- **Not another tab.** The unfolded rows are correspondence, the same set the
+  row's own count counted. A note is not a mail the conversation had, and the
+  tab strip over the open conversation is where that reading lives.
+
+Clicking one opens the conversation on **that** mail: the id is seeded into
+`state.open` before the read, and `readConversation()` only falls back to the
+newest message when nothing is open.
+
 ### Provider abstraction
 
 Everything wire-specific — how a mail is sent, how remote messages are listed
@@ -389,6 +417,14 @@ Log note is the same composer in the same pane, with the note subtype instead
 of the comment one and no recipients, so the screen still writes in exactly
 one place. The strip steps aside while somebody is writing: the pane has one
 job then, and a tab click would drop the draft.
+
+19.0.15.5.0 leaves the conversation *under* the composer instead of in its
+place. Outlook's shape: what is being written on top, the mail it answers
+below it, one scrollbar over both (`.o_mailpro_composing`). The stack is the
+same one the Mail tab draws -- `pan_mail_pro.ConversationMessages`, one
+template and two call sites -- so a message further down still opens where it
+is while the draft stays put. Replacing the thread with the composer had put
+the sentence somebody was answering behind a Discard.
 
 19.0.13.1.0 gives each tab one writing action instead of both: Reply on Mail,
 Log note on Mail + notes, and neither on Files or Activities, which are lists.
