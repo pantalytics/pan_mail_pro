@@ -1014,18 +1014,22 @@ class Checks:
             self.leave_live_folder(was)
             return
 
-        page.query_selector_all('.o_mailpro_folders')[-1] \
-            .query_selector_all('.o_mailpro_folder')[-1].click()
-        # This folder waits on a provider rather than on Postgres, and here
-        # it waits on one it cannot reach: a token that is the word "demo"
-        # against a network this container does not have. So the wait is the
-        # skeleton going away, generously, rather than a fixed pause.
+        # Waited on by its own request rather than by what is on screen.
+        # Every DOM condition here is true of the folder you just left --
+        # its rows are still up, and Owl has not drawn the skeleton yet --
+        # so any of them passes before the live read has begun.
+        with page.expect_response(
+                lambda response: 'live_messages' in response.url,
+                timeout=60000):
+            page.query_selector_all('.o_mailpro_folders')[-1] \
+                .query_selector_all('.o_mailpro_folder')[-1].click()
+        # The read is in: what is left is the render.
         try:
             page.wait_for_selector(
-                '.o_mailpro_conversation_list .o_mailpro_skeleton',
-                state='detached', timeout=60000)
+                '.o_mailpro_conversation_list .o_mailpro_empty, '
+                '.o_mailpro_conversation_list .o_mailpro_item', timeout=15000)
         except Exception:
-            self.fail('the live folder never stopped loading')
+            self.fail('the live folder never settled into rows or a reason')
             self.leave_live_folder(was)
             return
         page.wait_for_timeout(500)
@@ -1036,9 +1040,9 @@ class Checks:
         # it has an empty state of its own and it is always there.
         if not page.query_selector(
                 '.o_mailpro_conversation_list .o_mailpro_empty'):
-            self.fail('the live folder neither listed mail nor said why not')
+            self.fail('the live folder listed mail it cannot have reached')
 
-        page.click('.o_mailpro_filter_toggle')
+        page.click('.o_mailpro_searchview_toggle')
         page.wait_for_timeout(800)
         pills = [el.inner_text().strip()
                  for el in page.query_selector_all(

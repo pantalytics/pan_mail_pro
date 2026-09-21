@@ -712,6 +712,44 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### Reading a mailbox live (19.0.16.0.0)
+
+- **A subset of a mailbox is not something anybody can work in.** The imported
+  list is replies plus whatever rung of `sync_level` was chosen, by design, so
+  the real mail client stays open next to it. Importing everything is the
+  wrong fix -- the fallback home for an unfiled mail is the sender's own
+  contact chatter, so it publishes internal mail to every internal user. Read
+  the mailbox where it already is and store nothing.
+- **"Not even an admin can read it" is only true of what is not in the
+  database.** A private model with a record rule is still a table `sudo()`
+  reads, and encryption whose key is in the same database protects a stolen
+  dump and nothing else. The version with no copy is the only one that keeps
+  that promise -- and it is also the one with no sync, no cursor and no second
+  custodian of somebody else's correspondence.
+- **A Message-ID lives in two places and the index is the wrong one to ask.**
+  `_index_message` writes a `pan.mail.message.ref` row only when Odoo's own
+  `message_id` differs from the provider's, which on an ordinary import it
+  does not. A linked-or-not lookup that reads the index alone reports every
+  imported mail as missing -- the whole feature backwards, and green until
+  something asserts a real import.
+- **Authorising and executing are two questions.** A person reading their own
+  mailbox has no right to create a contact, post on a record or write a
+  routing log, so filing runs as the system the way the cron does. What makes
+  that safe is the ownership check in front of it, not the absence of `sudo`.
+- **Every other body on this screen was sanitized on write.** `message_post`
+  puts it through the Html field; a body read straight off a provider and
+  rendered in an Odoo session did not. One `html_sanitize` before it leaves
+  the server, and a test that a `<script>` does not survive.
+- **Waiting for a skeleton to *go* is the browser check that passes by
+  accident.** Owl has not drawn it when the click returns, so "it is not
+  there" is true before it is true again -- and every other DOM condition is
+  still true of the folder you just left. Wait on the request
+  (`page.expect_response`), then on the render.
+- **A user holds one account per provider.** Making a seeded mailbox personal
+  with a second account fails a constraint; `mailbox_type` is computed from
+  the addresses the owner signed in with *or the one on their user record*,
+  and the latter is the seam a fixture has.
+
 ### Which pane takes the slack (19.0.15.2.0)
 
 - **The elastic pane is the one whose divider stops doing anything.** Capping
