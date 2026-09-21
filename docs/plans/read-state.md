@@ -52,23 +52,26 @@ reading it here. They answer different questions and both answers are right:
 | Question | does this Odoo notification still want *me* | has this *mailbox* read this mail |
 | Scope | one user | one mailbox, everyone who opens it |
 | Set by | a mention, a record you follow | the provider |
-| Cleared in | Discuss, the bell | Outlook, the phone, or Mail Pro |
+| Cleared in | Discuss, the bell, **and reading it in Mail Pro** | Outlook, the phone, or Mail Pro |
 
 So the rules are:
 
 - **The Inbox stops reading `needaction`.** It never described the mailbox.
 - **Mail Pro never writes a `mail.notification` row.** The sync suppresses
   notifications on purpose and that boundary does not move.
-- **Marking a conversation read in Mail Pro does not clear your Odoo Inbox.**
-  Opening a record in Odoo does not clear it either, so this is Odoo's own
-  behaviour left alone rather than a decision of ours. Your mention is yours,
-  and a colleague reading the shared mailbox is not you.
+- **Reading a conversation in Mail Pro does clear your own Odoo Inbox rows for
+  it.** This is the one bridge between the two facts and it is deliberate: a
+  bell that keeps counting mail you have already read on the next screen is
+  noise, and clearing it by hand afterwards is the double work this whole plan
+  exists to remove. Details in §4a.
+- **The bridge is one way.** Mail Pro clears rows; it never creates one. The
+  import boundary does not move.
 - **No mentions filter in the Inbox.** That screen exists, it is Discuss.
 
-The two can therefore disagree on one message: unread in the mailbox and
-already ticked off in your Odoo Inbox, or the reverse. That is not drift, it is
-two facts. On a database whose mail arrives through Mail Pro the overlap is
-rare anyway, because only messages Odoo itself notified have a row at all.
+The two can still disagree on one message: read in the mailbox by a colleague
+while your own mention is untouched. That is not drift, it is two facts. On a
+database whose mail arrives through Mail Pro the overlap is small anyway,
+because only messages Odoo itself notified have a row at all.
 
 ## 2. Why the mirror exists at all
 
@@ -128,6 +131,25 @@ exists on the contract and in all three clients with no caller.
   says marking is the one mail write that undoes itself. A provider that is
   down makes the two disagree until the next refresh, which the next refresh
   fixes, because the provider is the authority.
+
+## 4a. Clearing the Odoo notification while you read
+
+Opening a conversation in the Inbox marks **your own** unread inbox
+notifications on its messages done. Marking the conversation read from the row
+menu does the same, because it is the same intent stated twice.
+
+- Through Odoo's own `set_message_done()`, never a write to `mail.notification`.
+  The method sends the bus message that makes the bell count down while you
+  read, which is the entire effect being asked for.
+- **Your rows only, and no `sudo`.** The method runs as the caller, so a
+  colleague reading the same shared mailbox clears their own bell and not
+  yours. A mention is addressed to a person.
+- **Named and dropped: you cannot put an Odoo notification back from here.**
+  Marking a conversation unread sets the mailbox unread at the provider and
+  leaves the bell alone. Discuss can un-tick it, and that is enough.
+- The bell will still not always reach zero from this screen. It also counts
+  mentions on records with no email in them and messages this Inbox does not
+  show. Mail Pro clears what it showed you, not what it did not.
 
 ## 5. Handoff is not read state
 
