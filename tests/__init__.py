@@ -38,6 +38,7 @@ from . import test_mail_lens
 from . import test_mail_coverage
 from . import test_read_state
 from . import test_neutralized
+from . import test_drafts
 from . import test_rename_migration
 from . import test_sync_sends_nothing
 from . import test_sync_level_migration
@@ -47,6 +48,7 @@ from . import test_connect_banner
 from . import test_imap_live
 from . import test_mailbox_test_send
 from . import test_mailbox_type
+from . import test_mailbox_heartbeat
 from . import test_license
 from . import test_rpc_surface
 from . import test_recipient_split

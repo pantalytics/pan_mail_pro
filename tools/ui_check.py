@@ -230,12 +230,14 @@ class Checks:
     # and its folders. Our own states are not folders and do not go here --
     # a mailbox list of invented names reads as a filter panel wearing a mailbox list's
     # clothes, which is what people notice first and trust least.
-    FOLDERS = ('Inbox', 'Sent')
+    FOLDERS = ('Inbox', 'Sent', 'Drafts')
 
-    # Those states, in the filter menu on the end of the search bar: one
-    # control for both ways of narrowing the list, the way Odoo's own
-    # control panel has one.
-    FILTERS = ('Unread', 'On a contact only', 'Linked to nothing')
+    # Those states, as filters in Odoo's own filter menu on the end of Odoo's
+    # own search bar: one control for both ways of narrowing the list, and the
+    # one the rest of the web client already uses. The names come from the
+    # Inbox's search view; Date is the standard month/quarter/year filter and
+    # Custom Filter is Odoo's, so both prove the menu is really Odoo's.
+    FILTERS = ('Unread', 'On a contact only', 'Linked to nothing', 'Date')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.
@@ -267,50 +269,42 @@ class Checks:
 
         # The bar reads the way Outlook's does: New Email on the left, and one
         # search control in the middle holding both ways to narrow the list --
-        # what you type, and the filter behind the arrow on its end, the way
-        # Odoo's own control panel holds both.
+        # what you type, and the filters behind the arrow on its end. It is
+        # Odoo's own `SearchBar`, so these are Odoo's own classes: if they
+        # stop matching, the screen has grown a search box of its own again.
         if not page.query_selector('.o_mailpro_new'):
             self.fail('the Inbox has no New Email button')
-        if not page.query_selector('.o_mailpro_topbar #o_mailpro_search'):
-            self.fail('the search is not in the top bar')
-        if not page.query_selector(
-                '.o_mailpro_searchview_group .o_mailpro_searchview_toggle'):
+        if not page.query_selector('.o_mailpro_topbar .o_cp_searchview .o_searchview_input'):
+            self.fail("the Inbox top bar does not hold Odoo's own search bar")
+        if not page.query_selector('.o_mailpro_topbar .o_searchview_dropdown_toggler'):
             self.fail('the filters are not on the end of the search bar')
         if page.query_selector('.o_mailpro_conversation_list_head .o_mailpro_filter_toggle'):
             self.fail('the conversation list still carries its own filter button')
 
         # The filter menu opens once, over the list, not once per mailbox.
-        page.click('.o_mailpro_searchview_toggle')
+        page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
         page.wait_for_timeout(800)
-        pills = [el.inner_text().strip()
-                 for el in page.query_selector_all(
-                     '.o_mailpro_filter_menu .o_mailpro_filter_item '
-                     '.o_mailpro_filter_label')]
-        if pills != list(self.FILTERS):
-            self.fail(f'the filter menu reads {pills}, expected {list(self.FILTERS)}')
+        items = [el.inner_text().strip()
+                 for el in page.query_selector_all('.o_filter_menu .o_menu_item')]
+        if items[:len(self.FILTERS)] != list(self.FILTERS):
+            self.fail(f'the filter menu reads {items}, expected {list(self.FILTERS)} first')
         else:
-            # An item narrows the list and a second click gives it back, which
-            # is the whole promise of a filter over a folder. The menu stays
-            # open while you do it, the way Odoo's own filter menu does.
-            items = page.query_selector_all(
-                '.o_mailpro_filter_menu .o_mailpro_filter_item')
-            items[0].click()
+            # A filter narrows the list and says so as a facet in the bar; a
+            # second click gives the folder back. The menu stays open while
+            # you do it, because it is Odoo's own menu.
+            page.query_selector_all('.o_filter_menu .o_menu_item')[0].click()
             page.wait_for_timeout(1500)
-            if not page.query_selector('.o_mailpro_filter_menu .selected'):
+            if not page.query_selector('.o_filter_menu .o_menu_item.selected'):
                 self.fail('clicking a filter did not mark it as the one in use')
-            # The filter in use is named in the search bar, the way Odoo
-            # names a facet: a list that is short for an invisible reason is
-            # what the facet exists to prevent.
-            facet = page.query_selector('.o_mailpro_searchview .o_mailpro_facet_label')
+            facet = page.query_selector('.o_cp_searchview .o_searchview_facet .o_facet_value')
             if not facet:
                 self.fail('the filter in use is not named in the search bar')
             elif facet.inner_text().strip() != self.FILTERS[0]:
                 self.fail(f'the facet reads {facet.inner_text().strip()!r}, '
                           f'expected {self.FILTERS[0]!r}')
-            page.query_selector_all(
-                '.o_mailpro_filter_menu .o_mailpro_filter_item')[0].click()
+            page.query_selector_all('.o_filter_menu .o_menu_item')[0].click()
             page.wait_for_timeout(1500)
-            if page.query_selector('.o_mailpro_filter_menu .selected'):
+            if page.query_selector('.o_filter_menu .o_menu_item.selected'):
                 self.fail('clicking the filter again did not clear it')
             self.error_free('Inbox filter menu')
         self.shot('inbox-filter-menu.png')
@@ -319,39 +313,46 @@ class Checks:
 
         # The cross on the facet is the other way back: pick a filter, remove
         # it where it is named, and the menu agrees it is gone.
-        page.click('.o_mailpro_searchview_toggle')
+        page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
         page.wait_for_timeout(800)
-        page.query_selector_all('.o_mailpro_filter_menu .o_mailpro_filter_item')[0].click()
+        page.query_selector_all('.o_filter_menu .o_menu_item')[0].click()
         page.wait_for_timeout(1500)
         page.keyboard.press('Escape')
         page.wait_for_timeout(500)
-        remove = page.query_selector('.o_mailpro_facet_remove')
+        remove = page.query_selector('.o_cp_searchview .o_facet_remove')
         if not remove:
             self.fail('the facet has no way to remove the filter')
         else:
             remove.click()
             page.wait_for_timeout(1500)
-            if page.query_selector('.o_mailpro_facet'):
+            if page.query_selector('.o_cp_searchview .o_searchview_facet'):
                 self.fail('removing the facet did not clear the filter')
             self.error_free('Inbox facet')
 
-        # Typing is the search: no Enter, no button, the list follows. The
-        # cross is the way back, the way Odoo's own search bar gives a facet
-        # back -- it only exists while there is something to clear.
-        if page.query_selector('.o_mailpro_search_clear'):
-            self.fail('the search shows a clear button with nothing to clear')
-        page.fill('#o_mailpro_search', 'zzzznothingmatchesthis')
+        # Typing and pressing Enter is the search, the way it is everywhere
+        # else in Odoo: the word becomes a facet, the list follows, and the
+        # facet is the way back. Enter needs the autocomplete to have caught
+        # up -- it activates the item under the caret, and that list is built
+        # asynchronously, so pressing it in the same tick as the typing
+        # activates nothing at all.
+        page.fill('.o_mailpro_topbar .o_searchview_input', 'zzzznothingmatchesthis')
+        try:
+            page.wait_for_selector('.o_searchview_autocomplete', timeout=5000)
+        except Exception:
+            self.fail('typing in the search bar offered nothing to search')
+        page.wait_for_timeout(800)
+        page.keyboard.press('Enter')
         page.wait_for_timeout(2500)
         if page.query_selector_all('.o_mailpro_item'):
-            self.fail('typing in the search did not narrow the conversation list')
-        if not page.query_selector('.o_mailpro_search_clear'):
-            self.fail('the search has no way to clear what was typed')
-        page.click('.o_mailpro_search_clear')
+            self.fail('searching did not narrow the conversation list')
+        if not page.query_selector('.o_cp_searchview .o_searchview_facet'):
+            self.fail('what was searched for is not named in the search bar')
+        remove = page.query_selector('.o_cp_searchview .o_facet_remove')
+        if remove:
+            remove.click()
         page.wait_for_timeout(2500)
         if not page.query_selector_all('.o_mailpro_item'):
             self.fail('clearing the search did not give the conversations back')
-        if page.eval_on_selector('#o_mailpro_search', 'el => el.value'):
-            self.fail('clearing the search left the typed text in the field')
         self.error_free('Inbox search')
 
         # New Email asks which record to write on before it opens anything:
@@ -481,7 +482,6 @@ class Checks:
         for selector, what in (('.o_mailpro_mailbox', 'mailbox'),
                                ('.o_mailpro_mailbox_toggle', 'mailbox caret'),
                                ('.o_mailpro_folder', 'folder'),
-                               ('.o_mailpro_filter', 'filter'),
                                ('.o_mailpro_item', 'conversation')):
             divs = [el for el in page.query_selector_all(selector)
                     if el.evaluate('el => el.tagName') != 'BUTTON']
@@ -770,6 +770,7 @@ class Checks:
                     page.wait_for_timeout(600)
 
         self.unfolding()
+        self.drafts(page)
         self.panes()
         self.zoom()
 
@@ -1084,16 +1085,22 @@ class Checks:
                 '.o_mailpro_conversation_list .o_mailpro_empty'):
             self.fail('the live folder listed mail it cannot have reached')
 
-        page.click('.o_mailpro_searchview_toggle')
-        page.wait_for_timeout(800)
+        # Its own control, in the list header, rather than a facet in the
+        # search bar: the bar's filters are domains over `mail.message` and
+        # these rows are a provider's answer.
         pills = [el.inner_text().strip()
-                 for el in page.query_selector_all(
-                     '.o_mailpro_filter_menu .o_mailpro_filter_item '
-                     '.o_mailpro_filter_label')]
+                 for el in page.query_selector_all('.o_mailpro_live_filter')]
         if pills != list(self.LIVE_FILTERS):
-            self.fail(f'the live filter menu reads {pills}, expected {list(self.LIVE_FILTERS)}')
-        page.keyboard.press('Escape')
-        page.wait_for_timeout(500)
+            self.fail(f'the live folder offers {pills}, expected {list(self.LIVE_FILTERS)}')
+        elif not page.query_selector(
+                '.o_mailpro_search_zone .o_mailpro_live_filter'):
+            # And one press marks it, which is the whole of what a browser
+            # can prove here: the list behind it is empty either way, because
+            # this instance reaches no provider.
+            page.query_selector_all('.o_mailpro_live_filter')[0].click()
+            page.wait_for_timeout(1500)
+            if not page.query_selector('.o_mailpro_live_filter_active'):
+                self.fail('pressing a live filter did not mark it as the one in use')
         self.shot('inbox-live-folder.png')
         self.leave_live_folder(was)
 
@@ -1128,11 +1135,10 @@ class Checks:
         is the whole reason the filter exists.
         """
         page = self.page
-        page.click('.o_mailpro_searchview_toggle')
+        page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
         page.wait_for_timeout(800)
         pill = page.query_selector(
-            '.o_mailpro_filter_item:has(.o_mailpro_filter_label:text-is('
-            '"On a contact only"))')
+            '.o_filter_menu .o_menu_item:text-is("On a contact only")')
         if not pill:
             self.fail('there is no "On a contact only" filter to link from')
             return
@@ -1298,11 +1304,32 @@ class Checks:
             self.fail('the list stayed on screen under the conversation on a phone')
         self.shot('inbox-phone.png')
 
-        # The record, over the conversation, and the way back from it.
+        # The head is chrome and the mail is the screen. It ran to three
+        # lines of subject, two of correspondent and two of Linked-to, which
+        # left the mail a third of a phone -- so what it may take is pinned
+        # here rather than left to the next screenshot somebody looks at.
+        head = page.query_selector('.o_mailpro_conversation_head')
+        if not head:
+            self.fail('the phone conversation has no head')
+        else:
+            share = head.bounding_box()['height'] / 844
+            if share > 0.3:
+                self.fail('the phone conversation head takes %d%% of the screen'
+                          % (share * 100))
+            title = page.query_selector('.o_mailpro_conversation_title')
+            if title and title.bounding_box()['height'] > 30:
+                self.fail('the phone subject wraps instead of truncating')
+
+        # The record, over the conversation, and the way back from it. It
+        # wears the chevron the record's own divider wears on a wider screen,
+        # pointing the way the boundary moves to bring the record in.
         button = page.query_selector('.o_mailpro_odoo_record_button')
         if not button:
             self.fail('the phone conversation head offers no way to the record')
         else:
+            if not button.query_selector('.fa-chevron-left'):
+                self.fail('the way to the record on a phone is not the '
+                          "divider's own chevron")
             button.click()
             page.wait_for_timeout(800)
             record = page.query_selector('.o_mailpro_odoo_record')
@@ -1359,6 +1386,189 @@ class Checks:
         if not self.visible('.o_mailpro_conversation_list'):
             self.fail('Back did not bring the list back on a phone')
 
+
+    def drafts(self, page):
+        """Save draft, and the unsent mail that comes back.
+
+        The round trip is the point, and it is checked with a word typed into
+        the reply rather than with "is there anything there": the composer
+        recomputes its own body while a form mounts, so a draft can come back
+        as a perfectly good empty composer that nothing reports. The marker
+        has to survive the server -- it shows in the strip's preview -- and
+        the form, where it is in the editor when the draft is reopened, and
+        the failure says which of the two lost it.
+
+        It ends where it started: the draft is deleted and the Inbox folder is
+        open again, because every check after this one reads the seeded mail.
+        """
+        marker = 'Levertijdmarkering'
+        tabs = page.query_selector_all('.o_mailpro_tab')
+        if not tabs:
+            self.fail('the conversation has no tab strip to write from')
+            return
+        tabs[0].click()  # Mail: where a reply is written, and where it lands.
+        page.wait_for_timeout(900)
+
+        reply = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
+        if not reply:
+            self.fail('there is no Reply button to write a draft from')
+            return
+        reply.click()
+        try:
+            page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+        except Exception:
+            self.fail('Reply opened no composer to save as a draft')
+            return
+        page.wait_for_timeout(600)
+        editor = page.query_selector('.o_mailpro_composer .odoo-editor-editable')
+        if not editor:
+            self.fail('the composer has no editor to write a draft in')
+            return
+        editor.click()
+        page.keyboard.type(marker)
+        page.wait_for_timeout(600)
+
+        save = page.query_selector(
+            '.o_mailpro_conversation_head button:has-text("Save draft")')
+        if not save:
+            self.fail('an open reply cannot be saved as a draft')
+            return
+        save.click()
+        try:
+            # The strip above the thread: the unsent answer, where it was left.
+            page.wait_for_selector('.o_mailpro_draft', timeout=15000)
+        except Exception:
+            self.fail('Save draft stored nothing on the conversation')
+            return
+        page.wait_for_timeout(600)
+        if page.query_selector('.o_mailpro_composer .o_form_view'):
+            self.fail('Save draft left the composer open over the stored copy')
+        # The server's own reading of what was typed, on the strip. A marker
+        # missing here means the words never reached the table, which is a
+        # different bug from a form that draws them and then forgets them.
+        strip = page.inner_text('.o_mailpro_draft')
+        if marker not in strip:
+            self.fail(f'the stored draft does not preview what was typed: {strip!r}')
+        self.shot('inbox-draft.png')
+
+        # The third folder in the mailbox list, and the draft in it.
+        drafts_folder = page.query_selector('.o_mailpro_folder:has-text("Drafts")')
+        if not drafts_folder:
+            self.fail('the mailbox list has no Drafts folder')
+            return
+        drafts_folder.click()
+        page.wait_for_timeout(1500)
+        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
+        if not rows:
+            self.fail('the Drafts folder is empty after saving a draft')
+            return
+        # One click on a draft is "carry on writing it", so the composer opens
+        # with the conversation behind it rather than a list row to click again.
+        rows[0].click()
+        try:
+            page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+        except Exception:
+            self.fail('a draft row did not reopen its composer')
+            return
+        page.wait_for_timeout(900)
+        body = page.query_selector('.o_mailpro_composer .odoo-editor-editable')
+        if not body:
+            self.fail('a reopened draft has no editor at all')
+        elif marker not in body.inner_text():
+            # Both halves in the message: the subject says whether this is the
+            # draft's own wizard at all, the editor says what it is holding.
+            subject = page.query_selector('.o_mailpro_composer [name="subject"] input')
+            self.fail('a reopened draft came back without what was typed'
+                      f' (subject: {subject.input_value() if subject else None!r},'
+                      f' editor: {body.inner_text()[:120]!r})')
+        close = page.query_selector(
+            '.o_mailpro_conversation_head button:has-text("Close")')
+        if not close:
+            self.fail('an open draft says Discard, which reads as "delete it"')
+        else:
+            close.click()
+            page.wait_for_timeout(900)
+
+        # And it can be thrown away, which is the only destructive thing on
+        # this screen. The seeded database goes back to what it was.
+        delete = page.query_selector('.o_mailpro_draft_delete')
+        if not delete:
+            self.fail('a stored draft cannot be deleted from the conversation')
+        else:
+            delete.click()
+            page.wait_for_timeout(900)
+            # It asks first: there is no Trash for a draft, so this is the one
+            # click on this screen that destroys something for good.
+            confirm = page.query_selector('.modal footer button.btn-primary')
+            if not confirm:
+                self.fail('deleting a draft destroys it without asking')
+            else:
+                confirm.click()
+                page.wait_for_timeout(1500)
+                if page.query_selector('.o_mailpro_draft'):
+                    self.fail('the deleted draft is still on the conversation')
+                left_open = self.dialog_in_the_way()
+                if left_open:
+                    self.fail(f'a dialog was left over the Inbox: {left_open}')
+
+        inbox = page.query_selector('.o_mailpro_folder:has-text("Inbox")')
+        if inbox:
+            inbox.click()
+            page.wait_for_timeout(1500)
+        self.error_free('drafts')
+        self.draft_on_leaving(page)
+
+    def draft_on_leaving(self, page):
+        """Walking away from a half-written answer keeps it.
+
+        The silent loss this feature exists for: somebody types two lines,
+        clicks the next conversation, and the words are gone with no warning.
+        Only the browser can prove this one -- it is the editor's own late
+        change notification that has to reach the save.
+        """
+        reply = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
+        if not reply:
+            self.fail('there is no Reply button to leave a draft behind')
+            return
+        reply.click()
+        try:
+            page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+        except Exception:
+            self.fail('Reply opened no composer to walk away from')
+            return
+        page.wait_for_timeout(600)
+        editor = page.query_selector('.o_mailpro_composer .odoo-editor-editable')
+        if not editor:
+            self.fail('the composer has no editor to type in')
+            return
+        editor.click()
+        page.keyboard.type('Nog even nakijken')
+        page.wait_for_timeout(600)
+
+        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
+        if not rows:
+            self.fail('no conversation to click away to')
+            return
+        rows[0].click()
+        try:
+            page.wait_for_selector('.o_mailpro_draft', timeout=15000)
+        except Exception:
+            self.fail('clicking away from a written reply lost it')
+            return
+        page.wait_for_timeout(600)
+
+        delete = page.query_selector('.o_mailpro_draft_delete')
+        if delete:
+            delete.click()
+            page.wait_for_timeout(900)
+            confirm = page.query_selector('.modal footer button.btn-primary')
+            if confirm:
+                confirm.click()
+                page.wait_for_timeout(1200)
+        left_open = self.dialog_in_the_way()
+        if left_open:
+            self.fail(f'a dialog was left over the Inbox: {left_open}')
+        self.error_free('draft on leaving')
     def unfolding(self):
         """The chevron: a conversation unfolds into the mails it is made of.
 
@@ -1387,13 +1597,21 @@ class Checks:
                 self.fail(f'a conversation of {said} has no chevron')
 
         group = None
-        for row in rows:
+        group_at = -1
+        for index, row in enumerate(rows):
             if row.query_selector('.o_mailpro_twist:not(.o_mailpro_twist_blank)'):
-                group = row
+                group, group_at = row, index
                 break
         if not group:
             self.fail('no seeded conversation holds more than one mail')
             return
+
+        # Opening a conversation unfolds it, and earlier steps in this run
+        # have opened one. Start from folded, or the first click below is a
+        # fold and everything after it reads backwards.
+        if group.query_selector('.o_mailpro_child'):
+            group.query_selector('.o_mailpro_twist').click()
+            page.wait_for_timeout(600)
 
         expected = int(group.query_selector('.o_mailpro_muted')
                        .inner_text().strip().split()[0])
@@ -1442,6 +1660,51 @@ class Checks:
         page.wait_for_timeout(600)
         if group.query_selector_all('.o_mailpro_child'):
             self.fail('the chevron did not fold the conversation back')
+
+        # And the click that opens a conversation unfolds it too, the way
+        # Outlook does: the thread you are reading is the one on screen. The
+        # chevron is then only the way to look without opening.
+        group.query_selector('.o_mailpro_item').click()
+        try:
+            page.wait_for_selector('.o_mailpro_child', timeout=15000)
+        except Exception:
+            self.fail('opening a conversation did not unfold it')
+            return
+        page.wait_for_timeout(600)
+        children = group.query_selector_all('.o_mailpro_child')
+        if len(children) != expected:
+            self.fail(f'opening a conversation unfolded {len(children)} mails, '
+                      f'the row says {expected}')
+
+        # They start where the sender's name starts on the row above: past
+        # the chevron and past the picture, so the thread reads as one column
+        # and not as a second list shifted left.
+        if children:
+            name = group.query_selector('.o_mailpro_item .o_mailpro_from')
+            child_name = children[0].query_selector('.o_mailpro_from')
+            if name and child_name:
+                head_x = name.bounding_box()['x']
+                child_x = child_name.bounding_box()['x']
+                if abs(head_x - child_x) > 2:
+                    self.fail(f'an unfolded mail starts at {child_x:.0f}px, '
+                              f'the sender above it at {head_x:.0f}px')
+        self.shot('inbox-unfolded-on-open.png')
+
+        # One at a time: opening the next conversation folds this one, or the
+        # list grows a row for every thread the reader has ever looked at.
+        other = None
+        # By position, not by handle: two handles on the same element do not
+        # compare equal, so a handle test would pick the row it just left.
+        for index, row in enumerate(page.query_selector_all('.o_mailpro_group')):
+            if index != group_at and row.query_selector(
+                    '.o_mailpro_twist:not(.o_mailpro_twist_blank)'):
+                other = row
+                break
+        if other:
+            other.query_selector('.o_mailpro_item').click()
+            page.wait_for_timeout(1200)
+            if group.query_selector_all('.o_mailpro_child'):
+                self.fail('opening another conversation left the first unfolded')
         self.error_free('unfolding a conversation')
 
     def panes(self):
@@ -1688,10 +1951,10 @@ class Checks:
         """Read and unread, and the correction reaching the database.
 
         Three things a Python test cannot see. That opening a conversation
-        marks it read without anybody clicking anything, that Mark unread puts
-        the dot back on the row the reader is looking at rather than
-        reshuffling the list under them, and that both of those are a column
-        in the database afterwards and not a class on a div.
+        marks it read without anybody clicking anything, that the read-state
+        button puts a visible dot back on the row the reader is looking at
+        rather than reshuffling the list under them, and that both of those
+        are a column in the database afterwards and not a class on a div.
         """
         action = dict(module_menu_actions(self.call)).get('Inbox')
         if not action:
@@ -1718,10 +1981,13 @@ class Checks:
         if active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
             self.fail('the conversation that is open still reads as unread')
 
-        button = page.query_selector('.o_mailpro_mark_unread')
+        button = page.query_selector('.o_mailpro_read_toggle')
         if not button:
             self.fail('an open conversation offers no way to mark it unread')
             return
+        if button.get_attribute('title') != 'Mark unread':
+            self.fail('the read-state button does not offer to mark a read '
+                      'conversation unread')
         before = unread_in_db()
         button.click()
         page.wait_for_timeout(1500)
@@ -1731,21 +1997,31 @@ class Checks:
             return
         if not active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
             self.fail('marking unread left the row reading as read')
+        # The class is not the point: the reader has to see it. A dot, because
+        # the row they marked is also the highlighted one and one font weight
+        # of difference on a highlighted row is invisible.
+        if not active.query_selector('.o_mailpro_unread_dot'):
+            self.fail('the row marked unread shows no unread dot')
         after = unread_in_db()
         if after <= before:
             self.fail('marking unread wrote nothing to the database')
         self.shot('inbox-unread.png')
 
-        # Opening it again is how it becomes read: there is one button here
-        # and not a toggle, because reading a mail is what reads a mail.
-        active.click()
+        # The same button is the way back, and it says so. A button whose
+        # second click does nothing is the bug this replaced.
+        button = page.query_selector('.o_mailpro_read_toggle')
+        if not button or button.get_attribute('title') != 'Mark read':
+            self.fail('the read-state button does not offer to read an unread '
+                      'conversation again')
+            return
+        button.click()
         page.wait_for_timeout(1500)
         active = page.query_selector('.o_mailpro_item_active')
         if active and active.evaluate(
                 'el => el.classList.contains("o_mailpro_item_unread")'):
-            self.fail('re-opening the conversation did not mark it read again')
+            self.fail('marking it read again left the row reading as unread')
         if unread_in_db() != before:
-            self.fail('re-opening the conversation did not clear it in the database')
+            self.fail('marking it read again did not clear it in the database')
         self.error_free('Inbox read state')
 
     # -- The provider form ----------------------------------------------------
@@ -1809,6 +2085,91 @@ class Checks:
                        + self.MICROSOFT_FIELDS + self.GOOGLE_ONLY):
             if hidden in text:
                 self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
+
+    # -- Status by absence ----------------------------------------------------
+
+    def mailbox_status(self):
+        """A working mailbox offers nothing, a stopped one explains itself.
+
+        The form used to carry Sync Now and Send Test Email in its header on
+        every mailbox, and its one status counter read `last_sync_date` under
+        the label "Last synced" -- the fetch cursor, which on a quiet mailbox
+        stands still for weeks while every run completes. So the screen could
+        not tell the reader it was fine, and had two buttons where the answer
+        belonged.
+
+        Both halves are the check, and the Inbox half is counted rather than
+        merely found: absence is the whole interface, so a mark that is always
+        drawn would pass a test that only looks for one.
+        """
+        action = dict(module_menu_actions(self.call)).get('Mailboxes')
+        inbox = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            self.fail('there is no Mailboxes menu')
+            return
+        rows = self.call('pan.mail.mailbox', 'search_read',
+                         [('is_notification_mailbox', '=', False)],
+                         fields=['email', 'state', 'last_check_date'], limit=1)
+        if not rows:
+            self.fail('the seed has no mailbox to inspect')
+            return
+        mailbox_id, was = rows[0]['id'], rows[0]['state']
+        url = f'{self.base}/odoo/action-{action}/{mailbox_id}'
+
+        def marks():
+            """How many mailboxes the Inbox is currently marking."""
+            if not inbox:
+                return None
+            page = self.page
+            page.goto(f'{self.base}/odoo/action-{inbox}', wait_until='domcontentloaded')
+            try:
+                page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
+            except Exception:
+                self.fail('the Inbox did not render for the status check')
+                return None
+            page.wait_for_timeout(2500)
+            return len(page.query_selector_all('.o_mailpro_mailbox_alert'))
+
+        try:
+            # Healthy: a run finished a moment ago and nothing is wrong.
+            self.call('pan.mail.mailbox', 'write', [mailbox_id],
+                      {'state': 'active', 'error_message': False,
+                       'sync_failure_count': 0,
+                       'last_check_date': datetime.datetime.now(
+                           datetime.UTC).strftime('%Y-%m-%d %H:%M:%S')})
+            quiet = marks()
+            text = self.form_text(url)
+            self.shot('mailbox-healthy.png')
+            for gone in ('Sync Now', 'Send Test Email', 'Try again'):
+                if gone in text:
+                    self.fail(f'a working mailbox still offers "{gone}"')
+            if 'Last checked' not in text:
+                self.fail('the mailbox form does not say when it was last checked')
+            if 'Last synced' in text:
+                self.fail('the form still labels the fetch cursor "Last synced"')
+
+            # Stale: the heartbeat is old enough that nobody is reading this
+            # mailbox, with no error recorded anywhere. That combination used
+            # to be completely invisible on every screen in the module.
+            self.call('pan.mail.mailbox', 'write', [mailbox_id],
+                      {'last_check_date': '2020-01-01 00:00:00'})
+            text = self.form_text(url)
+            self.shot('mailbox-stale.png')
+            if 'Try again' not in text:
+                self.fail('a mailbox that stopped being read offers no way back')
+            if 'not being read' not in text:
+                self.fail('a mailbox that stopped being read does not say so')
+
+            loud = marks()
+            if quiet is not None and loud is not None:
+                if loud != quiet + 1:
+                    self.fail(
+                        f'the Inbox marked {quiet} mailbox(es) while this one was '
+                        f'healthy and {loud} once it stopped, expected one more')
+                self.shot('inbox-mailbox-stale.png')
+        finally:
+            self.call('pan.mail.mailbox', 'write', [mailbox_id],
+                      {'state': was, 'last_check_date': False})
 
     # -- The connect banner ---------------------------------------------------
 
@@ -2337,6 +2698,7 @@ def main():
         checks.read_state()
         checks.improve()
         checks.provider_form()
+        checks.mailbox_status()
         checks.connect_banner()
         browser.close()
 

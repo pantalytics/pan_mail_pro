@@ -71,7 +71,8 @@ account.
      and Shared on Microsoft 365). The type follows from it: an owner on their
      own address is personal, no owner is shared
 3. Save
-4. Press **Send Test Email** to prove the address can actually send
+4. On the **Setup** tab, press **Send Test Email** to prove the address
+   can actually send. The mail goes to you, not to the mailbox
 
 ## Mailbox Settings
 

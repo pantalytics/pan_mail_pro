@@ -63,98 +63,54 @@
                 </div>
                 <div class="o_mailpro_search_zone flex-grow-1 d-flex justify-content-center">
                     <!--
-                        The shape Odoo's own control panel search has: one
-                        bordered box, the magnifier inside it on the left, the
-                        text starting where the magnifier ends, and a cross
-                        that gives the whole folder back. The box is the
-                        target, not the input: clicking the border or the
-                        padding focuses the field, which is what a text
-                        cursor over the whole thing promises.
+                        Odoo's own search bar, over `mail.message`: the box,
+                        the autocomplete that offers a field per word you
+                        type, the facets, and the filter menu behind the arrow
+                        on its end. A search that narrows this list and a
+                        filter that narrows the same list are the same
+                        question, so they are the widget the rest of the web
+                        client already uses for it.
 
-                        The cross is why the field is a plain text input.
-                        `type="search"` draws a clear button of the browser's
-                        own, in the browser's own place, and two crosses a
-                        few pixels apart is the one thing worse than none.
+                        What the reader can ask for is in the search view
+                        (`view_pan_mail_inbox_search`), not in here.
+
+                        `autofocus` off: this screen is opened to read mail,
+                        and a caret in the search box on arrival is a screen
+                        where the first thing you type disappears into a
+                        filter. Odoo focuses it on a list because a list is
+                        what you search.
                     -->
-                    <div class="o_mailpro_searchview_group d-flex align-items-stretch">
-                        <div class="o_mailpro_searchview d-flex align-items-center gap-2"
-                             role="search"
-                             t-on-click="() => this.focusSearch()">
-                            <i class="fa fa-search o_mailpro_search_icon" aria-hidden="true"/>
-                            <!--
-                                The filter in use, as the facet Odoo's own
-                                search bar shows it: named where the reader is
-                                looking, and removed where it is named. It sits
-                                before the field because that is the order the
-                                query reads in.
-                            -->
-                            <div t-if="activeFilter" class="o_mailpro_facet d-flex align-items-center">
-                                <i class="fa fa-filter o_mailpro_facet_icon" aria-hidden="true"/>
-                                <span class="o_mailpro_facet_label" t-esc="activeFilter.name"/>
-                                <button type="button" class="o_mailpro_facet_remove"
-                                        t-attf-aria-label="Remove the {{activeFilter.name}} filter"
-                                        t-on-click.stop="() => this.setFilter(activeFilter.id)">
-                                    <i class="fa fa-times" aria-hidden="true"/>
-                                </button>
-                            </div>
-                            <input type="text" id="o_mailpro_search"
-                                   class="o_mailpro_search" t-ref="search"
-                                   autocomplete="off"
-                                   aria-label="Search people and subjects"
-                                   placeholder="Search mail"
-                                   t-att-value="state.search"
-                                   t-on-input="(ev) => this.onSearchInput(ev)"
-                                   t-on-keydown="(ev) => this.onSearchKey(ev)"/>
-                            <button t-if="state.search" type="button"
-                                    class="o_mailpro_search_clear"
-                                    aria-label="Clear the search"
-                                    title="Clear the search"
-                                    t-on-click="() => this.clearSearch()">
-                                <i class="fa fa-times" aria-hidden="true"/>
-                            </button>
-                        </div>
-                        <!--
-                            The arrow on the end of the box, where Odoo puts
-                            it, opening the one panel this screen has to put
-                            in it. Odoo's own has three columns; ours has
-                            Filters, because Group By and Favourites are
-                            questions about a list over a table and this list
-                            is a mailbox: the grouping is the conversation and
-                            the folder is the saved search.
-                        -->
-                        <Dropdown t-if="filters.length" position="'bottom-end'"
-                                  menuClass="'o_mailpro_filter_menu'">
-                            <button type="button" class="o_mailpro_searchview_toggle"
-                                    t-att-class="{ 'o_mailpro_searchview_toggle_active': state.filter }"
-                                    aria-label="Filter conversations"
-                                    title="Filters">
-                                <i class="fa fa-caret-down" aria-hidden="true"/>
-                            </button>
-                            <t t-set-slot="content">
-                                <div class="o_dropdown_title o_mailpro_filter_title px-3 pb-1">
-                                    <i class="fa fa-filter me-1" aria-hidden="true"/>Filters
-                                </div>
-                                <CheckboxItem t-foreach="filters" t-as="pill" t-key="pill.id"
-                                              class="{ 'o_menu_item o_mailpro_filter_item': true, selected: state.filter === pill.id }"
-                                              checked="state.filter === pill.id"
-                                              closingMode="'none'"
-                                              onSelected="() => this.setFilter(pill.id)">
-                                    <span class="o_mailpro_filter_label" t-esc="pill.name"/>
-                                    <span t-if="pill.count" class="o_mailpro_count"
-                                          t-esc="folderCount(pill)"/>
-                                </CheckboxItem>
-                            </t>
-                        </Dropdown>
-                    </div>
+                    <SearchBar autofocus="false"/>
                 </div>
                 <!-- The search stays in the middle of the window, which it
                      only does if both sides weigh the same. -->
                 <div class="o_mailpro_topbar_end" aria-hidden="true"/>
             </div>
 
-            <div t-if="state.error" class="o_mailpro_error d-flex align-items-center gap-2" role="alert">
-                <span t-esc="state.error"/>
-                <button class="btn btn-sm btn-link p-0" t-on-click="() => this.refresh()">Try again</button>
+            <!--
+                Three lines at most, in the order a reader needs them: what
+                failed, what to do about it, and what the server actually
+                said. The middle one is there whenever the server can name a
+                remedy, and the last one is why the first two are not a
+                dead end.
+            -->
+            <div t-if="state.error" class="o_mailpro_error" role="alert">
+                <div class="d-flex align-items-center gap-2">
+                    <span t-esc="state.error"/>
+                    <span t-if="state.errorRemedy" class="o_mailpro_error_remedy"
+                          t-esc="state.errorRemedy"/>
+                    <!-- Disabled while the retry runs: a failure that comes
+                         back in twenty milliseconds repaints the same banner,
+                         and a button that never changes reads as a button
+                         that does nothing. -->
+                    <button class="btn btn-sm btn-link p-0" t-att-disabled="state.loading"
+                            t-on-click="() => this.refresh()">
+                        <t t-if="state.loading">Trying...</t>
+                        <t t-else="">Try again</t>
+                    </button>
+                </div>
+                <div t-if="state.errorReason" class="o_mailpro_error_reason"
+                     t-esc="state.errorReason"/>
             </div>
 
             <!--
@@ -206,6 +162,16 @@
                                     t-att-aria-current="mailbox.id === state.mailboxId ? 'true' : undefined"
                                     t-on-click="() => this.setMailbox(mailbox.id)">
                                 <span class="o_mailpro_mailbox_name text-truncate" t-esc="mailbox.email"/>
+                                <!-- Status by absence: nothing here while the
+                                     mailbox is being read, which is almost
+                                     always. The one case worth a mark is mail
+                                     that is not arriving, and this is the
+                                     screen where that is noticed. -->
+                                <i t-if="mailbox.status_message"
+                                   class="fa fa-exclamation-circle o_mailpro_mailbox_alert flex-shrink-0"
+                                   t-att-title="mailbox.status_message"
+                                   role="img"
+                                   t-attf-aria-label="Not syncing: {{ mailbox.status_message }}"/>
                             </button>
                         </div>
                         <div t-if="isExpanded(mailbox.id)" class="o_mailpro_folders">
@@ -232,14 +198,14 @@
 
                     <!--
                         The list header says which folder is open, and nothing
-                        else. The filter moved into the search bar, where Odoo
+                        else. The filters are in the search bar, where Odoo
                         keeps both: one place to narrow a list, one place that
                         says how it is narrowed. The states that are ours are
                         filters rather than folders. A folder is a place mail
                         is and the provider decides what those are, while
                         "linked to nothing" is a question we ask about it, so
-                        the mailbox list never grew them and the facet names
-                        the one in use.
+                        the mailbox list never grew them and the facets name
+                        the ones in use.
                     -->
                     <div class="o_mailpro_conversation_list_head d-flex align-items-center justify-content-between gap-2">
                         <div class="d-flex align-items-center gap-1 min-w-0">
@@ -257,6 +223,23 @@
                                 <i class="fa fa-times" aria-hidden="true"/>
                             </button>
                         </div>
+                        <!--
+                            The live folder's own two questions, here rather
+                            than in the search bar: every filter in that bar
+                            is a domain over `mail.message`, and these rows
+                            are a provider's answer no domain reaches. Two
+                            options is a pair of pills rather than a menu,
+                            and a second click on the one in use clears it.
+                        -->
+                        <div t-if="isLive" class="o_mailpro_live_filters d-flex align-items-center gap-1 flex-shrink-0">
+                            <button t-foreach="liveFilters" t-as="pill" t-key="pill.id"
+                                    type="button" class="o_mailpro_live_filter"
+                                    t-att-class="{ 'o_mailpro_live_filter_active': state.liveFilter === pill.id }"
+                                    t-att-aria-pressed="state.liveFilter === pill.id ? 'true' : 'false'"
+                                    t-on-click="() => this.setLiveFilter(pill.id)">
+                                <t t-esc="pill.name"/>
+                            </button>
+                        </div>
                     </div>
                     <t t-if="state.loading and !state.conversations.length">
                         <div class="o_mailpro_skeleton" aria-hidden="true">
@@ -268,8 +251,8 @@
                         <!-- An empty search is not an empty folder: "new
                              mail appears here" would say the mail does not
                              exist, when it may be one mailbox over. -->
-                        <div t-if="state.search" class="o_mailpro_empty">
-                            <h3 class="o_mailpro_empty_title">Nothing matches "<t t-esc="state.search"/>" in <t t-esc="listLabel"/>.</h3>
+                        <div t-if="searching" class="o_mailpro_empty">
+                            <h3 class="o_mailpro_empty_title">Nothing matches that search in <t t-esc="folderLabel"/>.</h3>
                             <p class="o_mailpro_empty_text">
                                 The search covers this mailbox. Try another one, or clear it.
                             </p>
@@ -281,21 +264,25 @@
                             </p>
                         </div>
                         <div t-elif="isLive" class="o_mailpro_empty">
-                            <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="listLabel"/>.</h3>
+                            <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel"/>.</h3>
                             <p class="o_mailpro_empty_text">
                                 This is your mailbox itself, read as it is right now.
                             </p>
                         </div>
                         <div t-else="" class="o_mailpro_empty">
-                            <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="listLabel"/> yet.</h3>
-                            <p class="o_mailpro_empty_text">
+                            <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel"/> yet.</h3>
+                            <p t-if="state.folder === 'drafts'" class="o_mailpro_empty_text">
+                                Mail you save instead of sending appears here.
+                            </p>
+                            <p t-else="" class="o_mailpro_empty_text">
                                 New mail appears here as it arrives.
                             </p>
                         </div>
                     </t>
                     <t t-else="">
                         <div t-foreach="state.conversations" t-as="conversation"
-                             t-key="conversation.message_id or conversation.live_id"
+                             t-key="conversation.draft_id ? 'draft-' + conversation.draft_id
+                                    : (conversation.message_id or conversation.live_id)"
                              class="o_mailpro_group">
                             <!--
                                 The chevron sits outside the row it belongs to,
@@ -348,6 +335,19 @@
                                               aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
                                         <span class="flex-grow-1 min-w-0">
                                             <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                                <!--
+                                                    Unread is a dot as well as
+                                                    weight. The open
+                                                    conversation is the
+                                                    highlighted row, and a
+                                                    highlighted row that goes
+                                                    one font weight heavier
+                                                    says nothing at all, which
+                                                    is what Mark unread looked
+                                                    like.
+                                                -->
+                                                <span t-if="conversation.unread"
+                                                      class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
                                                 <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
                                                 <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
                                                       t-esc="day(conversation.date)"/>
@@ -384,6 +384,8 @@
                                         t-on-click="() => this.pickMessage(conversation, message)">
                                     <span t-if="message.unread" class="visually-hidden">Unread. </span>
                                     <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                        <span t-if="message.unread"
+                                              class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
                                         <span class="o_mailpro_from text-truncate" t-esc="message.author"/>
                                         <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
                                               t-esc="day(message.date)"/>
@@ -459,24 +461,43 @@
                                      class="d-flex align-items-center gap-2 flex-shrink-0">
                                     <!--
                                         The way out of "I opened it, I cannot
-                                        deal with it now". Quiet on purpose:
-                                        reading is the normal case and this is
-                                        the exception beside it. Marking it
-                                        read again is opening it, so there is
-                                        one button here and not a toggle.
+                                        deal with it now", and the way back.
+                                        Quiet on purpose: reading is the normal
+                                        case and this is the exception beside
+                                        it. One button, and it says which of
+                                        the two states the conversation is in:
+                                        a button whose second click does
+                                        nothing is a button that reads as
+                                        broken.
                                     -->
                                     <button type="button"
-                                            class="btn btn-link btn-sm p-0 o_mailpro_mark_unread"
-                                            title="Mark unread"
-                                            t-on-click="() => this.markUnread()">
-                                        <i class="fa fa-envelope" aria-hidden="true"/>
-                                        <span class="visually-hidden">Mark unread</span>
+                                            class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
+                                            t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
+                                            t-att-title="readToggleLabel"
+                                            t-att-aria-pressed="selectedUnread ? 'true' : 'false'"
+                                            t-on-click="() => this.toggleRead()">
+                                        <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
+                                           aria-hidden="true"/>
+                                        <span class="visually-hidden" t-esc="readToggleLabel"/>
                                     </button>
+                                    <!--
+                                        The way to the Odoo record, on a phone
+                                        where it has no divider to carry its
+                                        button. It wears the same chevron that
+                                        divider wears when the record is off
+                                        screen, pointing the way the boundary
+                                        moves to bring it in. A labelled
+                                        button here cost the subject two lines
+                                        of a head that is already most of the
+                                        screen.
+                                    -->
                                     <button t-if="showOdooRecordButton" type="button"
-                                            class="btn btn-secondary btn-sm o_mailpro_odoo_record_button"
+                                            class="o_mailpro_odoo_record_button flex-shrink-0"
                                             t-att-title="selectedRecord.name"
+                                            t-att-aria-label="panes.toggleLabel('odoo_record')"
                                             t-on-click="() => this.showOdooRecordScreen()">
-                                        <i class="fa fa-cube me-1" aria-hidden="true"/>Record
+                                        <i class="fa" t-att-class="panes.toggleIcon('odoo_record')"
+                                           aria-hidden="true"/>
                                     </button>
                                     <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm"
                                             t-on-click="() => this.logNote()">Log note</button>
@@ -731,6 +752,31 @@
             written above the mail it answers instead of in place of it.
         -->
         <div class="o_mailpro_messages">
+            <!--
+                The unsent answers, above the thread they answer. A draft is
+                not a message: nobody received it, so it never wears a
+                message's card. One line with the word on it, and the two
+                things anybody does with one.
+            -->
+            <div t-foreach="drafts" t-as="draft" t-key="draft.draft_id"
+                 class="o_mailpro_draft d-flex align-items-center gap-2">
+                <button type="button"
+                        class="o_mailpro_draft_open flex-grow-1 min-w-0 d-flex align-items-baseline gap-2 text-start"
+                        t-on-click="() => this.openDraft(draft.draft_id)">
+                    <span class="o_mailpro_draft_tag flex-shrink-0">Draft</span>
+                    <span class="o_mailpro_draft_subject text-truncate" t-esc="draft.subject"/>
+                    <span class="o_mailpro_draft_preview text-truncate flex-grow-1"
+                          t-esc="draft.preview"/>
+                </button>
+                <span class="o_mailpro_date flex-shrink-0"
+                      t-att-title="fullDate(draft.date)" t-esc="day(draft.date)"/>
+                <button type="button" class="o_mailpro_draft_delete flex-shrink-0"
+                        title="Delete draft"
+                        t-on-click="() => this.deleteDraft(draft.draft_id)">
+                    <i class="fa fa-trash-o" aria-hidden="true"/>
+                    <span class="visually-hidden">Delete draft</span>
+                </button>
+            </div>
             <t t-foreach="state.conversation.messages" t-as="message" t-key="message.id">
             <!--
                 A record event is one line, never a card:
@@ -990,8 +1036,27 @@
 
     <t t-name="pan_mail_pro.ComposerButtons">
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
+            <!--
+                The two ways out, and the button says which one this is. On a
+                stored draft it is Close and it keeps the edits, the same as
+                clicking another conversation does. Otherwise it is Discard,
+                and Discard still throws the answer away: somebody saying so
+                is the one case where losing it is the point.
+            -->
             <button type="button" class="btn btn-link btn-sm"
-                    t-on-click="() => composer.close()">Discard</button>
+                    t-on-click="() => composer.state.draftId ? this.leaveComposer() : composer.close()">
+                <t t-if="composer.state.draftId">Close</t>
+                <t t-else="">Discard</t>
+            </button>
+            <!--
+                Put it away instead of sending it. Not on a note: a note is
+                two lines to the followers, written in one sitting, and a
+                Drafts folder filling up with half-written notes is a second
+                inbox for something that was never mail.
+            -->
+            <button t-if="canSaveDraft" type="button" class="btn btn-secondary btn-sm"
+                    t-att-disabled="composer.state.saving or composer.state.sending"
+                    t-on-click="() => composer.saveDraft()">Save draft</button>
             <button type="button" class="btn btn-primary btn-sm"
                     t-att-disabled="composer.state.sending"
                     t-on-click="() => composer.send()">

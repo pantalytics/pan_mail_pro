@@ -19,15 +19,22 @@
  * over the screen; that lives in `use_composer.js`.
  */
 
-import { Component, useState, useSubEnv, useRef, onWillStart, onError, markup } from "@odoo/owl";
+import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
-import { useService } from "@web/core/utils/hooks";
+import { useBus, useService } from "@web/core/utils/hooks";
+// The search bar is Odoo's own, over `mail.message`: the same box, the same
+// autocomplete, the same facets, the same filter menu. What it produces is a
+// domain, and a domain is all `pan.mail.conversation` ever wanted -- every
+// conversation on this screen is a group of `mail.message` rows. The filters
+// live in a search view (`view_pan_mail_inbox_search`), so adding one is an
+// inherited view rather than a patched component.
+import { SearchModel } from "@web/search/search_model";
+import { SearchBar } from "@web/search/search_bar/search_bar";
 import { View } from "@web/views/view";
+import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { Dropdown } from "@web/core/dropdown/dropdown";
 import { useDropdownState } from "@web/core/dropdown/dropdown_hooks";
-import { CheckboxItem } from "@web/core/dropdown/checkbox_item";
-import { useDebounced } from "@web/core/utils/timing";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
@@ -53,23 +60,31 @@ const PAGE = 30;
 // level deeper, for the days you want to work here instead of in Outlook.
 const LIVE_FOLDER = "all";
 
-// What you can ask of that folder. Both are one question -- does Odoo have
-// this mail -- and they are the reason the folder exists at all.
+// What you can ask of that folder, and the reason it exists: does Odoo have
+// this mail. Deliberately *not* in the search bar next to it. Every filter in
+// that bar is a domain over `mail.message`, and these rows are not
+// `mail.message` rows at all -- they are a provider's answer, and the
+// question is whether Odoo has them. A control of its own says that; a facet
+// in a bar that cannot reach them would be a filter that lies.
 const LIVE_FILTERS = [
-    { id: "unlinked", name: _t("Not in Odoo"), kind: "filter" },
-    { id: "linked", name: _t("In Odoo"), kind: "filter" },
+    { id: "unlinked", name: _t("Not in Odoo") },
+    { id: "linked", name: _t("In Odoo") },
 ];
 
-// How long the search waits after the last keystroke. Long enough that typing
-// a name is one query instead of eight, short enough that it still reads as
-// the list following along.
-const SEARCH_DELAY = 400;
+// The context key the "Linked to nothing" filter carries. Mail filed on
+// nothing is not one conversation, and that is the one thing its domain
+// cannot say. Kept in step with `UNGROUPED_KEY` in
+// `models/pan_mail_conversation.py`.
+const UNGROUPED_KEY = "pan_mail_ungrouped";
 
 // What a pane with nothing selected holds. A function rather than a constant:
 // four lists shared between two selections is one stale thread away from a
 // reply landing under the wrong subject.
 const EMPTY_CONVERSATION = () => ({
     messages: [], records: [], rejected: [], activities: [], suggestion: false,
+    // Your own unsent answers on this record. Nobody else's: the rule on
+    // `pan.mail.draft` decides that, and the screen never asks for more.
+    drafts: [],
     // The attachments as the mail store holds them: the ids in order, the
     // records themselves in `store`. See `files` below.
     files: { ids: [], store: {} },
@@ -94,6 +109,16 @@ function restoreTab() {
     } catch {
         return "mail";
     }
+}
+
+// What the server said, for the banner. An RPC failure carries the reason the
+// call refused -- a missing column after a deploy that never upgraded, a model
+// that is not there, an access error -- and hiding it behind "something went
+// wrong" turns a one-line answer into a log-reading session. One line, never
+// the traceback: the details dialog is Odoo's job, not this banner's.
+function serverReason(error) {
+    const reason = error?.data?.message || error?.message || "";
+    return String(reason).split("\n")[0].trim().slice(0, 300);
 }
 
 /** Stored state is somebody else's data by the time we read it back. */
@@ -175,7 +200,7 @@ export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
     static components = {
         OdooRecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
-        Dropdown, CheckboxItem, FollowerList,
+        Dropdown, FollowerList, SearchBar,
     };
     static props = ["*"];
     // A client action's name in the breadcrumb and the browser tab is the
@@ -199,15 +224,27 @@ export class ConversationView extends Component {
         // edit. The Inbox adds the button and nothing else.
         this.followerListDropdown = useDropdownState();
         this.panes = usePanes();
-        this.composer = useComposer({ onSent: () => this.onReplySent() });
+        this.composer = useComposer({
+            onSent: () => this.onReplySent(),
+            onDraftSaved: (row) => this.onDraftSaved(row),
+        });
         // Help improve Mail Pro: a no-op unless the session says otherwise.
         // Every `capture` below names a screen or a button, never content.
         this.improve = useImprove();
-        // Typing is the search, the way it is in every mail client. Debounced
-        // rather than bound to Enter: a list that only moves when you press a
-        // key you were not told about reads as a search box that is broken.
-        this.applySearch = useDebounced(() => this.runSearch(), SEARCH_DELAY);
-        this.searchRef = useRef("search");
+        // Odoo's own search model, over `mail.message`. `useSubEnv` is how
+        // `SearchBar` finds it, the same way every view in the web client
+        // hands it to its control panel. Everything the reader types, picks
+        // or removes comes back out of it as one domain.
+        this.searchModel = new SearchModel(this.env, {
+            orm: this.orm,
+            view: useService("view"),
+            field: useService("field"),
+            name: useService("name"),
+            dialog: this.dialog,
+            treeProcessor: useService("tree_processor"),
+        });
+        useSubEnv({ searchModel: this.searchModel });
+        useBus(this.searchModel, "update", () => this.onSearch());
 
         // Door 1: the chatter's Open in mail names the record it came from,
         // and whether one conversation is the answer or the reader has to
@@ -231,12 +268,16 @@ export class ConversationView extends Component {
         this.state = useState({
             loading: true,
             error: "",
+            // The banner says what broke, not only that something did, and
+            // what to do about it when the server can name it.
+            errorReason: "",
+            errorRemedy: "",
             folder: "inbox",
-            // Two dimensions, two controls: the mailbox list says where you are, the
-            // filter row says what you are looking for in there. Naming our
-            // own states as folders made the mailbox list read like a filter panel
-            // next to the mail client everybody also has open.
-            filter: null,
+            // Two dimensions, two controls: the mailbox list says where you
+            // are, the search bar says what you are looking for in there.
+            // Naming our own states as folders made the mailbox list read
+            // like a filter panel next to the mail client everybody also has
+            // open, so they are filters in the search view instead.
             mailboxes: [],
             mailboxId: null,
             // The mailbox list, the way Outlook draws it: every mailbox can stand
@@ -257,10 +298,13 @@ export class ConversationView extends Component {
             live: null,
             liveBusy: false,
             liveConnected: true,
+            // Which half of the live folder is on screen: the mail Odoo has,
+            // the mail it does not, or all of it.
+            liveFilter: null,
             conversations: [],
             // Door 1's narrowing: while it is set the list is the mail on one
-            // record rather than the mail in one mailbox. Any folder, mailbox,
-            // filter or search click leaves it, because each of those is a
+            // record rather than the mail in one mailbox. Any folder,
+            // mailbox or search leaves it, because each of those is a
             // question about a mailbox.
             record: null,
             limit: PAGE,
@@ -292,7 +336,6 @@ export class ConversationView extends Component {
             quotes: {},
             details: {},
             showRejected: false,
-            search: "",
         });
 
         // Splitting a body into "what was written" and "what was quoted" is a
@@ -302,7 +345,20 @@ export class ConversationView extends Component {
         this.split = new Map();
 
         onWillStart(async () => {
-            await this.loadMailboxes();
+            const [, searchViewId] = await Promise.all([
+                this.loadMailboxes(),
+                this.orm.call("pan.mail.conversation", "inbox_search_view_id", []),
+            ]);
+            await this.searchModel.load({
+                resModel: "mail.message",
+                searchViewId,
+                // Filters, and nothing else. Group By is a question about a
+                // list over a table and this list is a mailbox: the grouping
+                // is the conversation. A favourite would be a saved search
+                // per model rather than per screen, which is a promise this
+                // one cannot keep.
+                searchMenuTypes: ["filter"],
+            });
             if (this.openedOn) {
                 this.state.record = {
                     model: this.openedOn.model,
@@ -328,10 +384,14 @@ export class ConversationView extends Component {
         // The notification mailbox is the one the module sends *from*, not one
         // anybody reads. Opening the inbox on it shows an empty screen to
         // somebody whose mail is one dropdown away, which reads as broken.
+        // `status_message` is empty on a healthy mailbox, which is the whole
+        // interface: this pane shows a marker on a truthy value and nothing at
+        // all otherwise, rather than deciding for itself what healthy looks
+        // like. The mailbox form's alert reads the same string.
         this.state.mailboxes = await this.orm.searchRead(
             "pan.mail.mailbox",
             [["active", "=", true], ["is_notification_mailbox", "=", false]],
-            ["email"],
+            ["email", "status_message"],
             { limit: 50, order: "sequence, email" }
         );
         if (this.state.mailboxes.length) {
@@ -418,6 +478,8 @@ export class ConversationView extends Component {
         const seq = ++this.listSeq;
         this.state.loading = true;
         this.state.error = "";
+        this.state.errorReason = "";
+        this.state.errorRemedy = "";
         if (!keepSelection) {
             // Another folder, filter or search is another list, and an
             // unfolded thread from the previous one would reopen under
@@ -429,7 +491,7 @@ export class ConversationView extends Component {
         try {
             const args = {
                 mailbox_id: this.state.mailboxId,
-                search: this.state.search || null,
+                ...this.searchArgs(),
             };
             const record = this.state.record
                 ? { record_model: this.state.record.model,
@@ -444,21 +506,16 @@ export class ConversationView extends Component {
                     "pan.mail.conversation", "folder_counts", [], {
                         ...args,
                         mailbox_id: key || null,
-                        // The filter row belongs to the list, so it is
-                        // counted for the mailbox the list is showing and
-                        // nowhere else. The live folder is not one of the
-                        // counted ones: its numbers are in the mailbox, not
-                        // in Odoo.
-                        folder: key === this.mailboxKey() && !this.isLive
-                            ? this.state.folder : null,
                     }))),
+                // The live folder is read from the provider, so it takes
+                // neither the domain the search bar built nor the folder the
+                // counts are for.
                 this.isLive
                     ? this.readLiveFolder()
                     : this.orm.call("pan.mail.conversation", "search_conversations", [], {
                         ...args,
                         ...record,
                         folder: this.state.folder,
-                        filter_name: this.state.filter,
                         limit: this.state.limit,
                     }),
             ]);
@@ -497,6 +554,8 @@ export class ConversationView extends Component {
             // retry rather than clearing the pane.
             if (seq === this.listSeq) {
                 this.state.error = _t("Could not load your conversations.");
+                this.state.errorReason = serverReason(error);
+                this.loadRemedy(error);
             }
             console.warn("[Mail Pro] conversation list failed", error);
         } finally {
@@ -527,14 +586,18 @@ export class ConversationView extends Component {
      * message for it yet.
      */
     async readLiveFolder() {
-        const linked = this.state.filter === "linked" ? true
-            : this.state.filter === "unlinked" ? false : null;
+        const linked = this.state.liveFilter === "linked" ? true
+            : this.state.liveFilter === "unlinked" ? false : null;
         const result = await this.orm.call(
             "pan.mail.conversation", "live_messages", [], {
                 mailbox_id: this.state.mailboxId,
                 folder: "inbox",
                 linked,
-                search: this.state.search || null,
+                // The words out of the search bar, handed to the provider
+                // rather than compiled into a domain: this folder searches
+                // the whole mailbox, which is the one thing it does better
+                // than the imported list beside it.
+                search: this.searchText(),
             });
         this.state.liveConnected = result.connected;
         return result.rows;
@@ -607,17 +670,63 @@ export class ConversationView extends Component {
         }
     }
 
+    /**
+     * What to do about the failure, under the line that reports it.
+     *
+     * Two cases can be named honestly and no more. A request that never got
+     * an answer is Odoo or the connection to it, and asking the server about
+     * it would fail the same way. Everything else is the server's to explain,
+     * so we ask it: the common answer is a database the deploy never
+     * upgraded, which no error message in the browser can diagnose.
+     */
+    async loadRemedy(error) {
+        if (!error?.data) {
+            this.state.errorRemedy = _t(
+                "Odoo did not answer. Check your connection and try again.");
+            return;
+        }
+        try {
+            this.state.errorRemedy = await this.orm.silent.call(
+                "pan.mail.conversation", "failure_remedy", []);
+        } catch {
+            // The reason is already on screen; a second failure adds nothing.
+            this.state.errorRemedy = "";
+        }
+    }
+
     sameConversation(left, right) {
+        // A draft has no message to key on and there can be two of them on one
+        // record, so its own id is what tells the rows apart. Undefined on
+        // both sides for every other row, which is the ordinary case.
         return left.model === right.model
             && left.res_id === right.res_id
             && left.message_id === right.message_id
-            && left.live_id === right.live_id;
+            && (left.draft_id || false) === (right.draft_id || false);
     }
 
-    /** A conversation picked from the list: on a phone, that is also a step. */
+    /**
+     * A conversation picked from the list: on a phone, that is also a step.
+     *
+     * The click also unfolds it, the way Outlook does: the conversation you
+     * are reading is the one whose mails the list shows. One at a time --
+     * a list that keeps every thread you have looked at open is a list you
+     * scroll through your own history in -- so picking folds the rest back.
+     */
     async pick(conversation) {
         this.panes.showConversation();
-        await this.select(conversation);
+        this.foldOthers(conversation);
+        if (conversation.draft_id) {
+            // A row in Drafts is an unsent mail, and there is one thing to do
+            // with one: carry on writing it. So the conversation opens with
+            // the composer already on it, in a single click.
+            await this.continueDraft(conversation);
+            return;
+        }
+        const opened = this.select(conversation);
+        if (conversation.count > 1 && !this.isUnfolded(conversation)) {
+            await this.unfold(conversation);
+        }
+        await opened;
     }
 
     /** The key a conversation's unfolded thread is cached under. */
@@ -645,10 +754,10 @@ export class ConversationView extends Component {
     /**
      * The chevron: unfold a conversation into its own mails, one line each.
      *
-     * Not a second way to open a conversation. Unfolding is looking at what
-     * is in there; the row above it is still what opens it, and a chevron
-     * that also switched the pane would cost the reader the conversation
-     * they had open to answer "how many of these are from her".
+     * The fold, and the one way to look into a conversation without opening
+     * it: a chevron that also switched the pane would cost the reader the
+     * conversation they had open to answer "how many of these are from her".
+     * Opening a conversation unfolds it too, from `pick`.
      *
      * One read per conversation, kept until the list is rebuilt. Folding
      * keeps the rows, because folding and unfolding the same thread twice is
@@ -660,6 +769,18 @@ export class ConversationView extends Component {
             this.state.unfolded[key] = false;
             return;
         }
+        await this.unfold(conversation);
+    }
+
+    /**
+     * Unfold one conversation, reading its mails the first time it is asked.
+     *
+     * Both ways in end here: the chevron, and the click that opens the
+     * conversation. So the rows are read once whichever one the reader used,
+     * and a failure folds the row back either way.
+     */
+    async unfold(conversation) {
+        const key = this.conversationKey(conversation);
         this.state.unfolded[key] = true;
         if (this.state.thread[key]) {
             return;
@@ -686,6 +807,16 @@ export class ConversationView extends Component {
         }
     }
 
+    /** Everything else folds back: only what is being read stands open. */
+    foldOthers(conversation) {
+        const key = String(this.conversationKey(conversation));
+        for (const other of Object.keys(this.state.unfolded)) {
+            if (other !== key) {
+                this.state.unfolded[other] = false;
+            }
+        }
+    }
+
     /** A mail picked from under the chevron: the pane opens on that one. */
     async pickMessage(conversation, message) {
         this.panes.showConversation();
@@ -693,10 +824,29 @@ export class ConversationView extends Component {
     }
 
     /** The step back, on a phone. Nothing is deselected: the list marks it. */
-    backToList() {
-        this.composer.close();
+    async backToList() {
+        await this.leaveComposer();
         this.state.compose = null;
         this.panes.showConversationList();
+    }
+
+    /**
+     * Close the composer on the way out, keeping whatever was typed.
+     *
+     * Leaving is not discarding: Discard still throws the answer away, and
+     * every other way out of the composer -- another conversation, the step
+     * back on a phone -- stores it as a draft instead. The count under the
+     * mailbox is corrected; the list is not re-read, because the reader is
+     * already on their way somewhere and a list that reorders under them is
+     * worse than a number that waits for the next read.
+     */
+    async leaveComposer() {
+        const stored = await this.composer.leave();
+        if (stored) {
+            this.notification.add(_t("Draft saved."), { type: "success" });
+            await this.loadCounts(this.mailboxKey());
+        }
+        return stored;
     }
 
     /**
@@ -710,9 +860,11 @@ export class ConversationView extends Component {
      */
     async select(conversation, { openMessageId = null } = {}) {
         // A reply belongs to the conversation it answers, and this is another
-        // one. The draft goes with it: nothing was stored yet, and a composer
-        // left open over the wrong conversation is worse than retyping two lines.
-        this.composer.close();
+        // one, so the composer closes with it -- and what was typed into it
+        // is kept as a draft on the conversation it was written for. Losing
+        // an answer to a click on the list was the one thing this pane did
+        // that nobody expected.
+        await this.leaveComposer();
         this.state.selected = conversation;
         this.state.showRejected = false;
         this.improve.capture("conversation_opened", { folder: this.state.folder });
@@ -761,35 +913,52 @@ export class ConversationView extends Component {
         this.setUnreadLocally(conversation, false);
     }
 
+    /** Is the open conversation one the mailbox still calls unread? */
+    get selectedUnread() {
+        return !!(this.state.selected && this.state.selected.unread);
+    }
+
+    /** What the one read-state button in the header says right now. */
+    get readToggleLabel() {
+        return this.selectedUnread ? _t("Mark read") : _t("Mark unread");
+    }
+
     /**
-     * Put a conversation back to unread: the one way out of "I opened it, I
-     * cannot deal with it now".
+     * Read and unread, from the conversation you have open.
+     *
+     * A toggle, because the button is the only place the click can answer.
+     * Marking unread and then reading it again used to mean opening another
+     * conversation and coming back, and the one button said "Mark unread"
+     * over a conversation that already was: a second click that did nothing,
+     * which is what a broken button looks like.
      *
      * The list is corrected here rather than by reloading it. A reload would
      * re-sort, lose the reader's place, and on the Unread filter make the
      * conversation they are reading jump into the list under them.
      */
-    async markUnread() {
+    async toggleRead() {
         const conversation = this.state.selected;
         if (!conversation) {
             return;
         }
+        const read = this.selectedUnread;
         try {
             await this.orm.call("pan.mail.conversation", "set_read", [], {
                 model: conversation.model,
                 res_id: conversation.res_id,
                 message_id: conversation.message_id,
                 mailbox_id: this.state.mailboxId,
-                read: false,
+                read,
             });
         } catch (error) {
-            console.warn("[Mail Pro] could not mark the conversation unread", error);
+            console.warn("[Mail Pro] could not change the conversation's read state",
+                         error);
             return;
         }
-        this.setUnreadLocally(conversation, true);
+        this.setUnreadLocally(conversation, !read);
     }
 
-    /** The dot, on the row and on the open conversation, without a reload. */
+    /** The dot on the row and the button in the header, without a reload. */
     setUnreadLocally(conversation, unread) {
         for (const row of this.state.conversations) {
             if (this.sameConversation(row, conversation)) {
@@ -865,6 +1034,8 @@ export class ConversationView extends Component {
         } catch (error) {
             if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that conversation.");
+                this.state.errorReason = serverReason(error);
+                this.loadRemedy(error);
             }
             console.warn("[Mail Pro] conversation failed to open", error);
         }
@@ -883,26 +1054,20 @@ export class ConversationView extends Component {
         this.state.expanded[this.mailboxKey()] = true;
         this.saveExpanded();
         }
-        // A filter is a question about the folder you are in, and the live
-        // folder asks a different one. Crossing between them clears it
-        // rather than carrying a filter no menu can show.
+        // The live folder's own filter is a question only it can ask, so
+        // leaving it puts the question away rather than carrying it into a
+        // folder with no control to show it in.
         if ((folder === LIVE_FOLDER) !== this.isLive) {
-            this.state.filter = null;
+            this.state.liveFilter = null;
         }
         this.state.folder = folder;
         this.panes.closeMailboxList();
-        // A filter is a question about the folder you are in, so switching
+        // The search is a question about the folder you are in, so switching
         // folder keeps it: "linked to nothing" in Sent is a fair question,
-        // and dropping it on every click is the thing that makes a filter
-        // row feel like it undoes itself.
-        this.state.limit = PAGE;
-        await this.refresh();
-    }
-
-    /** Narrow the folder you are in, or clear the filter with a second click. */
-    async setFilter(filter) {
-        this.leaveRecord();
-        this.state.filter = this.state.filter === filter ? null : filter;
+        // and dropping it on every click is the thing that makes a search
+        // bar feel like it undoes itself. Drafts live in another table, so
+        // the filters over `mail.message` simply do not reach them -- only
+        // the words somebody typed do.
         this.state.limit = PAGE;
         await this.refresh();
     }
@@ -927,7 +1092,7 @@ export class ConversationView extends Component {
             this.state.counts[key] = await this.orm.call(
                 "pan.mail.conversation", "folder_counts", [], {
                     mailbox_id: key || null,
-                    search: this.state.search || null,
+                    ...this.searchArgs(),
                 });
         } catch (error) {
             // A mailbox list that cannot count is a mailbox list without numbers, not an
@@ -938,7 +1103,7 @@ export class ConversationView extends Component {
     }
 
     foldersFor(mailboxId) {
-        const folders = (this.state.counts[this.mailboxKey(mailboxId)] || {}).folders || [];
+        const folders = this.state.counts[this.mailboxKey(mailboxId)] || [];
         if (!this.isLiveMailbox(mailboxId)) {
             return folders;
         }
@@ -955,23 +1120,25 @@ export class ConversationView extends Component {
     }
 
     /**
-     * The filter menu over the list.
+     * The two questions the live folder answers, and the one in use.
      *
-     * In an imported folder these are counted server-side, inside the folder.
-     * In the live folder they are the two halves of the one question that
-     * folder exists to answer, and they carry no count: the provider cannot
-     * be asked how much of your mail Odoo has.
+     * Its own control rather than a facet in the search bar: every filter in
+     * that bar is a domain over `mail.message`, and these rows are a
+     * provider's answer that no domain can reach.
      */
-    get filters() {
-        if (this.isLive) {
-            return LIVE_FILTERS;
-        }
-        return (this.state.counts[this.mailboxKey()] || {}).filters || [];
+    get liveFilters() {
+        return LIVE_FILTERS;
     }
 
-    /** The one in use, named on the button so a closed menu still says so. */
-    get activeFilter() {
-        return this.filters.find((pill) => pill.id === this.state.filter) || null;
+    get activeLiveFilter() {
+        return LIVE_FILTERS.find((pill) => pill.id === this.state.liveFilter) || null;
+    }
+
+    /** Narrow the live folder, or clear it with a second click. */
+    async setLiveFilter(filter) {
+        this.state.liveFilter = this.state.liveFilter === filter ? null : filter;
+        await this.refresh();
+    }
     }
 
     /** Open another mailbox, from the mailbox list. Folders are per mailbox. */
@@ -985,14 +1152,14 @@ export class ConversationView extends Component {
         // Opening a mailbox unfolds it: the folders are where you go next.
         this.state.expanded[this.mailboxKey()] = true;
         this.saveExpanded();
-        // The folder and the filter carry over. Every mailbox has the same
+        // The folder and the search carry over. Every mailbox has the same
         // two folders, and landing back in Inbox on every switch loses the
         // one thing somebody switching mailboxes is usually doing: working
         // one view across all of them. Except the live folder, which not
         // every mailbox has: a mailbox you do not own lands in Inbox.
         if (this.isLive && !this.isLiveMailbox(mailboxId)) {
             this.state.folder = "inbox";
-            this.state.filter = null;
+            this.state.liveFilter = null;
         }
         this.state.limit = PAGE;
         await this.refresh();
@@ -1001,45 +1168,41 @@ export class ConversationView extends Component {
         this.refreshReadState();
     }
 
-    onSearchInput(event) {
-        this.state.search = event.target.value;
-        this.applySearch();
+    /**
+     * What the search bar is asking for, as the two arguments every read of
+     * the list takes.
+     *
+     * The domain is the whole of it, bar two things a domain cannot say.
+     * Mail filed on nothing is not one conversation, so the filter that asks
+     * for it carries `pan_mail_ungrouped` in its own context and the list
+     * stops grouping -- a search view attribute, not a special case in here.
+     * And Drafts are a table of their own, so a domain over `mail.message`
+     * means nothing to them; what does carry across is the words somebody
+     * typed, which is every text facet in the bar.
+     */
+    searchArgs() {
+        return {
+            domain: this.searchModel.domain,
+            search: this.searchText(),
+            ungrouped: !!this.searchModel.context[UNGROUPED_KEY],
+        };
     }
 
-    /** Enter does not wait, and Escape gives the whole folder back. */
-    onSearchKey(event) {
-        if (event.key === "Enter") {
-            this.applySearch.cancel();
-            this.runSearch();
-        } else if (event.key === "Escape" && this.state.search) {
-            this.clearSearch();
-        }
+    /** What the reader typed, as one string: the bar's text facets. */
+    searchText() {
+        const typed = this.searchModel.facets
+            .filter((facet) => facet.type === "field")
+            .flatMap((facet) => facet.values);
+        return typed.join(" ") || null;
     }
 
     /**
-     * The whole box is the search field, the way Odoo's own search bar is:
-     * the magnifier, the padding and the border all land in the input.
+     * The search changed: a word typed, a facet removed, a filter picked.
+     *
+     * Back to the whole mailbox and to the first page, because a search is a
+     * question about a mailbox rather than about the record door 1 opened on.
      */
-    focusSearch() {
-        this.searchRef.el?.focus();
-    }
-
-    /**
-     * The cross, and Escape: the folder back, in one click. The field is
-     * written to by hand because `t-att-value` sets the attribute and the
-     * browser is showing the property somebody typed into.
-     */
-    clearSearch() {
-        if (this.searchRef.el) {
-            this.searchRef.el.value = "";
-        }
-        this.state.search = "";
-        this.applySearch.cancel();
-        this.focusSearch();
-        return this.runSearch();
-    }
-
-    async runSearch() {
+    async onSearch() {
         this.leaveRecord();
         this.state.limit = PAGE;
         await this.refresh();
@@ -1553,15 +1716,9 @@ export class ConversationView extends Component {
         return (folders.find((e) => e.id === this.state.folder) || {}).name || "";
     }
 
-    /** What the list is showing, in words: the folder, narrowed by the filter. */
-    get listLabel() {
-        if (this.state.record) {
-            return this.folderLabel;
-        }
-        const named = (entries, id) => (entries.find((e) => e.id === id) || {}).name;
-        const folder = named(this.foldersFor(), this.state.folder) || "";
-        const filter = this.state.filter && named(this.filters, this.state.filter);
-        return filter ? `${folder} / ${filter}` : folder;
+    /** Is the search bar asking for anything? The empty state reads it. */
+    get searching() {
+        return this.searchModel.facets.length > 0;
     }
 
     folderCount(folder) {
@@ -1705,6 +1862,103 @@ export class ConversationView extends Component {
             default_composition_mode: "comment",
             default_subtype_xmlid: "mail.mt_note",
         }, "note");
+    }
+
+    // ------------------------------------------------------------- drafts
+
+    /** The unsent answers on the open conversation. Yours, and only yours. */
+    get drafts() {
+        return this.state.conversation.drafts || [];
+    }
+
+    /**
+     * Whether the open composer can be put away rather than sent.
+     *
+     * Not on a note. A note is two lines to the record's followers and it is
+     * written in one sitting; a Drafts folder that fills up with half-written
+     * notes is a second inbox for something that was never mail.
+     */
+    get canSaveDraft() {
+        return this.composer.state.open && this.composer.state.mode !== "note";
+    }
+
+    /**
+     * Open a stored draft: its conversation behind it, its words in the pane.
+     *
+     * The conversation first, so the pane the composer sits in is the thread
+     * the draft answers rather than an empty one. Then the composer, on the
+     * defaults the draft hands back -- the same subject, recipients and files
+     * it was saved with.
+     */
+    async continueDraft(row) {
+        await this.select(row);
+        await this.openDraft(row.draft_id);
+    }
+
+    /**
+     * The composer is made on the server and the pane mounts its form on it.
+     *
+     * Not opened empty on `default_` values: the composer recomputes its own
+     * body and subject while it mounts, so a draft handed over that way is
+     * gone before anybody sees it -- which is exactly what the browser check
+     * caught. `open_composer` creates the wizard, where the ORM protects the
+     * values it was created with, and the form has only to display it.
+     */
+    async openDraft(draftId) {
+        try {
+            const composerId = await this.orm.call(
+                "pan.mail.draft", "open_composer", [draftId]);
+            if (!composerId) {
+                // Without an id the form would open on a new, empty composer
+                // and look like a draft that lost its words. Say so instead.
+                throw new Error("pan.mail.draft.open_composer returned nothing");
+            }
+            this.composer.open({}, "reply", draftId, composerId);
+        } catch (error) {
+            this.notification.add(_t("Could not open that draft."), { type: "danger" });
+            console.warn("[Mail Pro] draft failed to open", error);
+        }
+    }
+
+    /**
+     * Throw a draft away.
+     *
+     * The one thing on this screen that destroys something nobody can get
+     * back -- there is no Trash for a draft -- so it is the one thing that
+     * asks first. Odoo's own confirmation dialog, because a dialog of ours
+     * would be a second one to keep in step with it.
+     */
+    deleteDraft(draftId) {
+        this.dialog.add(ConfirmationDialog, {
+            title: _t("Delete this draft"),
+            body: _t("The text is not kept anywhere else."),
+            confirmLabel: _t("Delete"),
+            confirm: () => this.discardDraft(draftId),
+            cancel: () => {},
+        });
+    }
+
+    async discardDraft(draftId) {
+        await this.orm.call("pan.mail.draft", "discard_draft", [draftId]);
+        if (this.composer.state.draftId === draftId) {
+            this.composer.close();
+        }
+        await this.readConversation();
+        await this.refresh({ keepSelection: true });
+    }
+
+    /**
+     * It was put away: the card above the thread, and the Drafts count.
+     *
+     * A new mail has no conversation behind it, so there is nothing to
+     * re-read and the line in the corner is the whole feedback. The folder is
+     * recounted either way, because that is where the draft went.
+     */
+    async onDraftSaved() {
+        this.state.compose = null;
+        this.notification.add(_t("Draft saved."), { type: "success" });
+        await this.readConversation();
+        await this.refresh({ keepSelection: true });
     }
 
     /**
