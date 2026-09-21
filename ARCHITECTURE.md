@@ -1369,8 +1369,9 @@ The number that says whether the "two separate worlds" problem is being solved,
 and the gate on building more triage: if almost everything files itself
 correctly, a queue solves nothing and the effort belongs elsewhere.
 
-Measured inside Odoo and nowhere else. Sending usage telemetry out would
-contradict the module's own data-disclosure statement. A `TransientModel`
+Measured inside Odoo, and the last 24 hours of it ride the daily heartbeat
+(§9.17) as the same four counts the screen shows, because it is the one number
+the product is steered by across the installed base. A `TransientModel`
 rather than a stored report: this is a question you ask, not a history you keep,
 so nothing is written and the answer cannot go stale.
 
@@ -1906,8 +1907,36 @@ server half lives in `pantalytics/mail-pro-admin`.
 
 - **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
   `_heartbeat_body()` and nothing else: database id, module and Odoo version,
-  connected accounts, whether sync is healthy. No address, subject or body. The
-  manifest's Data Disclosure says the same, and has to change with it.
+  connected accounts, whether sync is healthy, and for the last 24 hours the
+  four link coverage counts (`pan.mail.coverage.counts_since`), per matching
+  rule how often it decided and how often a person overruled it
+  (`pan.mail.routing.log.rule_counts_since`, off `corrected_at`, which
+  `link_to` stamps), and the number of hand-made links. Counts and rule
+  names. No address, subject, body or name. The manifest's Data Disclosure
+  says the same, and has to change with it.
+- **The answer carries the workspace's "Help improve Mail Pro" switch**:
+  `improve`, `improve_host` (our proxy, never PostHog) and `replay_sample`,
+  stored on the row only when the signature checks out. `improve_active()`
+  is the one question the browser side asks, and it is a no whenever the
+  switch is off, the host is missing, the config parameter
+  `pan_mail_pro.improve_refused` is set (Settings, "Not on this Odoo
+  instance": an administrator here can refuse, never enable) or the database
+  is a neutralized copy. The design and the phases are in mail-pro-admin's
+  `docs/plans/analytics-flywheel.md`.
+- **The browser side is `static/src/js/improve.js`**, and it is off unless
+  `ir.http.session_info` carries `pan_mail_improve` (`improve_config()`: the
+  host, the token, a `u:<hmac>` pseudonym under the encryption key, the
+  sample). Then the Inbox, and only the Inbox, loads posthog-js from the lazy
+  bundle `pan_mail_pro.assets_improve`, sends five named events
+  (`inbox_opened`, `conversation_opened`, `tab_opened`, `reply_sent`,
+  `conversation_linked`, with a folder, a tab, a mode or a `via`, never
+  content) and records a wireframe: every text node, input and attribute
+  masked, images blocked, no network bodies, `ip: false`, no person profile,
+  nothing persisted in the browser. Recording starts when the Inbox mounts
+  and stops when it unmounts. `tools/ui_check.py` points a seeded Inbox at a
+  sink and reads every byte back: a seeded subject or address on the wire is
+  the failure, which is the only way a masking promise stays true across
+  posthog-js upgrades.
 - **Only a signed answer is stored.** Ed25519 against `PUBLIC_KEY`, and its
   `db_uuid` must be this database's. An unreachable server keeps the cached
   answer until `valid_until` (14 days); a refused key drops it.

@@ -23,7 +23,7 @@ import logging
 from odoo import _, api, fields, models
 
 from .mail_provider_client import get_provider_client, get_setup_provider
-from .pan_mail_license import STATUS_SELECTION
+from .pan_mail_license import IMPROVE_REFUSED_PARAM, STATUS_SELECTION
 
 _logger = logging.getLogger(__name__)
 
@@ -115,6 +115,16 @@ class ResConfigSettings(models.TransientModel):
     x_license_last_error = fields.Char(compute='_compute_license')
     x_license_sync_blocked = fields.Boolean(compute='_compute_license')
 
+    # Help improve Mail Pro, as the Pantalytics workspace decided it. This
+    # page can only say no: the yes lives where the contract was signed.
+    x_improve_on = fields.Boolean(compute='_compute_license')
+    x_improve_refused = fields.Boolean(
+        string='Not on this Odoo instance',
+        config_parameter=IMPROVE_REFUSED_PARAM,
+        help='Refuse it for this Odoo instance, whatever the workspace decided. '
+             'Nothing is reported or recorded from this instance while this is ticked.',
+    )
+
     # -------------------------------------------------------------------------
     # About
     # -------------------------------------------------------------------------
@@ -172,6 +182,8 @@ class ResConfigSettings(models.TransientModel):
             record.x_license_message = link.message
             record.x_license_valid_until = link.valid_until
             record.x_license_last_error = link.last_error
+            record.x_improve_on = bool(
+                link.improve and link.improve_host and link.improve_token)
 
     def action_license_connect(self):
         link = self.env['pan.mail.license'].action_connect()

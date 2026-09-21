@@ -161,6 +161,13 @@ class PanMailRoutingLog(models.Model):
         default=False,
         help='Ticked by hand once someone has looked at this row.',
     )
+    corrected_at = fields.Datetime(
+        string='Corrected',
+        readonly=True,
+        help='When a person linked this conversation somewhere else by hand. '
+             'The rule on this row is the one they overruled, which is what '
+             'says whether a rule is worth its place.',
+    )
 
     @api.depends('outcome', 'candidate_count')
     def _compute_needs_review(self):
@@ -378,6 +385,7 @@ class PanMailRoutingLog(models.Model):
         self._relink_threads(logs, model, record)
         logs.write({
             'reviewed': True,
+            'corrected_at': fields.Datetime.now(),
             'suggested_model': False,
             'suggested_res_id': False,
             'suggested_name': False,
@@ -410,6 +418,33 @@ class PanMailRoutingLog(models.Model):
         if links:
             links.write({'model': model, 'res_id': record.id})
         return links
+
+    # ------------------------------------------------------------------ #
+    # What the rules are worth, for the heartbeat
+    # ------------------------------------------------------------------ #
+
+    @api.model
+    def rule_counts_since(self, since):
+        """Per rule: how often it decided a mail, and how often a person then
+        linked that mail somewhere else. Rule names and integers, nothing else;
+        a fallback counts under `none`, because "no rule reached the threshold"
+        is the outcome the whole ladder is measured against.
+        """
+        Log = self.sudo()
+        wins = {}
+        for group in Log._read_group(
+            [('date', '>=', since)], ['rule'], ['__count'],
+        ):
+            wins[group[0] or 'none'] = group[1]
+        corrected = {}
+        for group in Log._read_group(
+            [('corrected_at', '>=', since)], ['rule'], ['__count'],
+        ):
+            corrected[group[0] or 'none'] = group[1]
+        return [
+            {'rule': rule, 'wins': wins.get(rule, 0), 'corrected': corrected.get(rule, 0)}
+            for rule in sorted(set(wins) | set(corrected))
+        ]
 
     # ------------------------------------------------------------------ #
     # Housekeeping
