@@ -242,7 +242,21 @@
                         the one in use.
                     -->
                     <div class="o_mailpro_conversation_list_head d-flex align-items-center justify-content-between gap-2">
-                        <span class="o_mailpro_conversation_list_title text-truncate" t-esc="folderLabel"/>
+                        <div class="d-flex align-items-center gap-1 min-w-0">
+                            <span class="o_mailpro_conversation_list_title text-truncate" t-esc="folderLabel"/>
+                            <!-- Arrived from a record's chatter: the list is
+                                 that record's mail, and this is the way back
+                                 to the whole mailbox. Escapable, because a
+                                 list that is short for a reason nobody can
+                                 see is a list that reads as broken. -->
+                            <button t-if="state.record" type="button"
+                                    class="o_mailpro_record_clear flex-shrink-0"
+                                    aria-label="Show the whole mailbox"
+                                    title="Show the whole mailbox"
+                                    t-on-click="() => this.showWholeMailbox()">
+                                <i class="fa fa-times" aria-hidden="true"/>
+                            </button>
+                        </div>
                     </div>
                     <t t-if="state.loading and !state.conversations.length">
                         <div class="o_mailpro_skeleton" aria-hidden="true">

@@ -494,6 +494,8 @@ class TestConversationApi(TransactionCase):
         self._mail(subject='Re: Offerte', direction='outgoing')
         door = self.Conversation.record_conversations('crm.lead', self.lead.id)
         self.assertEqual(door['here'], 2)
+        self.assertEqual(door['threads'], 1,
+                         'mail with no thread indexed is still one conversation')
         # Everything is on this record, so the client draws no extra line.
         self.assertEqual(door['elsewhere'], 0)
         self.assertEqual(door['partner_id'], self.customer.id,
@@ -538,6 +540,77 @@ class TestConversationApi(TransactionCase):
 
         door = self.Conversation.record_conversations('crm.lead', self.lead.id)
         self.assertEqual(door['elsewhere'], 1, 'one message sits elsewhere')
+
+    def _link(self, thread_id, key_type='rfc', record=None, mailbox=None):
+        """One row of the thread index, the way `record_all` writes them."""
+        record = record if record is not None else self.lead
+        return self.env['pan.mail.thread.link'].create({
+            'provider': 'imap',
+            'mailbox_id': (mailbox or self.mailbox).id,
+            'thread_id': thread_id,
+            'key_type': key_type,
+            'model': record._name,
+            'res_id': record.id,
+        })
+
+    def test_the_button_counts_the_threads_on_this_record(self):
+        """Two exchanges filed on one lead is two threads, and that is the
+        number Open in mail needs: one conversation it can open, several and
+        the reader picks. `conversations` answers the other question -- how
+        many records the mail touched -- and stays 1."""
+        self._mail()
+        self._link('<offerte-root@vandermolen.test>')
+        self._link('<storing-root@vandermolen.test>')
+        door = self.Conversation.record_conversations('crm.lead', self.lead.id)
+        self.assertEqual(door['threads'], 2)
+        self.assertEqual(door['conversations'], 1)
+
+    def test_one_thread_two_mailboxes_is_one_thread(self):
+        """sales@ and support@ both saw it, so there are two rows and one
+        conversation. The References root is what says so; the provider's own
+        handle means something else in the other mailbox, which is why the
+        count is not taken from it."""
+        self._mail()
+        support = self.env['pan.mail.mailbox'].create({
+            'email': 'support@company.test',
+            'provider': 'imap',
+            'mailbox_type': 'shared',
+        })
+        self._link('<offerte-root@vandermolen.test>')
+        self._link('<offerte-root@vandermolen.test>', mailbox=support)
+        door = self.Conversation.record_conversations('crm.lead', self.lead.id)
+        self.assertEqual(door['threads'], 1)
+
+    def test_a_provider_handle_is_not_a_second_thread(self):
+        """One conversation carries a row per handle -- Graph's own and the
+        References root. Counting rows would say two."""
+        self._mail()
+        self._link('AAQkAGI2...', key_type='provider')
+        self._link('<offerte-root@vandermolen.test>')
+        door = self.Conversation.record_conversations('crm.lead', self.lead.id)
+        self.assertEqual(door['threads'], 1)
+
+    def test_a_provider_without_a_handle_still_counts(self):
+        """IMAP mints no thread id, so the root is stored as its provider
+        key. A count that only read `rfc` rows would report nothing."""
+        self._mail()
+        self._link('<offerte-root@vandermolen.test>', key_type='provider')
+        door = self.Conversation.record_conversations('crm.lead', self.lead.id)
+        self.assertEqual(door['threads'], 1)
+
+    def test_the_list_narrows_to_one_record(self):
+        """What door 1 opens when the record carries more than one thread:
+        the Inbox, listing this record's mail and nobody else's."""
+        other = self.env['crm.lead'].create({
+            'name': 'Another lead', 'partner_id': self.customer.id,
+        })
+        self._mail()
+        self._mail(record=other, subject='Nieuwe aanvraag')
+        rows = self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id,
+            record_model='crm.lead', record_id=self.lead.id)
+        self.assertEqual([(row['model'], row['res_id']) for row in rows],
+                         [('crm.lead', self.lead.id)])
 
     def test_a_record_chip_carries_the_icon_of_its_app(self):
         """The chip shows the tile of the app whose menu opens the model:

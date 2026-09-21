@@ -196,6 +196,19 @@ export class ConversationView extends Component {
         this.applySearch = useDebounced(() => this.runSearch(), SEARCH_DELAY);
         this.searchRef = useRef("search");
 
+        // Door 1: the chatter's Open in mail names the record it came from,
+        // and whether one conversation is the answer or the reader has to
+        // pick. The client action takes no params of its own, so it arrives
+        // in the context. See static/src/js/chatter_door.js.
+        const context = this.props.action?.context || {};
+        this.openedOn = context.pan_mail_model && context.pan_mail_res_id
+            ? {
+                  model: context.pan_mail_model,
+                  res_id: context.pan_mail_res_id,
+                  select: context.pan_mail_select !== false,
+              }
+            : null;
+
         // Two request tokens, one per pane. Somebody who clicks three folders
         // in a second starts three reads, and without these the slowest answer
         // wins the screen -- which need not be the one they asked for last.
@@ -220,6 +233,11 @@ export class ConversationView extends Component {
             expanded: {},
             counts: {},
             conversations: [],
+            // Door 1's narrowing: while it is set the list is the mail on one
+            // record rather than the mail in one mailbox. Any folder, mailbox,
+            // filter or search click leaves it, because each of those is a
+            // question about a mailbox.
+            record: null,
             limit: PAGE,
             hasMore: false,
             selected: null,
@@ -253,7 +271,18 @@ export class ConversationView extends Component {
 
         onWillStart(async () => {
             await this.loadMailboxes();
-            await this.refresh();
+            if (this.openedOn) {
+                this.state.record = {
+                    model: this.openedOn.model,
+                    res_id: this.openedOn.res_id,
+                    name: "",
+                };
+                // Mail on a record, wherever it arrived: the reader came from
+                // the record and not from a mailbox, and the thread they want
+                // may well have been synced by another one.
+                this.state.mailboxId = null;
+            }
+            await this.refresh({ select: this.openedOn ? this.openedOn.select : true });
             // Deliberately not awaited: the list is already on screen and
             // this only corrects the dots on it. Waiting would make the first
             // paint as slow as the provider is.
@@ -276,6 +305,8 @@ export class ConversationView extends Component {
         if (this.state.mailboxes.length) {
             this.state.mailboxId = this.state.mailboxes[0].id;
         }
+        // Where leaving door 1's narrowing puts the reader back.
+        this.defaultMailboxId = this.state.mailboxId;
         // What stood open last time, minus the mailboxes that are gone. The
         // one you land in is always open: a mailbox list that opens fully folded
         // hides the folder you are looking at.
@@ -343,7 +374,7 @@ export class ConversationView extends Component {
         }
     }
 
-    async refresh({ keepSelection = false } = {}) {
+    async refresh({ keepSelection = false, select = true } = {}) {
         const seq = ++this.listSeq;
         this.state.loading = true;
         this.state.error = "";
@@ -352,6 +383,10 @@ export class ConversationView extends Component {
                 mailbox_id: this.state.mailboxId,
                 search: this.state.search || null,
             };
+            const record = this.state.record
+                ? { record_model: this.state.record.model,
+                    record_id: this.state.record.res_id }
+                : {};
             // One count query per mailbox that is standing open. A folded
             // mailbox is not counted, which is what keeps a mailbox list of six
             // accounts from costing six times the queries of one.
@@ -368,6 +403,7 @@ export class ConversationView extends Component {
                     }))),
                 this.orm.call("pan.mail.conversation", "search_conversations", [], {
                     ...args,
+                    ...record,
                     folder: this.state.folder,
                     filter_name: this.state.filter,
                     limit: this.state.limit,
@@ -380,11 +416,16 @@ export class ConversationView extends Component {
                 keys.map((key, index) => [key, counts[index]]));
             this.state.conversations = conversations;
             this.state.hasMore = conversations.length >= this.state.limit;
+            if (this.state.record && conversations.length) {
+                // The record's own name, for the header over the narrowed
+                // list. It comes off the mail rather than a read of its own.
+                this.state.record.name = conversations[0].record_name || "";
+            }
 
             const stillThere = keepSelection && this.state.selected
                 && conversations.some((row) => this.sameConversation(row, this.state.selected));
             if (!stillThere) {
-                if (conversations.length && !this.panes.state.small) {
+                if (select && conversations.length && !this.panes.state.small) {
                     // A phone lands on the list, the way every mail client
                     // does: opening the first mail unasked is a screen the
                     // reader has to back out of before they have read it.
@@ -585,6 +626,7 @@ export class ConversationView extends Component {
      * in a single read rather than two.
      */
     async setFolder(folder, mailboxId) {
+        this.leaveRecord();
         if (mailboxId !== undefined && mailboxId !== this.state.mailboxId) {
             this.state.mailboxId = mailboxId;
         // Opening a mailbox unfolds it: the folders are where you go next.
@@ -603,6 +645,7 @@ export class ConversationView extends Component {
 
     /** Narrow the folder you are in, or clear the filter with a second click. */
     async setFilter(filter) {
+        this.leaveRecord();
         this.state.filter = this.state.filter === filter ? null : filter;
         this.state.limit = PAGE;
         await this.refresh();
@@ -658,6 +701,7 @@ export class ConversationView extends Component {
         if (mailboxId === this.state.mailboxId) {
             return;
         }
+        this.leaveRecord();
         this.state.mailboxId = mailboxId;
         // Opening a mailbox unfolds it: the folders are where you go next.
         this.state.expanded[this.mailboxKey()] = true;
@@ -712,6 +756,32 @@ export class ConversationView extends Component {
     }
 
     async runSearch() {
+        this.leaveRecord();
+        this.state.limit = PAGE;
+        await this.refresh();
+    }
+
+    /**
+     * Leave door 1's narrowing, without reading anything: every caller is on
+     * its way to a read of its own.
+     *
+     * The mailbox comes back with it. The door opened the Inbox on every
+     * mailbox the reader may see, which is right for one record's mail and
+     * wrong for the folder they just clicked.
+     */
+    leaveRecord() {
+        if (!this.state.record) {
+            return;
+        }
+        this.state.record = null;
+        if (!this.state.mailboxId) {
+            this.state.mailboxId = this.defaultMailboxId;
+        }
+    }
+
+    /** The way back to the whole mailbox, from the narrowed list's header. */
+    async showWholeMailbox() {
+        this.leaveRecord();
         this.state.limit = PAGE;
         await this.refresh();
     }
@@ -1177,12 +1247,20 @@ export class ConversationView extends Component {
 
     /** The folder the list is showing, for the header over it. */
     get folderLabel() {
+        if (this.state.record) {
+            // Arrived through door 1: the list is one record's mail, so the
+            // header says which record and not which folder.
+            return this.state.record.name || _t("This record");
+        }
         const folders = this.foldersFor();
         return (folders.find((e) => e.id === this.state.folder) || {}).name || "";
     }
 
     /** What the list is showing, in words: the folder, narrowed by the filter. */
     get listLabel() {
+        if (this.state.record) {
+            return this.folderLabel;
+        }
         const named = (entries, id) => (entries.find((e) => e.id === id) || {}).name;
         const folder = named(this.foldersFor(), this.state.folder) || "";
         const filter = this.state.filter && named(this.filters, this.state.filter);

@@ -1,6 +1,6 @@
 # Read, unread, and handing a conversation over
 
-Status: **built**, 19.0.15.3.0, except the handoff in section 5. The mirror,
+Status: **built**, 19.0.15.4.0, except the handoff in section 5. The mirror,
 the refresh, the write-back and the bridge to Odoo's own notifications all
 ship; the design behind them has moved into ARCHITECTURE.md section 9.18 and
 this file stays for the reasoning and for what was deliberately left out.

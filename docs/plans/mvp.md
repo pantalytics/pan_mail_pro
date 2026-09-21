@@ -48,8 +48,9 @@ polished through 19.0.13: four panes, mailbox list, filters, search, New
 Email, reply in the pane, the four tabs, linking in two steps, the
 suggestion chips. What the plans still call "on paper" and is actually
 built: New mail, search, filter, linking, the two triage rungs and the
-correction. What is genuinely not built: the chatter's door into the Inbox
-(`record_conversations` has no caller), the customer timeline screen
+correction. What is genuinely not built: door 1's per-message
+more-messages-elsewhere line (its button ships in 19.0.15.3.0), the customer
+timeline screen
 (`customer_timeline` has no caller), Cc in the composer, and any AI rung.
 
 **Connect and entitlement.** Built end to end and live: the Connect button,
