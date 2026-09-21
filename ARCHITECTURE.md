@@ -2049,6 +2049,15 @@ notification still want me", which has a screen of its own (Discuss, the
 bell). The mailbox's read state answers "has this mailbox read this mail".
 They can disagree on one message and neither is wrong.
 
+**One button, and it says which state the conversation is in.** The Inbox's
+read-state control is a toggle: Mark unread over a conversation you have read,
+Mark read over one you have not. It used to be a single Mark unread, on the
+argument that reading a mail is what reads a mail, so a second click did
+nothing at all. The list says it too, with a dot and not only a font weight:
+the row being marked is also the highlighted one, and 600 against 700 on a
+highlighted row is a change nobody can see. 19.0.15.6.0; the button was writing
+the database and the provider correctly the whole time.
+
 There is exactly one bridge, and it runs one way: **reading a conversation in
 the Inbox clears the reader's own unread inbox rows for it**, through Odoo's
 own `set_message_done()`, which sends the bus message that makes the bell
