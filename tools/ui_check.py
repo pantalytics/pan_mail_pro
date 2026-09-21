@@ -411,8 +411,10 @@ class Checks:
                 self.fail('New Email step two offers no records')
                 return
             records = page.query_selector_all(ODOO_PICKER + ' .o_data_row')
-            picked = records[0].inner_text().strip()
-            records[0].query_selector('.o_data_cell').click()  # step two: the record
+            # The first column is the name; the row is every column at once.
+            cell = records[0].query_selector('.o_data_cell')
+            picked = cell.inner_text().strip()
+            cell.click()             # step two: the record itself
             # The composer opens in the conversation pane, the same one a
             # reply uses. A regression here is New Email having gone back to
             # being a popup over the Inbox.
@@ -1295,10 +1297,18 @@ class Checks:
         self.shot('inbox-link-records.png')
 
         # Typing searches rather than filtering what is drawn: a term that
-        # matches nothing has to reach the server and come back empty.
+        # matches nothing has to reach the server and come back empty. Enter
+        # activates the autocomplete item under the caret, and that list is
+        # built asynchronously, so it waits for the list the way the Inbox's
+        # own search check does.
         page.fill(ODOO_PICKER + ' .o_searchview input', 'zzzzgeenmatch')
+        try:
+            page.wait_for_selector(ODOO_PICKER + ' .o_searchview_autocomplete', timeout=5000)
+        except Exception:
+            self.fail('typing in the record picker offered nothing to search')
+        page.wait_for_timeout(800)
         page.keyboard.press('Enter')
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(2500)
         if page.query_selector_all(ODOO_PICKER + ' .o_data_row'):
             self.fail('the record search answers rows for a term nothing matches')
         page.click(ODOO_PICKER + ' .o_form_button_cancel')
