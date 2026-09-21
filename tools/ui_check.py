@@ -502,6 +502,25 @@ class Checks:
             selected = page.query_selector_all('.o_mailpro_item_active')
             if len(selected) != 1:
                 self.fail(f'{len(selected)} conversations look selected, expected 1')
+            # And a line of the mail under the subject, the way every mail
+            # client draws a list. It is the one part of the row that can go
+            # empty without going wrong: the snippet stops where the quoted
+            # history starts, so a mail that opens with a quote previews as
+            # an empty span, which is invisible rather than visibly broken.
+            blank = []
+            echoes = []
+            for el in items:
+                snippet = el.query_selector('.o_mailpro_preview')
+                text = snippet.inner_text().strip() if snippet else ''
+                subject = el.query_selector('.o_mailpro_subject')
+                if not text:
+                    blank.append(el)
+                elif subject and text == subject.inner_text().strip():
+                    echoes.append(el)
+            if blank:
+                self.fail(f'{len(blank)} conversation rows show no preview line')
+            if echoes:
+                self.fail(f'{len(echoes)} previews are a second copy of the subject')
 
         messages = page.query_selector_all('.o_mailpro_message')
         if not messages:
@@ -728,6 +747,7 @@ class Checks:
                     page.wait_for_selector('.o_mailpro_messages', timeout=15000)
                     page.wait_for_timeout(600)
 
+        self.unfolding()
         self.panes()
         self.zoom()
 
@@ -1197,6 +1217,91 @@ class Checks:
         page.wait_for_timeout(400)
         if not self.visible('.o_mailpro_conversation_list'):
             self.fail('Back did not bring the list back on a phone')
+
+    def unfolding(self):
+        """The chevron: a conversation unfolds into the mails it is made of.
+
+        Three things a browser proves and no Python test can. That the
+        chevron is only offered where there is something behind it -- a
+        one-mail conversation that unfolds into one mail is a control that
+        lies. That it unfolds as many rows as the row above it says it has.
+        And that clicking one of them opens the conversation pane *on that
+        mail*, which is the whole reason the rows are clickable and the part
+        that is a seeded `state.open` rather than a method anybody can call.
+        """
+        page = self.page
+        rows = page.query_selector_all('.o_mailpro_group')
+        if not rows:
+            self.fail('the conversation list draws no rows to unfold')
+            return
+
+        # The chevron is a claim about the row it sits on, so read the claim.
+        for row in rows:
+            count = row.query_selector('.o_mailpro_muted')
+            said = count.inner_text().strip() if count else ''
+            twist = row.query_selector('.o_mailpro_twist:not(.o_mailpro_twist_blank)')
+            if said == '1 message' and twist:
+                self.fail('a one-mail conversation offers a chevron')
+            if said.endswith('messages') and not twist:
+                self.fail(f'a conversation of {said} has no chevron')
+
+        group = None
+        for row in rows:
+            if row.query_selector('.o_mailpro_twist:not(.o_mailpro_twist_blank)'):
+                group = row
+                break
+        if not group:
+            self.fail('no seeded conversation holds more than one mail')
+            return
+
+        expected = int(group.query_selector('.o_mailpro_muted')
+                       .inner_text().strip().split()[0])
+        group.query_selector('.o_mailpro_twist').click()
+        try:
+            page.wait_for_selector('.o_mailpro_child', timeout=15000)
+        except Exception:
+            self.fail('the chevron unfolded nothing')
+            return
+        page.wait_for_timeout(600)
+        children = group.query_selector_all('.o_mailpro_child')
+        if len(children) != expected:
+            self.fail(f'the chevron unfolded {len(children)} mails, '
+                      f'the row says {expected}')
+        # Same three things as the row above them, about one mail each.
+        for child in children:
+            if child.evaluate('el => el.tagName') != 'BUTTON':
+                self.fail('an unfolded mail is not a button')
+            author = child.query_selector('.o_mailpro_from')
+            snippet = child.query_selector('.o_mailpro_preview')
+            if not author or not author.inner_text().strip():
+                self.fail('an unfolded mail names no sender')
+            if not snippet or not snippet.inner_text().strip():
+                self.fail('an unfolded mail shows no preview line')
+        self.shot('inbox-unfolded.png')
+
+        # The bottom one is the oldest, so it is the one the pane does *not*
+        # open by itself. Clicking it has to move the pane, or the rows are
+        # decoration.
+        if len(children) > 1:
+            children[-1].click()
+            page.wait_for_timeout(2000)
+            opened = page.query_selector_all('.o_mailpro_message_open')
+            if len(opened) != 1:
+                self.fail(f'{len(opened)} messages open after picking one, expected 1')
+            else:
+                stack = page.query_selector_all('.o_mailpro_message')
+                if stack and stack[0].evaluate(
+                        'el => el.classList.contains("o_mailpro_message_open")'):
+                    self.fail('picking the oldest mail opened the newest one')
+
+        # And it folds back: a chevron that only opens is a chevron that
+        # leaves the list longer every time somebody looks at a thread.
+        twist = group.query_selector('.o_mailpro_twist')
+        twist.click()
+        page.wait_for_timeout(600)
+        if group.query_selector_all('.o_mailpro_child'):
+            self.fail('the chevron did not fold the conversation back')
+        self.error_free('unfolding a conversation')
 
     def panes(self):
         """The dividers move, the side panes fold, and the browser remembers.

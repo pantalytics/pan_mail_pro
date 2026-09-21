@@ -303,6 +303,65 @@ class TestConversationApi(TransactionCase):
         self.assertEqual([m['subject'] for m in thread['messages']],
                          ['Second', 'First'])
 
+    # ------------------------------------------------------- under the chevron
+
+    def test_the_chevron_unfolds_the_mails_of_one_conversation(self):
+        """What the list draws under an unfolded row: who, when, one line."""
+        self._mail(subject='First')
+        self._mail(subject='Second')
+        rows = self.Conversation.conversation_messages('crm.lead', self.lead.id)
+        self.assertEqual(len(rows), 2)
+        for key in ('id', 'author', 'author_id', 'date', 'preview', 'unread'):
+            self.assertIn(key, rows[0], f'an unfolded mail draws {key}')
+
+    def test_an_unfolded_mail_carries_no_body(self):
+        """A list row needs a snippet, not a mail.
+
+        Twenty unfolded threads with the body on every row is the whole
+        mailbox over the wire to draw sixty lines of text, and the body is
+        what the conversation pane is for.
+        """
+        self._mail()
+        row = self.Conversation.conversation_messages('crm.lead', self.lead.id)[0]
+        self.assertNotIn('body', row)
+        self.assertEqual(row['preview'], 'Kunnen jullie de levertijd bevestigen?')
+
+    def test_the_unfolded_mails_read_newest_first(self):
+        """The same order as the row above them and as the pane they open."""
+        old = self._mail(subject='First')
+        new = self._mail(subject='Second')
+        old.write({'date': '2026-09-18 08:00:00'})
+        new.write({'date': '2026-09-19 08:00:00'})
+        rows = self.Conversation.conversation_messages('crm.lead', self.lead.id)
+        self.assertEqual([r['id'] for r in rows], [new.id, old.id])
+
+    def test_the_chevron_shows_the_correspondence_and_not_the_notes(self):
+        """The unfolded rows are what the row above them counted.
+
+        `count` on the conversation row is mail. A chevron that unfolded into
+        more rows than the row said it had would read as a list that cannot
+        count, and an internal note is not a mail the conversation had.
+        """
+        self._mail()
+        self.lead.message_post(body='<p>Bellen voor de prijs.</p>',
+                               message_type='comment')
+        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
+        rows = self.Conversation.conversation_messages('crm.lead', self.lead.id)
+        self.assertEqual(len(rows), row['count'])
+
+    def test_unfolding_is_for_people_who_read_a_mailbox(self):
+        """Every method on this layer is reachable over `call_kw`."""
+        outsider = self.env['res.users'].create({
+            'name': 'Buitenstaander',
+            'login': 'outsider@company.test',
+            'email': 'outsider@company.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        self._mail()
+        with self.assertRaises(AccessError):
+            self.Conversation.with_user(outsider).conversation_messages(
+                'crm.lead', self.lead.id)
+
     def test_notes_stay_out_of_a_screen_about_mail(self):
         self.env['mail.message'].create({
             'model': 'crm.lead',
