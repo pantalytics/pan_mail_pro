@@ -25,7 +25,7 @@ from odoo.exceptions import UserError
 from ... import encryption_utils
 from ...mail_provider_client import (
     ERROR_NO_RECIPIENTS, FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
-    FOLDER_SENT, FOLDER_TRASH,
+    FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
     ERROR_THROTTLED,
     ThrottledError,
 )
@@ -975,6 +975,23 @@ class GoogleGmailClient(models.AbstractModel):
         return messages
 
     # ---- message state ------------------------------------------------------
+
+    @api.model
+    def unread_message_ids(self, account, mailbox, folder=FOLDER_INBOX,
+                           limit=UNREAD_CAP):
+        """The unread message ids in one label (see contract).
+
+        `messages.list` answers ids and nothing else, which is exactly what
+        this asks for: no `messages.get` per hit, unlike `search_messages`.
+        """
+        params = {'maxResults': max(1, int(limit or UNREAD_CAP)),
+                  'q': '-in:chats is:unread',
+                  'labelIds': self._gmail_label_id(folder)}
+        data = self._api_get(
+            account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages',
+            params)
+        return [entry['id'] for entry in (data.get('messages') or [])
+                if entry.get('id')]
 
     @api.model
     def set_seen(self, account, mailbox, provider_message_ids, seen=True):

@@ -18,6 +18,13 @@ _logger = logging.getLogger(__name__)
 # minute, so five is minutes of trouble, not months of silence.
 SYNC_FAILURE_LIMIT = 5
 
+# How long a read-state refresh stays good. The Inbox asks for one every time a
+# mailbox is opened, and a reader clicking between folders is not four
+# questions for the provider. A minute is short enough that mail read in
+# Outlook goes quiet here almost at once, and long enough that the screen costs
+# one call per visit rather than one per click.
+READ_STATE_TTL = 60
+
 
 
 class PanMailMailbox(models.Model):
@@ -318,6 +325,14 @@ class PanMailMailbox(models.Model):
         help='Reset by the first run that succeeds. Once it reaches the '
              'escalation limit the mailbox goes to Error and a person has to '
              'look at it.',
+    )
+
+    read_state_synced = fields.Datetime(
+        string='Read State Refreshed',
+        readonly=True,
+        copy=False,
+        help='When this mailbox last asked its provider which messages are '
+             'unread. Throttles the refresh the Inbox asks for on every visit.',
     )
 
     # -------------------------------------------------------------------------
@@ -649,6 +664,109 @@ class PanMailMailbox(models.Model):
                 'sticky': sticky,
             },
         }
+
+    # -------------------------------------------------------------------------
+    # Read state: the provider says, Odoo mirrors
+    # -------------------------------------------------------------------------
+    def refresh_read_state(self, folder=FOLDER_INBOX, force=False):
+        """Bring `mail.message.x_is_read` in line with the provider.
+
+        One call per mailbox, never one per message: "which messages are
+        unread" is a single cheap query everywhere (`unread_message_ids`), and
+        the answer is a small set because unread mail is.
+
+        Two bounded writes rather than a sweep over the mailbox's history:
+        the messages the provider calls unread that Odoo calls read, and the
+        messages Odoo calls unread that the provider no longer does. Both are
+        the size of somebody's unread pile, not the size of the table.
+
+        Never raises. A provider that is unreachable leaves the mirror as it
+        was, which is the last thing it knew rather than a wrong answer; the
+        Inbox opening must not depend on a network call succeeding.
+
+        Returns:
+            int: how many messages changed state.
+        """
+        self.ensure_one()
+        # Every internal user may *read* this model, so a public method that
+        # calls the provider needs the same gate `action_sync_now` has: this
+        # asks a live mailbox a question about somebody's mail.
+        self._check_manager()
+        if not force and self.read_state_synced:
+            age = fields.Datetime.now() - self.read_state_synced
+            if age.total_seconds() < READ_STATE_TTL:
+                return 0
+        if not self._has_working_credentials():
+            return 0
+
+        client = self._get_client()
+        try:
+            account = client.resolve_receiving_account(self)
+            unread = set(client.unread_message_ids(account, self, folder))
+        except Exception:
+            _logger.warning(
+                '[Read State] Could not read unread mail for %s', self.email,
+                exc_info=True)
+            return 0
+
+        # Written with sudo: this mirrors a fact about the mailbox, and the
+        # reader who triggered the refresh may hold no write access to the
+        # documents these messages hang on. What they may *see* is decided by
+        # the Inbox's own read methods, not here.
+        Message = self.env['mail.message'].sudo()
+        mine = [('x_mailbox_id', '=', self.id)]
+        changed = 0
+
+        if unread:
+            to_unread = Message.search(
+                mine + [('x_provider_message_id', 'in', list(unread)),
+                        ('x_is_read', '=', True)])
+            if to_unread:
+                to_unread.write({'x_is_read': False})
+                changed += len(to_unread)
+
+        # Everything this mailbox still calls unread that the provider did not
+        # name. A message read in another folder counts as read here, which is
+        # what a reader who moved it out of the Inbox meant.
+        stale = Message.search(mine + [('x_is_read', '=', False)])
+        stale = stale.filtered(lambda m: m.x_provider_message_id not in unread)
+        if stale:
+            stale.write({'x_is_read': True})
+            changed += len(stale)
+
+        self.sudo().write({'read_state_synced': fields.Datetime.now()})
+        if changed:
+            _logger.info('[Read State] %s: %s message(s) re-mirrored from the '
+                         'provider', self.email, changed)
+        return changed
+
+    def push_read_state(self, messages, read=True):
+        """Tell the provider what Odoo just marked, and do not insist.
+
+        Best effort by design: the contract calls marking the one mail write
+        that undoes itself, so a provider that is down costs a disagreement
+        the next refresh settles, not a button that does not work. The Odoo
+        write has already happened and is never rolled back from here.
+
+        Returns:
+            int: how many messages the provider reported marking.
+        """
+        self.ensure_one()
+        self._check_manager()
+        handles = [m.x_provider_message_id for m in messages
+                   if m.x_provider_message_id]
+        if not handles or not self._has_working_credentials():
+            return 0
+        client = self._get_client()
+        try:
+            account = client.resolve_receiving_account(self)
+            return client.set_seen(account, self, handles, seen=read) or 0
+        except Exception:
+            _logger.warning(
+                '[Read State] Could not mark %s message(s) %s at %s',
+                len(handles), 'read' if read else 'unread', self.email,
+                exc_info=True)
+            return 0
 
     def action_sync_now(self):
         """Manually trigger email sync for this mailbox."""

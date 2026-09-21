@@ -113,21 +113,16 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(by_id['inbox'], 1)
         self.assertEqual(by_id['sent'], 0)
 
-    def test_unread_is_odoos_own_needaction_row(self):
-        """The filter and the dot on the list row read the same fact.
+    def test_unread_is_the_mailbox_s_own_read_state(self):
+        """The filter and the dot on the list row read the same column.
 
-        `needaction` is Odoo's own search over `mail.notification`, so a
-        conversation is unread here exactly when the list draws it unread. A
-        flag of ours would be a second answer to one question, and the two
-        would disagree the first time somebody read the mail somewhere else.
+        `x_is_read` is mirrored from the provider, so a conversation is unread
+        here exactly when it is unread in Outlook. Odoo's `needaction` row is
+        not consulted: it is per user and answers a different question, and
+        the two would disagree the first time a colleague read the mail.
         """
         message = self._mail()
-        self.env['mail.notification'].create({
-            'mail_message_id': message.id,
-            'res_partner_id': self.env.user.partner_id.id,
-            'notification_type': 'inbox',
-            'is_read': False,
-        })
+        message.x_is_read = False
         rows = self.Conversation.search_conversations(
             mailbox_id=self.mailbox.id, filter_name='unread')
         self.assertEqual(len(rows), 1)
@@ -136,8 +131,25 @@ class TestConversationApi(TransactionCase):
             mailbox_id=self.mailbox.id, folder='inbox')['filters']}
         self.assertEqual(counts['unread'], 1)
 
-        self.env['mail.notification'].search([
-            ('mail_message_id', '=', message.id)]).is_read = True
+        message.x_is_read = True
+        self.assertFalse(self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id, filter_name='unread'))
+
+    def test_an_odoo_notification_does_not_make_a_conversation_unread(self):
+        """The bell and the dot are two facts.
+
+        A mention on a mail the mailbox has read leaves the Inbox alone; it is
+        Discuss that still wants something from this reader.
+        """
+        message = self._mail()
+        self.env['mail.notification'].create({
+            'mail_message_id': message.id,
+            'res_partner_id': self.env.user.partner_id.id,
+            'notification_type': 'inbox',
+            'is_read': False,
+        })
+        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
+        self.assertFalse(row['unread'])
         self.assertFalse(self.Conversation.search_conversations(
             mailbox_id=self.mailbox.id, filter_name='unread'))
 
@@ -262,17 +274,12 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(len(theirs), 1)
         self.assertEqual(theirs[0]['subject'], 'Via support')
 
-    def test_unread_is_odoo_s_own_needaction_row(self):
+    def test_the_row_is_unread_when_the_mailbox_has_not_read_it(self):
         message = self._mail()
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
         self.assertFalse(row['unread'])
 
-        self.env['mail.notification'].create({
-            'mail_message_id': message.id,
-            'res_partner_id': self.env.user.partner_id.id,
-            'notification_type': 'inbox',
-            'is_read': False,
-        })
+        message.x_is_read = False
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
         self.assertTrue(row['unread'])
 
@@ -295,6 +302,65 @@ class TestConversationApi(TransactionCase):
         thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
         self.assertEqual([m['subject'] for m in thread['messages']],
                          ['Second', 'First'])
+
+    # ------------------------------------------------------- under the chevron
+
+    def test_the_chevron_unfolds_the_mails_of_one_conversation(self):
+        """What the list draws under an unfolded row: who, when, one line."""
+        self._mail(subject='First')
+        self._mail(subject='Second')
+        rows = self.Conversation.conversation_messages('crm.lead', self.lead.id)
+        self.assertEqual(len(rows), 2)
+        for key in ('id', 'author', 'author_id', 'date', 'preview', 'unread'):
+            self.assertIn(key, rows[0], f'an unfolded mail draws {key}')
+
+    def test_an_unfolded_mail_carries_no_body(self):
+        """A list row needs a snippet, not a mail.
+
+        Twenty unfolded threads with the body on every row is the whole
+        mailbox over the wire to draw sixty lines of text, and the body is
+        what the conversation pane is for.
+        """
+        self._mail()
+        row = self.Conversation.conversation_messages('crm.lead', self.lead.id)[0]
+        self.assertNotIn('body', row)
+        self.assertEqual(row['preview'], 'Kunnen jullie de levertijd bevestigen?')
+
+    def test_the_unfolded_mails_read_newest_first(self):
+        """The same order as the row above them and as the pane they open."""
+        old = self._mail(subject='First')
+        new = self._mail(subject='Second')
+        old.write({'date': '2026-09-18 08:00:00'})
+        new.write({'date': '2026-09-19 08:00:00'})
+        rows = self.Conversation.conversation_messages('crm.lead', self.lead.id)
+        self.assertEqual([r['id'] for r in rows], [new.id, old.id])
+
+    def test_the_chevron_shows_the_correspondence_and_not_the_notes(self):
+        """The unfolded rows are what the row above them counted.
+
+        `count` on the conversation row is mail. A chevron that unfolded into
+        more rows than the row said it had would read as a list that cannot
+        count, and an internal note is not a mail the conversation had.
+        """
+        self._mail()
+        self.lead.message_post(body='<p>Bellen voor de prijs.</p>',
+                               message_type='comment')
+        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
+        rows = self.Conversation.conversation_messages('crm.lead', self.lead.id)
+        self.assertEqual(len(rows), row['count'])
+
+    def test_unfolding_is_for_people_who_read_a_mailbox(self):
+        """Every method on this layer is reachable over `call_kw`."""
+        outsider = self.env['res.users'].create({
+            'name': 'Buitenstaander',
+            'login': 'outsider@company.test',
+            'email': 'outsider@company.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        self._mail()
+        with self.assertRaises(AccessError):
+            self.Conversation.with_user(outsider).conversation_messages(
+                'crm.lead', self.lead.id)
 
     def test_notes_stay_out_of_a_screen_about_mail(self):
         self.env['mail.message'].create({
@@ -407,6 +473,74 @@ class TestConversationApi(TransactionCase):
         thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
         self.assertEqual(thread['files'], {'ids': [], 'store': {}})
         self.assertEqual(thread['activities'], [])
+
+    # -------------------------------------------------- the reply we sent
+
+    def _sent_reply(self, subject='Re: Offerte', message_type='comment',
+                    is_internal=False):
+        """A reply written on this screen: a chatter post that went out.
+
+        Odoo types every chatter post `comment`, or `auto_comment` when a
+        template wrote it. Nothing gives it `message_type = 'email'` -- the
+        sync reserves that for what it imported -- so `x_direction`, stamped
+        by `mail.mail` once the provider accepted it, is the only column that
+        says this mail left the building.
+        """
+        return self.env['mail.message'].create({
+            'model': 'crm.lead',
+            'res_id': self.lead.id,
+            'message_type': message_type,
+            'is_internal': is_internal,
+            'subject': subject,
+            'body': '<p>De levertijd is drie weken.</p>',
+            'x_direction': 'outgoing',
+            'x_mailbox_id': self.mailbox.id,
+        })
+
+    def test_a_reply_this_screen_sent_is_in_the_conversation(self):
+        """The one message the reader looks for after pressing Send."""
+        self._mail()
+        self._sent_reply()
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual([m['subject'] for m in thread['messages']],
+                         ['Re: Offerte', 'Offerte'])
+        self.assertEqual([m['kind'] for m in thread['messages']],
+                         ['mail', 'mail'])
+
+    def test_a_reply_this_screen_sent_is_in_sent(self):
+        """Sent is where somebody looks when the conversation does not show
+        it, so it has to be the same answer."""
+        self._sent_reply()
+        rows = self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id, folder='sent')
+        self.assertEqual([row['subject'] for row in rows], ['Re: Offerte'])
+        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id)['folders']}
+        self.assertEqual(counts['sent'], 1)
+
+    def test_a_template_mail_is_correspondence_too(self):
+        """A quote sent from the record is an `auto_comment`, and the customer
+        reads it as mail like any other."""
+        self._sent_reply(subject='Offerte S00031', message_type='auto_comment')
+        rows = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)
+        self.assertEqual([row['subject'] for row in rows], ['Offerte S00031'])
+
+    def test_a_note_that_was_mailed_to_followers_is_still_a_note(self):
+        """Odoo mails an internal note to the followers, so it goes out too --
+        and an assignment notification with it. Neither is correspondence."""
+        self._mail()
+        self._sent_reply(subject='Marge is krap', is_internal=True)
+        self._sent_reply(subject='Toegewezen', message_type='user_notification')
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual([m['subject'] for m in thread['messages']], ['Offerte'])
+
+    def test_door_1_counts_the_reply_it_sent(self):
+        """Open in mail reads the same definition, or the button disagrees
+        with the screen it opens."""
+        self._mail()
+        self._sent_reply()
+        door = self.Conversation.record_conversations('crm.lead', self.lead.id)
+        self.assertEqual(door['here'], 2)
 
     # ----------------------------------------------------------------- access
 

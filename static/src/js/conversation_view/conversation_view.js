@@ -266,6 +266,13 @@ export class ConversationView extends Component {
             limit: PAGE,
             hasMore: false,
             selected: null,
+            // The chevron, the way Outlook draws a conversation list: a row
+            // says how many mails are in there, and unfolding it says which.
+            // Keyed by the row's own key, so folding one thread says nothing
+            // about the next. `thread` is the cache the fold reads back.
+            unfolded: {},
+            thread: {},
+            threadLoading: {},
             // What a new mail is being written on, while one is: the record
             // picked in the dialog, by model, id and name. The composer reads
             // its target from its own context; this is for the head.
@@ -308,6 +315,10 @@ export class ConversationView extends Component {
                 this.state.mailboxId = null;
             }
             await this.refresh({ select: this.openedOn ? this.openedOn.select : true });
+            // Deliberately not awaited: the list is already on screen and
+            // this only corrects the dots on it. Waiting would make the first
+            // paint as slow as the provider is.
+            this.refreshReadState();
         });
     }
 
@@ -377,10 +388,44 @@ export class ConversationView extends Component {
         }
     }
 
+    /**
+     * Ask the provider which mail is unread, then redraw if it disagreed.
+     *
+     * Beside the list load rather than before it: the screen paints from what
+     * Odoo already knows, and the correction arrives a moment later if there
+     * is one. Waiting for a network call before the first row appears would
+     * make every visit to the Inbox as slow as the provider is.
+     *
+     * Throttled server-side per mailbox, so clicking between folders costs one
+     * call a minute, and silent on failure: an unreachable provider leaves the
+     * mirror as it was.
+     */
+    async refreshReadState() {
+        try {
+            const changed = await this.orm.silent.call(
+                "pan.mail.conversation", "refresh_read_state", [], {
+                    mailbox_id: this.state.mailboxId,
+                });
+            if (changed) {
+                await this.refresh({ keepSelection: true });
+            }
+        } catch (error) {
+            console.warn("[Mail Pro] could not refresh read state", error);
+        }
+    }
+
     async refresh({ keepSelection = false, select = true } = {}) {
         const seq = ++this.listSeq;
         this.state.loading = true;
         this.state.error = "";
+        if (!keepSelection) {
+            // Another folder, filter or search is another list, and an
+            // unfolded thread from the previous one would reopen under
+            // whichever row happens to land on that key.
+            this.state.unfolded = {};
+            this.state.thread = {};
+            this.state.threadLoading = {};
+        }
         try {
             const args = {
                 mailbox_id: this.state.mailboxId,
@@ -575,6 +620,78 @@ export class ConversationView extends Component {
         await this.select(conversation);
     }
 
+    /** The key a conversation's unfolded thread is cached under. */
+    conversationKey(conversation) {
+        // A live row has no Odoo message to key on. It is also never
+        // unfoldable -- one provider message is one row, count 1, no chevron
+        // -- so this only has to be a key nothing else answers to.
+        return conversation.message_id || conversation.live_id;
+    }
+
+    /** Is this conversation unfolded into the mails it is made of? */
+    isUnfolded(conversation) {
+        return !!this.state.unfolded[this.conversationKey(conversation)];
+    }
+
+    /** Those mails, or nothing at all while the read is still out. */
+    threadOf(conversation) {
+        return this.state.thread[this.conversationKey(conversation)] || [];
+    }
+
+    isThreadLoading(conversation) {
+        return !!this.state.threadLoading[this.conversationKey(conversation)];
+    }
+
+    /**
+     * The chevron: unfold a conversation into its own mails, one line each.
+     *
+     * Not a second way to open a conversation. Unfolding is looking at what
+     * is in there; the row above it is still what opens it, and a chevron
+     * that also switched the pane would cost the reader the conversation
+     * they had open to answer "how many of these are from her".
+     *
+     * One read per conversation, kept until the list is rebuilt. Folding
+     * keeps the rows, because folding and unfolding the same thread twice is
+     * not two questions.
+     */
+    async toggleUnfold(conversation) {
+        const key = this.conversationKey(conversation);
+        if (this.state.unfolded[key]) {
+            this.state.unfolded[key] = false;
+            return;
+        }
+        this.state.unfolded[key] = true;
+        if (this.state.thread[key]) {
+            return;
+        }
+        this.state.threadLoading[key] = true;
+        try {
+            this.state.thread[key] = await this.orm.call(
+                "pan.mail.conversation", "conversation_messages", [], {
+                    model: conversation.model,
+                    res_id: conversation.res_id,
+                    message_id: conversation.message_id,
+                    mailbox_id: this.state.mailboxId,
+                });
+        } catch (error) {
+            // Fold it back rather than leave an empty box standing open: the
+            // row above it still opens the conversation, which is the way in
+            // that matters.
+            this.state.unfolded[key] = false;
+            this.notification.add(
+                _t("Could not read that conversation."), { type: "warning" });
+            console.warn("[Mail Pro] could not unfold a conversation", error);
+        } finally {
+            this.state.threadLoading[key] = false;
+        }
+    }
+
+    /** A mail picked from under the chevron: the pane opens on that one. */
+    async pickMessage(conversation, message) {
+        this.panes.showConversation();
+        await this.select(conversation, { openMessageId: message.id });
+    }
+
     /** The step back, on a phone. Nothing is deselected: the list marks it. */
     backToList() {
         this.composer.close();
@@ -582,7 +699,16 @@ export class ConversationView extends Component {
         this.panes.showConversationList();
     }
 
-    async select(conversation) {
+    /**
+     * Open a conversation in the pane.
+     *
+     * `openMessageId` is the mail the reader clicked under the chevron. It is
+     * seeded into `state.open` before the read, because `readConversation`
+     * keeps what was already open and only falls back to the newest message
+     * when nothing is -- so the mail you picked is the one that is unfolded
+     * when the pane draws, and not the one at the top of the thread.
+     */
+    async select(conversation, { openMessageId = null } = {}) {
         // A reply belongs to the conversation it answers, and this is another
         // one. The draft goes with it: nothing was stored yet, and a composer
         // left open over the wrong conversation is worse than retyping two lines.
@@ -593,7 +719,7 @@ export class ConversationView extends Component {
         // Nothing from the previous conversation stays under the new subject.
         this.state.conversation = EMPTY_CONVERSATION();
         this.state.activityIds = [];
-        this.state.open = {};
+        this.state.open = openMessageId ? { [openMessageId]: true } : {};
         this.state.quotes = {};
         this.state.details = {};
         this.split.clear();
@@ -603,6 +729,82 @@ export class ConversationView extends Component {
             return;
         }
         await this.readConversation();
+        await this.markRead(conversation);
+    }
+
+    /**
+     * Opening a conversation reads it, the way every mail client means it.
+     *
+     * Always asked, even for a conversation the list already drew as read:
+     * the mailbox's read state and your own Odoo Inbox rows are two different
+     * facts, and the bell can still be ringing for a mail the mailbox calls
+     * read. The server marks only what moved, so saying so twice costs one
+     * query and no provider call.
+     *
+     * Silent on failure. A dot that is a second out of date is not worth an
+     * error over a conversation the reader has in front of them.
+     */
+    async markRead(conversation) {
+        try {
+            await this.orm.silent.call(
+                "pan.mail.conversation", "set_read", [], {
+                    model: conversation.model,
+                    res_id: conversation.res_id,
+                    message_id: conversation.message_id,
+                    mailbox_id: this.state.mailboxId,
+                    read: true,
+                });
+        } catch (error) {
+            console.warn("[Mail Pro] could not mark the conversation read", error);
+            return;
+        }
+        this.setUnreadLocally(conversation, false);
+    }
+
+    /**
+     * Put a conversation back to unread: the one way out of "I opened it, I
+     * cannot deal with it now".
+     *
+     * The list is corrected here rather than by reloading it. A reload would
+     * re-sort, lose the reader's place, and on the Unread filter make the
+     * conversation they are reading jump into the list under them.
+     */
+    async markUnread() {
+        const conversation = this.state.selected;
+        if (!conversation) {
+            return;
+        }
+        try {
+            await this.orm.call("pan.mail.conversation", "set_read", [], {
+                model: conversation.model,
+                res_id: conversation.res_id,
+                message_id: conversation.message_id,
+                mailbox_id: this.state.mailboxId,
+                read: false,
+            });
+        } catch (error) {
+            console.warn("[Mail Pro] could not mark the conversation unread", error);
+            return;
+        }
+        this.setUnreadLocally(conversation, true);
+    }
+
+    /** The dot, on the row and on the open conversation, without a reload. */
+    setUnreadLocally(conversation, unread) {
+        for (const row of this.state.conversations) {
+            if (this.sameConversation(row, conversation)) {
+                row.unread = unread;
+            }
+        }
+        if (this.state.selected
+            && this.sameConversation(this.state.selected, conversation)) {
+            this.state.selected.unread = unread;
+        }
+        // Reading a conversation reads every mail in it, so the rows under
+        // the chevron cannot keep a dot the row above them just lost.
+        for (const row of this.threadOf(conversation)) {
+            row.unread = unread;
+        }
     }
 
     /**
@@ -794,6 +996,9 @@ export class ConversationView extends Component {
         }
         this.state.limit = PAGE;
         await this.refresh();
+        // A mailbox the reader just opened is one whose dots are worth being
+        // right. Throttled server-side, so switching back and forth is free.
+        this.refreshReadState();
     }
 
     onSearchInput(event) {

@@ -1,6 +1,26 @@
 # Read, unread, and handing a conversation over
 
-Status: **design only.** Nothing below is built.
+Status: **built**, 19.0.15.4.0, except the handoff in section 5. The mirror,
+the refresh, the write-back and the bridge to Odoo's own notifications all
+ship; the design behind them has moved into ARCHITECTURE.md section 9.18 and
+this file stays for the reasoning and for what was deliberately left out.
+
+Three things landed differently from the plan below, each for a reason:
+
+- **The provider handle lives on `mail.message` (`x_provider_message_id`), not
+  on the ref index.** Section 3 said the ref row, on the grounds that it is
+  where a wire id lives. But that table is keyed on (Message-ID, message) and
+  a provider handle is neither: it belongs to (message, mailbox), which is
+  exactly what `mail.message` already carries next to `x_provider_thread_id`.
+- **The refresh is a call of its own, on opening the Inbox**, rather than
+  riding the sync's listing. The listing only carries the messages inside the
+  sync window, so mail read in Outlook last week would never have gone quiet;
+  one `unread_message_ids()` per mailbox is cheaper than that compromise and
+  correct for the whole mailbox. Nothing refreshes on the cron: a mirror
+  nobody is looking at does not need to be right.
+- **No `u` shortcut**, and no toggle. There is one quiet button on the open
+  conversation, Mark unread, because the way to mark something read is to
+  read it.
 
 The requirement in one sentence: **open your mailbox in Outlook, then open it
 in Mail Pro, and see the same thing.** Read state is one fact about a mailbox,

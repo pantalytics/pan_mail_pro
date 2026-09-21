@@ -36,6 +36,7 @@ from . import test_mailbox_permission
 from . import test_incoming_sync_gmail
 from . import test_mail_lens
 from . import test_mail_coverage
+from . import test_read_state
 from . import test_neutralized
 from . import test_rename_migration
 from . import test_sync_sends_nothing

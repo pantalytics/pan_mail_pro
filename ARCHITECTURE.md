@@ -116,6 +116,34 @@ documents, so "record" without a qualifier reads as either side. Pane 4 is the
 Sizing, folding and the three window shapes are in
 `static/src/js/conversation_view/use_panes.js`.
 
+#### A row in the conversation list, and what unfolds under it
+
+One row per conversation, not per mail: who it is with, the subject, one line
+of the newest mail, the record it is linked to, and how many mails are in it.
+The snippet is `pan.mail.conversation._preview()`, and it stops where the
+quoted history starts -- the same markers the conversation pane folds -- so a
+two-line answer on top of last week's thread previews as the answer.
+
+A row of more than one mail carries a **chevron**. Unfolding it asks
+`conversation_messages()` and draws one line per mail underneath: sender, date,
+snippet. Three things it deliberately is not:
+
+- **Not a second read of the conversation.** `read_conversation()` carries a
+  body per message because the pane renders them; a list needs three fields,
+  so the rows come from `_thread_row()` and a thread's worth of HTML does not
+  cross the wire to draw ten lines of text.
+- **Not a second way to open a conversation.** The chevron unfolds and nothing
+  else. The row above it is still what opens the conversation, so asking "how
+  many of these are from her" never costs the reader the conversation they had
+  open.
+- **Not another tab.** The unfolded rows are correspondence, the same set the
+  row's own count counted. A note is not a mail the conversation had, and the
+  tab strip over the open conversation is where that reading lives.
+
+Clicking one opens the conversation on **that** mail: the id is seeded into
+`state.open` before the read, and `readConversation()` only falls back to the
+newest message when nothing is open.
+
 ### Provider abstraction
 
 Everything wire-specific — how a mail is sent, how remote messages are listed
@@ -382,6 +410,14 @@ Log note is the same composer in the same pane, with the note subtype instead
 of the comment one and no recipients, so the screen still writes in exactly
 one place. The strip steps aside while somebody is writing: the pane has one
 job then, and a tab click would drop the draft.
+
+19.0.15.5.0 leaves the conversation *under* the composer instead of in its
+place. Outlook's shape: what is being written on top, the mail it answers
+below it, one scrollbar over both (`.o_mailpro_composing`). The stack is the
+same one the Mail tab draws -- `pan_mail_pro.ConversationMessages`, one
+template and two call sites -- so a message further down still opens where it
+is while the draft stays put. Replacing the thread with the composer had put
+the sentence somebody was answering behind a Discard.
 
 19.0.13.1.0 gives each tab one writing action instead of both: Reply on Mail,
 Log note on Mail + notes, and neither on Files or Activities, which are lists.
@@ -2045,6 +2081,58 @@ server half lives in `pantalytics/mail-pro-admin`.
   billing exists.
 - `PAN_MAIL_PRO_LICENSE_URL` and `PAN_MAIL_PRO_LICENSE_PUBLIC_KEY` point a
   deployment at a staging server. Environment only, never a settings field.
+
+### 9.18 Read state belongs to the mailbox, not to a user
+
+Open a mailbox in Outlook, then open it in Mail Pro, and see the same thing.
+That is the requirement, and it decides everything else: **the provider owns
+read state and Odoo mirrors it.**
+
+- `mail.message.x_is_read` is that mirror, and `x_provider_message_id` is the
+  handle the mailbox knows the message by (a Graph id, a Gmail id, an
+  `inbox:uidvalidity:uid` reference). Both are written at import, from the
+  `is_read` every client already fills in the normalized message.
+- The mirror exists because the conversation list has to **filter, sort and
+  page** on read state. That is a SQL clause, and a set held in Python cannot
+  be one. It is not a second opinion: on any disagreement the provider wins.
+- `pan.mail.mailbox.refresh_read_state()` is one call per mailbox --
+  `unread_message_ids()` on the contract, which is `$filter=isRead eq false`,
+  `q=is:unread` and `UID SEARCH UNSEEN`. Handles only. Two bounded writes
+  follow: the messages the provider calls unread that Odoo calls read, and the
+  ones Odoo still calls unread that the provider no longer names. Both are the
+  size of somebody's unread pile, never the size of the table.
+- `pan.mail.mailbox.push_read_state()` is the other direction, through
+  `set_seen()`. Best effort: the contract calls marking the one mail write
+  that undoes itself, so a provider that is down costs a disagreement the next
+  refresh settles, never a button that does not work.
+- **Refreshed when the Inbox is opened, not on a schedule.** A mirror nobody
+  is looking at does not need to be right, and the sync cron runs every
+  minute. Throttled per mailbox by `READ_STATE_TTL`, so a reader clicking
+  between folders costs one provider call a minute.
+- **Per-user read state is dropped.** A mailbox has one `\Seen`. On a personal
+  mailbox there is one person anyway; on a shared one, four private unread
+  flags is four people answering the same mail.
+- **The column is added with `default=True`**, so the upgrade that installs it
+  writes every existing `mail_message` row once. That is the price of a
+  filterable column on a table this size, paid once; calling an unmirrored
+  message unread instead would light the whole database up on the first
+  screen.
+- **At most `UNREAD_CAP` handles per refresh.** A mailbox sitting on thousands
+  of unread mails gets a truthful subset and the rest stays as it was.
+
+**Odoo's own `mail.notification` needaction row is a different fact**, and the
+Inbox no longer reads it. It is per user and answers "does this Odoo
+notification still want me", which has a screen of its own (Discuss, the
+bell). The mailbox's read state answers "has this mailbox read this mail".
+They can disagree on one message and neither is wrong.
+
+There is exactly one bridge, and it runs one way: **reading a conversation in
+the Inbox clears the reader's own unread inbox rows for it**, through Odoo's
+own `set_message_done()`, which sends the bus message that makes the bell
+count down while you read. Never another user's -- a mention is addressed to a
+person -- and never in reverse: marking a conversation unread puts the mailbox
+back to unread and leaves the bell alone. Mail Pro clears notification rows
+and never creates one; the import boundary of 9.10 does not move.
 
 ## 10. Security and permissions
 

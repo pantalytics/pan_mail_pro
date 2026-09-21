@@ -502,6 +502,25 @@ class Checks:
             selected = page.query_selector_all('.o_mailpro_item_active')
             if len(selected) != 1:
                 self.fail(f'{len(selected)} conversations look selected, expected 1')
+            # And a line of the mail under the subject, the way every mail
+            # client draws a list. It is the one part of the row that can go
+            # empty without going wrong: the snippet stops where the quoted
+            # history starts, so a mail that opens with a quote previews as
+            # an empty span, which is invisible rather than visibly broken.
+            blank = []
+            echoes = []
+            for el in items:
+                snippet = el.query_selector('.o_mailpro_preview')
+                text = snippet.inner_text().strip() if snippet else ''
+                subject = el.query_selector('.o_mailpro_subject')
+                if not text:
+                    blank.append(el)
+                elif subject and text == subject.inner_text().strip():
+                    echoes.append(el)
+            if blank:
+                self.fail(f'{len(blank)} conversation rows show no preview line')
+            if echoes:
+                self.fail(f'{len(echoes)} previews are a second copy of the subject')
 
         messages = page.query_selector_all('.o_mailpro_message')
         if not messages:
@@ -673,6 +692,18 @@ class Checks:
                 # whole reason this is a pane and not a dialog.
                 if not page.query_selector('.o_mailpro_odoo_record .o_form_view'):
                     self.fail('the record pane went away while replying')
+                # And so does the mail being answered: Outlook's shape, the
+                # reply on top and the conversation under it. Replacing the
+                # thread with the composer is what put the sentence somebody
+                # is answering behind a Discard.
+                history = page.query_selector(
+                    '.o_mailpro_composing .o_mailpro_messages .o_mailpro_message')
+                if not history:
+                    self.fail('the conversation went away while replying')
+                else:
+                    form = page.query_selector('.o_mailpro_composing .o_mailpro_composer')
+                    if history.bounding_box()['y'] <= form.bounding_box()['y']:
+                        self.fail('the conversation sits above the reply, not under it')
                 self.shot('inbox-reply.png')
                 # A dialog on top of the reply is this screen's failure mode:
                 # the pane renders, something throws behind it, and the next
@@ -688,6 +719,11 @@ class Checks:
                     self.fail('an open reply cannot be discarded')
                 else:
                     discard.click()
+                    # Not `.o_mailpro_messages`: the thread is on screen
+                    # while the reply is open too. What Discard closes is the
+                    # composer, so that is what has to go.
+                    page.wait_for_selector('.o_mailpro_composer', state='detached',
+                                           timeout=15000)
                     page.wait_for_selector('.o_mailpro_messages', timeout=15000)
                     page.wait_for_timeout(600)
             left_open = self.dialog_in_the_way()
@@ -725,9 +761,15 @@ class Checks:
                     '.o_mailpro_conversation_head button:has-text("Discard")')
                 if discard:
                     discard.click()
+                    # Not `.o_mailpro_messages`: the thread is on screen
+                    # while the reply is open too. What Discard closes is the
+                    # composer, so that is what has to go.
+                    page.wait_for_selector('.o_mailpro_composer', state='detached',
+                                           timeout=15000)
                     page.wait_for_selector('.o_mailpro_messages', timeout=15000)
                     page.wait_for_timeout(600)
 
+        self.unfolding()
         self.panes()
         self.zoom()
 
@@ -1317,6 +1359,91 @@ class Checks:
         if not self.visible('.o_mailpro_conversation_list'):
             self.fail('Back did not bring the list back on a phone')
 
+    def unfolding(self):
+        """The chevron: a conversation unfolds into the mails it is made of.
+
+        Three things a browser proves and no Python test can. That the
+        chevron is only offered where there is something behind it -- a
+        one-mail conversation that unfolds into one mail is a control that
+        lies. That it unfolds as many rows as the row above it says it has.
+        And that clicking one of them opens the conversation pane *on that
+        mail*, which is the whole reason the rows are clickable and the part
+        that is a seeded `state.open` rather than a method anybody can call.
+        """
+        page = self.page
+        rows = page.query_selector_all('.o_mailpro_group')
+        if not rows:
+            self.fail('the conversation list draws no rows to unfold')
+            return
+
+        # The chevron is a claim about the row it sits on, so read the claim.
+        for row in rows:
+            count = row.query_selector('.o_mailpro_muted')
+            said = count.inner_text().strip() if count else ''
+            twist = row.query_selector('.o_mailpro_twist:not(.o_mailpro_twist_blank)')
+            if said == '1 message' and twist:
+                self.fail('a one-mail conversation offers a chevron')
+            if said.endswith('messages') and not twist:
+                self.fail(f'a conversation of {said} has no chevron')
+
+        group = None
+        for row in rows:
+            if row.query_selector('.o_mailpro_twist:not(.o_mailpro_twist_blank)'):
+                group = row
+                break
+        if not group:
+            self.fail('no seeded conversation holds more than one mail')
+            return
+
+        expected = int(group.query_selector('.o_mailpro_muted')
+                       .inner_text().strip().split()[0])
+        group.query_selector('.o_mailpro_twist').click()
+        try:
+            page.wait_for_selector('.o_mailpro_child', timeout=15000)
+        except Exception:
+            self.fail('the chevron unfolded nothing')
+            return
+        page.wait_for_timeout(600)
+        children = group.query_selector_all('.o_mailpro_child')
+        if len(children) != expected:
+            self.fail(f'the chevron unfolded {len(children)} mails, '
+                      f'the row says {expected}')
+        # Same three things as the row above them, about one mail each.
+        for child in children:
+            if child.evaluate('el => el.tagName') != 'BUTTON':
+                self.fail('an unfolded mail is not a button')
+            author = child.query_selector('.o_mailpro_from')
+            snippet = child.query_selector('.o_mailpro_preview')
+            if not author or not author.inner_text().strip():
+                self.fail('an unfolded mail names no sender')
+            if not snippet or not snippet.inner_text().strip():
+                self.fail('an unfolded mail shows no preview line')
+        self.shot('inbox-unfolded.png')
+
+        # The bottom one is the oldest, so it is the one the pane does *not*
+        # open by itself. Clicking it has to move the pane, or the rows are
+        # decoration.
+        if len(children) > 1:
+            children[-1].click()
+            page.wait_for_timeout(2000)
+            opened = page.query_selector_all('.o_mailpro_message_open')
+            if len(opened) != 1:
+                self.fail(f'{len(opened)} messages open after picking one, expected 1')
+            else:
+                stack = page.query_selector_all('.o_mailpro_message')
+                if stack and stack[0].evaluate(
+                        'el => el.classList.contains("o_mailpro_message_open")'):
+                    self.fail('picking the oldest mail opened the newest one')
+
+        # And it folds back: a chevron that only opens is a chevron that
+        # leaves the list longer every time somebody looks at a thread.
+        twist = group.query_selector('.o_mailpro_twist')
+        twist.click()
+        page.wait_for_timeout(600)
+        if group.query_selector_all('.o_mailpro_child'):
+            self.fail('the chevron did not fold the conversation back')
+        self.error_free('unfolding a conversation')
+
     def panes(self):
         """The dividers move, the side panes fold, and the browser remembers.
 
@@ -1556,6 +1683,70 @@ class Checks:
         pane = page.query_selector('.o_mailpro_conversation_list')
         if not pane or not pane.is_visible():
             self.fail('the reload came back zoomed on the record')
+
+    def read_state(self):
+        """Read and unread, and the correction reaching the database.
+
+        Three things a Python test cannot see. That opening a conversation
+        marks it read without anybody clicking anything, that Mark unread puts
+        the dot back on the row the reader is looking at rather than
+        reshuffling the list under them, and that both of those are a column
+        in the database afterwards and not a class on a div.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            self.fail('there is no Inbox menu')
+            return
+
+        page = self.page
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_item', timeout=30000)
+        except Exception:
+            self.fail('the Inbox did not render for the read-state check')
+            return
+        page.wait_for_timeout(1500)
+
+        def unread_in_db():
+            return self.call('mail.message', 'search_count',
+                             [('x_is_read', '=', False)])
+
+        active = page.query_selector('.o_mailpro_item_active')
+        if not active:
+            self.fail('no conversation is open to read')
+            return
+        if active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
+            self.fail('the conversation that is open still reads as unread')
+
+        button = page.query_selector('.o_mailpro_mark_unread')
+        if not button:
+            self.fail('an open conversation offers no way to mark it unread')
+            return
+        before = unread_in_db()
+        button.click()
+        page.wait_for_timeout(1500)
+        active = page.query_selector('.o_mailpro_item_active')
+        if not active:
+            self.fail('marking unread lost the conversation the reader had open')
+            return
+        if not active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
+            self.fail('marking unread left the row reading as read')
+        after = unread_in_db()
+        if after <= before:
+            self.fail('marking unread wrote nothing to the database')
+        self.shot('inbox-unread.png')
+
+        # Opening it again is how it becomes read: there is one button here
+        # and not a toggle, because reading a mail is what reads a mail.
+        active.click()
+        page.wait_for_timeout(1500)
+        active = page.query_selector('.o_mailpro_item_active')
+        if active and active.evaluate(
+                'el => el.classList.contains("o_mailpro_item_unread")'):
+            self.fail('re-opening the conversation did not mark it read again')
+        if unread_in_db() != before:
+            self.fail('re-opening the conversation did not clear it in the database')
+        self.error_free('Inbox read state')
 
     # -- The provider form ----------------------------------------------------
 
@@ -2143,6 +2334,7 @@ def main():
         checks.chatter_door()
         checks.live_folder()
         checks.linking()
+        checks.read_state()
         checks.improve()
         checks.provider_form()
         checks.connect_banner()
