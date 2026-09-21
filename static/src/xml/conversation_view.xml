@@ -309,59 +309,108 @@
                         </div>
                     </t>
                     <t t-else="">
-                        <button t-foreach="state.conversations" t-as="conversation"
-                                t-key="conversation.message_id"
-                                type="button"
-                                class="o_mailpro_item"
-                                t-att-class="{
-                                    'o_mailpro_item_active': state.selected
-                                        and sameConversation(conversation, state.selected),
-                                    'o_mailpro_item_unread': conversation.unread }"
-                                t-att-aria-current="state.selected and sameConversation(conversation, state.selected) ? 'true' : undefined"
-                                t-on-click="() => this.pick(conversation)">
-                            <span t-if="conversation.unread" class="visually-hidden">Unread. </span>
+                        <div t-foreach="state.conversations" t-as="conversation"
+                             t-key="conversation.message_id" class="o_mailpro_group">
                             <!--
-                                The contact's own picture, the way every mail
-                                client draws a list: you find the conversation
-                                you want by who it is with, before you read a
-                                word. A partner without a photo gets Odoo's own
-                                letter circle; a sender who is nobody in the
-                                database gets initials from the name on the
-                                mail.
+                                The chevron sits outside the row it belongs to,
+                                because a button inside a button is not a thing a
+                                browser will draw. So the selection is painted on
+                                the pair rather than on the row, or the chevron
+                                column stays white next to the mail you have open.
                             -->
-                            <div class="d-flex align-items-start gap-2">
-                                <img t-if="conversation.partner_id" class="o_mailpro_avatar flex-shrink-0"
-                                     alt="" t-att-src="partnerAvatar(conversation)"/>
-                                <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
-                                      aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
-                                <span class="flex-grow-1 min-w-0">
-                                    <span class="d-flex justify-content-between align-items-baseline gap-2">
-                                        <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
-                                        <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
-                                              t-esc="day(conversation.date)"/>
-                                    </span>
-                                    <span class="o_mailpro_subject d-block text-truncate" t-esc="conversation.subject"/>
-                                    <span class="o_mailpro_preview d-block text-truncate" t-esc="conversation.preview"/>
-                                    <span class="o_mailpro_meta d-flex align-items-center gap-2">
-                                        <!--
-                                            Which mailbox this one is in, and
-                                            only while the list spans more
-                                            than one: the same address down
-                                            thirty rows of a single mailbox is
-                                            noise, so it is a property of the
-                                            list and not of the row.
-                                        -->
-                                        <span t-if="spansMailboxes and conversation.mailbox"
-                                              class="o_mailpro_mailbox_tag flex-shrink-0"
-                                              t-att-title="conversation.mailbox"
-                                              t-esc="mailboxLocal(conversation.mailbox)"/>
-                                        <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
-                                              t-esc="conversation.record_name"/>
-                                        <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
-                                    </span>
-                                </span>
+                            <div class="o_mailpro_group_head d-flex align-items-start"
+                                 t-att-class="{ 'o_mailpro_group_head_active': state.selected
+                                     and sameConversation(conversation, state.selected) }">
+                                <!--
+                                    The chevron, and only where there is something
+                                    behind it: a one-mail conversation that offers to
+                                    unfold into one mail is a control that lies. The
+                                    rows without one still line up, because the blank
+                                    keeps the column.
+                                -->
+                                <button t-if="conversation.count &gt; 1" type="button"
+                                        class="o_mailpro_twist flex-shrink-0"
+                                        t-att-aria-expanded="isUnfolded(conversation) ? 'true' : 'false'"
+                                        t-att-aria-label="isUnfolded(conversation) ? 'Fold this conversation' : 'Unfold this conversation'"
+                                        t-on-click="() => this.toggleUnfold(conversation)">
+                                    <i class="fa fa-fw" aria-hidden="true"
+                                       t-att-class="isUnfolded(conversation) ? 'fa-chevron-down' : 'fa-chevron-right'"/>
+                                </button>
+                                <span t-else="" class="o_mailpro_twist o_mailpro_twist_blank flex-shrink-0" aria-hidden="true"/>
+                                <button type="button"
+                                        class="o_mailpro_item flex-grow-1 min-w-0"
+                                        t-att-class="{
+                                            'o_mailpro_item_active': state.selected
+                                                and sameConversation(conversation, state.selected),
+                                            'o_mailpro_item_unread': conversation.unread }"
+                                        t-att-aria-current="state.selected and sameConversation(conversation, state.selected) ? 'true' : undefined"
+                                        t-on-click="() => this.pick(conversation)">
+                                    <span t-if="conversation.unread" class="visually-hidden">Unread. </span>
+                                    <!--
+                                        The contact's own picture, the way every mail
+                                        client draws a list: you find the conversation
+                                        you want by who it is with, before you read a
+                                        word. A partner without a photo gets Odoo's own
+                                        letter circle; a sender who is nobody in the
+                                        database gets initials from the name on the
+                                        mail.
+                                    -->
+                                    <div class="d-flex align-items-start gap-2">
+                                        <img t-if="conversation.partner_id" class="o_mailpro_avatar flex-shrink-0"
+                                             alt="" t-att-src="partnerAvatar(conversation)"/>
+                                        <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
+                                              aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
+                                        <span class="flex-grow-1 min-w-0">
+                                            <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                                <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
+                                                <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
+                                                      t-esc="day(conversation.date)"/>
+                                            </span>
+                                            <span class="o_mailpro_subject d-block text-truncate" t-esc="conversation.subject"/>
+                                            <span class="o_mailpro_preview d-block text-truncate" t-esc="conversation.preview"/>
+                                            <span class="o_mailpro_meta d-flex align-items-center gap-2">
+                                                <!--
+                                                    Which mailbox this one is
+                                                    in, and only while the list
+                                                    spans more than one: the
+                                                    same address down thirty
+                                                    rows of a single mailbox is
+                                                    noise, so it is a property
+                                                    of the list and not of the
+                                                    row.
+                                                -->
+                                                <span t-if="spansMailboxes and conversation.mailbox"
+                                                      class="o_mailpro_mailbox_tag flex-shrink-0"
+                                                      t-att-title="conversation.mailbox"
+                                                      t-esc="mailboxLocal(conversation.mailbox)"/>
+                                                <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
+                                                      t-esc="conversation.record_name"/>
+                                                <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
+                                            </span>
+                                        </span>
+                                    </div>
+                                </button>
                             </div>
-                        </button>
+                            <t t-if="isUnfolded(conversation)">
+                                <div t-if="isThreadLoading(conversation)" class="o_mailpro_thread_loading">
+                                    <span class="visually-hidden" role="status">Loading this conversation</span>
+                                    <div class="o_mailpro_skeleton_row" aria-hidden="true"/>
+                                </div>
+                                <button t-foreach="threadOf(conversation)" t-as="message"
+                                        t-key="message.id" type="button"
+                                        class="o_mailpro_child"
+                                        t-att-class="{ 'o_mailpro_child_unread': message.unread }"
+                                        t-on-click="() => this.pickMessage(conversation, message)">
+                                    <span t-if="message.unread" class="visually-hidden">Unread. </span>
+                                    <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                        <span class="o_mailpro_from text-truncate" t-esc="message.author"/>
+                                        <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
+                                              t-esc="day(message.date)"/>
+                                    </span>
+                                    <span class="o_mailpro_preview d-block text-truncate" t-esc="message.preview"/>
+                                </button>
+                            </t>
+                        </div>
                         <div t-if="state.hasMore" class="o_mailpro_more">
                             <button type="button" class="btn btn-link btn-sm"
                                     t-on-click="() => this.loadMore()">Load more</button>
@@ -596,27 +645,25 @@
                             </div>
                         </div>
                         <!--
-                            The conversation is a stack, newest at the top: the
-                            message you came for is open and the history under
-                            it is one line each. A conversation of nine mails that
-                            opens nine full bodies is a page you have to
-                            scroll, and the newest message is the only part
-                            anybody reads first.
-
-                            The header is the toggle and it is a button, so
-                            the whole history is reachable with a keyboard.
-                        -->
-                        <!--
                             Answering happens where the mail is. The composer
                             takes this pane instead of a dialog over the
                             screen, so the list, the record and the mail being
                             answered all stay readable while somebody writes.
                             It is Odoo's own composer form; `use_composer.js`
                             says what mounting it here costs.
+
+                            And the conversation stays under it, the way
+                            Outlook puts the older mail below what you are
+                            writing: same stack, same one scroll, so the
+                            sentence being answered is a scroll away instead
+                            of behind a Discard.
                         -->
-                        <div t-if="composer.state.open" class="o_mailpro_composer"
-                             role="region" t-att-aria-label="composer.state.mode === 'note' ? 'Internal note' : 'Reply'">
-                            <ComposerForm t-props="composer.formProps"/>
+                        <div t-if="composer.state.open" class="o_mailpro_composing">
+                            <div class="o_mailpro_composer"
+                                 role="region" t-att-aria-label="composer.state.mode === 'note' ? 'Internal note' : 'Reply'">
+                                <ComposerForm t-props="composer.formProps"/>
+                            </div>
+                            <t t-call="pan_mail_pro.ConversationMessages"/>
                         </div>
                         <t t-elif="state.tab === 'files'">
                             <t t-call="pan_mail_pro.ConversationFiles"/>
@@ -624,114 +671,9 @@
                         <t t-elif="state.tab === 'activities'">
                             <t t-call="pan_mail_pro.ConversationActivities"/>
                         </t>
-                        <div t-else="" class="o_mailpro_messages">
-                            <t t-foreach="state.conversation.messages" t-as="message" t-key="message.id">
-                            <!--
-                                A record event is one line, never a card:
-                                "Stage: New to Qualified" is the whole message,
-                                and forty of them as cards is a page you
-                                scroll past to reach the mail.
-                            -->
-                            <div t-if="message.kind === 'event'" class="o_mailpro_event d-flex justify-content-between gap-2">
-                                <span class="min-w-0">
-                                    <t t-if="message.tracking.length">
-                                        <span t-foreach="message.tracking" t-as="change" t-key="change.field"
-                                              class="o_mailpro_event_change">
-                                            <t t-esc="change.field"/>: <t t-esc="change.old or '-'"/>
-                                            &#8594; <t t-esc="change.new or '-'"/>
-                                        </span>
-                                    </t>
-                                    <t t-else=""><span t-esc="message.subject or message.author"/></t>
-                                </span>
-                                <span class="o_mailpro_date flex-shrink-0" t-att-title="fullDate(message.date)"
-                                      t-esc="day(message.date)"/>
-                            </div>
-                            <article t-else=""
-                                     class="o_mailpro_message"
-                                     t-att-class="{
-                                        'o_mailpro_message_open': isOpen(message),
-                                        'o_mailpro_message_note': message.kind === 'note' }">
-                                <button type="button" class="o_mailpro_message_head d-flex gap-2 w-100"
-                                        t-att-aria-expanded="isOpen(message) ? 'true' : 'false'"
-                                        t-on-click="() => this.toggleMessage(message)">
-                                    <img t-if="message.author_id" class="o_mailpro_avatar flex-shrink-0"
-                                         alt="" t-att-src="avatar(message)"/>
-                                    <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
-                                          aria-hidden="true" t-esc="initials(message.author)"/>
-                                    <span class="o_mailpro_message_lines flex-grow-1 min-w-0">
-                                        <span class="d-flex justify-content-between align-items-baseline gap-2">
-                                            <span class="min-w-0 d-flex align-items-baseline gap-2">
-                                                <span class="o_mailpro_message_from text-truncate"
-                                                      t-att-title="message.author_email"
-                                                      t-esc="message.author"/>
-                                                <!-- The one thing that must never be
-                                                     mistaken for a mail to the customer. -->
-                                                <span t-if="message.kind === 'note'"
-                                                      class="o_mailpro_note_tag flex-shrink-0">Internal note</span>
-                                            </span>
-                                            <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
-                                                  t-esc="day(message.date)"/>
-                                        </span>
-                                        <span t-if="!isOpen(message)"
-                                              class="o_mailpro_message_snippet d-block text-truncate"
-                                              t-esc="snippet(message)"/>
-                                    </span>
-                                </button>
-                                <t t-if="isOpen(message)">
-                                    <!--
-                                        Who was on it, the way Outlook shows
-                                        it: To and Cc on one line, the full
-                                        block a click further. Its own button
-                                        under the head rather than inside it,
-                                        because the head is already the
-                                        open/close toggle and a button in a
-                                        button is not a thing. A note gets no
-                                        line at all: a recipient row on a
-                                        note is what makes people believe a
-                                        note is an email.
-                                    -->
-                                    <div t-if="message.kind !== 'note'" class="o_mailpro_meta">
-                                        <button type="button"
-                                                class="o_mailpro_meta_toggle d-flex align-items-baseline gap-2 w-100"
-                                                t-att-aria-expanded="showDetails(message) ? 'true' : 'false'"
-                                                t-on-click="() => this.toggleDetails(message)">
-                                            <span class="o_mailpro_meta_line flex-grow-1 min-w-0 text-truncate">
-                                                <span class="o_mailpro_meta_key">To</span>
-                                                <t t-esc="message.recipients or '-'"/>
-                                                <t t-if="message.cc">
-                                                    <span class="o_mailpro_meta_key">Cc</span>
-                                                    <t t-esc="message.cc"/>
-                                                </t>
-                                            </span>
-                                            <i class="fa fa-chevron-down o_mailpro_meta_chevron flex-shrink-0"
-                                               aria-hidden="true"/>
-                                        </button>
-                                        <dl t-if="showDetails(message)" class="o_mailpro_meta_full">
-                                            <dt>From</dt>
-                                            <dd t-esc="fromLine(message)"/>
-                                            <dt>To</dt>
-                                            <dd t-esc="message.recipients or '-'"/>
-                                            <t t-if="message.cc">
-                                                <dt>Cc</dt>
-                                                <dd t-esc="message.cc"/>
-                                            </t>
-                                            <dt>Date</dt>
-                                            <dd t-esc="fullDate(message.date)"/>
-                                        </dl>
-                                    </div>
-                                    <div class="o_mailpro_body" t-out="visibleBody(message)"/>
-                                    <div t-if="hasQuote(message)" class="o_mailpro_quote_block">
-                                        <button type="button" class="o_mailpro_quote_toggle"
-                                                aria-label="Quoted history"
-                                                t-att-aria-expanded="state.quotes[message.id] ? 'true' : 'false'"
-                                                t-on-click="() => this.toggleQuote(message)">&#8230;</button>
-                                        <div t-if="state.quotes[message.id]" class="o_mailpro_quote"
-                                             t-out="quotedBody(message)"/>
-                                    </div>
-                                </t>
-                            </article>
-                            </t>
-                        </div>
+                        <t t-else="">
+                            <t t-call="pan_mail_pro.ConversationMessages"/>
+                        </t>
                     </t>
                     <div t-else="" class="o_mailpro_empty">
                         <h3 class="o_mailpro_empty_title">Pick a conversation.</h3>
@@ -762,6 +704,130 @@
                 </div>
 
             </div>
+        </div>
+    </t>
+
+    <t t-name="pan_mail_pro.ConversationMessages">
+        <!--
+            The conversation is a stack, newest at the top: the message you
+            came for is open and the history under it is one line each. A
+            conversation of nine mails that opens nine full bodies is a page
+            you have to scroll, and the newest message is the only part
+            anybody reads first.
+
+            The header is the toggle and it is a button, so the whole history
+            is reachable with a keyboard.
+
+            The same stack is what sits under an open composer, so a reply is
+            written above the mail it answers instead of in place of it.
+        -->
+        <div class="o_mailpro_messages">
+            <t t-foreach="state.conversation.messages" t-as="message" t-key="message.id">
+            <!--
+                A record event is one line, never a card:
+                "Stage: New to Qualified" is the whole message,
+                and forty of them as cards is a page you
+                scroll past to reach the mail.
+            -->
+            <div t-if="message.kind === 'event'" class="o_mailpro_event d-flex justify-content-between gap-2">
+                <span class="min-w-0">
+                    <t t-if="message.tracking.length">
+                        <span t-foreach="message.tracking" t-as="change" t-key="change.field"
+                              class="o_mailpro_event_change">
+                            <t t-esc="change.field"/>: <t t-esc="change.old or '-'"/>
+                            &#8594; <t t-esc="change.new or '-'"/>
+                        </span>
+                    </t>
+                    <t t-else=""><span t-esc="message.subject or message.author"/></t>
+                </span>
+                <span class="o_mailpro_date flex-shrink-0" t-att-title="fullDate(message.date)"
+                      t-esc="day(message.date)"/>
+            </div>
+            <article t-else=""
+                     class="o_mailpro_message"
+                     t-att-class="{
+                        'o_mailpro_message_open': isOpen(message),
+                        'o_mailpro_message_note': message.kind === 'note' }">
+                <button type="button" class="o_mailpro_message_head d-flex gap-2 w-100"
+                        t-att-aria-expanded="isOpen(message) ? 'true' : 'false'"
+                        t-on-click="() => this.toggleMessage(message)">
+                    <img t-if="message.author_id" class="o_mailpro_avatar flex-shrink-0"
+                         alt="" t-att-src="avatar(message)"/>
+                    <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
+                          aria-hidden="true" t-esc="initials(message.author)"/>
+                    <span class="o_mailpro_message_lines flex-grow-1 min-w-0">
+                        <span class="d-flex justify-content-between align-items-baseline gap-2">
+                            <span class="min-w-0 d-flex align-items-baseline gap-2">
+                                <span class="o_mailpro_message_from text-truncate"
+                                      t-att-title="message.author_email"
+                                      t-esc="message.author"/>
+                                <!-- The one thing that must never be
+                                     mistaken for a mail to the customer. -->
+                                <span t-if="message.kind === 'note'"
+                                      class="o_mailpro_note_tag flex-shrink-0">Internal note</span>
+                            </span>
+                            <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
+                                  t-esc="day(message.date)"/>
+                        </span>
+                        <span t-if="!isOpen(message)"
+                              class="o_mailpro_message_snippet d-block text-truncate"
+                              t-esc="snippet(message)"/>
+                    </span>
+                </button>
+                <t t-if="isOpen(message)">
+                    <!--
+                        Who was on it, the way Outlook shows
+                        it: To and Cc on one line, the full
+                        block a click further. Its own button
+                        under the head rather than inside it,
+                        because the head is already the
+                        open/close toggle and a button in a
+                        button is not a thing. A note gets no
+                        line at all: a recipient row on a
+                        note is what makes people believe a
+                        note is an email.
+                    -->
+                    <div t-if="message.kind !== 'note'" class="o_mailpro_meta">
+                        <button type="button"
+                                class="o_mailpro_meta_toggle d-flex align-items-baseline gap-2 w-100"
+                                t-att-aria-expanded="showDetails(message) ? 'true' : 'false'"
+                                t-on-click="() => this.toggleDetails(message)">
+                            <span class="o_mailpro_meta_line flex-grow-1 min-w-0 text-truncate">
+                                <span class="o_mailpro_meta_key">To</span>
+                                <t t-esc="message.recipients or '-'"/>
+                                <t t-if="message.cc">
+                                    <span class="o_mailpro_meta_key">Cc</span>
+                                    <t t-esc="message.cc"/>
+                                </t>
+                            </span>
+                            <i class="fa fa-chevron-down o_mailpro_meta_chevron flex-shrink-0"
+                               aria-hidden="true"/>
+                        </button>
+                        <dl t-if="showDetails(message)" class="o_mailpro_meta_full">
+                            <dt>From</dt>
+                            <dd t-esc="fromLine(message)"/>
+                            <dt>To</dt>
+                            <dd t-esc="message.recipients or '-'"/>
+                            <t t-if="message.cc">
+                                <dt>Cc</dt>
+                                <dd t-esc="message.cc"/>
+                            </t>
+                            <dt>Date</dt>
+                            <dd t-esc="fullDate(message.date)"/>
+                        </dl>
+                    </div>
+                    <div class="o_mailpro_body" t-out="visibleBody(message)"/>
+                    <div t-if="hasQuote(message)" class="o_mailpro_quote_block">
+                        <button type="button" class="o_mailpro_quote_toggle"
+                                aria-label="Quoted history"
+                                t-att-aria-expanded="state.quotes[message.id] ? 'true' : 'false'"
+                                t-on-click="() => this.toggleQuote(message)">&#8230;</button>
+                        <div t-if="state.quotes[message.id]" class="o_mailpro_quote"
+                             t-out="quotedBody(message)"/>
+                    </div>
+                </t>
+            </article>
+            </t>
         </div>
     </t>
 
