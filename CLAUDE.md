@@ -713,7 +713,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
-### All mailboxes (19.0.15.5.0)
+### All mailboxes (19.0.16.1.0)
 
 - **The unified inbox was a row and a label over a query that already
   existed.** `_base_domain(mailbox_id=None)`, `folder_counts` keyed on mailbox

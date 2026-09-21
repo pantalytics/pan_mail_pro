@@ -11,7 +11,7 @@ record carries more than one thread, on its list. Still on paper: door 1's
 more-messages-elsewhere line, and the customer view with its timeline, whose
 read method (`customer_timeline`) shipped and is tested, so what is left of it
 is markup. *All mailboxes*, the one folder that spans them, ships in
-19.0.15.5.0: the row, the mailbox on every list row that needs one, and the
+19.0.16.1.0: the row, the mailbox on every list row that needs one, and the
 reply that answers from the conversation's mailbox rather than the folder's.
 Also still on paper: the composer's
 **Cc/followers block**. Reply opens Odoo's own composer with To filled from
@@ -101,7 +101,7 @@ watches rather than one per mailbox that exists. 19.0.10.4.0.
 
 **Decision: one row at the top of the mailbox list, *All mailboxes*, with the
 same Inbox and Sent under it. Not a drop-down, and not a tick-list of
-mailboxes.** 19.0.15.5.0.
+mailboxes.** 19.0.16.1.0.
 
 Apple Mail puts All Inboxes behind a chevron because its sidebar keeps the
 accounts folded away underneath it. Ours already draws every mailbox in the
