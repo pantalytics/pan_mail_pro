@@ -4,7 +4,7 @@
     <!--
         Four panes: where you are, what is waiting, the conversation, the
         record. Content carries the screen; the chrome stays out of the way.
-        Progressive disclosure: the rail holds the mailbox and its folders and
+        Progressive disclosure: the mailbox list holds the mailbox and its folders and
         nothing else, our own states filter the list one pane over, the
         routing diagnostic stays folded until somebody asks, and everything
         else is one click deeper on the record itself.
@@ -36,17 +36,17 @@
             -->
             <div class="o_mailpro_topbar d-flex align-items-center gap-2">
                 <!--
-                    The rail from a button, on a phone only, where the rail
+                    The mailbox list from a button, on a phone only, where the mailbox list
                     is a drawer over the list rather than a pane with a
                     divider. Everywhere else the divider is the control: its
                     chevron folds the pane and the strip it leaves brings it
                     back, the same for all three panes, and a second control
                     for one of them is chrome.
                 -->
-                <button type="button" class="o_mailpro_rail_button flex-shrink-0"
-                        t-att-aria-expanded="panes.folded('rail') ? 'false' : 'true'"
-                        t-att-aria-label="panes.folded('rail') ? 'Show mailboxes' : 'Hide mailboxes'"
-                        t-on-click="() => panes.toggleRail()">
+                <button type="button" class="o_mailpro_mailbox_list_button flex-shrink-0"
+                        t-att-aria-expanded="panes.folded('mailbox_list') ? 'false' : 'true'"
+                        t-att-aria-label="panes.folded('mailbox_list') ? 'Show mailboxes' : 'Hide mailboxes'"
+                        t-on-click="() => panes.toggleMailboxList()">
                     <i class="fa fa-bars" aria-hidden="true"/>
                 </button>
                 <div class="o_mailpro_topbar_start d-flex align-items-center">
@@ -76,7 +76,7 @@
 
             <div class="o_mailpro_panes d-flex flex-grow-1"
                  t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom,
-                                'o_mailpro_record_folded': panes.toggleSide('record') === 'left' }">
+                                'o_mailpro_odoo_record_folded': panes.toggleSide('odoo_record') === 'left' }">
 
                 <!--
                     1. where you are: the mailbox, and inside it the folder.
@@ -84,7 +84,7 @@
                     is the one job people already know the layout of. Every
                     mailbox folds away the way Outlook folds an account: the
                     chevron opens and closes it, the name opens the mailbox
-                    itself. A folded mailbox is not counted, so a rail of six
+                    itself. A folded mailbox is not counted, so a mailbox list of six
                     accounts costs what the ones you actually watch cost.
                 -->
                 <!--
@@ -92,14 +92,14 @@
                     fold is a transition rather than a pane that blinks out.
                     The backdrop is the drawer's, on a phone, and fades with it.
                 -->
-                <div t-if="showRail and panes.state.small" class="o_mailpro_rail_backdrop"
-                     t-att-class="{ 'o_mailpro_folded': panes.folded('rail') }"
-                     t-on-click="() => panes.closeRail()"/>
-                <nav t-if="showRail" class="o_mailpro_rail"
-                     t-att-class="{ 'o_mailpro_folded': panes.folded('rail') }"
-                     t-att-inert="panes.folded('rail')"
+                <div t-if="showMailboxList and panes.state.small" class="o_mailpro_mailbox_list_backdrop"
+                     t-att-class="{ 'o_mailpro_folded': panes.folded('mailbox_list') }"
+                     t-on-click="() => panes.closeMailboxList()"/>
+                <nav t-if="showMailboxList" class="o_mailpro_mailbox_list"
+                     t-att-class="{ 'o_mailpro_folded': panes.folded('mailbox_list') }"
+                     t-att-inert="panes.folded('mailbox_list')"
                      aria-label="Mailboxes and folders"
-                     t-attf-style="flex-basis: {{panes.state.rail}}px">
+                     t-attf-style="flex-basis: {{panes.state.mailbox_list}}px">
                     <t t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id">
                         <div class="o_mailpro_mailbox_row d-flex align-items-center">
                             <button type="button" class="o_mailpro_mailbox_toggle flex-shrink-0"
@@ -118,41 +118,41 @@
                             </button>
                         </div>
                         <div t-if="isExpanded(mailbox.id)" class="o_mailpro_folders">
-                            <t t-set="railMailbox" t-value="mailbox.id"/>
+                            <t t-set="folderMailbox" t-value="mailbox.id"/>
                             <t t-call="pan_mail_pro.ConversationFolders"/>
                         </div>
                     </t>
                     <!-- No mailbox configured yet: the folders are still the
-                         reader's own mail, so the rail is not empty. -->
+                         reader's own mail, so the mailbox list is not empty. -->
                     <div t-if="!state.mailboxes.length" class="o_mailpro_folders">
-                        <t t-set="railMailbox" t-value="false"/>
+                        <t t-set="folderMailbox" t-value="false"/>
                         <t t-call="pan_mail_pro.ConversationFolders"/>
                     </div>
                 </nav>
 
-                <t t-set="divider" t-value="'rail'"/>
+                <t t-set="divider" t-value="'mailbox_list'"/>
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 2. what is waiting -->
-                <div t-if="showList" class="o_mailpro_list" role="region" aria-label="Conversations"
-                     t-att-class="'o_mailpro_lead_' + panes.lead('list') + (panes.folded('list') ? ' o_mailpro_folded' : '')"
-                     t-att-inert="panes.folded('list')"
-                     t-attf-style="flex-basis: {{panes.state.list}}px">
+                <div t-if="showConversationList" class="o_mailpro_conversation_list" role="region" aria-label="Conversations"
+                     t-att-class="'o_mailpro_lead_' + panes.lead('conversation_list') + (panes.folded('conversation_list') ? ' o_mailpro_folded' : '')"
+                     t-att-inert="panes.folded('conversation_list')"
+                     t-attf-style="flex-basis: {{panes.state.conversation_list}}px">
 
                     <!--
                         The list header, where a mail client puts it: what you
                         are reading on the left, the filter on the right.
 
                         The states that are ours live in that menu rather than
-                        in the rail. A folder is a place mail is and the
+                        in the mailbox list. A folder is a place mail is and the
                         provider decides what those are; "linked to nothing"
                         is a question we ask about it. One at a time, a second
                         click clears it, and the active one is named on the
                         button: a filter you cannot see from the closed menu
                         is a list that looks short for no reason.
                     -->
-                    <div class="o_mailpro_list_head d-flex align-items-center justify-content-between gap-2">
-                        <span class="o_mailpro_list_title text-truncate" t-esc="folderLabel"/>
+                    <div class="o_mailpro_conversation_list_head d-flex align-items-center justify-content-between gap-2">
+                        <span class="o_mailpro_conversation_list_title text-truncate" t-esc="folderLabel"/>
                         <Dropdown t-if="filters.length" position="'bottom-end'"
                                   menuClass="'o_mailpro_filter_menu'">
                             <button type="button" class="o_mailpro_filter_toggle"
@@ -248,7 +248,7 @@
                     </t>
                 </div>
 
-                <t t-set="divider" t-value="'list'"/>
+                <t t-set="divider" t-value="'conversation_list'"/>
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 3. the conversation -->
@@ -303,12 +303,12 @@
                                     Activities are lists, and neither is a
                                     place to write.
                                 -->
-                                <div t-if="!composer.state.open and (canReply or canLogNote or showRecordButton)"
+                                <div t-if="!composer.state.open and (canReply or canLogNote or showOdooRecordButton)"
                                      class="d-flex align-items-center gap-2 flex-shrink-0">
-                                    <button t-if="showRecordButton" type="button"
-                                            class="btn btn-secondary btn-sm o_mailpro_record_button"
+                                    <button t-if="showOdooRecordButton" type="button"
+                                            class="btn btn-secondary btn-sm o_mailpro_odoo_record_button"
                                             t-att-title="selectedRecord.name"
-                                            t-on-click="() => this.showRecordScreen()">
+                                            t-on-click="() => this.showOdooRecordScreen()">
                                         <i class="fa fa-cube me-1" aria-hidden="true"/>Record
                                     </button>
                                     <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm"
@@ -591,16 +591,16 @@
                     </div>
                 </div>
 
-                <t t-set="divider" t-value="'record'"/>
+                <t t-set="divider" t-value="'odoo_record'"/>
                 <t t-call="pan_mail_pro.PaneSplitter"/>
 
                 <!-- 4. the record: the pane a mail client cannot have -->
-                <div t-if="showRecord" class="o_mailpro_record"
-                     t-att-class="'o_mailpro_lead_' + panes.lead('record') + (panes.folded('record') ? ' o_mailpro_folded' : '')"
-                     t-att-inert="panes.folded('record')"
-                     role="region" aria-label="Record"
-                     t-attf-style="flex-basis: {{panes.state.record}}px">
-                    <RecordPane t-if="selectedRecord" record="selectedRecord"
+                <div t-if="showOdooRecord" class="o_mailpro_odoo_record"
+                     t-att-class="'o_mailpro_lead_' + panes.lead('odoo_record') + (panes.folded('odoo_record') ? ' o_mailpro_folded' : '')"
+                     t-att-inert="panes.folded('odoo_record')"
+                     role="region" aria-label="Odoo record"
+                     t-attf-style="flex-basis: {{panes.state.odoo_record}}px">
+                    <OdooRecordPane t-if="selectedRecord" record="selectedRecord"
                                 zoomed="panes.state.zoom"
                                 zoomLabel="panes.zoomLabel()"
                                 onToggleZoom.bind="() => panes.toggleZoom()"/>
@@ -620,18 +620,18 @@
     </t>
 
     <!--
-        The folders of one mailbox, `railMailbox`. One definition, two call
+        The folders of one mailbox, `folderMailbox`. One definition, two call
         sites. A folder is only the open one when its mailbox is the open one:
         two unfolded mailboxes must not both claim to be showing Inbox.
     -->
     <t t-name="pan_mail_pro.ConversationFolders">
-        <t t-set="isOpenMailbox" t-value="(railMailbox or false) === (state.mailboxId or false)"/>
-        <button t-foreach="foldersFor(railMailbox)" t-as="folder" t-key="folder.id"
+        <t t-set="isOpenMailbox" t-value="(folderMailbox or false) === (state.mailboxId or false)"/>
+        <button t-foreach="foldersFor(folderMailbox)" t-as="folder" t-key="folder.id"
                 type="button"
                 class="o_mailpro_folder d-flex align-items-center justify-content-between"
                 t-att-class="{ 'o_mailpro_folder_active': isOpenMailbox and folder.id === state.folder }"
                 t-att-aria-current="isOpenMailbox and folder.id === state.folder ? 'true' : undefined"
-                t-on-click="() => this.setFolder(folder.id, railMailbox or null)">
+                t-on-click="() => this.setFolder(folder.id, folderMailbox or null)">
             <span t-esc="folder.name"/>
             <span t-if="folder.count" class="o_mailpro_count" t-esc="folderCount(folder)"/>
         </button>
@@ -760,7 +760,7 @@
              trap. -->
         <button t-if="panes.state.small and !composer.state.open" type="button"
                 class="o_mailpro_back flex-shrink-0"
-                aria-label="Back to the list"
+                aria-label="Back to the conversation list"
                 t-on-click="() => this.backToList()">
             <i class="fa fa-arrow-left" aria-hidden="true"/>
         </button>
@@ -787,8 +787,8 @@
         <View t-props="props.viewProps"/>
     </t>
 
-    <t t-name="pan_mail_pro.RecordPane">
-        <div class="o_mailpro_record_inner h-100">
+    <t t-name="pan_mail_pro.OdooRecordPane">
+        <div class="o_mailpro_odoo_record_inner h-100">
             <t t-if="!state.failed">
                 <!--
                     The form's own control panel is off, so the pane says which
@@ -798,14 +798,14 @@
                     Two ways to make the record bigger side by side read as
                     one of them being broken.
                 -->
-                <div class="o_mailpro_record_head d-flex align-items-center justify-content-between gap-2"
+                <div class="o_mailpro_odoo_record_head d-flex align-items-center justify-content-between gap-2"
                      t-on-dblclick="() => this.props.onToggleZoom()">
                     <div class="min-w-0">
                         <div class="o_mailpro_label" t-esc="props.record.model_label"/>
-                        <h2 class="o_mailpro_record_name text-truncate" t-esc="props.record.name"/>
+                        <h2 class="o_mailpro_odoo_record_name text-truncate" t-esc="props.record.name"/>
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                        <button type="button" class="btn btn-secondary btn-sm o_mailpro_record_zoom"
+                        <button type="button" class="btn btn-secondary btn-sm o_mailpro_odoo_record_zoom"
                                 t-att-aria-pressed="props.zoomed ? 'true' : 'false'"
                                 t-on-click="() => this.props.onToggleZoom()">
                             <i class="fa me-1" aria-hidden="true"
@@ -813,7 +813,7 @@
                             <t t-esc="props.zoomLabel"/>
                         </button>
                         <button t-if="props.zoomed" type="button"
-                                class="btn btn-secondary btn-sm o_mailpro_record_open"
+                                class="btn btn-secondary btn-sm o_mailpro_odoo_record_open"
                                 t-on-click="() => this.openRecord()">Open</button>
                     </div>
                 </div>

@@ -2,11 +2,14 @@
 """
 The Inbox has four panes and each one has exactly one name.
 
-ARCHITECTURE.md section 1 fixes them -- rail, list, conversation, record --
-in the code key, the CSS class, the label and the prose alike. The third one
-was `thread` in the code and "the conversation pane" in every sentence about
-it until 19.0.13.10.0, which is the drift this file exists to stop coming
-back: "thread" means the mail thread the matcher keys on, and nothing else.
+ARCHITECTURE.md section 1 fixes them -- mailbox_list, conversation_list,
+conversation, odoo_record -- in the code key, the CSS class, the label and the
+prose alike. Each is named after what is in it, which `rail` never was and
+`record` only half was.
+
+This is the drift the file exists to stop coming back: "thread" means the mail
+thread the matcher keys on and never a pane, and "rail" means nothing here at
+all any more.
 
 A naming rule nobody can run is a naming rule that lasts one release, so it
 is asserted here rather than left to review.
@@ -18,15 +21,17 @@ from odoo.tests import TransactionCase, tagged
 
 MODULE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-PANES = ['rail', 'list', 'conversation', 'record']
+PANES = ['mailbox_list', 'conversation_list', 'conversation', 'odoo_record']
 
 # The screen itself. Its root class is not one of the panes: a pane called
 # after the whole screen is how the two collided in the first place.
 ROOT_CLASS = 'o_mailpro_inbox'
 
-# Named for the mail thread, never for a pane. `recordThread` is Odoo's own
-# Thread store model for the record's chatter, which is why it may stay.
-RETIRED = ['o_mailpro_thread', 'thread pane', 'showThread', 'readThread']
+# Words that named a pane and no longer do. `recordThread` survives the
+# `rail` sweep because it is Odoo's own Thread store model for the record's
+# chatter, and none of these strings appear in it.
+RETIRED = ['o_mailpro_thread', 'thread pane', 'showThread', 'readThread',
+           'rail', 'o_mailpro_list', 'o_mailpro_record']
 
 
 def read(*parts):
@@ -48,7 +53,7 @@ class TestInboxPanes(TransactionCase):
     def test_use_panes_orders_the_four_names(self):
         match = re.search(r'const ORDER = \[([^\]]*)\]', self.panes_js)
         self.assertTrue(match, 'use_panes.js no longer declares ORDER')
-        found = re.findall(r'"([a-z]+)"', match.group(1))
+        found = re.findall(r'"([a-z_]+)"', match.group(1))
         self.assertEqual(found, PANES, 'ORDER is the left-to-right pane list')
 
     def test_every_pane_has_an_icon_and_a_label(self):
@@ -74,12 +79,16 @@ class TestInboxPanes(TransactionCase):
 
     def test_the_old_names_are_gone(self):
         """A rename that leaves no check behind is a rename that comes back."""
+        # `LEGACY` is the one line allowed to spell the old keys: it reads a
+        # layout stored under them and never writes one back.
+        panes_js = re.sub(r'^const LEGACY = .*$', '', self.panes_js, flags=re.M)
         haystack = '\n'.join([
-            self.panes_js, self.template, self.scss,
+            panes_js, self.template, self.scss,
             read('static', 'src', 'js', 'conversation_view', 'conversation_view.js'),
             read('static', 'src', 'js', 'conversation_view', 'use_composer.js'),
             read('models', 'pan_mail_conversation.py'),
         ])
         for word in RETIRED:
-            self.assertNotIn(word, haystack,
-                             '"%s" names pane 3 again; it is `conversation`' % word)
+            # Whole words: `rail` must not match "trailing".
+            self.assertNotRegex(haystack, r'\b%s\b' % word,
+                                '"%s" is a retired pane name' % word)

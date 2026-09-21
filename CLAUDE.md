@@ -68,8 +68,8 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
 | `models/pan_mail_conversation.py` | The read side of the Inbox: the RPC methods behind the screen, no table, no sudo for an answer |
-| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**rail, list, conversation, record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, and the Followers button at its end that opens the chatter's own follower list |
-| `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (one round button floating on each divider: a chevron folds the pane beside it, the pane's icon brings it back, the same for rail, list and record), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the record take turns in one column, swapped from the strip between them; below 768px every pane takes turns and the rail is a drawer. A folded pane stays in the DOM at no width so the fold animates |
+| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, and the Followers button at its end that opens the chatter's own follower list |
+| `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (one round button floating on each divider: a chevron folds the pane beside it, the pane's icon brings it back, the same for the mailbox list, the conversation list and the Odoo record), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the strip between them; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
 | `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, and the Send that saves it and calls `action_send_mail` |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
@@ -700,7 +700,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   hand writes a `pan.mail.thread.link`, so the rest of that conversation
   matches at rule 3 from then on — exactly, for free. That is the only part of
   triage that compounds, and it needs no AI at all.
-- **"Filed on" was the one place the vocabulary drifted.** The rail already
+- **"Filed on" was the one place the vocabulary drifted.** The mailbox list already
   said "Linked to nothing" and the report is called link coverage; the chip
   row said "Filed on" and the method was `refile`. One idea, two words, and
   the technical one had reached the screen. It is **linked** now, in the copy
@@ -708,7 +708,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
-### Naming the panes (19.0.13.10.0)
+### Naming the panes (19.0.13.10.0, 19.0.13.11.0)
 
 - **One idea, two words, and the loaded one reaches the code.** Pane 3 was
   `thread` in the code and "the conversation pane" in every sentence about it,
@@ -722,6 +722,15 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **A pane name is four strings, not one.** The code key, the CSS class, the
   label and the prose. `tests/test_inbox_panes.py` reads all four and asserts
   they agree, because a vocabulary nobody can run lasts one release.
+- **Name a pane after what is in it, not where it sits.** `rail` said "the
+  narrow one on the left", which describes the layout and survives no
+  redesign; `list` and `record` said too little to tell apart from the things
+  they hold. They are `mailbox_list`, `conversation_list`, `conversation` and
+  `odoo_record`, and each one now answers "what is in that pane" on its own.
+- **A module inside Odoo still has to say Odoo.** This screen puts mail on
+  documents, so a bare `record` reads as either side of that sentence. The
+  pane is the **Odoo record**; `selectedRecord` and the record chips keep the
+  short word, because there the document is the only thing it can mean.
 - **The lint job's diff-shape checks only run with `BASE_REF`.** A bare
   `tools/ci.sh lint` passes while CI fails on "changes models/ but no test" --
   run `BASE_REF=origin/19.0 tools/ci_lint.sh` before pushing.

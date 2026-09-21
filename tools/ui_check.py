@@ -215,9 +215,9 @@ class Checks:
 
     # -- The Inbox ------------------------------------------------------------
 
-    # The rail is the shape the mail client next to this one has: a mailbox
+    # The mailbox list is the shape the mail client next to this one has: a mailbox
     # and its folders. Our own states are not folders and do not go here --
-    # a rail of invented names reads as a filter panel wearing a rail's
+    # a mailbox list of invented names reads as a filter panel wearing a mailbox list's
     # clothes, which is what people notice first and trust least.
     FOLDERS = ('Inbox', 'Sent')
 
@@ -248,10 +248,10 @@ class Checks:
         page.wait_for_timeout(2500)
         self.error_free('Inbox')
 
-        rail = [el.inner_text().split('\n')[0].strip()
+        mailboxes = [el.inner_text().split('\n')[0].strip()
                 for el in page.query_selector_all('.o_mailpro_folder')]
-        if rail != list(self.FOLDERS):
-            self.fail(f'the folder rail reads {rail}, expected {list(self.FOLDERS)}')
+        if mailboxes != list(self.FOLDERS):
+            self.fail(f'the folder list reads {mailboxes}, expected {list(self.FOLDERS)}')
 
         # The bar reads the way Outlook's does: New Email on the left, the
         # search in the middle, and the filter at the top right of the list.
@@ -261,7 +261,7 @@ class Checks:
             self.fail('the Inbox has no New Email button')
         if not page.query_selector('.o_mailpro_topbar #o_mailpro_search'):
             self.fail('the search is not in the top bar')
-        if not page.query_selector('.o_mailpro_list_head .o_mailpro_filter_toggle'):
+        if not page.query_selector('.o_mailpro_conversation_list_head .o_mailpro_filter_toggle'):
             self.fail('the filter is not at the top of the conversation list')
 
         # The filter menu opens once, over the list, not once per mailbox.
@@ -364,7 +364,7 @@ class Checks:
                 return
         self.error_free('Inbox New Email')
 
-        # The mailbox sits in the rail above its own folders, the way it does
+        # The mailbox sits in the mailbox list above its own folders, the way it does
         # in the mail client next to this one. The seed makes two, so this is
         # also the only place that proves switching mailbox works at all.
         def mailbox_names():
@@ -379,12 +379,12 @@ class Checks:
 
         names = mailbox_names()
         if len(names) < 2:
-            self.fail(f'{len(names)} mailboxes in the rail, expected the seeded 2')
+            self.fail(f'{len(names)} mailboxes in the mailbox list, expected the seeded 2')
         else:
             active = [el.inner_text().strip()
                       for el in page.query_selector_all('.o_mailpro_mailbox_active')]
             if active != names[:1]:
-                self.fail(f'the rail opens on {active}, expected {names[:1]}')
+                self.fail(f'the mailbox list opens on {active}, expected {names[:1]}')
             if open_mailbox(1) != names[1:2]:
                 self.fail('clicking a mailbox did not open it')
             # Back to the one the seeded mail is in, so everything below reads
@@ -494,14 +494,14 @@ class Checks:
 
         # The fourth pane is the product. If the form view cannot mount, the
         # pane falls back and this is the only place that would notice.
-        if page.query_selector('.o_mailpro_record .o_form_view') is None:
+        if page.query_selector('.o_mailpro_odoo_record .o_form_view') is None:
             self.fail('the record pane did not mount the record form')
 
         # ...and the form's own statusbar buttons stay out of it. A filled
         # "Convert to Opportunity" in the fourth pane is a louder button than
         # Reply, on a screen whose one job is replying.
         loud = [b for b in page.query_selector_all(
-            '.o_mailpro_record .o_form_statusbar button') if b.is_visible()]
+            '.o_mailpro_odoo_record .o_form_statusbar button') if b.is_visible()]
         if loud:
             self.fail('the record pane shows %d form buttons beside Reply'
                       % len(loud))
@@ -512,8 +512,8 @@ class Checks:
         # hidden with CSS, so it still mounts -- what must not happen is that
         # somebody sees it or tabs into it.
         chatter = [el for el in page.query_selector_all(
-            '.o_mailpro_record .o-mail-Form-chatter, '
-            '.o_mailpro_record .o-mail-Chatter') if el.is_visible()]
+            '.o_mailpro_odoo_record .o-mail-Form-chatter, '
+            '.o_mailpro_odoo_record .o-mail-Chatter') if el.is_visible()]
         if chatter:
             self.fail('the record pane still shows a chatter')
 
@@ -604,7 +604,7 @@ class Checks:
                     self.fail('the reply has no attachment or template row')
                 # The record stays readable beside the reply. That is the
                 # whole reason this is a pane and not a dialog.
-                if not page.query_selector('.o_mailpro_record .o_form_view'):
+                if not page.query_selector('.o_mailpro_odoo_record .o_form_view'):
                     self.fail('the record pane went away while replying')
                 self.shot('inbox-reply.png')
                 # A dialog on top of the reply is this screen's failure mode:
@@ -695,7 +695,7 @@ class Checks:
         # is where the fourth pane is meant to step aside rather than squeeze.
         page.set_viewport_size({'width': 1280, 'height': 900})
         page.wait_for_timeout(600)
-        record = page.query_selector('.o_mailpro_record')
+        record = page.query_selector('.o_mailpro_odoo_record')
         if record and record.is_visible():
             self.fail('the record pane still takes space at 1280px')
         # The pane stepped aside; the record did not. A round button floats
@@ -704,9 +704,9 @@ class Checks:
         # and the same button, now at the record's left edge, gives the
         # conversation back. No button in the conversation head: the one on the
         # divider is the control, and it is always on screen.
-        if page.query_selector('.o_mailpro_record_button'):
+        if page.query_selector('.o_mailpro_odoo_record_button'):
             self.fail('at 1280px the conversation head still carries a Record button')
-        toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        toggle = page.query_selector('.o_mailpro_split_odoo_record .o_mailpro_split_toggle')
         if not toggle or not toggle.is_visible():
             self.fail('at 1280px there is no button to open the record from')
         else:
@@ -716,12 +716,12 @@ class Checks:
                           % (box['width'], box['height']))
             if box['x'] + box['width'] > 1280:
                 self.fail('the record button hangs off the right edge at 1280px')
-            if 'record' not in (toggle.get_attribute('aria-label') or '').lower():
+            if 'odoo record' not in (toggle.get_attribute('aria-label') or '').lower():
                 self.fail('the record button does not say what it opens: %r'
                           % toggle.get_attribute('aria-label'))
             toggle.click()
             page.wait_for_timeout(600)
-            record = page.query_selector('.o_mailpro_record')
+            record = page.query_selector('.o_mailpro_odoo_record')
             if not record or not record.is_visible():
                 self.fail('tapping the button did not open the record at 1280px')
             elif record.bounding_box()['width'] < 500:
@@ -730,13 +730,13 @@ class Checks:
             if self.visible('.o_mailpro_conversation'):
                 self.fail('the conversation stayed open next to the record at 1280px')
             self.shot('inbox-narrow-record.png')
-            toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+            toggle = page.query_selector('.o_mailpro_split_odoo_record .o_mailpro_split_toggle')
             label = (toggle.get_attribute('aria-label') or '').lower() if toggle else ''
             if 'conversation' not in label:
                 self.fail('with the record open, the button does not offer the conversation')
             else:
                 # It floats over the record's header, which leaves it room.
-                head = page.query_selector('.o_mailpro_record .o_mailpro_record_head')
+                head = page.query_selector('.o_mailpro_odoo_record .o_mailpro_odoo_record_head')
                 if head and toggle.bounding_box()['x'] + toggle.bounding_box()['width'] > \
                         head.bounding_box()['x'] + float(
                             page.evaluate('el => getComputedStyle(el).paddingLeft',
@@ -746,45 +746,45 @@ class Checks:
                 page.wait_for_timeout(600)
                 if not self.visible('.o_mailpro_conversation'):
                     self.fail('tapping the button again did not bring the conversation back')
-                if self.visible('.o_mailpro_record'):
+                if self.visible('.o_mailpro_odoo_record'):
                     self.fail('the record stayed open next to the conversation at 1280px')
-        # The rail folds the way every pane folds: the button on its divider,
-        # a chevron while the rail is open, the menu icon once it is folded.
+        # The mailbox list folds the way every pane folds: the button on its divider,
+        # a chevron while the mailbox list is open, the menu icon once it is folded.
         # No second button in the top bar for it: that one is the phone's
         # drawer.
-        if self.visible('.o_mailpro_rail_button'):
-            self.fail('at 1280px the top bar still carries a rail button')
-        fold = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
+        if self.visible('.o_mailpro_mailbox_list_button'):
+            self.fail('at 1280px the top bar still carries a mailbox list button')
+        fold = page.query_selector('.o_mailpro_split_mailbox_list .o_mailpro_split_toggle')
         if not fold:
-            self.fail('at 1280px the rail divider has no button to fold with')
+            self.fail('at 1280px the mailbox list divider has no button to fold with')
         else:
             if not fold.query_selector('.fa-chevron-left'):
-                self.fail('the rail button beside the open rail is not a chevron')
+                self.fail('the mailbox list button beside the open mailbox list is not a chevron')
             fold.click()
             page.wait_for_timeout(400)
-            if self.visible('.o_mailpro_rail'):
-                self.fail('the button did not fold the rail at 1280px')
-            fold = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
+            if self.visible('.o_mailpro_mailbox_list'):
+                self.fail('the button did not fold the mailbox list at 1280px')
+            fold = page.query_selector('.o_mailpro_split_mailbox_list .o_mailpro_split_toggle')
             if not fold or not fold.is_visible():
-                self.fail('the folded rail left no button to bring it back')
+                self.fail('the folded mailbox list left no button to bring it back')
             elif fold.bounding_box()['x'] < 0:
-                self.fail('the folded rail\'s button hangs off the left edge')
+                self.fail('the folded mailbox list\'s button hangs off the left edge')
             elif not fold.query_selector('.fa-bars'):
-                self.fail('the folded rail\'s button is not the menu icon')
+                self.fail('the folded mailbox list\'s button is not the menu icon')
             else:
-                self.shot('inbox-narrow-rail-folded.png')
+                self.shot('inbox-narrow-mailboxes-folded.png')
                 fold.click()
                 page.wait_for_timeout(400)
-                if not self.visible('.o_mailpro_rail'):
-                    self.fail('the button did not bring the rail back at 1280px')
+                if not self.visible('.o_mailpro_mailbox_list'):
+                    self.fail('the button did not bring the mailbox list back at 1280px')
         self.shot('inbox-narrow.png')
 
         self.phone()
 
         page.set_viewport_size({'width': WIDE, 'height': 1100})
         page.wait_for_timeout(600)
-        for selector, name in (('.o_mailpro_rail', 'the mailbox rail'),
-                               ('.o_mailpro_list', 'the conversation list'),
+        for selector, name in (('.o_mailpro_mailbox_list', 'the mailbox list'),
+                               ('.o_mailpro_conversation_list', 'the conversation list'),
                                ('.o_mailpro_conversation', 'the conversation')):
             if not self.visible(selector):
                 self.fail(f'{name} did not come back at {WIDE}px')
@@ -911,7 +911,7 @@ class Checks:
         """One pane at a time, the way a phone reads mail.
 
         The list, then the conversation with a way back, then the record over
-        it with a way back; and the rail as a drawer that closes on the
+        it with a way back; and the mailbox list as a drawer that closes on the
         folder you picked. Asserted on what is on screen, because every pane
         is still in the same template and the difference is entirely which
         of them the width lets through.
@@ -926,38 +926,38 @@ class Checks:
         if back:
             back.click()
             page.wait_for_timeout(400)
-        if not self.visible('.o_mailpro_list'):
+        if not self.visible('.o_mailpro_conversation_list'):
             self.fail('a phone does not open on the conversation list')
             return
         if self.visible('.o_mailpro_conversation'):
             self.fail('the conversation sits next to the list on a phone')
-        list_width = page.query_selector('.o_mailpro_list').bounding_box()['width']
+        list_width = page.query_selector('.o_mailpro_conversation_list').bounding_box()['width']
         if list_width < 370:
             self.fail('the list takes %dpx of a 390px phone' % list_width)
 
-        # The rail is a drawer: absent until asked for, over the list while
+        # The mailbox list is a drawer: absent until asked for, over the list while
         # open, gone again once a folder is picked.
-        if self.visible('.o_mailpro_rail'):
-            self.fail('the rail takes space on a phone before it is asked for')
-        button = page.query_selector('.o_mailpro_rail_button')
+        if self.visible('.o_mailpro_mailbox_list'):
+            self.fail('the mailbox list takes space on a phone before it is asked for')
+        button = page.query_selector('.o_mailpro_mailbox_list_button')
         if not button or not button.is_visible():
-            self.fail('a phone has no button for the rail')
+            self.fail('a phone has no button for the mailbox list')
             return
         button.click()
         page.wait_for_timeout(400)
-        if not self.visible('.o_mailpro_rail'):
-            self.fail('the rail button opened nothing on a phone')
+        if not self.visible('.o_mailpro_mailbox_list'):
+            self.fail('the mailbox list button opened nothing on a phone')
         else:
-            rail = page.query_selector('.o_mailpro_rail').bounding_box()
-            if rail['width'] > 340:
-                self.fail('the rail drawer covers the whole phone')
-            self.shot('inbox-phone-rail.png')
+            mailboxes = page.query_selector('.o_mailpro_mailbox_list').bounding_box()
+            if mailboxes['width'] > 340:
+                self.fail('the mailbox list drawer covers the whole phone')
+            self.shot('inbox-phone-mailboxes.png')
             folder = page.query_selector('.o_mailpro_folder')
             if folder:
                 folder.click()
                 page.wait_for_timeout(800)
-            if self.visible('.o_mailpro_rail'):
-                self.fail('picking a folder left the rail drawer open')
+            if self.visible('.o_mailpro_mailbox_list'):
+                self.fail('picking a folder left the mailbox list drawer open')
 
         item = page.query_selector('.o_mailpro_item')
         if not item:
@@ -968,18 +968,18 @@ class Checks:
         if not self.visible('.o_mailpro_conversation'):
             self.fail('opening a conversation on a phone showed nothing')
             return
-        if self.visible('.o_mailpro_list'):
+        if self.visible('.o_mailpro_conversation_list'):
             self.fail('the list stayed on screen under the conversation on a phone')
         self.shot('inbox-phone.png')
 
         # The record, over the conversation, and the way back from it.
-        button = page.query_selector('.o_mailpro_record_button')
+        button = page.query_selector('.o_mailpro_odoo_record_button')
         if not button:
             self.fail('the phone conversation head offers no way to the record')
         else:
             button.click()
             page.wait_for_timeout(800)
-            record = page.query_selector('.o_mailpro_record')
+            record = page.query_selector('.o_mailpro_odoo_record')
             if not record or not record.is_visible():
                 self.fail('the Record button showed no record on a phone')
             else:
@@ -987,7 +987,7 @@ class Checks:
                 if share < 0.9:
                     self.fail('the phone record takes %d%% of the screen' % (share * 100))
                 self.shot('inbox-phone-record.png')
-                page.query_selector('.o_mailpro_record_zoom').click()
+                page.query_selector('.o_mailpro_odoo_record_zoom').click()
                 page.wait_for_timeout(500)
                 if not self.visible('.o_mailpro_conversation'):
                     self.fail('Back to the Inbox did not bring the conversation back on a phone')
@@ -1030,7 +1030,7 @@ class Checks:
             return
         back.click()
         page.wait_for_timeout(400)
-        if not self.visible('.o_mailpro_list'):
+        if not self.visible('.o_mailpro_conversation_list'):
             self.fail('Back did not bring the list back on a phone')
 
     def panes(self):
@@ -1043,8 +1043,8 @@ class Checks:
         """
         page = self.page
 
-        divider = page.query_selector('.o_mailpro_split_list')
-        pane = page.query_selector('.o_mailpro_list')
+        divider = page.query_selector('.o_mailpro_split_conversation_list')
+        pane = page.query_selector('.o_mailpro_conversation_list')
         if not divider or not pane:
             self.fail('the conversation list has no divider to drag')
             return
@@ -1060,18 +1060,18 @@ class Checks:
         page.mouse.up()
         page.wait_for_timeout(400)
 
-        widened = page.query_selector('.o_mailpro_list').bounding_box()['width']
+        widened = page.query_selector('.o_mailpro_conversation_list').bounding_box()['width']
         if widened - before < 40:
             self.fail('dragging the divider 90px moved the list %dpx'
                       % (widened - before))
 
-        fold = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        fold = page.query_selector('.o_mailpro_split_odoo_record .o_mailpro_split_toggle')
         if not fold:
             self.fail('the record pane cannot be folded away')
             return
         fold.click()
         page.wait_for_timeout(400)
-        record = page.query_selector('.o_mailpro_record')
+        record = page.query_selector('.o_mailpro_odoo_record')
         if record and record.is_visible():
             self.fail('the record pane did not fold away')
         self.shot('inbox-folded.png')
@@ -1086,39 +1086,39 @@ class Checks:
             return
         page.wait_for_timeout(1200)
 
-        record = page.query_selector('.o_mailpro_record')
+        record = page.query_selector('.o_mailpro_odoo_record')
         if record and record.is_visible():
             self.fail('the folded record pane came back on reload')
-        kept = page.query_selector('.o_mailpro_list').bounding_box()['width']
+        kept = page.query_selector('.o_mailpro_conversation_list').bounding_box()['width']
         if abs(kept - widened) > 8:
             self.fail('the list width was %dpx before the reload and %dpx after'
                       % (widened, kept))
 
         # The same button, now at the screen's right edge, is the way back.
-        toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        toggle = page.query_selector('.o_mailpro_split_odoo_record .o_mailpro_split_toggle')
         if not toggle or not toggle.is_visible():
             self.fail('the folded record pane left no button to bring it back')
         else:
             if toggle.bounding_box()['x'] + toggle.bounding_box()['width'] > WIDE:
                 self.fail('the folded record\'s button hangs off the right edge')
             toggle.click()
-        divider = page.query_selector('.o_mailpro_split_list')
+        divider = page.query_selector('.o_mailpro_split_conversation_list')
         if divider:
             divider.dblclick(position={'x': 2, 'y': 200})
         page.wait_for_timeout(500)
-        if not self.visible('.o_mailpro_record'):
+        if not self.visible('.o_mailpro_odoo_record'):
             self.fail('the record pane did not come back when unfolded')
 
         # The list folds too, the same way, and the conversation takes the
         # room it leaves.
         conversation_before = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
-        fold = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+        fold = page.query_selector('.o_mailpro_split_conversation_list .o_mailpro_split_toggle')
         if not fold:
             self.fail('the conversation list cannot be folded away')
             return
         fold.click()
         page.wait_for_timeout(400)
-        if self.visible('.o_mailpro_list'):
+        if self.visible('.o_mailpro_conversation_list'):
             self.fail('the conversation list did not fold away')
         conversation_after = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
         if conversation_after - conversation_before < 100:
@@ -1126,7 +1126,7 @@ class Checks:
                       % (conversation_after - conversation_before))
         # The button floats over the conversation's header, which makes
         # room: the title starts to the right of it.
-        toggle = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+        toggle = page.query_selector('.o_mailpro_split_conversation_list .o_mailpro_split_toggle')
         title = page.query_selector('.o_mailpro_conversation_title')
         if toggle and title and title.bounding_box()['x'] < \
                 toggle.bounding_box()['x'] + toggle.bounding_box()['width']:
@@ -1134,31 +1134,31 @@ class Checks:
         self.shot('inbox-list-folded.png')
         # Both left panes folded: two buttons, side by side, neither over
         # the other, and the title after both.
-        page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle').click()
+        page.query_selector('.o_mailpro_split_mailbox_list .o_mailpro_split_toggle').click()
         page.wait_for_timeout(400)
-        rail_btn = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
-        list_btn = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+        mailbox_list_btn = page.query_selector('.o_mailpro_split_mailbox_list .o_mailpro_split_toggle')
+        list_btn = page.query_selector('.o_mailpro_split_conversation_list .o_mailpro_split_toggle')
         title = page.query_selector('.o_mailpro_conversation_title')
-        if not rail_btn or not list_btn:
-            self.fail('folding rail and list together lost a button')
+        if not mailbox_list_btn or not list_btn:
+            self.fail('folding mailbox list and list together lost a button')
         else:
-            a, b = rail_btn.bounding_box(), list_btn.bounding_box()
+            a, b = mailbox_list_btn.bounding_box(), list_btn.bounding_box()
             if b['x'] < a['x'] + a['width']:
-                self.fail('the rail and list buttons overlap when both are folded')
+                self.fail('the mailbox list and list buttons overlap when both are folded')
             elif title and title.bounding_box()['x'] < b['x'] + b['width']:
                 self.fail('two folded panes\' buttons sit over the conversation title')
             self.shot('inbox-two-folded.png')
-            rail_btn.click()
+            mailbox_list_btn.click()
             page.wait_for_timeout(400)
-            if not self.visible('.o_mailpro_rail'):
-                self.fail('the menu button did not bring the rail back')
-        toggle = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+            if not self.visible('.o_mailpro_mailbox_list'):
+                self.fail('the menu button did not bring the mailbox list back')
+        toggle = page.query_selector('.o_mailpro_split_conversation_list .o_mailpro_split_toggle')
         if not toggle or not toggle.query_selector('.fa-list-ul'):
             self.fail('the folded list left no list button to bring it back')
         else:
             toggle.click()
             page.wait_for_timeout(400)
-            if not self.visible('.o_mailpro_list'):
+            if not self.visible('.o_mailpro_conversation_list'):
                 self.fail('the button did not bring the list back')
 
     def zoom(self):
@@ -1170,7 +1170,7 @@ class Checks:
         """
         page = self.page
 
-        button = page.query_selector('.o_mailpro_record_zoom')
+        button = page.query_selector('.o_mailpro_odoo_record_zoom')
         if not button:
             # The reload above lands on the list; pick a conversation so the
             # fourth pane has a record to zoom.
@@ -1178,31 +1178,31 @@ class Checks:
             if item:
                 item.click()
                 page.wait_for_timeout(1200)
-            button = page.query_selector('.o_mailpro_record_zoom')
+            button = page.query_selector('.o_mailpro_odoo_record_zoom')
         if not button:
             self.fail('the record pane has no control to take the screen')
             return
 
         # One way to make the record bigger. Leaving for the record's own
         # screen is offered once you are on the whole screen, not beside it.
-        if page.query_selector('.o_mailpro_record_open'):
+        if page.query_selector('.o_mailpro_odoo_record_open'):
             self.fail('Open sits next to Expand in the record pane')
 
         button.click()
         page.wait_for_timeout(500)
 
-        for selector, name in (('.o_mailpro_list', 'the conversation list'),
+        for selector, name in (('.o_mailpro_conversation_list', 'the conversation list'),
                                ('.o_mailpro_conversation', 'the conversation'),
-                               ('.o_mailpro_rail', 'the mailbox rail'),
-                               ('.o_mailpro_split_list', 'a divider')):
+                               ('.o_mailpro_mailbox_list', 'the mailbox list'),
+                               ('.o_mailpro_split_conversation_list', 'a divider')):
             pane = page.query_selector(selector)
             if pane and pane.is_visible():
                 self.fail(f'{name} is still on screen while the record is zoomed')
 
-        if not page.query_selector('.o_mailpro_record_open'):
+        if not page.query_selector('.o_mailpro_odoo_record_open'):
             self.fail('the zoomed record has no way to its own screen')
 
-        record = page.query_selector('.o_mailpro_record')
+        record = page.query_selector('.o_mailpro_odoo_record')
         panes = page.query_selector('.o_mailpro_panes')
         if not record or not record.is_visible():
             self.fail('the record pane went away when it was zoomed')
@@ -1212,16 +1212,16 @@ class Checks:
             self.fail('the zoomed record takes %d%% of the screen' % (share * 100))
         self.shot('inbox-zoom.png')
 
-        page.query_selector('.o_mailpro_record_zoom').click()
+        page.query_selector('.o_mailpro_odoo_record_zoom').click()
         page.wait_for_timeout(500)
-        for selector, name in (('.o_mailpro_list', 'the conversation list'),
+        for selector, name in (('.o_mailpro_conversation_list', 'the conversation list'),
                                ('.o_mailpro_conversation', 'the conversation')):
             pane = page.query_selector(selector)
             if not pane or not pane.is_visible():
                 self.fail(f'{name} did not come back when the zoom was closed')
 
         # A reading mode, not a preference: the reload lands on the Inbox.
-        page.query_selector('.o_mailpro_record_zoom').click()
+        page.query_selector('.o_mailpro_odoo_record_zoom').click()
         page.wait_for_timeout(400)
         page.reload(wait_until='domcontentloaded')
         try:
@@ -1230,7 +1230,7 @@ class Checks:
             self.fail('the Inbox did not come back after a reload')
             return
         page.wait_for_timeout(1200)
-        pane = page.query_selector('.o_mailpro_list')
+        pane = page.query_selector('.o_mailpro_conversation_list')
         if not pane or not pane.is_visible():
             self.fail('the reload came back zoomed on the record')
 

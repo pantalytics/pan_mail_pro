@@ -70,37 +70,45 @@ migrated once; `migrations/19.0.6.0.0/` is the record of what moved where.
 ### The Inbox and its panes
 
 The screen is the **Inbox**: one client action, root class `o_mailpro_inbox`.
-It holds four panes, left to right, and each one has exactly one name -- the
-same word in the code, the CSS class, the label and the prose.
+It holds four panes, left to right. Each one is named after what is in it, and
+that name is the same word in the code, the CSS class, the label and the prose.
 
-| # | Pane | Code | CSS class | Label | What is in it |
-|---|------|------|-----------|-------|----------------|
-| 1 | **rail** | `rail` | `o_mailpro_rail` | Mailboxes | the mailboxes and their folders |
-| 2 | **list** | `list` | `o_mailpro_list` | Conversations | the conversations in the chosen folder |
+| # | Pane | Code key | CSS class | Label | What is in it |
+|---|------|----------|-----------|-------|----------------|
+| 1 | **mailbox list** | `mailbox_list` | `o_mailpro_mailbox_list` | Mailboxes | the mailboxes and, under each, its folders |
+| 2 | **conversation list** | `conversation_list` | `o_mailpro_conversation_list` | Conversations | the conversations in the chosen folder, one row each |
 | 3 | **conversation** | `conversation` | `o_mailpro_conversation` | Conversation | the open conversation: its messages, the tab strip, the composer |
-| 4 | **record** | `record` | `o_mailpro_record` | Record | the linked Odoo record, as its own form view |
+| 4 | **Odoo record** | `odoo_record` | `o_mailpro_odoo_record` | Odoo record | the record the conversation is linked to, as its own form view |
 
-The names are the keys, not just labels: `ORDER`, `ICONS`, `paneLabel()`,
+The names are keys, not just labels: `ORDER`, `ICONS`, `PANES`, `paneLabel()`,
 `folded(name)`, `lead(name)` and `stage` in `use_panes.js` all take one of
-these four words, and the divider left of a pane is `o_mailpro_split_<pane>`
-(there is none left of the rail). Widths are stored for three of them; the
-conversation is what the other three leave over, so it has a floor and no
-width of its own.
+these four words, the divider left of a pane is `o_mailpro_split_<pane>`
+(there is none left of the mailbox list), and everything inside a pane keeps
+the pane's own prefix: `o_mailpro_conversation_head` is part of pane 3,
+`o_mailpro_odoo_record_zoom` part of pane 4.
 
-Two words are reserved and never name a pane:
+Three panes have a stored width; the conversation is what the other three
+leave over, so it has a floor and no width of its own. It is also the one pane
+that never folds -- a screen with no mail on it is not this screen. Pane 4 has
+a state that is not a width: zoom, the record on the whole screen.
+
+Two words are deliberately not pane names:
 
 - **thread** is the mail thread the matcher keys on -- `pan.mail.thread.index`,
   `pan.mail.thread.link`, the `References` root, and Odoo's own `Thread` store
-  model (`recordThread` is the record's chatter thread, not a pane). Pane 3 was
-  called `thread` until 19.0.13.10.0, which is why the prose and the code
-  disagreed about it.
-- **conversation** on its own is the object: a `pan.mail.conversation` row in
-  the list, opened in the conversation pane. The pane is always "the
-  conversation pane" when the pane is what is meant.
+  model (`recordThread` is the record's chatter thread). Pane 3 was called
+  `thread` until 19.0.13.10.0, which is why the prose and the code disagreed
+  about it.
+- **rail** was pane 1 until 19.0.13.11.0. It described where the pane sits
+  rather than what is in it, which is what made the other three hard to name
+  next to it.
 
-Pane 3 never folds -- a screen with no mail on it is not this screen -- and the
-record pane has a fifth state that is not a width: zoom, the record on the
-whole screen. Sizing, folding and the three window shapes are in
+**Record** on its own is not one either: this module puts mail on Odoo
+documents, so "record" without a qualifier reads as either side. Pane 4 is the
+**Odoo record**, and `selectedRecord`, the record chips and
+`pan.mail.thread.link`'s record still mean the document itself.
+
+Sizing, folding and the three window shapes are in
 `static/src/js/conversation_view/use_panes.js`.
 
 ### Provider abstraction
@@ -347,12 +355,12 @@ have to notice you left on is a screen that lost its mail.
 record pane steps aside, as it already did, and the thread head grows a
 Record button that gives the record the whole screen -- the zoom above, with
 its own "Back to the Inbox" -- so the record is one tap away instead of
-unreachable; the top bar grows a button that folds the rail, because the
+unreachable; the top bar grows a button that folds the mailbox list, because the
 chevron on a 5px divider is not something a finger can hit. Below 768px, the
 width Odoo itself calls small, the panes stop sitting side by side: the list
 or the conversation has the screen, an arrow in the thread head steps back
 to the list without deselecting anything, the record takes the screen over
-either, and the rail is a drawer over whichever pane is open that closes on
+either, and the mailbox list is a drawer over whichever pane is open that closes on
 the folder you pick. Every pane is still the same template; the width only
 decides which of them are let through, so nothing is drawn twice for two
 kinds of screen. A phone lands on the list rather than in the first
@@ -361,7 +369,7 @@ conversation, the way every mail client does.
 19.0.13.5.0 makes the fold a motion and gives the tablet its record back
 without a button. A folded pane is no longer removed: it stays in the DOM at
 no width, inert and invisible, so `flex-basis` and `flex-grow` are numbers
-the stylesheet can interpolate and the rail, the record and the phone's
+the stylesheet can interpolate and the mailbox list, the record and the phone's
 drawer slide instead of blinking out. Below 1400px the Record button in the
 thread head is gone; the conversation and the record share the third column
 and take turns in it, and the divider between them is a strip wide enough
@@ -395,12 +403,12 @@ comes from the same `followers` request the chatter makes, so the module adds
 a button and a fetch and no list of its own.
 
 19.0.13.6.0 makes that strip the one way a pane comes back, and the chevron
-on the divider the one way it goes: the rail, the list and the record fold
+on the divider the one way it goes: the mailbox list, the list and the record fold
 alike, and each leaves its divider as a strip named after it. The list folds
 now too, because on a tablet a long mail is worth more than the list beside
 it and the strip is a tap away; the conversation is still the one pane that
 never folds on its own. The chevron grew to a finger's size, so the top bar's
-rail button is the phone's drawer only, where the rail is not a pane with a
+mailbox-list button is the phone's drawer only, where the mailbox list is not a pane with a
 divider. Two controls for one fold was the inconsistency this removes.
 
 19.0.12.3.0 did the same to Files. `read_conversation` hands back the
@@ -1254,7 +1262,7 @@ anyone being asked again. One click buys permanent correctness for a thread,
 which is the only part of triage that compounds. The inbox says so in those
 words when it confirms.
 
-The word is **linked**, everywhere: the chip row reads `Linked to`, the rail
+The word is **linked**, everywhere: the chip row reads `Linked to`, the mailbox list
 already had `Linked to nothing`, and the report in §7 is called link coverage.
 "Filed" was the technical word for the same idea and it was the only place the
 vocabulary drifted.

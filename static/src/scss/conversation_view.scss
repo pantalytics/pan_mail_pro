@@ -23,7 +23,7 @@ $mailpro-accent-ink: #4340b4;
 $mailpro-warn: #c0392b;
 
 // One motion for every fold: long enough to read as a pane sliding, short
-// enough that a tap feels answered. Chosen once so the rail, the record and
+// enough that a tap feels answered. Chosen once so the mailbox list, the record and
 // the drawer move the same way.
 $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
@@ -52,11 +52,11 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         white-space: nowrap;
     }
 
-    // The two icon buttons a small screen adds: the rail from the top bar
+    // The two icon buttons a small screen adds: the mailbox list from the top bar
     // and the step back from a conversation. Sized for a thumb, drawn as
     // quietly as the fold chevron they stand in for. Both are hidden on a
     // wide screen, where the dividers are the controls.
-    .o_mailpro_rail_button,
+    .o_mailpro_mailbox_list_button,
     .o_mailpro_back {
         display: none;
         width: 2.25rem;
@@ -164,7 +164,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         }
     }
 
-    // Inside the neighbour on the right (a folded rail, list or, on a
+    // Inside the neighbour on the right (a folded mailbox list, conversation list or, on a
     // tablet, conversation), or on the left (a folded record). The inline
     // `left` moves a button along when the pane before its own is folded
     // too, so two folds are two buttons side by side.
@@ -183,24 +183,24 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // per folded pane before this one, so the title starts after the last
     // button rather than under it.
     @each $n in 1, 2, 3 {
-        .o_mailpro_lead_#{$n} .o_mailpro_list_head,
+        .o_mailpro_lead_#{$n} .o_mailpro_conversation_list_head,
         .o_mailpro_lead_#{$n} .o_mailpro_conversation_head,
-        .o_mailpro_lead_#{$n} .o_mailpro_record_head {
+        .o_mailpro_lead_#{$n} .o_mailpro_odoo_record_head {
             padding-left: #{0.5 + $n * 2.625}rem;
         }
     }
 
-    .o_mailpro_record_folded .o_mailpro_conversation_head { padding-right: 3.125rem; }
+    .o_mailpro_odoo_record_folded .o_mailpro_conversation_head { padding-right: 3.125rem; }
 
-    // 1. the rail
-    .o_mailpro_rail {
+    // 1. the mailbox list
+    .o_mailpro_mailbox_list {
         // The width is an inline flex-basis the reader dragged; no shrink, so
         // what they set is what they get and the next drag starts where the
         // last one ended.
         flex: 0 0 auto;
         background: $mailpro-panel;
         // Room on the right for the fold button that floats half over the
-        // rail's edge, so the first mailbox's count is not under it.
+        // mailbox list's edge, so the first mailbox's count is not under it.
         padding: 0.875rem 1.25rem 0.875rem 0.5rem;
         overflow-y: auto;
     }
@@ -293,7 +293,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     .o_mailpro_message_head,
     .o_mailpro_quote_toggle,
     .o_mailpro_more .btn,
-    .o_mailpro_record_head .btn {
+    .o_mailpro_odoo_record_head .btn {
         &:focus-visible {
             outline: 2px solid $mailpro-accent;
             outline-offset: -2px;
@@ -324,7 +324,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     }
 
     // 2. the list
-    .o_mailpro_list {
+    .o_mailpro_conversation_list {
         flex: 0 0 auto;
         overflow-y: auto;
     }
@@ -332,7 +332,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // The list header sits over the list it describes, and stays there while
     // the list scrolls under it: what you are reading, and which question you
     // asked about it, are part of reading the answer.
-    .o_mailpro_list_head {
+    .o_mailpro_conversation_list_head {
         position: sticky;
         top: 0;
         z-index: 1;
@@ -343,7 +343,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         border-bottom: 1px solid $mailpro-line-soft;
     }
 
-    .o_mailpro_list_title {
+    .o_mailpro_conversation_list_title {
         font-size: 0.75rem;
         font-weight: 600;
         letter-spacing: 0.04em;
@@ -782,7 +782,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // sheet and its chatter out side by side and the chatter runs off the
     // pane. Here it is one column, at the pane's own width, and its own
     // scrolling is the pane's.
-    .o_mailpro_record {
+    .o_mailpro_odoo_record {
         flex: 0 0 auto;
         background: #fafbfc;
         overflow: hidden auto;
@@ -839,18 +839,18 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         .o_form_sheet { padding: 1rem; margin: 0; }
     }
 
-    .o_mailpro_record_head {
+    .o_mailpro_odoo_record_head {
         // Wider on the left, for the fold button on the divider before it.
         padding: 0.75rem 1rem 0.75rem 1.5rem;
         background: #fff;
         border-bottom: 1px solid $mailpro-line;
     }
 
-    .o_mailpro_record_name { margin: 0; font-size: 0.875rem; font-weight: 600; }
+    .o_mailpro_odoo_record_name { margin: 0; font-size: 0.875rem; font-weight: 600; }
 
     // Zoom: the record alone. The dragged width is an inline style, so taking
     // the screen has to shout back at it.
-    .o_mailpro_zoomed .o_mailpro_record {
+    .o_mailpro_zoomed .o_mailpro_odoo_record {
         flex: 1 1 auto !important;
         display: block;
     }
@@ -858,13 +858,13 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // The form is a pane's width by default (one column, no chatter). On the
     // whole screen it may have the room it was designed for again -- but the
     // chatter stays gone: pane 3's reply is this screen's composer.
-    .o_mailpro_zoomed .o_mailpro_record .o_form_sheet {
+    .o_mailpro_zoomed .o_mailpro_odoo_record .o_form_sheet {
         max-width: 60rem !important;
         margin: 0 auto;
         padding: 1.5rem;
     }
 
-    .o_mailpro_zoomed .o_mailpro_record .o_inner_group {
+    .o_mailpro_zoomed .o_mailpro_odoo_record .o_inner_group {
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 
@@ -877,18 +877,18 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // slide is over on the way out and at once on the way back, which is
     // what keeps a screen reader and Playwright honest about what is on
     // screen without a frame of empty pane.
-    .o_mailpro_rail,
-    .o_mailpro_list,
+    .o_mailpro_mailbox_list,
+    .o_mailpro_conversation_list,
     .o_mailpro_conversation,
-    .o_mailpro_record {
+    .o_mailpro_odoo_record {
         transition: flex-basis $mailpro-fold, flex-grow $mailpro-fold,
                     padding $mailpro-fold, opacity 0.2s ease 0.08s;
     }
 
-    .o_mailpro_rail.o_mailpro_folded,
-    .o_mailpro_list.o_mailpro_folded,
+    .o_mailpro_mailbox_list.o_mailpro_folded,
+    .o_mailpro_conversation_list.o_mailpro_folded,
     .o_mailpro_conversation.o_mailpro_folded,
-    .o_mailpro_record.o_mailpro_folded {
+    .o_mailpro_odoo_record.o_mailpro_folded {
         flex-basis: 0 !important;
         flex-grow: 0 !important;
         min-width: 0 !important;
@@ -903,11 +903,11 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     }
 
     @media (prefers-reduced-motion: reduce) {
-        .o_mailpro_rail,
-        .o_mailpro_list,
+        .o_mailpro_mailbox_list,
+        .o_mailpro_conversation_list,
         .o_mailpro_conversation,
-        .o_mailpro_record,
-        .o_mailpro_rail_backdrop { transition: none !important; }
+        .o_mailpro_odoo_record,
+        .o_mailpro_mailbox_list_backdrop { transition: none !important; }
     }
 
     .o_mailpro_empty { padding: 2rem 1.375rem; }
@@ -929,7 +929,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // the other is folded, and the divider between them is the strip. Both
     // grow from a zero basis, so the swap is one slide: the record's dragged
     // width is an inline style and has to be shouted down here.
-    &.o_mailpro_narrow .o_mailpro_record {
+    &.o_mailpro_narrow .o_mailpro_odoo_record {
         flex-basis: 0 !important;
         flex-grow: 1;
         flex-shrink: 1;
@@ -938,12 +938,12 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // A dragged width is an inline style, so the narrow-window cap has to be
     // a property that outranks flex-basis rather than another flex-basis.
     @media (max-width: 1100px) {
-        .o_mailpro_rail { max-width: 11rem; }
-        .o_mailpro_list { max-width: 18rem; }
+        .o_mailpro_mailbox_list { max-width: 11rem; }
+        .o_mailpro_conversation_list { max-width: 18rem; }
     }
 
     // A phone: one pane at a time. The list or the conversation takes the
-    // width, the record takes it over either while it is zoomed, and the rail
+    // width, the record takes it over either while it is zoomed, and the mailbox list
     // is a drawer over whichever is open. The dragged widths are inline
     // styles, so every width here has to outrank them.
     &.o_mailpro_small {
@@ -952,7 +952,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
             gap: 0.25rem !important;
         }
 
-        .o_mailpro_rail_button,
+        .o_mailpro_mailbox_list_button,
         .o_mailpro_back { display: flex; }
 
         // The bar no longer centres the search: there is no room to weigh
@@ -967,7 +967,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         // the screen, not part of it, so it keeps its width and moves. The
         // generic fold above would take its width; the drawer's own rules
         // outrank it on specificity and give it back.
-        .o_mailpro_rail {
+        .o_mailpro_mailbox_list {
             position: absolute;
             top: 0;
             bottom: 0;
@@ -994,7 +994,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
             }
         }
 
-        .o_mailpro_rail_backdrop {
+        .o_mailpro_mailbox_list_backdrop {
             position: absolute;
             inset: 0;
             z-index: 2;
@@ -1008,9 +1008,9 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
             }
         }
 
-        .o_mailpro_list,
+        .o_mailpro_conversation_list,
         .o_mailpro_conversation,
-        .o_mailpro_record {
+        .o_mailpro_odoo_record {
             flex: 1 1 auto !important;
             width: 100%;
             max-width: none;
@@ -1039,11 +1039,11 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
         // The form is a phone wide now, so the zoom's two columns would be
         // two half-columns: the single column the pane draws is right here.
-        .o_mailpro_zoomed .o_mailpro_record .o_inner_group {
+        .o_mailpro_zoomed .o_mailpro_odoo_record .o_inner_group {
             grid-template-columns: minmax(0, 1fr) !important;
         }
 
-        .o_mailpro_zoomed .o_mailpro_record .o_form_sheet { padding: 1rem; }
+        .o_mailpro_zoomed .o_mailpro_odoo_record .o_form_sheet { padding: 1rem; }
     }
 }
 

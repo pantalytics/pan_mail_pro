@@ -1,6 +1,8 @@
 /** @odoo-module */
 /**
- * The Inbox: the rail, the list, the conversation and the record.
+ * The Inbox: the mailbox list, the conversation list, the conversation
+ * and the Odoo record. ARCHITECTURE.md section 1 is where those four names
+ * are fixed; nothing here calls a pane anything else.
  *
  * Everything on this screen is read through `pan.mail.conversation`, which
  * stores nothing. Every action is Odoo's own method on the record underneath,
@@ -61,10 +63,10 @@ const EMPTY_CONVERSATION = () => ({
     files: { ids: [], store: {} },
 });
 
-// Which mailboxes stand open in the rail. In the browser, next to the pane
+// Which mailboxes stand open in the mailbox list. In the browser, next to the pane
 // widths: it is the same kind of preference, per person and per monitor, and
 // a table for it would have to be read on every open.
-const RAIL_KEY = "pan_mail_pro.rail";
+const MAILBOX_LIST_KEY = "pan_mail_pro.mailbox_list";
 
 // Which of the four readings of a conversation this person left open. Theirs
 // rather than the conversation's: somebody clearing an inbox stays in Mail,
@@ -85,7 +87,7 @@ function restoreTab() {
 /** Stored state is somebody else's data by the time we read it back. */
 function restoreExpanded() {
     try {
-        const stored = JSON.parse(browser.localStorage.getItem(RAIL_KEY) || "null");
+        const stored = JSON.parse(browser.localStorage.getItem(MAILBOX_LIST_KEY) || "null");
         return Array.isArray(stored) ? stored.filter(Number.isFinite) : [];
     } catch {
         return []; // Private window, cleared storage, a half-written value.
@@ -108,8 +110,8 @@ const QUOTE_MARKERS = [
 ].join(", ");
 
 /** The record pane, isolated so a form-view failure cannot take the page. */
-export class RecordPane extends Component {
-    static template = "pan_mail_pro.RecordPane";
+export class OdooRecordPane extends Component {
+    static template = "pan_mail_pro.OdooRecordPane";
     static components = { View };
     static props = {
         record: { type: Object, optional: true },
@@ -160,7 +162,7 @@ export class RecordPane extends Component {
 export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
     static components = {
-        RecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
+        OdooRecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
         Dropdown, CheckboxItem, FollowerList,
     };
     static props = ["*"];
@@ -201,14 +203,14 @@ export class ConversationView extends Component {
             loading: true,
             error: "",
             folder: "inbox",
-            // Two dimensions, two controls: the rail says where you are, the
+            // Two dimensions, two controls: the mailbox list says where you are, the
             // filter row says what you are looking for in there. Naming our
-            // own states as folders made the rail read like a filter panel
+            // own states as folders made the mailbox list read like a filter panel
             // next to the mail client everybody also has open.
             filter: null,
             mailboxes: [],
             mailboxId: null,
-            // The rail, the way Outlook draws it: every mailbox can stand
+            // The mailbox list, the way Outlook draws it: every mailbox can stand
             // open or folded, and folding one does not close the mail you
             // are reading. `counts` is keyed by mailbox id (0 when there is
             // no mailbox yet), so a folded mailbox costs no query at all.
@@ -268,7 +270,7 @@ export class ConversationView extends Component {
             this.state.mailboxId = this.state.mailboxes[0].id;
         }
         // What stood open last time, minus the mailboxes that are gone. The
-        // one you land in is always open: a rail that opens fully folded
+        // one you land in is always open: a mailbox list that opens fully folded
         // hides the folder you are looking at.
         const known = new Set(this.state.mailboxes.map((mailbox) => mailbox.id));
         for (const id of restoreExpanded()) {
@@ -276,11 +278,11 @@ export class ConversationView extends Component {
                 this.state.expanded[id] = true;
             }
         }
-        this.state.expanded[this.railKey()] = true;
+        this.state.expanded[this.mailboxKey()] = true;
     }
 
     /** The key a mailbox's folders are stored under; 0 is "no mailbox". */
-    railKey(mailboxId) {
+    mailboxKey(mailboxId) {
         return (mailboxId === undefined ? this.state.mailboxId : mailboxId) || 0;
     }
 
@@ -289,22 +291,22 @@ export class ConversationView extends Component {
         const keys = this.state.mailboxes
             .map((mailbox) => mailbox.id)
             .filter((id) => this.state.expanded[id]);
-        // Without a mailbox the rail still shows the reader's own folders,
+        // Without a mailbox the mailbox list still shows the reader's own folders,
         // and the open mailbox is counted even when its folders are folded:
         // the empty state names the folder you are in.
-        const active = this.railKey();
+        const active = this.mailboxKey();
         return keys.includes(active) ? keys : [...keys, active];
     }
 
     saveExpanded() {
         try {
             browser.localStorage.setItem(
-                RAIL_KEY,
+                MAILBOX_LIST_KEY,
                 JSON.stringify(Object.keys(this.state.expanded)
                     .filter((id) => this.state.expanded[id])
                     .map(Number)));
         } catch {
-            // A rail nobody can store is still a rail you can fold today.
+            // A mailbox list nobody can store is still a mailbox list you can fold today.
         }
     }
 
@@ -318,7 +320,7 @@ export class ConversationView extends Component {
                 search: this.state.search || null,
             };
             // One count query per mailbox that is standing open. A folded
-            // mailbox is not counted, which is what keeps a rail of six
+            // mailbox is not counted, which is what keeps a mailbox list of six
             // accounts from costing six times the queries of one.
             const keys = this.expandedKeys();
             const [counts, conversations] = await Promise.all([
@@ -329,7 +331,7 @@ export class ConversationView extends Component {
                         // The filter row belongs to the list, so it is
                         // counted for the mailbox the list is showing and
                         // nowhere else.
-                        folder: key === this.railKey() ? this.state.folder : null,
+                        folder: key === this.mailboxKey() ? this.state.folder : null,
                     }))),
                 this.orm.call("pan.mail.conversation", "search_conversations", [], {
                     ...args,
@@ -389,7 +391,7 @@ export class ConversationView extends Component {
     backToList() {
         this.composer.close();
         this.state.compose = null;
-        this.panes.showList();
+        this.panes.showConversationList();
     }
 
     async select(conversation) {
@@ -481,11 +483,11 @@ export class ConversationView extends Component {
         if (mailboxId !== undefined && mailboxId !== this.state.mailboxId) {
             this.state.mailboxId = mailboxId;
         // Opening a mailbox unfolds it: the folders are where you go next.
-        this.state.expanded[this.railKey()] = true;
+        this.state.expanded[this.mailboxKey()] = true;
         this.saveExpanded();
         }
         this.state.folder = folder;
-        this.panes.closeRail();
+        this.panes.closeMailboxList();
         // A filter is a question about the folder you are in, so switching
         // folder keeps it: "linked to nothing" in Sent is a fair question,
         // and dropping it on every click is the thing that makes a filter
@@ -503,7 +505,7 @@ export class ConversationView extends Component {
 
     /** Fold a mailbox away, or open it, without leaving the one you are in. */
     async toggleMailbox(mailboxId) {
-        const key = this.railKey(mailboxId);
+        const key = this.mailboxKey(mailboxId);
         this.state.expanded[key] = !this.state.expanded[key];
         this.saveExpanded();
         if (this.state.expanded[key] && !this.state.counts[key]) {
@@ -512,7 +514,7 @@ export class ConversationView extends Component {
     }
 
     isExpanded(mailboxId) {
-        return !!this.state.expanded[this.railKey(mailboxId)];
+        return !!this.state.expanded[this.mailboxKey(mailboxId)];
     }
 
     /** The folder counts of one mailbox, loaded when it is unfolded. */
@@ -524,7 +526,7 @@ export class ConversationView extends Component {
                     search: this.state.search || null,
                 });
         } catch (error) {
-            // A rail that cannot count is a rail without numbers, not an
+            // A mailbox list that cannot count is a mailbox list without numbers, not an
             // error banner over the mail somebody is reading.
             console.warn("[Mail Pro] folder counts failed", error);
             this.state.counts[key] = [];
@@ -532,12 +534,12 @@ export class ConversationView extends Component {
     }
 
     foldersFor(mailboxId) {
-        return (this.state.counts[this.railKey(mailboxId)] || {}).folders || [];
+        return (this.state.counts[this.mailboxKey(mailboxId)] || {}).folders || [];
     }
 
     /** The filter menu over the list, counted inside the open folder. */
     get filters() {
-        return (this.state.counts[this.railKey()] || {}).filters || [];
+        return (this.state.counts[this.mailboxKey()] || {}).filters || [];
     }
 
     /** The one in use, named on the button so a closed menu still says so. */
@@ -545,15 +547,15 @@ export class ConversationView extends Component {
         return this.filters.find((pill) => pill.id === this.state.filter) || null;
     }
 
-    /** Open another mailbox, from the rail. Folders are per mailbox. */
+    /** Open another mailbox, from the mailbox list. Folders are per mailbox. */
     async setMailbox(mailboxId) {
-        this.panes.closeRail();
+        this.panes.closeMailboxList();
         if (mailboxId === this.state.mailboxId) {
             return;
         }
         this.state.mailboxId = mailboxId;
         // Opening a mailbox unfolds it: the folders are where you go next.
-        this.state.expanded[this.railKey()] = true;
+        this.state.expanded[this.mailboxKey()] = true;
         this.saveExpanded();
         // The folder and the filter carry over. Every mailbox has the same
         // two folders, and landing back in Inbox on every switch loses the
@@ -603,9 +605,9 @@ export class ConversationView extends Component {
     // these say which ones exist at all. Wide: all four. Narrow: all four,
     // the conversation and the record taking turns in the third column.
     // Small: one at a time -- the list or the conversation, the record over
-    // either, and the rail as a drawer over whichever is open.
+    // either, and the mailbox list as a drawer over whichever is open.
 
-    get showRail() {
+    get showMailboxList() {
         return !this.panes.state.zoom;
     }
 
@@ -615,7 +617,7 @@ export class ConversationView extends Component {
             && Boolean(this.state.selected || this.composer.state.open);
     }
 
-    get showList() {
+    get showConversationList() {
         const panes = this.panes.state;
         return !panes.zoom && (!panes.small || !this.conversationOpen);
     }
@@ -625,7 +627,7 @@ export class ConversationView extends Component {
         return !panes.zoom && (!panes.small || this.conversationOpen);
     }
 
-    get showRecord() {
+    get showOdooRecord() {
         const panes = this.panes.state;
         return panes.zoom || !panes.small;
     }
@@ -636,12 +638,12 @@ export class ConversationView extends Component {
      * "Back to the Inbox" brings the conversation back. A tablet needs no
      * button: the record's divider is the strip that swaps it in.
      */
-    get showRecordButton() {
+    get showOdooRecordButton() {
         const panes = this.panes.state;
         return panes.small && !panes.zoom && Boolean(this.selectedRecord);
     }
 
-    showRecordScreen() {
+    showOdooRecordScreen() {
         if (!this.panes.state.zoom) {
             this.panes.toggleZoom();
         }

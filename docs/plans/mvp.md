@@ -44,7 +44,7 @@ routing log, and the boundary that an imported message notifies nobody
 (the Juffermans incident, closed in #37).
 
 **3. The conversation with the record beside it.** Built as of 19.0.10 and
-polished through 19.0.13: four panes, folder rail, filters, search, New
+polished through 19.0.13: four panes, mailbox list, filters, search, New
 Email, reply in the pane, the four tabs, linking in two steps, the
 suggestion chips. What the plans still call "on paper" and is actually
 built: New mail, search, filter, linking, the two triage rungs and the

@@ -66,7 +66,7 @@ That is the whole API. Each returns plain dicts, and each is paginated.
 
 | Method | Takes | Returns |
 |---|---|---|
-| `folder_counts` | `mailbox_id`, `folder` | `folders`: one row per rail folder with its count. `filters`: the same for the filter row over `folder`, and only when one is given |
+| `folder_counts` | `mailbox_id`, `folder` | `folders`: one row per mailbox-list folder with its count. `filters`: the same for the filter row over `folder`, and only when one is given |
 | `search_conversations` | `mailbox_id`, `folder`, `filter_name`, `partner_id`, `search`, `limit`, `offset` | list rows: `model`, `res_id`, `message_id`, `subject`, `preview`, `correspondent`, `partner_id`, `date`, `count`, `record_name`, `unread`, `mailbox` |
 | `read_conversation` | `model`, `res_id`, `mailbox_id`, `message_id`, `limit`, `offset`, `scope` | the messages (`scope` picks Mail or Everything), the record chips, the files, the open activities, and for an unfiled one what the matcher rejected |
 | `customer_timeline` | `partner_id`, `kinds`, `limit`, `offset` | the merged axis: messages, done activities, record events |
@@ -206,7 +206,7 @@ company with no headcount to spare.
 
 1. `pan.mail.conversation` with `search_conversations` and `read_conversation`,
    plus their tests. No UI. The API is inspectable from a shell.
-2. The client action with the folder rail, the list and the thread. No record
+2. The client action with the mailbox list, the list and the thread. No record
    pane. Already useful: it is the first time a mailbox is readable in Odoo.
 3. The record pane. The risky step, alone, so it cannot take anything else down
    with it.
