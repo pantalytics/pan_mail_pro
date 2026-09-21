@@ -77,10 +77,30 @@ that name is the same word in the code, the CSS class, the label and the prose.
 
 | # | Pane | Code key | CSS class | Label | What is in it |
 |---|------|----------|-----------|-------|----------------|
-| 1 | **mailbox list** | `mailbox_list` | `o_mailpro_mailbox_list` | Mailboxes | the mailboxes and, under each, its folders |
+| 1 | **mailbox list** | `mailbox_list` | `o_mailpro_mailbox_list` | Mailboxes | **All mailboxes**, then the mailboxes, and under each its folders |
 | 2 | **conversation list** | `conversation_list` | `o_mailpro_conversation_list` | Conversations | the conversations in the chosen folder, one row each |
 | 3 | **conversation** | `conversation` | `o_mailpro_conversation` | Conversation | the open conversation: its messages, the tab strip, the composer |
 | 4 | **Odoo record** | `odoo_record` | `o_mailpro_odoo_record` | Odoo record | the record the conversation is linked to, as its own form view |
+
+**All mailboxes** is the row above them, drawn only where there is more than
+one mailbox. It is not a read path of its own: the mailbox key `0` already
+meant "no mailbox", and `_base_domain(mailbox_id=None)` is that query, with
+counts and folds under the same key. It asks for it with `in_a_mailbox`,
+which adds `x_mailbox_id != False`: the row promises the mailboxes, and mail
+no mailbox owns -- what the chatter sent before this module was installed --
+is in none of them. The flag is off by default because door 1 wants the
+opposite from the same key: one record's correspondence *wherever it
+arrived*, that mail included. Which mailbox a conversation is in
+is drawn only where it can be more than one: its local part in the list row's
+meta line while the list spans more than one mailbox, its full address in the
+conversation head, always. There is no colour per mailbox and no way to pick a
+subset -- all or one, and the search box is what narrows the rest.
+
+A reply sends from the mailbox of the **conversation**, which
+`_conversation_row` carries as `mailbox_id`, never from the mailbox of the
+folder on screen: under All mailboxes the folder has none, and letting
+`mail.mail._resolve_route()` choose then answers a customer from an address
+they never wrote to.
 
 The names are keys, not just labels: `ICONS`, `PANES`, `COLLAPSIBLE`,
 `paneLabel()`, `folded(name)`, `togglePane(name)` and `stage` in
@@ -595,6 +615,24 @@ one, whose header leaves it room; when two neighbouring panes are folded
 their buttons stand side by side rather than on one spot. A strip had a
 name on it and cost 2.5rem of every folded pane; a button costs nothing
 until you look for it, and its icon is the name.
+
+19.0.19.0.0 makes that bar the only one. The Inbox was drawn under Odoo's
+navbar, so a mail had two rows of chrome over it saying "Mail Pro" and
+"Inbox" -- which the screen says itself -- before the header that actually
+carries the subject and the Linked-to chip. The action is `target="fullscreen"`
+now, which is the one line that stops `web.WebClient` drawing its navbar, and
+the two things that navbar was for moved into the Inbox's own bar: the module
+icon on the far left, linking to `/odoo`, and Odoo's own systray components on
+the far right, read out of `registry.category("systray")` exactly the way the
+navbar reads them and wrapped in the same `ErrorHandler`, so a counter that
+throws costs one icon rather than the screen. The zone wears `o_main_navbar`
+because every rule web's scss writes for a systray item is nested under that
+class. A phone drops the systray and keeps the icon: at 390px there is room
+for the mail or for the chrome, and one door out is not optional -- fullscreen
+took the breadcrumb with the navbar. `tests/test_menus.py` pins the target and
+the door together, because either half alone is a bug: the target without the
+icon is a screen nobody can leave, the icon without the target is a second way
+home nobody needed.
 
 19.0.13.10.0 takes those buttons off the dividers and puts them in the top
 bar, left of New Email: one round button per pane that folds, in the order

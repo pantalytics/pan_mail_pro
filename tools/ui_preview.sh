@@ -195,6 +195,22 @@ for ref, summary, days in (
         'summary': summary, 'user_id': uid,
         'date_deadline': (datetime.date.today()
                           + datetime.timedelta(days=days)).strftime('%Y-%m-%d')})
+# Mail in the *other* mailbox, on a lead of its own. Without it every seeded
+# conversation is in one mailbox, and All mailboxes reads exactly like the
+# mailbox under it -- which proves nothing and hides the bug it exists to
+# catch. Older than the lead thread above, so the screen still opens on the
+# same conversation.
+other_customer = call('res.partner', 'create', {
+    'name': 'Waterschap Rijnmond', 'email': 'peter@rijnmond.example'})
+other_lead = call('crm.lead', 'create', {
+    'name': 'Onderhoudscontract 2027', 'partner_id': other_customer,
+    'email_from': 'peter@rijnmond.example'})
+call('mail.message', 'create', {
+    'model': 'crm.lead', 'res_id': other_lead, 'message_type': 'email',
+    'subject': 'Verlenging onderhoudscontract',
+    'body': '<p>Kunnen we het contract een jaar verlengen?</p>',
+    'author_id': other_customer, 'email_from': 'peter@rijnmond.example',
+    'date': ago(hours=20), 'x_direction': 'incoming', 'x_mailbox_id': ids[1]})
 # Two conversations that landed on a contact and nowhere better: the real
 # `fallback` outcome, delivered but to a place nobody is looking. Each carries
 # the suggestion the ladder nearly picked, which is what the Inbox offers with

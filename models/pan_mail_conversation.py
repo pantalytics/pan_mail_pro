@@ -182,16 +182,30 @@ class PanMailConversation(models.AbstractModel):
                 ('message_type', 'in', SENT_TYPES),
                 ('is_internal', '=', False)]
 
-    def _base_domain(self, mailbox_id=None, partner_id=None, domain=None):
+    def _base_domain(self, mailbox_id=None, partner_id=None, domain=None,
+                     in_a_mailbox=False):
         """Mail this user may read, optionally narrowed to one mailbox.
 
         `domain` is the search bar's, and it is the only thing the bar hands
         over: a facet, a typed word and a filter all arrive here as clauses on
         `mail.message`.
+
+        `in_a_mailbox` is the All mailboxes folder asking for what its own
+        label promises: the mail that is *in* a mailbox, all of them at once.
+        Without it the query also returns mail no mailbox owns -- what the
+        chatter sent before this module was installed, and Odoo's own -- which
+        under a row that says "All mailboxes" is neither true nor useful.
+
+        It is off by default, because the other caller of "no mailbox" wants
+        exactly the opposite: door 1 opens the Inbox on one record's mail
+        wherever it arrived, and mail this module never handled is still that
+        record's correspondence.
         """
         base = self._mail_domain()
         if mailbox_id:
             base.append(('x_mailbox_id', '=', mailbox_id))
+        elif in_a_mailbox:
+            base.append(('x_mailbox_id', '!=', False))
         if partner_id:
             partner = self.env['res.partner'].browse(partner_id)
             # The company, not the person: jan@acme and inkoop@acme are one
@@ -330,7 +344,8 @@ class PanMailConversation(models.AbstractModel):
 
     @api.model
     def folder_counts(self, mailbox_id=None, partner_id=None,
-                      domain=None, search=None, ungrouped=False):
+                      domain=None, search=None, ungrouped=False,
+                      in_a_mailbox=False):
         """The numbers on the mailbox list, one per folder.
 
         Counted on every read, capped at `COUNT_CAP`. A stored counter would be
@@ -347,7 +362,7 @@ class PanMailConversation(models.AbstractModel):
         per filter on every click.
         """
         self._check_caller()
-        base = self._base_domain(mailbox_id, partner_id, domain)
+        base = self._base_domain(mailbox_id, partner_id, domain, in_a_mailbox)
         return [self._count_entry(base, value, label,
                                   self._folder_domain(value), ungrouped)
                 if value != DRAFTS
@@ -393,7 +408,7 @@ class PanMailConversation(models.AbstractModel):
                              partner_id=None, domain=None, search=None,
                              ungrouped=False,
                              record_model=None, record_id=None,
-                             limit=DEFAULT_LIMIT, offset=0):
+                             limit=DEFAULT_LIMIT, offset=0, in_a_mailbox=False):
         """One page of conversations, newest first.
 
         Two dimensions: the folder from the mailbox list, and whatever the
@@ -434,7 +449,7 @@ class PanMailConversation(models.AbstractModel):
                 mailbox_id=mailbox_id, search=search,
                 record_model=record_model, record_id=record_id,
                 limit=limit, offset=offset)
-        base = self._base_domain(mailbox_id, partner_id, domain)
+        base = self._base_domain(mailbox_id, partner_id, domain, in_a_mailbox)
         if record_model and record_id:
             base = base + [('model', '=', record_model),
                            ('res_id', '=', int(record_id))]
@@ -1151,6 +1166,12 @@ class PanMailConversation(models.AbstractModel):
             # is what every mail client means by the dot.
             'unread': not newest.x_is_read,
             'mailbox': newest.x_mailbox_id.email or '',
+            # Which mailbox this conversation arrived on, beside the address
+            # the row draws. It is what the reply sends from: under All
+            # mailboxes the screen has no mailbox of its own, and answering
+            # from whichever address `_resolve_route()` picks is a mail the
+            # customer never wrote to.
+            'mailbox_id': newest.x_mailbox_id.id or False,
         }
 
     def _thread_row(self, message):
