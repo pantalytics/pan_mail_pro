@@ -5,6 +5,9 @@ The ratio this reports is what retired the triage queue, so it has to be
 right in the one way that matters: it must count what the lens would show, and
 the drill-down must land on exactly the rows the number claims.
 """
+from dateutil.relativedelta import relativedelta
+
+from odoo import fields
 from odoo.tests import tagged
 
 from .common import MailProTestCase
@@ -101,3 +104,12 @@ class TestMailCoverage(MailProTestCase):
         })
         self.coverage.invalidate_recordset()
         self.assertEqual(self.coverage.total_count, 5)
+
+    def test_the_heartbeat_reads_the_same_four_counts(self):
+        """`counts_since` is what leaves the database: the screen's numbers and
+        no others, so a customer can check the report against their own page."""
+        counts = self.env['pan.mail.coverage'].counts_since(
+            fields.Datetime.now() - relativedelta(days=1))
+        self.assertEqual(counts, {
+            'total': 5, 'linked': 2, 'contact_only': 1, 'unlinked': 2,
+        })

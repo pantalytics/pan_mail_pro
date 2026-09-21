@@ -31,6 +31,7 @@ import { useDebounced } from "@web/core/utils/timing";
 import { _t } from "@web/core/l10n/translation";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
+import { useImprove } from "../improve";
 import { LinkDialog } from "./link_dialog";
 import { AttachmentList } from "@mail/core/common/attachment_list";
 import { useAttachmentUploader } from "@mail/core/common/attachment_uploader_hook";
@@ -186,6 +187,9 @@ export class ConversationView extends Component {
         this.followerListDropdown = useDropdownState();
         this.panes = usePanes();
         this.composer = useComposer({ onSent: () => this.onReplySent() });
+        // Help improve Mail Pro: a no-op unless the session says otherwise.
+        // Every `capture` below names a screen or a button, never content.
+        this.improve = useImprove();
         // Typing is the search, the way it is in every mail client. Debounced
         // rather than bound to Enter: a list that only moves when you press a
         // key you were not told about reads as a search box that is broken.
@@ -399,6 +403,7 @@ export class ConversationView extends Component {
         this.composer.close();
         this.state.selected = conversation;
         this.state.showRejected = false;
+        this.improve.capture("conversation_opened", { folder: this.state.folder });
         // Nothing from the previous conversation stays under the new subject.
         this.state.conversation = EMPTY_CONVERSATION();
         this.state.activityIds = [];
@@ -676,6 +681,7 @@ export class ConversationView extends Component {
         }
         const reread = (tab === "all") !== (this.state.tab === "all");
         this.state.tab = tab;
+        this.improve.capture("tab_opened", { tab });
         try {
             browser.localStorage.setItem(TAB_KEY, tab);
         } catch {
@@ -1137,6 +1143,7 @@ export class ConversationView extends Component {
      * without leaving the tab, and it is the message that opens.
      */
     async onReplySent() {
+        this.improve.capture("reply_sent", { mode: this.composer.state.mode });
         if (this.composer.state.mode === "new") {
             // A new mail belongs to no open thread. The list is re-read, and
             // the mail shows up there if it landed in the folder on screen.
@@ -1217,7 +1224,7 @@ export class ConversationView extends Component {
     async acceptSuggestion() {
         const suggestion = this.state.conversation.suggestion;
         if (suggestion) {
-            await this.linkTo(suggestion.model, suggestion.res_id);
+            await this.linkTo(suggestion.model, suggestion.res_id, "suggestion");
         }
     }
 
@@ -1232,7 +1239,7 @@ export class ConversationView extends Component {
         this.dialog.add(LinkDialog, {
             partnerId: this.state.selected?.partner_id || false,
             correspondent: this.state.selected?.correspondent || "",
-            onSelect: (model, resId) => this.linkTo(model, resId),
+            onSelect: (model, resId) => this.linkTo(model, resId, "picker"),
         });
     }
 
@@ -1243,7 +1250,7 @@ export class ConversationView extends Component {
      * that is the part somebody would not otherwise know happened: the rest
      * of this conversation now files itself.
      */
-    async linkTo(model, resId) {
+    async linkTo(model, resId, via = "picker") {
         const messageIds = this.state.conversation.messages.map((message) => message.id);
         if (!messageIds.length) {
             return;
@@ -1262,6 +1269,10 @@ export class ConversationView extends Component {
             _t("Linked to %s. The next mail in this thread lands here too.", linked.name),
             { type: "success" }
         );
+        // Which way the correction came: the one-click suggestion or the
+        // picker. The kind of record it went to is not sent, on purpose: a
+        // model name is a fact about the customer's Odoo, not about ours.
+        this.improve.capture("conversation_linked", { via });
         // The conversation is somewhere else now, so it is addressed by the
         // record it moved to. `keepSelection` then does the right thing in
         // both folders it can be linked from: in the inbox the row is still

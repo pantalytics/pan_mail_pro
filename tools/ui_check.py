@@ -24,9 +24,15 @@ Exit code 1 with the failures listed is the whole interface; CI reads that.
 """
 import argparse
 import ast
+import base64
 import datetime
+import gzip
+import http.server
+import json
 import os
 import sys
+import threading
+import urllib.parse
 import xmlrpc.client
 
 try:
@@ -1501,12 +1507,274 @@ class Checks:
         if not page.query_selector('.o_mailpro_files input[type="file"]'):
             self.fail('the Files tab has no way to attach a file')
 
+    # -- Help improve Mail Pro: what reaches the wire is wireframe -----------
+
+    # Everything the seed puts on the Inbox screen. None of it may reach the
+    # sink: not in a replay chunk, not in an event, not in an attribute.
+    SEEDED = (
+        'Asafdichtingen', 'Vandermolen', 'bart@vandermolen.example',
+        'Offerte revisie', 'levertijd', 'Storing aan de pers', 'Keersluis',
+        'inkoop@keersluis.example', 'Nieuwe aanvraag afdichtingen',
+        'asafdichting.png',
+    )
+
+    def improve(self):
+        """Help improve Mail Pro switched on, and the recording read back.
+
+        The promise on the settings page is that a recording carries no word,
+        no field and no attribute of the screen. A Python test cannot see what
+        rrweb serialises, so this points the Inbox at a sink on this machine,
+        opens a conversation, switches a tab, and reads every byte posthog-js
+        sent: replay chunks, events, the lot. A seeded subject or address in
+        any of it is the failure this check exists for. It also asserts the
+        SDK fetched nothing (the recorder is in the bundle) and that the
+        person is the server's `u:` pseudonym.
+        """
+        sink = start_sink()
+        link = self.call('pan.mail.license', 'search', [])
+        if not link:
+            self.fail('no Pantalytics link row to switch Help improve Mail Pro on')
+            return
+        self.call('pan.mail.license', 'write', link, {
+            'improve': True, 'improve_host': sink.host,
+            'improve_token': 'phc_ui_check', 'replay_sample': 1.0,
+        })
+        # Its own browser context, looking like a person's browser: the SDK
+        # drops every event from a bot, and "HeadlessChrome" in the user
+        # agent, `navigator.webdriver`, and "HeadlessChrome" among the client
+        # hint brands (`navigator.userAgentData`, which the headless shell CI
+        # runs still reports under a rewritten user agent) each mark one. The
+        # product keeps that filter, which is right; the check has to get
+        # past all three.
+        context = self.browser.new_context(
+            viewport={'width': WIDE, 'height': 1100},
+            user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                       '(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
+        context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', { get: () => false });"
+            "Object.defineProperty(navigator, 'userAgentData', { get: () => undefined });")
+        page = context.new_page()
+        # Everything the page says, printed when the step fails: the SDK
+        # logs why it stays quiet, and a runner has no other way to tell us.
+        console = []
+        page.on('console', lambda m: console.append(f'{m.type}: {m.text[:300]}'))
+        page.on('pageerror', lambda e: console.append(f'pageerror: {str(e)[:300]}'))
+        page.on('requestfailed', lambda r: console.append(f'requestfailed: {r.url[:200]} {r.failure}'))
+        try:
+            login(page, self.base)
+            action = dict(module_menu_actions(self.call)).get('Inbox')
+            # A full page load: the config rides in session_info.
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
+            page.wait_for_timeout(2000)
+            items = page.query_selector_all('.o_mailpro_item')
+            if items:
+                items[0].click()
+                page.wait_for_timeout(1500)
+            tab = page.query_selector('.o_mailpro_tab:has-text("Files")')
+            if tab:
+                tab.click()
+                page.wait_for_timeout(800)
+            # Replay is batched; give it long enough to flush more than once.
+            for _ in range(25):
+                page.wait_for_timeout(1000)
+                if sink.saw('/s/') and sink.saw('/e/', 'inbox_opened'):
+                    break
+            if self.out:
+                page.screenshot(path=os.path.join(self.out, 'inbox-improve.png'), full_page=True)
+            if page.query_selector('.o_error_dialog, .o_dialog_error'):
+                self.fail('the Inbox with Help improve Mail Pro on opened an error dialog')
+
+            if not sink.saw('/e/', 'inbox_opened'):
+                self.fail('inbox_opened never reached the sink '
+                          f'(got {sorted({p for p, _ in sink.received})})')
+                state = page.evaluate("""() => {
+                    const s = odoo.loader.modules.get('@web/session');
+                    const ph = window.posthog;
+                    return {
+                        config: s && s.session && s.session.pan_mail_improve,
+                        posthog: typeof ph, loaded: !!(ph && ph.__loaded),
+                        host: ph && ph.config && ph.config.api_host,
+                        ua: navigator.userAgent, webdriver: navigator.webdriver,
+                        ready: document.readyState,
+                    };
+                }""")
+                print(f'    state: {state}')
+                for line in console[-40:]:
+                    print(f'    console {line}')
+            if not sink.saw('/s/'):
+                self.fail('no replay chunk reached the sink in 25s')
+            if not sink.saw('/e/', 'conversation_opened') and items:
+                self.fail('opening a conversation sent no conversation_opened')
+            wire = '\n'.join(text for _, text in sink.received)
+            # The positive control: the recording holds a serialised DOM with
+            # its text turned to stars (class names too, every attribute is
+            # masked), so a clean read below means masked, not empty or
+            # undecoded.
+            if '"tagName"' not in wire or wire.count('*') < 1000:
+                self.fail('the replay carries no masked DOM, so nothing below proves masking')
+            if '<snapshot not decoded' in wire:
+                self.fail('a replay snapshot could not be decoded, so it was not read')
+            for secret in self.SEEDED:
+                if secret in wire:
+                    self.fail(f'"{secret}" reached the wire: the masking does not hold')
+            if '"distinct_id":"u:' not in wire.replace(' ', ''):
+                self.fail('the person on the wire is not the server\'s u: pseudonym')
+            if 'admin' in wire.lower().replace('/odoo/', ''):
+                # The login of the user driving this check must not travel.
+                self.fail('the login reached the wire')
+            if sink.fetched:
+                self.fail(f'posthog-js fetched {sink.fetched}: nothing may be loaded '
+                          'from the host, the recorder is in the bundle')
+        finally:
+            context.close()
+            self.call('pan.mail.license', 'write', link, {
+                'improve': False, 'improve_host': False, 'improve_token': False,
+                'replay_sample': 0.0,
+            })
+            sink.stop()
+
     def error_free(self, where):
         dialog = self.page.query_selector('.o_error_dialog, .o_dialog_error')
         if dialog:
             self.fail(f'{where} opened an error dialog: {dialog.inner_text()[:200]}')
         if not self.page.query_selector('.o_content'):
             self.fail(f'{where} rendered no view')
+
+
+class _Sink(http.server.BaseHTTPRequestHandler):
+    """Stands in for the proxy: answers posthog-js and keeps what it sent."""
+
+    received = []   # (path, decoded text)
+    fetched = []    # GET paths: nothing should ever be fetched
+    CORS = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+    }
+
+    def log_message(self, *args):
+        pass
+
+    def _reply(self, status, body=b'', content_type='application/json'):
+        self.send_response(status)
+        for name, value in self.CORS.items():
+            self.send_header(name, value)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self._reply(204)
+
+    def do_GET(self):
+        path = self.path.split('?')[0]
+        if path.startswith('/array/') and path.endswith('/config'):
+            # The SDK's own remote config, the JSON the real host serves: it
+            # is what switches recording on. No flags, no surveys, no site
+            # apps, so nothing else is asked for.
+            self._reply(200, json.dumps({
+                'token': 'phc_ui_check', 'supportedCompression': ['gzip-js'],
+                'hasFeatureFlags': False, 'autocapture_opt_out': True,
+                'capturePerformance': False, 'surveys': False,
+                'sessionRecording': {'endpoint': '/s/'},
+            }).encode())
+            return
+        type(self).fetched.append(path)
+        self._reply(404, b'{}')
+
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length') or 0)
+        body = self.rfile.read(length) if length else b''
+        type(self).received.append((self.path.split('?')[0], _decode(self.path, body)))
+        if self.path.startswith('/flags'):
+            # What PostHog answers when recording is on for the project.
+            self._reply(200, json.dumps({
+                'featureFlags': {}, 'sessionRecording': {'endpoint': '/s/'},
+                'supportedCompression': ['gzip-js'],
+            }).encode())
+        else:
+            self._reply(200, b'{"status": 1}')
+
+
+def _decode(path, body):
+    """What posthog-js sent, as text: gzip for batches, base64 for beacons.
+
+    A replay chunk is gzip twice over: the batch, and inside it the DOM of
+    every full snapshot and mutation, gzipped again by the SDK and carried as
+    a string. The outer layer alone reads as clean whatever the screen held,
+    so the inner one is opened too and appended, which is the only reading
+    that can catch a subject in an attribute.
+    """
+    try:
+        if body[:2] == b'\x1f\x8b' or 'compression=gzip-js' in path:
+            text = gzip.decompress(body).decode('utf-8', 'replace')
+        elif body.startswith(b'data='):
+            raw = urllib.parse.unquote_plus(body[5:].decode())
+            text = base64.b64decode(raw + '=' * (-len(raw) % 4)).decode('utf-8', 'replace')
+        else:
+            text = body.decode('utf-8', 'replace')
+    except Exception as error:  # noqa: BLE001 - keep the bytes rather than lose them
+        return f'{error!r}: {body!r}'
+    return text + _inner_snapshots(text)
+
+
+def _inner_snapshots(text):
+    """The DOM inside every rrweb event of a replay batch, decompressed."""
+    try:
+        batch = json.loads(text)
+    except ValueError:
+        return ''
+    if not isinstance(batch, list):
+        batch = [batch]
+    out = []
+    for event in batch:
+        props = event.get('properties') if isinstance(event, dict) else None
+        for snapshot in (props or {}).get('$snapshot_data') or []:
+            data = snapshot.get('data') if isinstance(snapshot, dict) else None
+            if isinstance(data, str) and data[:2] == '\x1f\x8b':
+                try:
+                    out.append(gzip.decompress(data.encode('latin-1')).decode('utf-8', 'replace'))
+                except Exception as error:  # noqa: BLE001 - say so, rather than pass
+                    out.append(f'<snapshot not decoded: {error!r}>')
+            elif isinstance(snapshot, dict) and isinstance(snapshot.get('data'), dict):
+                out.append(json.dumps(snapshot['data']))
+    return '\n' + '\n'.join(out) if out else ''
+
+
+class _RunningSink:
+    def __init__(self, server, thread):
+        self.server = server
+        self.thread = thread
+        self.host = f'http://127.0.0.1:{server.server_address[1]}'
+        _Sink.received = []
+        _Sink.fetched = []
+
+    @property
+    def received(self):
+        return list(_Sink.received)
+
+    @property
+    def fetched(self):
+        return list(_Sink.fetched)
+
+    def saw(self, path_prefix, text=''):
+        return any(p.startswith(path_prefix) and text in t for p, t in _Sink.received)
+
+    def stop(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+
+def start_sink():
+    """The stand-in proxy, on a free port on this machine, in a thread."""
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), _Sink)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return _RunningSink(server, thread)
 
 
 def rpc_for(url, db):
@@ -1540,6 +1808,15 @@ def slug(name):
     return name.lower().replace(' ', '-')
 
 
+def login(page, url):
+    page.goto(f'{url}/web/login', wait_until='domcontentloaded')
+    page.fill('input[name=login]', 'admin')
+    page.fill('input[name=password]', 'admin')
+    page.click('button[type=submit]')
+    page.wait_for_url('**/odoo**', timeout=60000)
+    page.wait_for_timeout(1500)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--url', default='http://localhost:8069')
@@ -1553,12 +1830,7 @@ def main():
         launch = {'executable_path': CHROME} if os.path.exists(CHROME) else {}
         browser = p.chromium.launch(**launch)
         page = browser.new_page(viewport={'width': WIDE, 'height': 1100})
-        page.goto(f'{args.url}/web/login', wait_until='domcontentloaded')
-        page.fill('input[name=login]', 'admin')
-        page.fill('input[name=password]', 'admin')
-        page.click('button[type=submit]')
-        page.wait_for_url('**/odoo**', timeout=60000)
-        page.wait_for_timeout(1500)
+        login(page, args.url)
 
         checks = Checks(page, args.out, browser)
         page.on('pageerror', lambda error:
@@ -1575,6 +1847,7 @@ def main():
         checks.menus()
         checks.conversation_view()
         checks.linking()
+        checks.improve()
         checks.provider_form()
         checks.connect_banner()
         browser.close()

@@ -31,7 +31,17 @@ per-folder cursor catches up afterwards, so no mail is lost.
 
 **What leaves the database** is `_heartbeat_body()`, and the whole list is in
 that one method: the database id, two version strings, how many accounts are
-connected and whether sync is healthy. No address, subject, body or name.
+connected, whether sync is healthy, and for the last 24 hours the four link
+coverage counts, per matching rule how often it decided and how often a person
+overruled it, and how many conversations were linked by hand. Counts and rule
+names. No address, subject, body or name.
+
+**What the answer carries besides the licence** is the workspace's "Help
+improve Mail Pro" switch: `improve`, the `improve_host` our proxy answers on,
+and the `replay_sample`. Signed like the rest, so nothing on this side records
+anything on an unsigned say-so, and `improve_active()` is the one question the
+browser side asks (ARCHITECTURE.md §9.17, docs/plans/analytics-flywheel.md in
+mail-pro-admin).
 
 **Trust.** An entitlement is only stored after its Ed25519 signature checks out
 against the public key this module ships and its `db_uuid` matches this
@@ -41,6 +51,8 @@ secret here, which also means a neutralized copy cannot read it: a restored
 backup does not phone home and does not carry the licence with it.
 """
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -73,6 +85,10 @@ ENV_PUBLIC_KEY = 'PAN_MAIL_PRO_LICENSE_PUBLIC_KEY'
 
 TIMEOUT = 15
 
+# The server accepts this many rule rows; the ladder has six, so the cap only
+# guards against a rule name that is somehow not one of ours.
+MAX_RULE_ENTRIES = 20
+
 # A connected instance whose entitlement has not arrived asks again this often
 # (from the fetch cron), instead of waiting for the daily heartbeat.
 RETRY_MINUTES = 10
@@ -80,6 +96,11 @@ RETRY_MINUTES = 10
 # Stripe's statuses that keep a customer entitled, as the server decides them.
 # past_due stays entitled while Stripe is still retrying the card.
 ENTITLED_STATUSES = ('active', 'trialing', 'past_due')
+
+# "Not on this Odoo instance": the local no to the workspace's yes. A config
+# parameter rather than a field on the row, so it survives Disconnect and
+# Connect, which is when the row's own answer is thrown away and re-fetched.
+IMPROVE_REFUSED_PARAM = 'pan_mail_pro.improve_refused'
 
 STATUS_SELECTION = [
     ('not_connected', 'Not Connected'),
@@ -123,6 +144,15 @@ def verify_signature(payload, signature_b64, public_key_b64):
     return True
 
 
+def _sample(value):
+    """A share of sessions, 0 to 1. Anything else reads as 0: the answer said
+    yes, the number says how much, and a number we cannot read means none."""
+    try:
+        return min(1.0, max(0.0, float(value)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _naive_utc(iso_value):
     """An ISO timestamp from the server as the naive UTC datetime Odoo stores."""
     if not iso_value:
@@ -162,6 +192,15 @@ class PanMailLicense(models.Model):
     last_check = fields.Datetime(readonly=True, copy=False)
     last_error = fields.Char(readonly=True, copy=False)
 
+    # Help improve Mail Pro, as the workspace decided it at Pantalytics. Read
+    # off the signed entitlement and nowhere else; the local checkbox that
+    # refuses it lives in ir.config_parameter, because an administrator here
+    # may say no and never yes.
+    improve = fields.Boolean(readonly=True, copy=False)
+    improve_host = fields.Char(readonly=True, copy=False)
+    improve_token = fields.Char(readonly=True, copy=False)
+    replay_sample = fields.Float(readonly=True, copy=False)
+
     # -------------------------------------------------------------------------
     # One row
     # -------------------------------------------------------------------------
@@ -194,6 +233,53 @@ class PanMailLicense(models.Model):
         """May this instance sync incoming mail and connect new accounts?"""
         link = self.current()
         return bool(link) and link.is_entitled()
+
+    @api.model
+    def improve_active(self):
+        """May the Inbox in this browser report how it is used and record?
+
+        Four yeses, any no wins: the workspace switched it on, the answer named
+        a host and a project to send to, no administrator here refused it, and
+        this is not a neutralized copy. The host check matters on its own: an
+        older server that says yes without saying where would otherwise leave
+        the browser to guess.
+        """
+        link = self.current()
+        if not link or not link.improve or not link.improve_host or not link.improve_token:
+            return False
+        if self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM):
+            return False
+        return not database_is_neutralized(self.env)
+
+    @api.model
+    def improve_config(self):
+        """What the browser needs to report, or False. Read into `session_info`
+        by `ir.http`, so the Inbox knows before its first paint and makes no
+        call of its own to find out.
+
+        The person is `u:<hmac>`: an HMAC under this database's own
+        encryption key over the database id and the user id, twelve hex
+        characters. Two users are two ids, a user is the same id tomorrow, and
+        nothing we hold turns it back into a person.
+        """
+        if not self.improve_active():
+            return False
+        link = self.current()
+        return {
+            'host': link.improve_host,
+            'token': link.improve_token,
+            'user': self._improve_user_id(),
+            'sample': link.replay_sample,
+            'version': self._module_version(),
+        }
+
+    @api.model
+    def _improve_user_id(self):
+        key = encryption_utils.get_encryption_key(self.env)
+        digest = hmac.new(
+            key, f'{self._db_uuid()}:{self.env.uid}'.encode(), hashlib.sha256,
+        ).hexdigest()
+        return 'u:' + digest[:12]
 
     @api.model
     def not_allowed_error(self):
@@ -360,6 +446,10 @@ class PanMailLicense(models.Model):
             'entitlement_json': False,
             'signature': False,
             'last_error': False,
+            'improve': False,
+            'improve_host': False,
+            'improve_token': False,
+            'replay_sample': 0.0,
         })
 
     def _clear_pairing(self):
@@ -467,6 +557,10 @@ class PanMailLicense(models.Model):
             'signature': signature,
             'last_check': now,
             'last_error': False,
+            'improve': bool(payload.get('improve')),
+            'improve_host': (payload.get('improve_host') or '')[:255] or False,
+            'improve_token': (payload.get('improve_token') or '')[:128] or False,
+            'replay_sample': _sample(payload.get('replay_sample')),
         })
 
     def _untrusted(self, payload, signature):
@@ -481,12 +575,20 @@ class PanMailLicense(models.Model):
     def _heartbeat_body(self):
         """Everything this database tells Pantalytics. The whole list.
 
-        Counts and flags only. Sent and received counts and error codes are left
-        out until there is a dashboard that shows them: a number nobody reads is
-        still a number that left the customer's server.
+        Counts, flags and rule names only. Sent and received counts and error
+        codes are left out until there is a dashboard that shows them: a
+        number nobody reads is still a number that left the customer's server.
+
+        The coverage counts and the rule counts are the two numbers a decision
+        does wait on: whether linking gets better per release, and which rule
+        earns its place. Both are the last 24 hours, the same slice as the
+        counts around them, and both are what the customer reads on their own
+        Link Coverage screen and routing log.
         """
         Mailbox = self.env['pan.mail.mailbox'].sudo()
         mailboxes = Mailbox.search_count([])
+        since = fields.Datetime.now() - timedelta(hours=24)
+        rules = self.env['pan.mail.routing.log'].rule_counts_since(since)
         return {
             'db_uuid': self._db_uuid(),
             'module_version': self._module_version(),
@@ -495,6 +597,9 @@ class PanMailLicense(models.Model):
                 [('connected', '=', True)]),
             'sync_ok': (not Mailbox.search_count([('state', '=', 'error')])
                         if mailboxes else None),
+            'coverage': self.env['pan.mail.coverage'].counts_since(since),
+            'rules': rules[:MAX_RULE_ENTRIES],
+            'corrections': sum(r['corrected'] for r in rules),
         }
 
     # -------------------------------------------------------------------------

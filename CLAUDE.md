@@ -64,9 +64,12 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, and whether to nudge them |
 | `models/res_config_settings.py` | The Settings page: the three checklist steps and the users block |
 | `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
-| `models/ir_http.py` | One session flag: does this user still have to connect a mailbox |
+| `models/ir_http.py` | Two session flags: does this user still have to connect a mailbox, and may the Inbox report how it is used |
+| `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
+| `static/lib/posthog/` | posthog-js, vendored (MIT), pinned so the masking check in `tools/ui_check.py` proves the version that ships |
+| `tests/test_improve.py` | What the session carries once the workspace said yes: a host, a token, a pseudonym, nothing that names anyone |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
-| `models/pan_mail_coverage.py` | Link-coverage measurement (in-database only) |
+| `models/pan_mail_coverage.py` | Link-coverage measurement: the screen, and `counts_since()`, whose last 24 hours ride the heartbeat |
 | `models/pan_mail_conversation.py` | The read side of the Inbox: the RPC methods behind the screen, no table, no sudo for an answer |
 | `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, and the Followers button at its end that opens the chatter's own follower list |
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (the mailbox list from a round button in the top bar left of New Email, the conversation list and the Odoo record from a round button on their own divider), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the record's divider button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |

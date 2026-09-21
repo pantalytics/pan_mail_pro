@@ -28,6 +28,7 @@ POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
 HEARTBEAT_FIELDS = {
     'db_uuid', 'module_version', 'odoo_version', 'mailboxes_connected',
     'mails_sent_24h', 'mails_received_24h', 'sync_ok', 'errors',
+    'coverage', 'rules', 'corrections',
 }
 
 
@@ -310,6 +311,90 @@ class TestLicense(TransactionCase):
         body = self.calls[-1]['json']
         self.assertLessEqual(set(body), HEARTBEAT_FIELDS)
         self.assertNotIn('@', json.dumps(body))
+
+    def test_the_heartbeat_carries_the_four_coverage_counts_and_the_rules(self):
+        """Counts and rule names, the same four the Link Coverage screen shows."""
+        self.env['mail.message'].sudo().create({
+            'message_type': 'email', 'subject': 'Offerte', 'x_direction': 'incoming',
+            'model': 'res.partner', 'res_id': self.env.user.partner_id.id,
+        })
+        self.connected()
+        body = self.calls[-1]['json']
+        self.assertEqual(set(body['coverage']), {'total', 'linked', 'contact_only', 'unlinked'})
+        self.assertGreaterEqual(body['coverage']['contact_only'], 1)
+        self.assertEqual(
+            body['coverage']['total'],
+            body['coverage']['linked'] + body['coverage']['contact_only']
+            + body['coverage']['unlinked'])
+        self.assertIsInstance(body['rules'], list)
+        for row in body['rules']:
+            self.assertEqual(set(row), {'rule', 'wins', 'corrected'})
+        self.assertIsInstance(body['corrections'], int)
+        self.assertNotIn('Offerte', json.dumps(body))
+
+    # --- help improve Mail Pro -------------------------------------------------
+
+    def test_the_improve_switch_is_stored_off_the_signed_answer(self):
+        link = self.connected(heartbeat=_response(200, self.signed(self.entitlement(
+            improve=True, improve_host='https://mailpro.test/i/7-abc',
+            improve_token='phc_test', replay_sample=0.5))))
+        self.assertTrue(link.improve)
+        self.assertEqual(link.improve_host, 'https://mailpro.test/i/7-abc')
+        self.assertEqual(link.improve_token, 'phc_test')
+        self.assertEqual(link.replay_sample, 0.5)
+        self.assertTrue(self.License.improve_active())
+
+    def test_an_answer_without_the_switch_means_off(self):
+        """An older server, or a workspace that never said yes: nothing records."""
+        link = self.connected()
+        self.assertFalse(link.improve)
+        self.assertFalse(link.improve_host)
+        self.assertFalse(self.License.improve_active())
+
+    def test_a_yes_without_a_host_is_a_no(self):
+        self.connected(heartbeat=_response(200, self.signed(self.entitlement(
+            improve=True, improve_host='', improve_token='phc_test', replay_sample=1))))
+        self.assertFalse(self.License.improve_active())
+
+    def test_an_unsigned_yes_is_not_stored(self):
+        body = self.signed(self.entitlement())
+        body['entitlement']['improve'] = True
+        body['entitlement']['improve_host'] = 'https://evil.test/i/1-x'
+        link = self.connected(heartbeat=_response(200, body))
+        self.assertFalse(link.improve)
+        self.assertFalse(self.License.improve_active())
+
+    def test_the_odoo_administrator_can_refuse_but_never_enable(self):
+        link = self.connected(heartbeat=_response(200, self.signed(self.entitlement(
+            improve=True, improve_host='https://mailpro.test/i/7-abc',
+            improve_token='phc_test', replay_sample=1))))
+        self.env['ir.config_parameter'].sudo().set_param(
+            pan_mail_license.IMPROVE_REFUSED_PARAM, True)
+        self.assertFalse(self.License.improve_active())
+        # The other way round: the refusal lifted, and the workspace now says no.
+        self.env['ir.config_parameter'].sudo().set_param(
+            pan_mail_license.IMPROVE_REFUSED_PARAM, False)
+        with patch(POST, side_effect=self.server()):
+            link._heartbeat()
+        self.assertFalse(link.improve)
+        self.assertFalse(self.License.improve_active())
+
+    def test_a_neutralized_copy_never_records(self):
+        self.connected(heartbeat=_response(200, self.signed(self.entitlement(
+            improve=True, improve_host='https://mailpro.test/i/7-abc',
+            improve_token='phc_test', replay_sample=1))))
+        self.env['ir.config_parameter'].sudo().set_param('database.is_neutralized', True)
+        self.assertFalse(self.License.improve_active())
+
+    def test_disconnect_forgets_the_switch_too(self):
+        link = self.connected(heartbeat=_response(200, self.signed(self.entitlement(
+            improve=True, improve_host='https://mailpro.test/i/7-abc',
+            improve_token='phc_test', replay_sample=1))))
+        link.action_disconnect()
+        self.assertFalse(link.improve)
+        self.assertFalse(link.improve_host)
+        self.assertFalse(link.improve_token)
+        self.assertEqual(link.replay_sample, 0.0)
 
     def test_a_neutralized_copy_neither_connects_nor_reports(self):
         link = self.connected()

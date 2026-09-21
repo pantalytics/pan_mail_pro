@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""One flag in the session: does this user still have to connect a mailbox?
+"""Two things in the session: does this user still have to connect a mailbox,
+and may the Inbox report how it is used.
 
 The webclient asks nothing extra for it. `session_info` is already fetched once
 per page load, so the banner knows whether to draw itself before the first
@@ -21,4 +22,8 @@ class IrHttp(models.AbstractModel):
         if self.env.user._is_internal():
             result['pan_mail_connect_prompt'] = \
                 self.env.user._pan_mail_should_prompt_connect()
+            # Help improve Mail Pro, for the same reason and with the same
+            # staleness: the answer changes once a day at most, and the Inbox
+            # reads it before its first paint (pan_mail_license.improve_config).
+            result['pan_mail_improve'] = self.env['pan.mail.license'].improve_config()
         return result
