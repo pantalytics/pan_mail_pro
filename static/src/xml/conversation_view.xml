@@ -330,7 +330,7 @@
                         record it is written on where a subject would go, and
                         the buttons are the same two.
                     -->
-                    <t t-if="composer.state.open and composer.state.mode === 'new'">
+                    <t t-if="composingNew">
                         <div class="o_mailpro_conversation_head">
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <t t-call="pan_mail_pro.BackToList"/>

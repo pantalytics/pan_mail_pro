@@ -358,6 +358,12 @@ class Checks:
         # a mail this module sends with nothing behind it is the state the
         # filter menu one line up exists to find. It is the same two-step
         # dialog linking uses, which is the point -- one thing to learn.
+        def record_pane_name():
+            el = page.query_selector(
+                '.o_mailpro_odoo_record .o_mailpro_odoo_record_name')
+            return el.inner_text().strip() if el else ''
+
+        before_new = record_pane_name()
         page.click('.o_mailpro_new')
         try:
             page.wait_for_selector('.o_mailpro_link_dialog', timeout=15000)
@@ -376,6 +382,7 @@ class Checks:
             if not records:
                 self.fail('New Email step two offers no records')
                 return
+            picked = records[0].inner_text().strip()
             records[0].click()       # step two: the record itself
             # The composer opens in the conversation pane, the same one a
             # reply uses. A regression here is New Email having gone back to
@@ -393,6 +400,11 @@ class Checks:
             # assertion Reply makes further down.
             if not page.query_selector('.o_mailpro_composer [name="partner_ids"] .o_tag'):
                 self.fail('New Email opened a composer with nobody in To')
+            # The record pane belongs to the mail being written, not to the
+            # conversation that happened to be open behind it.
+            shown = record_pane_name()
+            if shown != picked:
+                self.fail(f'the record pane shows "{shown}", expected the picked "{picked}"')
             head = page.query_selector('.o_mailpro_conversation_head .o_mailpro_conversation_title')
             if not head or head.inner_text().strip() != 'New email':
                 self.fail('the pane head does not say a new email is being written')
@@ -412,6 +424,11 @@ class Checks:
             if page.query_selector('.o_mailpro_composer'):
                 self.fail('the New Email composer stayed open after Discard')
                 return
+            # And gives the conversation its own record back.
+            after = record_pane_name()
+            if after != before_new:
+                self.fail(f'after Discard the record pane shows "{after}", '
+                          f'expected "{before_new}"')
         self.error_free('Inbox New Email')
 
         # The mailbox sits in the mailbox list above its own folders, the way it does
