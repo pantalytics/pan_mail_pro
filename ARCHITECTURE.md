@@ -363,6 +363,18 @@ there left out of it. Gone with the buttons: the header padding that made
 room for them (`lead()`), the inline offset that stopped two of them
 stacking, and the second meaning Enter had on a divider.
 
+19.0.13.11.0 finishes that row. Expand was the one control on the screen
+still wearing a label and a grey Bootstrap button, in a header whose whole
+job is to stay quiet, and it does the same thing to the same panes as the
+buttons in the top bar: it is the same round icon button now, the two arrows
+out and the two arrows in, with the label it carried as its tooltip and its
+accessible name. Beside it, once the record has the screen, the way out of
+the Inbox is a link with the external arrow on it rather than a second
+button -- because that is what it is: another URL, another breadcrumb, and
+an arrow says so without a word of explanation. What Expand does is
+unchanged: the other panes are hidden rather than folded, so whatever was
+open or folded before is what comes back.
+
 19.0.13.7.0 puts the followers back on the screen. The chatter left the
 record pane in 19.0.10.0.0 and took the follower list with it, so nothing on
 the Inbox said who Odoo notifies about this record. A Followers button now
