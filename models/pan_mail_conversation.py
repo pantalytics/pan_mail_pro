@@ -79,6 +79,9 @@ THREAD_CAP = 50
 # signature, an inline stylesheet and the whole quoted history; the preview is
 # 140 characters.
 PREVIEW_SOURCE = 8000
+# How many mails the chevron unfolds under a conversation. A thread past
+# this is one you read in the conversation pane, not one you scan in a list.
+THREAD_ROWS = 50
 # Where the quoted history starts, as the mail clients people write to us
 # from mark it. The same list the conversation pane folds, so the snippet and
 # the open message end "what they wrote" at the same place.
@@ -450,6 +453,31 @@ class PanMailConversation(models.AbstractModel):
         }
 
     @api.model
+    def conversation_messages(self, model, res_id, message_id=None,
+                              mailbox_id=None, limit=THREAD_ROWS, offset=0):
+        """The mails inside one conversation, one line each, newest first.
+
+        What the chevron in the conversation list unfolds. It is the same set of
+        messages `read_conversation` returns for the `mail` tab, and deliberately
+        not the same rows: a line in a list needs a sender, a date and a
+        snippet, and a body per message would send the whole thread over the
+        wire to draw twenty lines of text. Asking `read_conversation` and
+        throwing the bodies away is the version of this that looks like reuse
+        and costs a thread's worth of HTML per chevron.
+
+        No `scope`: the list is correspondence. An internal note is not a mail
+        the conversation had, and the tab strip over the open conversation is
+        where that reading lives.
+        """
+        self._check_caller()
+        limit, offset = self._page(limit, offset, default=THREAD_ROWS)
+        messages = self.env['mail.message'].search(
+            self._conversation_domain(model, res_id, message_id, mailbox_id),
+            order='date desc, id desc', limit=limit, offset=offset,
+        )
+        return [self._thread_row(message) for message in messages]
+
+    @api.model
     def set_read(self, model, res_id, read=True, message_id=None,
                  mailbox_id=None):
         """Mark one conversation read or unread, everywhere it is recorded.
@@ -766,6 +794,23 @@ class PanMailConversation(models.AbstractModel):
             # is what every mail client means by the dot.
             'unread': not newest.x_is_read,
             'mailbox': newest.x_mailbox_id.email or '',
+        }
+
+    def _thread_row(self, message):
+        """One mail under an unfolded conversation: who, when, one line.
+
+        The same three things the conversation row above it carries, about one
+        message instead of the newest. Everything else -- the body, the
+        recipients, the attachments -- belongs to the conversation pane, which
+        is what clicking this row opens.
+        """
+        return {
+            'id': message.id,
+            'author': message.author_id.display_name or message.email_from or '',
+            'author_id': message.author_id.id or False,
+            'date': message.date,
+            'preview': self._preview(message),
+            'unread': not message.x_is_read,
         }
 
     def _message_row(self, message):

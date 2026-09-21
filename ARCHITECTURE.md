@@ -116,6 +116,34 @@ documents, so "record" without a qualifier reads as either side. Pane 4 is the
 Sizing, folding and the three window shapes are in
 `static/src/js/conversation_view/use_panes.js`.
 
+#### A row in the conversation list, and what unfolds under it
+
+One row per conversation, not per mail: who it is with, the subject, one line
+of the newest mail, the record it is linked to, and how many mails are in it.
+The snippet is `pan.mail.conversation._preview()`, and it stops where the
+quoted history starts -- the same markers the conversation pane folds -- so a
+two-line answer on top of last week's thread previews as the answer.
+
+A row of more than one mail carries a **chevron**. Unfolding it asks
+`conversation_messages()` and draws one line per mail underneath: sender, date,
+snippet. Three things it deliberately is not:
+
+- **Not a second read of the conversation.** `read_conversation()` carries a
+  body per message because the pane renders them; a list needs three fields,
+  so the rows come from `_thread_row()` and a thread's worth of HTML does not
+  cross the wire to draw ten lines of text.
+- **Not a second way to open a conversation.** The chevron unfolds and nothing
+  else. The row above it is still what opens the conversation, so asking "how
+  many of these are from her" never costs the reader the conversation they had
+  open.
+- **Not another tab.** The unfolded rows are correspondence, the same set the
+  row's own count counted. A note is not a mail the conversation had, and the
+  tab strip over the open conversation is where that reading lives.
+
+Clicking one opens the conversation on **that** mail: the id is seeded into
+`state.open` before the read, and `readConversation()` only falls back to the
+newest message when nothing is open.
+
 ### Provider abstraction
 
 Everything wire-specific — how a mail is sent, how remote messages are listed
