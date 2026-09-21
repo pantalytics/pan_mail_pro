@@ -97,5 +97,24 @@
             than narrowed.
         -->
 
+        <!--
+            A draft is a half-written answer, and it belongs to one person
+            until they send it. No manager exception and no company-wide read:
+            the mailbox managers who may read every mail in a shared mailbox
+            still may not read what a colleague has not sent. One rule, all
+            four operations, every internal user - an administrator's own
+            drafts are the only ones they see here.
+        -->
+        <record id="rule_mail_draft_own" model="ir.rule">
+            <field name="name">Draft: your own drafts, and nobody else's</field>
+            <field name="model_id" ref="model_pan_mail_draft"/>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+        </record>
+
     </data>
 </odoo>

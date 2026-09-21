@@ -40,6 +40,6 @@ def migrate(cr, version):
            AND last_check_date IS NULL
     """)
     _logger.info(
-        '[Mail Pro] 19.0.16.1.0: last_check_date added, %s active mailbox(es) seeded.',
+        '[Mail Pro] 19.0.17.1.0: last_check_date added, %s active mailbox(es) seeded.',
         cr.rowcount,
     )

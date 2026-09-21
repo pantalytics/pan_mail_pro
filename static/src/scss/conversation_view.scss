@@ -893,6 +893,51 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         text-transform: uppercase;
     }
 
+    // The unsent answer, above the thread. Drawn as a strip and not as a
+    // card, for the same reason a note is drawn apart: the cards in this pane
+    // are messages somebody received, and a draft is the one thing here that
+    // nobody has.
+    .o_mailpro_draft {
+        margin: 0 0 0.5rem;
+        padding: 0.375rem 0.75rem;
+        border: 1px dashed $mailpro-line;
+        border-radius: 0.5rem;
+        background: rgba(93, 91, 214, 0.04);
+        font-size: 0.8125rem;
+    }
+
+    .o_mailpro_draft_open {
+        border: 0;
+        background: none;
+        padding: 0;
+        color: inherit;
+        cursor: pointer;
+    }
+
+    .o_mailpro_draft_tag {
+        padding: 0.0625rem 0.375rem;
+        border-radius: 0.25rem;
+        background: rgba(93, 91, 214, 0.12);
+        color: $mailpro-accent-ink;
+        font-size: 0.625rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+
+    .o_mailpro_draft_subject { font-weight: 600; }
+    .o_mailpro_draft_preview { color: $mailpro-muted; font-size: 0.75rem; }
+
+    .o_mailpro_draft_delete {
+        border: 0;
+        background: none;
+        padding: 0;
+        color: $mailpro-muted;
+        cursor: pointer;
+
+        &:hover { color: $mailpro-warn; }
+    }
+
     // A record event is a line in the margin of the correspondence, never a
     // card: forty stage changes as cards is a page you scroll past.
     .o_mailpro_event {
