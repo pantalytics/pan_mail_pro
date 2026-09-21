@@ -48,18 +48,23 @@ class TestDrafts(TransactionCase):
     def _manager(cls, login):
         """Somebody the Inbox is for, who may also open the lead.
 
-        The salesman group is not decoration: the composer computes its
-        subject from the record, so a user who cannot read the lead cannot
-        open a composer on it and this file would be testing the refusal
-        rather than the draft.
+        The CRM groups are not decoration, and *all leads* is the one that
+        matters: `crm_rule_personal_lead` limits a plain salesman to the
+        leads assigned to them, so without it both of these people would be
+        unable to read the record their draft sits on -- and this file would
+        be testing that refusal instead of the draft. What the privacy tests
+        below prove is then the real thing: two people who can see the same
+        mailbox and the same lead, and still not each other's drafts.
         """
         return cls.env['res.users'].create({
             'name': login,
             'login': login,
             'email': login,
-            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id,
-                                  cls.env.ref('sales_team.group_sale_salesman').id,
-                                  cls.manager_group.id])],
+            'group_ids': [(6, 0, [
+                cls.env.ref('base.group_user').id,
+                cls.env.ref('sales_team.group_sale_salesman').id,
+                cls.env.ref('sales_team.group_sale_salesman_all_leads').id,
+                cls.manager_group.id])],
         })
 
     def _draft(self, row):
@@ -194,6 +199,22 @@ class TestDrafts(TransactionCase):
         for key in ('model', 'res_id', 'message_id', 'preview', 'correspondent',
                     'date', 'count', 'unread', 'mailbox'):
             self.assertIn(key, rows[0])
+
+    def test_a_record_that_is_gone_leaves_the_folder_standing(self):
+        """The record's name is a label on a row, never a reason to fail.
+
+        A record can be deleted under a draft, and the author can lose access
+        to the model in between. Both answer the same way: the draft is still
+        theirs, still says what they typed, and the Drafts folder still
+        opens.
+        """
+        self._save(self._composer())
+        self.lead.unlink()
+        rows = self.Conversation.with_user(self.user).search_conversations(
+            mailbox_id=self.mailbox.id, folder='drafts')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['record_name'], '')
+        self.assertEqual(rows[0]['subject'], 'Re: Offerte')
 
     def test_the_draft_is_on_its_conversation(self):
         """Above the thread it answers, where the person left it."""
