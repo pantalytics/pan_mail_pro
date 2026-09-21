@@ -408,6 +408,20 @@ there left out of it. Gone with the buttons: the header padding that made
 room for them (`lead()`), the inline offset that stopped two of them
 stacking, and the second meaning Enter had on a divider.
 
+19.0.14.3.0 splits that row in two, by what each button folds. The mailbox
+list keeps its place in the top bar: it is top left in every mail client, and
+on a phone the mailbox list is a drawer with no divider to hang anything on,
+so that button has to be there anyway. The conversation list and the Odoo
+record go back to a round button on their own divider -- a chevron beside the
+open pane, that pane's icon beside the folded one -- because a control for a
+pane belongs at the edge that pane went behind, not across the screen from it.
+A divider beside a folded pane is drawn again, with no width to drag and the
+button on it as the one way back; the mailbox list's, which carries no button,
+still goes with its pane. What 19.0.13.10.0 was right about survives: only one
+button ever floats into a header, from one side, and `o_mailpro_lead_*` /
+`o_mailpro_trail_*` on the pane row is the room that header leaves for it, so
+a title starts beside the button rather than under it.
+
 19.0.14.2.0 finishes that row. Expand was the one control on the screen
 still wearing a label and a grey Bootstrap button, in a header whose whole
 job is to stay quiet, and it does the same thing to the same panes as the
