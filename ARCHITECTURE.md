@@ -97,7 +97,8 @@ is the one pane that reads better for it. With the record folded away, or open
 with no document in it yet, the conversation takes that room back. The
 conversation is also the one pane that never folds -- a screen with no mail on
 it is not this screen. Pane 4 has a state that is not a width: zoom, the record
-on the whole screen.
+on the whole screen, which it takes by sliding over the other three rather than
+replacing them.
 
 Two words are deliberately not pane names:
 
@@ -629,6 +630,37 @@ button ever floats into a header, from one side, and `o_mailpro_lead_*` /
 `o_mailpro_trail_*` on the pane row is the room that header leaves for it, so
 a title starts beside the button rather than under it.
 
+19.0.17.2.0 makes Expand a movement. The record used to take the screen by
+the other three panes leaving it: they were dropped from the screen, the
+record grew into the space in the same frame, and the way back rebuilt the
+Inbox from nothing. Nothing said where the record had come from or where the
+mail had gone, which is the whole job of the animation every pane fold on
+this screen already has.
+
+It slides now. The record leaves the flex line for as long as it has the
+screen -- an overlay the size of the pane row -- and travels from the left
+edge its own pane had to the row's, over the three panes it covers. They stay
+exactly where they were, at the widths the reader dragged, inert and
+answering no pointer, so the way back is the same slide in reverse revealing
+a screen rather than assembling one. Three things make it work:
+
+- **The starting edge is measured, not computed.** Three dragged widths, two
+  folds and up to three dividers decide where pane 4 begins; the screen reads
+  it off the DOM at the press and hands it to the stylesheet as
+  `--mailpro-zoom-from`. The way back reuses the number the way in came from,
+  because a slide that returns somewhere else is two animations.
+- **Keyframes, not a transition.** The class that takes the record out of the
+  flex line arrives in the same frame as the class that moves it home, so
+  there is no first frame to transition from. An animation does not need one.
+- **The overlay outlives the state.** `zoomLeaving` holds it for exactly one
+  slide after zoom is off, because a class that is gone is a class that does
+  not animate.
+
+Under it, zoom stopped touching the layout at all: it no longer unfolds what
+was folded, no longer removes the dividers, no longer decides which panes
+exist. What was open or folded before Expand is what is underneath it and
+what comes back, which is what 19.0.14.2.0 promised and did by rebuilding.
+
 19.0.17.1.0 gives the phone the same sentence and the mail the room the head
 was taking. The one place the cube survived was the phone's way to the Odoo
 record, in the conversation head, where the record has no divider to hang a
@@ -655,7 +687,8 @@ the Inbox is a link with the external arrow on it rather than a second
 button -- because that is what it is: another URL, another breadcrumb, and
 an arrow says so without a word of explanation. What Expand does is
 unchanged: the other panes are hidden rather than folded, so whatever was
-open or folded before is what comes back.
+open or folded before is what comes back. 19.0.17.2.0 makes that literal --
+they stay on the screen, under the record, while it slides over them.
 
 19.0.13.7.0 puts the followers back on the screen. The chatter left the
 record pane in 19.0.10.0.0 and took the follower list with it, so nothing on
@@ -2175,9 +2208,18 @@ That is the device flow's shape: no redirect URI per customer database, so it
 works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
 server half lives in `pantalytics/mail-pro-admin`.
 
+- **Usage and billing are read there, not here.** The settings page carries
+  one link (`dashboard_url()`, the Odoo instances page), and this module has
+  no usage screen of its own: the number that decides an invoice is the one
+  our server counted from the heartbeats, and a second copy in Odoo is a
+  second number to keep true.
+
 - **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
   `_heartbeat_body()` and nothing else: database id, module and Odoo version,
-  connected accounts, whether sync is healthy, and for the last 24 hours the
+  connected accounts, whether sync is healthy, and for the last 24 hours how
+  many mails were sent and received (off `mail.message.x_direction`, so one
+  message is one mail while the cap meters `mail.mail`, one per recipient:
+  this is the trend, not the meter), the
   four link coverage counts (`pan.mail.coverage.counts_since`), per matching
   rule how often it decided and how often a person overruled it
   (`pan.mail.routing.log.rule_counts_since`, off `corrected_at`, which
@@ -2297,6 +2339,47 @@ count down while you read. Never another user's -- a mention is addressed to a
 person -- and never in reverse: marking a conversation unread puts the mailbox
 back to unread and leaves the bell alone. Mail Pro clears notification rows
 and never creates one; the import boundary of 9.10 does not move.
+
+### 9.19 The sync level is the user's, the rest of the mailbox is not
+
+A mailbox has one setting that is not a configuration decision: `sync_level`
+says how much of somebody's correspondence lands in a database their whole
+company can search. Everything else about the row -- the address, whose
+credentials it carries, whether an alias routes it to a team, which mailbox
+carries the system email -- is the workspace's, and stays under Settings with
+the mailbox managers.
+
+So the ladder appears twice and is stored once. On the mailbox form it is the
+Sync Settings tab, with the consequence table of §3. On **My Preferences → Mail
+Pro** it is the radio and the one warning that matters, next to Send from:
+`res.users.x_pan_mail_sync_level`, computed from the user's own personal
+mailbox and written back to it. The selection comes from
+`pan.mail.mailbox._fields['sync_level']`, so a rung added to the ladder cannot
+be missing from the user's copy of it.
+
+Three decisions hold it up.
+
+**The mailbox is searched, not stored.** A personal mailbox is one whose owner
+signed in with that very address, so the link runs from the mailbox to the user
+and there is no field to follow the other way.
+`x_pan_mail_personal_mailbox_id` is an unstored compute for the reason
+19.0.5.0.0 deleted `x_incoming_enabled`: a stored compute over a searched
+relation needs invalidation written by hand, and the hand-written half is what
+goes stale.
+
+**The write is `sudo()`, and `_check_mailbox_is_mine` is why that is safe.**
+`pan.mail.mailbox` is read-only for `base.group_user` in the ACL, and widening
+that would hand every internal user write access to every shared mailbox --
+the record rule that keeps personal mailboxes private already lets everyone see
+the shared ones. The inverse writes one field on one row instead, and refuses
+when the record it is aimed at is not the caller's own. That guard is the same
+one `action_connect_mailbox` and `action_disconnect_mailbox` use: self-writeable
+fields and public methods on `res.users` are both reachable over RPC for any id
+an internal user can browse, which is all of them.
+
+**The notification mailbox is excluded**, even when an administrator owns it.
+It carries the system email, its own form hides the Sync Settings tab, and
+nothing about it is one person's preference.
 
 ## 10. Security and permissions
 

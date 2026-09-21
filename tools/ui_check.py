@@ -1923,9 +1923,25 @@ class Checks:
         if not record or not record.is_visible():
             self.fail('the record pane went away when it was zoomed')
             return
-        share = record.bounding_box()['width'] / panes.bounding_box()['width']
-        if share < 0.9:
+
+        # It slides over the other panes rather than replacing them, which is
+        # a thing about where it ends up: an overlay over the whole pane row,
+        # left edge on the row's own left edge. A record that merely grew to
+        # 90% of the row cannot have slid over anything.
+        row, seat = panes.bounding_box(), record.bounding_box()
+        share = seat['width'] / row['width']
+        if share < 0.99:
             self.fail('the zoomed record takes %d%% of the screen' % (share * 100))
+        if abs(seat['x'] - row['x']) > 1:
+            self.fail('the zoomed record starts %dpx into the pane row'
+                      % (seat['x'] - row['x']))
+
+        # Covered, not gone: the panes underneath keep the widths the reader
+        # dragged, so the way back reveals the screen instead of rebuilding
+        # it. `is_visible()` above already read them as off screen.
+        listing = page.query_selector('.o_mailpro_conversation_list')
+        if listing and listing.bounding_box() and listing.bounding_box()['width'] < 100:
+            self.fail('the conversation list lost its width while the record was zoomed')
         self.shot('inbox-zoom.png')
 
         page.query_selector('.o_mailpro_odoo_record_zoom').click()
@@ -2483,6 +2499,94 @@ class Checks:
             })
             sink.stop()
 
+    # -- My Preferences → Mail Pro -------------------------------------------
+
+    def preferences(self):
+        """The sync ladder where the person whose mail it is can reach it.
+
+        It is the mailbox's own `sync_level` on a second screen, and that
+        screen is a dialog no Python test renders: a field that lands outside
+        its group, a radio that draws one option, or a save that writes
+        nothing are all invisible to the suite. The save is the half that
+        cannot be faked -- `pan.mail.mailbox` is write-only to mailbox
+        managers, and this user is not one, so an inverse that forgot its
+        `sudo()` fails exactly here.
+
+        A user of its own: the seeded admin already holds the one Microsoft
+        account a user may have, and their own address is the notification
+        mailbox, which is the workspace's. Last of all the checks, so nothing
+        earlier sees the extra user or the extra mailbox.
+        """
+        login = 'ui-personal@example.com'
+        found = self.call('res.users', 'search', [('login', '=', login)])
+        if found:
+            uid = found[0]
+        else:
+            uid = self.call('res.users', 'create', {
+                'name': 'Personal Mailbox', 'login': login, 'password': login,
+                'email': login,
+                'group_ids': [(6, 0, self.call(
+                    'ir.model.data', 'check_object_reference', 'base', 'group_user')[1:])],
+            })
+            self.call('pan.mail.account', 'create', {
+                'user_id': uid, 'provider': 'outlook', 'email': login,
+                'refresh_token': 'demo', 'access_token': 'demo'})
+        found = self.call('pan.mail.mailbox', 'search', [('email', '=', login)])
+        mailbox = found[0] if found else self.call('pan.mail.mailbox', 'create', {
+            'email': login, 'provider': 'outlook', 'owner_user_id': uid})
+        self.call('pan.mail.mailbox', 'write', [mailbox], {'sync_level': 'replies'})
+
+        page = self.browser.new_context(
+            viewport={'width': WIDE, 'height': 1100}).new_page()
+        try:
+            page.goto(f'{self.base}/web/login', wait_until='domcontentloaded')
+            page.fill('input[name=login]', login)
+            page.fill('input[name=password]', login)
+            page.click('button[type=submit]')
+            page.wait_for_selector('.o_main_navbar', timeout=60000)
+            page.click('.o_main_navbar .o_user_menu')
+            page.click('.o-dropdown--menu .dropdown-item:has-text("Preferences")')
+            page.wait_for_selector('.modal .o_form_view', timeout=30000)
+            tab = page.query_selector('.modal .o_notebook a:has-text("Mail Pro")')
+            if not tab:
+                self.fail('My Preferences has no Mail Pro tab')
+                return
+            tab.click()
+            page.wait_for_timeout(600)
+            if self.out:
+                page.screenshot(path=os.path.join(self.out, 'preferences-mail-pro.png'))
+
+            text = page.inner_text('.modal .o_form_view')
+            for rung in ('Replies, in Odoo only',
+                         'Replies, in Odoo and your mail app',
+                         'Replies and new email, existing contacts only',
+                         'Replies and new email, everyone'):
+                if rung not in text:
+                    self.fail(f'My Preferences does not offer "{rung}"')
+            if 'Send from' not in text:
+                self.fail('My Preferences lost Send from')
+
+            widest = page.query_selector(
+                '.modal .o_form_view label:has-text("Replies and new email, everyone")')
+            if not widest:
+                self.fail('the sync ladder is not a radio in My Preferences')
+                return
+            widest.click()
+            page.wait_for_timeout(300)
+            if 'newsletters' not in page.inner_text('.modal .o_form_view'):
+                self.fail('the widest rung is picked without saying what it lets in')
+            page.click('.modal button[name=preference_save]')
+            page.wait_for_timeout(1500)
+            dialog = page.query_selector('.o_error_dialog, .o_dialog_error')
+            if dialog:
+                self.fail(f'saving My Preferences failed: {dialog.inner_text()[:200]}')
+            level = self.call('pan.mail.mailbox', 'read', [mailbox],
+                              fields=['sync_level'])[0]['sync_level']
+            if level != 'everyone':
+                self.fail(f'My Preferences saved, the mailbox still reads {level}')
+        finally:
+            page.context.close()
+
     def error_free(self, where):
         dialog = self.page.query_selector('.o_error_dialog, .o_dialog_error')
         if dialog:
@@ -2703,6 +2807,7 @@ def main():
         checks.provider_form()
         checks.mailbox_status()
         checks.connect_banner()
+        checks.preferences()
         browser.close()
 
     if checks.failures:

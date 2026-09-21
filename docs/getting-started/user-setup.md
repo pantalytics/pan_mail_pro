@@ -50,6 +50,23 @@ before a customer finds it. Every mailbox form has the same button.
 
 That mailbox is pre-selected in the composer. You can still change it per email.
 
+## Choose how much of your mailbox Odoo reads
+
+Replies to mail Odoo sent always land on their record, whatever you pick. The
+**Sync level** on **My Preferences → Mail Pro** decides what is read on top of
+that, for your own address:
+
+| Sync level | What is read back |
+|---|---|
+| Replies, in Odoo only | your contact's replies, and nothing from your mail app |
+| Replies, in Odoo and your mail app | also the replies you send from Outlook or Gmail |
+| Replies and new email, existing contacts only | also new conversations with people who are already contacts |
+| Replies and new email, everyone | also new conversations from strangers, who become contacts |
+
+It is your setting, not an administrator's: nobody else can change it, and you
+can move up or down at any time. Shared mailboxes are configured by an
+administrator under Settings.
+
 ## Sending emails
 
 1. Open any email composer (from CRM, Helpdesk, a sales order)
