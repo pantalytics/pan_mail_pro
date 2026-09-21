@@ -1517,16 +1517,26 @@ class Checks:
             'improve_token': 'phc_ui_check', 'replay_sample': 1.0,
         })
         # Its own browser context, looking like a person's browser: the SDK
-        # drops every event from a bot, and both "HeadlessChrome" in the user
-        # agent and `navigator.webdriver` mark one. The product keeps that
-        # filter, which is right; the check has to get past it.
+        # drops every event from a bot, and "HeadlessChrome" in the user
+        # agent, `navigator.webdriver`, and "HeadlessChrome" among the client
+        # hint brands (`navigator.userAgentData`, which the headless shell CI
+        # runs still reports under a rewritten user agent) each mark one. The
+        # product keeps that filter, which is right; the check has to get
+        # past all three.
         context = self.browser.new_context(
             viewport={'width': WIDE, 'height': 1100},
             user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
                        '(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
         context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', { get: () => false });")
+            "Object.defineProperty(navigator, 'webdriver', { get: () => false });"
+            "Object.defineProperty(navigator, 'userAgentData', { get: () => undefined });")
         page = context.new_page()
+        # Everything the page says, printed when the step fails: the SDK
+        # logs why it stays quiet, and a runner has no other way to tell us.
+        console = []
+        page.on('console', lambda m: console.append(f'{m.type}: {m.text[:300]}'))
+        page.on('pageerror', lambda e: console.append(f'pageerror: {str(e)[:300]}'))
+        page.on('requestfailed', lambda r: console.append(f'requestfailed: {r.url[:200]} {r.failure}'))
         try:
             login(page, self.base)
             action = dict(module_menu_actions(self.call)).get('Inbox')
@@ -1555,6 +1565,20 @@ class Checks:
             if not sink.saw('/e/', 'inbox_opened'):
                 self.fail('inbox_opened never reached the sink '
                           f'(got {sorted({p for p, _ in sink.received})})')
+                state = page.evaluate("""() => {
+                    const s = odoo.loader.modules.get('@web/session');
+                    const ph = window.posthog;
+                    return {
+                        config: s && s.session && s.session.pan_mail_improve,
+                        posthog: typeof ph, loaded: !!(ph && ph.__loaded),
+                        host: ph && ph.config && ph.config.api_host,
+                        ua: navigator.userAgent, webdriver: navigator.webdriver,
+                        ready: document.readyState,
+                    };
+                }""")
+                print(f'    state: {state}')
+                for line in console[-40:]:
+                    print(f'    console {line}')
             if not sink.saw('/s/'):
                 self.fail('no replay chunk reached the sink in 25s')
             if not sink.saw('/e/', 'conversation_opened') and items:
