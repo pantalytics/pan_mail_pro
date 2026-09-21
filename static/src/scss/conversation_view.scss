@@ -437,15 +437,22 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     // 3. the conversation
     .o_mailpro_conversation {
-        // Basis zero, not auto: the conversation is what the other three leave,
-        // and on a tablet it is also what the record takes -- a swap that
-        // animates only when both sides grow from nothing.
-        flex: 1 1 0;
+        // The basis is the width the reader dragged, on the divider to its
+        // right: mail is prose, so this is the pane that stops rather than
+        // the one that stretches. No grow, because the room it does not need
+        // belongs to the record beside it -- and shrink, because a window
+        // that cannot hold both gives it up before the form does.
+        flex: 0 1 auto;
         min-width: 0;
         display: flex;
         flex-direction: column;
         overflow: hidden;
     }
+
+    // Nothing beside it to take the slack -- the record folded away, or open
+    // with no document in it yet -- and the conversation takes it back. A
+    // margin where a pane used to be is a pane you think is still there.
+    .o_mailpro_conversation_fills { flex-grow: 1; }
 
     .o_mailpro_conversation_head {
         flex: 0 0 auto;
@@ -782,8 +789,14 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // sheet and its chatter out side by side and the chatter runs off the
     // pane. Here it is one column, at the pane's own width, and its own
     // scrolling is the pane's.
+    //
+    // That width is what the other three leave: a form is the one pane on
+    // this screen that reads better wider, so the slack a wide monitor
+    // leaves in the middle goes here rather than into a stretched line of
+    // mail. The minimum is the floor a drag on its divider runs into.
     .o_mailpro_odoo_record {
-        flex: 0 0 auto;
+        flex: 1 1 0;
+        min-width: 20rem;
         background: #fafbfc;
         overflow: hidden auto;
 
@@ -944,13 +957,13 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     // A tablet: the conversation and the record share the third column
     // rather than squeezing four into a laptop. One of them has the column,
-    // the other is folded, and the divider between them is the strip. Both
-    // grow from a zero basis, so the swap is one slide: the record's dragged
-    // width is an inline style and has to be shouted down here.
-    &.o_mailpro_narrow .o_mailpro_odoo_record {
+    // the other is folded, and the divider between them is the strip. The
+    // record already grows from a zero basis; the conversation's own basis
+    // is an inline style the reader dragged, so the one that has the column
+    // takes all of it rather than the width a wider window gave it.
+    &.o_mailpro_narrow .o_mailpro_conversation {
         flex-basis: 0 !important;
         flex-grow: 1;
-        flex-shrink: 1;
     }
 
     // A dragged width is an inline style, so the narrow-window cap has to be
@@ -1030,6 +1043,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         .o_mailpro_odoo_record {
             flex: 1 1 auto !important;
             width: 100%;
+            min-width: 0;
             max-width: none;
         }
 

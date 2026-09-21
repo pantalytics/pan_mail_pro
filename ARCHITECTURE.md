@@ -87,10 +87,15 @@ is `o_mailpro_split_<pane>`, and everything inside a pane keeps the pane's
 own prefix: `o_mailpro_conversation_head` is part of pane 3,
 `o_mailpro_odoo_record_zoom` part of pane 4.
 
-Three panes have a stored width; the conversation is what the other three
-leave over, so it has a floor and no width of its own. It is also the one pane
-that never folds -- a screen with no mail on it is not this screen. Pane 4 has
-a state that is not a width: zoom, the record on the whole screen.
+Three panes have a stored width; the Odoo record is what the other three leave
+over, so it has a floor and no width of its own. The conversation is the pane
+that stops rather than stretches -- mail is prose and prose has a comfortable
+measure -- so on a wide monitor the room in the middle goes to the form, which
+is the one pane that reads better for it. With the record folded away, or open
+with no document in it yet, the conversation takes that room back. The
+conversation is also the one pane that never folds -- a screen with no mail on
+it is not this screen. Pane 4 has a state that is not a width: zoom, the record
+on the whole screen.
 
 Two words are deliberately not pane names:
 

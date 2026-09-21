@@ -711,6 +711,26 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### Which pane takes the slack (19.0.15.2.0)
+
+- **The elastic pane is the one whose divider stops doing anything.** Capping
+  the conversation at its prose measure and giving the record `flex-grow`
+  looks right and breaks the drag: once the capped pane freezes, flexbox
+  hands the remainder to the grower, so its size is `total - others - cap`
+  whatever basis the drag stored. The number is still written, still restored,
+  and nothing reads it. Invert instead -- the pane with a natural ceiling keeps
+  the stored width, the pane that reads better wider becomes the leftover.
+- **A divider is named after a pane, not after the width it sets.** The record's
+  divider now sizes the conversation, so `dragged()` is that mapping and
+  everything the splitter reads goes through it -- including `aria-valuemin` /
+  `aria-valuemax`. Miss one and `PANES[divider]` is `undefined`: Owl says
+  "Cannot read properties of undefined (reading 'min')" with a template line
+  number and nothing else, and the whole screen is an error dialog.
+- **A ceiling reserves a neighbour's floor, not its width, when that neighbour
+  shrinks.** Counting the conversation's full stored width made the list's
+  ceiling smaller than the list already was, so the first drag snapped it to
+  its minimum before moving.
+
 ### Naming the panes (19.0.14.1.0)
 
 - **One idea, two words, and the loaded one reaches the code.** Pane 3 was

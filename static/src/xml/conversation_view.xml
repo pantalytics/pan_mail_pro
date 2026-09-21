@@ -268,8 +268,10 @@
                 <!-- 3. the conversation -->
                 <div t-if="showConversation" class="o_mailpro_conversation" role="region" aria-label="Conversation"
                      t-att-class="{ 'o_mailpro_conversation_composing': composer.state.open,
+                                    'o_mailpro_conversation_fills': panes.conversationFills(showOdooRecord and selectedRecord),
                                     'o_mailpro_folded': panes.folded('conversation') }"
-                     t-att-inert="panes.folded('conversation')">
+                     t-att-inert="panes.folded('conversation')"
+                     t-attf-style="flex-basis: {{panes.state.conversation}}px">
                     <!--
                         A new mail takes the pane the way a reply does. There
                         is no conversation behind it yet, so the head names the
@@ -611,8 +613,7 @@
                 <div t-if="showOdooRecord" class="o_mailpro_odoo_record"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('odoo_record') }"
                      t-att-inert="panes.folded('odoo_record')"
-                     role="region" aria-label="Odoo record"
-                     t-attf-style="flex-basis: {{panes.state.odoo_record}}px">
+                     role="region" aria-label="Odoo record">
                     <OdooRecordPane t-if="selectedRecord" record="selectedRecord"
                                 zoomed="panes.state.zoom"
                                 zoomLabel="panes.zoomLabel()"
@@ -738,9 +739,9 @@
              t-attf-class="o_mailpro_split o_mailpro_split_{{divider}} {{ panes.toggleSide(divider) === 'center' ? '' : 'o_mailpro_split_folded' }}"
              role="separator" aria-orientation="vertical" tabindex="0"
              t-att-aria-label="panes.label(divider)"
-             t-att-aria-valuenow="panes.folded(divider) ? 0 : panes.state[divider]"
-             t-att-aria-valuemin="panes.panes[divider].min"
-             t-att-aria-valuemax="panes.panes[divider].max"
+             t-att-aria-valuenow="panes.folded(divider) ? 0 : panes.width(divider)"
+             t-att-aria-valuemin="panes.bounds(divider).min"
+             t-att-aria-valuemax="panes.bounds(divider).max"
              t-on-pointerdown="(ev) => panes.startDrag(divider, ev)"
              t-on-keydown="(ev) => panes.onKey(divider, ev)"
              t-on-dblclick="() => panes.reset(divider)">

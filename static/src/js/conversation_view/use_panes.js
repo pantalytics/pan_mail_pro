@@ -3,10 +3,20 @@
  * Pane sizing for the Inbox: drag the dividers, fold the three panes around
  * the conversation, and find the screen tomorrow the way you left it tonight.
  *
- * Three stored widths, not four. The conversation is whatever is left over, so it
- * has no width of its own -- it has a floor, and that floor is what a drag
- * runs into instead of eating the mail. It is also the one pane that never
- * folds on its own: a screen with no mail on it is not this screen.
+ * Three stored widths, not four. The Odoo record is whatever is left over, so
+ * it has no width of its own -- it has a floor, and that floor is what a drag
+ * runs into instead of eating the form.
+ *
+ * The conversation is the pane that stops, because mail is prose and prose has
+ * a comfortable measure: past it a line is stretched rather than longer, and
+ * the room the reading does not need is room a form does. On a wide monitor
+ * that room sits in the middle of the screen, which is the most expensive
+ * place on it to leave empty. When the record is folded away, or there is no
+ * record to show yet, the conversation takes the slack back rather than
+ * leaving a margin where a pane used to be.
+ *
+ * The conversation is still the one pane that never folds: a screen with no
+ * mail on it is not this screen.
  *
  * One control per pane, at the edge that pane went behind. The mailbox list
  * folds from a button in the top bar, top left, where every mail client has
@@ -73,11 +83,14 @@ const ICONS = {
 
 // px. Minimums are where a pane stops being readable rather than where it
 // stops being visible: a folder name that wraps, a subject line with two
-// words on it, a form field whose label eats the value.
+// words on it, a reply typed in a column three words wide.
 const PANES = {
     mailbox_list: { start: 232, min: 140, max: 380 },
     conversation_list: { start: 352, min: 260, max: 620 },
-    odoo_record: { start: 448, min: 300, max: 720 },
+    // 48rem: the width the messages, the composer and both other tabs already
+    // stop at. The pane stops with them, so nothing is stretched and nothing
+    // is cut off.
+    conversation: { start: 768, min: 360, max: 1040 },
 };
 
 // Everything but the conversation folds away. Outlook folds the two outer
@@ -91,7 +104,9 @@ const COLLAPSIBLE = ["mailbox_list", "conversation_list", "odoo_record"];
 // the inconsistency, not two places for two different folds.
 const DIVIDER_TOGGLES = ["conversation_list", "odoo_record"];
 
-const CONVERSATION_MIN = 360;
+// px. The floor under the pane that has no width of its own. A form whose
+// labels have eaten their values is a pane nobody reads.
+const ODOO_RECORD_MIN = 320;
 const STEP = 16;
 
 function paneLabel(name) {
@@ -111,7 +126,7 @@ function defaults() {
     return {
         mailbox_list: PANES.mailbox_list.start,
         conversation_list: PANES.conversation_list.start,
-        odoo_record: PANES.odoo_record.start,
+        conversation: PANES.conversation.start,
         collapsed: { mailbox_list: false, conversation_list: false, odoo_record: false },
         zoom: false,
         // Not stored: they describe the window, not a preference.
@@ -210,19 +225,30 @@ export function usePanes() {
         return isFolded(name) ? "left" : null;
     }
 
-    /** The widest this pane may get before the conversation drops below its floor. */
+    /**
+     * The widest this pane may get. What a drag has to leave behind is not
+     * the same for every neighbour: the two lists never give way, so their
+     * width is theirs, while the conversation and the record give way to
+     * each other and only their floors have to survive.
+     */
     function ceiling(name, total) {
         const spec = PANES[name];
         if (!total) {
             return spec.max;
         }
         let others = 0;
-        for (const other of Object.keys(PANES)) {
+        for (const other of ["mailbox_list", "conversation_list"]) {
             if (other !== name && !isFolded(other)) {
                 others += state[other];
             }
         }
-        return clamp(total - others - CONVERSATION_MIN, spec.min, spec.max);
+        if (name !== "conversation" && !isFolded("conversation")) {
+            others += PANES.conversation.min;
+        }
+        if (!isFolded("odoo_record")) {
+            others += ODOO_RECORD_MIN;
+        }
+        return clamp(total - others, spec.min, spec.max);
     }
 
     function containerWidth(handle) {
@@ -230,10 +256,14 @@ export function usePanes() {
         return panes ? panes.getBoundingClientRect().width : 0;
     }
 
-    // The record pane sits to the right of its divider, so the same gesture
-    // means the opposite thing there.
-    function direction(name) {
-        return name === "odoo_record" ? -1 : 1;
+    // Which pane a divider's drag moves. Three of the four dividers have
+    // their own pane to the left of them; the record's has the conversation
+    // there, and the record is what the conversation leaves -- so that
+    // gesture sets the conversation's width and the record follows it. Every
+    // stored pane is therefore left of the divider that sizes it, and a drag
+    // to the right is a wider pane on all three.
+    function dragged(name) {
+        return name === "odoo_record" ? "conversation" : name;
     }
 
     function resize(name, width, total) {
@@ -259,7 +289,21 @@ export function usePanes() {
 
     return {
         state,
-        panes: PANES,
+
+        /**
+         * What a divider's drag sets: the width itself, and the range it may
+         * set it in. Both go through `dragged()`, because the record's
+         * divider sizes the conversation rather than the pane it is named
+         * after -- and a separator that reports somebody else's range is a
+         * separator a screen reader lies about.
+         */
+        width(name) {
+            return state[dragged(name)];
+        },
+
+        bounds(name) {
+            return PANES[dragged(name)];
+        },
 
         label(name) {
             return paneLabel(name);
@@ -267,6 +311,16 @@ export function usePanes() {
 
         folded(name) {
             return isFolded(name);
+        },
+
+        /**
+         * Whether the conversation takes the slack instead of the record.
+         * It does whenever there is no record beside it to take it: folded
+         * away, or open with nothing in it yet. Which document is selected
+         * is the screen's answer, not this hook's, so it is asked for.
+         */
+        conversationFills(hasRecord) {
+            return !hasRecord || isFolded("odoo_record");
         },
 
         /**
@@ -333,9 +387,10 @@ export function usePanes() {
                 return; // Nothing to drag; the button is the control.
             }
             const handle = ev.currentTarget;
+            const pane = dragged(name);
             const total = containerWidth(handle);
             const startX = ev.clientX;
-            const startWidth = state[name];
+            const startWidth = state[pane];
             ev.preventDefault();
 
             // Pointer capture keeps the move events on the handle, so a fast
@@ -345,7 +400,7 @@ export function usePanes() {
             handle.classList.add("o_mailpro_split_dragging");
 
             const onMove = (move) => {
-                resize(name, startWidth + (move.clientX - startX) * direction(name), total);
+                resize(pane, startWidth + (move.clientX - startX), total);
             };
             const stop = () => {
                 handle.removeEventListener("pointermove", onMove);
@@ -368,8 +423,9 @@ export function usePanes() {
                 return;
             }
             ev.preventDefault();
-            const step = (ev.key === "ArrowRight" ? STEP : -STEP) * direction(name);
-            resize(name, state[name] + step, containerWidth(ev.currentTarget));
+            const pane = dragged(name);
+            const step = ev.key === "ArrowRight" ? STEP : -STEP;
+            resize(pane, state[pane] + step, containerWidth(ev.currentTarget));
             save();
         },
 
@@ -449,7 +505,8 @@ export function usePanes() {
             if (foldedSide(name)) {
                 return; // No width to regret; a double tap is two taps.
             }
-            state[name] = PANES[name].start;
+            const pane = dragged(name);
+            state[pane] = PANES[pane].start;
             state.collapsed[name] = false;
             save();
         },
