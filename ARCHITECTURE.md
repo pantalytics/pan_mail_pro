@@ -321,6 +321,15 @@ a second inbox to empty:
   Values passed to `create()` are protected from their own compute, so the
   pane mounts its form on a record that already holds what was typed.
 
+**It is written on leaving, never on a timer.** Save draft stores one; so
+does leaving a composer that was typed in -- another conversation, the step
+back on a phone -- which is where an answer used to be lost. `isDirty()` is
+what separates "typed in" from "opened and thought better of", and it is the
+asynchronous one on purpose: it flushes the field changes the form has not
+notified yet, which on a composer is the body. An autosave on a timer was
+refused twice over: it writes a row for every Reply anybody ever opened, at
+the rate a person types. **Discard still discards.**
+
 It is **not** the provider's draft. `mail.provider.client.save_draft` puts a
 complete MIME message in the mailbox's own Drafts folder for another client to
 finish; this row is an Odoo composer somebody closed. Storing it in both

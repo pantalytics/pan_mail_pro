@@ -480,18 +480,38 @@ export class ConversationView extends Component {
     }
 
     /** The step back, on a phone. Nothing is deselected: the list marks it. */
-    backToList() {
-        this.composer.close();
+    async backToList() {
+        await this.leaveComposer();
         this.state.compose = null;
         this.panes.showConversationList();
     }
 
+    /**
+     * Close the composer on the way out, keeping whatever was typed.
+     *
+     * Leaving is not discarding: Discard still throws the answer away, and
+     * every other way out of the composer -- another conversation, the step
+     * back on a phone -- stores it as a draft instead. The count under the
+     * mailbox is corrected; the list is not re-read, because the reader is
+     * already on their way somewhere and a list that reorders under them is
+     * worse than a number that waits for the next read.
+     */
+    async leaveComposer() {
+        const stored = await this.composer.leave();
+        if (stored) {
+            this.notification.add(_t("Draft saved."), { type: "success" });
+            await this.loadCounts(this.mailboxKey());
+        }
+        return stored;
+    }
+
     async select(conversation) {
         // A reply belongs to the conversation it answers, and this is another
-        // one, so the composer closes with it. What was typed is gone unless
-        // it was saved as a draft, which is the button next to Send and the
-        // only promise this screen makes about unsent words.
-        this.composer.close();
+        // one, so the composer closes with it -- and what was typed into it
+        // is kept as a draft on the conversation it was written for. Losing
+        // an answer to a click on the list was the one thing this pane did
+        // that nobody expected.
+        await this.leaveComposer();
         this.state.selected = conversation;
         this.state.showRejected = false;
         this.improve.capture("conversation_opened", { folder: this.state.folder });

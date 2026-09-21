@@ -333,12 +333,17 @@ conversation compounds from there.
 **The cases we drop.**
 
 - ~~**Drafts.**~~ Shipped in 19.0.16.0.0, and the refusal above is the reason
-  the shape is as small as it is. A draft is stored only when somebody presses
-  **Save draft**: there is no autosave, so closing the pane still loses the
-  text, and the Drafts folder holds what people decided to keep rather than
-  everything they started. It is one table, `pan.mail.draft`, private to its
+  the shape is as small as it is. One table, `pan.mail.draft`, private to its
   author, on the record the mail will be sent from -- so sending it changes
   nothing about where the conversation lives. No drafts of internal notes.
+
+  **Saved on leaving, not on a timer.** A draft is written by **Save draft**,
+  and by walking away from a composer somebody typed in: clicking another
+  conversation, or the step back on a phone. Not every few seconds -- an
+  autosave on a timer writes a row for every Reply anybody ever opened, which
+  is the second inbox this section refused, and it does it at the rate a
+  person types. Leaving writes one row, once. **Discard still discards**: the
+  one case where losing the answer is what was asked for.
 - **More than one record.** One mail, one record. `mail.message` has one
   `res_id`, and a mail that is about two things is two mails or a link in the
   body.

@@ -174,17 +174,49 @@ export function useComposer({ onSent, onDraftSaved }) {
         close,
 
         /**
-         * Save the composer, then send it -- which is what the button in the
-         * dialog's footer does, in that order.
+         * Leaving the composer by going somewhere else, rather than by
+         * discarding it: anything typed is kept as a draft.
          *
-         * A save that fails says which field is missing, in the form, next to
-         * the field. A send that fails raises, which is Odoo's own error
-         * dialog -- and by then the reply is already posted: the chatter sends
-         * after its commit, so the raise reaches the browser with the message
-         * in the conversation and the failure on its envelope. Leaving the composer
-         * open would let a second Send post the same reply again, so it
-         * closes and the conversation refreshes before the dialog shows.
+         * The difference from Discard is the whole point. Discard is somebody
+         * saying "throw this away", and it still does; clicking another
+         * conversation is not, and losing an answer to that was the one thing
+         * this pane did that nobody expected. It is also why there is no
+         * autosave on a timer: a draft is written when you leave the mail,
+         * once, rather than on every pause in the typing.
+         *
+         * `isDirty()` rather than `dirty`: it flushes the field changes that
+         * have not been notified yet, which on this form is the body -- the
+         * field people type in and the one that reports late. A composer
+         * nobody touched is not dirty, so opening Reply and changing your
+         * mind leaves no row behind.
+         *
+         * Never on a note, and never a reason to trap somebody on this
+         * screen: a save that fails still closes the pane.
+         *
+         * @returns {Promise<boolean>} whether a draft was stored
          */
+        async leave() {
+            const controller = handle.controller;
+            if (!controller || state.sending || state.mode === "note") {
+                close();
+                return false;
+            }
+            const record = controller.model.root;
+            let stored = false;
+            try {
+                if (await record.isDirty() && await record.save({ reload: false })) {
+                    await orm.call("pan.mail.draft", "save_from_composer",
+                                   [record.resId], { draft_id: state.draftId });
+                    stored = true;
+                }
+            } catch (error) {
+                console.warn("[Mail Pro] could not keep the draft", error);
+            } finally {
+                close();
+            }
+            return stored;
+        },
+
         /**
          * Put the unsent mail away: save the composer, then store it.
          *
@@ -221,6 +253,18 @@ export function useComposer({ onSent, onDraftSaved }) {
             }
         },
 
+        /**
+         * Save the composer, then send it -- which is what the button in the
+         * dialog's footer does, in that order.
+         *
+         * A save that fails says which field is missing, in the form, next to
+         * the field. A send that fails raises, which is Odoo's own error
+         * dialog -- and by then the reply is already posted: the chatter sends
+         * after its commit, so the raise reaches the browser with the message
+         * in the conversation and the failure on its envelope. Leaving the composer
+         * open would let a second Send post the same reply again, so it
+         * closes and the conversation refreshes before the dialog shows.
+         */
         async send() {
             const controller = handle.controller;
             if (!controller || state.sending) {

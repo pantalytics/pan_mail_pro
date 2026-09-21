@@ -1309,6 +1309,59 @@ class Checks:
             inbox.click()
             page.wait_for_timeout(1500)
         self.error_free('drafts')
+        self.draft_on_leaving(page)
+
+    def draft_on_leaving(self, page):
+        """Walking away from a half-written answer keeps it.
+
+        The silent loss this feature exists for: somebody types two lines,
+        clicks the next conversation, and the words are gone with no warning.
+        Only the browser can prove this one -- it is the editor's own late
+        change notification that has to reach the save.
+        """
+        reply = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
+        if not reply:
+            self.fail('there is no Reply button to leave a draft behind')
+            return
+        reply.click()
+        try:
+            page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+        except Exception:
+            self.fail('Reply opened no composer to walk away from')
+            return
+        page.wait_for_timeout(600)
+        editor = page.query_selector('.o_mailpro_composer .odoo-editor-editable')
+        if not editor:
+            self.fail('the composer has no editor to type in')
+            return
+        editor.click()
+        page.keyboard.type('Nog even nakijken')
+        page.wait_for_timeout(600)
+
+        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
+        if not rows:
+            self.fail('no conversation to click away to')
+            return
+        rows[0].click()
+        try:
+            page.wait_for_selector('.o_mailpro_draft', timeout=15000)
+        except Exception:
+            self.fail('clicking away from a written reply lost it')
+            return
+        page.wait_for_timeout(600)
+
+        delete = page.query_selector('.o_mailpro_draft_delete')
+        if delete:
+            delete.click()
+            page.wait_for_timeout(900)
+            confirm = page.query_selector('.modal footer button.btn-primary')
+            if confirm:
+                confirm.click()
+                page.wait_for_timeout(1200)
+        left_open = self.dialog_in_the_way()
+        if left_open:
+            self.fail(f'a dialog was left over the Inbox: {left_open}')
+        self.error_free('draft on leaving')
 
     def panes(self):
         """The dividers move, the side panes fold, and the browser remembers.
