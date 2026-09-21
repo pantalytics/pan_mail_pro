@@ -58,6 +58,23 @@ import { compareDatetime } from "@mail/utils/common/misc";
 
 const PAGE = 30;
 
+// The folder that is your own mailbox rather than what Odoo imported. One
+// entry under your own mailbox and nowhere else: the imported folders are the
+// simple path and stay exactly as they were, and the whole mailbox is one
+// level deeper, for the days you want to work here instead of in Outlook.
+const LIVE_FOLDER = "all";
+
+// What you can ask of that folder, and the reason it exists: does Odoo have
+// this mail. Deliberately *not* in the search bar next to it. Every filter in
+// that bar is a domain over `mail.message`, and these rows are not
+// `mail.message` rows at all -- they are a provider's answer, and the
+// question is whether Odoo has them. A control of its own says that; a facet
+// in a bar that cannot reach them would be a filter that lies.
+const LIVE_FILTERS = [
+    { id: "unlinked", name: _t("Not in Odoo") },
+    { id: "linked", name: _t("In Odoo") },
+];
+
 // The context key the "Linked to nothing" filter carries. Mail filed on
 // nothing is not one conversation, and that is the one thing its domain
 // cannot say. Kept in step with `UNGROUPED_KEY` in
@@ -306,6 +323,21 @@ export class ConversationView extends Component {
             // no mailbox yet), so a folded mailbox costs no query at all.
             expanded: {},
             counts: {},
+            // The mailboxes this reader may open in full, which is their own
+            // and nobody else's -- the server decides that, this is the
+            // answer. Empty for somebody who reads only shared mailboxes,
+            // and then the live folder is simply not drawn.
+            liveIds: [],
+            // The live message being read, when it is one Odoo does not
+            // have. A conversation and a loose message are different things
+            // on screen: this one has no thread, no record and no reply,
+            // only what it says and a button to file it.
+            live: null,
+            liveBusy: false,
+            liveConnected: true,
+            // Which half of the live folder is on screen: the mail Odoo has,
+            // the mail it does not, or all of it.
+            liveFilter: null,
             conversations: [],
             // Door 1's narrowing: while it is set the list is the mail on one
             // record rather than the mail in one mailbox. Any folder,
@@ -413,6 +445,14 @@ export class ConversationView extends Component {
         }
         // Where leaving door 1's narrowing puts the reader back.
         this.defaultMailboxId = this.state.mailboxId;
+        try {
+            const live = await this.orm.call("pan.mail.conversation", "live_mailboxes", []);
+            this.state.liveIds = live.map((mailbox) => mailbox.id);
+        } catch (error) {
+            // No live folder is a smaller inbox, not a broken one.
+            console.warn("[Mail Pro] live mailboxes failed", error);
+            this.state.liveIds = [];
+        }
         // What stood open last time, minus the mailboxes that are gone. The
         // one you land in is always open: a mailbox list that opens fully folded
         // hides the folder you are looking at.
@@ -567,12 +607,17 @@ export class ConversationView extends Component {
                         // shows, whichever mailbox the list is in.
                         in_a_mailbox: !key && this.showAllMailboxes,
                     }))),
-                this.orm.call("pan.mail.conversation", "search_conversations", [], {
-                    ...args,
-                    ...record,
-                    folder: this.state.folder,
-                    limit: this.state.limit,
-                }),
+                // The live folder is read from the provider, so it takes
+                // neither the domain the search bar built nor the folder the
+                // counts are for.
+                this.isLive
+                    ? this.readLiveFolder()
+                    : this.orm.call("pan.mail.conversation", "search_conversations", [], {
+                        ...args,
+                        ...record,
+                        folder: this.state.folder,
+                        limit: this.state.limit,
+                    }),
             ]);
             if (seq !== this.listSeq) {
                 return; // A newer request is already on its way.
@@ -580,7 +625,11 @@ export class ConversationView extends Component {
             this.state.counts = Object.fromEntries(
                 keys.map((key, index) => [key, counts[index]]));
             this.state.conversations = conversations;
-            this.state.hasMore = conversations.length >= this.state.limit;
+            // The live folder is the newest page and has no next one: the
+            // provider contract's search takes a limit and no offset, so
+            // older mail is a search term rather than a scroll.
+            this.state.hasMore = !this.isLive
+                && conversations.length >= this.state.limit;
             if (this.state.record && conversations.length) {
                 // The record's own name, for the header over the narrowed
                 // list. It comes off the mail rather than a read of its own.
@@ -613,6 +662,111 @@ export class ConversationView extends Component {
             if (seq === this.listSeq) {
                 this.state.loading = false;
             }
+        }
+    }
+
+    // ------------------------------------------------------------ live
+
+    /** Is the open folder the mailbox itself rather than what Odoo imported? */
+    get isLive() {
+        return this.state.folder === LIVE_FOLDER;
+    }
+
+    /** May this mailbox be opened in full? Only its owner's own may. */
+    isLiveMailbox(mailboxId) {
+        return this.state.liveIds.includes(this.mailboxKey(mailboxId));
+    }
+
+    /**
+     * One page of the mailbox itself, as list rows.
+     *
+     * The rows come back in the same shape the imported list draws, so there
+     * is one list component and one template: what a live row adds is
+     * `linked`, and what it lacks is a `message_id`, because Odoo has no
+     * message for it yet.
+     */
+    async readLiveFolder() {
+        const linked = this.state.liveFilter === "linked" ? true
+            : this.state.liveFilter === "unlinked" ? false : null;
+        const result = await this.orm.call(
+            "pan.mail.conversation", "live_messages", [], {
+                mailbox_id: this.state.mailboxId,
+                folder: "inbox",
+                linked,
+                // The words out of the search bar, handed to the provider
+                // rather than compiled into a domain: this folder searches
+                // the whole mailbox, which is the one thing it does better
+                // than the imported list beside it.
+                search: this.searchText(),
+            });
+        this.state.liveConnected = result.connected;
+        return result.rows;
+    }
+
+    /**
+     * Read a live message that Odoo does not have.
+     *
+     * Not a conversation: there is no thread to draw, no record beside it and
+     * nothing to reply to yet. What the pane shows is the mail and the one
+     * button that changes that.
+     */
+    async readLiveMessage(row) {
+        const seq = ++this.conversationSeq;
+        try {
+            const message = await this.orm.call(
+                "pan.mail.conversation", "read_live_message", [], {
+                    mailbox_id: this.state.mailboxId,
+                    provider_message_id: row.live_id,
+                });
+            if (seq === this.conversationSeq) {
+                this.state.live = message;
+            }
+        } catch (error) {
+            if (seq === this.conversationSeq) {
+                this.state.error = _t("Could not open that email.");
+            }
+            console.warn("[Mail Pro] live message failed to open", error);
+        }
+    }
+
+    /**
+     * File the open live message in Odoo.
+     *
+     * The moment a private read becomes Odoo data, which is why it is a
+     * button and not something opening a message does on its own. Where it
+     * lands is the matcher's answer, so the list is read again and the
+     * conversation it became is opened.
+     */
+    async importLive() {
+        const row = this.state.selected;
+        if (!row || !row.live || this.state.liveBusy) {
+            return;
+        }
+        this.state.liveBusy = true;
+        try {
+            const result = await this.orm.call(
+                "pan.mail.conversation", "import_live_message", [], {
+                    mailbox_id: this.state.mailboxId,
+                    provider_message_id: row.live_id,
+                });
+            if (!result.linked) {
+                this.state.error = _t("Odoo would not take that email in.");
+                return;
+            }
+            this.state.live = null;
+            await this.refresh();
+            await this.select({
+                ...row,
+                linked: true,
+                model: result.linked.model,
+                res_id: result.linked.res_id,
+                record_name: result.linked.name,
+            });
+        } catch (error) {
+            this.state.error = _t("Could not file that email.");
+            console.warn("[Mail Pro] live import failed", error);
+        } finally {
+            this.state.liveBusy = false;
         }
     }
 
@@ -677,7 +831,10 @@ export class ConversationView extends Component {
 
     /** The key a conversation's unfolded thread is cached under. */
     conversationKey(conversation) {
-        return conversation.message_id;
+        // A live row has no Odoo message to key on. It is also never
+        // unfoldable -- one provider message is one row, count 1, no chevron
+        // -- so this only has to be a key nothing else answers to.
+        return conversation.message_id || conversation.live_id;
     }
 
     /** Is this conversation unfolded into the mails it is made of? */
@@ -818,6 +975,11 @@ export class ConversationView extends Component {
         this.state.quotes = {};
         this.state.details = {};
         this.split.clear();
+        this.state.live = null;
+        if (conversation.live && !conversation.linked) {
+            await this.readLiveMessage(conversation);
+            return;
+        }
         await this.readConversation();
         await this.markRead(conversation);
     }
@@ -993,6 +1155,12 @@ export class ConversationView extends Component {
             this.saveExpanded();
             this.saveMailbox();
         }
+        // The live folder's own filter is a question only it can ask, so
+        // leaving it puts the question away rather than carrying it into a
+        // folder with no control to show it in.
+        if ((folder === LIVE_FOLDER) !== this.isLive) {
+            this.state.liveFilter = null;
+        }
         this.state.folder = folder;
         this.panes.closeMailboxList();
         // The search is a question about the folder you are in, so switching
@@ -1037,7 +1205,41 @@ export class ConversationView extends Component {
     }
 
     foldersFor(mailboxId) {
-        return this.state.counts[this.mailboxKey(mailboxId)] || [];
+        const folders = this.state.counts[this.mailboxKey(mailboxId)] || [];
+        if (!this.isLiveMailbox(mailboxId)) {
+            return folders;
+        }
+        // Last, and without a number. It is not a third place mail sits: it
+        // is the mailbox itself, and counting it would mean asking the
+        // provider how much mail you have every time a folder is unfolded.
+        return [...folders, {
+            id: LIVE_FOLDER,
+            name: _t("All email"),
+            kind: "folder",
+            count: 0,
+            capped: false,
+        }];
+    }
+
+    /**
+     * The two questions the live folder answers, and the one in use.
+     *
+     * Its own control rather than a facet in the search bar: every filter in
+     * that bar is a domain over `mail.message`, and these rows are a
+     * provider's answer that no domain can reach.
+     */
+    get liveFilters() {
+        return LIVE_FILTERS;
+    }
+
+    get activeLiveFilter() {
+        return LIVE_FILTERS.find((pill) => pill.id === this.state.liveFilter) || null;
+    }
+
+    /** Narrow the live folder, or clear it with a second click. */
+    async setLiveFilter(filter) {
+        this.state.liveFilter = this.state.liveFilter === filter ? null : filter;
+        await this.refresh();
     }
 
     /** Open another mailbox, from the mailbox list. Folders are per mailbox. */
@@ -1055,7 +1257,12 @@ export class ConversationView extends Component {
         // The folder and the search carry over. Every mailbox has the same
         // two folders, and landing back in Inbox on every switch loses the
         // one thing somebody switching mailboxes is usually doing: working
-        // one view across all of them.
+        // one view across all of them. Except the live folder, which not
+        // every mailbox has: a mailbox you do not own lands in Inbox.
+        if (this.isLive && !this.isLiveMailbox(mailboxId)) {
+            this.state.folder = "inbox";
+            this.state.liveFilter = null;
+        }
         this.state.limit = PAGE;
         await this.refresh();
         // A mailbox the reader just opened is one whose dots are worth being
@@ -1541,6 +1748,19 @@ export class ConversationView extends Component {
 
     quotedBody(message) {
         return markup(this.parts(message).quote);
+    }
+
+    /**
+     * The body of a live message.
+     *
+     * The only body on this screen that never passed through `message_post`,
+     * so `read_live_message` runs Odoo's own `html_sanitize` over it before
+     * it leaves the server -- the same call the Html field makes on write.
+     * Rendering a provider's HTML unsanitized in an Odoo session is a mail
+     * from anybody running script as the reader.
+     */
+    safeBody(body) {
+        return markup(body || "");
     }
 
     /** The one line a collapsed message shows, taken from what was written. */
