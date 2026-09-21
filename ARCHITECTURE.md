@@ -2065,6 +2065,47 @@ person -- and never in reverse: marking a conversation unread puts the mailbox
 back to unread and leaves the bell alone. Mail Pro clears notification rows
 and never creates one; the import boundary of 9.10 does not move.
 
+### 9.19 The sync level is the user's, the rest of the mailbox is not
+
+A mailbox has one setting that is not a configuration decision: `sync_level`
+says how much of somebody's correspondence lands in a database their whole
+company can search. Everything else about the row -- the address, whose
+credentials it carries, whether an alias routes it to a team, which mailbox
+carries the system email -- is the workspace's, and stays under Settings with
+the mailbox managers.
+
+So the ladder appears twice and is stored once. On the mailbox form it is the
+Sync Settings tab, with the consequence table of §3. On **My Preferences → Mail
+Pro** it is the radio and the one warning that matters, next to Send from:
+`res.users.x_pan_mail_sync_level`, computed from the user's own personal
+mailbox and written back to it. The selection comes from
+`pan.mail.mailbox._fields['sync_level']`, so a rung added to the ladder cannot
+be missing from the user's copy of it.
+
+Three decisions hold it up.
+
+**The mailbox is searched, not stored.** A personal mailbox is one whose owner
+signed in with that very address, so the link runs from the mailbox to the user
+and there is no field to follow the other way.
+`x_pan_mail_personal_mailbox_id` is an unstored compute for the reason
+19.0.5.0.0 deleted `x_incoming_enabled`: a stored compute over a searched
+relation needs invalidation written by hand, and the hand-written half is what
+goes stale.
+
+**The write is `sudo()`, and `_check_mailbox_is_mine` is why that is safe.**
+`pan.mail.mailbox` is read-only for `base.group_user` in the ACL, and widening
+that would hand every internal user write access to every shared mailbox --
+the record rule that keeps personal mailboxes private already lets everyone see
+the shared ones. The inverse writes one field on one row instead, and refuses
+when the record it is aimed at is not the caller's own. That guard is the same
+one `action_connect_mailbox` and `action_disconnect_mailbox` use: self-writeable
+fields and public methods on `res.users` are both reachable over RPC for any id
+an internal user can browse, which is all of them.
+
+**The notification mailbox is excluded**, even when an administrator owns it.
+It carries the system email, its own form hides the Sync Settings tab, and
+nothing about it is one person's preference.
+
 ## 10. Security and permissions
 
 All Microsoft permissions are **delegated** (user context, never application) —
