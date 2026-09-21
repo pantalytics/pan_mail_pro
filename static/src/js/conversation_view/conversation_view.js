@@ -19,7 +19,7 @@
  * over the screen; that lives in `use_composer.js`.
  */
 
-import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
+import { Component, useState, useSubEnv, useRef, onWillStart, onError, markup } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useService } from "@web/core/utils/hooks";
@@ -194,6 +194,7 @@ export class ConversationView extends Component {
         // rather than bound to Enter: a list that only moves when you press a
         // key you were not told about reads as a search box that is broken.
         this.applySearch = useDebounced(() => this.runSearch(), SEARCH_DELAY);
+        this.searchRef = useRef("search");
 
         // Two request tokens, one per pane. Somebody who clicks three folders
         // in a second starts three reads, and without these the slowest answer
@@ -579,11 +580,31 @@ export class ConversationView extends Component {
             this.applySearch.cancel();
             this.runSearch();
         } else if (event.key === "Escape" && this.state.search) {
-            event.target.value = "";
-            this.state.search = "";
-            this.applySearch.cancel();
-            this.runSearch();
+            this.clearSearch();
         }
+    }
+
+    /**
+     * The whole box is the search field, the way Odoo's own search bar is:
+     * the magnifier, the padding and the border all land in the input.
+     */
+    focusSearch() {
+        this.searchRef.el?.focus();
+    }
+
+    /**
+     * The cross, and Escape: the folder back, in one click. The field is
+     * written to by hand because `t-att-value` sets the attribute and the
+     * browser is showing the property somebody typed into.
+     */
+    clearSearch() {
+        if (this.searchRef.el) {
+            this.searchRef.el.value = "";
+        }
+        this.state.search = "";
+        this.applySearch.cancel();
+        this.focusSearch();
+        return this.runSearch();
     }
 
     async runSearch() {
