@@ -719,7 +719,7 @@ class Checks:
             if box['width'] < 32 or abs(box['width'] - box['height']) > 2:
                 self.fail('the record toggle is %dx%dpx, not a finger-sized square'
                           % (box['width'], box['height']))
-            if 'odoo_record' not in (toggle.get_attribute('aria-label') or '').lower():
+            if 'odoo record' not in (toggle.get_attribute('aria-label') or '').lower():
                 self.fail('the record button does not say what it opens: %r'
                           % toggle.get_attribute('aria-label'))
             if toggle.get_attribute('aria-pressed') != 'false':
