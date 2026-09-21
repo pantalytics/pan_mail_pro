@@ -40,6 +40,63 @@ $mailpro-child-indent: $mailpro-twist + $mailpro-row-pad-x + $mailpro-avatar + $
 // the drawer move the same way.
 $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
+// The hover and the press on a control. Shorter than a fold, because this is
+// a pointer being answered rather than a pane moving.
+$mailpro-tap: 0.15s ease;
+
+// Every control that moves a boundary is the same circle: the mailboxes
+// button in the top bar, the two on the dividers, the phone's way back to the
+// list and its way through to the record, and Expand on the record's own
+// head. One diameter, one icon size, one focus ring, one press. Two finishes
+// and no third: flat where it sits in a bar or a header, raised where it
+// floats over a pane.
+$mailpro-control: 2.25rem;
+
+// The band every pane header keeps clear at its top, and where a control in
+// it sits: the centre line of the header's first row. The conversation's head
+// already puts its title and its buttons there and the other heads are given
+// the same band, so a fold button, a folder name and a subject line up across
+// the screen instead of each starting wherever its own padding left off.
+$mailpro-band: 3.5rem;
+
+// ($mailpro-band - $mailpro-control) / 2, written out: libsass reads `/` as
+// division it now warns about, and the number is one line either way.
+$mailpro-band-inset: 0.625rem;
+
+// The room a header keeps beside a control that floats in it: the circle,
+// plus the gap it is inset by, plus the same gap again on the other side.
+$mailpro-band-gutter: 3.5rem;
+
+@mixin mailpro-control {
+    display: flex;
+    width: $mailpro-control;
+    height: $mailpro-control;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: $mailpro-muted;
+    font-size: 0.875rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color $mailpro-tap, color $mailpro-tap,
+                border-color $mailpro-tap, box-shadow $mailpro-tap,
+                transform $mailpro-tap;
+
+    &:hover { background: $mailpro-panel; color: $mailpro-accent-ink; }
+
+    // The press, and the only thing on this screen that scales: a circle is
+    // the one shape that can shrink without reading as a layout shift.
+    &:active { transform: scale(0.92); }
+
+    &:focus-visible {
+        outline: 2px solid $mailpro-accent;
+        outline-offset: 1px;
+    }
+}
+
 .o_mailpro_inbox {
     background: #fff;
     color: $mailpro-ink;
@@ -127,25 +184,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     .o_mailpro_pane_toggle,
     .o_mailpro_odoo_record_zoom,
     .o_mailpro_back {
-        display: flex;
-        width: 2.25rem;
-        height: 2.25rem;
-        padding: 0;
-        align-items: center;
-        justify-content: center;
-        border: 0;
-        border-radius: 0.375rem;
-        background: transparent;
-        color: $mailpro-muted;
-        font-size: 1rem;
-        cursor: pointer;
-
-        &:hover { background: $mailpro-panel; color: $mailpro-accent-ink; }
-
-        &:focus-visible {
-            outline: 2px solid $mailpro-accent;
-            outline-offset: 1px;
-        }
+        @include mailpro-control;
     }
 
     .o_mailpro_back { display: none; }
@@ -214,6 +253,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         cursor: col-resize;
         touch-action: none;
         user-select: none;
+        transition: background-color $mailpro-tap;
 
         &:hover,
         &.o_mailpro_split_dragging { background-color: $mailpro-accent; }
@@ -231,58 +271,53 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         }
     }
 
-    // The fold: a round button floating on the divider, the shape every
-    // sidebar toggle has in the apps people already use. A finger's size.
-    // Centred on the line between two open panes; wholly inside the open
-    // neighbour of a folded one, whose header leaves it room. Above the
-    // list's sticky header, which it otherwise disappears under.
+    // The fold: the same round control, raised, anchored to the divider it
+    // belongs to and sitting in the header band of the pane beside it. Never
+    // centred on the line: a circle on a 5px divider is half over each
+    // neighbour, and neither half is over nothing. On the left is the
+    // scrollbar a pane runs down its own edge and on the right the first
+    // line of its header, so the button that is meant to read as the
+    // boundary's own control reads as debris on top of two panes instead.
     .o_mailpro_split_toggle {
+        @include mailpro-control;
         position: absolute;
-        top: 0.625rem;
-        left: 50%;
-        transform: translateX(-50%);
+        top: $mailpro-band-inset;
+        left: $mailpro-band-inset;
         z-index: 2;
-        width: 2.25rem;
-        height: 2.25rem;
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         border: 1px solid $mailpro-line;
-        border-radius: 50%;
         background: #fff;
         box-shadow: 0 1px 3px rgba(0, 29, 33, 0.12);
-        color: $mailpro-muted;
-        font-size: 0.875rem;
-        cursor: pointer;
-        transition: left $mailpro-fold, right $mailpro-fold;
+        transition: left $mailpro-fold, right $mailpro-fold,
+                    background-color $mailpro-tap, color $mailpro-tap,
+                    border-color $mailpro-tap, box-shadow $mailpro-tap,
+                    transform $mailpro-tap;
 
-        &:hover { color: $mailpro-accent-ink; border-color: $mailpro-accent; }
-
-        &:focus-visible {
-            outline: 2px solid $mailpro-accent;
-            outline-offset: 1px;
+        // Raised, so it lifts rather than fills: a grey pill here would read
+        // as a second divider.
+        &:hover {
+            background: #fff;
+            color: $mailpro-accent-ink;
+            border-color: $mailpro-accent;
+            box-shadow: 0 2px 6px rgba(0, 29, 33, 0.16);
         }
     }
 
-    // Inside the neighbour on the right (a folded conversation list, or on a
-    // tablet a folded conversation), or on the left (a folded record).
-    .o_mailpro_split_toggle_right {
-        left: 0.375rem;
-        transform: none;
-    }
+    // Which neighbour it is inside. `_right` is the pane after the divider
+    // (the conversation, for the list's own divider), `_left` the pane
+    // before it (the conversation again, for the record's). The side is a
+    // question `use_panes.js` answers; both values are here because on a
+    // tablet the conversation folds and each button steps over the line.
+    .o_mailpro_split_toggle_right { left: $mailpro-band-inset; right: auto; }
 
-    .o_mailpro_split_toggle_left {
-        left: auto;
-        right: 0.375rem;
-        transform: none;
-    }
+    .o_mailpro_split_toggle_left { left: auto; right: $mailpro-band-inset; }
 
-    // The room a header leaves for the button that floats into it from a
-    // folded neighbour: the title starts beside the button, not under it.
-    .o_mailpro_lead_conversation .o_mailpro_conversation_head { padding-left: 3.125rem; }
-    .o_mailpro_trail_conversation .o_mailpro_conversation_head { padding-right: 3.125rem; }
-    .o_mailpro_lead_odoo_record .o_mailpro_odoo_record_head { padding-left: 3.125rem; }
+    // The room a header keeps for the button that sits in it: the title
+    // starts beside the button, not under it. Kept whenever the button is
+    // there, which is whenever the pane row has dividers at all.
+    .o_mailpro_lead_conversation .o_mailpro_conversation_head { padding-left: $mailpro-band-gutter; }
+    .o_mailpro_trail_conversation .o_mailpro_conversation_head { padding-right: $mailpro-band-gutter; }
+    .o_mailpro_trail_conversation_list .o_mailpro_conversation_list_head { padding-right: $mailpro-band-gutter; }
+    .o_mailpro_lead_odoo_record .o_mailpro_odoo_record_head { padding-left: $mailpro-band-gutter; }
 
     // 1. the mailbox list
     .o_mailpro_mailbox_list {
@@ -333,8 +368,10 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         &:hover { background: rgba(0, 29, 33, 0.04); }
     }
 
-    // A caret with a 24px target, which is what a finger and a shaking hand
-    // both need; the glyph itself stays as quiet as the label beside it.
+    // A chevron with a 24px target, which is what a finger and a shaking hand
+    // both need; the glyph itself stays as quiet as the label beside it. The
+    // same chevron the conversation list unfolds with: one gesture, one
+    // icon, whichever list it is drawn in.
     .o_mailpro_mailbox_toggle {
         width: 1.5rem;
         height: 1.5rem;
@@ -430,21 +467,32 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     }
 
     // 2. the list
+    //
+    // The head does not scroll and is not sticky over something that does:
+    // it is a row of its own above a body that scrolls. A pane that scrolls
+    // as one runs its scrollbar down its whole right edge, header included,
+    // and that edge is the divider the fold button is anchored to.
     .o_mailpro_conversation_list {
         flex: 0 0 auto;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .o_mailpro_conversation_list_body {
+        flex: 1 1 auto;
+        min-height: 0;
         overflow-y: auto;
     }
 
-    // The list header sits over the list it describes, and stays there while
-    // the list scrolls under it: what you are reading, and which question you
-    // asked about it, are part of reading the answer.
+    // What you are reading, and which question you asked about it: part of
+    // reading the answer, so it stays while the answer moves. The band is
+    // the same one the conversation's head and the record's keep, so the
+    // folder name sits on the line the subject beside it sits on.
     .o_mailpro_conversation_list_head {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-        // Wider on the right: the fold button on the next divider floats
-        // half over this edge, and the folder name must not run under it.
-        padding: 0.375rem 1.75rem 0.375rem 0.625rem;
+        flex: 0 0 auto;
+        min-height: $mailpro-band;
+        padding: 0.375rem 0.75rem 0.375rem 0.625rem;
         background: #fff;
         border-bottom: 1px solid $mailpro-line-soft;
     }
@@ -715,29 +763,12 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     .o_mailpro_conversation_title { margin: 0; font-size: 1rem; font-weight: 600; }
 
-    // The way to the Odoo record on a phone. Flat and unlabelled, like the
-    // back arrow at the other end of the same row: the head is most of a
-    // phone screen already, and two words here cost the subject a line.
+    // The way to the Odoo record on a phone: the same control as the chevron
+    // on the record's divider, because it is the same boundary moving the
+    // same way. Flat rather than raised, like the way back at the other end
+    // of the row, because here it is in a header and not over a pane.
     .o_mailpro_odoo_record_button {
-        display: flex;
-        width: 2.25rem;
-        height: 2.25rem;
-        padding: 0;
-        align-items: center;
-        justify-content: center;
-        border: 0;
-        border-radius: 0.375rem;
-        background: transparent;
-        color: $mailpro-muted;
-        font-size: 0.875rem;
-        cursor: pointer;
-
-        &:hover { background: $mailpro-panel; color: $mailpro-accent-ink; }
-
-        &:focus-visible {
-            outline: 2px solid $mailpro-accent;
-            outline-offset: -2px;
-        }
+        @include mailpro-control;
     }
     .o_mailpro_conversation_sub { margin-top: 0.25rem; font-size: 0.75rem; color: $mailpro-muted; }
     .o_mailpro_chips { margin-top: 0.75rem; flex-wrap: wrap; }
@@ -1201,7 +1232,7 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     }
 
     .o_mailpro_odoo_record_head {
-        // Wider on the left, for the fold button on the divider before it.
+        min-height: $mailpro-band;
         padding: 0.75rem 1rem 0.75rem 1.5rem;
         background: #fff;
         border-bottom: 1px solid $mailpro-line;
@@ -1337,6 +1368,21 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         .o_mailpro_conversation,
         .o_mailpro_odoo_record,
         .o_mailpro_mailbox_list_backdrop { transition: none !important; }
+
+        // The controls too: a press that scales and a button that slides
+        // along its divider are motion somebody asked not to be given.
+        .o_mailpro_pane_toggle,
+        .o_mailpro_odoo_record_zoom,
+        .o_mailpro_back,
+        .o_mailpro_odoo_record_button,
+        .o_mailpro_split,
+        .o_mailpro_split_toggle { transition: none !important; }
+
+        .o_mailpro_split_toggle:active,
+        .o_mailpro_pane_toggle:active,
+        .o_mailpro_odoo_record_zoom:active,
+        .o_mailpro_back:active,
+        .o_mailpro_odoo_record_button:active { transform: none; }
 
         .o_mailpro_zoomed .o_mailpro_odoo_record,
         .o_mailpro_zoom_leaving .o_mailpro_odoo_record { animation: none !important; }

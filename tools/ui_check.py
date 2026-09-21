@@ -530,8 +530,8 @@ class Checks:
 
         # A mailbox folds its folders away and unfolds them again, the way an
         # account does in Outlook. Asserted on the folder rows, not on the
-        # caret: the caret pointing the right way proves nothing about what
-        # is on screen.
+        # chevron: the chevron pointing the right way proves nothing about
+        # what is on screen.
         def folder_rows():
             return len(page.query_selector_all('.o_mailpro_folder'))
 
@@ -551,7 +551,7 @@ class Checks:
 
         # Everything clickable is a real button, so a keyboard can reach it.
         for selector, what in ((MAILBOX, 'mailbox'),
-                               ('.o_mailpro_mailbox_toggle', 'mailbox caret'),
+                               ('.o_mailpro_mailbox_toggle', 'mailbox chevron'),
                                ('.o_mailpro_folder', 'folder'),
                                ('.o_mailpro_item', 'conversation')):
             divs = [el for el in page.query_selector_all(selector)
@@ -1453,16 +1453,20 @@ class Checks:
             if title and title.bounding_box()['height'] > 30:
                 self.fail('the phone subject wraps instead of truncating')
 
-        # The record, over the conversation, and the way back from it. It
-        # wears the chevron the record's own divider wears on a wider screen,
-        # pointing the way the boundary moves to bring the record in.
+        # The record, over the conversation, and the way back from it. Its
+        # chevron points right, at the pane it asks for: there is no divider
+        # on a phone and no boundary to move, the record arrives over the
+        # screen from the right, and the way back to the list is a chevron
+        # pointing the other way at the other end of the same row. The
+        # divider's own rule would draw this one pointing left, which is that
+        # same arrow twice doing opposite things.
         button = page.query_selector('.o_mailpro_odoo_record_button')
         if not button:
             self.fail('the phone conversation head offers no way to the record')
         else:
-            if not button.query_selector('.fa-chevron-left'):
-                self.fail('the way to the record on a phone is not the '
-                          "divider's own chevron")
+            if not button.query_selector('.fa-chevron-right'):
+                self.fail('the way to the record on a phone does not point at '
+                          'the record')
             button.click()
             page.wait_for_timeout(800)
             record = page.query_selector('.o_mailpro_odoo_record')
@@ -1514,6 +1518,13 @@ class Checks:
         if not back:
             self.fail('the phone conversation has no way back to the list')
             return
+
+        # The other end of that row, and the other half of the rule the record
+        # button above is held to: each chevron points at the pane it asks
+        # for, so the list is left and the record is right.
+        if not back.query_selector('.fa-chevron-left'):
+            self.fail('the phone way back does not point at the list')
+
         back.click()
         page.wait_for_timeout(400)
         if not self.visible('.o_mailpro_conversation_list'):
@@ -1871,6 +1882,42 @@ class Checks:
         if widened - before < 40:
             self.fail('dragging the divider 90px moved the list %dpx'
                       % (widened - before))
+
+        # The button on a divider sits inside one pane and never on the line.
+        # A circle centred on a 5px divider is half over each neighbour, and
+        # neither half is over nothing: on the left the scrollbar the pane
+        # runs down its own edge, on the right the first line of the next
+        # pane's header. Both are invisible to every other assertion here and
+        # both are what the reader sees.
+        tops = set()
+        for name, inside in (('conversation_list', 'right'), ('odoo_record', 'left')):
+            line = page.query_selector('.o_mailpro_split_%s' % name)
+            button = line.query_selector('.o_mailpro_split_toggle') if line else None
+            if not button or not button.is_visible():
+                self.fail('the %s divider carries no fold button' % name)
+                continue
+            box, strip = button.bounding_box(), line.bounding_box()
+            if inside == 'right' and box['x'] < strip['x'] + strip['width']:
+                self.fail('the %s button starts %dpx left of its own divider'
+                          % (name, strip['x'] + strip['width'] - box['x']))
+            if inside == 'left' and box['x'] + box['width'] > strip['x']:
+                self.fail('the %s button runs %dpx past its own divider'
+                          % (name, box['x'] + box['width'] - strip['x']))
+            tops.add(round(box['y']))
+        if len(tops) > 1:
+            self.fail('the two fold buttons sit at %s, not on one line'
+                      % sorted(tops))
+
+        # ...and the pane it sits beside does not run a scrollbar up behind
+        # it. The head is a row above a body that scrolls, not a sticky block
+        # inside a pane that scrolls as one.
+        body = page.query_selector('.o_mailpro_conversation_list_body')
+        if not body:
+            self.fail('the conversation list lost the body that scrolls under its head')
+        elif body.evaluate('el => el.parentElement.scrollHeight'
+                           ' > el.parentElement.clientHeight + 1'):
+            self.fail('the conversation list scrolls as one pane, so its scrollbar '
+                      'runs the full height of the edge its fold button is on')
 
         fold = page.query_selector('.o_mailpro_split_odoo_record .o_mailpro_split_toggle')
         if not fold:

@@ -714,7 +714,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
-### A bar on a phone, and the class it borrowed (19.0.20.1.0)
+### A bar on a phone, and the class it borrowed (19.0.20.2.0)
 
 - **A `display: none` an addon can outrank is not a decision, it is a
   request.** The phone dropped the systray with a rule in our own stylesheet;
@@ -740,6 +740,59 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   the `/web/assets/...` url, the file is public, and a real mobile screenshot
   plus that file is enough to find the losing declaration in a static harness
   -- no Odoo, no Docker, no device.
+### One control, never on the line (19.0.20.1.0)
+
+- **A control centred on a divider is over two panes, and neither of them is
+  empty.** The round fold button sat at `left: 50%` of a 5px strip, so half of
+  it covered the conversation list's scrollbar and half the first line of the
+  conversation's header: a timestamp behind a circle, a subject starting under
+  it, a scrollbar thumb sliding out from underneath. Every assertion passed --
+  the button was visible, clickable, correctly labelled and pointed the right
+  way. Only a screenshot showed it.
+- **Put it inside the pane that stays, and the choice makes itself.** Both
+  dividers that carry a button now put it in the conversation, which is the one
+  pane that never folds, at the end nearest the pane each folds. So neither
+  button can vanish with what it controls, and the two land in one header at
+  one height -- alignment that falls out of the rule rather than being measured.
+  Only the tablet's column swap, where the conversation itself folds, moves a
+  button to its other side.
+- **A sticky header inside a scrolling pane still has the pane's scrollbar
+  behind it.** `position: sticky` keeps the header drawn; it does not stop the
+  scrollbar running the full height of the edge the header shares with the
+  divider. A header row above a body that scrolls (`o_mailpro_conversation_list_body`)
+  is the version where nothing crosses that boundary.
+- **A gutter that is only there when a neighbour is folded is a title that
+  jumps.** The `lead` / `trail` padding used to appear with the fold. It is
+  kept whenever the button is there at all now, which is whenever the pane row
+  has dividers.
+- **One shape in five places beats five that are nearly the same.** The
+  mailboxes button, the two on the dividers, the phone's way back and its way
+  through to the record were four sizes, two radii and three hover rules. One
+  `mailpro-control` mixin, two finishes -- flat in a bar or header, raised over
+  a pane -- and the vocabulary is enforceable instead of remembered. Same for
+  the chevron: the mailbox rows unfolded with a caret while the conversation
+  rows beside them used a chevron, one gesture drawn two ways.
+- **Borrowing an icon rule borrows its assumptions.** The phone's way through
+  to the record read `toggleIcon('odoo_record')`, which is the divider's rule:
+  "the record is folded, so the boundary moves left to bring it back". On a
+  phone there is no divider and no boundary -- the record arrives over the
+  screen from the right -- so it drew a left chevron identical to the back
+  chevron at the other end of the same row, two identical arrows doing
+  opposite things. Each chevron points at the pane it asks for, and the
+  browser check now reads both ends of that row.
+- **The `ui-screenshots` artifact is readable from a cloud session.**
+  `curl -H "Authorization: Bearer $GITHUB_TOKEN" .../actions/runs/<id>/artifacts`,
+  then the same header on `/actions/artifacts/<id>/zip`, unzip, crop with
+  Pillow and open the PNG. Without Docker that is the only way to see the
+  screen, and it is what caught the two identical chevrons that every
+  assertion was happy with.
+- **No Docker in a cloud session means no `tools/ci.sh test|ui`.** What still
+  runs: `tools/ci.sh lint`, `BASE_REF=origin/19.0 tools/ci_lint.sh`,
+  `pip install libsass` + `sass.compile(filename=...)` on the stylesheet, and
+  the static assertions of `tests/test_inbox_panes.py` re-run by hand as a
+  script. That is enough to keep a bundle from failing to compile; it is not
+  enough to see the screen, so the browser job on the PR is the first real
+  look.
 
 ### All mailboxes (19.0.18.4.0)
 
