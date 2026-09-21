@@ -708,6 +708,24 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### Naming the panes (19.0.13.10.0)
+
+- **One idea, two words, and the loaded one reaches the code.** Pane 3 was
+  `thread` in the code and "the conversation pane" in every sentence about it,
+  while "thread" already meant the matcher's key (`pan.mail.thread.index`, the
+  References root, Odoo's own `Thread` store). The pane is `conversation` now
+  and the screen's root class is `o_mailpro_inbox`, which is what freed the
+  name. Same mistake as "Filed on" vs "linked", one release later.
+- **Rename the root before the child that wants its name.** Doing it the other
+  way round makes `.o_mailpro_conversation` mean two things for one sed, and
+  every rule nested under the old root silently changes scope.
+- **A pane name is four strings, not one.** The code key, the CSS class, the
+  label and the prose. `tests/test_inbox_panes.py` reads all four and asserts
+  they agree, because a vocabulary nobody can run lasts one release.
+- **The lint job's diff-shape checks only run with `BASE_REF`.** A bare
+  `tools/ci.sh lint` passes while CI fails on "changes models/ but no test" --
+  run `BASE_REF=origin/19.0 tools/ci_lint.sh` before pushing.
+
 ### Small screens (19.0.13.4.0)
 - **Odoo compiles SCSS with libsass, and libsass reads `min()` / `max()` as
   Sass's own functions.** `width: min(80%, 20rem)` fails on the mixed units,
@@ -719,8 +737,8 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 
 ### Reusing Odoo's own menus (19.0.13.0.0)
 - **A dropdown renders in the overlay container, not inside the screen that
-  opened it.** Nest its SCSS under `.o_mailpro_conversation` and not one rule
-  applies -- the menu is a sibling of the whole web client by the time it is
+  opened it.** Nest its SCSS under the screen's root (`.o_mailpro_inbox`) and not one
+  rule applies -- the menu is a sibling of the whole web client by the time it is
   drawn. `menuClass` plus a top-level block is the way.
 - **The filter menu is `Dropdown` + `CheckboxItem`**, the same two components
   `web.SearchBarMenu` builds Odoo's own filter menu from, down to
