@@ -844,6 +844,25 @@ class Checks:
             if not self.visible(selector):
                 self.fail(f'{name} did not come back at {WIDE}px')
 
+        # The middle of a wide monitor is the most expensive space on it. The
+        # mail column stops at its own 48rem whatever the pane does, so a
+        # conversation pane wider than that is empty paper between the mail
+        # and the form -- which is exactly what the record is there to take.
+        # Only a pane with a record in it can take it, so the empty state is
+        # not this assertion's business.
+        if page.query_selector('.o_mailpro_odoo_record .o_form_view'):
+            conversation = page.query_selector(
+                '.o_mailpro_conversation').bounding_box()['width']
+            record = page.query_selector(
+                '.o_mailpro_odoo_record').bounding_box()['width']
+            if conversation > 840:
+                self.fail('at %dpx the conversation pane is %dpx wide around a '
+                          '768px column of mail' % (WIDE, conversation))
+            if record < 500:
+                self.fail('at %dpx the record pane is %dpx wide: the room the '
+                          'conversation left did not reach it' % (WIDE, record))
+            self.shot('inbox-wide-record.png')
+
     def chatter_door(self):
         """Door 1: a record's chatter has a way into the Inbox, and it works.
 
@@ -1260,8 +1279,11 @@ class Checks:
         if not self.visible('.o_mailpro_odoo_record'):
             self.fail('the record pane did not come back when unfolded')
 
-        # The list folds too, the same way, and the conversation takes the
-        # room it leaves.
+        # The list folds too, the same way, and the room it leaves goes to the
+        # pane that has no width of its own: the Odoo record. The mail column
+        # stops at its own measure whatever the window does, so a fold that
+        # stretched it would only be moving the empty space around.
+        record_before = page.query_selector('.o_mailpro_odoo_record').bounding_box()['width']
         thread_before = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
         fold = page.query_selector('.o_mailpro_split_conversation_list .o_mailpro_split_toggle')
         if not fold:
@@ -1271,9 +1293,13 @@ class Checks:
         page.wait_for_timeout(400)
         if self.visible('.o_mailpro_conversation_list'):
             self.fail('the conversation list did not fold away')
+        record_after = page.query_selector('.o_mailpro_odoo_record').bounding_box()['width']
         thread_after = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
-        if thread_after - thread_before < 100:
-            self.fail('folding the list gave the conversation %dpx, not the list\'s width'
+        if record_after - record_before < 100:
+            self.fail('folding the list gave the record %dpx, not the list\'s width'
+                      % (record_after - record_before))
+        if thread_after - thread_before > 8:
+            self.fail('folding the list stretched the conversation by %dpx instead'
                       % (thread_after - thread_before))
         self.shot('inbox-list-folded.png')
 
