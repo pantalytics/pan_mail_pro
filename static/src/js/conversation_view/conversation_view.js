@@ -437,7 +437,12 @@ export class ConversationView extends Component {
                     model: conversation.model,
                     res_id: conversation.res_id,
                     message_id: conversation.message_id,
-                    mailbox_id: this.state.mailboxId,
+                    // No mailbox: the pane is the correspondence on this
+                    // record, and the mailbox is the list's question. A
+                    // thread both colleagues are on lands half in each
+                    // mailbox, and reading it through one of them hides the
+                    // other half -- including, as it happened, the newest
+                    // reply.
                     // Files and Activities are two other lists over the same
                     // conversation, so they read the mail thread underneath.
                     scope: this.state.tab === "all" ? "all" : "mail",
@@ -1066,10 +1071,12 @@ export class ConversationView extends Component {
             default_res_ids: [conversation.res_id],
             default_composition_mode: "comment",
             default_subtype_xmlid: "mail.mt_comment",
-            // Send from the mailbox being read, when one is selected in the
-            // mailbox list. The composer drops it again if this person may not send
-            // from it and falls back to their own default.
-            default_x_send_from_mailbox_id: this.state.mailboxId || false,
+            // Send from the mailbox this conversation actually arrived in,
+            // which is not always the one the list has open: the pane shows
+            // the whole thread, and its newest turn may have reached a
+            // colleague's mailbox. The composer drops it again if this person
+            // may not send from it and falls back to their own default.
+            default_x_send_from_mailbox_id: this.conversationMailboxId(),
             // The chatter fills "To" from the record's suggested recipients;
             // the composer itself fills nothing, and since 18.2 the customer
             // is no longer a follower by default. A reply with an empty "To"
@@ -1205,6 +1212,39 @@ export class ConversationView extends Component {
             return [newest.author_id];
         }
         return conversation.partner_id ? [conversation.partner_id] : [];
+    }
+
+    /**
+     * The mailbox a reply to the open conversation leaves from.
+     *
+     * The message being answered decides, not the mailbox list: the pane
+     * holds the whole thread now, so the newest turn may have arrived in a
+     * colleague's mailbox while the list has yours open. Falls back to the
+     * selected mailbox for a conversation whose messages carry none -- mail
+     * posted from the chatter before this module was set up.
+     */
+    conversationMailboxId() {
+        const messages = this.state.conversation.messages || [];
+        return (this.newestIncoming()?.mailbox_id
+            || messages.find((m) => m.mailbox_id)?.mailbox_id
+            || this.state.mailboxId
+            || false);
+    }
+
+    /**
+     * Does the open thread span more than one mailbox?
+     *
+     * When it does, every message says which one it arrived in: a thread that
+     * reached two colleagues reads as one conversation here, and without the
+     * line nobody can tell why a reply they never received is in it.
+     */
+    get spansMailboxes() {
+        const mailboxes = new Set(
+            (this.state.conversation.messages || [])
+                .map((m) => m.mailbox)
+                .filter(Boolean)
+        );
+        return mailboxes.size > 1;
     }
 
     /** The newest message from their side in the open thread, if any. */

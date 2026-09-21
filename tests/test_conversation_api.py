@@ -284,6 +284,47 @@ class TestConversationApi(TransactionCase):
         self.assertIn('records', thread)
         self.assertIn('rejected', thread)
 
+    def test_the_pane_holds_the_whole_record_not_one_mailbox_s_half(self):
+        """A thread two colleagues are on lands half in each mailbox.
+
+        Both mailboxes sync it and the Message-ID dedup leaves each message
+        in whichever one fetched it first, so a pane filtered by mailbox cut
+        the conversation along a line the reader cannot see -- and on
+        odoo.pantalytics.com the missing half held the newest reply. The list
+        still says which mail reached this mailbox; the pane says what the
+        correspondence on this record is.
+        """
+        colleague = self.env['pan.mail.mailbox'].create({
+            'email': 'daniel@company.test',
+            'provider': 'imap',
+            'mailbox_type': 'shared',
+        })
+        mine = self._mail(subject='Out of office')
+        mine.write({'date': '2026-09-18 07:26:00'})
+        theirs = self._mail(subject='Re: Ready Partner worden')
+        theirs.write({'date': '2026-09-21 07:06:00',
+                      'x_mailbox_id': colleague.id})
+
+        thread = self.Conversation.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual([m['id'] for m in thread['messages']],
+                         [theirs.id, mine.id],
+                         'the newest turn is in the pane whichever mailbox '
+                         'fetched it')
+        # And each message says which mailbox it arrived in, so the reply the
+        # reader never received is explained rather than surprising.
+        self.assertEqual({m['id']: m['mailbox'] for m in thread['messages']},
+                         {mine.id: self.mailbox.email,
+                          theirs.id: colleague.email})
+        self.assertEqual({m['id']: m['mailbox_id'] for m in thread['messages']},
+                         {mine.id: self.mailbox.id, theirs.id: colleague.id},
+                         'the reply leaves from the mailbox of the message '
+                         'it answers')
+
+        # The list is the other question, and it is unchanged: this mailbox
+        # sees the conversation because its own mail is in it.
+        rows = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)
+        self.assertEqual([row['message_id'] for row in rows], [mine.id])
+
     def test_the_thread_reads_newest_first(self):
         """The message you came for is the newest one, and it is the one the
         pane opens. Below fifty collapsed headers it is an open message
@@ -336,12 +377,12 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(kinds, {'mail', 'note', 'event'})
 
     def test_a_note_in_another_mailbox_s_conversation_is_still_a_note(self):
-        """A note carries no mailbox, so running it through the mailbox
-        filter would empty the tab that exists to show it."""
+        """A note carries no mailbox, so a pane that asked about one would
+        empty the tab that exists to show it."""
         self._mail()
         self._note()
         thread = self.Conversation.read_conversation(
-            'crm.lead', self.lead.id, mailbox_id=self.mailbox.id, scope='all')
+            'crm.lead', self.lead.id, scope='all')
         self.assertIn('note', [m['kind'] for m in thread['messages']])
         self.assertIn('mail', [m['kind'] for m in thread['messages']])
 
