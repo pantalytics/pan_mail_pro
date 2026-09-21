@@ -349,6 +349,19 @@
                                               aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
                                         <span class="flex-grow-1 min-w-0">
                                             <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                                <!--
+                                                    Unread is a dot as well as
+                                                    weight. The open
+                                                    conversation is the
+                                                    highlighted row, and a
+                                                    highlighted row that goes
+                                                    one font weight heavier
+                                                    says nothing at all, which
+                                                    is what Mark unread looked
+                                                    like.
+                                                -->
+                                                <span t-if="conversation.unread"
+                                                      class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
                                                 <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
                                                 <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
                                                       t-esc="day(conversation.date)"/>
@@ -376,6 +389,8 @@
                                         t-on-click="() => this.pickMessage(conversation, message)">
                                     <span t-if="message.unread" class="visually-hidden">Unread. </span>
                                     <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                        <span t-if="message.unread"
+                                              class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
                                         <span class="o_mailpro_from text-truncate" t-esc="message.author"/>
                                         <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
                                               t-esc="day(message.date)"/>
@@ -451,18 +466,24 @@
                                      class="d-flex align-items-center gap-2 flex-shrink-0">
                                     <!--
                                         The way out of "I opened it, I cannot
-                                        deal with it now". Quiet on purpose:
-                                        reading is the normal case and this is
-                                        the exception beside it. Marking it
-                                        read again is opening it, so there is
-                                        one button here and not a toggle.
+                                        deal with it now", and the way back.
+                                        Quiet on purpose: reading is the normal
+                                        case and this is the exception beside
+                                        it. One button, and it says which of
+                                        the two states the conversation is in:
+                                        a button whose second click does
+                                        nothing is a button that reads as
+                                        broken.
                                     -->
                                     <button type="button"
-                                            class="btn btn-link btn-sm p-0 o_mailpro_mark_unread"
-                                            title="Mark unread"
-                                            t-on-click="() => this.markUnread()">
-                                        <i class="fa fa-envelope" aria-hidden="true"/>
-                                        <span class="visually-hidden">Mark unread</span>
+                                            class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
+                                            t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
+                                            t-att-title="readToggleLabel"
+                                            t-att-aria-pressed="selectedUnread ? 'true' : 'false'"
+                                            t-on-click="() => this.toggleRead()">
+                                        <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
+                                           aria-hidden="true"/>
+                                        <span class="visually-hidden" t-esc="readToggleLabel"/>
                                     </button>
                                     <button t-if="showOdooRecordButton" type="button"
                                             class="btn btn-secondary btn-sm o_mailpro_odoo_record_button"

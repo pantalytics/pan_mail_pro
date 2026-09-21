@@ -616,13 +616,39 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     .o_mailpro_thread_loading { padding: 0.3125rem 0.5rem 0.3125rem $mailpro-child-indent; }
 
-    // Unread is weight, not a badge: the list still reads as one column.
+    // Unread is a dot and a weight. Weight alone was 600 against 700 on a row
+    // that is also the highlighted one, which is a difference nobody can see:
+    // Mark unread wrote the database, the provider and the class, and the
+    // screen said nothing back. Read rows drop to 500 so the two are telling
+    // apart at a glance, and the dot carries it on the active row.
     .o_mailpro_item_unread .o_mailpro_from,
     .o_mailpro_item_unread .o_mailpro_subject { font-weight: 700; }
 
-    .o_mailpro_from { font-size: 0.8125rem; font-weight: 600; }
+    .o_mailpro_unread_dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 999px;
+        background: $mailpro-accent;
+        align-self: center;
+    }
+
+    // The same fact at the other end of the header: the one read-state button
+    // wears the state it is offering to leave.
+    .o_mailpro_read_toggle {
+        color: $mailpro-muted;
+
+        &:hover { color: $mailpro-ink; }
+    }
+
+    .o_mailpro_read_toggle_unread {
+        color: $mailpro-accent;
+
+        &:hover { color: $mailpro-accent; }
+    }
+
+    .o_mailpro_from { font-size: 0.8125rem; font-weight: 500; }
     .o_mailpro_date { font-size: 0.6875rem; color: $mailpro-muted; white-space: nowrap; }
-    .o_mailpro_subject { margin-top: 0.125rem; font-size: 0.8125rem; font-weight: 600; }
+    .o_mailpro_subject { margin-top: 0.125rem; font-size: 0.8125rem; font-weight: 500; }
     .o_mailpro_preview { margin-top: 0.125rem; font-size: 0.75rem; color: $mailpro-muted; }
     .o_mailpro_meta { margin-top: 0.4375rem; }
     .o_mailpro_muted { font-size: 0.6875rem; color: $mailpro-muted; }

@@ -1806,10 +1806,10 @@ class Checks:
         """Read and unread, and the correction reaching the database.
 
         Three things a Python test cannot see. That opening a conversation
-        marks it read without anybody clicking anything, that Mark unread puts
-        the dot back on the row the reader is looking at rather than
-        reshuffling the list under them, and that both of those are a column
-        in the database afterwards and not a class on a div.
+        marks it read without anybody clicking anything, that the read-state
+        button puts a visible dot back on the row the reader is looking at
+        rather than reshuffling the list under them, and that both of those
+        are a column in the database afterwards and not a class on a div.
         """
         action = dict(module_menu_actions(self.call)).get('Inbox')
         if not action:
@@ -1836,10 +1836,13 @@ class Checks:
         if active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
             self.fail('the conversation that is open still reads as unread')
 
-        button = page.query_selector('.o_mailpro_mark_unread')
+        button = page.query_selector('.o_mailpro_read_toggle')
         if not button:
             self.fail('an open conversation offers no way to mark it unread')
             return
+        if button.get_attribute('title') != 'Mark unread':
+            self.fail('the read-state button does not offer to mark a read '
+                      'conversation unread')
         before = unread_in_db()
         button.click()
         page.wait_for_timeout(1500)
@@ -1849,21 +1852,31 @@ class Checks:
             return
         if not active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
             self.fail('marking unread left the row reading as read')
+        # The class is not the point: the reader has to see it. A dot, because
+        # the row they marked is also the highlighted one and one font weight
+        # of difference on a highlighted row is invisible.
+        if not active.query_selector('.o_mailpro_unread_dot'):
+            self.fail('the row marked unread shows no unread dot')
         after = unread_in_db()
         if after <= before:
             self.fail('marking unread wrote nothing to the database')
         self.shot('inbox-unread.png')
 
-        # Opening it again is how it becomes read: there is one button here
-        # and not a toggle, because reading a mail is what reads a mail.
-        active.click()
+        # The same button is the way back, and it says so. A button whose
+        # second click does nothing is the bug this replaced.
+        button = page.query_selector('.o_mailpro_read_toggle')
+        if not button or button.get_attribute('title') != 'Mark read':
+            self.fail('the read-state button does not offer to read an unread '
+                      'conversation again')
+            return
+        button.click()
         page.wait_for_timeout(1500)
         active = page.query_selector('.o_mailpro_item_active')
         if active and active.evaluate(
                 'el => el.classList.contains("o_mailpro_item_unread")'):
-            self.fail('re-opening the conversation did not mark it read again')
+            self.fail('marking it read again left the row reading as unread')
         if unread_in_db() != before:
-            self.fail('re-opening the conversation did not clear it in the database')
+            self.fail('marking it read again did not clear it in the database')
         self.error_free('Inbox read state')
 
     # -- The provider form ----------------------------------------------------

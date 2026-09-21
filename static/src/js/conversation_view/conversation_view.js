@@ -686,35 +686,52 @@ export class ConversationView extends Component {
         this.setUnreadLocally(conversation, false);
     }
 
+    /** Is the open conversation one the mailbox still calls unread? */
+    get selectedUnread() {
+        return !!(this.state.selected && this.state.selected.unread);
+    }
+
+    /** What the one read-state button in the header says right now. */
+    get readToggleLabel() {
+        return this.selectedUnread ? _t("Mark read") : _t("Mark unread");
+    }
+
     /**
-     * Put a conversation back to unread: the one way out of "I opened it, I
-     * cannot deal with it now".
+     * Read and unread, from the conversation you have open.
+     *
+     * A toggle, because the button is the only place the click can answer.
+     * Marking unread and then reading it again used to mean opening another
+     * conversation and coming back, and the one button said "Mark unread"
+     * over a conversation that already was: a second click that did nothing,
+     * which is what a broken button looks like.
      *
      * The list is corrected here rather than by reloading it. A reload would
      * re-sort, lose the reader's place, and on the Unread filter make the
      * conversation they are reading jump into the list under them.
      */
-    async markUnread() {
+    async toggleRead() {
         const conversation = this.state.selected;
         if (!conversation) {
             return;
         }
+        const read = this.selectedUnread;
         try {
             await this.orm.call("pan.mail.conversation", "set_read", [], {
                 model: conversation.model,
                 res_id: conversation.res_id,
                 message_id: conversation.message_id,
                 mailbox_id: this.state.mailboxId,
-                read: false,
+                read,
             });
         } catch (error) {
-            console.warn("[Mail Pro] could not mark the conversation unread", error);
+            console.warn("[Mail Pro] could not change the conversation's read state",
+                         error);
             return;
         }
-        this.setUnreadLocally(conversation, true);
+        this.setUnreadLocally(conversation, !read);
     }
 
-    /** The dot, on the row and on the open conversation, without a reload. */
+    /** The dot on the row and the button in the header, without a reload. */
     setUnreadLocally(conversation, unread) {
         for (const row of this.state.conversations) {
             if (this.sameConversation(row, conversation)) {
