@@ -67,6 +67,13 @@ const EMPTY_CONVERSATION = () => ({
 // a table for it would have to be read on every open.
 const MAILBOX_LIST_KEY = "pan_mail_pro.mailbox_list";
 
+// Which mailbox this person reads in. Next to the folds, for the same reason:
+// somebody with six accounts who works one of them does not want to pick it
+// again every morning, and somebody who reads them together does not want to
+// leave All mailboxes every time. `0` is All mailboxes -- the same key the
+// counts and the folds are stored under.
+const MAILBOX_KEY = "pan_mail_pro.mailbox";
+
 // Which of the four readings of a conversation this person left open. Theirs
 // rather than the conversation's: somebody clearing an inbox stays in Mail,
 // somebody catching up on a deal stays in Mail + notes.
@@ -80,6 +87,16 @@ function restoreTab() {
         return TAB_IDS.includes(stored) ? stored : "mail";
     } catch {
         return "mail";
+    }
+}
+
+/** The mailbox this person last read in, as a key: an id, 0, or undefined. */
+function restoreMailbox() {
+    try {
+        const stored = Number(browser.localStorage.getItem(MAILBOX_KEY));
+        return Number.isFinite(stored) && stored >= 0 ? stored : undefined;
+    } catch {
+        return undefined;
     }
 }
 
@@ -302,7 +319,16 @@ export class ConversationView extends Component {
             ["email"],
             { limit: 50, order: "sequence, email" }
         );
-        if (this.state.mailboxes.length) {
+        const known = new Set(this.state.mailboxes.map((mailbox) => mailbox.id));
+        // Where this person left off, then where they land by default: All
+        // mailboxes when there is more than one, that one when there is not.
+        // A single-mailbox database has no All row to land in.
+        const stored = restoreMailbox();
+        if (stored && known.has(stored)) {
+            this.state.mailboxId = stored;
+        } else if (stored === 0 && this.showAllMailboxes) {
+            this.state.mailboxId = null;
+        } else if (this.state.mailboxes.length && !this.showAllMailboxes) {
             this.state.mailboxId = this.state.mailboxes[0].id;
         }
         // Where leaving door 1's narrowing puts the reader back.
@@ -310,18 +336,44 @@ export class ConversationView extends Component {
         // What stood open last time, minus the mailboxes that are gone. The
         // one you land in is always open: a mailbox list that opens fully folded
         // hides the folder you are looking at.
-        const known = new Set(this.state.mailboxes.map((mailbox) => mailbox.id));
         for (const id of restoreExpanded()) {
-            if (known.has(id)) {
+            if (id === 0 ? this.showAllMailboxes : known.has(id)) {
                 this.state.expanded[id] = true;
             }
         }
         this.state.expanded[this.mailboxKey()] = true;
     }
 
-    /** The key a mailbox's folders are stored under; 0 is "no mailbox". */
+    /**
+     * The key a mailbox's folders are stored under; 0 is "every mailbox".
+     *
+     * It means two things and they are the same query: with no mailbox
+     * configured it is the reader's own mail, and with mailboxes it is all of
+     * them. `_base_domain(mailbox_id=None)` is that query on the server, so
+     * All mailboxes is a row and a label over a read path that already exists.
+     */
     mailboxKey(mailboxId) {
         return (mailboxId === undefined ? this.state.mailboxId : mailboxId) || 0;
+    }
+
+    /**
+     * Is there an All mailboxes row at all.
+     *
+     * Only with more than one mailbox. With one, the row is a second copy of
+     * the only mailbox under it, one line up.
+     */
+    get showAllMailboxes() {
+        return this.state.mailboxes.length > 1;
+    }
+
+    /** Does the list on screen hold mail from more than one mailbox. */
+    get spansMailboxes() {
+        return this.showAllMailboxes && !this.state.mailboxId;
+    }
+
+    /** The mailbox on a row, short: `sales` rather than sales@example.com. */
+    mailboxLocal(address) {
+        return (address || "").split("@")[0];
     }
 
     /** The mailboxes whose folders are on screen, so whose counts we need. */
@@ -329,11 +381,23 @@ export class ConversationView extends Component {
         const keys = this.state.mailboxes
             .map((mailbox) => mailbox.id)
             .filter((id) => this.state.expanded[id]);
+        if (this.showAllMailboxes && this.state.expanded[0]) {
+            keys.unshift(0);
+        }
         // Without a mailbox the mailbox list still shows the reader's own folders,
         // and the open mailbox is counted even when its folders are folded:
         // the empty state names the folder you are in.
         const active = this.mailboxKey();
         return keys.includes(active) ? keys : [...keys, active];
+    }
+
+    /** Remember where this person reads, next to the folds and the widths. */
+    saveMailbox() {
+        try {
+            browser.localStorage.setItem(MAILBOX_KEY, String(this.mailboxKey()));
+        } catch {
+            // A mailbox nobody can store is still the one you are reading.
+        }
     }
 
     saveExpanded() {
@@ -629,9 +693,10 @@ export class ConversationView extends Component {
         this.leaveRecord();
         if (mailboxId !== undefined && mailboxId !== this.state.mailboxId) {
             this.state.mailboxId = mailboxId;
-        // Opening a mailbox unfolds it: the folders are where you go next.
-        this.state.expanded[this.mailboxKey()] = true;
-        this.saveExpanded();
+            // Opening a mailbox unfolds it: the folders are where you go next.
+            this.state.expanded[this.mailboxKey()] = true;
+            this.saveExpanded();
+            this.saveMailbox();
         }
         this.state.folder = folder;
         this.panes.closeMailboxList();
@@ -706,6 +771,7 @@ export class ConversationView extends Component {
         // Opening a mailbox unfolds it: the folders are where you go next.
         this.state.expanded[this.mailboxKey()] = true;
         this.saveExpanded();
+        this.saveMailbox();
         // The folder and the filter carry over. Every mailbox has the same
         // two folders, and landing back in Inbox on every switch loses the
         // one thing somebody switching mailboxes is usually doing: working
@@ -1272,6 +1338,18 @@ export class ConversationView extends Component {
     }
 
     /**
+     * What a search that found nothing actually looked at.
+     *
+     * A folder is one mailbox or all of them, and "try another mailbox" is
+     * advice that makes no sense once the search already covered every one.
+     */
+    get searchScope() {
+        return this.spansMailboxes
+            ? _t("The search covers every mailbox you can read. Clear it to see the folder again.")
+            : _t("The search covers this mailbox. Try another one, or clear it.");
+    }
+
+    /**
      * Reply through Odoo's own composer, not one of ours.
      *
      * It already carries this module's "Send From" dropdown, the followers,
@@ -1293,10 +1371,14 @@ export class ConversationView extends Component {
             default_res_ids: [conversation.res_id],
             default_composition_mode: "comment",
             default_subtype_xmlid: "mail.mt_comment",
-            // Send from the mailbox being read, when one is selected in the
-            // mailbox list. The composer drops it again if this person may not send
-            // from it and falls back to their own default.
-            default_x_send_from_mailbox_id: this.state.mailboxId || false,
+            // Send from the mailbox this conversation arrived on, not from
+            // the folder being read. Under All mailboxes the folder has no
+            // mailbox at all, and letting `_resolve_route()` choose then
+            // answers a customer from an address they never wrote to. The
+            // composer drops it again if this person may not send from it and
+            // falls back to their own default.
+            default_x_send_from_mailbox_id:
+                conversation.mailbox_id || this.state.mailboxId || false,
             // The chatter fills "To" from the record's suggested recipients;
             // the composer itself fills nothing, and since 18.2 the customer
             // is no longer a follower by default. A reply with an empty "To"

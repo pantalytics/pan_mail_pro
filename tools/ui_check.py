@@ -434,29 +434,62 @@ class Checks:
         # The mailbox sits in the mailbox list above its own folders, the way it does
         # in the mail client next to this one. The seed makes two, so this is
         # also the only place that proves switching mailbox works at all.
+        MAILBOX = '.o_mailpro_mailbox:not(.o_mailpro_all_mailboxes)'
+
         def mailbox_names():
             return [el.inner_text().strip()
-                    for el in page.query_selector_all('.o_mailpro_mailbox')]
+                    for el in page.query_selector_all(MAILBOX)]
+
+        def active_names():
+            return [el.inner_text().strip()
+                    for el in page.query_selector_all('.o_mailpro_mailbox_active')]
 
         def open_mailbox(index):
-            page.query_selector_all('.o_mailpro_mailbox')[index].click()
+            page.query_selector_all(MAILBOX)[index].click()
             page.wait_for_timeout(1500)
-            open_now = page.query_selector_all('.o_mailpro_mailbox_active')
-            return [el.inner_text().strip() for el in open_now]
+            return active_names()
+
+        def row_mailboxes():
+            return [el.inner_text().strip() for el
+                    in page.query_selector_all('.o_mailpro_item .o_mailpro_mailbox_tag')]
+
+        # Every mailbox at once, as the row above them. With two seeded
+        # mailboxes it is where the reader lands, and each row says which one
+        # it is in -- the part that is silent when it breaks, because a list
+        # that spans two accounts and names neither looks exactly right.
+        all_row = page.query_selector('.o_mailpro_all_mailboxes')
+        if not all_row:
+            self.fail('the mailbox list has no All mailboxes row with two mailboxes')
+        else:
+            if all_row.inner_text().strip() != 'All mailboxes':
+                self.fail(f'the row reads "{all_row.inner_text().strip()}", '
+                          f'expected "All mailboxes"')
+            if active_names() != ['All mailboxes']:
+                self.fail(f'the Inbox opens on {active_names()}, '
+                          f'expected All mailboxes with two mailboxes seeded')
+            tags = row_mailboxes()
+            rows = len(page.query_selector_all('.o_mailpro_item'))
+            if len(tags) != rows:
+                self.fail(f'{len(tags)} of {rows} rows name their mailbox '
+                          f'under All mailboxes')
+            if len(set(tags)) < 2:
+                self.fail(f'All mailboxes shows rows from {sorted(set(tags))}, '
+                          f'expected both seeded mailboxes')
+            self.shot('inbox-all-mailboxes.png')
 
         names = mailbox_names()
         if len(names) < 2:
             self.fail(f'{len(names)} mailboxes in the mailbox list, expected the seeded 2')
         else:
-            active = [el.inner_text().strip()
-                      for el in page.query_selector_all('.o_mailpro_mailbox_active')]
-            if active != names[:1]:
-                self.fail(f'the mailbox list opens on {active}, expected {names[:1]}')
             if open_mailbox(1) != names[1:2]:
                 self.fail('clicking a mailbox did not open it')
             # Back to the one the seeded mail is in, so everything below reads
             # the filled screen.
             open_mailbox(0)
+            # One mailbox is not a list that spans any: repeating the same
+            # address down thirty rows is the noise this is drawn against.
+            if row_mailboxes():
+                self.fail('a single mailbox still names itself on every row')
 
         # A mailbox folds its folders away and unfolds them again, the way an
         # account does in Outlook. Asserted on the folder rows, not on the
@@ -466,7 +499,9 @@ class Checks:
             return len(page.query_selector_all('.o_mailpro_folder'))
 
         def fold(index):
-            page.query_selector_all('.o_mailpro_mailbox_toggle')[index].click()
+            page.query_selector_all(
+                '.o_mailpro_mailbox_row:not(.o_mailpro_all_row) '
+                '.o_mailpro_mailbox_toggle')[index].click()
             page.wait_for_timeout(1200)
             return folder_rows()
 
@@ -478,7 +513,7 @@ class Checks:
                 self.fail('unfolding a mailbox did not bring its folders back')
 
         # Everything clickable is a real button, so a keyboard can reach it.
-        for selector, what in (('.o_mailpro_mailbox', 'mailbox'),
+        for selector, what in ((MAILBOX, 'mailbox'),
                                ('.o_mailpro_mailbox_toggle', 'mailbox caret'),
                                ('.o_mailpro_folder', 'folder'),
                                ('.o_mailpro_filter', 'filter'),

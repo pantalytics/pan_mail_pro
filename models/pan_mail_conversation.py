@@ -741,6 +741,12 @@ class PanMailConversation(models.AbstractModel):
             # is what every mail client means by the dot.
             'unread': not newest.x_is_read,
             'mailbox': newest.x_mailbox_id.email or '',
+            # Which mailbox this conversation arrived on, beside the address
+            # the row draws. It is what the reply sends from: under All
+            # mailboxes the screen has no mailbox of its own, and answering
+            # from whichever address `_resolve_route()` picks is a mail the
+            # customer never wrote to.
+            'mailbox_id': newest.x_mailbox_id.id or False,
         }
 
     def _message_row(self, message):

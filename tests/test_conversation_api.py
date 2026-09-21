@@ -274,6 +274,37 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(len(theirs), 1)
         self.assertEqual(theirs[0]['subject'], 'Via support')
 
+    def test_no_mailbox_is_every_mailbox(self):
+        """All mailboxes is `_base_domain(None)`, which is the query the
+        screen already had: a row and a label, not a second read path."""
+        other = self.env['pan.mail.mailbox'].create({
+            'email': 'support@company.test',
+            'provider': 'imap',
+            'mailbox_type': 'shared',
+        })
+        second = self.env['crm.lead'].create({
+            'name': 'Onderhoudscontract', 'partner_id': self.customer.id,
+        })
+        self._mail()
+        self._mail(subject='Via support', record=second).x_mailbox_id = other
+
+        rows = self.Conversation.search_conversations()
+        self.assertEqual(len(rows), 2, 'All mailboxes spans both')
+        self.assertEqual(
+            {row['mailbox'] for row in rows},
+            {'sales@company.test', 'support@company.test'},
+            'every row says which mailbox it is in')
+
+    def test_the_row_carries_the_mailbox_the_reply_answers_from(self):
+        """The silent one. Under All mailboxes the screen has no mailbox of
+        its own, so a reply that reads the folder rather than the row falls
+        through to `_resolve_route()` and answers from an address the
+        customer never wrote to."""
+        self._mail()
+        row = self.Conversation.search_conversations()[0]
+        self.assertEqual(row['mailbox_id'], self.mailbox.id)
+        self.assertEqual(row['mailbox'], self.mailbox.email)
+
     def test_the_row_is_unread_when_the_mailbox_has_not_read_it(self):
         message = self._mail()
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]

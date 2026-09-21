@@ -10,9 +10,11 @@ record that carries mail, opening the Inbox on that conversation or, when the
 record carries more than one thread, on its list. Still on paper: door 1's
 more-messages-elsewhere line, and the customer view with its timeline, whose
 read method (`customer_timeline`) shipped and is tested, so what is left of it
-is markup. Also still on paper: the composer's
-**Cc/followers block**, and *All mailboxes*, the one folder that spans
-them. Reply opens Odoo's own composer with To filled from
+is markup. *All mailboxes*, the one folder that spans them, ships in
+19.0.15.5.0: the row, the mailbox on every list row that needs one, and the
+reply that answers from the conversation's mailbox rather than the folder's.
+Also still on paper: the composer's
+**Cc/followers block**. Reply opens Odoo's own composer with To filled from
 the newest inbound message and Cc not filled at all. New Email opens the same
 composer in a dialog after the record is picked, rather than in pane 3 as
 decided below. What the MVP needs of this file is in [mvp.md](mvp.md).
@@ -99,7 +101,7 @@ watches rather than one per mailbox that exists. 19.0.10.4.0.
 
 **Decision: one row at the top of the mailbox list, *All mailboxes*, with the
 same Inbox and Sent under it. Not a drop-down, and not a tick-list of
-mailboxes.** On paper.
+mailboxes.** 19.0.15.5.0.
 
 Apple Mail puts All Inboxes behind a chevron because its sidebar keeps the
 accounts folded away underneath it. Ours already draws every mailbox in the
@@ -147,7 +149,8 @@ than the state. A test asserts it, because this one is silent.
 
 **Search widens with the folder.** The empty state says *"The search covers
 this mailbox. Try another one, or clear it."* Under All mailboxes it covers all
-of them, so that copy is wrong there and has to name the folder it searched.
+of them, so it reads *"The search covers every mailbox you can read. Clear it
+to see the folder again."* instead.
 
 **Where it opens.** A reader with more than one mailbox lands in All mailboxes;
 with one, in that one. Stored next to the pane widths and the folds, like every
