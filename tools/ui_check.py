@@ -1340,12 +1340,30 @@ class Checks:
             self.fail('the list takes %dpx of a 390px phone' % list_width)
 
         # The row's last line is one line. It holds the mailbox, the record
-        # and the message count, and the count is a span of text: squeezed, a
-        # flex line that does not wrap takes it out of the items themselves,
-        # so "5 messages" broke in two and every row in the list grew a line.
-        meta = page.query_selector('.o_mailpro_item .o_mailpro_meta')
-        if meta and meta.bounding_box()['height'] > 26:
-            self.fail('the row meta line wraps on a phone, so every row is taller')
+        # and the message count, and each of those is a span of text:
+        # squeezed, a flex line that does not wrap takes it out of the items
+        # themselves, so "5 messages" broke in two and every row in the list
+        # grew a line. Asked per item and in its own line-heights, because
+        # how tall a line is belongs to the font and how many of them there
+        # are is the thing being asserted.
+        lines = page.evaluate("""
+            () => {
+                const meta = document.querySelector('.o_mailpro_item .o_mailpro_meta');
+                if (!meta) { return []; }
+                return [...meta.children].map((el) => {
+                    const cs = getComputedStyle(el);
+                    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+                    const box = el.getBoundingClientRect().height
+                        - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+                        - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth);
+                    return { text: el.textContent.trim().slice(0, 24), lines: box / lh };
+                });
+            }
+        """)
+        for entry in lines:
+            if entry['lines'] > 1.5:
+                self.fail('"%s" wraps to %.1f lines on a phone, so every row is taller'
+                          % (entry['text'], entry['lines']))
 
         # The mailbox list is a drawer: absent until asked for, over the list while
         # open, gone again once a folder is picked.

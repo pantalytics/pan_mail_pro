@@ -620,6 +620,9 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         white-space: nowrap;
     }
 
+    // A chip is one line. Whatever is in it -- a record name, a state -- it
+    // truncates rather than breaking: the row it sits on has four lines
+    // already, and a chip that wraps adds a fifth to every row in the list.
     .o_mailpro_chip {
         padding: 0.125rem 0.4375rem;
         border-radius: 0.25rem;
@@ -627,6 +630,9 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         color: $mailpro-accent-ink;
         font-size: 0.6875rem;
         font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     // A row from the mailbox itself that Odoo does not have. Quiet on
