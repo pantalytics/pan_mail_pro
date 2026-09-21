@@ -133,9 +133,11 @@ snippet. Three things it deliberately is not:
   so the rows come from `_thread_row()` and a thread's worth of HTML does not
   cross the wire to draw ten lines of text.
 - **Not a second way to open a conversation.** The chevron unfolds and nothing
-  else. The row above it is still what opens the conversation, so asking "how
-  many of these are from her" never costs the reader the conversation they had
-  open.
+  else, so asking "how many of these are from her" never costs the reader the
+  conversation they had open. It is the only way to look without opening: the
+  click that opens a conversation unfolds it as well, the way Outlook does, and
+  folds back whichever one stood open before it. One thread at a time, and it
+  is the one being read.
 - **Not another tab.** The unfolded rows are correspondence, the same set the
   row's own count counted. A note is not a mail the conversation had, and the
   tab strip over the open conversation is where that reading lives.
@@ -143,6 +145,13 @@ snippet. Three things it deliberately is not:
 Clicking one opens the conversation on **that** mail: the id is seeded into
 `state.open` before the read, and `readConversation()` only falls back to the
 newest message when nothing is open.
+
+The unfolded mails start where the sender's name starts on the row above --
+past the chevron's column and past the picture -- so a thread reads as one
+column under the conversation it belongs to rather than as a second list
+shifted left. The indent is those widths added up in
+`static/src/scss/conversation_view.scss`, which is why the row's own padding is
+written there instead of left to the browser's button default.
 
 ### Provider abstraction
 
