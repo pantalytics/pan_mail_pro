@@ -154,16 +154,20 @@
             </div>
 
             <!--
-                The three `lead` / `trail` classes are the room a header
-                leaves for the button that floats into it from a folded
-                neighbour, so the title starts beside it rather than under
-                it. At most one arrives from each side.
+                The four `lead` / `trail` classes are the room a header keeps
+                for the round button that sits in it, so the title starts
+                beside it rather than under it. The button is inside a pane
+                and never on the line between two, so the room is kept
+                whenever the button is there at all, not only when a
+                neighbour is folded. At most one arrives from each side, and
+                on a phone there are no dividers and so none of them.
             -->
             <div class="o_mailpro_panes d-flex flex-grow-1" t-ref="panes"
                  t-attf-style="--mailpro-zoom-from: {{panes.state.zoomFrom}}px"
                  t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom,
                                 'o_mailpro_zoom_leaving': panes.state.zoomLeaving,
-                                'o_mailpro_lead_conversation': panes.folded('conversation_list'),
+                                'o_mailpro_lead_conversation': panes.toggleSide('conversation_list') === 'right',
+                                'o_mailpro_trail_conversation_list': panes.toggleSide('conversation_list') === 'left',
                                 'o_mailpro_trail_conversation': panes.toggleSide('odoo_record') === 'left',
                                 'o_mailpro_lead_odoo_record': panes.toggleSide('odoo_record') === 'right' }">
 
@@ -202,8 +206,8 @@
                                     t-att-aria-expanded="isExpanded(false) ? 'true' : 'false'"
                                     t-attf-aria-label="{{ isExpanded(false) ? 'Hide folders of' : 'Show folders of' }} all mailboxes"
                                     t-on-click="() => this.toggleMailbox(null)">
-                                <i class="fa" aria-hidden="true"
-                                   t-att-class="isExpanded(false) ? 'fa-caret-down' : 'fa-caret-right'"/>
+                                <i class="fa fa-fw" aria-hidden="true"
+                                   t-att-class="isExpanded(false) ? 'fa-chevron-down' : 'fa-chevron-right'"/>
                             </button>
                             <button type="button"
                                     class="o_mailpro_mailbox o_mailpro_all_mailboxes d-flex align-items-center gap-2"
@@ -224,8 +228,8 @@
                                     t-att-aria-expanded="isExpanded(mailbox.id) ? 'true' : 'false'"
                                     t-attf-aria-label="{{ isExpanded(mailbox.id) ? 'Hide folders of' : 'Show folders of' }} {{ mailbox.email }}"
                                     t-on-click="() => this.toggleMailbox(mailbox.id)">
-                                <i class="fa" aria-hidden="true"
-                                   t-att-class="isExpanded(mailbox.id) ? 'fa-caret-down' : 'fa-caret-right'"/>
+                                <i class="fa fa-fw" aria-hidden="true"
+                                   t-att-class="isExpanded(mailbox.id) ? 'fa-chevron-down' : 'fa-chevron-right'"/>
                             </button>
                             <button type="button"
                                     class="o_mailpro_mailbox d-flex align-items-center gap-2"
@@ -312,176 +316,187 @@
                             </button>
                         </div>
                     </div>
-                    <t t-if="state.loading and !state.conversations.length">
-                        <div class="o_mailpro_skeleton" aria-hidden="true">
-                            <div class="o_mailpro_skeleton_row" t-foreach="[1, 2, 3, 4, 5]" t-as="row" t-key="row"/>
-                        </div>
-                        <span class="visually-hidden" role="status">Loading conversations</span>
-                    </t>
-                    <t t-elif="!state.conversations.length">
-                        <!-- An empty search is not an empty folder: "new
-                             mail appears here" would say the mail does not
-                             exist, when it may be one mailbox over. -->
-                        <div t-if="searching" class="o_mailpro_empty">
-                            <h3 class="o_mailpro_empty_title">Nothing matches that search in <t t-esc="folderLabel"/>.</h3>
-                            <p class="o_mailpro_empty_text" t-esc="searchScope"/>
-                        </div>
-                        <div t-elif="isLive and !state.liveConnected" class="o_mailpro_empty">
-                            <h3 class="o_mailpro_empty_title">This mailbox is not connected.</h3>
-                            <p class="o_mailpro_empty_text">
-                                Reading your own mailbox needs working credentials for it.
-                            </p>
-                        </div>
-                        <div t-elif="isLive" class="o_mailpro_empty">
-                            <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel"/>.</h3>
-                            <p class="o_mailpro_empty_text">
-                                This is your mailbox itself, read as it is right now.
-                            </p>
-                        </div>
-                        <div t-else="" class="o_mailpro_empty">
-                            <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel"/> yet.</h3>
-                            <p t-if="state.folder === 'drafts'" class="o_mailpro_empty_text">
-                                Mail you save instead of sending appears here.
-                            </p>
-                            <p t-else="" class="o_mailpro_empty_text">
-                                New mail appears here as it arrives.
-                            </p>
-                        </div>
-                    </t>
-                    <t t-else="">
-                        <div t-foreach="state.conversations" t-as="conversation"
-                             t-key="conversation.draft_id ? 'draft-' + conversation.draft_id
-                                    : (conversation.message_id or conversation.live_id)"
-                             class="o_mailpro_group">
-                            <!--
-                                The chevron sits outside the row it belongs to,
-                                because a button inside a button is not a thing a
-                                browser will draw. So the selection is painted on
-                                the pair rather than on the row, or the chevron
-                                column stays white next to the mail you have open.
-                            -->
-                            <div class="o_mailpro_group_head d-flex align-items-start"
-                                 t-att-class="{ 'o_mailpro_group_head_active': state.selected
-                                     and sameConversation(conversation, state.selected) }">
-                                <!--
-                                    The chevron, and only where there is something
-                                    behind it: a one-mail conversation that offers to
-                                    unfold into one mail is a control that lies. The
-                                    rows without one still line up, because the blank
-                                    keeps the column.
-                                -->
-                                <button t-if="conversation.count &gt; 1" type="button"
-                                        class="o_mailpro_twist flex-shrink-0"
-                                        t-att-aria-expanded="isUnfolded(conversation) ? 'true' : 'false'"
-                                        t-att-aria-label="isUnfolded(conversation) ? 'Fold this conversation' : 'Unfold this conversation'"
-                                        t-on-click="() => this.toggleUnfold(conversation)">
-                                    <i class="fa fa-fw" aria-hidden="true"
-                                       t-att-class="isUnfolded(conversation) ? 'fa-chevron-down' : 'fa-chevron-right'"/>
-                                </button>
-                                <span t-else="" class="o_mailpro_twist o_mailpro_twist_blank flex-shrink-0" aria-hidden="true"/>
-                                <button type="button"
-                                        class="o_mailpro_item flex-grow-1 min-w-0"
-                                        t-att-class="{
-                                            'o_mailpro_item_active': state.selected
-                                                and sameConversation(conversation, state.selected),
-                                            'o_mailpro_item_unread': conversation.unread }"
-                                        t-att-aria-current="state.selected and sameConversation(conversation, state.selected) ? 'true' : undefined"
-                                        t-on-click="() => this.pick(conversation)">
-                                    <span t-if="conversation.unread" class="visually-hidden">Unread. </span>
-                                    <!--
-                                        The contact's own picture, the way every mail
-                                        client draws a list: you find the conversation
-                                        you want by who it is with, before you read a
-                                        word. A partner without a photo gets Odoo's own
-                                        letter circle; a sender who is nobody in the
-                                        database gets initials from the name on the
-                                        mail.
-                                    -->
-                                    <div class="d-flex align-items-start gap-2">
-                                        <img t-if="conversation.partner_id" class="o_mailpro_avatar flex-shrink-0"
-                                             alt="" t-att-src="partnerAvatar(conversation)"/>
-                                        <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
-                                              aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
-                                        <span class="flex-grow-1 min-w-0">
-                                            <span class="d-flex justify-content-between align-items-baseline gap-2">
-                                                <!--
-                                                    Unread is a dot as well as
-                                                    weight. The open
-                                                    conversation is the
-                                                    highlighted row, and a
-                                                    highlighted row that goes
-                                                    one font weight heavier
-                                                    says nothing at all, which
-                                                    is what Mark unread looked
-                                                    like.
-                                                -->
-                                                <span t-if="conversation.unread"
-                                                      class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
-                                                <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
-                                                <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
-                                                      t-esc="day(conversation.date)"/>
-                                            </span>
-                                            <span class="o_mailpro_subject d-block text-truncate" t-esc="conversation.subject"/>
-                                            <span class="o_mailpro_preview d-block text-truncate" t-esc="conversation.preview"/>
-                                            <span class="o_mailpro_meta d-flex align-items-center gap-2">
-                                                <!--
-                                                    Which mailbox this one is
-                                                    in, and only while the list
-                                                    spans more than one: the
-                                                    same address down thirty
-                                                    rows of a single mailbox is
-                                                    noise, so it is a property
-                                                    of the list and not of the
-                                                    row.
-                                                -->
-                                                <span t-if="spansMailboxes and conversation.mailbox"
-                                                      class="o_mailpro_mailbox_tag flex-shrink-0"
-                                                      t-att-title="conversation.mailbox"
-                                                      t-esc="mailboxLocal(conversation.mailbox)"/>
-                                                <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
-                                                      t-esc="conversation.record_name"/>
-                                                <!-- Only on a row from the mailbox
-                                                     itself: in an imported folder
-                                                     every row is in Odoo by
-                                                     definition, so the chip would be
-                                                     a word on every line that says
-                                                     nothing. -->
-                                                <span t-if="conversation.live and !conversation.linked"
-                                                      class="o_mailpro_chip o_mailpro_chip_live">Not in Odoo</span>
-                                                <span t-if="!conversation.live" class="o_mailpro_muted"
-                                                      t-esc="messageCount(conversation.count)"/>
-                                            </span>
-                                        </span>
-                                    </div>
-                                </button>
+                    <!--
+                        The list itself scrolls; the header above it does
+                        not. A pane that scrolls as one puts its scrollbar
+                        down its own edge for its whole height, header
+                        included, and that edge is where the divider and the
+                        round button on it are. Two scroll areas would
+                        be worse; one that starts under the head is the
+                        same list with nothing crossing the boundary.
+                    -->
+                    <div class="o_mailpro_conversation_list_body">
+                        <t t-if="state.loading and !state.conversations.length">
+                            <div class="o_mailpro_skeleton" aria-hidden="true">
+                                <div class="o_mailpro_skeleton_row" t-foreach="[1, 2, 3, 4, 5]" t-as="row" t-key="row"/>
                             </div>
-                            <t t-if="isUnfolded(conversation)">
-                                <div t-if="isThreadLoading(conversation)" class="o_mailpro_thread_loading">
-                                    <span class="visually-hidden" role="status">Loading this conversation</span>
-                                    <div class="o_mailpro_skeleton_row" aria-hidden="true"/>
+                            <span class="visually-hidden" role="status">Loading conversations</span>
+                        </t>
+                        <t t-elif="!state.conversations.length">
+                            <!-- An empty search is not an empty folder: "new
+                                 mail appears here" would say the mail does not
+                                 exist, when it may be one mailbox over. -->
+                            <div t-if="searching" class="o_mailpro_empty">
+                                <h3 class="o_mailpro_empty_title">Nothing matches that search in <t t-esc="folderLabel"/>.</h3>
+                                <p class="o_mailpro_empty_text" t-esc="searchScope"/>
+                            </div>
+                            <div t-elif="isLive and !state.liveConnected" class="o_mailpro_empty">
+                                <h3 class="o_mailpro_empty_title">This mailbox is not connected.</h3>
+                                <p class="o_mailpro_empty_text">
+                                    Reading your own mailbox needs working credentials for it.
+                                </p>
+                            </div>
+                            <div t-elif="isLive" class="o_mailpro_empty">
+                                <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel"/>.</h3>
+                                <p class="o_mailpro_empty_text">
+                                    This is your mailbox itself, read as it is right now.
+                                </p>
+                            </div>
+                            <div t-else="" class="o_mailpro_empty">
+                                <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel"/> yet.</h3>
+                                <p t-if="state.folder === 'drafts'" class="o_mailpro_empty_text">
+                                    Mail you save instead of sending appears here.
+                                </p>
+                                <p t-else="" class="o_mailpro_empty_text">
+                                    New mail appears here as it arrives.
+                                </p>
+                            </div>
+                        </t>
+                        <t t-else="">
+                            <div t-foreach="state.conversations" t-as="conversation"
+                                 t-key="conversation.draft_id ? 'draft-' + conversation.draft_id
+                                        : (conversation.message_id or conversation.live_id)"
+                                 class="o_mailpro_group">
+                                <!--
+                                    The chevron sits outside the row it belongs to,
+                                    because a button inside a button is not a thing a
+                                    browser will draw. So the selection is painted on
+                                    the pair rather than on the row, or the chevron
+                                    column stays white next to the mail you have open.
+                                -->
+                                <div class="o_mailpro_group_head d-flex align-items-start"
+                                     t-att-class="{ 'o_mailpro_group_head_active': state.selected
+                                         and sameConversation(conversation, state.selected) }">
+                                    <!--
+                                        The chevron, and only where there is something
+                                        behind it: a one-mail conversation that offers to
+                                        unfold into one mail is a control that lies. The
+                                        rows without one still line up, because the blank
+                                        keeps the column.
+                                    -->
+                                    <button t-if="conversation.count &gt; 1" type="button"
+                                            class="o_mailpro_twist flex-shrink-0"
+                                            t-att-aria-expanded="isUnfolded(conversation) ? 'true' : 'false'"
+                                            t-att-aria-label="isUnfolded(conversation) ? 'Fold this conversation' : 'Unfold this conversation'"
+                                            t-on-click="() => this.toggleUnfold(conversation)">
+                                        <i class="fa fa-fw" aria-hidden="true"
+                                           t-att-class="isUnfolded(conversation) ? 'fa-chevron-down' : 'fa-chevron-right'"/>
+                                    </button>
+                                    <span t-else="" class="o_mailpro_twist o_mailpro_twist_blank flex-shrink-0" aria-hidden="true"/>
+                                    <button type="button"
+                                            class="o_mailpro_item flex-grow-1 min-w-0"
+                                            t-att-class="{
+                                                'o_mailpro_item_active': state.selected
+                                                    and sameConversation(conversation, state.selected),
+                                                'o_mailpro_item_unread': conversation.unread }"
+                                            t-att-aria-current="state.selected and sameConversation(conversation, state.selected) ? 'true' : undefined"
+                                            t-on-click="() => this.pick(conversation)">
+                                        <span t-if="conversation.unread" class="visually-hidden">Unread. </span>
+                                        <!--
+                                            The contact's own picture, the way every mail
+                                            client draws a list: you find the conversation
+                                            you want by who it is with, before you read a
+                                            word. A partner without a photo gets Odoo's own
+                                            letter circle; a sender who is nobody in the
+                                            database gets initials from the name on the
+                                            mail.
+                                        -->
+                                        <div class="d-flex align-items-start gap-2">
+                                            <img t-if="conversation.partner_id" class="o_mailpro_avatar flex-shrink-0"
+                                                 alt="" t-att-src="partnerAvatar(conversation)"/>
+                                            <span t-else="" class="o_mailpro_avatar o_mailpro_avatar_text flex-shrink-0"
+                                                  aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
+                                            <span class="flex-grow-1 min-w-0">
+                                                <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                                    <!--
+                                                        Unread is a dot as well as
+                                                        weight. The open
+                                                        conversation is the
+                                                        highlighted row, and a
+                                                        highlighted row that goes
+                                                        one font weight heavier
+                                                        says nothing at all, which
+                                                        is what Mark unread looked
+                                                        like.
+                                                    -->
+                                                    <span t-if="conversation.unread"
+                                                          class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
+                                                    <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
+                                                    <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
+                                                          t-esc="day(conversation.date)"/>
+                                                </span>
+                                                <span class="o_mailpro_subject d-block text-truncate" t-esc="conversation.subject"/>
+                                                <span class="o_mailpro_preview d-block text-truncate" t-esc="conversation.preview"/>
+                                                <span class="o_mailpro_meta d-flex align-items-center gap-2">
+                                                    <!--
+                                                        Which mailbox this one is
+                                                        in, and only while the list
+                                                        spans more than one: the
+                                                        same address down thirty
+                                                        rows of a single mailbox is
+                                                        noise, so it is a property
+                                                        of the list and not of the
+                                                        row.
+                                                    -->
+                                                    <span t-if="spansMailboxes and conversation.mailbox"
+                                                          class="o_mailpro_mailbox_tag flex-shrink-0"
+                                                          t-att-title="conversation.mailbox"
+                                                          t-esc="mailboxLocal(conversation.mailbox)"/>
+                                                    <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
+                                                          t-esc="conversation.record_name"/>
+                                                    <!-- Only on a row from the mailbox
+                                                         itself: in an imported folder
+                                                         every row is in Odoo by
+                                                         definition, so the chip would be
+                                                         a word on every line that says
+                                                         nothing. -->
+                                                    <span t-if="conversation.live and !conversation.linked"
+                                                          class="o_mailpro_chip o_mailpro_chip_live">Not in Odoo</span>
+                                                    <span t-if="!conversation.live" class="o_mailpro_muted"
+                                                          t-esc="messageCount(conversation.count)"/>
+                                                </span>
+                                            </span>
+                                        </div>
+                                    </button>
                                 </div>
-                                <button t-foreach="threadOf(conversation)" t-as="message"
-                                        t-key="message.id" type="button"
-                                        class="o_mailpro_child"
-                                        t-att-class="{ 'o_mailpro_child_unread': message.unread }"
-                                        t-on-click="() => this.pickMessage(conversation, message)">
-                                    <span t-if="message.unread" class="visually-hidden">Unread. </span>
-                                    <span class="d-flex justify-content-between align-items-baseline gap-2">
-                                        <span t-if="message.unread"
-                                              class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
-                                        <span class="o_mailpro_from text-truncate" t-esc="message.author"/>
-                                        <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
-                                              t-esc="day(message.date)"/>
-                                    </span>
-                                    <span class="o_mailpro_preview d-block text-truncate" t-esc="message.preview"/>
-                                </button>
-                            </t>
-                        </div>
-                        <div t-if="state.hasMore" class="o_mailpro_more">
-                            <button type="button" class="btn btn-link btn-sm"
-                                    t-on-click="() => this.loadMore()">Load more</button>
-                        </div>
-                    </t>
+                                <t t-if="isUnfolded(conversation)">
+                                    <div t-if="isThreadLoading(conversation)" class="o_mailpro_thread_loading">
+                                        <span class="visually-hidden" role="status">Loading this conversation</span>
+                                        <div class="o_mailpro_skeleton_row" aria-hidden="true"/>
+                                    </div>
+                                    <button t-foreach="threadOf(conversation)" t-as="message"
+                                            t-key="message.id" type="button"
+                                            class="o_mailpro_child"
+                                            t-att-class="{ 'o_mailpro_child_unread': message.unread }"
+                                            t-on-click="() => this.pickMessage(conversation, message)">
+                                        <span t-if="message.unread" class="visually-hidden">Unread. </span>
+                                        <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                            <span t-if="message.unread"
+                                                  class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
+                                            <span class="o_mailpro_from text-truncate" t-esc="message.author"/>
+                                            <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
+                                                  t-esc="day(message.date)"/>
+                                        </span>
+                                        <span class="o_mailpro_preview d-block text-truncate" t-esc="message.preview"/>
+                                    </button>
+                                </t>
+                            </div>
+                            <div t-if="state.hasMore" class="o_mailpro_more">
+                                <button type="button" class="btn btn-link btn-sm"
+                                        t-on-click="() => this.loadMore()">Load more</button>
+                            </div>
+                        </t>
+                    </div>
                 </div>
 
                 <t t-set="divider" t-value="'conversation_list'"/>
@@ -1082,7 +1097,7 @@
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
         <div t-if="panes.splitterVisible(divider)"
-             t-attf-class="o_mailpro_split o_mailpro_split_{{divider}} {{ panes.toggleSide(divider) === 'center' ? '' : 'o_mailpro_split_folded' }}"
+             t-attf-class="o_mailpro_split o_mailpro_split_{{divider}} {{ panes.resizable(divider) ? '' : 'o_mailpro_split_folded' }}"
              role="separator" aria-orientation="vertical" tabindex="0"
              t-att-aria-label="panes.label(divider)"
              t-att-aria-valuenow="panes.folded(divider) ? 0 : panes.width(divider)"
@@ -1122,8 +1137,9 @@
         <button t-if="panes.state.small and !composer.state.open" type="button"
                 class="o_mailpro_back flex-shrink-0"
                 aria-label="Back to the conversation list"
+                title="Back to the conversation list"
                 t-on-click="() => this.backToList()">
-            <i class="fa fa-arrow-left" aria-hidden="true"/>
+            <i class="fa fa-chevron-left" aria-hidden="true"/>
         </button>
     </t>
 
