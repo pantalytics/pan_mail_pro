@@ -113,21 +113,16 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(by_id['inbox'], 1)
         self.assertEqual(by_id['sent'], 0)
 
-    def test_unread_is_odoos_own_needaction_row(self):
-        """The filter and the dot on the list row read the same fact.
+    def test_unread_is_the_mailbox_s_own_read_state(self):
+        """The filter and the dot on the list row read the same column.
 
-        `needaction` is Odoo's own search over `mail.notification`, so a
-        conversation is unread here exactly when the list draws it unread. A
-        flag of ours would be a second answer to one question, and the two
-        would disagree the first time somebody read the mail somewhere else.
+        `x_is_read` is mirrored from the provider, so a conversation is unread
+        here exactly when it is unread in Outlook. Odoo's `needaction` row is
+        not consulted: it is per user and answers a different question, and
+        the two would disagree the first time a colleague read the mail.
         """
         message = self._mail()
-        self.env['mail.notification'].create({
-            'mail_message_id': message.id,
-            'res_partner_id': self.env.user.partner_id.id,
-            'notification_type': 'inbox',
-            'is_read': False,
-        })
+        message.x_is_read = False
         rows = self.Conversation.search_conversations(
             mailbox_id=self.mailbox.id, filter_name='unread')
         self.assertEqual(len(rows), 1)
@@ -136,8 +131,25 @@ class TestConversationApi(TransactionCase):
             mailbox_id=self.mailbox.id, folder='inbox')['filters']}
         self.assertEqual(counts['unread'], 1)
 
-        self.env['mail.notification'].search([
-            ('mail_message_id', '=', message.id)]).is_read = True
+        message.x_is_read = True
+        self.assertFalse(self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id, filter_name='unread'))
+
+    def test_an_odoo_notification_does_not_make_a_conversation_unread(self):
+        """The bell and the dot are two facts.
+
+        A mention on a mail the mailbox has read leaves the Inbox alone; it is
+        Discuss that still wants something from this reader.
+        """
+        message = self._mail()
+        self.env['mail.notification'].create({
+            'mail_message_id': message.id,
+            'res_partner_id': self.env.user.partner_id.id,
+            'notification_type': 'inbox',
+            'is_read': False,
+        })
+        row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
+        self.assertFalse(row['unread'])
         self.assertFalse(self.Conversation.search_conversations(
             mailbox_id=self.mailbox.id, filter_name='unread'))
 
@@ -262,17 +274,12 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(len(theirs), 1)
         self.assertEqual(theirs[0]['subject'], 'Via support')
 
-    def test_unread_is_odoo_s_own_needaction_row(self):
+    def test_the_row_is_unread_when_the_mailbox_has_not_read_it(self):
         message = self._mail()
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
         self.assertFalse(row['unread'])
 
-        self.env['mail.notification'].create({
-            'mail_message_id': message.id,
-            'res_partner_id': self.env.user.partner_id.id,
-            'notification_type': 'inbox',
-            'is_read': False,
-        })
+        message.x_is_read = False
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
         self.assertTrue(row['unread'])
 

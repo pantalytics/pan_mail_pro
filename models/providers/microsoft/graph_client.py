@@ -11,7 +11,7 @@ from odoo.exceptions import UserError
 from ... import encryption_utils
 from ...mail_provider_client import (
     ERROR_NO_RECIPIENTS, FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
-    FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH,
+    FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
     ERROR_THROTTLED,
     ThrottledError,
 )
@@ -1641,6 +1641,26 @@ class MicrosoftGraphClient(models.AbstractModel):
         return messages[:limit]
 
     # ---- message state ------------------------------------------------------
+
+    @api.model
+    def unread_message_ids(self, account, mailbox, folder=FOLDER_INBOX,
+                           limit=UNREAD_CAP):
+        """The unread message ids in one folder (see contract).
+
+        No `$orderby`: Graph answers a filtered list ordered by
+        `receivedDateTime` already, and asking it to sort on a property the
+        filter does not name is how you get "the restriction or sort order is
+        too complex" back instead of mail.
+        """
+        folder_id = self._graph_folder_id(folder)
+        data = self._graph_call(
+            account, 'get',
+            f'/users/{mailbox.email}/mailFolders/{folder_id}/messages',
+            params={'$top': max(1, int(limit or UNREAD_CAP)),
+                    '$select': 'id',
+                    '$filter': 'isRead eq false'},
+        )
+        return [raw['id'] for raw in (data.get('value') or []) if raw.get('id')]
 
     @api.model
     def set_seen(self, account, mailbox, provider_message_ids, seen=True):

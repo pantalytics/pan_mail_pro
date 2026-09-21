@@ -169,6 +169,12 @@ FOLDER_TRASH = 'trash'
 FOLDER_ARCHIVE = 'archive'
 FOLDER_JUNK = 'junk'
 
+# How many unread handles one refresh may ask a provider for. The mirror is a
+# convenience, not an archive: a mailbox sitting on thousands of unread mails
+# gets the answer for a bounded slice of them and keeps the rest as it found
+# them, rather than paging a provider on every visit to the Inbox.
+UNREAD_CAP = 500
+
 FOLDER_ROLES = {
     FOLDER_INBOX: 'INBOX',
     FOLDER_SENT: 'Sent',
@@ -720,6 +726,30 @@ class MailProviderClient(models.AbstractModel):
     # The two markers are siblings, and neither may delete anything. See the
     # rule in the module docstring.
     # -------------------------------------------------------------------------
+
+    @api.model
+    def unread_message_ids(self, account, mailbox, folder=FOLDER_INBOX,
+                           limit=UNREAD_CAP):
+        """The provider handles of the unread messages in one folder.
+
+        The read counterpart of `set_seen`, and the whole reason Mail Pro can
+        agree with Outlook without asking after every message: "what is unread"
+        is one cheap query on every provider, because unread is a small set.
+
+        Handles and nothing else. A normalized message would be a body, a
+        header block and an author per hit, for an answer that is a set
+        membership test -- and on Gmail it costs one extra request per message
+        to build.
+
+        Args:
+            limit: at most this many handles. A mailbox that keeps thousands of
+                unread mails gets a truthful subset rather than a slow answer;
+                the mirror leaves the rest as it found them.
+
+        Returns:
+            list[str]: provider message ids, in no promised order.
+        """
+        raise NotImplementedError
 
     @api.model
     def set_seen(self, account, mailbox, provider_message_ids, seen=True):

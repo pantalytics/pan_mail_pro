@@ -76,6 +76,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (the mailbox list from a round button in the top bar left of New Email, the conversation list and the Odoo record from a round button on their own divider), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the record's divider button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
 | `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, and the Send that saves it and calls `action_send_mail` |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
+| `tests/test_read_state.py` | Who decides whether a mail is read: the provider, mirrored onto `mail.message`, and the one way Odoo's own bell is cleared |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_connect_banner.py` | Who is asked to connect a mailbox, and who is left alone |
 | `tests/test_oauth_routes.py` | Every route this module opens, who may call it, and what the OAuth callback stores when it works and when it refuses |

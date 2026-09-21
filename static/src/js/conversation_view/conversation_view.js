@@ -283,6 +283,10 @@ export class ConversationView extends Component {
                 this.state.mailboxId = null;
             }
             await this.refresh({ select: this.openedOn ? this.openedOn.select : true });
+            // Deliberately not awaited: the list is already on screen and
+            // this only corrects the dots on it. Waiting would make the first
+            // paint as slow as the provider is.
+            this.refreshReadState();
         });
     }
 
@@ -341,6 +345,32 @@ export class ConversationView extends Component {
                     .map(Number)));
         } catch {
             // A mailbox list nobody can store is still a mailbox list you can fold today.
+        }
+    }
+
+    /**
+     * Ask the provider which mail is unread, then redraw if it disagreed.
+     *
+     * Beside the list load rather than before it: the screen paints from what
+     * Odoo already knows, and the correction arrives a moment later if there
+     * is one. Waiting for a network call before the first row appears would
+     * make every visit to the Inbox as slow as the provider is.
+     *
+     * Throttled server-side per mailbox, so clicking between folders costs one
+     * call a minute, and silent on failure: an unreachable provider leaves the
+     * mirror as it was.
+     */
+    async refreshReadState() {
+        try {
+            const changed = await this.orm.silent.call(
+                "pan.mail.conversation", "refresh_read_state", [], {
+                    mailbox_id: this.state.mailboxId,
+                });
+            if (changed) {
+                await this.refresh({ keepSelection: true });
+            }
+        } catch (error) {
+            console.warn("[Mail Pro] could not refresh read state", error);
         }
     }
 
@@ -454,6 +484,77 @@ export class ConversationView extends Component {
         this.state.details = {};
         this.split.clear();
         await this.readConversation();
+        await this.markRead(conversation);
+    }
+
+    /**
+     * Opening a conversation reads it, the way every mail client means it.
+     *
+     * Always asked, even for a conversation the list already drew as read:
+     * the mailbox's read state and your own Odoo Inbox rows are two different
+     * facts, and the bell can still be ringing for a mail the mailbox calls
+     * read. The server marks only what moved, so saying so twice costs one
+     * query and no provider call.
+     *
+     * Silent on failure. A dot that is a second out of date is not worth an
+     * error over a conversation the reader has in front of them.
+     */
+    async markRead(conversation) {
+        try {
+            await this.orm.silent.call(
+                "pan.mail.conversation", "set_read", [], {
+                    model: conversation.model,
+                    res_id: conversation.res_id,
+                    message_id: conversation.message_id,
+                    mailbox_id: this.state.mailboxId,
+                    read: true,
+                });
+        } catch (error) {
+            console.warn("[Mail Pro] could not mark the conversation read", error);
+            return;
+        }
+        this.setUnreadLocally(conversation, false);
+    }
+
+    /**
+     * Put a conversation back to unread: the one way out of "I opened it, I
+     * cannot deal with it now".
+     *
+     * The list is corrected here rather than by reloading it. A reload would
+     * re-sort, lose the reader's place, and on the Unread filter make the
+     * conversation they are reading jump into the list under them.
+     */
+    async markUnread() {
+        const conversation = this.state.selected;
+        if (!conversation) {
+            return;
+        }
+        try {
+            await this.orm.call("pan.mail.conversation", "set_read", [], {
+                model: conversation.model,
+                res_id: conversation.res_id,
+                message_id: conversation.message_id,
+                mailbox_id: this.state.mailboxId,
+                read: false,
+            });
+        } catch (error) {
+            console.warn("[Mail Pro] could not mark the conversation unread", error);
+            return;
+        }
+        this.setUnreadLocally(conversation, true);
+    }
+
+    /** The dot, on the row and on the open conversation, without a reload. */
+    setUnreadLocally(conversation, unread) {
+        for (const row of this.state.conversations) {
+            if (this.sameConversation(row, conversation)) {
+                row.unread = unread;
+            }
+        }
+        if (this.state.selected
+            && this.sameConversation(this.state.selected, conversation)) {
+            this.state.selected.unread = unread;
+        }
     }
 
     /**
@@ -611,6 +712,9 @@ export class ConversationView extends Component {
         // one view across all of them.
         this.state.limit = PAGE;
         await this.refresh();
+        // A mailbox the reader just opened is one whose dots are worth being
+        // right. Throttled server-side, so switching back and forth is free.
+        this.refreshReadState();
     }
 
     onSearchInput(event) {

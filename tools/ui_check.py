@@ -1438,6 +1438,70 @@ class Checks:
         if not pane or not pane.is_visible():
             self.fail('the reload came back zoomed on the record')
 
+    def read_state(self):
+        """Read and unread, and the correction reaching the database.
+
+        Three things a Python test cannot see. That opening a conversation
+        marks it read without anybody clicking anything, that Mark unread puts
+        the dot back on the row the reader is looking at rather than
+        reshuffling the list under them, and that both of those are a column
+        in the database afterwards and not a class on a div.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            self.fail('there is no Inbox menu')
+            return
+
+        page = self.page
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_item', timeout=30000)
+        except Exception:
+            self.fail('the Inbox did not render for the read-state check')
+            return
+        page.wait_for_timeout(1500)
+
+        def unread_in_db():
+            return self.call('mail.message', 'search_count',
+                             [('x_is_read', '=', False)])
+
+        active = page.query_selector('.o_mailpro_item_active')
+        if not active:
+            self.fail('no conversation is open to read')
+            return
+        if active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
+            self.fail('the conversation that is open still reads as unread')
+
+        button = page.query_selector('.o_mailpro_mark_unread')
+        if not button:
+            self.fail('an open conversation offers no way to mark it unread')
+            return
+        before = unread_in_db()
+        button.click()
+        page.wait_for_timeout(1500)
+        active = page.query_selector('.o_mailpro_item_active')
+        if not active:
+            self.fail('marking unread lost the conversation the reader had open')
+            return
+        if not active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
+            self.fail('marking unread left the row reading as read')
+        after = unread_in_db()
+        if after <= before:
+            self.fail('marking unread wrote nothing to the database')
+        self.shot('inbox-unread.png')
+
+        # Opening it again is how it becomes read: there is one button here
+        # and not a toggle, because reading a mail is what reads a mail.
+        active.click()
+        page.wait_for_timeout(1500)
+        active = page.query_selector('.o_mailpro_item_active')
+        if active and active.evaluate(
+                'el => el.classList.contains("o_mailpro_item_unread")'):
+            self.fail('re-opening the conversation did not mark it read again')
+        if unread_in_db() != before:
+            self.fail('re-opening the conversation did not clear it in the database')
+        self.error_free('Inbox read state')
+
     # -- The provider form ----------------------------------------------------
 
     # What each provider's registration asks for, under the name its own
@@ -2023,6 +2087,7 @@ def main():
         checks.conversation_view()
         checks.chatter_door()
         checks.linking()
+        checks.read_state()
         checks.improve()
         checks.provider_form()
         checks.connect_banner()

@@ -52,7 +52,7 @@ from odoo import models, api, _
 from odoo.exceptions import UserError
 from ...mail_provider_client import (
     ERROR_NO_RECIPIENTS, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_ROLES, FOLDER_SENT,
-    FOLDER_TRASH,
+    FOLDER_TRASH, UNREAD_CAP,
 )
 from .. import mime_utils
 
@@ -1159,6 +1159,28 @@ class ImapSmtpClient(models.AbstractModel):
         return messages
 
     # ---- message state ------------------------------------------------------
+
+    @api.model
+    def unread_message_ids(self, account, mailbox, folder=FOLDER_INBOX,
+                           limit=UNREAD_CAP):
+        """The unread message references in one folder (see contract).
+
+        The reference is built from the folder ARGUMENT and the folder's
+        current UIDVALIDITY, exactly as the sync builds it, so a handle from
+        here and a handle the sync stored are the same string. A renumbered
+        folder therefore matches nothing rather than matching the wrong mail.
+        """
+        limit = max(1, int(limit or UNREAD_CAP))
+        with self._imap(account) as conn:
+            name, uidvalidity = self._select(conn, account, folder)
+            typ, data = conn.uid('SEARCH', None, 'UNSEEN')
+            if typ != 'OK':
+                raise UserError(
+                    _('Could not read the unread mail in folder "%s".') % name)
+            # SEARCH answers ascending, so the tail is the newest.
+            uids = (data[0] or b'').split()[-limit:]
+        return [self._message_ref(folder, uidvalidity, uid.decode())
+                for uid in uids]
 
     @api.model
     def set_seen(self, account, mailbox, provider_message_ids, seen=True):

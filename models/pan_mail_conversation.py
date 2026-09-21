@@ -179,15 +179,34 @@ class PanMailConversation(models.AbstractModel):
         is the whole answer.
         """
         if filter_name == 'unread':
-            # Odoo's own needaction search, which is the same row
-            # `_unread_ids` reads to put the dot on the list. Never a flag of
-            # ours: two answers to "have I read this" is one answer too many.
-            return [('needaction', '=', True)]
+            # The mailbox's own read state, mirrored from the provider, which
+            # is the same column the dot on the row reads. Never Odoo's
+            # `needaction`: that row is per user and says whether an Odoo
+            # notification still wants you, which is a different question with
+            # a screen of its own (ARCHITECTURE.md section 9.18).
+            return [('x_is_read', '=', False)]
         if filter_name == 'unlinked_contact':
             return [('model', '=', 'res.partner')]
         if filter_name == 'unlinked_none':
             return [('model', '=', False)]
         return []
+
+    def _conversation_domain(self, model, res_id, message_id=None,
+                             mailbox_id=None):
+        """The mail of one conversation, however the caller named it.
+
+        Reading it and marking it read have to mean the same set of messages,
+        so they ask the same method rather than each building the clauses
+        again.
+        """
+        base = self._base_domain(mailbox_id)
+        if model:
+            return base + [('model', '=', model), ('res_id', '=', res_id)]
+        if message_id:
+            return base + [('id', '=', int(message_id))]
+        # `= 0` does not match a NULL res_id, so a conversation linked to
+        # nothing, asked for by key rather than by message, has to say False.
+        return base + [('model', '=', False), ('res_id', '=', False)]
 
     # ------------------------------------------------------------------
     # Public read methods, the whole API the client has
@@ -301,8 +320,8 @@ class PanMailConversation(models.AbstractModel):
         is not the question.
 
         A fixed number of queries, whatever the page size: the grouping, the
-        newest message of each group, the message counts, the unread rows, and
-        the display names of the records. The newest messages come back as one
+        newest message of each group, the message counts, and the display
+        names of the records. The newest messages come back as one
         recordset on purpose, so the ORM prefetches their authors, mailboxes
         and document names for the whole page instead of once per row.
         """
@@ -346,10 +365,9 @@ class PanMailConversation(models.AbstractModel):
             return []
 
         counts = self._counts_per_group(base, newest)
-        unread = self._unread_ids(newest)
         return [
             self._conversation_row(
-                message, counts.get((message.model, message.res_id), 1), unread)
+                message, counts.get((message.model, message.res_id), 1))
             for message in newest
         ]
 
@@ -376,23 +394,16 @@ class PanMailConversation(models.AbstractModel):
         self._check_caller()
         limit, offset = self._page(limit, offset, default=50)
         Message = self.env['mail.message']
-        base = self._base_domain(mailbox_id)
-        if model:
-            target = [('model', '=', model), ('res_id', '=', res_id)]
-            domain = Domain(base + target)
-            if scope == 'all':
-                # A note and a stage change belong to the record, not to a
-                # mailbox, and carry no direction. Running them through the
-                # correspondence clauses would empty the tab that exists to
-                # show them.
-                domain = Domain.OR([domain, Domain(
-                    target + [('message_type', 'in', ('comment', 'notification'))])])
-        elif message_id:
-            domain = Domain(base + [('id', '=', int(message_id))])
-        else:
-            # `= 0` does not match a NULL res_id, so a conversation linked to
-            # nothing, asked for by key rather than by message, has to say False.
-            domain = Domain(base + [('model', '=', False), ('res_id', '=', False)])
+        domain = Domain(self._conversation_domain(
+            model, res_id, message_id, mailbox_id))
+        if model and scope == 'all':
+            # A note and a stage change belong to the record, not to a
+            # mailbox, and carry no direction. Running them through the
+            # correspondence clauses would empty the tab that exists to
+            # show them.
+            domain = Domain.OR([domain, Domain(
+                [('model', '=', model), ('res_id', '=', res_id),
+                 ('message_type', 'in', ('comment', 'notification'))])])
 
         # Newest first, on the screen as well as in the query. The message
         # you came for is the last one, so it belongs where the eye lands and
@@ -411,6 +422,77 @@ class PanMailConversation(models.AbstractModel):
             'files': self._files_for(model, res_id, messages),
             'activities': self._activities_for(records),
         }
+
+    @api.model
+    def set_read(self, model, res_id, read=True, message_id=None,
+                 mailbox_id=None):
+        """Mark one conversation read or unread, everywhere it is recorded.
+
+        Three writes, in the order that survives a failure: the mirror in
+        Odoo, then the reader's own Odoo Inbox rows, then the provider. The
+        first is what the screen draws, the last is best effort by design (see
+        `pan.mail.mailbox.push_read_state`), and a refresh settles any
+        disagreement in favour of the provider a minute later.
+
+        Per conversation, because reading is: nobody reads the fourth message
+        of a thread and not the fifth.
+
+        Returns:
+            dict: `read` as it now stands and `count`, the messages touched.
+        """
+        self._check_caller()
+        # Searched as the caller, so a conversation they may not read is a
+        # conversation they cannot mark. Odoo's own rules over `mail.message`
+        # do that work and this must not step around them.
+        messages = self.env['mail.message'].search(
+            self._conversation_domain(model, res_id, message_id, mailbox_id))
+        if not messages:
+            return {'read': bool(read), 'count': 0}
+
+        # Only what actually moves. The Inbox calls this every time a
+        # conversation is opened, and a conversation that was already read
+        # must not cost a provider call for saying so again.
+        changing = messages.filtered(lambda m: m.x_is_read != bool(read))
+
+        # Written with sudo: read state is a fact about the mailbox, not about
+        # the document, and a reader with no write access to somebody's sale
+        # order may still have read their mail. The search above is what
+        # decided they may touch these messages at all.
+        changing.sudo().write({'x_is_read': bool(read)})
+
+        if read:
+            # Your own Odoo Inbox rows for these messages, and nobody else's:
+            # `set_message_done` works from `env.user`, and it sends the bus
+            # message that makes the bell count down while you read. Asked of
+            # every message, not only the ones that moved -- the notification
+            # row and the mailbox's read state are two different facts, and
+            # the bell can still be ringing for a mail the mailbox calls read.
+            messages.set_message_done()
+
+        for mailbox in changing.mapped('x_mailbox_id'):
+            mailbox.push_read_state(
+                changing.filtered(lambda m: m.x_mailbox_id == mailbox),
+                read=bool(read))
+        return {'read': bool(read), 'count': len(changing)}
+
+    @api.model
+    def refresh_read_state(self, mailbox_id=None):
+        """Ask the provider which mail is unread, for one mailbox or all.
+
+        The Inbox calls this when it opens a mailbox. It is throttled per
+        mailbox (`READ_STATE_TTL`), so clicking between folders costs one
+        provider call a minute and not one a click, and it never raises: a
+        provider that is unreachable leaves the mirror as it was.
+
+        Returns:
+            int: how many messages changed, so the client knows whether the
+                list it already drew is now wrong.
+        """
+        self._check_caller()
+        Mailbox = self.env['pan.mail.mailbox']
+        mailboxes = (Mailbox.browse(int(mailbox_id)).exists() if mailbox_id
+                     else Mailbox.search([]))
+        return sum(mailbox.refresh_read_state() for mailbox in mailboxes)
 
     @api.model
     def record_conversations(self, model, res_id):
@@ -554,10 +636,9 @@ class PanMailConversation(models.AbstractModel):
             domain + [('model', '=', False)],
             order='date desc, id desc', limit=limit, offset=offset,
         )
-        unread = self._unread_ids(messages)
         rows = []
         for message in messages:
-            row = self._conversation_row(message, 1, unread)
+            row = self._conversation_row(message, 1)
             row['message_id'] = message.id
             rows.append(row)
         return rows
@@ -611,21 +692,6 @@ class PanMailConversation(models.AbstractModel):
         )
         return {(model, res_id): count for model, res_id, count in groups}
 
-    def _unread_ids(self, messages):
-        """Which of these messages are unread, in one query.
-
-        Odoo's own needaction row, never a flag of ours.
-        """
-        if not messages:
-            return set()
-        notifications = self.env['mail.notification'].search([
-            ('mail_message_id', 'in', messages.ids),
-            ('res_partner_id', '=', self.env.user.partner_id.id),
-            ('notification_type', '=', 'inbox'),
-            ('is_read', '=', False),
-        ])
-        return set(notifications.mail_message_id.ids)
-
     def _count_on_records(self, records):
         """How many emails sit on these records, in one grouped query."""
         wanted = {(row['model'], row['res_id']) for row in records}
@@ -655,7 +721,7 @@ class PanMailConversation(models.AbstractModel):
     # Row builders
     # ------------------------------------------------------------------
 
-    def _conversation_row(self, newest, count, unread_ids):
+    def _conversation_row(self, newest, count):
         """One line in the list, built from the newest message of the group."""
         record_name = newest.x_document_name or newest.record_name or ''
         return {
@@ -670,7 +736,10 @@ class PanMailConversation(models.AbstractModel):
             'date': newest.date,
             'count': count,
             'record_name': record_name,
-            'unread': newest.id in unread_ids,
+            # The newest message speaks for the conversation: a thread whose
+            # last mail you have read is a thread you are up to date on, which
+            # is what every mail client means by the dot.
+            'unread': not newest.x_is_read,
             'mailbox': newest.x_mailbox_id.email or '',
         }
 
