@@ -232,10 +232,12 @@ class Checks:
     # clothes, which is what people notice first and trust least.
     FOLDERS = ('Inbox', 'Sent')
 
-    # Those states, in the filter menu on the end of the search bar: one
-    # control for both ways of narrowing the list, the way Odoo's own
-    # control panel has one.
-    FILTERS = ('Unread', 'On a contact only', 'Linked to nothing')
+    # Those states, as filters in Odoo's own filter menu on the end of Odoo's
+    # own search bar: one control for both ways of narrowing the list, and the
+    # one the rest of the web client already uses. The names come from the
+    # Inbox's search view; Date is the standard month/quarter/year filter and
+    # Custom Filter is Odoo's, so both prove the menu is really Odoo's.
+    FILTERS = ('Unread', 'On a contact only', 'Linked to nothing', 'Date')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.
@@ -267,50 +269,42 @@ class Checks:
 
         # The bar reads the way Outlook's does: New Email on the left, and one
         # search control in the middle holding both ways to narrow the list --
-        # what you type, and the filter behind the arrow on its end, the way
-        # Odoo's own control panel holds both.
+        # what you type, and the filters behind the arrow on its end. It is
+        # Odoo's own `SearchBar`, so these are Odoo's own classes: if they
+        # stop matching, the screen has grown a search box of its own again.
         if not page.query_selector('.o_mailpro_new'):
             self.fail('the Inbox has no New Email button')
-        if not page.query_selector('.o_mailpro_topbar #o_mailpro_search'):
-            self.fail('the search is not in the top bar')
-        if not page.query_selector(
-                '.o_mailpro_searchview_group .o_mailpro_searchview_toggle'):
+        if not page.query_selector('.o_mailpro_topbar .o_cp_searchview .o_searchview_input'):
+            self.fail("the Inbox top bar does not hold Odoo's own search bar")
+        if not page.query_selector('.o_mailpro_topbar .o_searchview_dropdown_toggler'):
             self.fail('the filters are not on the end of the search bar')
         if page.query_selector('.o_mailpro_conversation_list_head .o_mailpro_filter_toggle'):
             self.fail('the conversation list still carries its own filter button')
 
         # The filter menu opens once, over the list, not once per mailbox.
-        page.click('.o_mailpro_searchview_toggle')
+        page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
         page.wait_for_timeout(800)
-        pills = [el.inner_text().strip()
-                 for el in page.query_selector_all(
-                     '.o_mailpro_filter_menu .o_mailpro_filter_item '
-                     '.o_mailpro_filter_label')]
-        if pills != list(self.FILTERS):
-            self.fail(f'the filter menu reads {pills}, expected {list(self.FILTERS)}')
+        items = [el.inner_text().strip()
+                 for el in page.query_selector_all('.o_filter_menu .o_menu_item')]
+        if items[:len(self.FILTERS)] != list(self.FILTERS):
+            self.fail(f'the filter menu reads {items}, expected {list(self.FILTERS)} first')
         else:
-            # An item narrows the list and a second click gives it back, which
-            # is the whole promise of a filter over a folder. The menu stays
-            # open while you do it, the way Odoo's own filter menu does.
-            items = page.query_selector_all(
-                '.o_mailpro_filter_menu .o_mailpro_filter_item')
-            items[0].click()
+            # A filter narrows the list and says so as a facet in the bar; a
+            # second click gives the folder back. The menu stays open while
+            # you do it, because it is Odoo's own menu.
+            page.query_selector_all('.o_filter_menu .o_menu_item')[0].click()
             page.wait_for_timeout(1500)
-            if not page.query_selector('.o_mailpro_filter_menu .selected'):
+            if not page.query_selector('.o_filter_menu .o_menu_item.selected'):
                 self.fail('clicking a filter did not mark it as the one in use')
-            # The filter in use is named in the search bar, the way Odoo
-            # names a facet: a list that is short for an invisible reason is
-            # what the facet exists to prevent.
-            facet = page.query_selector('.o_mailpro_searchview .o_mailpro_facet_label')
+            facet = page.query_selector('.o_cp_searchview .o_searchview_facet .o_facet_value')
             if not facet:
                 self.fail('the filter in use is not named in the search bar')
             elif facet.inner_text().strip() != self.FILTERS[0]:
                 self.fail(f'the facet reads {facet.inner_text().strip()!r}, '
                           f'expected {self.FILTERS[0]!r}')
-            page.query_selector_all(
-                '.o_mailpro_filter_menu .o_mailpro_filter_item')[0].click()
+            page.query_selector_all('.o_filter_menu .o_menu_item')[0].click()
             page.wait_for_timeout(1500)
-            if page.query_selector('.o_mailpro_filter_menu .selected'):
+            if page.query_selector('.o_filter_menu .o_menu_item.selected'):
                 self.fail('clicking the filter again did not clear it')
             self.error_free('Inbox filter menu')
         self.shot('inbox-filter-menu.png')
@@ -319,39 +313,46 @@ class Checks:
 
         # The cross on the facet is the other way back: pick a filter, remove
         # it where it is named, and the menu agrees it is gone.
-        page.click('.o_mailpro_searchview_toggle')
+        page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
         page.wait_for_timeout(800)
-        page.query_selector_all('.o_mailpro_filter_menu .o_mailpro_filter_item')[0].click()
+        page.query_selector_all('.o_filter_menu .o_menu_item')[0].click()
         page.wait_for_timeout(1500)
         page.keyboard.press('Escape')
         page.wait_for_timeout(500)
-        remove = page.query_selector('.o_mailpro_facet_remove')
+        remove = page.query_selector('.o_cp_searchview .o_facet_remove')
         if not remove:
             self.fail('the facet has no way to remove the filter')
         else:
             remove.click()
             page.wait_for_timeout(1500)
-            if page.query_selector('.o_mailpro_facet'):
+            if page.query_selector('.o_cp_searchview .o_searchview_facet'):
                 self.fail('removing the facet did not clear the filter')
             self.error_free('Inbox facet')
 
-        # Typing is the search: no Enter, no button, the list follows. The
-        # cross is the way back, the way Odoo's own search bar gives a facet
-        # back -- it only exists while there is something to clear.
-        if page.query_selector('.o_mailpro_search_clear'):
-            self.fail('the search shows a clear button with nothing to clear')
-        page.fill('#o_mailpro_search', 'zzzznothingmatchesthis')
+        # Typing and pressing Enter is the search, the way it is everywhere
+        # else in Odoo: the word becomes a facet, the list follows, and the
+        # facet is the way back. Enter needs the autocomplete to have caught
+        # up -- it activates the item under the caret, and that list is built
+        # asynchronously, so pressing it in the same tick as the typing
+        # activates nothing at all.
+        page.fill('.o_mailpro_topbar .o_searchview_input', 'zzzznothingmatchesthis')
+        try:
+            page.wait_for_selector('.o_searchview_autocomplete', timeout=5000)
+        except Exception:
+            self.fail('typing in the search bar offered nothing to search')
+        page.wait_for_timeout(800)
+        page.keyboard.press('Enter')
         page.wait_for_timeout(2500)
         if page.query_selector_all('.o_mailpro_item'):
-            self.fail('typing in the search did not narrow the conversation list')
-        if not page.query_selector('.o_mailpro_search_clear'):
-            self.fail('the search has no way to clear what was typed')
-        page.click('.o_mailpro_search_clear')
+            self.fail('searching did not narrow the conversation list')
+        if not page.query_selector('.o_cp_searchview .o_searchview_facet'):
+            self.fail('what was searched for is not named in the search bar')
+        remove = page.query_selector('.o_cp_searchview .o_facet_remove')
+        if remove:
+            remove.click()
         page.wait_for_timeout(2500)
         if not page.query_selector_all('.o_mailpro_item'):
             self.fail('clearing the search did not give the conversations back')
-        if page.eval_on_selector('#o_mailpro_search', 'el => el.value'):
-            self.fail('clearing the search left the typed text in the field')
         self.error_free('Inbox search')
 
         # New Email asks which record to write on before it opens anything:
@@ -481,7 +482,6 @@ class Checks:
         for selector, what in (('.o_mailpro_mailbox', 'mailbox'),
                                ('.o_mailpro_mailbox_toggle', 'mailbox caret'),
                                ('.o_mailpro_folder', 'folder'),
-                               ('.o_mailpro_filter', 'filter'),
                                ('.o_mailpro_item', 'conversation')):
             divs = [el for el in page.query_selector_all(selector)
                     if el.evaluate('el => el.tagName') != 'BUTTON']
@@ -967,11 +967,10 @@ class Checks:
         is the whole reason the filter exists.
         """
         page = self.page
-        page.click('.o_mailpro_searchview_toggle')
+        page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
         page.wait_for_timeout(800)
         pill = page.query_selector(
-            '.o_mailpro_filter_item:has(.o_mailpro_filter_label:text-is('
-            '"On a contact only"))')
+            '.o_filter_menu .o_menu_item:text-is("On a contact only")')
         if not pill:
             self.fail('there is no "On a contact only" filter to link from')
             return

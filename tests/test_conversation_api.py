@@ -8,7 +8,10 @@ is the reason this file exists; the rest guards the shapes the client depends
 on, because a missing key here is a blank pane in the browser and an empty
 server log.
 """
+from ast import literal_eval
 from unittest.mock import patch
+
+from lxml import etree
 
 from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, tagged
@@ -54,6 +57,23 @@ class TestConversationApi(TransactionCase):
             'x_mailbox_id': self.mailbox.id,
         })
 
+    def _search_filter(self, name):
+        """One filter of the Inbox's search view, as the search bar sends it.
+
+        Read out of the view rather than written out here: the search bar is
+        Odoo's own and the view is the only thing that decides what a filter
+        asks for, so a test that spells the domain out again would keep
+        passing after somebody changed it.
+        """
+        view = self.env.ref('pan_mail_pro.view_pan_mail_inbox_search')
+        node = etree.fromstring(view.arch).find(f'.//filter[@name="{name}"]')
+        self.assertIsNotNone(node, f'the search view has no {name} filter')
+        context = literal_eval(node.get('context') or '{}')
+        return {
+            'domain': literal_eval(node.get('domain')),
+            'ungrouped': bool(context.get('pan_mail_ungrouped')),
+        }
+
     # ------------------------------------------------------------------ shape
 
     def test_empty_mailbox_returns_empty(self):
@@ -94,24 +114,47 @@ class TestConversationApi(TransactionCase):
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
         self.assertEqual(row['preview'], 'Dank!')
 
-    def test_the_rail_holds_folders_and_the_list_holds_filters(self):
-        """The rail is the shape every mail client has, and nothing else.
+    def test_the_mailbox_list_holds_folders_and_the_search_bar_the_filters(self):
+        """The mailbox list is the shape every mail client has, and nothing else.
 
-        Our own states -- the two unlinked ones -- read as a filter over a
-        list, not as places mail sits, so they come back separately and only
-        for the folder somebody has open.
+        Our own states -- unread, and the two unlinked ones -- are questions
+        about a list rather than places mail sits, so they are filters in the
+        Inbox's search view and the counts know nothing about them.
         """
         self._mail()
-        counts = self.Conversation.folder_counts(
-            mailbox_id=self.mailbox.id, folder='inbox')
-        self.assertEqual([row['id'] for row in counts['folders']],
-                         ['inbox', 'sent'])
-        self.assertEqual([row['id'] for row in counts['filters']],
-                         ['unread', 'unlinked_contact', 'unlinked_none'])
-        by_id = {row['id']: row['count']
-                 for row in counts['folders'] + counts['filters']}
+        folders = self.Conversation.folder_counts(mailbox_id=self.mailbox.id)
+        self.assertEqual([row['id'] for row in folders], ['inbox', 'sent'])
+        by_id = {row['id']: row['count'] for row in folders}
         self.assertEqual(by_id['inbox'], 1)
         self.assertEqual(by_id['sent'], 0)
+
+        view = self.env.ref('pan_mail_pro.view_pan_mail_inbox_search')
+        self.assertEqual(view.model, 'mail.message',
+                         'the search bar searches the mail the list groups')
+        names = etree.fromstring(view.arch).xpath('//filter/@name')
+        self.assertEqual(names, ['unread', 'on_contact', 'unlinked', 'date'])
+
+    def test_the_search_bar_has_a_view_to_load(self):
+        """The bar is Odoo's own, and Odoo's own asks for a view id."""
+        view = self.env.ref('pan_mail_pro.view_pan_mail_inbox_search')
+        self.assertEqual(self.Conversation.inbox_search_view_id(), view.id)
+        self.assertEqual(view.type, 'search')
+
+    def test_a_domain_that_is_not_a_domain_is_refused(self):
+        """The domain arrives over RPC, so it is parsed and not pasted."""
+        with self.assertRaises(TypeError):
+            self.Conversation.search_conversations(
+                mailbox_id=self.mailbox.id, domain='DROP TABLE mail_message')
+
+    def test_the_search_bar_searches_the_subject_and_the_sender(self):
+        """One box, the question people type: a name or a word from a subject.
+
+        It is the first field in the view, so it is what Enter searches.
+        """
+        view = self.env.ref('pan_mail_pro.view_pan_mail_inbox_search')
+        first = etree.fromstring(view.arch).find('.//field')
+        self.assertEqual(first.get('name'), 'subject')
+        self.assertIn('email_from', first.get('filter_domain'))
 
     def test_unread_is_the_mailbox_s_own_read_state(self):
         """The filter and the dot on the list row read the same column.
@@ -123,17 +166,15 @@ class TestConversationApi(TransactionCase):
         """
         message = self._mail()
         message.x_is_read = False
+        unread = self._search_filter('unread')
         rows = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, filter_name='unread')
+            mailbox_id=self.mailbox.id, **unread)
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0]['unread'])
-        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
-            mailbox_id=self.mailbox.id, folder='inbox')['filters']}
-        self.assertEqual(counts['unread'], 1)
 
         message.x_is_read = True
         self.assertFalse(self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, filter_name='unread'))
+            mailbox_id=self.mailbox.id, **unread))
 
     def test_an_odoo_notification_does_not_make_a_conversation_unread(self):
         """The bell and the dot are two facts.
@@ -151,14 +192,7 @@ class TestConversationApi(TransactionCase):
         row = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)[0]
         self.assertFalse(row['unread'])
         self.assertFalse(self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, filter_name='unread'))
-
-    def test_a_folded_mailbox_is_not_asked_for_filter_counts(self):
-        """The filter row belongs to one list, so it costs one mailbox."""
-        self._mail()
-        counts = self.Conversation.folder_counts(mailbox_id=self.mailbox.id)
-        self.assertEqual(counts['filters'], [])
-        self.assertEqual(len(counts['folders']), 2)
+            mailbox_id=self.mailbox.id, **self._search_filter('unread')))
 
     def test_sent_is_every_thread_written_in_not_the_last_word(self):
         """A customer answering does not take a thread out of Sent."""
@@ -214,14 +248,17 @@ class TestConversationApi(TransactionCase):
                 'x_direction': 'incoming',
                 'x_mailbox_id': self.mailbox.id,
             })
+        unlinked = self._search_filter('unlinked')
+        self.assertTrue(unlinked['ungrouped'],
+                        'the filter is what tells the list to stop grouping')
         rows = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, filter_name='unlinked_none')
+            mailbox_id=self.mailbox.id, **unlinked)
         self.assertEqual(len(rows), 2)
         self.assertEqual({row['subject'] for row in rows},
                          {'Stranger one', 'Stranger two'})
         counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
-            mailbox_id=self.mailbox.id, folder='inbox')['filters']}
-        self.assertEqual(counts['unlinked_none'], 2,
+            mailbox_id=self.mailbox.id, **unlinked)}
+        self.assertEqual(counts['inbox'], 2,
                          'the number says how many mails there are to review')
 
         # And each one opens on its own message rather than on all of them.
@@ -250,13 +287,16 @@ class TestConversationApi(TransactionCase):
             'name': 'Other', 'partner_id': self.customer.id,
         }), subject='Storing pomp')
 
+        # What the search bar sends when somebody types a word into it.
+        typed = ['|', ('subject', 'ilike', 'asafdicht'),
+                 ('email_from', 'ilike', 'asafdicht')]
         rows = self.Conversation.search_conversations(
-            mailbox_id=self.mailbox.id, search='asafdicht')
+            mailbox_id=self.mailbox.id, domain=typed)
         self.assertEqual(len(rows), 1)
         counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
-            mailbox_id=self.mailbox.id, search='asafdicht')['folders']}
+            mailbox_id=self.mailbox.id, domain=typed)}
         self.assertEqual(counts['inbox'], 1,
-                         'the rail describes the same mail as the list')
+                         'the mailbox list describes the same mail as the list')
 
     def test_the_mailbox_filter_filters(self):
         other = self.env['pan.mail.mailbox'].create({

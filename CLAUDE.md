@@ -71,7 +71,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement: the screen, and `counts_since()`, whose last 24 hours ride the heartbeat |
 | `models/pan_mail_conversation.py` | The read side of the Inbox: the RPC methods behind the screen, no table, no sudo for an answer |
-| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, and the Followers button at its end that opens the chatter's own follower list |
+| `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, the Followers button at its end that opens the chatter's own follower list, and Odoo's own `SearchBar` over the top: the filters are a search view (`view_pan_mail_inbox_search`), what it produces is a domain over `mail.message` |
 | `static/src/js/chatter_door.js` | Door 1: **Open in mail** in Odoo's own chatter, on a record that carries an emailed message. Counts the record's threads, then opens the Inbox on the conversation or on the record's list |
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (the mailbox list from a round button in the top bar left of New Email, the conversation list and the Odoo record from a round button on their own divider), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the record's divider button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
 | `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, and the Send that saves it and calls `action_send_mail` |
@@ -713,6 +713,29 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### Borrowing a control instead of imitating it (19.0.16.0.0)
+
+- **"There is no table behind this screen" is not a reason to build your own
+  search.** Every folder, every filter and every typed word in the Inbox was
+  already a domain over `mail.message` -- the RPC methods take clauses and
+  group what is left. So the seam Odoo's `SearchModel` needs was there the
+  whole time, and what was missing was a search *view*, not a table. Ask what
+  the component actually consumes (a domain) before concluding it does not fit.
+- **An imitation costs more the better it looks.** The hand-built bar was a
+  facet, a cross, a debounce, a dropdown, ~150 lines of SCSS and eight browser
+  assertions, and it still had one filter at a time, no autocomplete, no date
+  filter and no way for a customer to add one. Odoo's own is `<SearchBar/>`
+  plus a `<search>` view, and it arrives with all four.
+- **`SearchModel` is instantiable on its own.** `new SearchModel(env, {orm,
+  view, field, name, dialog, treeProcessor})`, `useSubEnv({searchModel})`,
+  `useBus(searchModel, "update", ...)` -- that is the whole mount, and
+  `WithSearch` is only needed when the search state has to survive a
+  breadcrumb. It wants `env.config`, which a client action has.
+- **A filter can carry what a domain cannot.** "Linked to nothing" also means
+  "stop grouping", and a domain has no way to say that. `context="{...}"` on
+  the `<filter>` reaches the client as `searchModel.context`, so the rule stays
+  declared in the view instead of becoming a special case in the read method.
+
 ### Which pane takes the slack (19.0.15.2.0)
 
 - **The elastic pane is the one whose divider stops doing anything.** Capping
@@ -774,12 +797,14 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   opened it.** Nest its SCSS under the screen's root (`.o_mailpro_inbox`) and not one
   rule applies -- the menu is a sibling of the whole web client by the time it is
   drawn. `menuClass` plus a top-level block is the way.
-- **The filter menu is `Dropdown` + `CheckboxItem`**, the same two components
-  `web.SearchBarMenu` builds Odoo's own filter menu from, down to
-  `class="{ 'o_menu_item': true, selected: isActive }"` and
-  `closingMode="'none'"`. A full `SearchModel` would not fit: the Inbox reads
-  through `pan.mail.conversation`'s own RPC methods, not through a
-  `search_read` over a table, so there is no domain for a facet to become.
+- **The filter menu was `Dropdown` + `CheckboxItem`**, the same two components
+  `web.SearchBarMenu` builds Odoo's own filter menu from. The argument for
+  building it was that a full `SearchModel` would not fit, because the Inbox
+  reads through `pan.mail.conversation`'s own RPC methods rather than a
+  `search_read` over a table, so there was no domain for a facet to become.
+  That was wrong, and 19.0.16.0.0 replaced the whole thing with Odoo's own
+  `SearchBar` -- see the lesson under *Borrowing a control instead of
+  imitating it*.
 - **A composer opened in a dialog does not close on Escape when it has a
   draft in it**, so a browser check that presses Escape leaves a modal over
   everything it asserts next. Click the dialog's own close button.
