@@ -784,10 +784,11 @@
                 <!--
                     The form's own control panel is off, so the pane says which
                     record this is and offers one action: the record on the
-                    whole screen. Leaving the Inbox for the record's own screen
-                    is a step further, so Open only appears once you are there.
-                    Two ways to make the record bigger side by side read as
-                    one of them being broken.
+                    whole screen. Two ways to make the record bigger side by
+                    side read as one of them being broken, so there is one,
+                    and it is the icon button the top bar already uses for
+                    the panes. The link out of the Inbox is a step further
+                    and only appears once you are on the whole screen.
                 -->
                 <div class="o_mailpro_odoo_record_head d-flex align-items-center justify-content-between gap-2"
                      t-on-dblclick="() => this.props.onToggleZoom()">
@@ -796,16 +797,33 @@
                         <h2 class="o_mailpro_odoo_record_name text-truncate" t-esc="props.record.name"/>
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                        <button type="button" class="btn btn-secondary btn-sm o_mailpro_odoo_record_zoom"
+                        <!--
+                            Leaving the Inbox for the record's own screen is
+                            a step further, so it only appears once you are on
+                            the whole screen. It wears the arrow every product
+                            uses for "this opens somewhere else", because it
+                            does: another URL, another breadcrumb.
+                        -->
+                        <a t-if="props.zoomed" href="#" class="o_mailpro_odoo_record_open"
+                           t-on-click.prevent="() => this.openRecord()">
+                            <span>Open in Odoo</span>
+                            <i class="fa fa-external-link ms-1" aria-hidden="true"/>
+                        </a>
+                        <!--
+                            The same round, quiet icon button as the pane
+                            toggles in the top bar: it does the same kind of
+                            thing to the same panes, so it looks the same.
+                            The two arrows say it, in and out, the way every
+                            player and every map does.
+                        -->
+                        <button type="button" class="o_mailpro_odoo_record_zoom"
                                 t-att-aria-pressed="props.zoomed ? 'true' : 'false'"
+                                t-att-aria-label="props.zoomLabel"
+                                t-att-title="props.zoomLabel"
                                 t-on-click="() => this.props.onToggleZoom()">
-                            <i class="fa me-1" aria-hidden="true"
+                            <i class="fa" aria-hidden="true"
                                t-att-class="props.zoomed ? 'fa-compress' : 'fa-expand'"/>
-                            <t t-esc="props.zoomLabel"/>
                         </button>
-                        <button t-if="props.zoomed" type="button"
-                                class="btn btn-secondary btn-sm o_mailpro_odoo_record_open"
-                                t-on-click="() => this.openRecord()">Open</button>
                     </div>
                 </div>
                 <View t-props="viewProps"/>

@@ -9,7 +9,8 @@ Still on paper: the *screens* for door 1 (the chatter's own button and its
 more-messages-elsewhere line) and for the customer view and its timeline. Their
 read methods (`record_conversations`, `customer_timeline`) shipped and are
 tested, so what is left of each is markup. Also still on paper: the composer's
-**Cc/followers block**. Reply opens Odoo's own composer with To filled from
+**Cc/followers block**, and *All mailboxes*, the one folder that spans
+them. Reply opens Odoo's own composer with To filled from
 the newest inbound message and Cc not filled at all. New Email opens the same
 composer in a dialog after the record is picked, rather than in pane 3 as
 decided below. What the MVP needs of this file is in [mvp.md](mvp.md).
@@ -89,6 +90,68 @@ Outlook: the caret opens and closes it, the name opens the mailbox itself, and
 which ones stand open is remembered next to the widths. A folded mailbox is not
 counted, so the mailbox list costs one folder query per mailbox somebody actually
 watches rather than one per mailbox that exists. 19.0.10.4.0.
+
+### Reading every mailbox at once
+
+**Decision: one row at the top of the mailbox list, *All mailboxes*, with the
+same Inbox and Sent under it. Not a drop-down, and not a tick-list of
+mailboxes.** On paper.
+
+Apple Mail puts All Inboxes behind a chevron because its sidebar keeps the
+accounts folded away underneath it. Ours already draws every mailbox in the
+same pane, so a chevron that expands to those same rows is a second copy of the
+pane one row above it.
+
+The read side already does this. `_base_domain(mailbox_id=None)` is every
+message the reader may see, `folder_counts` already keys that as mailbox `0`,
+and `mailboxKey()` already returns `0` for "no mailbox", which is the key the
+folds and the counts are stored under. Today that state means "no mailbox is
+configured yet"; with mailboxes it means all of them. The unified inbox is a
+row and a label over a query that exists, not a new read path.
+
+**Which mailbox a mail is in is drawn in two places, and only where it can be
+more than one:**
+
+1. **In the list row**, in the meta line, left of the record chip: the mailbox's
+   local part -- `sales`, `info`, `support` -- with the full address as its
+   title. Drawn only while the list spans more than one mailbox. Repeating one
+   address down thirty rows of a single-mailbox folder is noise, so this is a
+   property of the list and not of the row.
+2. **In the conversation head**, always: the address the mail arrived on, after
+   the correspondent, on the line that already reads *correspondent, n
+   messages*. In a single mailbox it is the answer to "am I looking at the
+   right account"; in the unified list it is the answer to "who is about to
+   reply".
+
+**No colour per mailbox.** A colour is a legend the reader has to learn and
+hold, it runs out at the seventh mailbox, and it says nothing to a screen
+reader or in a screenshot pasted into a ticket. The local part is shorter than
+a dot and already carries the meaning.
+
+**Sent shows the same chip**, where it reads as the from address. That is what
+somebody scanning their own sent mail across three mailboxes is looking for.
+
+**The part that is not visual, and is where the bug would be.** The composer
+defaults `x_send_from_mailbox_id` to `state.mailboxId`
+(`conversation_view.js:1066`, `:1127`). In the unified view that is null, so a
+reply falls back to `_resolve_route()` and can answer from an address the
+customer never wrote to. Reading across mailboxes must not change which address
+answers: the reply sends from the mailbox of the **conversation** being read,
+not of the folder being shown. So `_conversation_row` carries `mailbox_id`
+beside the address it already carries, and the composer reads the row rather
+than the state. A test asserts it, because this one is silent.
+
+**Search widens with the folder.** The empty state says *"The search covers
+this mailbox. Try another one, or clear it."* Under All mailboxes it covers all
+of them, so that copy is wrong there and has to name the folder it searched.
+
+**Where it opens.** A reader with more than one mailbox lands in All mailboxes;
+with one, in that one. Stored next to the pane widths and the folds, like every
+other thing this screen remembers.
+
+**Dropped: picking a subset.** Apple's per-account tick-list, and any
+mailbox multi-select. All or one. Somebody who wants two of six has the search
+box, which under All mailboxes now spans everything they can read.
 
 When nothing is linked, the fourth pane shows what the matcher considered and
 rejected, with a one-click way to file it. An unfiled conversation is the case
