@@ -1,111 +1,116 @@
 # Read, unread, and handing a conversation over
 
-Status: **design only.** Nothing below is built. Two decisions are made here
-and the code is a consequence of them: read state is a property of the
-*mailbox*, not of an Odoo user, and handing work to a colleague is not
-something read state can do.
+Status: **design only.** Nothing below is built.
 
-## 0. What ships today, and why it barely works
+The requirement in one sentence: **open your mailbox in Outlook, then open it
+in Mail Pro, and see the same thing.** Read state is one fact about a mailbox,
+it already exists at the provider, and Mail Pro's job is to show it and to
+write to it. Not to keep a second opinion.
+
+## 0. What ships today, and why it cannot work
 
 The Inbox draws a conversation unread when the current user has an unread
 `mail.notification` inbox row on its newest message, and the Unread filter is
 Odoo's `needaction` search over the same row (`pan.mail.conversation`
-`_unread_ids`, `_filter_domain`). One fact, read in two places, which was the
-right call for a screen that could only read.
+`_unread_ids`, `_filter_domain`).
 
-The problem is what writes it. Nothing here does. Every mail the sync imports
-is posted under `IMPORT_CTX`, and `mail.thread._notify_thread` returns an empty
-recipient list for those, so an imported mail produces no notification row at
-all. On a database whose email arrives through Mail Pro, the Unread filter is
-therefore close to permanently empty and the dot close to permanently off. The
-feature is not missing a toggle. It is reading a fact nobody in this module
-ever sets.
+Nothing in this module writes that row. Every imported mail is posted under
+`IMPORT_CTX`, and `mail.thread._notify_thread` returns an empty recipient list
+for those, so an imported mail produces no notification at all. On a database
+whose mail arrives through Mail Pro the Unread filter is close to permanently
+empty and the dot close to permanently off.
 
-The providers, meanwhile, all hand us the answer and we throw it away:
-`is_read` is in the normalized message shape, all three clients fill it from
-`isRead`, `\Seen` and the `UNREAD` label, and `pan_mail_fetcher` never looks
-at it.
+It is also the wrong fact. A `mail.notification` row is per Odoo user and says
+"does this Odoo notification still want me". Outlook's `\Seen` is per mailbox
+and says "has this mailbox read this mail". Reading the first and calling it
+the second is why the two screens can never agree.
 
-## 1. The decision: read state belongs to the mailbox
+Meanwhile all three clients already fill `is_read` in the normalized message,
+from `isRead`, `\Seen` and the absence of the `UNREAD` label, and
+`pan_mail_fetcher` throws it away.
 
-A mailbox has one read state, shared by everyone who opens it. That is what
-`\Seen` means, it is what Outlook shows a second person on `support@`, and it
-is the only version that makes a shared mailbox workable: if four people each
-carry a private unread flag, four people each answer the same mail.
+## 1. The provider owns the fact
 
-**The case being dropped: per-user read state.** On a personal mailbox there is
-one person, so the distinction is free. On a shared mailbox it is actively
-harmful. There is no third kind of mailbox, so the case is not worth a setting.
+Read state lives at the provider. Odoo keeps a **mirror**, refreshed from the
+provider and written through to it, and the mirror is never the authority: on
+any disagreement the provider wins, because that is where Outlook, the phone
+and Mail Pro all meet.
 
-This replaces `needaction` as the source. Odoo's own inbox keeps answering its
-own question, which is "does this Odoo notification still want me", and it is
-a different question from "has this mailbox read this mail". Two facts, two
-places, neither pretending to be the other.
+That settles the question a per-user flag would raise. A mailbox has one read
+state, shared by everyone who opens it, because that is what `\Seen` is. On a
+personal mailbox there is one person anyway; on a shared mailbox it is the
+whole point, since four private unread flags is four people answering the same
+mail. **Per-user read state is dropped.** It cannot be mirrored from anything.
 
-## 2. The toggle (part one, shippable alone)
+## 2. Why the mirror exists at all
 
-- `x_is_read` on `mail.message`, boolean, default `True`. Everything already
-  in the database reads as read, which is exactly what it reads as today.
-- The fetcher writes it from the provider's `is_read` at import, so a mail you
-  already read in Outlook arrives read.
-- `_unread_ids()` and `_filter_domain('unread')` read `x_is_read`. The filter
-  becomes a clause on the message, which is what that method already assumes.
-- One RPC, `set_read(model, res_id, read)`, marking every message of the
-  conversation. Marking is per conversation because reading is: nobody reads
-  the fourth message of a thread and not the fifth.
-- In the list: the row menu, and `u` on the keyboard. Nothing else, and no
-  setting.
+`x_is_read` on `mail.message`, boolean, default `True`.
 
-## 3. Write-through to the provider (part two)
+Not a cache for speed: the list has to filter, sort and page on read state, and
+you cannot paginate a database query against a set held in Python. The Unread
+filter becomes a clause on the message, which is what `_filter_domain` already
+assumes. `_unread_ids()` reads the same column, so the dot and the filter stay
+one fact.
 
-The Inbox marks a mail read; Outlook should agree. `set_seen` already exists on
-the contract and in all three clients with no caller. It needs the provider's
-own handle for the message, which is the one thing we do not store: the ref
-index keeps the RFC Message-ID (`pan.mail.message.ref`), and the provider
-handle survives only on the thread link's `last_provider_message_id`.
+Seeded at import from the `is_read` the fetcher currently drops, so a mail you
+already read in Outlook arrives read.
 
-So: **add `provider_message_id` to `pan.mail.message.ref`.** That table is
-already the one place a wire id for a message lives, which is the rule
-19.0.6.0.0 settled on after three copies of one id drifted apart. A row that
-has no handle, or an IMAP handle the server renumbered, falls back to the
-Message-ID search each client already supports.
+## 3. Refreshing it: one cheap call, not one per message
 
-Two properties this write must have:
+"Which messages are unread" is a single cheap query on all three providers,
+because unread is a small set:
 
+| Provider | The call | Comes back as |
+|----------|----------|---------------|
+| Microsoft 365 | `/messages?$filter=isRead eq false&$select=id` | Graph ids |
+| Gmail | `messages.list?q=is:unread` | Gmail ids, no per-message get |
+| IMAP | `UID SEARCH UNSEEN` | UIDs |
+
+So: a new contract method **`unread_message_ids(account, mailbox, folder)`**,
+returning provider handles and nothing else. Not `search_messages(unread_only=True)`,
+which exists but normalizes every hit, and on Gmail costs one metadata call per
+message.
+
+Matching those handles to our messages needs the handle stored at import.
+Today only the RFC Message-ID survives, in `pan.mail.message.ref`. So
+**`provider_message_id` goes on that ref row**, which is already the one place
+a wire id for a message lives, and this becomes a set intersection with no
+extra header fetch. This is required for the feature, not a later phase.
+
+**When it runs:** when the Inbox opens a mailbox and when the conversation list
+refreshes, with a short TTL per mailbox so clicking around does not hammer the
+provider, and on every sync cron run. Not per rendered row, not per message.
+
+**Named and dropped:** the refresh asks for the newest N unread (500) and
+mirrors only those. A mailbox that keeps five thousand unread mails gets the
+newest five hundred right, and the reader who has five thousand unread mails is
+not reading them.
+
+## 4. Writing it back
+
+Marking read in Mail Pro sets the mirror and calls `set_seen`, which already
+exists on the contract and in all three clients with no caller.
+
+- One RPC, `set_read(model, res_id, read)`, per conversation. Nobody reads the
+  fourth message of a thread and not the fifth.
+- In the list: the row menu, and `u` on the keyboard. No setting.
+- Off the request: a 40 message conversation is one Odoo write and one queued
+  provider call, not forty round trips while the user waits.
 - **Best effort, and it never rolls back the Odoo side.** The contract already
   says marking is the one mail write that undoes itself. A provider that is
-  down must not make the button not work; it makes the two disagree until the
-  next refresh, and disagreeing about read state is not a data loss.
-- **Off the request.** Marking a 40 message conversation read is one Odoo write
-  and one provider call, queued, not forty round trips while the user waits.
-
-## 4. The refresh (part three, and the honest limit)
-
-The other direction is what makes this feel alive: read it in Outlook, the dot
-goes out in Odoo. Doing that properly is a per-provider change stream (Graph
-delta, Gmail history, IMAP flag fetch) and its own cursor, and that is a larger
-feature than this one.
-
-The cheap 90%: the incoming sync already lists the Inbox and the Sent folder
-over its window, and every one of those listings already carries the read flag.
-Refresh `x_is_read` for the messages in that listing that we have already
-imported. No extra API call, no new cursor, bounded to the window the sync
-already looks at.
-
-**Named and dropped: mail older than the sync window does not get its read
-state refreshed.** It keeps whatever Odoo last knew. A three week old thread
-whose dot is stale is not the complaint this feature exists to answer.
+  down makes the two disagree until the next refresh, which the next refresh
+  fixes, because the provider is the authority.
 
 ## 5. Handoff is not read state
 
-Read state cannot hand work over. It has nobody's name on it, it undoes
-itself, and the colleague you meant to hand it to has no reason to look. Using
-unread as a shared to-do list is the classic shared mailbox failure, and it
-fails the same way here.
+Read state cannot hand work over. It has nobody's name on it, it undoes itself,
+and the colleague you meant to hand it to has no reason to look. Using unread
+as a shared to-do list is the classic shared mailbox failure and it fails the
+same way here.
 
-What a handoff needs is an owner and a question, and Odoo has both already.
-The conversation is linked to a record, the record takes activities, and the
-Inbox already shows an Activities tab over it. So:
+A handoff needs an owner and a question, and Odoo has both. The conversation is
+linked to a record, the record takes activities, and the Inbox already shows an
+Activities tab over it.
 
 - **Hand over** on the conversation: schedule an activity on the linked record,
   assigned to the chosen user, summary prefilled from the subject. It lands in
@@ -121,12 +126,15 @@ not in this plan. It earns itself once Hand over is used.
 
 ## 6. Order
 
-1. `x_is_read`, seeded at import, read by the list and the filter, toggled from
-   the row. This alone is the feature people asked for.
-2. The refresh on the sync listing, which is small and makes part 1 stop lying.
-3. `provider_message_id` on the ref index and the write-through to `set_seen`.
-4. Hand over.
+1. `provider_message_id` on the ref index, written at import.
+2. `x_is_read`, seeded at import, read by the dot and the filter in place of
+   `needaction`.
+3. `unread_message_ids()` on the contract and in the three clients, plus the
+   refresh on opening a mailbox. **After this step the two screens agree**,
+   which is the feature.
+4. The toggle and the write-through to `set_seen`.
+5. Hand over.
 
-Parts 1 and 2 are one release and do not touch a provider. Part 3 is where the
-provider work is. Part 4 is independent of all three and could go first if the
-handoff is the thing that hurts.
+Steps 1 to 3 are one release and they are the whole requirement: what Outlook
+knows, Mail Pro shows. Step 4 makes it work in the other direction too. Step 5
+is independent of all four and could go first if the handoff is what hurts.
