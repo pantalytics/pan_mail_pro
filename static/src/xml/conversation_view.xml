@@ -98,8 +98,10 @@
                 neighbour, so the title starts beside it rather than under
                 it. At most one arrives from each side.
             -->
-            <div class="o_mailpro_panes d-flex flex-grow-1"
+            <div class="o_mailpro_panes d-flex flex-grow-1" t-ref="panes"
+                 t-attf-style="--mailpro-zoom-from: {{panes.state.zoomFrom}}px"
                  t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom,
+                                'o_mailpro_zoom_leaving': panes.state.zoomLeaving,
                                 'o_mailpro_lead_conversation': panes.folded('conversation_list'),
                                 'o_mailpro_trail_conversation': panes.toggleSide('odoo_record') === 'left',
                                 'o_mailpro_lead_odoo_record': panes.toggleSide('odoo_record') === 'right' }">
@@ -118,12 +120,12 @@
                     fold is a transition rather than a pane that blinks out.
                     The backdrop is the drawer's, on a phone, and fades with it.
                 -->
-                <div t-if="showMailboxList and panes.state.small" class="o_mailpro_mailbox_list_backdrop"
+                <div t-if="panes.state.small" class="o_mailpro_mailbox_list_backdrop"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('mailbox_list') }"
                      t-on-click="() => panes.closeMailboxList()"/>
-                <nav t-if="showMailboxList" class="o_mailpro_mailbox_list"
+                <nav class="o_mailpro_mailbox_list"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('mailbox_list') }"
-                     t-att-inert="panes.folded('mailbox_list')"
+                     t-att-inert="panes.folded('mailbox_list') or panes.state.zoom"
                      aria-label="Mailboxes and folders"
                      t-attf-style="flex-basis: {{panes.state.mailbox_list}}px">
                     <t t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id">
@@ -172,7 +174,7 @@
                 <!-- 2. what is waiting -->
                 <div t-if="showConversationList" class="o_mailpro_conversation_list" role="region" aria-label="Conversations"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('conversation_list') }"
-                     t-att-inert="panes.folded('conversation_list')"
+                     t-att-inert="panes.folded('conversation_list') or panes.state.zoom"
                      t-attf-style="flex-basis: {{panes.state.conversation_list}}px">
 
                     <!--
@@ -349,7 +351,7 @@
                      t-att-class="{ 'o_mailpro_conversation_composing': composer.state.open,
                                     'o_mailpro_conversation_fills': panes.conversationFills(showOdooRecord and selectedRecord),
                                     'o_mailpro_folded': panes.folded('conversation') }"
-                     t-att-inert="panes.folded('conversation')"
+                     t-att-inert="panes.folded('conversation') or panes.state.zoom"
                      t-attf-style="flex-basis: {{panes.state.conversation}}px">
                     <!--
                         A new mail takes the pane the way a reply does. There
@@ -623,7 +625,7 @@
                     <OdooRecordPane t-if="selectedRecord" record="selectedRecord"
                                 zoomed="panes.state.zoom"
                                 zoomLabel="panes.zoomLabel()"
-                                onToggleZoom.bind="() => panes.toggleZoom()"/>
+                                onToggleZoom.bind="() => this.toggleZoom()"/>
                     <div t-else="" class="o_mailpro_empty">
                         <h3 class="o_mailpro_empty_title">No record yet.</h3>
                         <p class="o_mailpro_empty_text">Link this conversation and it appears here.</p>
@@ -631,7 +633,7 @@
                              screen, so the way back comes along. -->
                         <button t-if="panes.state.zoom" type="button"
                                 class="btn btn-secondary btn-sm"
-                                t-on-click="() => panes.toggleZoom()">Back to the Inbox</button>
+                                t-on-click="() => this.toggleZoom()">Back to the Inbox</button>
                     </div>
                 </div>
 

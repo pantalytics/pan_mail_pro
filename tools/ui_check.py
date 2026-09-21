@@ -1795,9 +1795,25 @@ class Checks:
         if not record or not record.is_visible():
             self.fail('the record pane went away when it was zoomed')
             return
-        share = record.bounding_box()['width'] / panes.bounding_box()['width']
-        if share < 0.9:
+
+        # It slides over the other panes rather than replacing them, which is
+        # a thing about where it ends up: an overlay over the whole pane row,
+        # left edge on the row's own left edge. A record that merely grew to
+        # 90% of the row cannot have slid over anything.
+        row, seat = panes.bounding_box(), record.bounding_box()
+        share = seat['width'] / row['width']
+        if share < 0.99:
             self.fail('the zoomed record takes %d%% of the screen' % (share * 100))
+        if abs(seat['x'] - row['x']) > 1:
+            self.fail('the zoomed record starts %dpx into the pane row'
+                      % (seat['x'] - row['x']))
+
+        # Covered, not gone: the panes underneath keep the widths the reader
+        # dragged, so the way back reveals the screen instead of rebuilding
+        # it. `is_visible()` above already read them as off screen.
+        listing = page.query_selector('.o_mailpro_conversation_list')
+        if listing and listing.bounding_box() and listing.bounding_box()['width'] < 100:
+            self.fail('the conversation list lost its width while the record was zoomed')
         self.shot('inbox-zoom.png')
 
         page.query_selector('.o_mailpro_odoo_record_zoom').click()
