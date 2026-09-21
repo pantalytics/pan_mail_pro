@@ -8,13 +8,15 @@
  * runs into instead of eating the mail. It is also the one pane that never
  * folds on its own: a screen with no mail on it is not this screen.
  *
- * One control, one place: a row of round buttons in the top bar, left of New
- * Email, one per pane that folds. Pressed is showing. They sit there rather
- * than on the dividers because a button floating over the conversation's own
- * header is a second menu bar on top of the screen's first one, and because
- * "show me the mailboxes" has been the top left corner of a mail client for
- * thirty years. The dividers are left as what they look like: a width to
- * drag. Nothing else says the same thing.
+ * One control per pane, at the edge that pane went behind. The mailbox list
+ * folds from a button in the top bar, top left, where every mail client has
+ * kept the mailboxes since there were mail clients -- and where a phone's
+ * drawer has to be, because there the mailbox list is not a pane with a
+ * divider at all. The conversation list and the Odoo record fold from a
+ * round button on their own divider, wearing the chevron that points where
+ * that divider is about to go -- open or folded, the arrow is the sentence.
+ * A control on the other side of the screen from the pane it folds is a
+ * control you hunt for, and nothing else says what either of these says.
  *
  * Widths live in the browser, not the database. It is a per-monitor
  * preference, the same person has a laptop and a desk, and a table for it
@@ -35,8 +37,9 @@
  * A folded pane is not removed, it is drawn at no width, so folding and
  * unfolding are a transition the stylesheet animates rather than a pane that
  * blinks out. `folded(name)` is the one answer the template asks, whichever
- * of the three shapes decided it, and `toggles()` which buttons the top bar
- * shows for the shape the window is in.
+ * of the three shapes decided it; `toggleSide(name)` says where on its own
+ * divider a pane's button sits, and `toggles()` which buttons the top bar
+ * carries.
  */
 
 import { onWillDestroy, useState } from "@odoo/owl";
@@ -55,8 +58,12 @@ const KEY = "pan_mail_pro.panes";
 // fourth does not.
 const BREAKPOINTS = { small: 767.98, narrow: 1400 };
 
-// What each pane's button in the top bar shows: the thing it brings back.
-// The conversation never folds on its own, so it never wears one.
+// The icon a pane is known by. Only the mailbox list wears one today: its
+// button sits in the top bar, where there is no divider and so no direction
+// to point in. The dividers wear a chevron instead -- an icon says which
+// pane, which you can see from where the button is, and the arrow says which
+// way it goes, which you cannot. The four stay listed because this is the
+// vocabulary `tests/test_inbox_panes.py` reads.
 const ICONS = {
     mailbox_list: "fa-bars",
     conversation_list: "fa-list-ul",
@@ -73,11 +80,16 @@ const PANES = {
     odoo_record: { start: 448, min: 300, max: 720 },
 };
 
-// Everything but the conversation folds away, and the top bar carries one
-// button for each, in this order. Outlook folds the two outer ones; the list
-// goes too, because on a tablet a long mail is worth more than the list
-// beside it, and one tap brings it back.
+// Everything but the conversation folds away. Outlook folds the two outer
+// ones; the list goes too, because on a tablet a long mail is worth more
+// than the list beside it, and one tap brings it back.
 const COLLAPSIBLE = ["mailbox_list", "conversation_list", "odoo_record"];
+
+// Which of them fold from a button on their own divider. Not the mailbox
+// list: its divider is the only one a phone does not draw, and the top bar's
+// menu icon is already that drawer's control. Two controls for one fold is
+// the inconsistency, not two places for two different folds.
+const DIVIDER_TOGGLES = ["conversation_list", "odoo_record"];
 
 const CONVERSATION_MIN = 360;
 const STEP = 16;
@@ -162,7 +174,7 @@ export function usePanes() {
 
     /**
      * Whether a pane is drawn at no width right now. Three shapes, three
-     * reasons: a wide screen folds what the top bar folded, a tablet folds
+     * reasons: a wide screen folds what a button folded, a tablet folds
      * whichever of the conversation and the record is not on, and a phone
      * folds the mailbox list until the drawer is asked for.
      */
@@ -258,19 +270,50 @@ export function usePanes() {
         },
 
         /**
-         * The buttons the top bar carries, left to right. On a phone the
-         * panes take turns rather than sit together, so the only one that
-         * means anything there is the mailbox list: it is the drawer.
+         * The buttons the top bar carries. One: the mailbox list, which is a
+         * pane on a monitor and the drawer on a phone, and folds from the
+         * same place in both. The other two fold from their own divider.
          */
         toggles() {
-            return state.small ? ["mailbox_list"] : COLLAPSIBLE;
+            return ["mailbox_list"];
+        },
+
+        /** Whether this divider carries its pane's fold button. */
+        collapsible(name) {
+            return DIVIDER_TOGGLES.includes(name);
         },
 
         paneIcon(name) {
             return ICONS[name];
         },
 
+        /**
+         * Where that button sits: centred on the divider between two open
+         * panes, or wholly inside the open neighbour of a folded one, where
+         * there is room for it and a finger can find it.
+         */
+        toggleSide(name) {
+            const side = foldedSide(name);
+            return side === "left" ? "right" : side === "right" ? "left" : "center";
+        },
+
+        /**
+         * What the button on a divider wears: the chevron pointing where
+         * that divider is about to go. It reads the same open or folded,
+         * and on a tablet, where the record's divider swaps two panes in one
+         * column, it is still the direction the boundary moves.
+         */
+        toggleIcon(name) {
+            const folded = isFolded(name);
+            const rightwards = name === "odoo_record" ? !folded : folded;
+            return rightwards ? "fa-chevron-right" : "fa-chevron-left";
+        },
+
+        /** The pane the button acts on: on a tablet the divider serves two. */
         toggleLabel(name) {
+            if (name === "odoo_record" && foldedSide(name) === "left") {
+                return _t("Show %s", paneLabel("conversation"));
+            }
             return isFolded(name)
                 ? _t("Show %s", paneLabel(name))
                 : _t("Hide %s", paneLabel(name));
@@ -286,8 +329,8 @@ export function usePanes() {
         },
 
         startDrag(name, ev) {
-            if (ev.button !== 0) {
-                return;
+            if (ev.button !== 0 || foldedSide(name)) {
+                return; // Nothing to drag; the button is the control.
             }
             const handle = ev.currentTarget;
             const total = containerWidth(handle);
@@ -318,6 +361,9 @@ export function usePanes() {
 
         /** A width is a control, and a control answers a keyboard. */
         onKey(name, ev) {
+            if (foldedSide(name)) {
+                return; // No width beside a folded pane, so no step to take.
+            }
             if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") {
                 return;
             }
@@ -340,7 +386,8 @@ export function usePanes() {
         },
 
         /**
-         * The fold, from the top bar's button. On a tablet the record has no
+         * The fold, from the button on the pane's divider, or the top bar's
+         * for the mailbox list. On a tablet the record has no
          * width of its own to fold: it takes the conversation's column or
          * gives it back, and that is a step, not a preference, so it is not
          * stored.
@@ -385,16 +432,23 @@ export function usePanes() {
         },
 
         /**
-         * Whether a divider has two open panes to sit between. Beside a
-         * folded one there is no width to drag, so there is nothing for a
-         * col-resize cursor to promise.
+         * Whether the divider is drawn at all. Between two open panes it is
+         * a width to drag; beside a folded one there is no width, so it is
+         * drawn only when it carries that pane's button, which is the one
+         * way back. The mailbox list's divider carries none and goes.
          */
         splitterVisible(name) {
-            return !state.zoom && !state.small && !foldedSide(name);
+            if (state.zoom || state.small) {
+                return false;
+            }
+            return !foldedSide(name) || DIVIDER_TOGGLES.includes(name);
         },
 
         /** Double-click is the way back from a width you regret. */
         reset(name) {
+            if (foldedSide(name)) {
+                return; // No width to regret; a double tap is two taps.
+            }
             state[name] = PANES[name].start;
             state.collapsed[name] = false;
             save();

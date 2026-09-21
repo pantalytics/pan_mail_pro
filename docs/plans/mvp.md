@@ -49,7 +49,7 @@ Email, reply in the pane, the four tabs, linking in two steps, the
 suggestion chips. What the plans still call "on paper" and is actually
 built: New mail, search, filter, linking, the two triage rungs and the
 correction. What is genuinely not built: door 1's per-message
-more-messages-elsewhere line (its button ships in 19.0.15.1.0), the customer
+more-messages-elsewhere line (its button ships in 19.0.15.3.0), the customer
 timeline screen
 (`customer_timeline` has no caller), Cc in the composer, and any AI rung.
 

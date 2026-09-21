@@ -5,7 +5,7 @@ the conversation list with its filters and search, New Email, the thread with
 its four-position tab strip, linking in two steps with the suggestion chips,
 and the record pane without its chatter, reading through
 `pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
-Door 1's button ships in 19.0.15.1.0: **Open in mail** in every chatter on a
+Door 1's button ships in 19.0.15.3.0: **Open in mail** in every chatter on a
 record that carries mail, opening the Inbox on that conversation or, when the
 record carries more than one thread, on its list. Still on paper: door 1's
 more-messages-elsewhere line, and the customer view with its timeline, whose
@@ -52,13 +52,15 @@ The screen is four panes:
    thread is filed on. Unread is weight, not a badge, and it is the only state
    on a row: a mailbox has read and unread, and a state of ours ("needs reply")
    is a second inbox to keep correct. Over it, a header with the folder's name
-   and, at its right, the filter menu: unread, and the two unfiled ones (on a
-   contact only, linked to nothing). One filter at a time, named on the closed
-   button so a short list is never short for a reason nobody can see. A filter
-   is a question about the folder you are in, so it survives a folder switch
-   and a second click clears it. It is Odoo's own dropdown and its own
+   and nothing else. The filters -- unread, and the two unfiled ones (on a
+   contact only, linked to nothing) -- live in the search bar at the top,
+   behind the arrow on its end, where Odoo's control panel keeps both ways of
+   narrowing a list. One filter at a time, named in the bar as a facet so a
+   short list is never short for a reason nobody can see, and removed where it
+   is named. A filter is a question about the folder you are in, so it
+   survives a folder switch. It is Odoo's own dropdown and its own
    `CheckboxItem`, the components the control panel's filter menu is built
-   from. 19.0.13.0.0.
+   from. 19.0.13.0.0; merged into the search bar in 19.0.15.1.0.
 3. **The thread.** Messages in order, quoted history collapsed, and a reply that
    goes out through the right mailbox with the conversation quoted underneath.
    That last part is a survey complaint in its own right: today each chatter
@@ -373,7 +375,7 @@ that one conversation two mailboxes saw is one thread. Its `conversations` key
 is the other axis -- how many *records* the recent mail touched -- and is what
 the "messages elsewhere" line needs.
 
-Shipped in 19.0.15.1.0, with one wrinkle worth writing down: the Inbox groups
+Shipped in 19.0.15.3.0, with one wrinkle worth writing down: the Inbox groups
 a conversation on (model, res_id), so a record's mail is one row in the list
 however many threads it holds. The more-than-one branch therefore narrows the
 list to the record and lets the reader open that row, rather than offering
