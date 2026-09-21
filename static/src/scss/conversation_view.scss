@@ -52,14 +52,59 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         border-bottom: 1px solid $mailpro-line;
     }
 
-    // The bar reads left to right the way every mail client's does: which
-    // panes are showing, the one thing you start from, then the one thing
-    // you look for with. The search is centred in the window, which only
-    // holds if both sides weigh the same, so the spacer on the right is as
-    // wide as the menu button and New Email together.
+    // The bar reads left to right the way every mail client's does: the way
+    // home, which panes are showing, the one thing you start from, then the
+    // one thing you look for with, then the systray. The search is centred in
+    // the window, which holds as long as both sides take the same share of
+    // what is left -- so the two ends each take half of it, whatever is in
+    // them. The systray's width changes with an unread count; the search box
+    // does not move with it.
     .o_mailpro_topbar_start,
     .o_mailpro_topbar_end {
-        flex: 0 0 13.75rem;
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .o_mailpro_search_zone {
+        flex: 0 1 34rem;
+    }
+
+    // The systray is Odoo's own, and so is everything that styles it: web's
+    // scss nests every one of those rules under `.o_main_navbar`, so the zone
+    // wears that class to get them. What it gives back is the four things the
+    // navbar sets for itself as a bar, because here it is not the bar.
+    // The layout is here rather than on the tag: Bootstrap's `d-flex` carries
+    // `!important`, so a bar that wore it could not be hidden on a phone by
+    // any rule at all. Every display in this block is plain CSS for that
+    // reason.
+    .o_mailpro_topbar_end.o_main_navbar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        height: auto;
+        padding: 0;
+        border-bottom: 0;
+        background: transparent;
+    }
+
+    // The way out, and the only one: this action is fullscreen, so there is no
+    // navbar over this screen to go back through. An icon rather than a label,
+    // top left, the size of the avatar at the other end of the bar.
+    .o_mailpro_home {
+        display: flex;
+        align-items: center;
+        opacity: 0.9;
+
+        &:hover, &:focus-visible {
+            opacity: 1;
+        }
+
+        img {
+            display: block;
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 0.25rem;
+        }
     }
 
     .o_mailpro_new {
@@ -1281,10 +1326,13 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         .o_mailpro_back { display: flex; }
 
         // The bar no longer centres the search: there is no room to weigh
-        // both sides, and the search takes what New Email leaves.
+        // both sides, and the search takes what New Email leaves. The systray
+        // goes with it -- a phone has room for the mail or for the chrome, and
+        // the counters, the company and the user menu are all one tap away
+        // through the icon on the left, on a screen built to show them.
         .o_mailpro_topbar_start { flex: 0 0 auto; }
-        .o_mailpro_topbar_end { display: none; }
-        .o_mailpro_search_zone { min-width: 0; }
+        .o_mailpro_topbar_end.o_main_navbar { display: none; }
+        .o_mailpro_search_zone { flex: 1 1 auto; min-width: 0; }
 
         // The drawer slides in from the edge rather than folding: it is over
         // the screen, not part of it, so it keeps its width and moves. The

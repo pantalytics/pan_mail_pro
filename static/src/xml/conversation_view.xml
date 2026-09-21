@@ -21,10 +21,13 @@
 
             <!--
                 The bar every mail client has, in the order they all put it:
-                the one thing you start from on the left, the one thing you
-                look for with in the middle. No title: the control panel above
-                already says Mail Pro / Inbox, and saying it twice is chrome
-                competing with content.
+                the way home and the one thing you start from on the left, the
+                one thing you look for with in the middle, the systray on the
+                right. It is the only bar on this screen: the action is
+                `fullscreen`, so Odoo's navbar is not drawn above it, and the
+                52px it used to cost went to the mail. No title either: the
+                icon says Mail Pro and the screen says Inbox, and saying it
+                again is chrome competing with content.
 
                 Writing a mail from here needs a record to write it on. This
                 module files mail on documents, and a mail filed on nothing is
@@ -36,6 +39,19 @@
             -->
             <div class="o_mailpro_topbar d-flex align-items-center gap-2">
                 <div class="o_mailpro_topbar_start d-flex align-items-center gap-2">
+                    <!--
+                        The way back. This action is `fullscreen`, so the web
+                        client's own navbar is not drawn above this bar and
+                        this is the only door out of the Inbox. It is the
+                        module's icon, top left, which is where every mail
+                        client keeps the way home, and it goes to `/odoo`
+                        rather than to an action so it works the same on
+                        community and Enterprise.
+                    -->
+                    <a class="o_mailpro_home flex-shrink-0" href="/odoo"
+                       aria-label="Back to Odoo" title="Back to Odoo">
+                        <img src="/pan_mail_pro/static/description/icon.png" alt=""/>
+                    </a>
                     <!--
                         The mailboxes: showing or not, pressed while showing.
                         Top left, where every mail client has kept them since
@@ -82,9 +98,33 @@
                     -->
                     <SearchBar autofocus="false"/>
                 </div>
-                <!-- The search stays in the middle of the window, which it
-                     only does if both sides weigh the same. -->
-                <div class="o_mailpro_topbar_end" aria-hidden="true"/>
+                <!--
+                    The systray: the activity and message counters, the
+                    company, the user menu. Odoo's own components out of its
+                    own registry, drawn in the same order the navbar draws
+                    them, because a bar that replaces the navbar has to carry
+                    what the navbar carried. Each one is wrapped the way the
+                    navbar wraps it: a systray item that throws is one icon
+                    missing, never the Inbox gone.
+
+                    The `o_main_navbar` class is not decoration: every rule
+                    web's own scss writes for a systray item is nested under
+                    it, so an item outside that class is an unstyled one. The
+                    scss gives back what the navbar sets for itself.
+
+                    A phone leaves them out (see the `o_mailpro_small` block
+                    in the scss): there is room for the mail or for the
+                    chrome, and the way to all of it is the icon on the left.
+                -->
+                <div class="o_mailpro_topbar_end o_main_navbar">
+                    <div class="o_menu_systray d-flex align-items-center" role="menu">
+                        <t t-foreach="systrayItems" t-as="item" t-key="item.key">
+                            <ErrorHandler onError="(error) => this.systrayFailed(error, item)">
+                                <t t-component="item.Component" t-props="item.props"/>
+                            </ErrorHandler>
+                        </t>
+                    </div>
+                </div>
             </div>
 
             <!--

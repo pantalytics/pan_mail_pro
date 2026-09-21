@@ -18,9 +18,18 @@ often a screen is opened, and this is the screen somebody answers customer mail
 in all day. It is the exception because it is not a diagnostic. Anything else
 that wants to be an app has to change this list and say why.
 """
+import os
+
 from odoo.tests import tagged
 
 from .common import MailProTestCase
+
+MODULE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def read(*parts):
+    with open(os.path.join(MODULE, *parts), encoding='utf-8') as handle:
+        return handle.read()
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -57,6 +66,30 @@ class TestMenus(MailProTestCase):
         self.assertEqual(
             app.child_id.mapped('name'), ['Inbox'],
             "a second screen under the app tile needs its own argument",
+        )
+
+    def test_the_inbox_is_fullscreen_and_keeps_its_way_back(self):
+        """Fullscreen takes Odoo's navbar off the screen. Both halves, or none.
+
+        `web.WebClient` draws its navbar under `t-if="!state.fullscreen"`, so
+        this target is what gives the Inbox the row the navbar was using. It
+        also takes away the app switcher, the systray and the breadcrumb --
+        every door out of this screen at once. The Inbox's own bar carries
+        them instead, and a change that keeps the target while dropping the
+        icon leaves a reader in a screen with no way back to Odoo.
+        """
+        action = self.env.ref('pan_mail_pro.action_pan_mail_conversation')
+        self.assertEqual(action.target, 'fullscreen')
+
+        template = read('static', 'src', 'xml', 'conversation_view.xml')
+        self.assertIn(
+            'o_mailpro_home', template,
+            "the Inbox is fullscreen and has no way back to Odoo",
+        )
+        self.assertIn('href="/odoo"', template)
+        self.assertIn(
+            'o_menu_systray', template,
+            "the systray went with the navbar and nothing brought it back",
         )
 
     def test_no_two_menus_share_a_sequence(self):

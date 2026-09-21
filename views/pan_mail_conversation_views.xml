@@ -83,6 +83,16 @@
         <field name="name">Inbox</field>
         <field name="tag">pan_mail_conversation_view</field>
         <!--
+            Fullscreen: `web.WebClient` draws its navbar under
+            `t-if="!state.fullscreen"`, so this is what takes that row off the
+            screen. It is a row we were paying twice for. The navbar said
+            "Mail Pro / Inbox" over a screen that says both itself, and the
+            bar under it held the controls. What the navbar did carry (the way
+            back to Odoo, the systray) moved into the Inbox's own bar, which
+            is the only place a mail client puts them anyway.
+        -->
+        <field name="target">fullscreen</field>
+        <!--
             The group lives on the menu and on the model, not here: Odoo 19's
             `ir.actions.actions` carries no group field, so an action is
             reachable by URL to anyone who knows it. That makes the check in
