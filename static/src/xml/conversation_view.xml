@@ -235,6 +235,16 @@
                                     t-att-aria-current="mailbox.id === state.mailboxId ? 'true' : undefined"
                                     t-on-click="() => this.setMailbox(mailbox.id)">
                                 <span class="o_mailpro_mailbox_name text-truncate" t-esc="mailbox.email"/>
+                                <!-- Status by absence: nothing here while the
+                                     mailbox is being read, which is almost
+                                     always. The one case worth a mark is mail
+                                     that is not arriving, and this is the
+                                     screen where that is noticed. -->
+                                <i t-if="mailbox.status_message"
+                                   class="fa fa-exclamation-circle o_mailpro_mailbox_alert flex-shrink-0"
+                                   t-att-title="mailbox.status_message"
+                                   role="img"
+                                   t-attf-aria-label="Not syncing: {{ mailbox.status_message }}"/>
                             </button>
                         </div>
                         <div t-if="isExpanded(mailbox.id)" class="o_mailpro_folders">
@@ -366,6 +376,19 @@
                                               aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
                                         <span class="flex-grow-1 min-w-0">
                                             <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                                <!--
+                                                    Unread is a dot as well as
+                                                    weight. The open
+                                                    conversation is the
+                                                    highlighted row, and a
+                                                    highlighted row that goes
+                                                    one font weight heavier
+                                                    says nothing at all, which
+                                                    is what Mark unread looked
+                                                    like.
+                                                -->
+                                                <span t-if="conversation.unread"
+                                                      class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
                                                 <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
                                                 <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
                                                       t-esc="day(conversation.date)"/>
@@ -407,6 +430,8 @@
                                         t-on-click="() => this.pickMessage(conversation, message)">
                                     <span t-if="message.unread" class="visually-hidden">Unread. </span>
                                     <span class="d-flex justify-content-between align-items-baseline gap-2">
+                                        <span t-if="message.unread"
+                                              class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
                                         <span class="o_mailpro_from text-truncate" t-esc="message.author"/>
                                         <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
                                               t-esc="day(message.date)"/>
@@ -492,24 +517,43 @@
                                      class="d-flex align-items-center gap-2 flex-shrink-0">
                                     <!--
                                         The way out of "I opened it, I cannot
-                                        deal with it now". Quiet on purpose:
-                                        reading is the normal case and this is
-                                        the exception beside it. Marking it
-                                        read again is opening it, so there is
-                                        one button here and not a toggle.
+                                        deal with it now", and the way back.
+                                        Quiet on purpose: reading is the normal
+                                        case and this is the exception beside
+                                        it. One button, and it says which of
+                                        the two states the conversation is in:
+                                        a button whose second click does
+                                        nothing is a button that reads as
+                                        broken.
                                     -->
                                     <button type="button"
-                                            class="btn btn-link btn-sm p-0 o_mailpro_mark_unread"
-                                            title="Mark unread"
-                                            t-on-click="() => this.markUnread()">
-                                        <i class="fa fa-envelope" aria-hidden="true"/>
-                                        <span class="visually-hidden">Mark unread</span>
+                                            class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
+                                            t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
+                                            t-att-title="readToggleLabel"
+                                            t-att-aria-pressed="selectedUnread ? 'true' : 'false'"
+                                            t-on-click="() => this.toggleRead()">
+                                        <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
+                                           aria-hidden="true"/>
+                                        <span class="visually-hidden" t-esc="readToggleLabel"/>
                                     </button>
+                                    <!--
+                                        The way to the Odoo record, on a phone
+                                        where it has no divider to carry its
+                                        button. It wears the same chevron that
+                                        divider wears when the record is off
+                                        screen, pointing the way the boundary
+                                        moves to bring it in. A labelled
+                                        button here cost the subject two lines
+                                        of a head that is already most of the
+                                        screen.
+                                    -->
                                     <button t-if="showOdooRecordButton" type="button"
-                                            class="btn btn-secondary btn-sm o_mailpro_odoo_record_button"
+                                            class="o_mailpro_odoo_record_button flex-shrink-0"
                                             t-att-title="selectedRecord.name"
+                                            t-att-aria-label="panes.toggleLabel('odoo_record')"
                                             t-on-click="() => this.showOdooRecordScreen()">
-                                        <i class="fa fa-cube me-1" aria-hidden="true"/>Record
+                                        <i class="fa" t-att-class="panes.toggleIcon('odoo_record')"
+                                           aria-hidden="true"/>
                                     </button>
                                     <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm"
                                             t-on-click="() => this.logNote()">Log note</button>

@@ -32,7 +32,9 @@ code, the views and the documentation use the same one.
 | **Provider** | Where the mail lives: `outlook`, `gmail` or `imap` | `mail.provider.client`, `PROVIDER_SELECTION` |
 | **Outgoing** | Chatter → email. Odoo composes, the provider sends | `mail.mail` (`_resolve_route`, `send_message`) |
 | **Incoming** | Email → chatter. The provider is read, the matcher decides, Odoo posts | `pan.mail.fetcher`, `pan.mail.matcher` |
-| **Sync** | The user's word for reading a mailbox and its settings | `sync_level`, `last_sync_date`, "Sync Now" |
+| **Sync** | The user's word for reading a mailbox and its settings | `sync_level`, "Try again" |
+| **Cursor** | How far a folder has been read: the date of the newest message taken from it | `last_sync_date`, `last_sent_sync_date` |
+| **Heartbeat** | That a run finished, whether or not it read anything | `last_check_date` |
 | **Send From** | The mailbox a mail leaves through | `x_send_from_mailbox_id`, `x_default_mailbox_id` |
 | **Direction** | Which way an *email* went for its mailbox, whichever flow carried it | `mail.message.x_direction` |
 
@@ -153,9 +155,11 @@ snippet. Three things it deliberately is not:
   so the rows come from `_thread_row()` and a thread's worth of HTML does not
   cross the wire to draw ten lines of text.
 - **Not a second way to open a conversation.** The chevron unfolds and nothing
-  else. The row above it is still what opens the conversation, so asking "how
-  many of these are from her" never costs the reader the conversation they had
-  open.
+  else, so asking "how many of these are from her" never costs the reader the
+  conversation they had open. It is the only way to look without opening: the
+  click that opens a conversation unfolds it as well, the way Outlook does, and
+  folds back whichever one stood open before it. One thread at a time, and it
+  is the one being read.
 - **Not another tab.** The unfolded rows are correspondence, the same set the
   row's own count counted. A note is not a mail the conversation had, and the
   tab strip over the open conversation is where that reading lives.
@@ -163,6 +167,13 @@ snippet. Three things it deliberately is not:
 Clicking one opens the conversation on **that** mail: the id is seeded into
 `state.open` before the read, and `readConversation()` only falls back to the
 newest message when nothing is open.
+
+The unfolded mails start where the sender's name starts on the row above --
+past the chevron's column and past the picture -- so a thread reads as one
+column under the conversation it belongs to rather than as a second list
+shifted left. The indent is those widths added up in
+`static/src/scss/conversation_view.scss`, which is why the row's own padding is
+written there instead of left to the browser's button default.
 
 ### Provider abstraction
 
@@ -550,6 +561,22 @@ button ever floats into a header, from one side, and `o_mailpro_lead_*` /
 `o_mailpro_trail_*` on the pane row is the room that header leaves for it, so
 a title starts beside the button rather than under it.
 
+19.0.17.1.0 gives the phone the same sentence and the mail the room the head
+was taking. The one place the cube survived was the phone's way to the Odoo
+record, in the conversation head, where the record has no divider to hang a
+button on -- so it is the chevron that divider wears when the record is off
+screen, pointing the way the boundary moves to bring it in, and unlabelled
+like the back arrow at the other end of the same row. `isFolded()` now says
+what was already true, that a phone's record is folded until it is zoomed,
+which is what the chevron reads to know its direction. The two words it
+dropped are half the fix: the head ran to three lines of subject, two of
+correspondent and two of Linked-to on a 390px screen, leaving the mail a
+third of the phone. Each of those is one line now -- the subject truncated
+rather than wrapped, because it is in the list above and the mail below, and
+the Linked-to label dropped, because the chip says what it is. The browser
+check pins what the head may take, so the next thing added to it argues with
+a failing assertion.
+
 19.0.14.2.0 finishes that row. Expand was the one control on the screen
 still wearing a label and a grey Bootstrap button, in a header whose whole
 job is to stay quiet, and it does the same thing to the same panes as the
@@ -666,7 +693,7 @@ condition of its own.
 | 3 | Mailboxes | a mailbox with `is_notification_mailbox` ticked that can send |
 
 All three are mandatory. There is no partial service: while the phase is `setup`
-the incoming cron returns without fetching, "Sync Now" refuses with the step
+the incoming cron returns without fetching, "Try again" refuses with the step
 that is missing, and internal notifications queue with a readable reason instead
 of being cancelled. Nothing here has an opinion once the phase is `syncing`.
 
@@ -1322,6 +1349,39 @@ Stripe webhooks use:
 4. If a folder came back empty, *its* cursor jumps to `now()` — caught up. Not
    when it stalled: that jump is exactly the skip the stall prevents
 
+**A cursor is not a heartbeat.** Both cursors answer "when did mail last
+arrive", and on a quiet mailbox both stand still for as long as nobody writes
+in. Nothing on the model answered "when did we last look", so the form showed
+`last_sync_date` under the label *Last synced* and read half an hour behind on
+a mailbox syncing every minute. `last_check_date` is the run itself, written by
+`_record_sync_success()` on every completed pass including the great majority
+that read nothing. It is the only field that can tell a quiet mailbox from a
+stopped one, which is the failure the module could not see before: Odoo
+deactivates a cron that keeps hitting its time limit, and until then that
+showed up as mail not arriving, on a form whose every indicator still read OK.
+Past `STALE_AFTER_MINUTES` it makes `health_status` a warning. An empty
+heartbeat is never stale -- a mailbox that has never completed a run is either
+in setup or freshly upgraded, and neither earns a mark the next cron minute
+clears.
+
+**Status is absence, and the sentence is written once.** `status_message` is
+empty on a healthy mailbox and carries the one sentence otherwise -- no
+credentials, the last error, the stale heartbeat, setup not finished. Both
+surfaces render on a truthy value and nothing at all on a falsy one, so neither
+gets to decide for itself what healthy looks like: the mailbox form draws an
+alert with **Try again** beside it, and the Inbox's mailbox list draws a mark
+against the mailbox's name. The Inbox is the important one. That is where mail
+is read, so that is where its absence is noticed; the mailbox form is plumbing
+somebody visits once. What the form keeps that the Inbox does not is the plain
+`last_check_date` line, for the admin configuring an address whose mail they
+will never read themselves.
+
+There is no manual sync on a working mailbox, and no countdown to the next one.
+The cron runs every minute, so a countdown never reaches sixty seconds: motion
+on a screen whose whole job is to be uneventful. `action_sync_now` survives as
+the **Try again** inside the alert -- a recovery action, in the only state that
+has anything to recover from.
+
 The two cursors used to be one, advanced to the **minimum** of both folders so
 the quieter folder could never be skipped. That made the quietest folder the
 pace of the whole mailbox: an address that received mail but sent none through
@@ -1741,7 +1801,7 @@ database at all, and re-authorizing in staging cannot write live credentials
 back in. `tests/test_provider_contract.py` holds a new provider to the same
 rule.
 
-**Where a sentence is owed.** The outgoing send, the sync cron and "Sync Now"
+**Where a sentence is owed.** The outgoing send, the sync cron and "Try again"
 each ask directly, so the refusal says *neutralized* instead of "account not
 connected". Only a caller that knows what it was attempting can say why it
 stopped.
@@ -2096,7 +2156,7 @@ server half lives in `pantalytics/mail-pro-admin`.
   exactly that, because the gate is a view modifier no Python test can see.
 - **Mail Pro works on a connected Odoo instance** (19.0.9.0.0, #126).
   `sync_allowed()` gates incoming sync (the cron, which marks the mailboxes
-  with the reason, and Sync Now) and creating a **new** `pan.mail.account`.
+  with the reason, and Try again) and creating a **new** `pan.mail.account`.
   Outgoing mail is never gated: the module took over Odoo's SMTP, so stopping
   sends would hold all of the instance's email hostage. Reconnecting an
   existing account is a `write` and stays allowed.
@@ -2152,6 +2212,15 @@ Inbox no longer reads it. It is per user and answers "does this Odoo
 notification still want me", which has a screen of its own (Discuss, the
 bell). The mailbox's read state answers "has this mailbox read this mail".
 They can disagree on one message and neither is wrong.
+
+**One button, and it says which state the conversation is in.** The Inbox's
+read-state control is a toggle: Mark unread over a conversation you have read,
+Mark read over one you have not. It used to be a single Mark unread, on the
+argument that reading a mail is what reads a mail, so a second click did
+nothing at all. The list says it too, with a dot and not only a font weight:
+the row being marked is also the highlighted one, and 600 against 700 on a
+highlighted row is a change nobody can see. 19.0.17.1.0; the button was writing
+the database and the provider correctly the whole time.
 
 There is exactly one bridge, and it runs one way: **reading a conversation in
 the Inbox clears the reader's own unread inbox rows for it**, through Odoo's

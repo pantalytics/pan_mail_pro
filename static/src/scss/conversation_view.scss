@@ -22,10 +22,18 @@ $mailpro-accent: #5d5bd6;
 $mailpro-accent-ink: #4340b4;
 $mailpro-warn: #c0392b;
 
-// The chevron's column in the conversation list. One number: it is the
-// control's width and the indent of the mails it unfolds, so a row without
-// a chevron still lines up with the rows that have one.
+// The chevron's column in the conversation list, so a row without a chevron
+// still lines up with the rows that have one.
 $mailpro-twist: 1.5rem;
+
+// The conversation row's own padding, and the picture beside its text. The
+// mails an unfolded conversation shows start where that text starts, the way
+// Outlook draws them, so the indent is these four added up rather than a
+// number somebody measured off a screenshot once.
+$mailpro-row-pad-x: 0.375rem;
+$mailpro-avatar: 2rem;
+$mailpro-avatar-gap: 0.5rem;
+$mailpro-child-indent: $mailpro-twist + $mailpro-row-pad-x + $mailpro-avatar + $mailpro-avatar-gap;
 
 // One motion for every fold: long enough to read as a pane sliding, short
 // enough that a tap feels answered. Chosen once so the mailbox list, the record and
@@ -416,6 +424,13 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     .o_mailpro_mailbox_name { min-width: 0; }
 
+    // The only colour in this pane, and it appears on a mailbox that is not
+    // being read. Nothing marks a mailbox that works.
+    .o_mailpro_mailbox_alert {
+        color: $mailpro-warn;
+        font-size: 0.75rem;
+    }
+
     .o_mailpro_mailbox_active { color: $mailpro-ink; }
 
     // The folders belong to the mailbox above them, and the indent is what
@@ -470,8 +485,8 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // find the line you want by who it is with, long before you read a name.
     // Shared by the conversation list and the conversation.
     .o_mailpro_avatar {
-        width: 2rem;
-        height: 2rem;
+        width: $mailpro-avatar;
+        height: $mailpro-avatar;
         border-radius: 50%;
         object-fit: cover;
     }
@@ -545,8 +560,12 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         &:hover { background: rgba(93, 91, 214, 0.08); }
     }
 
+    // The padding is said here rather than left to the browser's own button
+    // default, because the unfolded mails indent to this row's text column
+    // and an indent computed from a number nobody wrote is one that drifts.
     .o_mailpro_item {
         display: block;
+        padding: 1px $mailpro-row-pad-x;
         border: 0;
         background: none;
         text-align: left;
@@ -578,13 +597,15 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     // and not the control: the senders below each other stay in one line.
     .o_mailpro_twist_blank { display: block; }
 
-    // One mail of an unfolded conversation. Indented under the chevron that
-    // opened it, quieter than the row above, and a way into the conversation
-    // pane on that message rather than on the newest.
+    // One mail of an unfolded conversation. It starts where the sender's name
+    // starts on the row above -- past the chevron and past the picture -- so
+    // the mails read as one column under the conversation they belong to.
+    // Quieter than that row, and a way into the conversation pane on that
+    // message rather than on the newest.
     .o_mailpro_child {
         display: block;
         width: 100%;
-        padding: 0.3125rem 0.5rem 0.3125rem $mailpro-twist;
+        padding: 0.3125rem 0.5rem 0.3125rem $mailpro-child-indent;
         border: 0;
         border-bottom: 1px solid $mailpro-line-soft;
         background: rgba(0, 29, 33, 0.015);
@@ -602,15 +623,41 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
 
     .o_mailpro_child_unread .o_mailpro_from { font-weight: 700; }
 
-    .o_mailpro_thread_loading { padding: 0.3125rem 0.5rem 0.3125rem $mailpro-twist; }
+    .o_mailpro_thread_loading { padding: 0.3125rem 0.5rem 0.3125rem $mailpro-child-indent; }
 
-    // Unread is weight, not a badge: the list still reads as one column.
+    // Unread is a dot and a weight. Weight alone was 600 against 700 on a row
+    // that is also the highlighted one, which is a difference nobody can see:
+    // Mark unread wrote the database, the provider and the class, and the
+    // screen said nothing back. Read rows drop to 500 so the two are telling
+    // apart at a glance, and the dot carries it on the active row.
     .o_mailpro_item_unread .o_mailpro_from,
     .o_mailpro_item_unread .o_mailpro_subject { font-weight: 700; }
 
-    .o_mailpro_from { font-size: 0.8125rem; font-weight: 600; }
+    .o_mailpro_unread_dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 999px;
+        background: $mailpro-accent;
+        align-self: center;
+    }
+
+    // The same fact at the other end of the header: the one read-state button
+    // wears the state it is offering to leave.
+    .o_mailpro_read_toggle {
+        color: $mailpro-muted;
+
+        &:hover { color: $mailpro-ink; }
+    }
+
+    .o_mailpro_read_toggle_unread {
+        color: $mailpro-accent;
+
+        &:hover { color: $mailpro-accent; }
+    }
+
+    .o_mailpro_from { font-size: 0.8125rem; font-weight: 500; }
     .o_mailpro_date { font-size: 0.6875rem; color: $mailpro-muted; white-space: nowrap; }
-    .o_mailpro_subject { margin-top: 0.125rem; font-size: 0.8125rem; font-weight: 600; }
+    .o_mailpro_subject { margin-top: 0.125rem; font-size: 0.8125rem; font-weight: 500; }
     .o_mailpro_preview { margin-top: 0.125rem; font-size: 0.75rem; color: $mailpro-muted; }
     .o_mailpro_meta { margin-top: 0.4375rem; }
     .o_mailpro_muted { font-size: 0.6875rem; color: $mailpro-muted; }
@@ -687,6 +734,31 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
     }
 
     .o_mailpro_conversation_title { margin: 0; font-size: 1rem; font-weight: 600; }
+
+    // The way to the Odoo record on a phone. Flat and unlabelled, like the
+    // back arrow at the other end of the same row: the head is most of a
+    // phone screen already, and two words here cost the subject a line.
+    .o_mailpro_odoo_record_button {
+        display: flex;
+        width: 2.25rem;
+        height: 2.25rem;
+        padding: 0;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 0.375rem;
+        background: transparent;
+        color: $mailpro-muted;
+        font-size: 0.875rem;
+        cursor: pointer;
+
+        &:hover { background: $mailpro-panel; color: $mailpro-accent-ink; }
+
+        &:focus-visible {
+            outline: 2px solid $mailpro-accent;
+            outline-offset: -2px;
+        }
+    }
     .o_mailpro_conversation_sub { margin-top: 0.25rem; font-size: 0.75rem; color: $mailpro-muted; }
     .o_mailpro_chips { margin-top: 0.75rem; flex-wrap: wrap; }
 
@@ -1343,7 +1415,46 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
             max-width: none;
         }
 
-        .o_mailpro_conversation_head { padding-left: 0.5rem; }
+        // The head is chrome above the mail, and on a phone it was most of
+        // the screen: a subject over three lines, a correspondent over two,
+        // the Linked-to row over two more. Everything here is the same
+        // information on one line each, so the mail gets the rest. The
+        // subject is truncated rather than wrapped -- it is in the list
+        // above and in the mail below, and the reader came here for the mail.
+        // The bottom padding stays 1rem: the tab strip's negative bottom
+        // margin cancels exactly that, which is what puts the active tab's
+        // underline on the head's own border.
+        .o_mailpro_conversation_head { padding: 0.5rem 0.75rem 1rem 0.5rem; }
+
+        .o_mailpro_conversation_title,
+        .o_mailpro_conversation_sub {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .o_mailpro_conversation_title { font-size: 0.9375rem; }
+        .o_mailpro_conversation_sub { margin-top: 0.0625rem; }
+
+        // One row: the record it is linked to, and the way to change it. The
+        // label is what the chip already says, and it cost the row a line of
+        // its own.
+        .o_mailpro_chips {
+            margin-top: 0.375rem;
+            flex-wrap: nowrap;
+
+            .o_mailpro_label { display: none; }
+
+            .o_mailpro_chip_button {
+                min-width: 0;
+
+                span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+            }
+
+            .o_mailpro_relink_toggle { flex-shrink: 0; }
+        }
+
+        .o_mailpro_tabs { margin-top: 0.5rem; }
 
         // Writing takes the whole phone. The head keeps the subject and the
         // two buttons that end it; the chips, the suggestion and the

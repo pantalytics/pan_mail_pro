@@ -327,10 +327,14 @@ export class ConversationView extends Component {
         // The notification mailbox is the one the module sends *from*, not one
         // anybody reads. Opening the inbox on it shows an empty screen to
         // somebody whose mail is one dropdown away, which reads as broken.
+        // `status_message` is empty on a healthy mailbox, which is the whole
+        // interface: this pane shows a marker on a truthy value and nothing at
+        // all otherwise, rather than deciding for itself what healthy looks
+        // like. The mailbox form's alert reads the same string.
         this.state.mailboxes = await this.orm.searchRead(
             "pan.mail.mailbox",
             [["active", "=", true], ["is_notification_mailbox", "=", false]],
-            ["email"],
+            ["email", "status_message"],
             { limit: 50, order: "sequence, email" }
         );
         const known = new Set(this.state.mailboxes.map((mailbox) => mailbox.id));
@@ -561,9 +565,17 @@ export class ConversationView extends Component {
             && (left.draft_id || false) === (right.draft_id || false);
     }
 
-    /** A conversation picked from the list: on a phone, that is also a step. */
+    /**
+     * A conversation picked from the list: on a phone, that is also a step.
+     *
+     * The click also unfolds it, the way Outlook does: the conversation you
+     * are reading is the one whose mails the list shows. One at a time --
+     * a list that keeps every thread you have looked at open is a list you
+     * scroll through your own history in -- so picking folds the rest back.
+     */
     async pick(conversation) {
         this.panes.showConversation();
+        this.foldOthers(conversation);
         if (conversation.draft_id) {
             // A row in Drafts is an unsent mail, and there is one thing to do
             // with one: carry on writing it. So the conversation opens with
@@ -571,7 +583,11 @@ export class ConversationView extends Component {
             await this.continueDraft(conversation);
             return;
         }
-        await this.select(conversation);
+        const opened = this.select(conversation);
+        if (conversation.count > 1 && !this.isUnfolded(conversation)) {
+            await this.unfold(conversation);
+        }
+        await opened;
     }
 
     /** The key a conversation's unfolded thread is cached under. */
@@ -596,10 +612,10 @@ export class ConversationView extends Component {
     /**
      * The chevron: unfold a conversation into its own mails, one line each.
      *
-     * Not a second way to open a conversation. Unfolding is looking at what
-     * is in there; the row above it is still what opens it, and a chevron
-     * that also switched the pane would cost the reader the conversation
-     * they had open to answer "how many of these are from her".
+     * The fold, and the one way to look into a conversation without opening
+     * it: a chevron that also switched the pane would cost the reader the
+     * conversation they had open to answer "how many of these are from her".
+     * Opening a conversation unfolds it too, from `pick`.
      *
      * One read per conversation, kept until the list is rebuilt. Folding
      * keeps the rows, because folding and unfolding the same thread twice is
@@ -611,6 +627,18 @@ export class ConversationView extends Component {
             this.state.unfolded[key] = false;
             return;
         }
+        await this.unfold(conversation);
+    }
+
+    /**
+     * Unfold one conversation, reading its mails the first time it is asked.
+     *
+     * Both ways in end here: the chevron, and the click that opens the
+     * conversation. So the rows are read once whichever one the reader used,
+     * and a failure folds the row back either way.
+     */
+    async unfold(conversation) {
+        const key = this.conversationKey(conversation);
         this.state.unfolded[key] = true;
         if (this.state.thread[key]) {
             return;
@@ -634,6 +662,16 @@ export class ConversationView extends Component {
             console.warn("[Mail Pro] could not unfold a conversation", error);
         } finally {
             this.state.threadLoading[key] = false;
+        }
+    }
+
+    /** Everything else folds back: only what is being read stands open. */
+    foldOthers(conversation) {
+        const key = String(this.conversationKey(conversation));
+        for (const other of Object.keys(this.state.unfolded)) {
+            if (other !== key) {
+                this.state.unfolded[other] = false;
+            }
         }
     }
 
@@ -728,35 +766,52 @@ export class ConversationView extends Component {
         this.setUnreadLocally(conversation, false);
     }
 
+    /** Is the open conversation one the mailbox still calls unread? */
+    get selectedUnread() {
+        return !!(this.state.selected && this.state.selected.unread);
+    }
+
+    /** What the one read-state button in the header says right now. */
+    get readToggleLabel() {
+        return this.selectedUnread ? _t("Mark read") : _t("Mark unread");
+    }
+
     /**
-     * Put a conversation back to unread: the one way out of "I opened it, I
-     * cannot deal with it now".
+     * Read and unread, from the conversation you have open.
+     *
+     * A toggle, because the button is the only place the click can answer.
+     * Marking unread and then reading it again used to mean opening another
+     * conversation and coming back, and the one button said "Mark unread"
+     * over a conversation that already was: a second click that did nothing,
+     * which is what a broken button looks like.
      *
      * The list is corrected here rather than by reloading it. A reload would
      * re-sort, lose the reader's place, and on the Unread filter make the
      * conversation they are reading jump into the list under them.
      */
-    async markUnread() {
+    async toggleRead() {
         const conversation = this.state.selected;
         if (!conversation) {
             return;
         }
+        const read = this.selectedUnread;
         try {
             await this.orm.call("pan.mail.conversation", "set_read", [], {
                 model: conversation.model,
                 res_id: conversation.res_id,
                 message_id: conversation.message_id,
                 mailbox_id: this.state.mailboxId,
-                read: false,
+                read,
             });
         } catch (error) {
-            console.warn("[Mail Pro] could not mark the conversation unread", error);
+            console.warn("[Mail Pro] could not change the conversation's read state",
+                         error);
             return;
         }
-        this.setUnreadLocally(conversation, true);
+        this.setUnreadLocally(conversation, !read);
     }
 
-    /** The dot, on the row and on the open conversation, without a reload. */
+    /** The dot on the row and the button in the header, without a reload. */
     setUnreadLocally(conversation, unread) {
         for (const row of this.state.conversations) {
             if (this.sameConversation(row, conversation)) {
