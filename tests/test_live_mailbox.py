@@ -288,6 +288,19 @@ class TestLiveMailbox(TransactionCase):
         self.assertIn('Hoi', row['body'])
         self.assertNotIn('<script', row['body'])
 
+    def test_a_plain_text_body_keeps_its_line_breaks(self):
+        """The one body on this screen that never passed through
+        `message_post`, so nothing turned its newlines into line breaks and
+        the whole mail arrived as one block."""
+        plain = self._message(
+            body_html='Hoi,\n\nKunnen jullie de levertijd bevestigen?',
+            body_is_html=False)
+        search, get = self._serving([plain])
+        with search, get:
+            row = self._as_owner().read_live_message(self.mailbox.id, 'AAA')
+
+        self.assertIn('<br', row['body'])
+
     def test_reading_a_message_that_is_gone(self):
         search, get = self._serving([self._message()])
         with search, get, self.assertRaises(AccessError):

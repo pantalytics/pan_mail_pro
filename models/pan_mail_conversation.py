@@ -44,7 +44,7 @@ from odoo.exceptions import AccessError
 from odoo.fields import Domain
 from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import email_split, html2plaintext
-from odoo.tools.mail import html_sanitize
+from odoo.tools.mail import html_sanitize, plaintext2html
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
@@ -894,8 +894,12 @@ class PanMailConversation(models.AbstractModel):
         # Every other body on this screen reached `mail.message` through
         # `message_post`, where the Html field sanitizes it on write; this one
         # comes straight off the provider and is rendered in an Odoo session.
-        # Same call, one step earlier.
-        row['body'] = html_sanitize(message.get('body_html') or '')
+        # Same call, one step earlier. And the same question `message_post`
+        # answers for the imported bodies: text is text until something turns
+        # its newlines into line breaks, or the mail arrives as one block.
+        body = message.get('body_html') or ''
+        row['body'] = html_sanitize(
+            body if message.get('body_is_html') else plaintext2html(body))
         row['linked_record'] = link or False
         row['to'] = [a.get('email') for a in (message.get('to') or []) if a.get('email')]
         return row
