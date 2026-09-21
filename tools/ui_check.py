@@ -821,8 +821,17 @@ class Checks:
         if any(tab.inner_text().strip() == 'Mail Pro'
                for tab in page.query_selector_all('.o_form_view .nav-link')):
             self.fail('My Preferences still has a separate Mail Pro tab')
-        if 'Replies and new email, existing contacts only' not in text:
-            self.fail('My Preferences does not show the level the seed set')
+        # The level is a Selection, and Odoo 19 draws one as a SelectMenu whose
+        # value lives in an <input>. `inner_text()` cannot see an input value,
+        # so the screen reads correctly while the assertion comes up empty.
+        field = page.query_selector('[name="x_pan_mail_sync_level"]')
+        shown = field.inner_text().strip() if field else ''
+        if not shown and field:
+            control = field.query_selector('input, select')
+            shown = control.input_value() if control else ''
+        if 'existing contacts only' not in shown:
+            self.fail('My Preferences shows the level as %r, not the one the '
+                      'seed set' % shown)
         self.error_free('My Preferences')
 
     def mailbox_access(self):
