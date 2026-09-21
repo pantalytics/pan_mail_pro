@@ -52,6 +52,18 @@
                                string="Send from"
                                domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
+                        <field name="x_pan_mail_personal_mailbox_id" invisible="1"/>
+                        <label for="x_pan_mail_sync_level"
+                               invisible="not x_pan_mail_personal_mailbox_id"/>
+                        <div invisible="not x_pan_mail_personal_mailbox_id">
+                            <field name="x_pan_mail_sync_level" widget="radio" nolabel="1"/>
+                            <div class="alert alert-warning mt-2 mb-0" role="alert"
+                                 invisible="x_pan_mail_sync_level != 'everyone'">
+                                Every sender becomes a contact in Odoo, newsletters
+                                and private email included. Pick this only for an
+                                address that exists to hear from strangers.
+                            </div>
+                        </div>
                         <div colspan="2">
                             <button type="object"
                                     name="action_disconnect_mailbox"
@@ -91,6 +103,18 @@
                                string="Send from"
                                domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
+                        <field name="x_pan_mail_personal_mailbox_id" invisible="1"/>
+                        <label for="x_pan_mail_sync_level"
+                               invisible="not x_pan_mail_personal_mailbox_id"/>
+                        <div invisible="not x_pan_mail_personal_mailbox_id">
+                            <field name="x_pan_mail_sync_level" widget="radio" nolabel="1"/>
+                            <div class="alert alert-warning mt-2 mb-0" role="alert"
+                                 invisible="x_pan_mail_sync_level != 'everyone'">
+                                Every sender becomes a contact in Odoo, newsletters
+                                and private email included. Pick this only for an
+                                address that exists to hear from strangers.
+                            </div>
+                        </div>
                         <div colspan="2">
                             <button type="object"
                                     name="action_test_send_mailbox"
