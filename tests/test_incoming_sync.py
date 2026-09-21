@@ -25,6 +25,59 @@ CONV_ID = 'CONV_INBOUND_001'
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestCronProgress(MailProTestCase):
+    """Under the cron, every mailbox's mail is committed before the next one.
+    A person's Sync Now stays one transaction. Odoo's per-job budget is ten
+    seconds and the API reports what is left of it; nothing here reads that
+    number, because the re-run it would buy starts from the top."""
+
+    def _run(self, context, seconds_left=3.0):
+        fetcher = self.env['pan.mail.fetcher'].with_context(**context)
+        Cron = type(self.env['ir.cron'])
+        with patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=True), \
+                patch.object(type(self.env['pan.mail.mailbox']), '_has_working_credentials',
+                             return_value=True), \
+                patch.object(type(fetcher), '_process_mailbox', return_value=None) as process, \
+                patch.object(Cron, '_commit_progress', return_value=seconds_left) as progress:
+            fetcher._cron_fetch_incoming_mail()
+        return process, progress
+
+    def test_the_cron_commits_after_every_mailbox(self):
+        process, progress = self._run({'ir_cron_progress_id': 1})
+        self.assertEqual(process.call_count, 3)
+        # Once with the total, once after each mailbox, counting down.
+        self.assertEqual(progress.call_count, 4)
+        self.assertEqual(progress.call_args_list[0].kwargs['remaining'], 3)
+        self.assertEqual(
+            [c.kwargs['remaining'] for c in progress.call_args_list[1:]], [2, 1, 0])
+        self.assertTrue(all(c.kwargs['processed'] == 1 for c in progress.call_args_list[1:]))
+
+    def test_the_stalest_mailbox_goes_first(self):
+        self.shared_mailbox.last_sync_date = '2026-01-01 00:00:00'
+        self.personal_mailbox.last_sync_date = '2026-02-01 00:00:00'
+        self.notification_mailbox.last_sync_date = False
+        process, _progress = self._run({'ir_cron_progress_id': 1})
+        self.assertEqual(
+            [c.args[0] for c in process.call_args_list],
+            [self.notification_mailbox, self.shared_mailbox, self.personal_mailbox])
+
+    def test_the_license_retry_runs_before_the_setup_gate(self):
+        """Setup is when a first heartbeat can meet a bad minute, and setup is
+        when the cron has nothing else to do and returns early."""
+        fetcher = self.env['pan.mail.fetcher']
+        License = type(self.env['pan.mail.license'])
+        with patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=False), \
+                patch.object(License, '_retry_if_stuck') as retry:
+            fetcher._cron_fetch_incoming_mail()
+        retry.assert_called_once()
+
+    def test_outside_the_cron_nothing_is_committed(self):
+        process, progress = self._run({})
+        self.assertEqual(process.call_count, 3)
+        progress.assert_not_called()
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestIncomingSync(MailProTestCase):
 
     def setUp(self):

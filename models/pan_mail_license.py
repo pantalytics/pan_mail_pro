@@ -4,7 +4,7 @@
 The admin presses **Connect to Pantalytics** on the settings page. Odoo asks
 our server for a pairing and opens its page in a new tab, with the code already
 in the link. The admin signs in with their Pantalytics account, checks that the
-page names this Odoo, and approves; **Back to Odoo** lands on
+page names this Odoo, and approves; the button back to their Odoo lands on
 `/mail_pro/pantalytics/return`, which collects the key. Nobody types a code or
 copies a key, and there is still no redirect URI to register per customer:
 the way back is an ordinary link to this Odoo, not an OAuth redirect.
@@ -44,12 +44,12 @@ import base64
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
 from odoo import _, api, fields, models, release
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from . import encryption_utils
 from .neutralization import database_is_neutralized
@@ -72,6 +72,10 @@ ENV_URL = 'PAN_MAIL_PRO_LICENSE_URL'
 ENV_PUBLIC_KEY = 'PAN_MAIL_PRO_LICENSE_PUBLIC_KEY'
 
 TIMEOUT = 15
+
+# A connected instance whose entitlement has not arrived asks again this often
+# (from the fetch cron), instead of waiting for the daily heartbeat.
+RETRY_MINUTES = 10
 
 # Stripe's statuses that keep a customer entitled, as the server decides them.
 # past_due stays entitled while Stripe is still retrying the card.
@@ -146,7 +150,9 @@ class PanMailLicense(models.Model):
 
     # The last entitlement whose signature checked out, and what it said.
     plan = fields.Char(readonly=True)
-    seats_allowed = fields.Integer(readonly=True)
+    # The number the plan is metered on (docs/plans/mail-pro-paid.md): mails
+    # per UTC day. Read from the signed answer; nothing enforces it yet (#128).
+    daily_send_limit = fields.Integer(readonly=True)
     valid_until = fields.Datetime(readonly=True)
     latest_version = fields.Char(readonly=True)
     message = fields.Char(readonly=True)
@@ -191,11 +197,49 @@ class PanMailLicense(models.Model):
 
     @api.model
     def not_allowed_error(self):
-        return _(
-            'Connect this Odoo instance to Pantalytics to use Mail Pro: Settings, '
-            'Mail Pro, Connect to Pantalytics. Until then incoming mail is not '
-            'synced and no new mailbox can be connected. Sending keeps working.'
-        )
+        """Why sync is refused, in the words of the state it is refused in.
+
+        One sentence for every refusal used to say "connect", which is wrong
+        advice for six of the seven states it covered: an admin whose key was
+        revoked, or whose server cannot reach ours, had already connected.
+        """
+        link = self.current()
+        status = link.status if link else 'not_connected'
+        tail = _(' Until then incoming mail is not synced and no new mailbox '
+                 'can be connected. Sending keeps working.')
+        if status == 'not_connected':
+            head = _('Connect this Odoo instance to Pantalytics to use Mail Pro: '
+                     'Settings, Mail Pro, Connect to Pantalytics.')
+        elif status == 'pending':
+            head = _('The connection to Pantalytics is waiting for approval: '
+                     'Settings, Mail Pro, Check Approval.')
+        elif status == 'invalid':
+            head = _('Pantalytics no longer recognises the key of this Odoo '
+                     'instance: Settings, Mail Pro, Disconnect, then Connect to '
+                     'Pantalytics again.')
+        elif status == 'revoked':
+            head = _('The connection to Pantalytics was replaced or revoked: '
+                     'Settings, Mail Pro, Disconnect, then Connect to Pantalytics '
+                     'again.')
+        elif status == 'canceled':
+            head = _('This Odoo instance has no Mail Pro subscription. See '
+                     'Settings, Mail Pro.')
+        elif link.last_error:
+            head = _('The last check with Pantalytics failed: %s It is retried '
+                     'automatically.') % link.last_error
+        else:
+            head = _('Pantalytics has not confirmed this Odoo instance yet. It is '
+                     'asked again automatically; Settings, Mail Pro shows the '
+                     'result.')
+        return head + tail
+
+    def _check_admin(self):
+        """Connecting and disconnecting are an administrator's acts, whoever
+        calls: the methods are public on the model and reachable over RPC, and
+        the link record is written as sudo."""
+        if not self.env.su and not self.env.user.has_group('base.group_system'):
+            raise AccessError(_('Only an administrator can change the connection '
+                                'to Pantalytics.'))
 
     # -------------------------------------------------------------------------
     # Pairing
@@ -205,7 +249,11 @@ class PanMailLicense(models.Model):
     def action_connect(self):
         """Ask our server for a code, and show it with the link."""
         self._refuse_when_neutralized()
+        self._check_admin()
         link = self.current() or self.sudo().create({})
+        if link.is_entitled():
+            raise UserError(_('This Odoo instance is already connected to Pantalytics. '
+                              'Disconnect it first to connect it again.'))
         code, body = link._post('/api/v1/link/start', {
             'db_uuid': self._db_uuid(),
             'odoo_url': self.env['ir.config_parameter'].sudo().get_param('web.base.url', ''),
@@ -242,6 +290,12 @@ class PanMailLicense(models.Model):
         """
         self.ensure_one()
         self._refuse_when_neutralized()
+        self._check_admin()
+        if self.key_encrypted and self.status in ENTITLED_STATUSES and not self.is_entitled():
+            # Connected, but the answer never came (or lapsed): ask again now
+            # rather than at the next daily heartbeat.
+            self._heartbeat_guarded()
+            return False
         token = encryption_utils.decrypt_value(self.env, self.device_token_encrypted)
         if self.status != 'pending' or not token:
             return False
@@ -254,11 +308,20 @@ class PanMailLicense(models.Model):
                 'status': 'active',
             })
             self._clear_pairing()
-            self._heartbeat()
+            # Guarded: the server has handed the key over exactly once. An
+            # exception here would roll the key back while the server already
+            # counts it as collected, and the next poll would say so.
+            self._heartbeat_guarded()
             return False
         if status in ('pending', 'too_soon'):
             return self._notify(_('Not approved yet. Approve it on the Pantalytics '
                                   'page first, then check again.'))
+        if code >= 500 or not status:
+            # Our server, or the proxy in front of it, did not answer properly.
+            # That is a bad minute on our side (a deploy restarts it), not a
+            # verdict on this code: keep the pairing and say so.
+            return self._notify(_('Pantalytics did not answer (HTTP %s). Try again '
+                                  'in a minute; the code stays valid.') % code, 'warning')
         # expired, collected, unknown: this pairing cannot finish. Start over.
         self._clear_pairing()
         self.status = 'not_connected' if not self.key_encrypted else self.status
@@ -273,6 +336,8 @@ class PanMailLicense(models.Model):
         nothing here needs to be shown.
         """
         self.ensure_one()
+        if not self.env.user.has_group('base.group_system'):
+            return
         if self.status == 'pending' and not database_is_neutralized(self.env):
             try:
                 self.action_check_approval()
@@ -282,12 +347,13 @@ class PanMailLicense(models.Model):
     def action_disconnect(self):
         """Forget the key and the last answer on this database."""
         self.ensure_one()
+        self._check_admin()
         self._clear_pairing()
         self.write({
             'status': 'not_connected',
             'key_encrypted': False,
             'plan': False,
-            'seats_allowed': 0,
+            'daily_send_limit': 0,
             'valid_until': False,
             'latest_version': False,
             'message': False,
@@ -314,6 +380,29 @@ class PanMailLicense(models.Model):
         if link:
             link._heartbeat()
 
+    @api.model
+    def _retry_if_stuck(self):
+        """Connected, key in hand, no usable answer: ask again, at most every
+        RETRY_MINUTES. Called from the fetch cron, so a first heartbeat that
+        met a bad minute costs ten minutes of sync rather than a day."""
+        link = self.current()
+        if (not link or not link.key_encrypted
+                or link.status not in ENTITLED_STATUSES or link.is_entitled()):
+            return
+        if link.last_check and fields.Datetime.now() - link.last_check < timedelta(
+                minutes=RETRY_MINUTES):
+            return
+        link._heartbeat_guarded()
+
+    def _heartbeat_guarded(self):
+        """A heartbeat that cannot take the caller's transaction down with it."""
+        try:
+            with self.env.cr.savepoint():
+                self._heartbeat()
+        except Exception as error:  # noqa: BLE001 - recorded, never raised
+            _logger.exception('[License] Heartbeat failed')
+            self.write({'last_check': fields.Datetime.now(), 'last_error': str(error)})
+
     def _heartbeat(self):
         """Report in, and store the answer if, and only if, it is ours."""
         self.ensure_one()
@@ -332,6 +421,19 @@ class PanMailLicense(models.Model):
             self.write({'last_check': now, 'last_error': str(error)})
             return
 
+        if code == 403 and body.get('status') == 'wrong_database':
+            # The key was paired for another database uuid: this is a copy
+            # (a restore under another name, a staging clone). It gets no
+            # entitlement, and it says so instead of looking connected.
+            _logger.warning('[License] The key belongs to another Odoo database')
+            self.write({
+                'status': 'invalid', 'last_check': now,
+                'last_error': _('This key was issued to another Odoo database. A copy '
+                                'needs its own connection: Settings, Mail Pro, '
+                                'Disconnect, then Connect to Pantalytics.'),
+                'entitlement_json': False, 'signature': False, 'valid_until': False,
+            })
+            return
         if code == 401:
             _logger.warning('[License] Pantalytics refused the key for this database')
             self.write({
@@ -357,7 +459,7 @@ class PanMailLicense(models.Model):
         self.write({
             'status': status if status in dict(STATUS_SELECTION) else 'invalid',
             'plan': payload.get('plan') or False,
-            'seats_allowed': int(payload.get('seats_allowed') or 0),
+            'daily_send_limit': int(payload.get('daily_send_limit') or 0),
             'valid_until': _naive_utc(payload.get('valid_until')),
             'latest_version': payload.get('latest_version') or False,
             'message': payload.get('message') or False,

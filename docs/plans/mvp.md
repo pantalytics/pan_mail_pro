@@ -62,7 +62,7 @@ healthy mailboxes, heartbeat today.
 
 | Item | Where | MVP? |
 |---|---|---|
-| Module reads `seats_allowed`; server signs `daily_send_limit` | pan_mail_pro #169 | **Yes.** The limit never reaches the module |
+| ~~Module reads `seats_allowed`; server signs `daily_send_limit`~~ | pan_mail_pro #169 | Done 2026-09-20: the module reads `daily_send_limit`. The counts below are still open |
 | Heartbeat carries no send/receive counts or error codes | pan_mail_pro #169 | **Yes.** The dashboard's "sent today" column and `mailpro_usage_daily` are fed zeros |
 | Send throttle (defer over the limit) and the one-month trial | pan_mail_pro, phase 2 | **Yes**, after the two above. Free has to bite or nobody pays |
 | A way to put an installation on Pro or Max | mail-pro-admin | **Yes**, as a script or one SQL line. Not a page |
@@ -77,9 +77,8 @@ healthy mailboxes, heartbeat today.
 
 ## Bugs to fix before the next customer rollout
 
-- **#96**: every partner in `recipient_ids` lands in one To header, so
-  followers at different customers see each other's addresses. An address
-  leak on the default path. Fix before Juffermans, not after.
+- ~~**#96**~~: fixed 2026-09-20, one provider send per recipient partner
+  (`mail.mail._one_send_per_recipient`).
 - **#149**: "Linked to nothing" is empty for everyone but the sender.
 - **#140**: attachments invisible in the thread pane.
 - **#134**: Cloudpepper never runs `-u`. Not only on mailpro-dev: production

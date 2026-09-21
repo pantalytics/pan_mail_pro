@@ -40,6 +40,11 @@ class ResConfigSettings(models.TransientModel):
         compute='_compute_setup_status', readonly=True,
     )
     x_setup_provider_done = fields.Boolean(compute='_compute_setup_status')
+    # What the open step says, and whether its arrow points at the accounts
+    # list rather than the provider form: IMAP/SMTP has no registration, its
+    # first step is done when the first account exists.
+    x_setup_provider_todo = fields.Char(compute='_compute_setup_status')
+    x_setup_provider_needs_account = fields.Boolean(compute='_compute_setup_status')
 
     # -------------------------------------------------------------------------
     # Step 2 — internal domains
@@ -237,6 +242,12 @@ class ResConfigSettings(models.TransientModel):
         for record in self:
             record.x_active_provider_id = active_provider
             record.x_setup_provider_done = bool(active_provider) and active_provider.credentials_set
+            needs_account = bool(active_provider) and not get_provider_client(
+                self.env, active_provider.provider).uses_oauth and not record.x_setup_provider_done
+            record.x_setup_provider_needs_account = needs_account
+            record.x_setup_provider_todo = (
+                _('IMAP/SMTP: add the first account') if needs_account
+                else _('Not set up yet'))
             record.x_setup_domains_done = bool(record.x_internal_domain_ids)
             record.x_setup_notification_done = answers['mailboxes']
             record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()

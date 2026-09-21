@@ -116,6 +116,11 @@ class ResUsers(models.Model):
         """Send this user to their provider's consent screen."""
         self.ensure_one()
         self._check_connection_is_mine()
+        if self.share:
+            # A portal login is a customer. Nothing in the OAuth round trip
+            # asks who consented, so this is where a customer's Gmail is kept
+            # from becoming a company mailbox the cron syncs.
+            raise AccessError(_('Only internal users connect a mailbox.'))
         provider = provider or get_setup_provider(self.env)
         if not provider:
             raise UserError(_(
@@ -128,6 +133,14 @@ class ResUsers(models.Model):
                 'An IMAP/SMTP mailbox has no sign-in screen. An administrator '
                 'enters its server, login and password on the account.'
             ))
+        License = self.env['pan.mail.license']
+        if not License.sync_allowed() and not self.sudo().x_pan_mail_account_ids.filtered(
+                lambda account: account.provider == provider):
+            # Refused here, before the consent screen, with the same sentence
+            # the account's create() would refuse with after it. Walking a
+            # person through Microsoft's consent and then telling them no is
+            # the one order this must never happen in.
+            raise UserError(License.not_allowed_error())
 
         state = client.generate_oauth_state()
         self.sudo().write({'x_pan_mail_oauth_state': state})
@@ -163,6 +176,10 @@ class ResUsers(models.Model):
         if not self._is_internal() or self.x_pan_mail_connected:
             return False
         if database_is_neutralized(self.env):
+            return False
+        if not self.env['pan.mail.license'].sync_allowed():
+            # A new account is refused on an unconnected instance, so the
+            # button would end in a refusal after the consent screen.
             return False
         provider = get_setup_provider(self.env)
         if not provider:

@@ -221,6 +221,42 @@ class TestOAuthCallback(HttpCase):
         self.assertIn('Connection Failed', response.text)
         self.assertFalse(self._accounts())
 
+    def test_a_grant_before_the_domains_are_set_connects_the_account_and_no_mailbox(self):
+        """Users are invited before setup is done, on purpose. The consent
+        stores the credentials; the mailbox waits for the domain list, and the
+        refusal of the mailbox must not read as a failed connection or leave
+        a row past the gate."""
+        self.env['pan.mail.domain'].sudo().search([]).unlink()
+        self._arm_state()
+        tokens = {'access_token': 'at', 'refresh_token': 'rt',
+                  'token_expiry': '2030-01-01 00:00:00'}
+        with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
+             patch(f'{GRAPH}.get_user_email', return_value='nora@company.test'):
+            response = self._callback(code='authcode', state='nonce-123')
+        self.assertIn('Mailbox Connected', response.text)
+        self.assertEqual(len(self._accounts()), 1)
+        self.assertFalse(self.env['pan.mail.mailbox'].sudo().with_context(
+            active_test=False).search([('owner_user_id', '=', self.user.id)]))
+
+    def test_a_portal_user_is_refused_at_the_callback(self):
+        """A customer with a portal login and the callback URL: no account."""
+        portal = self.env['res.users'].create({
+            'name': 'Customer',
+            'login': 'customer@example.test',
+            'password': 'customer@example.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+        })
+        portal.sudo().x_pan_mail_oauth_state = 'nonce-portal'
+        self.authenticate('customer@example.test', 'customer@example.test')
+        tokens = {'access_token': 'at', 'refresh_token': 'rt',
+                  'token_expiry': '2030-01-01 00:00:00'}
+        with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
+             patch(f'{GRAPH}.get_user_email', return_value='customer@example.test'):
+            response = self._callback(code='authcode', state='nonce-portal')
+        self.assertIn('Only internal users', response.text)
+        self.assertFalse(self.env['pan.mail.account'].sudo().search(
+            [('user_id', '=', portal.id)]))
+
     def test_a_shared_mailbox_is_never_repurposed(self):
         """Somebody configured `info@` on purpose. A personal grant for that
         address connects the account and leaves the mailbox alone."""

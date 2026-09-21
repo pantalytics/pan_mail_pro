@@ -1060,6 +1060,10 @@ export class ConversationView extends Component {
             default_res_ids: [conversation.res_id],
             default_composition_mode: "comment",
             default_subtype_xmlid: "mail.mt_comment",
+            // Send from the mailbox being read, when one is selected in the
+            // rail. The composer drops it again if this person may not send
+            // from it and falls back to their own default.
+            default_x_send_from_mailbox_id: this.state.mailboxId || false,
             // The chatter fills "To" from the record's suggested recipients;
             // the composer itself fills nothing, and since 18.2 the customer
             // is no longer a follower by default. A reply with an empty "To"
@@ -1117,6 +1121,10 @@ export class ConversationView extends Component {
             default_res_ids: [resId],
             default_composition_mode: "comment",
             default_subtype_xmlid: "mail.mt_comment",
+            // Send from the mailbox being read, when one is selected in the
+            // rail. The composer drops it again if this person may not send
+            // from it and falls back to their own default.
+            default_x_send_from_mailbox_id: this.state.mailboxId || false,
             default_partner_ids: partnerIds,
         }, "new");
     }

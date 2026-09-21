@@ -99,7 +99,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.13.10.0',
+    'version': '19.0.14.0.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -153,4 +153,5 @@
     'application': True,
     'auto_install': False,
     'post_init_hook': '_disable_smtp_servers',
+    'uninstall_hook': '_restore_smtp_servers',
 }

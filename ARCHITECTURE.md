@@ -941,7 +941,7 @@ them:
    when the provider's has moved. A message that starts a thread is its own root.
 
 `pan.mail.thread.link.key_type` records which of the two a row is. It is not
-cosmetic: `find_for_record()` hands the stored value straight back to the
+cosmetic: `_find_for_record()` hands the stored value straight back to the
 provider on the next send, and Gmail rejects a `threadId` it did not mint, so
 only a `provider` row may be used for sending. On IMAP the two keys are the same
 value and collapse into one row.
@@ -1078,7 +1078,7 @@ Pre-filters: duplicate, Odoo-originated, internal domain, block list, sync mode
   (a refusal is one log line naming the gate; nothing is stored — see §3)
       │
       ▼
-pan.mail.matcher.match(message, mailbox, partner)
+pan.mail.matcher._match(message, mailbox, partner)
       │
       ├── model set  → message_post onto that record          → outcome 'threaded'
       ├── sent item  → message_post onto the correspondent    → outcome 'sent_item'
@@ -1839,8 +1839,10 @@ stay there; the relicence applies from `19.0.7.14.0` onwards.
 ### 9.17 Connecting to Pantalytics, and working only when connected
 
 Settings → Mail Pro → Pantalytics Account. The admin presses **Connect to
-Pantalytics**, gets a short code and a link, approves on our site with their
-Pantalytics account, and presses **Check Approval**; Odoo collects its key.
+Pantalytics**, which opens our site with the code already in the link; they
+approve there with their Pantalytics account and press the button back to
+their Odoo, which collects the key (**Check Approval** does the same by hand). The entitlement
+carries `daily_send_limit`, the number the plan is metered on.
 That is the device flow's shape: no redirect URI per customer database, so it
 works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
 server half lives in `pantalytics/mail-pro-admin`.
@@ -1856,13 +1858,14 @@ server half lives in `pantalytics/mail-pro-admin`.
   unreadable anyway because it goes through `decrypt_value`.
 - **Check Approval is a button, not a poll loop.** The admin knows when they
   approved. Dropped: the page does not refresh itself.
-- **Until it is connected, the settings page is one button.** The checklist,
-  the users block and About are hidden while the state is anything but
+- **Until it is connected, the settings page is one button and About.** The
+  checklist and the users block are hidden while the state is anything but
   connected: every one of them configures a product that will not sync, and a
   checklist you cannot finish reads as the broken thing on the screen. One
-  screen, one action. `tools/ui_check.py` disconnects the seeded instance and
-  asserts exactly that, because the gate is a view modifier no Python test can
-  see.
+  screen, one action. About stays, because the version and the documentation
+  link are what a support mail and a first-time admin need before they can
+  connect. `tools/ui_check.py` disconnects the seeded instance and asserts
+  exactly that, because the gate is a view modifier no Python test can see.
 - **Mail Pro works on a connected Odoo instance** (19.0.9.0.0, #126).
   `sync_allowed()` gates incoming sync (the cron, which marks the mailboxes
   with the reason, and Sync Now) and creating a **new** `pan.mail.account`.
@@ -1915,7 +1918,7 @@ For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 | Authentication | OAuth 2.0 (Microsoft Entra ID, Google) — or login + password on IMAP |
 | Token storage | Encrypted at rest (Fernet) |
 | Token refresh | Automatic |
-| Data egress | Provider APIs only. Nothing goes to Pantalytics |
+| Data egress | Provider APIs, plus one daily heartbeat to Pantalytics: counts and versions only (§9.17) |
 
 ---
 
@@ -1930,6 +1933,14 @@ An inbound server left enabled means Odoo fetches mail itself and routes it
 through `mail.alias`, past every control in §3. Closing the outbound door and
 leaving the inbound one open is not a smaller version of the same act; it is
 the half that lets mail in.
+
+**And it is undone on uninstall.** The takeover records the ids of the servers
+it disabled (`pan_mail_pro.smtp_takeover_disabled_ids`); the module's
+`uninstall_hook` (`_restore_smtp_servers`) re-enables exactly those, retires
+the placeholder server and sets `base_setup.default_external_email_server`
+back. A server somebody switched off on purpose stays off. Before this a
+database that trialled Mail Pro and removed it was left with no outgoing mail
+and no hint why.
 
 ## 11. Conventions
 

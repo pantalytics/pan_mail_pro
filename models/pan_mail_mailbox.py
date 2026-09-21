@@ -460,7 +460,7 @@ class PanMailMailbox(models.Model):
                 ) % self.email
             return _(
                 '"%(who)s" has no connected %(provider)s account, so nothing can '
-                'send from shared mailbox "%(email)s". Connect it under My Profile '
+                'send from shared mailbox "%(email)s". Connect it under My Preferences '
                 '→ Mail Pro, with SendAs rights on that address.',
                 who=who.name, provider=provider, email=self.email,
             )
@@ -597,7 +597,7 @@ class PanMailMailbox(models.Model):
         if not recipient:
             raise UserError(_(
                 'Your user has no email address, so there is nowhere to send '
-                'the test. Add one under My Profile and try again.'
+                'the test. Add one under My Preferences and try again.'
             ))
 
         try:
@@ -732,6 +732,10 @@ class PanMailMailbox(models.Model):
         others = MailServer.search([('active', '=', True)])
         if placeholder:
             others -= placeholder
+        # Remembered, empty or not, so an uninstall can give exactly these
+        # back and not every server somebody switched off on purpose.
+        IrConfigParameter.set_param(
+            'pan_mail_pro.smtp_takeover_disabled_ids', ','.join(map(str, others.ids)) or ' ')
         if others:
             others.write({'active': False})
             for server in others:
@@ -881,7 +885,7 @@ class PanMailMailbox(models.Model):
                 raise ValidationError(_(
                     'The notification mailbox sends with its owner\'s account, and '
                     '%(owner)s has not connected their mailbox yet. Ask them to open '
-                    'the user menu at the top right → My Profile → Mail Pro, or pick '
+                    'the user menu at the top right → My Preferences → Mail Pro, or pick '
                     'an owner who has.',
                     owner=record.owner_user_id.name or _('nobody'),
                 ))

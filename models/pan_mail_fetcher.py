@@ -9,6 +9,7 @@ Provider-neutral: everything here reads the normalized message shape documented
 in `mail_provider_client.py`. No Graph, Gmail or other wire-specific key should
 ever appear below this line.
 """
+from datetime import datetime
 import logging
 from typing import NamedTuple
 from markupsafe import Markup
@@ -16,7 +17,7 @@ from markupsafe import Markup
 from odoo import models, api, fields, _
 from odoo.exceptions import UserError
 
-from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT, ThrottledError
 from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
@@ -119,6 +120,11 @@ class PanMailFetcher(models.AbstractModel):
         if database_is_neutralized(self.env):
             _logger.info('[Incoming Mail] Database is neutralized - skipping sync')
             return
+        # Before every other gate: during setup there are no mailboxes and the
+        # setup gate returns, and setup is exactly when a first heartbeat can
+        # meet a bad minute. The retry must not wait for a state it unblocks.
+        License = self.env['pan.mail.license']
+        License._retry_if_stuck()
         # Deliberately not filtered on an owner: whether a mailbox needs one is
         # the provider's business. A Gmail or IMAP shared mailbox is its own
         # account with nobody behind it, and requiring an owner here silently
@@ -154,7 +160,6 @@ class PanMailFetcher(models.AbstractModel):
 
         # Not connected to Pantalytics: the same
         # shape as setup, so the stop is on the mailboxes where people look.
-        License = self.env['pan.mail.license']
         if not License.sync_allowed():
             reason = License.not_allowed_error()
             _logger.info('[License] %s', reason)
@@ -163,7 +168,25 @@ class PanMailFetcher(models.AbstractModel):
 
         _logger.info(f"[Incoming Mail] Starting sync for {len(mailboxes)} mailbox(es)")
 
-        for mailbox in mailboxes:
+        # Under the cron, what one mailbox landed is committed before the next
+        # one starts. Without this the whole run was one transaction: a
+        # backlog on one busy mailbox hit the cron worker's time limit, rolled
+        # every mailbox's mail back, and repeated identically a minute later
+        # until Odoo deactivated the cron. `_commit_progress` commits, so it is
+        # only called under a cron; a person's Sync Now stays one transaction.
+        # Stalest mailbox first, so a run the watchdog does cut short is not
+        # the same mailboxes' turn again next minute. (Odoo's own time budget
+        # per job is ten seconds and the API reports how much of it is left;
+        # it re-runs the method from the top, not from where it stopped, so
+        # there is nothing to gain by returning early on that number.)
+        cron = self.env['ir.cron']
+        in_cron = bool(self.env.context.get('ir_cron_progress_id'))
+        mailboxes = mailboxes.sorted(
+            key=lambda m: m.last_sync_date or datetime.min)
+        if in_cron:
+            cron._commit_progress(remaining=len(mailboxes))
+
+        for index, mailbox in enumerate(mailboxes):
             try:
                 with self.env.cr.savepoint():
                     stall = self._process_mailbox(mailbox)
@@ -176,11 +199,21 @@ class PanMailFetcher(models.AbstractModel):
                     mailbox.write({'state': 'error', 'error_message': stall})
                 else:
                     mailbox._record_sync_success()
+            except ThrottledError as e:
+                # The provider asked for a pause longer than a run may sleep.
+                # Said on the mailbox, not counted as a failure: a throttled
+                # mailbox is a healthy one being polite, and five polite
+                # minutes must not turn its badge red.
+                _logger.info("[Incoming Mail] Mailbox %s throttled: %s", mailbox.id, e)
+                mailbox.write({'error_message': str(e)})
             except Exception as e:
                 # Savepoint rolled back: the cursor is usable again, so the
                 # error write below won't hit "current transaction is aborted".
                 _logger.exception(f"[Incoming Mail] Error processing mailbox {mailbox.email}")
                 mailbox._record_sync_failure(str(e))
+
+            if in_cron:
+                cron._commit_progress(processed=1, remaining=len(mailboxes) - index - 1)
 
         _logger.info("[Incoming Mail] Sync completed")
 
@@ -857,7 +890,7 @@ class PanMailFetcher(models.AbstractModel):
         # Where does this mail belong? The fetcher decides whether a message is
         # worth keeping; deciding where it goes is the matcher's job, and it is
         # provider-neutral — the same ladder serves Graph, Gmail and IMAP.
-        match = self.env['pan.mail.matcher'].match(
+        match = self.env['pan.mail.matcher']._match(
             full_message,
             mailbox=mailbox,
             partner=partner,

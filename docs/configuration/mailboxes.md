@@ -63,13 +63,13 @@ account.
 
 ## Creating a Mailbox
 
-1. Click **Create**
+1. Press **New**
 2. Fill in:
    - **Mailbox:** The address, as the provider knows it. It is also what the
      Send From dropdown shows, so there is no separate display name
-   - **Type:** Personal or Shared
    - **Owner:** The user whose credentials the mailbox sends with (Personal,
-     and Shared on Microsoft 365)
+     and Shared on Microsoft 365). The type follows from it: an owner on their
+     own address is personal, no owner is shared
 3. Save
 4. Press **Send Test Email** to prove the address can actually send
 
@@ -78,10 +78,10 @@ account.
 | Field | Description |
 |-------|-------------|
 | Mailbox | The address to send from, and the label in every dropdown |
-| Type | Personal or Shared |
+| Type | Personal or Shared, derived from the owner |
 | Notification Mailbox | Ticked on the one mailbox that sends the system email |
 | Owner | The user whose credentials are used |
-| Receiving / Sending | Which folders are synced; replies always are |
+| Sync level | How much of the mailbox is read; replies to Odoo's own mail always are |
 | Team | Alias for routing incoming emails |
 
 ## Next Steps
