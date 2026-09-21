@@ -90,11 +90,16 @@ export class LinkDialog extends Component {
     /**
      * A kind of record picked: hand over to Odoo's own picker for the record.
      *
-     * This dialog closes first, so the picker is the only thing on screen;
-     * closing that one is the way back, the same as everywhere else in Odoo.
+     * This dialog closes, so the picker is the only thing on screen; closing
+     * that one is the way back, the same as everywhere else in Odoo.
+     *
+     * The order matters. `useService` hands a component a protected handle
+     * whose calls never answer once the component is destroyed, so the head
+     * start is fetched while this dialog is still open, and the read that
+     * names the picked record, which runs long after it closed, goes through
+     * the service itself.
      */
     async choose(target) {
-        this.props.close();
         let scope = { domain: false, partner: "" };
         try {
             scope = await this.orm.call("pan.mail.conversation", "link_scope", [], {
@@ -104,6 +109,8 @@ export class LinkDialog extends Component {
         } catch {
             // No head start, then: the picker still opens on the whole list.
         }
+        const orm = this.env.services.orm;
+        const onSelect = this.props.onSelect;
         this.dialog.add(SelectCreateDialog, {
             resModel: target.model,
             title: `${this.title}: ${target.label}`,
@@ -116,9 +123,10 @@ export class LinkDialog extends Component {
             onSelected: async ([resId]) => {
                 // The record's name and the model's own label come along: the
                 // caller shows the record in a pane whose head names both.
-                const [record] = await this.orm.read(target.model, [resId], ["display_name"]);
-                this.props.onSelect(target.model, resId, record.display_name, target.label);
+                const [record] = await orm.read(target.model, [resId], ["display_name"]);
+                onSelect(target.model, resId, record.display_name, target.label);
             },
         });
+        this.props.close();
     }
 }

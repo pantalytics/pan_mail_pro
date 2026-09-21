@@ -728,6 +728,14 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   records as `domain` makes it a wall; passing them as `dynamicFilters`
   makes it a chip the reader takes off with one click. Same data, and only
   one of the two keeps the promise that the seeding never has to be escaped.
+- **A service call from a destroyed component never answers.** `useService`
+  hands a component a protected handle: a call made after the component is
+  destroyed throws, and one made just before resolves into a promise that
+  never settles. `choose()` closed its own dialog and then awaited
+  `link_scope`, so the await hung and Odoo's picker never opened -- no
+  error, no log line, two red browser assertions. Fetch what the next
+  screen needs before closing this one, and hand a callback that outlives
+  the component the service itself (`env.services.orm`), not the handle.
 - **The tile a model wears was already computed for the chips.**
   `_model_icon` answered "which app opens this model" for the Linked-to
   chips; step one of the picker asked the same question and had no icon.
