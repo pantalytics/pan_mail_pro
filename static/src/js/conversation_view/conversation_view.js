@@ -1139,7 +1139,6 @@ export class ConversationView extends Component {
         this.state.liveFilter = this.state.liveFilter === filter ? null : filter;
         await this.refresh();
     }
-    }
 
     /** Open another mailbox, from the mailbox list. Folders are per mailbox. */
     async setMailbox(mailboxId) {

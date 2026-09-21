@@ -1097,8 +1097,11 @@ class Checks:
             # And one press marks it, which is the whole of what a browser
             # can prove here: the list behind it is empty either way, because
             # this instance reaches no provider.
-            page.query_selector_all('.o_mailpro_live_filter')[0].click()
-            page.wait_for_timeout(1500)
+            with page.expect_response(
+                    lambda response: 'live_messages' in response.url,
+                    timeout=60000):
+                page.query_selector_all('.o_mailpro_live_filter')[0].click()
+            page.wait_for_timeout(1000)
             if not page.query_selector('.o_mailpro_live_filter_active'):
                 self.fail('pressing a live filter did not mark it as the one in use')
         self.shot('inbox-live-folder.png')
