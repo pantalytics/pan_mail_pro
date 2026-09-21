@@ -23,7 +23,10 @@
                 <field name="provider" string="Provider" optional="hide"/>
                 <field name="owner_user_id" string="Owner" optional="hide"/>
                 <field name="sync_level" string="Sync" optional="hide"/>
-                <field name="last_sync_date" string="Last Synced" optional="hide"/>
+                <!-- The cursor, named as one. It used to say "Last Synced"
+                     here too, which is the question the next column answers. -->
+                <field name="last_sync_date" string="Newest Mail Read" optional="hide"/>
+                <field name="last_check_date" string="Last Checked" optional="hide"/>
                 <field name="error_message" string="Error" optional="hide"/>
             </list>
         </field>
@@ -42,21 +45,12 @@
         <field name="model">pan.mail.mailbox</field>
         <field name="arch" type="xml">
             <form string="Mailbox">
-                <header>
-                    <!-- Every mailbox syncs something since 19.0.7.6.0: replies
-                         land on their record with no setting at all, so there
-                         is no configuration under which this button has
-                         nothing to do. -->
-                    <button name="action_sync_now" string="Sync Now"
-                            type="object" class="btn-primary" icon="fa-refresh"
-                            invisible="is_notification_mailbox"/>
-                    <!-- Every mailbox, including the notification one: sending
-                         is the one thing the consent screen does not prove. The
-                         mail goes to the user who presses it, never to this
-                         address. -->
-                    <button name="action_test_send" string="Send Test Email"
-                            type="object" class="btn-secondary" icon="fa-paper-plane"/>
-                </header>
+                <!-- No header. A mailbox that works has no action to offer,
+                     and a header carrying two buttons on such a screen is the
+                     module admitting it cannot tell the reader whether the
+                     sync runs. Recovery moved next to the reason it exists
+                     for, at the bottom; the send test moved to Setup, which
+                     is the one moment it answers a question anyone has. -->
                 <sheet>
                     <!-- Inherited from the one provider this database runs on;
                          only the IMAP button below reads it. -->
@@ -66,18 +60,14 @@
 
                     <!-- The inspection surface: is it working, and since when. -->
                     <div name="button_box" class="oe_button_box">
-                        <button class="oe_stat_button" icon="fa-clock-o"
-                                invisible="not last_sync_date or is_notification_mailbox">
-                            <div class="o_stat_info">
-                                <span class="o_stat_value">
-                                    <field name="last_sync_date" readonly="1"/>
-                                </span>
-                                <span class="o_stat_text">Last synced</span>
-                                <span class="o_stat_text" invisible="not last_sent_sync_date">
-                                    Sent: <field name="last_sent_sync_date" readonly="1"/>
-                                </span>
-                            </div>
-                        </button>
+                        <!-- The counter that was here read "Last synced" over
+                             `last_sync_date`, which is the fetch cursor: the
+                             date of the newest message read, not the moment of
+                             the last run. On a quiet mailbox it stands still
+                             while everything works, so the one number on the
+                             form claiming to answer "is this working" was the
+                             one number that could not. It is a grey line under
+                             the address now, reading the heartbeat. -->
                         <button name="action_open_routing_log" type="object"
                                 class="oe_stat_button" icon="fa-random"
                                 invisible="is_notification_mailbox">
@@ -98,6 +88,18 @@
                         </h1>
                         <div class="text-muted">
                             <field name="subtitle" readonly="1" nolabel="1"/>
+                        </div>
+                        <!-- Time Machine's line, for the same reason: a result
+                             nobody can see any other way has to be stated. The
+                             reader of this mailbox sees the sync working in
+                             the Inbox; the admin setting up an address for
+                             somebody else's team never does. -->
+                        <div class="text-muted small" invisible="is_notification_mailbox">
+                            <span invisible="not last_check_date">
+                                Last checked <field name="last_check_date" readonly="1" nolabel="1"
+                                                    class="d-inline-block"/>
+                            </span>
+                            <span invisible="last_check_date">Not checked yet</span>
                         </div>
                     </div>
 
@@ -229,6 +231,23 @@
                                            invisible="is_notification_mailbox"/>
                                 </group>
                                 <group>
+                                    <!-- Sending is the one thing the consent
+                                         screen does not prove: a missing send
+                                         scope, an ungranted SendAs, an SPF or
+                                         DMARC record that rejects the address.
+                                         So it belongs to setting the mailbox
+                                         up, not to looking at one. The mail
+                                         goes to whoever presses it, never to
+                                         this address. -->
+                                    <div>
+                                        <button name="action_test_send" type="object"
+                                                string="Send Test Email" class="btn-link ps-0"
+                                                icon="fa-paper-plane"/>
+                                        <div class="text-muted mt-1">
+                                            Sends one email to you, to prove this address
+                                            can actually send.
+                                        </div>
+                                    </div>
                                     <div invisible="provider != 'imap'">
                                         <button name="action_open_account" type="object"
                                                 string="Server Credentials" class="btn-link ps-0"
@@ -243,9 +262,17 @@
                         </page>
                     </notebook>
 
-                    <!-- Error alert -->
-                    <div class="alert alert-danger mt-3" role="alert" invisible="state != 'error'">
-                        <strong>Sync failed:</strong> <field name="error_message" nolabel="1" readonly="1"/>
+                    <!-- The one sentence a mailbox owes the reader, and the
+                         way back, together. Shown for every unhealthy state
+                         rather than only `error`, because a cron that stopped
+                         running leaves the state at `active` and used to say
+                         nothing at all. Nothing is drawn while it works. -->
+                    <div class="alert alert-danger mt-3" role="alert"
+                         invisible="health_status == 'healthy'">
+                        <field name="status_message" nolabel="1" readonly="1"/>
+                        <button name="action_sync_now" type="object" string="Try again"
+                                class="btn-secondary btn-sm ms-2"
+                                invisible="is_notification_mailbox"/>
                     </div>
                 </sheet>
             </form>

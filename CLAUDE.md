@@ -714,7 +714,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
-### A user's own setting over somebody else's model (19.0.17.1.0)
+### A user's own setting over somebody else's model (19.0.17.2.0)
 
 - **An unstored many2one cannot carry a `@api.depends` path.** `res.users
   .x_pan_mail_personal_mailbox_id` is searched, not related, so
