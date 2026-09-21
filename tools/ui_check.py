@@ -1403,16 +1403,20 @@ class Checks:
             if title and title.bounding_box()['height'] > 30:
                 self.fail('the phone subject wraps instead of truncating')
 
-        # The record, over the conversation, and the way back from it. It
-        # wears the chevron the record's own divider wears on a wider screen,
-        # pointing the way the boundary moves to bring the record in.
+        # The record, over the conversation, and the way back from it. Its
+        # chevron points right, at the pane it asks for: there is no divider
+        # on a phone and no boundary to move, the record arrives over the
+        # screen from the right, and the way back to the list is a chevron
+        # pointing the other way at the other end of the same row. The
+        # divider's own rule would draw this one pointing left, which is that
+        # same arrow twice doing opposite things.
         button = page.query_selector('.o_mailpro_odoo_record_button')
         if not button:
             self.fail('the phone conversation head offers no way to the record')
         else:
-            if not button.query_selector('.fa-chevron-left'):
-                self.fail('the way to the record on a phone is not the '
-                          "divider's own chevron")
+            if not button.query_selector('.fa-chevron-right'):
+                self.fail('the way to the record on a phone does not point at '
+                          'the record')
             button.click()
             page.wait_for_timeout(800)
             record = page.query_selector('.o_mailpro_odoo_record')
@@ -1465,17 +1469,11 @@ class Checks:
             self.fail('the phone conversation has no way back to the list')
             return
 
-        # The two chevrons at the ends of that row point at the pane each one
-        # asks for: the list is back to the left, the record arrives over the
-        # screen from the right. Same icon both ways is two identical arrows
-        # doing opposite things, which is what the divider's own rule draws
-        # here if this button borrows it.
+        # The other end of that row, and the other half of the rule the record
+        # button above is held to: each chevron points at the pane it asks
+        # for, so the list is left and the record is right.
         if not back.query_selector('.fa-chevron-left'):
             self.fail('the phone way back does not point at the list')
-        through = page.query_selector('.o_mailpro_odoo_record_button')
-        if through and not through.query_selector('.fa-chevron-right'):
-            self.fail('the phone way through to the record points the same way '
-                      'as the way back to the list')
 
         back.click()
         page.wait_for_timeout(400)
