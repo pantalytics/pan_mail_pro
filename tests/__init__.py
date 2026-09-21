@@ -27,6 +27,7 @@ from . import test_recipient_columns
 from . import test_mail_matcher
 from . import test_outgoing_threading
 from . import test_thread_drift
+from . import test_inbox_panes
 from . import test_reply_sync
 from . import test_routing_log
 from . import test_linking
@@ -46,6 +47,8 @@ from . import test_imap_live
 from . import test_mailbox_test_send
 from . import test_mailbox_type
 from . import test_license
+from . import test_rpc_surface
+from . import test_recipient_split
 from . import test_conversation_api
 from . import test_oauth_routes
 from . import test_mailbox_actions

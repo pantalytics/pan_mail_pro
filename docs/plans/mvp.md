@@ -44,7 +44,7 @@ routing log, and the boundary that an imported message notifies nobody
 (the Juffermans incident, closed in #37).
 
 **3. The conversation with the record beside it.** Built as of 19.0.10 and
-polished through 19.0.13: four panes, folder rail, filters, search, New
+polished through 19.0.13: four panes, mailbox list, filters, search, New
 Email, reply in the pane, the four tabs, linking in two steps, the
 suggestion chips. What the plans still call "on paper" and is actually
 built: New mail, search, filter, linking, the two triage rungs and the
@@ -62,7 +62,7 @@ healthy mailboxes, heartbeat today.
 
 | Item | Where | MVP? |
 |---|---|---|
-| Module reads `seats_allowed`; server signs `daily_send_limit` | pan_mail_pro #169 | **Yes.** The limit never reaches the module |
+| ~~Module reads `seats_allowed`; server signs `daily_send_limit`~~ | pan_mail_pro #169 | Done 2026-09-20: the module reads `daily_send_limit`. The counts below are still open |
 | Heartbeat carries no send/receive counts or error codes | pan_mail_pro #169 | **Yes.** The dashboard's "sent today" column and `mailpro_usage_daily` are fed zeros |
 | Send throttle (defer over the limit) and the one-month trial | pan_mail_pro, phase 2 | **Yes**, after the two above. Free has to bite or nobody pays |
 | A way to put an installation on Pro or Max | mail-pro-admin | **Yes**, as a script or one SQL line. Not a page |
@@ -77,11 +77,10 @@ healthy mailboxes, heartbeat today.
 
 ## Bugs to fix before the next customer rollout
 
-- **#96**: every partner in `recipient_ids` lands in one To header, so
-  followers at different customers see each other's addresses. An address
-  leak on the default path. Fix before Juffermans, not after.
+- ~~**#96**~~: fixed 2026-09-20, one provider send per recipient partner
+  (`mail.mail._one_send_per_recipient`).
 - **#149**: "Linked to nothing" is empty for everyone but the sender.
-- **#140**: attachments invisible in the thread pane.
+- **#140**: attachments invisible in the conversation pane.
 - **#134**: Cloudpepper never runs `-u`. Not only on mailpro-dev: production
   Pantalytics sits on 12.5.0 in the database with 13.1.0 on disk right now.
   Until this is understood, every version bump is a manual Upgrade click on

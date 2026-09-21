@@ -75,18 +75,18 @@ MAX_LINK_CANDIDATES = 12
 # 140 characters.
 PREVIEW_SOURCE = 8000
 # Where the quoted history starts, as the mail clients people write to us
-# from mark it. The same list the thread pane folds, so the snippet and the
-# open message end "what they wrote" at the same place.
+# from mark it. The same list the conversation pane folds, so the snippet and
+# the open message end "what they wrote" at the same place.
 QUOTE_START = re.compile(
     r'<blockquote\b|class="[^"]*\b(?:gmail_quote|moz-cite-prefix|OutlookMessageHeader)\b'
     r'|data-o-mail-quote|id="(?:divRplyFwdMsg|appendonsend)"',
     re.IGNORECASE)
 
-# The rail, in the order it is drawn. A mailbox and the two folders every
-# mail client has, because the rail is the part of this screen people already
-# know how to read. Our own states are not folders and do not belong here;
+# The mailbox list, in the order it is drawn. A mailbox and the two folders
+# every mail client has, because that pane is the part of this screen people
+# already know how to read. Our own states are not folders and do not belong here;
 # they filter the list, one pane to the right.
-RAIL_FOLDERS = [
+MAILBOX_FOLDERS = [
     ('inbox', 'Inbox'),
     ('sent', 'Sent'),
 ]
@@ -106,7 +106,7 @@ LIST_FILTERS = [
     ('unlinked_none', 'Linked to nothing'),
 ]
 
-KINDS = ({value: 'folder' for value, _label in RAIL_FOLDERS}
+KINDS = ({value: 'folder' for value, _label in MAILBOX_FOLDERS}
          | {value: 'filter' for value, _label in LIST_FILTERS})
 
 # The matcher's rule names, in words. The screen shows why a mail was not
@@ -157,7 +157,7 @@ class PanMailConversation(models.AbstractModel):
         return domain
 
     def _folder_domain(self, folder):
-        """The extra clauses the rail folder adds to the grouping query.
+        """The extra clauses the chosen folder adds to the grouping query.
 
         Sent is "this conversation was written in", not "we spoke last": a
         thread the customer answered is still one you sent in, which is what
@@ -226,26 +226,26 @@ class PanMailConversation(models.AbstractModel):
     @api.model
     def folder_counts(self, mailbox_id=None, folder=None,
                       partner_id=None, search=None):
-        """The numbers on the rail, and on the filters of one folder.
+        """The numbers on the mailbox list, and on the filters of one folder.
 
         Counted on every read, capped at `COUNT_CAP`. A stored counter would be
         one more fact that can disagree with the messages; an exact count means
         aggregating every row the reader can see, once per entry, on every
         click. The cap costs a "+" on the label and saves the scan.
 
-        It takes the same `partner_id` and `search` the list takes, so the rail
-        and the list always describe the same mail.
+        It takes the same `partner_id` and `search` the list takes, so the two
+        panes always describe the same mail.
 
         `folder` is the one the reader has open. The filters are counted
         inside it and only for that mailbox, because they are a filter row
-        over one list rather than a second rail: a mailbox standing open in
-        the rail costs its two folders, not four.
+        over one list rather than a second pane: a mailbox standing open in
+        the mailbox list costs its two folders, not four.
         """
         self._check_caller()
         base = self._base_domain(mailbox_id, partner_id, search)
         folders = [self._count_entry(base, value, label,
                                      self._folder_domain(value))
-                   for value, label in RAIL_FOLDERS]
+                   for value, label in MAILBOX_FOLDERS]
         filters = []
         if folder:
             within = base + self._folder_domain(folder)
@@ -257,7 +257,7 @@ class PanMailConversation(models.AbstractModel):
         return {'folders': folders, 'filters': filters}
 
     def _count_entry(self, domain, value, label, extra):
-        """One number for the rail or the filter row, capped."""
+        """One number for the mailbox list or the filter row, capped."""
         groups = self.env['mail.message']._read_group(
             domain + extra, groupby=['model', 'res_id'],
             aggregates=['__count', 'date:max'],
@@ -284,9 +284,9 @@ class PanMailConversation(models.AbstractModel):
                              limit=DEFAULT_LIMIT, offset=0):
         """One page of conversations, newest first.
 
-        Two dimensions: the folder from the rail, and the filter over it. A
+        Two dimensions: the folder from the mailbox list, and the filter over it. A
         folder is a place mail is, a filter is a question about it, and the
-        screen keeps them apart because the rail is the part people already
+        screen keeps them apart because the mailbox list is the part people already
         know how to read.
 
         A fixed number of queries, whatever the page size: the grouping, the
@@ -1225,7 +1225,7 @@ class PanMailConversation(models.AbstractModel):
         body = str(message.body or '')[:PREVIEW_SOURCE]
         # A short answer on top of a long quote previews as the answer and
         # then the quote's first line, which reads as if the customer wrote
-        # both. Cut at the first quote marker; the thread pane folds the same
+        # both. Cut at the first quote marker; the conversation pane folds the same
         # markers (QUOTE_MARKERS in conversation_view.js), so the line here
         # and the open message agree on where "what they wrote" ends.
         quote = QUOTE_START.search(body)

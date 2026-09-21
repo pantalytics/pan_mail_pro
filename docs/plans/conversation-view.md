@@ -1,6 +1,6 @@
 # The conversation view
 
-Status: **mostly built**, 19.0.13.1.0. The inbox itself ships: the folder rail,
+Status: **mostly built**, 19.0.13.1.0. The inbox itself ships: the mailbox list,
 the conversation list with its filters and search, New Email, the thread with
 its four-position tab strip, linking in two steps with the suggestion chips,
 and the record pane without its chatter, reading through
@@ -43,7 +43,7 @@ The screen is four panes:
 1. **Folders.** The mailbox you are in and its folders -- Inbox and Sent, the
    two words every mail client uses -- and nothing else. Shared mailboxes below
    your own. The states that are ours are not folders and are not here: naming
-   them as places mail sits makes the rail read as a filter panel next to the
+   them as places mail sits makes the mailbox list read as a filter panel next to the
    mail client the same person has open. 19.0.11.1.0.
 2. **The conversation list.** Sender, subject, snippet, date, and the record the
    thread is filed on. Unread is weight, not a badge, and it is the only state
@@ -79,15 +79,15 @@ not optional: a mail this module sends with nothing behind it is the "linked
 to nothing" state the filter menu one pane over exists to find. 19.0.13.0.0;
 the composer moved from its own window into the pane in 19.0.13.2.0.
 
-The panes are the reader's, not ours. Every divider drags, the folder rail and
+The panes are the reader's, not ours. Every divider drags, the mailbox list and
 the record pane fold away, and the widths live in the browser, so the screen
 opens tomorrow the way it closed tonight. The list and the thread do not fold:
 a screen with no mail on it is not this screen. 19.0.10.2.0.
 
-Inside the rail, each mailbox folds away too, the way an account does in
+Inside the mailbox list, each mailbox folds away too, the way an account does in
 Outlook: the caret opens and closes it, the name opens the mailbox itself, and
 which ones stand open is remembered next to the widths. A folded mailbox is not
-counted, so the rail costs one folder query per mailbox somebody actually
+counted, so the mailbox list costs one folder query per mailbox somebody actually
 watches rather than one per mailbox that exists. 19.0.10.4.0.
 
 When nothing is linked, the fourth pane shows what the matcher considered and

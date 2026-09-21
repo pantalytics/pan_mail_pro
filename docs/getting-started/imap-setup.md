@@ -9,7 +9,7 @@ password once.
 
 ## Step 1: Create the account
 
-1. Go to **Settings → Technical → Email → Mail Pro → Email Accounts**
+1. Go to **Settings → Mail Pro** and press the arrow on step 1, which opens the account list (the same list sits under **Settings → Technical → Email → Mail Pro → Email Accounts**, visible in developer mode)
 2. Create a new account
 3. Set **Provider** to *IMAP / SMTP*
 4. Fill in the email address

@@ -115,7 +115,7 @@ class TestMailMatcher(TransactionCase):
 
     def test_odoo_headers_win(self):
         """A mail carrying our own routing headers needs no guessing."""
-        decision = self.matcher.match(self._message(headers={
+        decision = self.matcher._match(self._message(headers={
             'X-Odoo-Model': 'crm.lead',
             'X-Odoo-Record-Id': str(self.lead.id),
         }), mailbox=self.mailbox)
@@ -134,7 +134,7 @@ class TestMailMatcher(TransactionCase):
         ghost_id = ghost.id
         ghost.unlink()
 
-        decision = self.matcher.match(self._message(headers={
+        decision = self.matcher._match(self._message(headers={
             'X-Odoo-Model': 'crm.lead',
             'X-Odoo-Record-Id': str(ghost_id),
         }), mailbox=self.mailbox)
@@ -148,7 +148,7 @@ class TestMailMatcher(TransactionCase):
     def test_in_reply_to_matches(self):
         parent = self._post_on(self.lead, '<parent@example.com>')
 
-        decision = self.matcher.match(self._message(headers={
+        decision = self.matcher._match(self._message(headers={
             'In-Reply-To': '<parent@example.com>',
         }), mailbox=self.mailbox)
 
@@ -166,7 +166,7 @@ class TestMailMatcher(TransactionCase):
         """
         self._post_on(self.lead, '<root@example.com>')
 
-        decision = self.matcher.match(self._message(headers={
+        decision = self.matcher._match(self._message(headers={
             'References': '<unknown@example.com> <root@example.com>',
         }), mailbox=self.mailbox)
 
@@ -179,7 +179,7 @@ class TestMailMatcher(TransactionCase):
         self._post_on(self.other_lead, '<root@example.com>')
         self._post_on(self.lead, '<recent@example.com>')
 
-        decision = self.matcher.match(self._message(headers={
+        decision = self.matcher._match(self._message(headers={
             # References is root-first, so <recent> is the nearest ancestor.
             'References': '<root@example.com> <recent@example.com>',
         }), mailbox=self.mailbox)
@@ -197,7 +197,7 @@ class TestMailMatcher(TransactionCase):
         self.env['pan.mail.message.ref'].record(
             message, '<graph-assigned@outlook.com>', source='provider')
 
-        decision = self.matcher.match(self._message(headers={
+        decision = self.matcher._match(self._message(headers={
             'In-Reply-To': '<graph-assigned@outlook.com>',
         }), mailbox=self.mailbox)
 
@@ -208,7 +208,7 @@ class TestMailMatcher(TransactionCase):
         """IMAP-shaped input: no mailbox context, no thread id, just headers."""
         self._post_on(self.lead, '<parent@example.com>')
 
-        decision = self.matcher.match(self._message(headers={
+        decision = self.matcher._match(self._message(headers={
             'In-Reply-To': '<parent@example.com>',
         }))
 
@@ -224,7 +224,7 @@ class TestMailMatcher(TransactionCase):
             mailbox=self.mailbox, thread_id='CONV-1',
             model='crm.lead', res_id=self.lead.id, message=message)
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(thread_id='CONV-1'), mailbox=self.mailbox)
 
         self.assertEqual(decision['model'], 'crm.lead')
@@ -241,7 +241,7 @@ class TestMailMatcher(TransactionCase):
             mailbox=self.other_mailbox, thread_id='CONV-1',
             model='crm.lead', res_id=self.lead.id)
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(thread_id='CONV-1'), mailbox=self.mailbox)
 
         self.assertFalse(decision['model'])
@@ -255,7 +255,7 @@ class TestMailMatcher(TransactionCase):
             'last_seen': fields.Datetime.now() - timedelta(days=400),
         })
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(thread_id='CONV-OLD'), mailbox=self.mailbox)
 
         self.assertFalse(decision['model'])
@@ -271,7 +271,7 @@ class TestMailMatcher(TransactionCase):
         new = self._post_on(self.lead, '<new@example.com>')
         (old | new).sudo().write({'x_provider_thread_id': 'CONV-LEGACY'})
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(thread_id='CONV-LEGACY'), mailbox=self.mailbox)
 
         self.assertEqual(decision['rule'], RULE_THREAD_LINK_LEGACY)
@@ -283,7 +283,7 @@ class TestMailMatcher(TransactionCase):
         message = self._post_on(self.customer, '<on-partner@example.com>')
         message.sudo().write({'x_provider_thread_id': 'CONV-PARTNER'})
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(thread_id='CONV-PARTNER'),
             mailbox=self.mailbox,
             exclude_models=('res.partner',),
@@ -303,7 +303,7 @@ class TestMailMatcher(TransactionCase):
         """
         order = self._sale_order()
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(subject='Vraag over %s' % order.name),
             mailbox=self.mailbox,
             partner=self.customer,
@@ -324,7 +324,7 @@ class TestMailMatcher(TransactionCase):
         first = self._sale_order()
         second = self._sale_order()
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(subject='%s en %s samenvoegen' % (first.name, second.name)),
             mailbox=self.mailbox,
             partner=self.customer,
@@ -362,7 +362,7 @@ class TestMailMatcher(TransactionCase):
         order = self._sale_order()
         parent = self._post_on(self.lead, '<thread@example.com>')
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(
                 subject='Re: %s' % order.name,
                 headers={'In-Reply-To': '<thread@example.com>'},
@@ -390,7 +390,7 @@ class TestMailMatcher(TransactionCase):
         self.lead.write({'partner_id': self.customer.id})
         self._route_mailbox_to('crm.lead')
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(subject='Nieuwe vraag'),
             mailbox=self.mailbox,
             partner=self.customer,
@@ -408,7 +408,7 @@ class TestMailMatcher(TransactionCase):
         self.other_lead.write({'partner_id': self.customer.id})
         self._route_mailbox_to('crm.lead')
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(subject='Nieuwe vraag'),
             mailbox=self.mailbox,
             partner=self.customer,
@@ -425,7 +425,7 @@ class TestMailMatcher(TransactionCase):
         """
         self.lead.write({'partner_id': self.customer.id})
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(subject='Nieuwe vraag'),
             mailbox=self.mailbox,
             partner=self.customer,
@@ -442,7 +442,7 @@ class TestMailMatcher(TransactionCase):
         """A guess stays a guess: it appears as a candidate, never as a target."""
         self._post_on(self.lead, '<sub@example.com>', subject='Invoice 2024-11')
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(subject='Re: Invoice 2024-11'),
             mailbox=self.mailbox,
             partner=self.customer,
@@ -458,7 +458,7 @@ class TestMailMatcher(TransactionCase):
     def test_subject_match_requires_the_same_correspondent(self):
         self._post_on(self.lead, '<sub@example.com>', subject='Invoice 2024-11')
 
-        decision = self.matcher.match(
+        decision = self.matcher._match(
             self._message(subject='Re: Invoice 2024-11'),
             mailbox=self.mailbox,
             partner=self.other_customer,
@@ -486,7 +486,7 @@ class TestMailMatcher(TransactionCase):
         Every participant in a thread carries the same root, so this gives
         providers without a thread concept the same rung the others get.
         """
-        decision = self.matcher.match(self._message(headers={
+        decision = self.matcher._match(self._message(headers={
             'References': '<root@example.com> <middle@example.com>',
             'In-Reply-To': '<middle@example.com>',
         }), mailbox=self.mailbox)
@@ -494,7 +494,7 @@ class TestMailMatcher(TransactionCase):
         self.assertEqual(decision['thread_id'], '<root@example.com>')
 
     def test_provider_thread_id_is_preferred_over_the_derived_one(self):
-        decision = self.matcher.match(self._message(
+        decision = self.matcher._match(self._message(
             thread_id='CONV-1',
             headers={'References': '<root@example.com>'},
         ), mailbox=self.mailbox)
@@ -513,7 +513,7 @@ class TestMailMatcher(TransactionCase):
     # ------------------------------------------------------------------ #
 
     def test_unknown_mail_returns_an_empty_decision(self):
-        decision = self.matcher.match(self._message(), mailbox=self.mailbox)
+        decision = self.matcher._match(self._message(), mailbox=self.mailbox)
 
         self.assertFalse(decision['model'])
         self.assertFalse(decision['res_id'])
@@ -529,7 +529,7 @@ class TestMailMatcher(TransactionCase):
             type(self.matcher), '_rule_odoo_headers',
             autospec=True, side_effect=ValueError('boom'),
         ):
-            decision = self.matcher.match(self._message(headers={
+            decision = self.matcher._match(self._message(headers={
                 'In-Reply-To': '<parent@example.com>',
             }), mailbox=self.mailbox)
 

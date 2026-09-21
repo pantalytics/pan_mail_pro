@@ -119,8 +119,12 @@ class PanMailMessageRef(models.Model):
             return self.browse()
 
     @api.model
-    def lookup(self, message_id):
-        """Return the `mail.message` for a Message-ID, or an empty recordset."""
+    def _lookup(self, message_id):
+        """Return the `mail.message` for a Message-ID, or an empty recordset.
+
+        Private: a sudo lookup that any RPC caller could use to map a wire id
+        to a record they may not read. Every caller is Python.
+        """
         if not message_id:
             return self.env['mail.message'].browse()
         ref = self.sudo().search([('message_id', '=', message_id.strip())], limit=1)
@@ -207,7 +211,7 @@ class PanMailThreadLink(models.Model):
     )
 
     @api.model
-    def find_for_record(self, mailbox, model, res_id):
+    def _find_for_record(self, mailbox, model, res_id):
         """The thread this mailbox last used for a record, if any.
 
         The outgoing mirror of matching: before sending, this is how we learn

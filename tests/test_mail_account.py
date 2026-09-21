@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from psycopg2 import IntegrityError
 
+from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 from odoo.tools import mute_logger
 
@@ -107,6 +108,51 @@ class TestMailAccount(TransactionCase):
 
         self.assertEqual(account.refresh_token, 'the-only-one')
         self.assertEqual(account.access_token, 'fresh-access')
+
+    def test_consenting_as_another_address_is_refused_not_merged(self):
+        """Tokens for B on a row that says A would send from A with B's token
+        and grow a second personal mailbox. Disconnect first is the way."""
+        account = self.Account.create({
+            'email': 'first@test.local', 'provider': 'outlook', 'user_id': self.user.id,
+            'refresh_token': 'first-refresh', 'access_token': 'first-access',
+        })
+        with self.assertRaisesRegex(UserError, 'connected as first@test.local'):
+            self.Account._store_tokens(
+                'outlook', self.user, 'second@test.local', 'second-access', 'second-refresh', False)
+        account.invalidate_recordset()
+        self.assertEqual(account.email, 'first@test.local')
+        self.assertEqual(account.refresh_token, 'first-refresh')
+        # The same address in another case is the same address.
+        self.Account._store_tokens(
+            'outlook', self.user, 'First@Test.local', 'again', None, False)
+        account.invalidate_recordset()
+        self.assertEqual(account.access_token, 'again')
+
+    def test_after_disconnect_another_address_is_accepted_and_the_old_mailbox_retires(self):
+        """The remedy the refusal names must work: Disconnect, then consent as
+        the other address. The row follows the person, the old personal
+        mailbox is archived and is no longer their default."""
+        self.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        account = self.Account.create({
+            'email': 'first@test.local', 'provider': 'outlook', 'user_id': self.user.id,
+            'refresh_token': 'first-refresh', 'access_token': 'first-access',
+        })
+        old_mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'first@test.local', 'owner_user_id': self.user.id})
+        self.assertEqual(old_mailbox.mailbox_type, 'personal')
+        self.user.x_default_mailbox_id = old_mailbox
+
+        self.user.action_disconnect_mailbox('outlook')
+        account.invalidate_recordset()
+        self.assertFalse(account.connected)
+
+        self.Account._store_tokens(
+            'outlook', self.user, 'second@test.local', 'second-access', 'second-refresh', False)
+        account.invalidate_recordset()
+        self.assertEqual(account.email, 'second@test.local')
+        self.assertEqual(account.refresh_token, 'second-refresh')
+        self.assertFalse(old_mailbox.active)
+        self.assertFalse(self.user.x_default_mailbox_id)
 
     def test_stored_connection_flag_follows_the_account(self):
         """x_pan_mail_connected is stored and drives the mailbox owner domains.

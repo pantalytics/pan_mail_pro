@@ -31,8 +31,8 @@ Before enabling incoming sync:
 ## Routing Configuration
 
 By default, mail that starts a new conversation lands on the sender's contact
-chatter. Tick **To Team** on the mailbox and pick a **Route to Team** alias to
-have it create a record instead:
+chatter. Tick **Route new conversations to a team** on the mailbox and pick
+the **Team** to have it create a record instead:
 
 | Alias belongs to | What is created |
 |------------------|-----------------|
@@ -64,7 +64,7 @@ contact's chatter, and the Mail Routing log flags that row for review.
 ### Timing
 
 - Sync runs automatically every **1 minute**
-- Set **Sync Start Date** to import historical emails
+- Set **Import from** to import historical emails
 - Default: sync from module activation date
 
 ## Block List
@@ -72,8 +72,8 @@ contact's chatter, and the Mail Routing log flags that row for review.
 To exclude specific contacts from sync:
 
 1. Open the contact's form
-2. Go to **Email Sync** tab
-3. Enable **Block Email Sync**
+2. Go to the **Mail Pro** tab
+3. Tick **Block Sync**
 
 Emails from blocked contacts are skipped across all mailboxes.
 

@@ -30,6 +30,7 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import get_provider_cl
 # Patch requests.post specifically, not the whole module — the client catches
 # requests.exceptions.RequestException, which must stay a real class.
 GRAPH_POST = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.post'
+GRAPH_GET = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.get'
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -197,17 +198,72 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
 
         self.assertIn('reconnect', str(ctx.exception).lower())
 
-    def test_invalid_client_also_prompts_reconnect(self):
-        """Rotated app secret in Azure. Not the user's fault, but a reconnect
-        is still what unblocks them once the admin fixes the registration."""
+    def test_invalid_client_blames_the_secret_and_keeps_the_tokens(self):
+        """An expired or mistyped app secret in Azure is the administrator's
+        problem, not this user's. It used to clear every user's refresh token
+        as it went, so fixing the secret still left the whole company
+        re-consenting. Now it names the secret and touches nothing."""
         account = self._account(
             access_token='stale', refresh_token='r',
             token_expiry=fields.Datetime.now() - timedelta(minutes=1))
-        with patch(GRAPH_POST, side_effect=self._http_error({'error': 'invalid_client'})):
+        with patch(GRAPH_POST, side_effect=self._http_error({
+                'error': 'invalid_client',
+                'error_description': 'AADSTS7000222: The provided client secret keys are expired'})):
             with self.assertRaises(UserError) as ctx:
                 self.client.get_valid_token(account)
 
-        self.assertIn('reconnect', str(ctx.exception).lower())
+        self.assertIn('Client Secret', str(ctx.exception))
+        self.assertNotIn('reconnect', str(ctx.exception).lower())
+        account.invalidate_recordset()
+        self.assertEqual(account.refresh_token, 'r')
+
+    def test_a_long_retry_after_is_not_slept_inside_the_cron(self):
+        """Graph asks for two minutes: the mailbox records it and the next
+        run tries again, instead of the worker sleeping through every other
+        mailbox's turn."""
+        throttled = MagicMock()
+        throttled.status_code = 429
+        throttled.headers = {'Retry-After': '120'}
+        with patch(GRAPH_GET, return_value=throttled), \
+                patch('odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.time.sleep') as sleep:
+            with self.assertRaisesRegex(UserError, 'asked to wait'):
+                self.client._request_with_retry('get', 'https://graph.microsoft.com/v1.0/me', {})
+        sleep.assert_not_called()
+
+    def test_a_send_is_never_repeated_after_a_timeout(self):
+        """The answer to /send was lost, not the send: Microsoft may well have
+        delivered it. Retrying it is a customer mailed twice; a 429, which
+        means refused, is still retried."""
+        with patch(GRAPH_POST, side_effect=requests.exceptions.Timeout('slow')) as post, \
+                patch('odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.time.sleep'):
+            with self.assertRaises(requests.exceptions.Timeout):
+                self.client._request_with_retry(
+                    'post', 'https://graph.microsoft.com/v1.0/me/messages/x/send', {},
+                    idempotent=False)
+        self.assertEqual(post.call_count, 1)
+        refused = MagicMock()
+        refused.status_code = 429
+        refused.headers = {'Retry-After': '1'}
+        fine = MagicMock()
+        fine.status_code = 202
+        with patch(GRAPH_POST, side_effect=[refused, fine]) as post, \
+                patch('odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.time.sleep'):
+            response = self.client._request_with_retry(
+                'post', 'https://graph.microsoft.com/v1.0/me/messages/x/send', {},
+                idempotent=False)
+        self.assertIs(response, fine)
+
+    def test_a_short_retry_after_is_honoured(self):
+        throttled = MagicMock()
+        throttled.status_code = 429
+        throttled.headers = {'Retry-After': '3'}
+        fine = MagicMock()
+        fine.status_code = 200
+        with patch(GRAPH_GET, side_effect=[throttled, fine]), \
+                patch('odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.time.sleep') as sleep:
+            response = self.client._request_with_retry('get', 'https://graph.microsoft.com/v1.0/me', {})
+        self.assertIs(response, fine)
+        sleep.assert_called_once_with(3)
 
     def test_transient_refresh_error_is_not_a_reconnect_prompt(self):
         """A network blip must NOT tell the user their connection is revoked —

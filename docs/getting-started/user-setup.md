@@ -24,7 +24,7 @@ on a staging copy.
 
 ## Connect your mailbox
 
-1. Click your **profile picture** (top right) → **My Profile**
+1. Click your **profile picture** (top right) → **My Preferences**
 2. Go to the **Mail Pro** tab
 3. Click **Connect Mailbox**
 4. Sign in with your Microsoft 365 or Google Workspace account
@@ -38,13 +38,13 @@ the Users list (Settings → Mail Pro → Users).
 
 ## Check it works
 
-On **My Profile → Mail Pro**, press **Send Test Email**. It sends a message
+On **My Preferences → Mail Pro**, press **Send Test Email**. It sends a message
 from your own mailbox to your own address, so a failure names the problem
 before a customer finds it. Every mailbox form has the same button.
 
 ## Set your default mailbox
 
-1. Go to **My Profile → Mail Pro**
+1. Go to **My Preferences → Mail Pro**
 2. Pick a mailbox in **Send from**
 3. Save
 
@@ -61,7 +61,7 @@ shared mailbox also needs SendAs permission on the address.
 
 ## Disconnecting
 
-1. Go to **My Profile → Mail Pro**
+1. Go to **My Preferences → Mail Pro**
 2. Click **Disconnect** and confirm
 
 This removes your stored credentials. Odoo stops sending and receiving for that

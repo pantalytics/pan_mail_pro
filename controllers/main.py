@@ -78,6 +78,11 @@ class MailProOAuthController(http.Controller):
         user = request.env.user
         client = get_provider_client(request.env, provider)
 
+        if user.share:
+            _logger.warning('[OAuth] Portal user %s reached the %s callback', user.id, provider)
+            return _result_page(False, _('Connection Failed'),
+                                _('Only internal users connect a mailbox.'))
+
         error = kwargs.get('error')
         if error:
             _logger.error('[OAuth] %s returned %s - %s',
@@ -112,8 +117,20 @@ class MailProOAuthController(http.Controller):
             _logger.info('[OAuth] Connected %s account %s for Odoo user %s',
                          provider, email, user.login)
 
-            self._retry_error_mailboxes(user, provider)
-            self._claim_personal_mailbox(user, provider, email)
+            # The credentials are the point; the mailbox is a convenience. A
+            # claim that fails (the internal domains are not set yet, so the
+            # mailbox constraint refuses) must neither turn a successful
+            # connection into "Connection Failed" nor leave a half-created
+            # row behind: Odoo validates after the INSERT, and a swallowed
+            # exception would commit it, past the very gate that refused.
+            try:
+                with request.env.cr.savepoint():
+                    self._retry_error_mailboxes(user, provider)
+                    if not request.env['pan.mail.domain'].configuration_error():
+                        self._claim_personal_mailbox(user, provider, email)
+            except Exception:
+                _logger.exception('[OAuth] Connected %s, but its mailbox could not be '
+                                  'claimed yet', email)
 
             return _result_page(True, _('Mailbox Connected'),
                                 _('Your email account has been connected successfully.'))

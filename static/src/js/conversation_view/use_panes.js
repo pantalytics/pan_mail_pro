@@ -3,7 +3,7 @@
  * Pane sizing for the Inbox: drag the dividers, fold the three panes around
  * the conversation, and find the screen tomorrow the way you left it tonight.
  *
- * Three stored widths, not four. The thread is whatever is left over, so it
+ * Three stored widths, not four. The conversation is whatever is left over, so it
  * has no width of its own -- it has a floor, and that floor is what a drag
  * runs into instead of eating the mail. It is also the one pane that never
  * folds on its own: a screen with no mail on it is not this screen.
@@ -28,7 +28,7 @@
  * The window's shape is the other thing that is not stored. Below `narrow`
  * the conversation and the record share one column and take turns in it;
  * below `small` the panes stop sitting side by side and the screen shows one
- * at a time, with the rail as a drawer. Both come from the browser's own
+ * at a time, with the mailbox list as a drawer. Both come from the browser's own
  * media queries, so a phone turned sideways gets the layout its width earns
  * without a reload.
  *
@@ -50,7 +50,7 @@ const KEY = "pan_mail_pro.panes";
 // open, the other is a strip on the divider that a tap swaps in. Below
 // `small` -- a phone, and Odoo's own mobile breakpoint -- the panes stop
 // sitting side by side at all: the list, then the conversation, then the
-// record, one at a time, and the rail is a drawer over whichever one is
+// record, one at a time, and the mailbox list is a drawer over whichever one is
 // open. A tablet in portrait is `narrow`, not `small`: three panes fit, the
 // fourth does not.
 const BREAKPOINTS = { small: 767.98, narrow: 1400 };
@@ -58,36 +58,36 @@ const BREAKPOINTS = { small: 767.98, narrow: 1400 };
 // What each pane's button in the top bar shows: the thing it brings back.
 // The conversation never folds on its own, so it never wears one.
 const ICONS = {
-    rail: "fa-bars",
-    list: "fa-list-ul",
-    thread: "fa-envelope-o",
-    record: "fa-cube",
+    mailbox_list: "fa-bars",
+    conversation_list: "fa-list-ul",
+    conversation: "fa-envelope-o",
+    odoo_record: "fa-cube",
 };
 
 // px. Minimums are where a pane stops being readable rather than where it
 // stops being visible: a folder name that wraps, a subject line with two
 // words on it, a form field whose label eats the value.
 const PANES = {
-    rail: { start: 232, min: 140, max: 380 },
-    list: { start: 352, min: 260, max: 620 },
-    record: { start: 448, min: 300, max: 720 },
+    mailbox_list: { start: 232, min: 140, max: 380 },
+    conversation_list: { start: 352, min: 260, max: 620 },
+    odoo_record: { start: 448, min: 300, max: 720 },
 };
 
 // Everything but the conversation folds away, and the top bar carries one
 // button for each, in this order. Outlook folds the two outer ones; the list
 // goes too, because on a tablet a long mail is worth more than the list
 // beside it, and one tap brings it back.
-const COLLAPSIBLE = ["rail", "list", "record"];
+const COLLAPSIBLE = ["mailbox_list", "conversation_list", "odoo_record"];
 
-const THREAD_MIN = 360;
+const CONVERSATION_MIN = 360;
 const STEP = 16;
 
 function paneLabel(name) {
     return {
-        rail: _t("Mailboxes"),
-        list: _t("Conversations"),
-        thread: _t("Conversation"),
-        record: _t("Record"),
+        mailbox_list: _t("Mailboxes"),
+        conversation_list: _t("Conversations"),
+        conversation: _t("Conversation"),
+        odoo_record: _t("Odoo record"),
     }[name];
 }
 
@@ -97,20 +97,25 @@ function clamp(value, min, max) {
 
 function defaults() {
     return {
-        rail: PANES.rail.start,
-        list: PANES.list.start,
-        record: PANES.record.start,
-        collapsed: { rail: false, list: false, record: false },
+        mailbox_list: PANES.mailbox_list.start,
+        conversation_list: PANES.conversation_list.start,
+        odoo_record: PANES.odoo_record.start,
+        collapsed: { mailbox_list: false, conversation_list: false, odoo_record: false },
         zoom: false,
         // Not stored: they describe the window, not a preference.
         small: false,
         narrow: false,
-        railOpen: false,
+        mailboxListOpen: false,
         // A phone shows the list or the conversation; a tablet the
         // conversation or the record. Three positions, one word.
-        stage: "list",
+        stage: "conversation_list",
     };
 }
+
+// What the panes were called before 19.0.14.1.0. A browser that stored a
+// layout under the old names keeps it; the names it wrote are not coming
+// back, so this reads them once and never writes them.
+const LEGACY = { rail: "mailbox_list", list: "conversation_list", record: "odoo_record" };
 
 /** Stored state is somebody else's data by the time we read it back. */
 function restore() {
@@ -123,6 +128,14 @@ function restore() {
     }
     if (!stored || typeof stored !== "object") {
         return state;
+    }
+    for (const [was, now] of Object.entries(LEGACY)) {
+        if (!(now in stored) && was in stored) {
+            stored[now] = stored[was];
+        }
+        if (stored.collapsed && !(now in stored.collapsed) && was in stored.collapsed) {
+            stored.collapsed[now] = stored.collapsed[was];
+        }
     }
     for (const [name, spec] of Object.entries(PANES)) {
         if (Number.isFinite(stored[name])) {
@@ -140,7 +153,7 @@ export function usePanes() {
 
     function save() {
         try {
-            const { zoom, small, narrow, railOpen, stage, ...stored } = state;
+            const { zoom, small, narrow, mailboxListOpen, stage, ...stored } = state;
             browser.localStorage.setItem(KEY, JSON.stringify(stored));
         } catch {
             // A width nobody can store is still a width you can drag today.
@@ -151,26 +164,26 @@ export function usePanes() {
      * Whether a pane is drawn at no width right now. Three shapes, three
      * reasons: a wide screen folds what the top bar folded, a tablet folds
      * whichever of the conversation and the record is not on, and a phone
-     * folds the rail until the drawer is asked for.
+     * folds the mailbox list until the drawer is asked for.
      */
     function isFolded(name) {
         if (state.zoom) {
             return false;
         }
         if (state.small) {
-            return name === "rail" && !state.railOpen;
+            return name === "mailbox_list" && !state.mailboxListOpen;
         }
-        if (state.narrow && name === "record") {
-            return state.stage !== "record";
+        if (state.narrow && name === "odoo_record") {
+            return state.stage !== "odoo_record";
         }
-        if (state.narrow && name === "thread") {
-            return state.stage === "record";
+        if (state.narrow && name === "conversation") {
+            return state.stage === "odoo_record";
         }
         return Boolean(state.collapsed[name]);
     }
 
     /**
-     * Which side of a divider is folded, if any. The rail's and the list's
+     * Which side of a divider is folded, if any. The mailbox list's and the list's
      * dividers have their pane on the left; the record's has the record on
      * the right and the conversation on the left, and on a tablet one of
      * those two is always folded.
@@ -179,13 +192,13 @@ export function usePanes() {
         if (state.small || state.zoom) {
             return null;
         }
-        if (name === "record") {
-            return isFolded("record") ? "right" : isFolded("thread") ? "left" : null;
+        if (name === "odoo_record") {
+            return isFolded("odoo_record") ? "right" : isFolded("conversation") ? "left" : null;
         }
         return isFolded(name) ? "left" : null;
     }
 
-    /** The widest this pane may get before the thread drops below its floor. */
+    /** The widest this pane may get before the conversation drops below its floor. */
     function ceiling(name, total) {
         const spec = PANES[name];
         if (!total) {
@@ -197,7 +210,7 @@ export function usePanes() {
                 others += state[other];
             }
         }
-        return clamp(total - others - THREAD_MIN, spec.min, spec.max);
+        return clamp(total - others - CONVERSATION_MIN, spec.min, spec.max);
     }
 
     function containerWidth(handle) {
@@ -208,7 +221,7 @@ export function usePanes() {
     // The record pane sits to the right of its divider, so the same gesture
     // means the opposite thing there.
     function direction(name) {
-        return name === "record" ? -1 : 1;
+        return name === "odoo_record" ? -1 : 1;
     }
 
     function resize(name, width, total) {
@@ -217,13 +230,13 @@ export function usePanes() {
 
     // The window's shape, kept current by the browser rather than polled.
     // A phone rotated into landscape crosses `small` without a reload, and
-    // the drawer must not stay open over a rail that is now a pane.
+    // the drawer must not stay open over a mailbox list that is now a pane.
     const queries = Object.entries(BREAKPOINTS).map(([name, px]) => {
         const query = window.matchMedia(`(max-width: ${px}px)`);
         const apply = () => {
             state[name] = query.matches;
             if (name === "small" && !query.matches) {
-                state.railOpen = false;
+                state.mailboxListOpen = false;
             }
         };
         apply();
@@ -247,10 +260,10 @@ export function usePanes() {
         /**
          * The buttons the top bar carries, left to right. On a phone the
          * panes take turns rather than sit together, so the only one that
-         * means anything there is the rail: it is the drawer.
+         * means anything there is the mailbox list: it is the drawer.
          */
         toggles() {
-            return state.small ? ["rail"] : COLLAPSIBLE;
+            return state.small ? ["mailbox_list"] : COLLAPSIBLE;
         },
 
         paneIcon(name) {
@@ -263,10 +276,10 @@ export function usePanes() {
                 : _t("Hide %s", paneLabel(name));
         },
 
-        /** The rail is a drawer on a phone and a pane everywhere else. */
+        /** The mailbox list is a drawer on a phone and a pane everywhere else. */
         togglePane(name) {
-            if (name === "rail") {
-                this.toggleRail();
+            if (name === "mailbox_list") {
+                this.toggleMailboxList();
             } else {
                 this.toggle(name);
             }
@@ -336,26 +349,26 @@ export function usePanes() {
             if (!COLLAPSIBLE.includes(name)) {
                 return;
             }
-            if (name === "record" && state.narrow && !state.small) {
-                state.stage = state.stage === "record" ? "thread" : "record";
+            if (name === "odoo_record" && state.narrow && !state.small) {
+                state.stage = state.stage === "odoo_record" ? "conversation" : "odoo_record";
                 return;
             }
             state.collapsed[name] = !state.collapsed[name];
             save();
         },
 
-        /** The rail: a drawer over the screen on a phone, a pane elsewhere. */
-        toggleRail() {
+        /** The mailbox list: a drawer over the screen on a phone, a pane elsewhere. */
+        toggleMailboxList() {
             if (state.small) {
-                state.railOpen = !state.railOpen;
+                state.mailboxListOpen = !state.mailboxListOpen;
             } else {
-                this.toggle("rail");
+                this.toggle("mailbox_list");
             }
         },
 
         /** A folder was picked: the drawer has done its job. */
-        closeRail() {
-            state.railOpen = false;
+        closeMailboxList() {
+            state.mailboxListOpen = false;
         },
 
         /**
@@ -363,12 +376,12 @@ export function usePanes() {
          * instead of the record. A conversation just picked is the thing
          * to look at, whichever pane had the column before.
          */
-        showThread() {
-            state.stage = "thread";
+        showConversation() {
+            state.stage = "conversation";
         },
 
-        showList() {
-            state.stage = "list";
+        showConversationList() {
+            state.stage = "conversation_list";
         },
 
         /**
