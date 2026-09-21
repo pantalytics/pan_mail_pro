@@ -88,10 +88,28 @@ back.
 The tab itself stays where it is. One surface per job, and the setup checklist
 is on it.
 
-**Users never see Settings.** Everything in the previous section reaches them
-through My Profile > Mail Pro, which exists, plus the one-time screen after the
-provider's sign-in. The administrator's overview is the only part that lives in
-Settings.
+**Users never see Settings.** My Preferences is the only screen they open, so
+everything in the previous section lives there, plus the one-time screen after
+the provider's sign-in. The administrator's overview is the only part that is a
+settings screen.
+
+And it lives on the Preferences tab itself, not on a Mail Pro tab beside it.
+That tab shows Odoo's own **Outgoing Mail Server** field, which names a route
+Mail Pro has already decided -- two answers to one question on the one screen
+this person ever opens. The field is replaced by one block in its place:
+
+| | |
+|---|---|
+| Send from | the mailbox, replacing Outgoing Mail Server |
+| Odoo reads | the rung, with Change |
+| | Disconnect mailbox |
+
+Not connected yet: one line and Connect, in the same spot. The Mail Pro tab
+stays on the user form in Settings, where an administrator reads one person at
+a time.
+
+The dropped case is a user who wants their own outgoing server, separate from
+Mail Pro. That is what the takeover removes, and it is gone here too.
 
 ## Open
 
