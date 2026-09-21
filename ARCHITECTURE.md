@@ -309,12 +309,17 @@ a second inbox to empty:
   conversation had is the link it keeps.
 - **It never sends itself.** No state, no cron, no queue. A draft leaves the
   table when it is sent or when it is deleted.
-- **It is stored from the wizard, not from the screen.** `save_from_composer`
+- **It is stored from the wizard, and reopened as one.** `save_from_composer`
   takes the saved `mail.compose.message` and reads it, so a draft is the
   record that would have been posted rather than a second reading of the form
-  in JavaScript. Reopening hands every value back as a `default_`, which is
-  what the ORM protects from the composer's own computes -- `_compute_body`
-  resets the body whenever no template is chosen.
+  in JavaScript. `open_composer` goes the other way and *creates* the wizard,
+  because the composer recomputes its own body and subject while a form
+  mounts: `_compute_body` resets the body whenever no template is chosen and
+  `_compute_subject` reaches for the parent's. A form opened empty on
+  `default_` values therefore recomputes a draft away before anybody sees it,
+  with nothing in the server log -- which is what the browser check caught.
+  Values passed to `create()` are protected from their own compute, so the
+  pane mounts its form on a record that already holds what was typed.
 
 It is **not** the provider's draft. `mail.provider.client.save_draft` puts a
 complete MIME message in the mailbox's own Drafts folder for another client to

@@ -156,19 +156,31 @@ class TestDrafts(TransactionCase):
     def test_reopening_keeps_what_was_typed(self):
         """A draft opened again is the composer it came from.
 
-        Everything goes back in as a `default_`, which is what the ORM
-        protects from the composer's own computes. `_compute_body` resets the
-        body whenever no template is chosen, so a value handed over any other
-        way comes back empty and nothing says so.
+        `open_composer` is the whole reason this is created on the server
+        rather than opened empty on `default_` values: the composer recomputes
+        its own body and subject while a form mounts, and a draft handed over
+        that way is gone before anybody sees it. Values passed to `create()`
+        are protected from their own compute, so this is what the pane mounts
+        on -- and the browser check that caught the empty body is the other
+        half of this assertion.
         """
         row = self._save(self._composer())
         draft = self._draft(row)
-        reopened = self.env['mail.compose.message'].with_user(
-            self.user).with_context(**draft.composer_context()).create({})
+        reopened = self.env['mail.compose.message'].with_user(self.user).browse(
+            draft.open_composer())
         self.assertEqual(reopened.subject, 'Re: Offerte')
         self.assertIn('vier weken', reopened.body)
         self.assertEqual(reopened.partner_ids, self.customer)
         self.assertEqual(reopened.x_send_from_mailbox_id, self.mailbox)
+        self.assertEqual(reopened.model, 'crm.lead')
+        self.assertEqual(reopened._evaluate_res_ids(), [self.lead.id])
+
+    def test_reopening_a_draft_is_not_reopening_somebody_else_s(self):
+        """`open_composer` creates a wizard, so it is asked who is asking."""
+        row = self._save(self._composer())
+        with self.assertRaises(AccessError):
+            self.Draft.with_user(self.colleague).browse(
+                row['draft_id']).open_composer()
 
     def test_discarding_removes_it(self):
         row = self._save(self._composer())

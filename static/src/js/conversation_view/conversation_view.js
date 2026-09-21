@@ -1466,11 +1466,20 @@ export class ConversationView extends Component {
         await this.openDraft(row.draft_id);
     }
 
+    /**
+     * The composer is made on the server and the pane mounts its form on it.
+     *
+     * Not opened empty on `default_` values: the composer recomputes its own
+     * body and subject while it mounts, so a draft handed over that way is
+     * gone before anybody sees it -- which is exactly what the browser check
+     * caught. `open_composer` creates the wizard, where the ORM protects the
+     * values it was created with, and the form has only to display it.
+     */
     async openDraft(draftId) {
         try {
-            const context = await this.orm.call(
-                "pan.mail.draft", "composer_context", [draftId]);
-            this.composer.open(context, "reply", draftId);
+            const composerId = await this.orm.call(
+                "pan.mail.draft", "open_composer", [draftId]);
+            this.composer.open({}, "reply", draftId, composerId);
         } catch (error) {
             this.notification.add(_t("Could not open that draft."), { type: "danger" });
             console.warn("[Mail Pro] draft failed to open", error);

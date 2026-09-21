@@ -143,12 +143,15 @@ export function useComposer({ onSent, onDraftSaved }) {
          * @param {Object} context the `default_*` values for the message
          * @param {string} [mode] "reply", "note" or "new"; the label only
          * @param {number} [draftId] the stored draft this composer continues
+         * @param {number} [resId] a wizard the server already filled in
+         *   (a reopened draft). Without one the form starts empty on the
+         *   defaults, which is every other way this pane is opened.
          */
-        open(context, mode = "reply", draftId = null) {
+        open(context, mode = "reply", draftId = null, resId = false) {
             formProps.viewProps = {
                 type: "form",
                 resModel: "mail.compose.message",
-                resId: false,
+                resId: resId || false,
                 display: { controlPanel: false },
                 context: { ...context, form_view_ref: INLINE_FORM },
                 // `FormController` calls this the moment it is mounted, to

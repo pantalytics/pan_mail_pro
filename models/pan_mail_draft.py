@@ -256,13 +256,33 @@ class PanMailDraft(models.Model):
         except AccessError:
             return ''
 
-    def composer_context(self):
-        """What the pane composer opens on: this draft, field for field.
+    def open_composer(self):
+        """Make the wizard this draft reopens in, and say which one it is.
 
-        Every value goes in as a `default_`, which is how the composer is
-        opened everywhere else on this screen. `default_body` is the one that
-        has to be there: the composer resets its body whenever no template is
-        chosen, and a default is what the ORM protects from that compute.
+        The composer is **created here**, not filled in from the screen, and
+        that is the whole point. `_compute_body` resets the body whenever no
+        template is chosen and `_compute_subject` reaches for the parent's,
+        so a form opened empty on `default_` values recomputes a draft away
+        while it mounts -- in the browser, with an empty server log. Values
+        passed to `create()` are protected from their own compute, so the
+        record that comes back already holds what was typed and the form has
+        only to display it.
+
+        Returns:
+            int: the `mail.compose.message` id the pane mounts its form on.
+        """
+        self.ensure_one()
+        composer = self.env['mail.compose.message'].with_context(
+            **self.composer_context()).create({})
+        return composer.id
+
+    def composer_context(self):
+        """This draft as the composer's own defaults, field for field.
+
+        Read by `open_composer`, which is the only caller: the form is mounted
+        on the record that comes out of it rather than on this context. It
+        stays a method of its own because it is also what a test can read to
+        see what a draft promises to restore.
         """
         self.ensure_one()
         return {
