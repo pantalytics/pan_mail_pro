@@ -5,10 +5,12 @@ the conversation list with its filters and search, New Email, the thread with
 its four-position tab strip, linking in two steps with the suggestion chips,
 and the record pane without its chatter, reading through
 `pan.mail.conversation`, which is in `ARCHITECTURE.md` because it exists now.
-Still on paper: the *screens* for door 1 (the chatter's own button and its
-more-messages-elsewhere line) and for the customer view and its timeline. Their
-read methods (`record_conversations`, `customer_timeline`) shipped and are
-tested, so what is left of each is markup. Also still on paper: the composer's
+Door 1's button ships in 19.0.15.3.0: **Open in mail** in every chatter on a
+record that carries mail, opening the Inbox on that conversation or, when the
+record carries more than one thread, on its list. Still on paper: door 1's
+more-messages-elsewhere line, and the customer view with its timeline, whose
+read method (`customer_timeline`) shipped and is tested, so what is left of it
+is markup. Also still on paper: the composer's
 **Cc/followers block**, and *All mailboxes*, the one folder that spans
 them. Reply opens Odoo's own composer with To filled from
 the newest inbound message and Cc not filled at all. New Email opens the same
@@ -367,10 +369,18 @@ the conversation somebody wants is the one they were just reading.
 - **From a message** -- the message's own conversation, which is exact and
   needs no list at all.
 
-That costs `record_conversations` one number it does not have yet. Its
-`conversations` key today counts the *records* the recent mail touched, which
-is the other axis and is what the "messages elsewhere" line needs; the button
-needs the thread count on this record. Both, when the button is built.
+That cost `record_conversations` one number it did not have: `threads`, how
+many email threads are filed on this record, counted on the References root so
+that one conversation two mailboxes saw is one thread. Its `conversations` key
+is the other axis -- how many *records* the recent mail touched -- and is what
+the "messages elsewhere" line needs.
+
+Shipped in 19.0.15.3.0, with one wrinkle worth writing down: the Inbox groups
+a conversation on (model, res_id), so a record's mail is one row in the list
+however many threads it holds. The more-than-one branch therefore narrows the
+list to the record and lets the reader open that row, rather than offering
+three to choose between. The day the list groups on the thread key, the branch
+is already there.
 
 **What we do not build: merge and split.** No control joins two conversations
 on one record into one thread, and none splits one in two. A conversation is

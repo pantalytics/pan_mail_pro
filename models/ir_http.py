@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Two things in the session: does this user still have to connect a mailbox,
-and may the Inbox report how it is used.
+"""Three things in the session: does this user still have to connect a
+mailbox, may they open the Inbox at all, and may the Inbox report how it is
+used.
 
 The webclient asks nothing extra for it. `session_info` is already fetched once
 per page load, so the banner knows whether to draw itself before the first
@@ -26,4 +27,10 @@ class IrHttp(models.AbstractModel):
             # staleness: the answer changes once a day at most, and the Inbox
             # reads it before its first paint (pan_mail_license.improve_config).
             result['pan_mail_improve'] = self.env['pan.mail.license'].improve_config()
+            # Door 1's button, in every chatter. Asked here rather than over
+            # RPC per record: without it the chatter would call the read
+            # layer on every form a plain user opens, and be refused every
+            # time -- an AccessError per record open, in everybody's log.
+            result['pan_mail_inbox'] = self.env.user.has_group(
+                'pan_mail_pro.group_mail_mailbox_manager')
         return result

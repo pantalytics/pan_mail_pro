@@ -311,6 +311,22 @@ template selector back in the body, and Send saves the composer and calls
 `action_send_mail` itself, from the pane, because the pane is what closes when
 the mail is out.
 
+19.0.15.3.0 opens door 1: **Open in mail**, in every chatter on a record that
+carries an emailed message. The chatter shows what is filed on one record and
+the conversation may be larger, so the button is the way across. It is drawn by
+inheriting Odoo's own `mail.Chatter` template
+(`static/src/js/chatter_door.js`), asks
+`pan.mail.conversation.record_conversations()` how many threads the record
+carries, and opens the Inbox with the record in the action's context. One
+thread and that conversation opens; more than one and the Inbox lists the
+record's mail with nothing selected, because newest is a guess. The list
+narrowed that way spans every mailbox the reader may see -- they arrived from a
+record, not from a mailbox -- and the × next to the record's name gives the
+mailbox back. Who may see the button is `session_info`'s `pan_mail_inbox`, not
+an RPC per record: the Inbox is for mailbox managers, and an AccessError per
+form open is not a way to find that out. The per-message "messages elsewhere"
+line of the same door is not built.
+
 19.0.11.0.0 took the chatter out of the Inbox's fourth pane and put what it
 carried into a four-position strip over the third: Mail, Mail + notes (the notes
 and the record's own events, interleaved), Files, Activities. The screen had
