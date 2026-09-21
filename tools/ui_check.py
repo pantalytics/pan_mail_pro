@@ -230,7 +230,7 @@ class Checks:
     # and its folders. Our own states are not folders and do not go here --
     # a mailbox list of invented names reads as a filter panel wearing a mailbox list's
     # clothes, which is what people notice first and trust least.
-    FOLDERS = ('Inbox', 'Sent')
+    FOLDERS = ('Inbox', 'Sent', 'Drafts')
 
     # Those states, in the filter menu on the end of the search bar: one
     # control for both ways of narrowing the list, the way Odoo's own
@@ -728,6 +728,8 @@ class Checks:
                     page.wait_for_selector('.o_mailpro_messages', timeout=15000)
                     page.wait_for_timeout(600)
 
+        self.drafts(page)
+
         self.panes()
         self.zoom()
 
@@ -1197,6 +1199,116 @@ class Checks:
         page.wait_for_timeout(400)
         if not self.visible('.o_mailpro_conversation_list'):
             self.fail('Back did not bring the list back on a phone')
+
+
+    def drafts(self, page):
+        """Save draft, and the unsent mail that comes back.
+
+        The round trip is the point. A draft is stored from the composer and
+        handed back to a new one as `default_` values, and `_compute_body`
+        resets the body whenever no template is chosen -- so a draft that came
+        back through anything else would reopen empty, in the browser, with
+        nothing in the server log. `tests/test_drafts.py` proves the values;
+        this proves the form.
+
+        It ends where it started: the draft is deleted and the Inbox folder is
+        open again, because every check after this one reads the seeded mail.
+        """
+        tabs = page.query_selector_all('.o_mailpro_tab')
+        if not tabs:
+            self.fail('the conversation has no tab strip to write from')
+            return
+        tabs[0].click()  # Mail: where a reply is written, and where it lands.
+        page.wait_for_timeout(900)
+
+        reply = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
+        if not reply:
+            self.fail('there is no Reply button to write a draft from')
+            return
+        reply.click()
+        try:
+            page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+        except Exception:
+            self.fail('Reply opened no composer to save as a draft')
+            return
+        page.wait_for_timeout(600)
+
+        save = page.query_selector(
+            '.o_mailpro_conversation_head button:has-text("Save draft")')
+        if not save:
+            self.fail('an open reply cannot be saved as a draft')
+            return
+        save.click()
+        try:
+            # The strip above the thread: the unsent answer, where it was left.
+            page.wait_for_selector('.o_mailpro_draft', timeout=15000)
+        except Exception:
+            self.fail('Save draft stored nothing on the conversation')
+            return
+        page.wait_for_timeout(600)
+        if page.query_selector('.o_mailpro_composer .o_form_view'):
+            self.fail('Save draft left the composer open over the stored copy')
+        self.shot('inbox-draft.png')
+
+        # The third folder in the mailbox list, and the draft in it.
+        drafts_folder = page.query_selector('.o_mailpro_folder:has-text("Drafts")')
+        if not drafts_folder:
+            self.fail('the mailbox list has no Drafts folder')
+            return
+        drafts_folder.click()
+        page.wait_for_timeout(1500)
+        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
+        if not rows:
+            self.fail('the Drafts folder is empty after saving a draft')
+            return
+        # One click on a draft is "carry on writing it", so the composer opens
+        # with the conversation behind it rather than a list row to click again.
+        rows[0].click()
+        try:
+            page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+        except Exception:
+            self.fail('a draft row did not reopen its composer')
+            return
+        page.wait_for_timeout(900)
+        body = page.query_selector('.o_mailpro_composer .note-editable, '
+                                   '.o_mailpro_composer [name="body"] .odoo-editor-editable')
+        if body and not body.inner_text().strip():
+            self.fail('a reopened draft came back with an empty body')
+        close = page.query_selector(
+            '.o_mailpro_conversation_head button:has-text("Close")')
+        if not close:
+            self.fail('an open draft says Discard, which reads as "delete it"')
+        else:
+            close.click()
+            page.wait_for_timeout(900)
+
+        # And it can be thrown away, which is the only destructive thing on
+        # this screen. The seeded database goes back to what it was.
+        delete = page.query_selector('.o_mailpro_draft_delete')
+        if not delete:
+            self.fail('a stored draft cannot be deleted from the conversation')
+        else:
+            delete.click()
+            page.wait_for_timeout(900)
+            # It asks first: there is no Trash for a draft, so this is the one
+            # click on this screen that destroys something for good.
+            confirm = page.query_selector('.modal footer button.btn-primary')
+            if not confirm:
+                self.fail('deleting a draft destroys it without asking')
+            else:
+                confirm.click()
+                page.wait_for_timeout(1500)
+                if page.query_selector('.o_mailpro_draft'):
+                    self.fail('the deleted draft is still on the conversation')
+                left_open = self.dialog_in_the_way()
+                if left_open:
+                    self.fail(f'a dialog was left over the Inbox: {left_open}')
+
+        inbox = page.query_selector('.o_mailpro_folder:has-text("Inbox")')
+        if inbox:
+            inbox.click()
+            page.wait_for_timeout(1500)
+        self.error_free('drafts')
 
     def panes(self):
         """The dividers move, the side panes fold, and the browser remembers.

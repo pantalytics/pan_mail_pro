@@ -10,7 +10,9 @@ record that carries mail, opening the Inbox on that conversation or, when the
 record carries more than one thread, on its list. Still on paper: door 1's
 more-messages-elsewhere line, and the customer view with its timeline, whose
 read method (`customer_timeline`) shipped and is tested, so what is left of it
-is markup. Also still on paper: the composer's
+is markup. Drafts ship in 19.0.16.0.0: a third
+folder in the mailbox list, a **Save draft** beside Send, and the unsent answer
+on the conversation it belongs to. Also still on paper: the composer's
 **Cc/followers block**, and *All mailboxes*, the one folder that spans
 them. Reply opens Odoo's own composer with To filled from
 the newest inbound message and Cc not filled at all. New Email opens the same
@@ -330,9 +332,13 @@ conversation compounds from there.
 
 **The cases we drop.**
 
-- **Drafts.** Closing the pane loses the text. The composer is a transient
-  model and a half-written mail that survives a reload is a second inbox to
-  empty.
+- ~~**Drafts.**~~ Shipped in 19.0.16.0.0, and the refusal above is the reason
+  the shape is as small as it is. A draft is stored only when somebody presses
+  **Save draft**: there is no autosave, so closing the pane still loses the
+  text, and the Drafts folder holds what people decided to keep rather than
+  everything they started. It is one table, `pan.mail.draft`, private to its
+  author, on the record the mail will be sent from -- so sending it changes
+  nothing about where the conversation lives. No drafts of internal notes.
 - **More than one record.** One mail, one record. `mail.message` has one
   `res_id`, and a mail that is about two things is two mails or a link in the
   body.

@@ -101,14 +101,22 @@ export class ComposerForm extends Component {
 /**
  * @param {Object} options
  * @param {Function} options.onSent called after the mail actually went out
+ * @param {Function} options.onDraftSaved called with the stored draft's row
  */
-export function useComposer({ onSent }) {
+export function useComposer({ onSent, onDraftSaved }) {
     const orm = useService("orm");
     // `mode` is which of the three things is being written: `reply`, `note`
     // or `new`. The button label and the pane's head read it; the composer,
     // the save and the post are the same, and what separates them is the
     // subtype and the record in the context.
-    const state = useState({ open: false, sending: false, mode: "reply" });
+    //
+    // `draftId` is the stored draft this composer came out of, if it came out
+    // of one. Saving again writes that row rather than a second one, and
+    // sending deletes it: a draft that survives the mail it became is the
+    // Drafts folder nobody trusts.
+    const state = useState({
+        open: false, sending: false, saving: false, mode: "reply", draftId: null,
+    });
 
     // Where the form's controller leaves itself on mount. Not in `state`: it
     // is a component, not a fact about the screen, and nothing renders it.
@@ -117,6 +125,8 @@ export function useComposer({ onSent }) {
     function close() {
         state.open = false;
         state.sending = false;
+        state.saving = false;
+        state.draftId = null;
         handle.controller = null;
         formProps.viewProps = null;
     }
@@ -132,8 +142,9 @@ export function useComposer({ onSent }) {
         /**
          * @param {Object} context the `default_*` values for the message
          * @param {string} [mode] "reply", "note" or "new"; the label only
+         * @param {number} [draftId] the stored draft this composer continues
          */
-        open(context, mode = "reply") {
+        open(context, mode = "reply", draftId = null) {
             formProps.viewProps = {
                 type: "form",
                 resModel: "mail.compose.message",
@@ -152,7 +163,9 @@ export function useComposer({ onSent }) {
             };
             state.open = true;
             state.sending = false;
+            state.saving = false;
             state.mode = mode;
+            state.draftId = draftId || null;
         },
 
         close,
@@ -169,6 +182,42 @@ export function useComposer({ onSent }) {
          * open would let a second Send post the same reply again, so it
          * closes and the conversation refreshes before the dialog shows.
          */
+        /**
+         * Put the unsent mail away: save the composer, then store it.
+         *
+         * The wizard is saved first and the server reads *it*, so a draft is
+         * the record that would have been posted -- the same recipients, the
+         * same uploaded files -- rather than a second reading of the form in
+         * JavaScript. A save that fails says which field is missing, in the
+         * form, next to the field, exactly as Send does.
+         *
+         * The pane closes afterwards. A draft is what you write when you are
+         * leaving the mail, and a composer that stays open over a stored copy
+         * is two places holding the same words.
+         */
+        async saveDraft() {
+            const controller = handle.controller;
+            if (!controller || state.saving || state.sending) {
+                return;
+            }
+            state.saving = true;
+            const record = controller.model.root;
+            let row = null;
+            try {
+                if (!(await record.save({ reload: false }))) {
+                    return;
+                }
+                row = await orm.call("pan.mail.draft", "save_from_composer",
+                                     [record.resId], { draft_id: state.draftId });
+            } finally {
+                state.saving = false;
+                if (row) {
+                    close();
+                    await onDraftSaved(row);
+                }
+            }
+        },
+
         async send() {
             const controller = handle.controller;
             if (!controller || state.sending) {
@@ -177,12 +226,19 @@ export function useComposer({ onSent }) {
             state.sending = true;
             const record = controller.model.root;
             let sent = false;
+            const draftId = state.draftId;
             try {
                 if (!(await record.save({ reload: false }))) {
                     return;
                 }
                 sent = true;
                 await orm.call("mail.compose.message", "action_send_mail", [[record.resId]]);
+                // The draft became the mail, so it stops being a draft. After
+                // the send and not before: a delete that runs first turns a
+                // failed send into a lost answer.
+                if (draftId) {
+                    await orm.call("pan.mail.draft", "discard_draft", [draftId]);
+                }
             } finally {
                 state.sending = false;
                 if (sent) {

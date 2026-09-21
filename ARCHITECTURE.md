@@ -275,6 +275,7 @@ reviewed is what leaves.
 | Model | Purpose |
 |-------|---------|
 | `pan.mail.conversation` | AbstractModel, no table. The queries behind the Inbox screen: folders, conversations, one thread with its files and follow-ups, a customer's timeline, and what the chatter's door needs |
+| `pan.mail.draft` | One saved composer: an unsent mail on the record it will be sent from. The only thing the Inbox stores, and private to its author |
 
 Every configuration and diagnostic screen lives under Settings → Technical →
 Email → **Mail Pro**. 19.0.4.0.0 gave the module a "Communication" application
@@ -290,6 +291,39 @@ checks before it answers. It also reaches two tables whose ACL is
 manager-only (`pan.mail.thread.link`, `pan.mail.routing.log`) with `sudo()`,
 after the message search that fences the result -- the sudo buys the lookup,
 never the answer.
+
+**The one exception is a draft.** `pan.mail.draft` is a table, because an
+unsent mail is the only thing on that screen that exists nowhere else: the
+chatter has no row for it, `mail.message` has none either -- a message people
+can read is a message that went out -- and the composer is a transient wizard
+that is gone the moment the pane closes. Four decisions keep it from becoming
+a second inbox to empty:
+
+- **Private, with no manager exception.** One rule on `user_id`, all four
+  operations, every group. The mailbox managers who may read every mail in a
+  shared mailbox may not read what a colleague has not sent.
+- **Filed before it is written.** `model` and `res_id` are required, which is
+  the same question Reply and New Email already answer before the composer
+  opens. So sending a draft is a non-event: it goes out on the record it was
+  saved on, through the parent message it was saved with, and the link the
+  conversation had is the link it keeps.
+- **It never sends itself.** No state, no cron, no queue. A draft leaves the
+  table when it is sent or when it is deleted.
+- **It is stored from the wizard, not from the screen.** `save_from_composer`
+  takes the saved `mail.compose.message` and reads it, so a draft is the
+  record that would have been posted rather than a second reading of the form
+  in JavaScript. Reopening hands every value back as a `default_`, which is
+  what the ORM protects from the composer's own computes -- `_compute_body`
+  resets the body whenever no template is chosen.
+
+It is **not** the provider's draft. `mail.provider.client.save_draft` puts a
+complete MIME message in the mailbox's own Drafts folder for another client to
+finish; this row is an Odoo composer somebody closed. Storing it in both
+places would leave two half-written copies of one answer and nothing to settle
+which is newer, so the Inbox's Drafts folder lists this table and Outlook's own
+Drafts stays Outlook's. What the Inbox drops with it: no autosave (Save draft
+is a button, and closing the pane without it loses the words, as it always
+did), and no drafts of internal notes.
 
 Beyond that it is a namespace, not storage. Two rules hold it together: every query starts at `mail.message` so the ORM applies the record
 rules before anything is grouped (the thread index is not access controlled, so

@@ -99,13 +99,15 @@ class TestConversationApi(TransactionCase):
 
         Our own states -- the two unlinked ones -- read as a filter over a
         list, not as places mail sits, so they come back separately and only
-        for the folder somebody has open.
+        for the folder somebody has open. Drafts is a folder by that same
+        test: unsent mail is somewhere it sits, even though the rows come
+        from a table of our own rather than from `mail.message`.
         """
         self._mail()
         counts = self.Conversation.folder_counts(
             mailbox_id=self.mailbox.id, folder='inbox')
         self.assertEqual([row['id'] for row in counts['folders']],
-                         ['inbox', 'sent'])
+                         ['inbox', 'sent', 'drafts'])
         self.assertEqual([row['id'] for row in counts['filters']],
                          ['unread', 'unlinked_contact', 'unlinked_none'])
         by_id = {row['id']: row['count']
@@ -158,7 +160,7 @@ class TestConversationApi(TransactionCase):
         self._mail()
         counts = self.Conversation.folder_counts(mailbox_id=self.mailbox.id)
         self.assertEqual(counts['filters'], [])
-        self.assertEqual(len(counts['folders']), 2)
+        self.assertEqual(len(counts['folders']), 3)
 
     def test_sent_is_every_thread_written_in_not_the_last_word(self):
         """A customer answering does not take a thread out of Sent."""
