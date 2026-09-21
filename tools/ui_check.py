@@ -411,8 +411,11 @@ class Checks:
                 self.fail('New Email step two offers no records')
                 return
             records = page.query_selector_all(ODOO_PICKER + ' .o_data_row')
-            # The first column is the name; the row is every column at once.
-            cell = records[0].query_selector('.o_data_cell')
+            # The name is the first column with words in it: the row's text
+            # is every column at once, and a contact's first column is the
+            # avatar.
+            cell = next(c for c in records[0].query_selector_all('.o_data_cell')
+                        if c.inner_text().strip())
             picked = cell.inner_text().strip()
             cell.click()             # step two: the record itself
             # The composer opens in the conversation pane, the same one a
@@ -1300,10 +1303,11 @@ class Checks:
         # matches nothing has to reach the server and come back empty. Enter
         # activates the autocomplete item under the caret, and that list is
         # built asynchronously, so it waits for the list the way the Inbox's
-        # own search check does.
+        # own search check does. The list is a dropdown, drawn in the overlay
+        # container and not inside the modal.
         page.fill(ODOO_PICKER + ' .o_searchview input', 'zzzzgeenmatch')
         try:
-            page.wait_for_selector(ODOO_PICKER + ' .o_searchview_autocomplete', timeout=5000)
+            page.wait_for_selector('.o_searchview_autocomplete', timeout=5000)
         except Exception:
             self.fail('typing in the record picker offered nothing to search')
         page.wait_for_timeout(800)
