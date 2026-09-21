@@ -1464,6 +1464,19 @@ class Checks:
         if not back:
             self.fail('the phone conversation has no way back to the list')
             return
+
+        # The two chevrons at the ends of that row point at the pane each one
+        # asks for: the list is back to the left, the record arrives over the
+        # screen from the right. Same icon both ways is two identical arrows
+        # doing opposite things, which is what the divider's own rule draws
+        # here if this button borrows it.
+        if not back.query_selector('.fa-chevron-left'):
+            self.fail('the phone way back does not point at the list')
+        through = page.query_selector('.o_mailpro_odoo_record_button')
+        if through and not through.query_selector('.fa-chevron-right'):
+            self.fail('the phone way through to the record points the same way '
+                      'as the way back to the list')
+
         back.click()
         page.wait_for_timeout(400)
         if not self.visible('.o_mailpro_conversation_list'):

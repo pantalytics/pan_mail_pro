@@ -591,21 +591,29 @@
                                     <!--
                                         The way to the Odoo record, on a phone
                                         where it has no divider to carry its
-                                        button. It wears the same chevron that
-                                        divider wears when the record is off
-                                        screen, pointing the way the boundary
-                                        moves to bring it in. A labelled
-                                        button here cost the subject two lines
-                                        of a head that is already most of the
-                                        screen.
+                                        button. A labelled button here cost
+                                        the subject two lines of a head that
+                                        is already most of the screen.
+
+                                        It points right, and not at whatever
+                                        the record's divider would wear: there
+                                        is no divider on a phone and so no
+                                        boundary to move. The record arrives
+                                        over the screen from the right and the
+                                        list is back to the left, so each
+                                        chevron points at the pane it asks
+                                        for. The divider's rule would draw
+                                        this one pointing left, which is the
+                                        back chevron at the other end of the
+                                        same row: two identical arrows doing
+                                        opposite things.
                                     -->
                                     <button t-if="showOdooRecordButton" type="button"
                                             class="o_mailpro_odoo_record_button flex-shrink-0"
                                             t-att-title="selectedRecord.name"
                                             t-att-aria-label="panes.toggleLabel('odoo_record')"
                                             t-on-click="() => this.showOdooRecordScreen()">
-                                        <i class="fa" t-att-class="panes.toggleIcon('odoo_record')"
-                                           aria-hidden="true"/>
+                                        <i class="fa fa-chevron-right" aria-hidden="true"/>
                                     </button>
                                     <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm"
                                             t-on-click="() => this.logNote()">Log note</button>

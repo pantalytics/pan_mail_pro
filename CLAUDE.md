@@ -746,6 +746,20 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   a pane -- and the vocabulary is enforceable instead of remembered. Same for
   the chevron: the mailbox rows unfolded with a caret while the conversation
   rows beside them used a chevron, one gesture drawn two ways.
+- **Borrowing an icon rule borrows its assumptions.** The phone's way through
+  to the record read `toggleIcon('odoo_record')`, which is the divider's rule:
+  "the record is folded, so the boundary moves left to bring it back". On a
+  phone there is no divider and no boundary -- the record arrives over the
+  screen from the right -- so it drew a left chevron identical to the back
+  chevron at the other end of the same row, two identical arrows doing
+  opposite things. Each chevron points at the pane it asks for, and the
+  browser check now reads both ends of that row.
+- **The `ui-screenshots` artifact is readable from a cloud session.**
+  `curl -H "Authorization: Bearer $GITHUB_TOKEN" .../actions/runs/<id>/artifacts`,
+  then the same header on `/actions/artifacts/<id>/zip`, unzip, crop with
+  Pillow and open the PNG. Without Docker that is the only way to see the
+  screen, and it is what caught the two identical chevrons that every
+  assertion was happy with.
 - **No Docker in a cloud session means no `tools/ci.sh test|ui`.** What still
   runs: `tools/ci.sh lint`, `BASE_REF=origin/19.0 tools/ci_lint.sh`,
   `pip install libsass` + `sass.compile(filename=...)` on the stylesheet, and
