@@ -45,6 +45,8 @@ from odoo.fields import Domain
 from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import email_split, html2plaintext
 
+from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+
 _logger = logging.getLogger(__name__)
 
 # What the Files tab draws at most. A tab, not a document archive: past this
@@ -53,6 +55,11 @@ FILE_PAGE = 50
 
 # One page. Deliberately small: the list is read, not scrolled through.
 DEFAULT_LIMIT = 30
+
+# One page of a live mailbox. Larger than the imported list because it is not
+# paged at all: the provider contract's search takes a limit and no offset, so
+# this number is the whole of the first answer and the search box is the rest.
+LIVE_LIMIT = 50
 
 # The ceiling on what a caller may ask for. `limit` arrives over RPC and every
 # query under it materialises rows; a page is a page.
@@ -495,6 +502,248 @@ class PanMailConversation(models.AbstractModel):
             'items': items,
             'has_more': len(merged) > offset + limit,
         }
+
+    # ------------------------------------------------------------------
+    # Your own mailbox, read from the provider
+    #
+    # The design is in `docs/plans/personal-mailbox.md`. Two rules, and they
+    # are the whole of why this is allowed to exist:
+    #
+    # **Nothing is stored.** These methods read the mailbox through the client
+    # contract and return rows. There is no mirror table, no flag of ours on a
+    # provider message and no cursor, so there is nothing to keep correct and
+    # nothing that outlives the request. The privacy boundary does not move
+    # because no mail crosses it.
+    #
+    # **Ownership is the access rule.** A group says "may read a mailbox";
+    # the question here is "may read *this* mailbox in full", and only its
+    # owner may. A shared mailbox has no owner and is refused outright, which
+    # is also the answer to "can a colleague read my mail this way": no, and
+    # not because of a menu.
+    # ------------------------------------------------------------------
+
+    def _own_mailbox(self, mailbox_id):
+        """The mailbox, if it is the caller's own personal one.
+
+        Deliberately not `_is_sendable_by`: that one lets anybody send through
+        the notification mailbox, which is right for sending and would be a
+        hole here.
+        """
+        self._check_caller()
+        try:
+            mailbox = self.env['pan.mail.mailbox'].browse(int(mailbox_id)).exists()
+        except (TypeError, ValueError):
+            mailbox = self.env['pan.mail.mailbox'].browse()
+        if not mailbox:
+            raise AccessError(_('No such mailbox.'))
+        if (mailbox.mailbox_type != 'personal'
+                or mailbox.owner_user_id != self.env.user):
+            raise AccessError(
+                _('Reading a mailbox in full is for its own owner. A shared '
+                  'mailbox is read through what the sync imported.'))
+        return mailbox
+
+    @api.model
+    def live_mailboxes(self):
+        """The mailboxes this user may read in full: their own, if any."""
+        self._check_caller()
+        mailboxes = self.env['pan.mail.mailbox'].search([
+            ('mailbox_type', '=', 'personal'),
+            ('owner_user_id', '=', self.env.user.id),
+        ])
+        return [{'id': m.id, 'email': m.email}
+                for m in mailboxes if m._has_working_credentials()]
+
+    @api.model
+    def live_messages(self, mailbox_id, folder=FOLDER_INBOX, linked=None,
+                      search=None, limit=LIVE_LIMIT):
+        """One page of your own mailbox, newest first, straight from the provider.
+
+        `linked` is the filter the whole feature is for: `False` asks for the
+        mail Odoo does not have, `True` for the mail it does, `None` for the
+        mailbox as it is. It is applied after the provider answers, because no
+        provider can be asked "is this in Odoo" -- which also means a page of
+        50 filtered down may show fewer than 50 rows, and says so with
+        `scanned`.
+
+        Not paged: `search_messages` takes a limit and no offset. Older mail
+        is a search term rather than a scroll, which is how anybody finds a
+        mail from March anyway.
+        """
+        mailbox = self._own_mailbox(mailbox_id)
+        if folder not in (FOLDER_INBOX, FOLDER_SENT):
+            raise AccessError(_('That folder is not one this screen reads.'))
+        limit, _offset = self._page(limit, 0, default=LIVE_LIMIT)
+        client = mailbox._get_client()
+        account = client.resolve_receiving_account(mailbox)
+        if not account.connected:
+            return {'rows': [], 'scanned': 0, 'connected': False}
+        messages = client.search_messages(
+            account=account, mailbox=mailbox, folder=folder,
+            query=search or None, limit=limit,
+        )
+        links = self._links_for_live(messages)
+        rows = []
+        for message in messages:
+            link = links.get(message.get('message_id') or '')
+            if linked is not None and bool(link) != bool(linked):
+                continue
+            rows.append(self._live_row(message, link))
+        return {'rows': rows, 'scanned': len(messages), 'connected': True}
+
+    @api.model
+    def read_live_message(self, mailbox_id, provider_message_id):
+        """One live message in full, for the reading pane.
+
+        A read and nothing else: it does not mark the message seen. Reading
+        mail here must not change what the mail client next to this screen
+        shows, and a seen flag written from a preview is the classic way to
+        lose an email.
+        """
+        mailbox = self._own_mailbox(mailbox_id)
+        client = mailbox._get_client()
+        account = client.resolve_receiving_account(mailbox)
+        message = client.get_message(
+            account=account, mailbox=mailbox,
+            provider_message_id=provider_message_id,
+        )
+        if not message:
+            raise AccessError(_('That message is no longer in this mailbox.'))
+        link = self._links_for_live([message]).get(message.get('message_id') or '')
+        row = self._live_row(message, link)
+        row['body'] = message.get('body_html') or ''
+        row['to'] = [a.get('email') for a in (message.get('to') or []) if a.get('email')]
+        return row
+
+    @api.model
+    def import_live_message(self, mailbox_id, provider_message_id):
+        """File one live message in Odoo, and say where it landed.
+
+        This is the moment a private read becomes Odoo data, so it is an
+        explicit act with its own button and never a side effect of opening a
+        message. It runs the ordinary fetcher with `pan_mail_force_import`,
+        which lifts the sync-level and internal-domain filters and lifts
+        neither the duplicate guard nor the contact block list.
+
+        The fetcher runs as the system, the way the cron runs it: filing a
+        mail creates a contact, posts on a record and writes a routing log,
+        and a person reading their own mailbox has rights to none of those.
+        The authorisation is `_own_mailbox` above -- you may only file a
+        message that is in a mailbox you own -- and what happens next is the
+        import this module already does, triggered by hand instead of by the
+        clock. The gates run either way, so the block list still holds.
+        """
+        mailbox = self._own_mailbox(mailbox_id)
+        client = mailbox._get_client()
+        account = client.resolve_receiving_account(mailbox)
+        message = client.get_message(
+            account=account, mailbox=mailbox,
+            provider_message_id=provider_message_id,
+        )
+        if not message:
+            raise AccessError(_('That message is no longer in this mailbox.'))
+        folder = FOLDER_SENT if self._is_own_address(mailbox, message) else FOLDER_INBOX
+        imported = self.env['pan.mail.fetcher'].sudo().with_context(
+            pan_mail_force_import=True)._process_message(mailbox, message, folder)
+        link = self._links_for_live([message]).get(message.get('message_id') or '')
+        return {'imported': bool(imported), 'linked': link or False}
+
+    # ------------------------------------------------------------------
+    # Live helpers
+    # ------------------------------------------------------------------
+
+    def _is_own_address(self, mailbox, message):
+        """Did this mailbox write the message? Which decides Inbox or Sent."""
+        sender = (message.get('from') or {}).get('email') or ''
+        return sender.strip().lower() == (mailbox.email or '').strip().lower()
+
+    def _links_for_live(self, messages):
+        """Message-ID -> the record it is filed on, for a page of live rows.
+
+        Two places to look, for the reason `pan.mail.matcher._resolve_message_id`
+        gives: Odoo's own `message_id`, which is where `message_post` puts the
+        id on import, and the ref index, which carries every *other* id a
+        message was seen under -- the one the provider minted when we sent it
+        included. The index alone answers "no" for most imported mail, because
+        `_index_message` writes nothing when the two agree, which is the normal
+        case. Batched rather than per row: this runs once per page.
+
+        Both reads are sudo, so they can answer for a record the reader may not
+        open. That is deliberate and bounded: the answer is "yes, Odoo has
+        this", never the record's name, which is filled in below only for
+        records the reader can actually read. Telling somebody their own email
+        is already filed is not a leak; telling them what it is filed on can be.
+        """
+        wanted = [m.get('message_id').strip()
+                  for m in messages if m.get('message_id')]
+        if not wanted:
+            return {}
+        found = {}
+        own = self.env['mail.message'].sudo().search(
+            [('message_id', 'in', wanted)], order='id desc')
+        for message in own:
+            if not message.model or not message.res_id:
+                continue
+            found.setdefault(message.message_id, (message.model, message.res_id))
+        missing = [message_id for message_id in wanted if message_id not in found]
+        refs = self.env['pan.mail.message.ref'].sudo().search(
+            [('message_id', 'in', missing)]) if missing else []
+        for ref in refs:
+            message = ref.mail_message_id
+            if not message.model or not message.res_id:
+                continue
+            found.setdefault(ref.message_id, (message.model, message.res_id))
+        names = self._readable_names(found.values())
+        return {
+            message_id: {
+                'model': model,
+                'res_id': res_id,
+                'name': names.get((model, res_id)) or '',
+            }
+            for message_id, (model, res_id) in found.items()
+        }
+
+    def _readable_names(self, pairs):
+        """Display names for the records in this page the reader may open."""
+        names = {}
+        by_model = {}
+        for model, res_id in pairs:
+            by_model.setdefault(model, set()).add(res_id)
+        for model, res_ids in by_model.items():
+            if model not in self.env:
+                continue
+            records = self.env[model].browse(sorted(res_ids)).exists()
+            for record in records._filtered_access('read'):
+                names[(model, record.id)] = record.display_name
+        return names
+
+    def _live_row(self, message, link):
+        """One row of the live list, in the shape the conversation list draws."""
+        sender = message.get('from') or {}
+        date = message.get('date')
+        return {
+            'id': 'live:%s' % (message.get('provider_message_id') or ''),
+            'live': True,
+            'provider_message_id': message.get('provider_message_id'),
+            'subject': message.get('subject') or _('(no subject)'),
+            'correspondent': sender.get('name') or sender.get('email') or '',
+            'email': sender.get('email') or '',
+            'date': date.isoformat() if isinstance(date, datetime) else (date or ''),
+            'unread': not message.get('is_read'),
+            'preview': self._live_preview(message),
+            'linked': link or False,
+        }
+
+    def _live_preview(self, message):
+        """The one-line snippet, from whatever the list form gave us."""
+        body = (message.get('body_html') or '')[:PREVIEW_SOURCE]
+        if not body:
+            return ''
+        cut = QUOTE_START.search(body)
+        if cut:
+            body = body[:cut.start()]
+        text = html2plaintext(body) if message.get('body_is_html') else body
+        return ' '.join(text.split())[:140]
 
     # ------------------------------------------------------------------
     # Batch helpers: one query for the page, never one per row

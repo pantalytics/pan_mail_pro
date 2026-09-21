@@ -294,6 +294,42 @@ own methods called on the record itself, unwrapped, so the reply path cannot
 drift from the chatter. The screen it serves is designed in
 `docs/plans/conversation-view.md`.
 
+### Your own mailbox, read live
+
+One set of methods on `pan.mail.conversation` does not start at `mail.message`
+at all: `live_mailboxes`, `live_messages`, `read_live_message` and
+`import_live_message` read a mailbox straight from the provider through the
+client contract. They exist because the imported list is by design a subset of
+a mailbox -- replies plus whatever rung of `sync_level` was chosen -- and a
+subset is not something anybody can work in. Importing everything instead is
+the wrong fix: the fallback home for an unfiled mail is the sender's own
+contact chatter, so a full import would publish internal mail to every
+internal user.
+
+So nothing is stored. There is no mirror table, no flag of ours on a provider
+message and no cursor; a read is a read, and the privacy boundary does not
+move because no mail crosses it. Two consequences are the whole design:
+
+- **Ownership is the access rule.** `_own_mailbox` requires a `personal`
+  mailbox whose `owner_user_id` is the caller. A shared mailbox has no owner
+  and is refused outright, and the manager group is necessary but not
+  sufficient -- a colleague with every Mail Pro right still cannot read your
+  mail this way. This is the one place in the module where a group would have
+  been the wrong check.
+- **Reading is private, filing is public.** Each row carries `linked`, looked
+  up in the Message-ID ref index, which is what "in Odoo / not in Odoo"
+  filters on. The lookup is a sudo read, so it can answer for a record the
+  reader may not open: it then says *that* Odoo holds the mail and never what
+  it is filed on. `import_live_message` is the explicit act that turns a
+  private read into ordinary Odoo data, under ordinary Odoo rules; it runs the
+  same fetcher with `pan_mail_force_import`, which lifts the sync-level and
+  internal-domain filters and lifts neither the duplicate guard nor the
+  contact block list.
+
+The design, including what it deliberately does not do (no reply to a mail
+Odoo does not have, no paging past the first page, no shared mailboxes), is in
+`docs/plans/personal-mailbox.md`.
+
 Replying happens in the conversation pane, not in a dialog over the screen: a
 dialog hides the list, the record and the mail being answered, which are the
 three things somebody looks at while writing. It is still `mail.compose.message`
