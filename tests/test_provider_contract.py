@@ -56,7 +56,8 @@ class TestProviderRegistry(TransactionCase):
             # The mailbox actions. `tests/test_mailbox_actions.py` checks the
             # same list against Squirrel's tool names.
             'list_folders', 'create_folder', 'rename_folder', 'delete_folder',
-            'search_messages', 'set_seen', 'set_flagged', 'move_messages',
+            'search_messages', 'unread_message_ids', 'set_seen', 'set_flagged',
+            'move_messages',
             'delete_messages', 'save_draft', 'update_draft', 'send_draft',
         ]
         for code in PROVIDER_CLIENTS:

@@ -47,6 +47,42 @@ class MailMessage(models.Model):
     )
 
     # -------------------------------------------------------------------------
+    # Read state, mirrored from the provider
+    #
+    # The mailbox owns this fact, not Odoo and not the reader: `\Seen` is what
+    # Outlook shows the next person to open the same mailbox, and a private
+    # per-user flag is how four people end up answering one mail. Odoo keeps a
+    # copy because the conversation list has to filter, sort and page on it,
+    # which a set held in Python cannot do -- but the provider is the
+    # authority, and `pan.mail.mailbox.refresh_read_state()` overwrites this
+    # from what the provider says.
+    #
+    # It is deliberately NOT Odoo's `mail.notification` needaction row. That
+    # one is per user and answers "does this Odoo notification still want me",
+    # which is a different question with a different screen (Discuss). See
+    # ARCHITECTURE.md section 9.18.
+    # -------------------------------------------------------------------------
+    x_provider_message_id = fields.Char(
+        string='Provider Message ID',
+        index='btree_not_null',
+        help='The handle the provider knows this message by, inside the mailbox '
+             'that holds it. Used to mark it read or unread at the provider; '
+             'not an RFC Message-ID.',
+    )
+
+    x_is_read = fields.Boolean(
+        string='Read',
+        default=True,
+        # Indexed because the Unread filter is a clause on it. The default is
+        # True on purpose: a message nobody ever mirrored is not evidence of
+        # unread mail, and a database that lights up entirely on upgrade would
+        # be worse than one that lights up on the next refresh.
+        index=True,
+        help='Whether the mailbox has read this message. Mirrored from the '
+             'provider; not a per-user flag.',
+    )
+
+    # -------------------------------------------------------------------------
     # Communication lens
     # -------------------------------------------------------------------------
     x_direction = fields.Selection(

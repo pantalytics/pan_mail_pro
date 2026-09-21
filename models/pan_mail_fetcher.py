@@ -1066,6 +1066,17 @@ class PanMailFetcher(models.AbstractModel):
                     # earlier attempt through msg_dict never managed.
                     'x_email_to': to_addresses,
                     'x_email_cc': cc_addresses,
+                    # The provider's own handle, and what the provider says
+                    # about this mail's read state right now. Both are the
+                    # mailbox's facts rather than Odoo's: the handle is how
+                    # `set_seen` reaches this message later, and the read flag
+                    # is why a mail you already read in Outlook does not arrive
+                    # here shouting for attention. A provider that says nothing
+                    # means read, which is what an imported mail looks like to
+                    # everyone who was not sitting in the mailbox.
+                    'x_provider_message_id': provider_message_id or False,
+                    'x_is_read': bool(full_message.get(
+                        'is_read', message.get('is_read', True))),
                 })
 
             _logger.info(f"[Incoming Mail] Successfully processed: {internet_message_id} -> {target_record._name}/{target_record.id}")
