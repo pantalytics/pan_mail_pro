@@ -10,10 +10,12 @@ record that carries mail, opening the Inbox on that conversation or, when the
 record carries more than one thread, on its list. Still on paper: door 1's
 more-messages-elsewhere line, and the customer view with its timeline, whose
 read method (`customer_timeline`) shipped and is tested, so what is left of it
-is markup. *All mailboxes*, the one folder that spans them, ships in
-19.0.16.1.0: the row, the mailbox on every list row that needs one, and the
-reply that answers from the conversation's mailbox rather than the folder's.
-Also still on paper: the composer's
+is markup. Drafts ship in 19.0.17.0.0: a third
+folder in the mailbox list, a **Save draft** beside Send, and the unsent answer
+on the conversation it belongs to. *All mailboxes*, the one folder that spans
+them, ships in 19.0.17.1.0: the row, the mailbox on every list row that needs
+one, and the reply that answers from the conversation's mailbox rather than the
+folder's. Also still on paper: the composer's
 **Cc/followers block**. Reply opens Odoo's own composer with To filled from
 the newest inbound message and Cc not filled at all. New Email opens the same
 composer in a dialog after the record is picked, rather than in pane 3 as
@@ -101,7 +103,7 @@ watches rather than one per mailbox that exists. 19.0.10.4.0.
 
 **Decision: one row at the top of the mailbox list, *All mailboxes*, with the
 same Inbox and Sent under it. Not a drop-down, and not a tick-list of
-mailboxes.** 19.0.16.1.0.
+mailboxes.** 19.0.17.1.0.
 
 Apple Mail puts All Inboxes behind a chevron because its sidebar keeps the
 accounts folded away underneath it. Ours already draws every mailbox in the
@@ -333,9 +335,18 @@ conversation compounds from there.
 
 **The cases we drop.**
 
-- **Drafts.** Closing the pane loses the text. The composer is a transient
-  model and a half-written mail that survives a reload is a second inbox to
-  empty.
+- ~~**Drafts.**~~ Shipped in 19.0.17.0.0, and the refusal above is the reason
+  the shape is as small as it is. One table, `pan.mail.draft`, private to its
+  author, on the record the mail will be sent from -- so sending it changes
+  nothing about where the conversation lives. No drafts of internal notes.
+
+  **Saved on leaving, not on a timer.** A draft is written by **Save draft**,
+  and by walking away from a composer somebody typed in: clicking another
+  conversation, or the step back on a phone. Not every few seconds -- an
+  autosave on a timer writes a row for every Reply anybody ever opened, which
+  is the second inbox this section refused, and it does it at the rate a
+  person types. Leaving writes one row, once. **Discard still discards**: the
+  one case where losing the answer is what was asked for.
 - **More than one record.** One mail, one record. `mail.message` has one
   `res_id`, and a mail that is about two things is two mails or a link in the
   body.

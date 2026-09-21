@@ -24,6 +24,7 @@ import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
+import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { Dropdown } from "@web/core/dropdown/dropdown";
 import { useDropdownState } from "@web/core/dropdown/dropdown_hooks";
 import { CheckboxItem } from "@web/core/dropdown/checkbox_item";
@@ -57,6 +58,9 @@ const SEARCH_DELAY = 400;
 // reply landing under the wrong subject.
 const EMPTY_CONVERSATION = () => ({
     messages: [], records: [], rejected: [], activities: [], suggestion: false,
+    // Your own unsent answers on this record. Nobody else's: the rule on
+    // `pan.mail.draft` decides that, and the screen never asks for more.
+    drafts: [],
     // The attachments as the mail store holds them: the ids in order, the
     // records themselves in `store`. See `files` below.
     files: { ids: [], store: {} },
@@ -203,7 +207,10 @@ export class ConversationView extends Component {
         // edit. The Inbox adds the button and nothing else.
         this.followerListDropdown = useDropdownState();
         this.panes = usePanes();
-        this.composer = useComposer({ onSent: () => this.onReplySent() });
+        this.composer = useComposer({
+            onSent: () => this.onReplySent(),
+            onDraftSaved: (row) => this.onDraftSaved(row),
+        });
         // Help improve Mail Pro: a no-op unless the session says otherwise.
         // Every `capture` below names a screen or a button, never content.
         this.improve = useImprove();
@@ -529,14 +536,25 @@ export class ConversationView extends Component {
     }
 
     sameConversation(left, right) {
+        // A draft has no message to key on and there can be two of them on one
+        // record, so its own id is what tells the rows apart. Undefined on
+        // both sides for every other row, which is the ordinary case.
         return left.model === right.model
             && left.res_id === right.res_id
-            && left.message_id === right.message_id;
+            && left.message_id === right.message_id
+            && (left.draft_id || false) === (right.draft_id || false);
     }
 
     /** A conversation picked from the list: on a phone, that is also a step. */
     async pick(conversation) {
         this.panes.showConversation();
+        if (conversation.draft_id) {
+            // A row in Drafts is an unsent mail, and there is one thing to do
+            // with one: carry on writing it. So the conversation opens with
+            // the composer already on it, in a single click.
+            await this.continueDraft(conversation);
+            return;
+        }
         await this.select(conversation);
     }
 
@@ -610,10 +628,29 @@ export class ConversationView extends Component {
     }
 
     /** The step back, on a phone. Nothing is deselected: the list marks it. */
-    backToList() {
-        this.composer.close();
+    async backToList() {
+        await this.leaveComposer();
         this.state.compose = null;
         this.panes.showConversationList();
+    }
+
+    /**
+     * Close the composer on the way out, keeping whatever was typed.
+     *
+     * Leaving is not discarding: Discard still throws the answer away, and
+     * every other way out of the composer -- another conversation, the step
+     * back on a phone -- stores it as a draft instead. The count under the
+     * mailbox is corrected; the list is not re-read, because the reader is
+     * already on their way somewhere and a list that reorders under them is
+     * worse than a number that waits for the next read.
+     */
+    async leaveComposer() {
+        const stored = await this.composer.leave();
+        if (stored) {
+            this.notification.add(_t("Draft saved."), { type: "success" });
+            await this.loadCounts(this.mailboxKey());
+        }
+        return stored;
     }
 
     /**
@@ -627,9 +664,11 @@ export class ConversationView extends Component {
      */
     async select(conversation, { openMessageId = null } = {}) {
         // A reply belongs to the conversation it answers, and this is another
-        // one. The draft goes with it: nothing was stored yet, and a composer
-        // left open over the wrong conversation is worse than retyping two lines.
-        this.composer.close();
+        // one, so the composer closes with it -- and what was typed into it
+        // is kept as a draft on the conversation it was written for. Losing
+        // an answer to a click on the list was the one thing this pane did
+        // that nobody expected.
+        await this.leaveComposer();
         this.state.selected = conversation;
         this.state.showRejected = false;
         this.improve.capture("conversation_opened", { folder: this.state.folder });
@@ -797,6 +836,12 @@ export class ConversationView extends Component {
             this.saveMailbox();
         }
         this.state.folder = folder;
+        // Every filter is a question about mail that arrived or went out.
+        // None of them is a question about your own unsent answer, so Drafts
+        // has no filter row and carries none in from the folder before it.
+        if (folder === "drafts") {
+            this.state.filter = null;
+        }
         this.panes.closeMailboxList();
         // A filter is a question about the folder you are in, so switching
         // folder keeps it: "linked to nothing" in Sent is a fair question,
@@ -1588,6 +1633,103 @@ export class ConversationView extends Component {
             default_composition_mode: "comment",
             default_subtype_xmlid: "mail.mt_note",
         }, "note");
+    }
+
+    // ------------------------------------------------------------- drafts
+
+    /** The unsent answers on the open conversation. Yours, and only yours. */
+    get drafts() {
+        return this.state.conversation.drafts || [];
+    }
+
+    /**
+     * Whether the open composer can be put away rather than sent.
+     *
+     * Not on a note. A note is two lines to the record's followers and it is
+     * written in one sitting; a Drafts folder that fills up with half-written
+     * notes is a second inbox for something that was never mail.
+     */
+    get canSaveDraft() {
+        return this.composer.state.open && this.composer.state.mode !== "note";
+    }
+
+    /**
+     * Open a stored draft: its conversation behind it, its words in the pane.
+     *
+     * The conversation first, so the pane the composer sits in is the thread
+     * the draft answers rather than an empty one. Then the composer, on the
+     * defaults the draft hands back -- the same subject, recipients and files
+     * it was saved with.
+     */
+    async continueDraft(row) {
+        await this.select(row);
+        await this.openDraft(row.draft_id);
+    }
+
+    /**
+     * The composer is made on the server and the pane mounts its form on it.
+     *
+     * Not opened empty on `default_` values: the composer recomputes its own
+     * body and subject while it mounts, so a draft handed over that way is
+     * gone before anybody sees it -- which is exactly what the browser check
+     * caught. `open_composer` creates the wizard, where the ORM protects the
+     * values it was created with, and the form has only to display it.
+     */
+    async openDraft(draftId) {
+        try {
+            const composerId = await this.orm.call(
+                "pan.mail.draft", "open_composer", [draftId]);
+            if (!composerId) {
+                // Without an id the form would open on a new, empty composer
+                // and look like a draft that lost its words. Say so instead.
+                throw new Error("pan.mail.draft.open_composer returned nothing");
+            }
+            this.composer.open({}, "reply", draftId, composerId);
+        } catch (error) {
+            this.notification.add(_t("Could not open that draft."), { type: "danger" });
+            console.warn("[Mail Pro] draft failed to open", error);
+        }
+    }
+
+    /**
+     * Throw a draft away.
+     *
+     * The one thing on this screen that destroys something nobody can get
+     * back -- there is no Trash for a draft -- so it is the one thing that
+     * asks first. Odoo's own confirmation dialog, because a dialog of ours
+     * would be a second one to keep in step with it.
+     */
+    deleteDraft(draftId) {
+        this.dialog.add(ConfirmationDialog, {
+            title: _t("Delete this draft"),
+            body: _t("The text is not kept anywhere else."),
+            confirmLabel: _t("Delete"),
+            confirm: () => this.discardDraft(draftId),
+            cancel: () => {},
+        });
+    }
+
+    async discardDraft(draftId) {
+        await this.orm.call("pan.mail.draft", "discard_draft", [draftId]);
+        if (this.composer.state.draftId === draftId) {
+            this.composer.close();
+        }
+        await this.readConversation();
+        await this.refresh({ keepSelection: true });
+    }
+
+    /**
+     * It was put away: the card above the thread, and the Drafts count.
+     *
+     * A new mail has no conversation behind it, so there is nothing to
+     * re-read and the line in the corner is the whole feedback. The folder is
+     * recounted either way, because that is where the draft went.
+     */
+    async onDraftSaved() {
+        this.state.compose = null;
+        this.notification.add(_t("Draft saved."), { type: "success" });
+        await this.readConversation();
+        await this.refresh({ keepSelection: true });
     }
 
     /**

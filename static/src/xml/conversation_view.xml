@@ -303,14 +303,18 @@
                         </div>
                         <div t-else="" class="o_mailpro_empty">
                             <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="listLabel"/> yet.</h3>
-                            <p class="o_mailpro_empty_text">
+                            <p t-if="state.folder === 'drafts'" class="o_mailpro_empty_text">
+                                Mail you save instead of sending appears here.
+                            </p>
+                            <p t-else="" class="o_mailpro_empty_text">
                                 New mail appears here as it arrives.
                             </p>
                         </div>
                     </t>
                     <t t-else="">
                         <div t-foreach="state.conversations" t-as="conversation"
-                             t-key="conversation.message_id" class="o_mailpro_group">
+                             t-key="conversation.draft_id ? 'draft-' + conversation.draft_id : conversation.message_id"
+                             class="o_mailpro_group">
                             <!--
                                 The chevron sits outside the row it belongs to,
                                 because a button inside a button is not a thing a
@@ -722,6 +726,31 @@
             written above the mail it answers instead of in place of it.
         -->
         <div class="o_mailpro_messages">
+            <!--
+                The unsent answers, above the thread they answer. A draft is
+                not a message: nobody received it, so it never wears a
+                message's card. One line with the word on it, and the two
+                things anybody does with one.
+            -->
+            <div t-foreach="drafts" t-as="draft" t-key="draft.draft_id"
+                 class="o_mailpro_draft d-flex align-items-center gap-2">
+                <button type="button"
+                        class="o_mailpro_draft_open flex-grow-1 min-w-0 d-flex align-items-baseline gap-2 text-start"
+                        t-on-click="() => this.openDraft(draft.draft_id)">
+                    <span class="o_mailpro_draft_tag flex-shrink-0">Draft</span>
+                    <span class="o_mailpro_draft_subject text-truncate" t-esc="draft.subject"/>
+                    <span class="o_mailpro_draft_preview text-truncate flex-grow-1"
+                          t-esc="draft.preview"/>
+                </button>
+                <span class="o_mailpro_date flex-shrink-0"
+                      t-att-title="fullDate(draft.date)" t-esc="day(draft.date)"/>
+                <button type="button" class="o_mailpro_draft_delete flex-shrink-0"
+                        title="Delete draft"
+                        t-on-click="() => this.deleteDraft(draft.draft_id)">
+                    <i class="fa fa-trash-o" aria-hidden="true"/>
+                    <span class="visually-hidden">Delete draft</span>
+                </button>
+            </div>
             <t t-foreach="state.conversation.messages" t-as="message" t-key="message.id">
             <!--
                 A record event is one line, never a card:
@@ -981,8 +1010,27 @@
 
     <t t-name="pan_mail_pro.ComposerButtons">
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
+            <!--
+                The two ways out, and the button says which one this is. On a
+                stored draft it is Close and it keeps the edits, the same as
+                clicking another conversation does. Otherwise it is Discard,
+                and Discard still throws the answer away: somebody saying so
+                is the one case where losing it is the point.
+            -->
             <button type="button" class="btn btn-link btn-sm"
-                    t-on-click="() => composer.close()">Discard</button>
+                    t-on-click="() => composer.state.draftId ? this.leaveComposer() : composer.close()">
+                <t t-if="composer.state.draftId">Close</t>
+                <t t-else="">Discard</t>
+            </button>
+            <!--
+                Put it away instead of sending it. Not on a note: a note is
+                two lines to the followers, written in one sitting, and a
+                Drafts folder filling up with half-written notes is a second
+                inbox for something that was never mail.
+            -->
+            <button t-if="canSaveDraft" type="button" class="btn btn-secondary btn-sm"
+                    t-att-disabled="composer.state.saving or composer.state.sending"
+                    t-on-click="() => composer.saveDraft()">Save draft</button>
             <button type="button" class="btn btn-primary btn-sm"
                     t-att-disabled="composer.state.sending"
                     t-on-click="() => composer.send()">
