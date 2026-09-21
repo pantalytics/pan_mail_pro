@@ -25,6 +25,15 @@ SYNC_FAILURE_LIMIT = 5
 # one call per visit rather than one per click.
 READ_STATE_TTL = 60
 
+# How long a mailbox may go without a check before the screen says so. The cron
+# runs every minute, so this is fifteen missed runs: long enough that a busy
+# worker, a restart or a slow provider costs nobody a red mark, short enough
+# that a cron Odoo deactivated is visible the same morning. It is deliberately
+# not derived from the cron's own interval -- reading that record on every
+# compute buys accuracy nobody asked for, and a customer who slows the cron to
+# five minutes is still inside this window.
+STALE_AFTER_MINUTES = 15
+
 
 
 class PanMailMailbox(models.Model):
@@ -301,6 +310,21 @@ class PanMailMailbox(models.Model):
              "apart from 'Last synced' so a quiet folder cannot hold the "
              "other one back."
     )
+    # The heartbeat, and the only field on this model that means "we looked".
+    # The two cursors above are the date of the newest message read, so on a
+    # quiet mailbox they stand still while everything works -- which is exactly
+    # how the form came to read 36 minutes behind on a mailbox syncing every
+    # minute. A cursor answers "when did mail last arrive"; nothing answered
+    # "when did we last check", so the screen could not say a mailbox was fine
+    # and put two buttons there instead.
+    last_check_date = fields.Datetime(
+        string='Last checked',
+        readonly=True,
+        copy=False,
+        help="When this mailbox last completed a sync run, whether or not "
+             "there was anything to read. Kept apart from 'Last synced', "
+             "which is the date of the newest message read."
+    )
     alias_id = fields.Many2one(
         'mail.alias',
         string='Route to Team',
@@ -345,7 +369,7 @@ class PanMailMailbox(models.Model):
     ], string='Status', compute='_compute_health_status', store=False)
 
     @api.depends('state', 'sync_level', 'mailbox_type', 'provider', 'owner_user_id',
-                 'sync_failure_count',
+                 'sync_failure_count', 'last_check_date',
                  'owner_user_id.x_pan_mail_account_ids.connected')
     def _compute_health_status(self):
         for record in self:
@@ -359,8 +383,68 @@ class PanMailMailbox(models.Model):
                 record.health_status = 'warning'
             elif record._syncs_more_than_replies() and record.state == 'draft':
                 record.health_status = 'warning'
+            elif record._sync_is_stale():
+                record.health_status = 'warning'
             else:
                 record.health_status = 'healthy'
+
+    def _sync_is_stale(self):
+        """Has this mailbox gone quiet in the way that means nobody is reading it?
+
+        Only ever asked of a mailbox that has passed every rung above: the
+        credentials work and the state is not `error`. So a True here means the
+        one failure the module could not see before -- the cron itself not
+        running. Odoo deactivates a cron that keeps hitting its time limit, and
+        until now that showed up as mail simply not arriving, on a form whose
+        every indicator still read OK.
+
+        An empty `last_check_date` is *not* stale. A mailbox that has never
+        completed a run is either still in setup, which the `draft` rung above
+        already says, or freshly upgraded, and neither is worth a warning the
+        first cron minute will clear.
+        """
+        self.ensure_one()
+        if self.is_notification_mailbox or not self.last_check_date:
+            return False
+        age = fields.Datetime.now() - self.last_check_date
+        return age.total_seconds() > STALE_AFTER_MINUTES * 60
+
+    status_message = fields.Char(compute='_compute_status_message')
+
+    @api.depends('health_status', 'error_message', 'last_check_date',
+                 'sync_failure_count', 'state')
+    def _compute_status_message(self):
+        """The one sentence a mailbox owes the reader, or nothing at all.
+
+        Empty while it works, which is what lets both surfaces show status by
+        absence: the form's alert and the Inbox's mailbox list are hidden on a
+        falsy value rather than each deciding for themselves what healthy looks
+        like. Two screens, one sentence, written once.
+        """
+        for record in self:
+            if record.health_status == 'healthy':
+                record.status_message = False
+            elif record._needs_credentials() and not record._has_working_credentials():
+                # Phrased by the provider's own client, which needs the client
+                # to exist. A mailbox whose provider row was removed cannot
+                # answer, and a compute that raises takes the whole form with
+                # it -- including the sentence explaining why.
+                try:
+                    record.status_message = record._no_credentials_error()
+                except Exception:  # noqa: BLE001 - any client failure, same answer
+                    record.status_message = _('This mailbox has no usable credentials.')
+            elif record.error_message:
+                record.status_message = record.error_message
+            elif record._sync_is_stale():
+                record.status_message = _(
+                    'No completed check since %s. The sync runs every minute, '
+                    'so this mailbox is not being read.',
+                    fields.Datetime.to_string(record.last_check_date),
+                )
+            elif record.state == 'draft':
+                record.status_message = _('This mailbox has not synced yet.')
+            else:
+                record.status_message = _('The last sync run did not finish.')
 
     # -------------------------------------------------------------------------
     # What a failed sync run means
@@ -388,9 +472,16 @@ class PanMailMailbox(models.Model):
         self.write(vals)
 
     def _record_sync_success(self):
-        """Back to active, counter cleared. Writes only when something moved."""
+        """Back to active, counter cleared, and the heartbeat moved.
+
+        `last_check_date` is written on every run that finishes, including the
+        overwhelming majority that read nothing at all. That is the whole point
+        of it: a mailbox with no new mail is not a mailbox that stopped, and
+        before this field there was no way for the screen to tell the two
+        apart.
+        """
         self.ensure_one()
-        vals = {}
+        vals = {'last_check_date': fields.Datetime.now()}
         if self.state != 'active':
             vals['state'] = 'active'
         if self.error_message:
