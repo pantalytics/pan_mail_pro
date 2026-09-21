@@ -698,27 +698,27 @@ class Checks:
         record = page.query_selector('.o_mailpro_record')
         if record and record.is_visible():
             self.fail('the record pane still takes space at 1280px')
-        # The pane stepped aside; the record did not. A round button floats
-        # on its divider, at the conversation's right edge: a tap slides the
-        # record into the conversation's column and folds the conversation,
-        # and the same button, now at the record's left edge, gives the
-        # conversation back. No button in the thread head: the one on the
-        # divider is the control, and it is always on screen.
+        # The pane stepped aside; the record did not. Its button is in the
+        # top bar with the other two, where it is on screen whatever is
+        # folded: nothing floats over the conversation's own header, which
+        # already carries a title, a chip row and a tab strip.
         if page.query_selector('.o_mailpro_record_button'):
             self.fail('at 1280px the thread head still carries a Record button')
-        toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        if page.query_selector('.o_mailpro_split_toggle'):
+            self.fail('a fold button still floats on a divider')
+        toggle = page.query_selector('.o_mailpro_pane_toggle_record')
         if not toggle or not toggle.is_visible():
             self.fail('at 1280px there is no button to open the record from')
         else:
             box = toggle.bounding_box()
             if box['width'] < 32 or abs(box['width'] - box['height']) > 2:
-                self.fail('the fold button is %dx%dpx, not a finger-sized circle'
+                self.fail('the record toggle is %dx%dpx, not a finger-sized square'
                           % (box['width'], box['height']))
-            if box['x'] + box['width'] > 1280:
-                self.fail('the record button hangs off the right edge at 1280px')
             if 'record' not in (toggle.get_attribute('aria-label') or '').lower():
                 self.fail('the record button does not say what it opens: %r'
                           % toggle.get_attribute('aria-label'))
+            if toggle.get_attribute('aria-pressed') != 'false':
+                self.fail('the record is folded but its button reads pressed')
             toggle.click()
             page.wait_for_timeout(600)
             record = page.query_selector('.o_mailpro_record')
@@ -730,47 +730,35 @@ class Checks:
             if self.visible('.o_mailpro_thread'):
                 self.fail('the conversation stayed open next to the record at 1280px')
             self.shot('inbox-narrow-record.png')
-            toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
-            label = (toggle.get_attribute('aria-label') or '').lower() if toggle else ''
-            if 'conversation' not in label:
-                self.fail('with the record open, the button does not offer the conversation')
-            else:
-                # It floats over the record's header, which leaves it room.
-                head = page.query_selector('.o_mailpro_record .o_mailpro_record_head')
-                if head and toggle.bounding_box()['x'] + toggle.bounding_box()['width'] > \
-                        head.bounding_box()['x'] + float(
-                            page.evaluate('el => getComputedStyle(el).paddingLeft',
-                                          head).rstrip('px')):
-                    self.fail('the conversation button sits over the record header text')
-                toggle.click()
-                page.wait_for_timeout(600)
-                if not self.visible('.o_mailpro_thread'):
-                    self.fail('tapping the button again did not bring the conversation back')
-                if self.visible('.o_mailpro_record'):
-                    self.fail('the record stayed open next to the conversation at 1280px')
-        # The rail folds the way every pane folds: the button on its divider,
-        # a chevron while the rail is open, the menu icon once it is folded.
-        # No second button in the top bar for it: that one is the phone's
-        # drawer.
-        if self.visible('.o_mailpro_rail_button'):
-            self.fail('at 1280px the top bar still carries a rail button')
-        fold = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
-        if not fold:
-            self.fail('at 1280px the rail divider has no button to fold with')
+            toggle = page.query_selector('.o_mailpro_pane_toggle_record')
+            if toggle.get_attribute('aria-pressed') != 'true':
+                self.fail('the record is open but its button does not read pressed')
+            toggle.click()
+            page.wait_for_timeout(600)
+            if not self.visible('.o_mailpro_thread'):
+                self.fail('tapping the button again did not bring the conversation back')
+            if self.visible('.o_mailpro_record'):
+                self.fail('the record stayed open next to the conversation at 1280px')
+        # The rail folds the way every pane folds: its own button in the top
+        # bar, the menu icon whether it is open or shut, pressed while it is
+        # open. There is no second control for it anywhere else.
+        fold = page.query_selector('.o_mailpro_pane_toggle_rail')
+        if not fold or not fold.is_visible():
+            self.fail('at 1280px the top bar has no button for the rail')
         else:
-            if not fold.query_selector('.fa-chevron-left'):
-                self.fail('the rail button beside the open rail is not a chevron')
+            if not fold.query_selector('.fa-bars'):
+                self.fail('the rail button is not the menu icon')
+            if fold.get_attribute('aria-pressed') != 'true':
+                self.fail('the rail is open but its button does not read pressed')
             fold.click()
             page.wait_for_timeout(400)
             if self.visible('.o_mailpro_rail'):
                 self.fail('the button did not fold the rail at 1280px')
-            fold = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
+            fold = page.query_selector('.o_mailpro_pane_toggle_rail')
             if not fold or not fold.is_visible():
-                self.fail('the folded rail left no button to bring it back')
-            elif fold.bounding_box()['x'] < 0:
-                self.fail('the folded rail\'s button hangs off the left edge')
-            elif not fold.query_selector('.fa-bars'):
-                self.fail('the folded rail\'s button is not the menu icon')
+                self.fail('folding the rail took its own button off the screen')
+            elif fold.get_attribute('aria-pressed') != 'false':
+                self.fail('the rail is folded but its button still reads pressed')
             else:
                 self.shot('inbox-narrow-rail-folded.png')
                 fold.click()
@@ -939,7 +927,10 @@ class Checks:
         # open, gone again once a folder is picked.
         if self.visible('.o_mailpro_rail'):
             self.fail('the rail takes space on a phone before it is asked for')
-        button = page.query_selector('.o_mailpro_rail_button')
+        if page.query_selector('.o_mailpro_pane_toggle_list') or \
+                page.query_selector('.o_mailpro_pane_toggle_record'):
+            self.fail('a phone shows toggles for panes that take turns anyway')
+        button = page.query_selector('.o_mailpro_pane_toggle_rail')
         if not button or not button.is_visible():
             self.fail('a phone has no button for the rail')
             return
@@ -1051,8 +1042,8 @@ class Checks:
 
         before = pane.bounding_box()['width']
         box = divider.bounding_box()
-        # 200px down the strip: the fold button sits at the top of it, and a
-        # drag that starts on a button is a click.
+        # 200px down the strip, well clear of anything sticky at the top of
+        # the panes it sits between.
         grab = (box['x'] + box['width'] / 2, box['y'] + 200)
         page.mouse.move(*grab)
         page.mouse.down()
@@ -1065,7 +1056,7 @@ class Checks:
             self.fail('dragging the divider 90px moved the list %dpx'
                       % (widened - before))
 
-        fold = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        fold = page.query_selector('.o_mailpro_pane_toggle_record')
         if not fold:
             self.fail('the record pane cannot be folded away')
             return
@@ -1094,13 +1085,14 @@ class Checks:
             self.fail('the list width was %dpx before the reload and %dpx after'
                       % (widened, kept))
 
-        # The same button, now at the screen's right edge, is the way back.
-        toggle = page.query_selector('.o_mailpro_split_record .o_mailpro_split_toggle')
+        # The same button, in the same place, is the way back: a control that
+        # moves when the thing it controls folds is a control you hunt for.
+        toggle = page.query_selector('.o_mailpro_pane_toggle_record')
         if not toggle or not toggle.is_visible():
             self.fail('the folded record pane left no button to bring it back')
         else:
-            if toggle.bounding_box()['x'] + toggle.bounding_box()['width'] > WIDE:
-                self.fail('the folded record\'s button hangs off the right edge')
+            if toggle.get_attribute('aria-pressed') != 'false':
+                self.fail('the record is folded but its button still reads pressed')
             toggle.click()
         divider = page.query_selector('.o_mailpro_split_list')
         if divider:
@@ -1112,7 +1104,7 @@ class Checks:
         # The list folds too, the same way, and the conversation takes the
         # room it leaves.
         thread_before = page.query_selector('.o_mailpro_thread').bounding_box()['width']
-        fold = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+        fold = page.query_selector('.o_mailpro_pane_toggle_list')
         if not fold:
             self.fail('the conversation list cannot be folded away')
             return
@@ -1124,39 +1116,41 @@ class Checks:
         if thread_after - thread_before < 100:
             self.fail('folding the list gave the conversation %dpx, not the list\'s width'
                       % (thread_after - thread_before))
-        # The button floats over the conversation's header, which makes
-        # room: the title starts to the right of it.
-        toggle = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
-        title = page.query_selector('.o_mailpro_thread_title')
-        if toggle and title and title.bounding_box()['x'] < \
-                toggle.bounding_box()['x'] + toggle.bounding_box()['width']:
-            self.fail('the folded list\'s button sits over the conversation title')
         self.shot('inbox-list-folded.png')
-        # Both left panes folded: two buttons, side by side, neither over
-        # the other, and the title after both.
-        page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle').click()
+
+        # Both left panes folded. This is the shape the buttons used to be
+        # read in: two of them floating over the conversation's header,
+        # beside its title, its chip row and its tab strip -- a second menu
+        # bar on top of the screen's first. Nothing floats there now, the
+        # conversation starts at its own pane's edge, and both buttons are
+        # where they always are.
+        page.query_selector('.o_mailpro_pane_toggle_rail').click()
         page.wait_for_timeout(400)
-        rail_btn = page.query_selector('.o_mailpro_split_rail .o_mailpro_split_toggle')
-        list_btn = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
+        if self.visible('.o_mailpro_rail'):
+            self.fail('the rail did not fold away')
+        if page.query_selector('.o_mailpro_split_toggle'):
+            self.fail('a fold button still floats over a pane')
+        thread = page.query_selector('.o_mailpro_thread')
         title = page.query_selector('.o_mailpro_thread_title')
-        if not rail_btn or not list_btn:
-            self.fail('folding rail and list together lost a button')
+        if thread and title and title.bounding_box()['x'] - thread.bounding_box()['x'] > 40:
+            self.fail('the conversation title still starts %dpx into its pane'
+                      % (title.bounding_box()['x'] - thread.bounding_box()['x']))
+        rail_btn = page.query_selector('.o_mailpro_pane_toggle_rail')
+        list_btn = page.query_selector('.o_mailpro_pane_toggle_list')
+        new_btn = page.query_selector('.o_mailpro_new')
+        if not rail_btn or not list_btn or not new_btn:
+            self.fail('folding rail and list together lost a button from the top bar')
+        elif rail_btn.bounding_box()['x'] > new_btn.bounding_box()['x']:
+            self.fail('the pane toggles sit to the right of New Email')
         else:
-            a, b = rail_btn.bounding_box(), list_btn.bounding_box()
-            if b['x'] < a['x'] + a['width']:
-                self.fail('the rail and list buttons overlap when both are folded')
-            elif title and title.bounding_box()['x'] < b['x'] + b['width']:
-                self.fail('two folded panes\' buttons sit over the conversation title')
             self.shot('inbox-two-folded.png')
             rail_btn.click()
             page.wait_for_timeout(400)
             if not self.visible('.o_mailpro_rail'):
                 self.fail('the menu button did not bring the rail back')
-        toggle = page.query_selector('.o_mailpro_split_list .o_mailpro_split_toggle')
-        if not toggle or not toggle.query_selector('.fa-list-ul'):
-            self.fail('the folded list left no list button to bring it back')
-        else:
-            toggle.click()
+            if not list_btn.query_selector('.fa-list-ul'):
+                self.fail('the list button is not the list icon')
+            list_btn.click()
             page.wait_for_timeout(400)
             if not self.visible('.o_mailpro_list'):
                 self.fail('the button did not bring the list back')

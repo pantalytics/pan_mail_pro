@@ -8,11 +8,13 @@
  * runs into instead of eating the mail. It is also the one pane that never
  * folds on its own: a screen with no mail on it is not this screen.
  *
- * One control, everywhere: a round button floating on the divider. Beside
- * an open pane it shows a chevron and folds it; beside a folded pane it
- * shows that pane's icon and brings it back. The button moves with the
- * divider, so it is always where the pane was. No button elsewhere says
- * the same thing.
+ * One control, one place: a row of round buttons in the top bar, left of New
+ * Email, one per pane that folds. Pressed is showing. They sit there rather
+ * than on the dividers because a button floating over the conversation's own
+ * header is a second menu bar on top of the screen's first one, and because
+ * "show me the mailboxes" has been the top left corner of a mail client for
+ * thirty years. The dividers are left as what they look like: a width to
+ * drag. Nothing else says the same thing.
  *
  * Widths live in the browser, not the database. It is a per-monitor
  * preference, the same person has a laptop and a desk, and a table for it
@@ -33,9 +35,8 @@
  * A folded pane is not removed, it is drawn at no width, so folding and
  * unfolding are a transition the stylesheet animates rather than a pane that
  * blinks out. `folded(name)` is the one answer the template asks, whichever
- * of the three shapes decided it; `toggleSide(name)` says on which side of
- * its divider the button sits, and `lead(name)` how many folded panes stand
- * before an open one, so its header can leave room for their buttons.
+ * of the three shapes decided it, and `toggles()` which buttons the top bar
+ * shows for the shape the window is in.
  */
 
 import { onWillDestroy, useState } from "@odoo/owl";
@@ -54,22 +55,14 @@ const KEY = "pan_mail_pro.panes";
 // fourth does not.
 const BREAKPOINTS = { small: 767.98, narrow: 1400 };
 
-// The panes in the order they sit, left to right. `lead()` walks it.
-const ORDER = ["rail", "list", "thread", "record"];
-
-// What a folded pane's button shows: the thing it brings back.
+// What each pane's button in the top bar shows: the thing it brings back.
+// The conversation never folds on its own, so it never wears one.
 const ICONS = {
     rail: "fa-bars",
     list: "fa-list-ul",
     thread: "fa-envelope-o",
     record: "fa-cube",
 };
-
-// rem. The button's diameter plus the gap that separates two of them when
-// neighbouring panes are folded together; the header padding uses the same
-// step, so the text starts after the last button.
-const TOGGLE_STEP = 2.625;
-const TOGGLE_INSET = 0.375;
 
 // px. Minimums are where a pane stops being readable rather than where it
 // stops being visible: a folder name that wraps, a subject line with two
@@ -80,9 +73,10 @@ const PANES = {
     record: { start: 448, min: 300, max: 720 },
 };
 
-// Everything but the conversation folds away. Outlook folds the two outer
-// ones; the list goes too, because on a tablet a long mail is worth more
-// than the list beside it, and the strip brings the list back in a tap.
+// Everything but the conversation folds away, and the top bar carries one
+// button for each, in this order. Outlook folds the two outer ones; the list
+// goes too, because on a tablet a long mail is worth more than the list
+// beside it, and one tap brings it back.
 const COLLAPSIBLE = ["rail", "list", "record"];
 
 const THREAD_MIN = 360;
@@ -155,7 +149,7 @@ export function usePanes() {
 
     /**
      * Whether a pane is drawn at no width right now. Three shapes, three
-     * reasons: a wide screen folds what the chevron folded, a tablet folds
+     * reasons: a wide screen folds what the top bar folded, a tablet folds
      * whichever of the conversation and the record is not on, and a phone
      * folds the rail until the drawer is asked for.
      */
@@ -189,15 +183,6 @@ export function usePanes() {
             return isFolded("record") ? "right" : isFolded("thread") ? "left" : null;
         }
         return isFolded(name) ? "left" : null;
-    }
-
-    /** The folded panes standing together right before this one. */
-    function foldedRun(name) {
-        let count = 0;
-        for (let i = ORDER.indexOf(name) - 1; i >= 0 && isFolded(ORDER[i]); i--) {
-            count++;
-        }
-        return count;
     }
 
     /** The widest this pane may get before the thread drops below its floor. */
@@ -255,83 +240,41 @@ export function usePanes() {
             return paneLabel(name);
         },
 
-        collapsible(name) {
-            return COLLAPSIBLE.includes(name);
-        },
-
         folded(name) {
             return isFolded(name);
         },
 
         /**
-         * Where the button sits: centred on the divider between two open
-         * panes, or wholly inside the open neighbour of a folded one, where
-         * there is room for it and a finger can find it.
+         * The buttons the top bar carries, left to right. On a phone the
+         * panes take turns rather than sit together, so the only one that
+         * means anything there is the rail: it is the drawer.
          */
-        toggleSide(name) {
-            const side = foldedSide(name);
-            return side === "left" ? "right" : side === "right" ? "left" : "center";
+        toggles() {
+            return state.small ? ["rail"] : COLLAPSIBLE;
         },
 
-        /**
-         * A button inside the open neighbour, when the pane before it is
-         * folded too: each folded pane in the run gets its own place, so
-         * two folds do not stack two buttons on one spot.
-         */
-        toggleStyle(name) {
-            if (this.toggleSide(name) !== "right") {
-                return "";
-            }
-            const pane = name === "record" ? "thread" : name;
-            const index = foldedRun(pane);
-            return `left: ${TOGGLE_INSET + index * TOGGLE_STEP}rem`;
+        paneIcon(name) {
+            return ICONS[name];
         },
 
-        /**
-         * How many folded panes stand together right before this open one.
-         * Their buttons float over its header, which leaves that much room.
-         */
-        lead(name) {
-            if (state.small || state.zoom || isFolded(name)) {
-                return 0;
-            }
-            return foldedRun(name);
-        },
-
-        /** The chevron points where the divider is about to go. */
-        chevron(name) {
-            const folded = isFolded(name);
-            const rightwards = name === "record" ? !folded : folded;
-            return rightwards ? "fa-chevron-right" : "fa-chevron-left";
-        },
-
-        /**
-         * A chevron beside an open pane, that pane's own icon beside a
-         * folded one: the menu for the mailboxes, the envelope for the
-         * conversation, the cube the record chips already wear.
-         */
-        toggleIcon(name) {
-            const side = foldedSide(name);
-            if (!side) {
-                return this.chevron(name);
-            }
-            return ICONS[name === "record" && side === "left" ? "thread" : name];
-        },
-
-        /** The pane the button acts on: on a tablet the divider serves two. */
         toggleLabel(name) {
-            const side = foldedSide(name);
-            if (name === "record" && side === "left") {
-                return _t("Show %s", paneLabel("thread"));
-            }
             return isFolded(name)
                 ? _t("Show %s", paneLabel(name))
                 : _t("Hide %s", paneLabel(name));
         },
 
+        /** The rail is a drawer on a phone and a pane everywhere else. */
+        togglePane(name) {
+            if (name === "rail") {
+                this.toggleRail();
+            } else {
+                this.toggle(name);
+            }
+        },
+
         startDrag(name, ev) {
-            if (ev.button !== 0 || foldedSide(name)) {
-                return; // Nothing to drag; the button is the control.
+            if (ev.button !== 0) {
+                return;
             }
             const handle = ev.currentTarget;
             const total = containerWidth(handle);
@@ -360,21 +303,12 @@ export function usePanes() {
             handle.addEventListener("pointercancel", stop);
         },
 
-        /** A divider is a control, and a control answers a keyboard. */
+        /** A width is a control, and a control answers a keyboard. */
         onKey(name, ev) {
-            const collapsible = COLLAPSIBLE.includes(name);
-            if ((ev.key === "Enter" || ev.key === " ") && collapsible) {
-                ev.preventDefault();
-                this.toggle(name);
-                return;
-            }
             if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") {
                 return;
             }
             ev.preventDefault();
-            if (foldedSide(name)) {
-                return;
-            }
             const step = (ev.key === "ArrowRight" ? STEP : -STEP) * direction(name);
             resize(name, state[name] + step, containerWidth(ev.currentTarget));
             save();
@@ -393,9 +327,10 @@ export function usePanes() {
         },
 
         /**
-         * The fold. On a tablet the record has no width of its own to fold:
-         * it takes the conversation's column or gives it back, and that is
-         * a step, not a preference, so it is not stored.
+         * The fold, from the top bar's button. On a tablet the record has no
+         * width of its own to fold: it takes the conversation's column or
+         * gives it back, and that is a step, not a preference, so it is not
+         * stored.
          */
         toggle(name) {
             if (!COLLAPSIBLE.includes(name)) {
@@ -409,11 +344,7 @@ export function usePanes() {
             save();
         },
 
-        /**
-         * The rail from the top bar. On a phone that is the drawer; the
-         * button is hidden everywhere else, where the divider is the
-         * control, but a keyboard or a test may still reach it.
-         */
+        /** The rail: a drawer over the screen on a phone, a pane elsewhere. */
         toggleRail() {
             if (state.small) {
                 state.railOpen = !state.railOpen;
@@ -440,16 +371,17 @@ export function usePanes() {
             state.stage = "list";
         },
 
-        /** Whether a divider has two panes to sit between. */
+        /**
+         * Whether a divider has two open panes to sit between. Beside a
+         * folded one there is no width to drag, so there is nothing for a
+         * col-resize cursor to promise.
+         */
         splitterVisible(name) {
-            return !state.zoom && !state.small;
+            return !state.zoom && !state.small && !foldedSide(name);
         },
 
         /** Double-click is the way back from a width you regret. */
         reset(name) {
-            if (foldedSide(name)) {
-                return; // No width to regret; a double tap is two taps.
-            }
             state[name] = PANES[name].start;
             state.collapsed[name] = false;
             save();
