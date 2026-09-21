@@ -347,6 +347,22 @@ their buttons stand side by side rather than on one spot. A strip had a
 name on it and cost 2.5rem of every folded pane; a button costs nothing
 until you look for it, and its icon is the name.
 
+19.0.13.10.0 takes those buttons off the dividers and puts them in the top
+bar, left of New Email: one round button per pane that folds, in the order
+the panes sit, pressed while its pane is showing. Floating them on the
+divider meant that folding the rail and the list put two buttons beside the
+conversation's own header, which already carries a subject, a Linked-to chip
+and a tab strip -- a second row of controls stacked on the screen's first,
+which is what it read as. In the top bar there is one row, always in the
+same place whatever is folded, where every mail client has kept the
+mailboxes since there were mail clients. The divider goes back to being the
+one thing it looks like, a width to drag, and is not drawn at all beside a
+folded pane, which has no width to offer. The phone's rail button is no
+longer a special case: it is this row, with the two panes that take turns
+there left out of it. Gone with the buttons: the header padding that made
+room for them (`lead()`), the inline offset that stopped two of them
+stacking, and the second meaning Enter had on a divider.
+
 19.0.13.7.0 puts the followers back on the screen. The chatter left the
 record pane in 19.0.10.0.0 and took the follower list with it, so nothing on
 the Inbox said who Odoo notifies about this record. A Followers button now
