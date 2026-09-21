@@ -1188,6 +1188,15 @@ class Checks:
         if page.query_selector('.o_mailpro_odoo_record_open'):
             self.fail('Open sits next to Expand in the record pane')
 
+        # It is an icon, the same quiet round one the pane toggles wear --
+        # the label it used to carry is the tooltip now.
+        if not button.query_selector('.fa-expand'):
+            self.fail('Expand is not the expand arrows')
+        if button.inner_text().strip():
+            self.fail('the Expand button still carries a text label')
+        if not button.get_attribute('aria-label'):
+            self.fail('the icon-only Expand button has no accessible name')
+
         button.click()
         page.wait_for_timeout(500)
 
@@ -1199,8 +1208,14 @@ class Checks:
             if pane and pane.is_visible():
                 self.fail(f'{name} is still on screen while the record is zoomed')
 
-        if not page.query_selector('.o_mailpro_odoo_record_open'):
+        open_link = page.query_selector('.o_mailpro_odoo_record_open')
+        if not open_link:
             self.fail('the zoomed record has no way to its own screen')
+        elif not open_link.query_selector('.fa-external-link'):
+            self.fail('the way to the record\'s own screen wears no external arrow')
+
+        if not page.query_selector('.o_mailpro_odoo_record_zoom .fa-compress'):
+            self.fail('the zoomed record offers no way back to the pane')
 
         record = page.query_selector('.o_mailpro_odoo_record')
         panes = page.query_selector('.o_mailpro_panes')
