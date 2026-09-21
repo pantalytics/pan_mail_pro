@@ -281,6 +281,30 @@ class Checks:
         if page.query_selector('.o_mailpro_conversation_list_head .o_mailpro_filter_toggle'):
             self.fail('the conversation list still carries its own filter button')
 
+        # One bar, not two. The action is fullscreen, so `web.WebClient` draws
+        # no navbar over this screen and the row it used to take belongs to the
+        # mail. The Inbox's own bar carries what the navbar carried: the way
+        # back to Odoo on the left, the systray on the right. A regression here
+        # is either a second bar coming back, or -- worse -- a fullscreen
+        # screen with no door out of it.
+        strays = page.evaluate(
+            "document.querySelectorAll("
+            "'.o_main_navbar:not(.o_mailpro_topbar_end)').length")
+        if strays:
+            self.fail("Odoo's navbar is drawn over the Inbox: two bars over the mail")
+        home = page.query_selector('.o_mailpro_topbar .o_mailpro_home')
+        if not home or not home.is_visible():
+            self.fail('the fullscreen Inbox has no way back to Odoo')
+        elif home.get_attribute('href') != '/odoo':
+            self.fail('the way back out of the Inbox does not go to Odoo')
+        if not page.query_selector('.o_mailpro_topbar_end .o_menu_systray > *'):
+            self.fail('the systray went with the navbar and nothing brought it back')
+        else:
+            box = page.query_selector('.o_mailpro_topbar_end').bounding_box()
+            bar = page.query_selector('.o_mailpro_topbar').bounding_box()
+            if box['height'] > bar['height']:
+                self.fail('the systray is taller than the bar holding it')
+
         # The filter menu opens once, over the list, not once per mailbox.
         page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
         page.wait_for_timeout(800)
@@ -1146,6 +1170,15 @@ class Checks:
             self.fail('the mailbox list takes space on a phone before it is asked for')
         if page.query_selector('.o_mailpro_split'):
             self.fail('a phone draws a divider between panes that take turns anyway')
+
+        # A phone has room for the mail or for the chrome. The systray is the
+        # chrome and stays behind the icon on the left, which is the one piece
+        # of it a phone keeps: without it this screen has no way out at all.
+        if self.visible('.o_mailpro_topbar_end'):
+            self.fail('the systray takes room from a 390px bar')
+        home = page.query_selector('.o_mailpro_home')
+        if not home or not home.is_visible():
+            self.fail('a phone has no way back to Odoo from the Inbox')
         button = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
         if not button or not button.is_visible():
             self.fail('a phone has no button for the mailbox list')

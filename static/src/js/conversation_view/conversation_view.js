@@ -33,6 +33,10 @@ import { SearchModel } from "@web/search/search_model";
 import { SearchBar } from "@web/search/search_bar/search_bar";
 import { View } from "@web/views/view";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
+// The wrapper Odoo's own navbar puts around every systray item, for the
+// same reason it does: this bar is the only one on the screen, and one
+// broken counter must not take the whole Inbox with it.
+import { ErrorHandler } from "@web/core/utils/components";
 import { Dropdown } from "@web/core/dropdown/dropdown";
 import { useDropdownState } from "@web/core/dropdown/dropdown_hooks";
 import { _t } from "@web/core/l10n/translation";
@@ -173,12 +177,13 @@ export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
     static components = {
         OdooRecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
-        Dropdown, FollowerList, SearchBar,
+        Dropdown, FollowerList, SearchBar, ErrorHandler,
     };
     static props = ["*"];
-    // A client action's name in the breadcrumb and the browser tab is the
-    // component's, not the action record's: without this, opening a record
-    // from the Inbox shows "Unnamed / Onderhoudscontract 2027" up top.
+    // A client action's name in the browser tab is the component's, not the
+    // action record's, and without this the tab reads "Unnamed". The
+    // breadcrumb it also fed is gone with the navbar this action replaced;
+    // the tab is not, and it is what a second window is picked from.
     static displayName = _t("Inbox");
 
     setup() {
@@ -197,6 +202,18 @@ export class ConversationView extends Component {
         // edit. The Inbox adds the button and nothing else.
         this.followerListDropdown = useDropdownState();
         this.panes = usePanes();
+        // The systray, borrowed rather than rebuilt. This action is
+        // `fullscreen`, so `web.WebClient` draws no navbar above the Inbox
+        // and nothing else would render the activity and message counters,
+        // the company or the user menu. They are components in a registry,
+        // and a registry can be read from here as well as from the navbar.
+        // `UPDATE` is how an addon adds one after this screen is mounted.
+        this.systrayRegistry = registry.category("systray");
+        useBus(this.systrayRegistry, "UPDATE", () => this.render());
+        // Items whose component threw once. Odoo's navbar patches the entry
+        // it just copied, which does nothing on the next render; a set of
+        // keys the getter filters on actually keeps the icon away.
+        this.brokenSystray = new Set();
         this.composer = useComposer({
             onSent: () => this.onReplySent(),
             onDraftSaved: (row) => this.onDraftSaved(row),
@@ -987,6 +1004,33 @@ export class ConversationView extends Component {
     }
 
     // --------------------------------------------------------------- render
+
+    /**
+     * What the navbar would have shown on the right, in the order it shows
+     * it: the registry is sorted by sequence and the navbar reverses it, so
+     * the lowest sequence ends up furthest right. Reading it the same way is
+     * what keeps the user menu where a reader's hand already goes.
+     */
+    get systrayItems() {
+        return this.systrayRegistry
+            .getEntries()
+            .map(([key, value]) => ({ key, ...value }))
+            .filter((item) => !this.brokenSystray.has(item.key))
+            .filter((item) => ("isDisplayed" in item ? item.isDisplayed(this.env) : true))
+            .reverse();
+    }
+
+    /**
+     * A systray component threw while rendering. Drop that one icon, keep the
+     * screen, and let the error reach the handler that reports it.
+     */
+    systrayFailed(error, item) {
+        this.brokenSystray.add(item.key);
+        this.render();
+        Promise.resolve().then(() => {
+            throw error;
+        });
+    }
 
     /**
      * A new mail is open in the pane. The composer is what says so: Discard

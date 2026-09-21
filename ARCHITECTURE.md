@@ -554,6 +554,24 @@ their buttons stand side by side rather than on one spot. A strip had a
 name on it and cost 2.5rem of every folded pane; a button costs nothing
 until you look for it, and its icon is the name.
 
+19.0.19.0.0 makes that bar the only one. The Inbox was drawn under Odoo's
+navbar, so a mail had two rows of chrome over it saying "Mail Pro" and
+"Inbox" -- which the screen says itself -- before the header that actually
+carries the subject and the Linked-to chip. The action is `target="fullscreen"`
+now, which is the one line that stops `web.WebClient` drawing its navbar, and
+the two things that navbar was for moved into the Inbox's own bar: the module
+icon on the far left, linking to `/odoo`, and Odoo's own systray components on
+the far right, read out of `registry.category("systray")` exactly the way the
+navbar reads them and wrapped in the same `ErrorHandler`, so a counter that
+throws costs one icon rather than the screen. The zone wears `o_main_navbar`
+because every rule web's scss writes for a systray item is nested under that
+class. A phone drops the systray and keeps the icon: at 390px there is room
+for the mail or for the chrome, and one door out is not optional -- fullscreen
+took the breadcrumb with the navbar. `tests/test_menus.py` pins the target and
+the door together, because either half alone is a bug: the target without the
+icon is a screen nobody can leave, the icon without the target is a second way
+home nobody needed.
+
 19.0.13.10.0 takes those buttons off the dividers and puts them in the top
 bar, left of New Email: one round button per pane that folds, in the order
 the panes sit, pressed while its pane is showing. Floating them on the
