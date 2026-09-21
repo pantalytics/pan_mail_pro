@@ -714,6 +714,33 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### A bar on a phone, and the class it borrowed (19.0.20.1.0)
+
+- **A `display: none` an addon can outrank is not a decision, it is a
+  request.** The phone dropped the systray with a rule in our own stylesheet;
+  `pan_style_pro` writes `.o_main_navbar { display: flex !important }`, so on
+  the instance that runs the theme the phone kept a systray, the search box
+  got 55px of a 393px bar, and Odoo's `input-group` put the filter caret on a
+  second line out of a 52px bar. What is not rendered cannot be un-hidden:
+  the zone is a `t-if` on `panes.state.small` now.
+- **Borrowing a class borrows everything written for it.** The zone wears
+  `o_main_navbar` to get web's systray styling, which also hands it a theme's
+  idea of a *bar*: height, padding, border and shadow, all `!important`. A
+  zone inside a 52px bar was 56px tall with a border of its own. What it gives
+  back has to be `!important` too, or it is not given back.
+- **CI runs the module, not the customer's database.** No theme, no
+  `!important`, so the browser check was green on a bar that was broken in
+  production. Assert the shape the reader sees -- the search box's width, that
+  it fits the bar -- rather than the rule that was supposed to produce it.
+- **A flex line that does not wrap takes the squeeze out of the items.** A
+  span of text takes it by breaking, so "5 messages" became two lines and
+  every row in the conversation list grew one. `white-space: nowrap` on what
+  may not break, `min-width: 0` on what may shrink.
+- **The production CSS bundle is readable from outside.** `ir.attachment` has
+  the `/web/assets/...` url, the file is public, and a real mobile screenshot
+  plus that file is enough to find the losing declaration in a static harness
+  -- no Odoo, no Docker, no device.
+
 ### All mailboxes (19.0.18.4.0)
 
 - **The unified inbox was a row and a label over a query that already

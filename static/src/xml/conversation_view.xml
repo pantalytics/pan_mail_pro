@@ -72,9 +72,18 @@
                             <i class="fa" t-att-class="panes.paneIcon(pane)" aria-hidden="true"/>
                         </button>
                     </div>
+                    <!--
+                        The one thing you start from. On a phone it is the
+                        pencil alone: the label costs a third of a 390px bar,
+                        and what it buys back is the search box, which is the
+                        other thing this screen is opened with. Every mail
+                        client on a phone draws compose as an icon.
+                    -->
                     <button type="button" class="btn btn-primary btn-sm o_mailpro_new"
+                            aria-label="New Email" title="New Email"
                             t-on-click="() => this.newEmail()">
-                        <i class="fa fa-pencil-square-o me-1" aria-hidden="true"/>New Email
+                        <i class="fa fa-pencil-square-o" aria-hidden="true"/>
+                        <span class="o_mailpro_new_label ms-1">New Email</span>
                     </button>
                 </div>
                 <div class="o_mailpro_search_zone flex-grow-1 d-flex justify-content-center">
@@ -112,11 +121,16 @@
                     it, so an item outside that class is an unstyled one. The
                     scss gives back what the navbar sets for itself.
 
-                    A phone leaves them out (see the `o_mailpro_small` block
-                    in the scss): there is room for the mail or for the
-                    chrome, and the way to all of it is the icon on the left.
+                    A phone leaves them out: there is room for the mail or
+                    for the chrome, and the way to all of it is the icon on
+                    the left. It is a `t-if` and not a `display: none`,
+                    because the zone wears `o_main_navbar` to borrow web's
+                    styling and a theme is free to write
+                    `.o_main_navbar { display: flex !important }`. Ours does,
+                    and the phone kept a systray no rule of ours could hide.
+                    A row that is not rendered cannot be un-hidden.
                 -->
-                <div class="o_mailpro_topbar_end o_main_navbar">
+                <div t-if="!panes.state.small" class="o_mailpro_topbar_end o_main_navbar">
                     <div class="o_menu_systray d-flex align-items-center" role="menu">
                         <t t-foreach="systrayItems" t-as="item" t-key="item.key">
                             <ErrorHandler onError="(error) => this.systrayFailed(error, item)">
