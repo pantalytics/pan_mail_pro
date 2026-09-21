@@ -408,7 +408,7 @@ there left out of it. Gone with the buttons: the header padding that made
 room for them (`lead()`), the inline offset that stopped two of them
 stacking, and the second meaning Enter had on a divider.
 
-19.0.14.3.0 splits that row in two, by what each button folds. The mailbox
+19.0.15.1.0 splits that row in two, by what each button folds. The mailbox
 list keeps its place in the top bar: it is top left in every mail client, and
 on a phone the mailbox list is a drawer with no divider to hang anything on,
 so that button has to be there anyway. The conversation list and the Odoo
