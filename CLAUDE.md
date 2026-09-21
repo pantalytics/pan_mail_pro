@@ -708,6 +708,32 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### Consent (19.0.15.0.0)
+
+- **The person a permission is for may not be able to hold it.** The sync
+  level is the owner's decision, and an internal user has *read* and nothing
+  else on `pan.mail.mailbox` -- so `mailbox.write()` as the owner raises an
+  AccessError from Odoo's own ACL before any rule of ours runs. Their route
+  is `res.users.x_pan_mail_sync_level`, a computed field with an inverse that
+  checks whose mailbox it is and then writes under sudo. Two tests asserted
+  the owner writing the mailbox directly and were testing an actor that
+  cannot exist.
+- **Catching a ValidationError from `write()` commits the write it refused.**
+  The constraint fires after the UPDATE, and swallowing the exception leaves
+  the new value in the transaction: the consent route answered "not saved" and
+  saved it. `with request.env.cr.savepoint():` around the write is the fix, the
+  same shape the OAuth claim already used. The test that caught it asserted the
+  *value* after the refusal, not only the message -- an assertion on the message
+  alone would have passed.
+- **A guard on `write` is half a guard.** `create` is the door beside it: a
+  manager could have created a colleague's personal mailbox with the level
+  already on it. Same check, called from `create` with the floor as the
+  baseline, because the record already carries the new value by then.
+- **A pane name is five strings, not four.** `tools/ui_check.py` builds the
+  toggle selectors from the pane keys, and the 19.0.14.1.0 rename missed it:
+  four assertions failed on a screen that was fine, and `19.0` went red.
+  `tests/test_inbox_panes.py` reads the browser check now too.
+
 ### Naming the panes (19.0.14.1.0)
 
 - **One idea, two words, and the loaded one reaches the code.** Pane 3 was

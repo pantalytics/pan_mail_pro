@@ -71,6 +71,98 @@
         </html>
     </template>
 
+    <!-- The consent screen. It is the tab the provider just handed back, so
+         it is a page of its own rather than anything inside the Odoo client:
+         the person is not in Odoo yet, and this is the only moment where the
+         sentence about who sees the mail can still change a decision.
+         Pantalytics light-mode palette, system font stack (the brand face is
+         self-hosted on the website for GDPR reasons and is not shipped here). -->
+    <template id="oauth_consent" name="Mail Pro Consent">
+        <html>
+            <head>
+                <title>What should Odoo read?</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                <style>
+                    :root {
+                        --ink: #001d21;
+                        --muted: rgba(0, 29, 33, 0.6);
+                        --ground: #f4f5f7;
+                        --surface: #ffffff;
+                        --accent: #5b58d8;
+                        --accent-hover: #4a47c4;
+                        --sep: #e6e7ea;
+                    }
+                    body {
+                        margin: 0;
+                        background: var(--ground);
+                        color: var(--ink);
+                        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+                        font-size: 16px;
+                        line-height: 1.45;
+                    }
+                    .sheet { max-width: 520px; margin: 0 auto; padding: 56px 16px 72px; }
+                    h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.02em; margin: 0 0 6px; }
+                    .sub { color: var(--muted); margin: 0 0 28px; font-size: 15px; }
+                    .group { background: var(--surface); border-radius: 14px; overflow: hidden; }
+                    label.row {
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        padding: 14px 16px;
+                        border-top: 1px solid var(--sep);
+                        cursor: pointer;
+                    }
+                    label.row:first-child { border-top: 0; }
+                    label.row input { accent-color: var(--accent); margin: 0; }
+                    label.row span { font-size: 15px; }
+                    .foot { color: var(--muted); font-size: 13px; margin: 10px 16px 28px; }
+                    button.go {
+                        width: 100%;
+                        border: 0;
+                        border-radius: 12px;
+                        background: var(--accent);
+                        color: #ffffff;
+                        font: inherit;
+                        font-weight: 500;
+                        font-size: 16px;
+                        padding: 13px;
+                        cursor: pointer;
+                    }
+                    button.go:hover { background: var(--accent-hover); }
+                </style>
+            </head>
+            <body>
+                <div class="sheet">
+                    <h1>What should Odoo read from <t t-out="mailbox.email"/>?</h1>
+                    <p class="sub">You can change this whenever you want, in My Preferences.</p>
+                    <form method="post" action="/mail_pro/consent">
+                        <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                        <input type="hidden" name="mailbox_id" t-att-value="mailbox.id"/>
+                        <div class="group" id="levels">
+                            <t t-foreach="levels" t-as="level">
+                                <label class="row">
+                                    <input type="radio" name="level" t-att-value="level[0]"
+                                           t-att-checked="level[0] == mailbox.sync_level or None"
+                                           t-att-data-seen="level[2]"/>
+                                    <span t-out="level[1]"/>
+                                </label>
+                            </t>
+                        </div>
+                        <p class="foot">Colleagues see <span id="seen" t-out="current_seen"/>. Anything already on a record stays there if you lower this later.</p>
+                        <button class="go" type="submit">Continue</button>
+                    </form>
+                </div>
+                <script>
+                    document.querySelectorAll('#levels input').forEach(function (input) {
+                        input.addEventListener('change', function () {
+                            document.getElementById('seen').textContent = input.dataset.seen;
+                        });
+                    });
+                </script>
+            </body>
+        </html>
+    </template>
+
     <!-- Legacy templates kept for compatibility -->
     <template id="oauth_success" name="Microsoft OAuth Success">
         <t t-call="pan_mail_pro.oauth_result">

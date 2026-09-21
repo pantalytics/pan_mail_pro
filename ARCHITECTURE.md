@@ -664,6 +664,28 @@ ever waiting for Odoo: every sent item is either mail Odoo itself sent (dropped
 by the loop guard) or a copy of correspondence Odoo was never part of. The Inbox
 holds replies, which are.
 
+**Whose answer it is.** On a personal mailbox, the owner's, and nobody else's.
+`_check_sync_level_raise` refuses a *raise* of `sync_level` by anyone but
+`owner_user_id`; lowering, archiving and disconnecting stay with the
+administrator, because none of them expose anything. `consent_date` records
+when the owner last chose, in its own field rather than on the write date,
+which every sync-cursor write moves. Three exemptions: `sudo()` (the OAuth
+callback and the crons), a shared mailbox (the company's, nobody is asked) and
+the notification mailbox (personal by type, system mail by content), the same
+exemption `_is_sendable_by` makes.
+
+An internal user has read and no write on `pan.mail.mailbox`, so the level
+reaches them through `res.users.x_pan_mail_sync_level`, a computed field with
+an inverse that refuses to write anybody else's mailbox. That field is what My
+Preferences shows, in the row where Odoo's own Outgoing Mail Server picker used
+to be -- Mail Pro has already decided the route, and two controls naming it is
+one too many. The first answer is given on the consent screen the OAuth
+callback returns (`pan_mail_pro.oauth_consent`), which is the only place in the
+product that says out loud that mail landing on a record is visible to everyone
+who can open that record. Lowering a level stops the supply and removes
+nothing: what is on a record stays there, and the screen says so before the
+choice rather than after it.
+
 `mailbox._syncs_more_than_replies()` is the question the health status, the
 credentials check and the constraints ask: did somebody climb above the bottom
 rung? A Microsoft shared mailbox that only sends has no credentials of its own,

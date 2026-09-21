@@ -897,10 +897,10 @@ class MailMail(models.Model):
             if not author_user.x_pan_mail_connected:
                 raise RoutingError(_(
                     'User "%s" has not connected an email account yet. Open My '
-                    'Preferences, Mail Pro, and press Connect Mailbox.'
+                    'Preferences and press Connect Mailbox.'
                 ) % author_user.name)
             raise RoutingError(_(
-                'User "%s" has no default mailbox. Open My Preferences, Mail Pro, '
+                'User "%s" has no default mailbox. Open My Preferences '
                 'and pick the address to send from.'
             ) % author_user.name)
 

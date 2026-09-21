@@ -18,6 +18,11 @@ _logger = logging.getLogger(__name__)
 # minute, so five is minutes of trouble, not months of silence.
 SYNC_FAILURE_LIMIT = 5
 
+# The ladder, as numbers, so "is this a raise" is one comparison. The order is
+# the contract of `sync_level`: every rung keeps strictly more than the one
+# before it, which is what makes a raise the only direction worth guarding.
+SYNC_LEVEL_RANK = {'replies': 0, 'both': 1, 'contacts': 2, 'everyone': 3}
+
 
 
 class PanMailMailbox(models.Model):
@@ -264,6 +269,17 @@ class PanMailMailbox(models.Model):
              'sent always land on their record; each level adds one more kind '
              'of mail on top of that.')
 
+    # Who agreed is `owner_user_id`; this is when. Its own field rather than
+    # the write date, because the write date moves on every sync cursor update
+    # and a column that says "agreed on" has to survive one.
+    consent_date = fields.Datetime(
+        string='Agreed on',
+        readonly=True,
+        copy=False,
+        help='When the owner last chose what Odoo may read from this mailbox. '
+             'A shared mailbox has none: nobody is asked.',
+    )
+
     route_to_team = fields.Boolean(
         string='To Team',
         default=False,
@@ -460,8 +476,8 @@ class PanMailMailbox(models.Model):
                 ) % self.email
             return _(
                 '"%(who)s" has no connected %(provider)s account, so nothing can '
-                'send from shared mailbox "%(email)s". Connect it under My Preferences '
-                '→ Mail Pro, with SendAs rights on that address.',
+                'send from shared mailbox "%(email)s". Connect it under My Preferences, '
+                'with SendAs rights on that address.',
                 who=who.name, provider=provider, email=self.email,
             )
 
@@ -710,6 +726,13 @@ class PanMailMailbox(models.Model):
         """
         is_first = not self.sudo().with_context(active_test=False).search_count([])
         records = super().create(vals_list)
+        # The same rule as on write, on the door beside it: creating somebody
+        # else's personal mailbox already reading their inbox is the guard with
+        # one extra step. `mailbox_type` is a compute, so this can only be
+        # asked after the INSERT -- the raise rolls it back.
+        for record in records:
+            record._check_sync_level_raise(
+                {'sync_level': record.sync_level}, baseline='replies')
         if is_first:
             self._activate_smtp_takeover()
         return records
@@ -752,8 +775,47 @@ class PanMailMailbox(models.Model):
         IrConfigParameter.set_param('pan_mail_pro.smtp_takeover_done', 'True')
         _logger.info('[Mail Pro] SMTP takeover active — all email routes through the provider API')
 
+    def _check_sync_level_raise(self, vals, baseline=None):
+        """Only a personal mailbox's owner may raise how much Odoo reads.
+
+        The ladder is what decides how much of somebody's correspondence ends
+        up on records their colleagues can open, so the person whose mail it is
+        holds it. An administrator keeps every way of *stopping* a sync --
+        lowering the level, archiving the mailbox, disconnecting the account --
+        because none of those expose anything. There is deliberately no company
+        policy that raises everybody at once; that is this rule with a nicer
+        name.
+
+        Two exemptions. `sudo()` passes, which is the OAuth callback claiming a
+        mailbox and the crons; and the notification mailbox, which is personal
+        by type but holds the company's system mail rather than anybody's own,
+        the same exemption `_is_sendable_by` makes for the same reason.
+        """
+        level = vals.get('sync_level')
+        if not level or self.env.su:
+            return
+        user = self.env.user
+        for record in self:
+            if record.mailbox_type != 'personal' or record.is_notification_mailbox:
+                continue
+            # On create the record already carries the new value, so the
+            # level it is measured against is the floor, not its own.
+            current = SYNC_LEVEL_RANK.get(
+                baseline or record.sync_level or 'replies', 0)
+            if SYNC_LEVEL_RANK.get(level, 0) <= current:
+                continue
+            if record.owner_user_id == user:
+                continue
+            raise AccessError(_(
+                'Only %(owner)s can let Odoo read more of %(mailbox)s. You can '
+                'lower it or disconnect the mailbox.',
+                owner=record.owner_user_id.name or _('its owner'),
+                mailbox=record.email,
+            ))
+
     def write(self, vals):
         """Reset both folder cursors when sync_start_date moves earlier."""
+        self._check_sync_level_raise(vals)
         rewind = self.browse()
         if 'sync_start_date' in vals and vals['sync_start_date']:
             new_start = fields.Datetime.to_datetime(vals['sync_start_date'])
@@ -772,6 +834,17 @@ class PanMailMailbox(models.Model):
             if starting:
                 super(PanMailMailbox, starting).write({'last_sent_sync_date': False})
         result = super().write(vals)
+        if 'sync_level' in vals and 'consent_date' not in vals:
+            # The owner answered the question, so the answer is dated. A
+            # manager lowering somebody's level is not consent and leaves the
+            # date where it was -- the column says when its owner last chose.
+            mine = self.filtered(
+                lambda r: r.mailbox_type == 'personal'
+                and not r.is_notification_mailbox
+                and r.owner_user_id == self.env.user)
+            if mine:
+                super(PanMailMailbox, mine).write(
+                    {'consent_date': fields.Datetime.now()})
         for mailbox in rewind:
             # Per cursor: a Sent cursor already behind `new_start` must not be
             # dragged forward by a rewind of the inbox.
@@ -885,7 +958,7 @@ class PanMailMailbox(models.Model):
                 raise ValidationError(_(
                     'The notification mailbox sends with its owner\'s account, and '
                     '%(owner)s has not connected their mailbox yet. Ask them to open '
-                    'the user menu at the top right → My Preferences → Mail Pro, or pick '
+                    'the user menu at the top right → My Preferences, or pick '
                     'an owner who has.',
                     owner=record.owner_user_id.name or _('nobody'),
                 ))

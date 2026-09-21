@@ -19,10 +19,15 @@
                      tick there. -->
                 <field name="is_notification_mailbox" string="Notification"
                        widget="boolean_toggle"/>
-                <field name="mailbox_type" string="Type" optional="hide"/>
+                <field name="mailbox_type" string="Type" optional="show"/>
                 <field name="provider" string="Provider" optional="hide"/>
-                <field name="owner_user_id" string="Owner" optional="hide"/>
-                <field name="sync_level" string="Sync" optional="hide"/>
+                <!-- Who, what and since when: the three columns that answer
+                     "is this rolled out and who agreed to what". Visible by
+                     default, because an administrator who has to switch them
+                     on cannot see the thing they are accountable for. -->
+                <field name="owner_user_id" string="Owner" optional="show"/>
+                <field name="sync_level" string="Odoo reads" optional="show"/>
+                <field name="consent_date" string="Agreed on" optional="show"/>
                 <field name="last_sync_date" string="Last Synced" optional="hide"/>
                 <field name="error_message" string="Error" optional="hide"/>
             </list>
@@ -122,6 +127,19 @@
                                  default and says out loud what it does. -->
                             <span class="o_form_label">Sync level</span>
                             <field name="sync_level" widget="radio" nolabel="1" class="mt-1"/>
+                            <!-- On a personal mailbox this is the owner's
+                                 answer, and only they may raise it. Saying so
+                                 here is cheaper than the AccessError that
+                                 would otherwise be the first anybody hears
+                                 of the rule. -->
+                            <div class="text-muted small mt-2"
+                                 invisible="mailbox_type != 'personal' or is_notification_mailbox">
+                                <field name="consent_date" class="oe_inline" nolabel="1"
+                                       invisible="not consent_date"/>
+                                <span invisible="not consent_date">is when the owner chose this.</span>
+                                <span invisible="consent_date">The owner has not chosen yet.</span>
+                                Only they can let Odoo read more; you can lower it or disconnect.
+                            </div>
                             <div class="alert alert-warning mt-2 mb-0" role="alert"
                                  invisible="sync_level != 'everyone'">
                                 Every sender becomes a contact in Odoo, newsletters

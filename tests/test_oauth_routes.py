@@ -16,6 +16,7 @@ import ast
 import os
 from unittest.mock import patch
 
+from odoo.http import Request
 from odoo.tests import HttpCase, TransactionCase, tagged
 
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.MicrosoftGraphClient'
@@ -29,6 +30,7 @@ DECLARED_ROUTES = {
     '/microsoft_oauth/callback': 'user',
     '/google_oauth/callback': 'user',
     '/mail_pro/pantalytics/return': 'user',
+    '/mail_pro/consent': 'user',
 }
 
 
@@ -134,7 +136,9 @@ class TestOAuthCallback(HttpCase):
             response = self._callback(code='authcode', state='nonce-123')
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('Mailbox Connected', response.text)
+        # The grant lands on the one screen where the person chooses what Odoo
+        # may read, not on a page that says it is done.
+        self.assertIn('What should Odoo read', response.text)
 
         account = self._accounts()
         self.assertEqual(len(account), 1)
@@ -256,6 +260,85 @@ class TestOAuthCallback(HttpCase):
         self.assertIn('Only internal users', response.text)
         self.assertFalse(self.env['pan.mail.account'].sudo().search(
             [('user_id', '=', portal.id)]))
+
+    # ----------------------------------------------------------- consent
+
+    def _consent(self, mailbox, level):
+        return self.url_open('/mail_pro/consent', data={
+            'csrf_token': Request.csrf_token(self),
+            'mailbox_id': mailbox.id,
+            'level': level,
+        })
+
+    def _connect(self, email='nora@company.test'):
+        """Walk the grant, so there is a mailbox to consent about."""
+        self._arm_state()
+        tokens = {'access_token': 'at', 'refresh_token': 'rt',
+                  'token_expiry': '2030-01-01 00:00:00'}
+        with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
+             patch(f'{GRAPH}.get_user_email', return_value=email):
+            self._callback(code='authcode', state='nonce-123')
+        return self.env['pan.mail.mailbox'].sudo().search(
+            [('email', '=ilike', email)])
+
+    def _notification_mailbox(self):
+        """Nothing may read until something can send. See ARCHITECTURE §2."""
+        return self.env['pan.mail.mailbox'].sudo().create({
+            'email': 'notifications@company.test',
+            'provider': 'outlook',
+            'is_notification_mailbox': True,
+            'owner_user_id': self.user.id,
+        })
+
+    def test_the_owner_s_answer_is_stored_and_dated(self):
+        mailbox = self._connect()
+        self._notification_mailbox()
+        self.assertEqual(mailbox.sync_level, 'replies', 'the default is the floor')
+
+        response = self._consent(mailbox, 'contacts')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mailbox.sync_level, 'contacts')
+        self.assertTrue(mailbox.consent_date)
+
+    def test_a_refusal_reads_as_a_sentence(self):
+        """The database can refuse for reasons that are not this person's.
+
+        Reading above replies needs a notification mailbox, and the first
+        person to connect is usually ahead of the administrator who sets one.
+        They get the reason, not the 422 the constraint would otherwise be.
+        """
+        mailbox = self._connect()
+
+        response = self._consent(mailbox, 'contacts')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Notification mailbox', response.text)
+        self.assertEqual(mailbox.sync_level, 'replies')
+
+    def test_the_route_refuses_a_mailbox_that_is_not_yours(self):
+        """The write is a sudo, so this check is the whole boundary."""
+        colleague = self.env['res.users'].sudo().create({
+            'name': 'Sam Colleague',
+            'login': 'sam@company.test',
+            'email': 'sam@company.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        theirs = self.env['pan.mail.mailbox'].sudo().create({
+            'email': 'sam@company.test',
+            'provider': 'outlook',
+            'owner_user_id': colleague.id,
+        })
+
+        response = self._consent(theirs, 'everyone')
+
+        self.assertIn('not yours', response.text)
+        self.assertEqual(theirs.sync_level, 'replies')
+
+    def test_the_route_refuses_a_level_that_does_not_exist(self):
+        mailbox = self._connect()
+        self._consent(mailbox, 'everything')
+        self.assertEqual(mailbox.sync_level, 'replies')
 
     def test_a_shared_mailbox_is_never_repurposed(self):
         """Somebody configured `info@` on purpose. A personal grant for that

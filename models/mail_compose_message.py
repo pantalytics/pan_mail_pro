@@ -61,11 +61,11 @@ class MailComposeMessage(models.TransientModel):
         user = self.env.user
         for record in self:
             if not user.x_pan_mail_account_ids.filtered('connected'):
-                record.x_setup_warning = _("Connect your email account: My Preferences, Mail Pro, Connect Mailbox.")
+                record.x_setup_warning = _("Connect your email account: My Preferences, Connect Mailbox.")
             elif record.x_send_from_mailbox_id:
                 record.x_setup_warning = False
             elif not user.x_default_mailbox_id:
-                record.x_setup_warning = _("Pick a default mailbox: My Preferences, Mail Pro, Send from.")
+                record.x_setup_warning = _("Pick a default mailbox: My Preferences, Send from.")
             else:
                 record.x_setup_warning = False
 

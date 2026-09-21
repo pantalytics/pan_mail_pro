@@ -711,7 +711,7 @@ class Checks:
             self.fail('at 1280px the conversation head still carries a Record button')
         if page.query_selector('.o_mailpro_split_toggle'):
             self.fail('a fold button still floats on a divider')
-        toggle = page.query_selector('.o_mailpro_pane_toggle_record')
+        toggle = page.query_selector('.o_mailpro_pane_toggle_odoo_record')
         if not toggle or not toggle.is_visible():
             self.fail('at 1280px there is no button to open the record from')
         else:
@@ -735,7 +735,7 @@ class Checks:
             if self.visible('.o_mailpro_conversation'):
                 self.fail('the conversation stayed open next to the record at 1280px')
             self.shot('inbox-narrow-record.png')
-            toggle = page.query_selector('.o_mailpro_pane_toggle_record')
+            toggle = page.query_selector('.o_mailpro_pane_toggle_odoo_record')
             if toggle.get_attribute('aria-pressed') != 'true':
                 self.fail('the record is open but its button does not read pressed')
             toggle.click()
@@ -747,7 +747,7 @@ class Checks:
         # The mailbox list folds the way every pane folds: its own button in the top
         # bar, the menu icon whether it is open or shut, pressed while it is
         # open. There is no second control for it anywhere else.
-        fold = page.query_selector('.o_mailpro_pane_toggle_rail')
+        fold = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
         if not fold or not fold.is_visible():
             self.fail('at 1280px the top bar has no button for the mailbox list')
         else:
@@ -759,7 +759,7 @@ class Checks:
             page.wait_for_timeout(400)
             if self.visible('.o_mailpro_mailbox_list'):
                 self.fail('the button did not fold the mailbox list at 1280px')
-            fold = page.query_selector('.o_mailpro_pane_toggle_rail')
+            fold = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
             if not fold or not fold.is_visible():
                 self.fail('folding the mailbox list took its own button off the screen')
             elif fold.get_attribute('aria-pressed') != 'false':
@@ -781,6 +781,73 @@ class Checks:
                                ('.o_mailpro_conversation', 'the conversation')):
             if not self.visible(selector):
                 self.fail(f'{name} did not come back at {WIDE}px')
+
+    def preferences(self):
+        """My Preferences: one mail block, and none of Odoo's own.
+
+        This is the only screen an internal user ever opens, so it is the only
+        place they can see what Odoo reads from their mailbox -- and Odoo's own
+        Outgoing Mail Server picker names a route Mail Pro has already decided.
+        Two controls for one question is the bug; both halves are asserted here
+        because hiding one without adding the other is just as wrong.
+        """
+        page = self.page
+        page.goto(f'{self.base}/odoo/my-preferences', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_form_view', timeout=30000)
+        except Exception:
+            self.fail('My Preferences did not render')
+            return
+        page.wait_for_timeout(1200)
+        self.shot('my-preferences.png')
+
+        form = page.query_selector('.o_form_view')
+        text = form.inner_text()
+        for label in ('Send from', 'Odoo reads'):
+            if label not in text:
+                self.fail(f'My Preferences has no "{label}" row')
+        if 'Outgoing Mail Server' in text:
+            self.fail("Odoo's own Outgoing Mail Server picker is still on My Preferences")
+        if any(tab.inner_text().strip() == 'Mail Pro'
+               for tab in page.query_selector_all('.o_form_view .nav-link')):
+            self.fail('My Preferences still has a separate Mail Pro tab')
+        if 'Replies and new email, existing contacts only' not in text:
+            self.fail('My Preferences does not show the level the seed set')
+        self.error_free('My Preferences')
+
+    def mailbox_access(self):
+        """The administrator's overview: who, what, and since when.
+
+        Three columns, visible without switching them on -- an administrator
+        who has to go looking for the thing they are accountable for does not
+        look.
+        """
+        page = self.page
+        action = dict(module_menu_actions(self.call)).get('Mailboxes')
+        if not action:
+            self.fail('there is no Mailboxes menu')
+            return
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_list_view', timeout=30000)
+        except Exception:
+            self.fail('the mailbox list did not render')
+            return
+        page.wait_for_timeout(1000)
+        self.shot('mailbox-access.png')
+
+        headers = [th.inner_text().strip()
+                   for th in page.query_selector_all('.o_list_view thead th')]
+        for column in ('Owner', 'Odoo reads', 'Agreed on'):
+            if column not in headers:
+                self.fail(f'the mailbox list has no "{column}" column, only {headers}')
+        rows = page.query_selector_all('.o_list_view tbody tr.o_data_row')
+        own = [r for r in rows if 'admin@example.com' in r.inner_text()]
+        if not own:
+            self.fail('the seeded personal mailbox is missing from the list')
+        elif 'Replies and new email' not in own[0].inner_text():
+            self.fail('the personal mailbox does not show what Odoo reads from it')
+        self.error_free('Mailbox access')
 
     def linking(self):
         """The screen where a match is corrected, and the correction sticking.
@@ -932,10 +999,10 @@ class Checks:
         # open, gone again once a folder is picked.
         if self.visible('.o_mailpro_mailbox_list'):
             self.fail('the mailbox list takes space on a phone before it is asked for')
-        if page.query_selector('.o_mailpro_pane_toggle_list') or \
-                page.query_selector('.o_mailpro_pane_toggle_record'):
+        if page.query_selector('.o_mailpro_pane_toggle_conversation_list') or \
+                page.query_selector('.o_mailpro_pane_toggle_odoo_record'):
             self.fail('a phone shows toggles for panes that take turns anyway')
-        button = page.query_selector('.o_mailpro_pane_toggle_rail')
+        button = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
         if not button or not button.is_visible():
             self.fail('a phone has no button for the mailbox list')
             return
@@ -1061,7 +1128,7 @@ class Checks:
             self.fail('dragging the divider 90px moved the list %dpx'
                       % (widened - before))
 
-        fold = page.query_selector('.o_mailpro_pane_toggle_record')
+        fold = page.query_selector('.o_mailpro_pane_toggle_odoo_record')
         if not fold:
             self.fail('the record pane cannot be folded away')
             return
@@ -1092,7 +1159,7 @@ class Checks:
 
         # The same button, in the same place, is the way back: a control that
         # moves when the thing it controls folds is a control you hunt for.
-        toggle = page.query_selector('.o_mailpro_pane_toggle_record')
+        toggle = page.query_selector('.o_mailpro_pane_toggle_odoo_record')
         if not toggle or not toggle.is_visible():
             self.fail('the folded record pane left no button to bring it back')
         else:
@@ -1109,7 +1176,7 @@ class Checks:
         # The list folds too, the same way, and the conversation takes the
         # room it leaves.
         thread_before = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
-        fold = page.query_selector('.o_mailpro_pane_toggle_list')
+        fold = page.query_selector('.o_mailpro_pane_toggle_conversation_list')
         if not fold:
             self.fail('the conversation list cannot be folded away')
             return
@@ -1129,7 +1196,7 @@ class Checks:
         # bar on top of the screen's first. Nothing floats there now, the
         # conversation starts at its own pane's edge, and both buttons are
         # where they always are.
-        page.query_selector('.o_mailpro_pane_toggle_rail').click()
+        page.query_selector('.o_mailpro_pane_toggle_mailbox_list').click()
         page.wait_for_timeout(400)
         if self.visible('.o_mailpro_mailbox_list'):
             self.fail('the mailbox list did not fold away')
@@ -1141,16 +1208,16 @@ class Checks:
                 title.bounding_box()['x'] - conversation.bounding_box()['x'] > 40:
             self.fail('the conversation title still starts %dpx into its pane'
                       % (title.bounding_box()['x'] - conversation.bounding_box()['x']))
-        rail_btn = page.query_selector('.o_mailpro_pane_toggle_rail')
-        list_btn = page.query_selector('.o_mailpro_pane_toggle_list')
+        mailbox_btn = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
+        list_btn = page.query_selector('.o_mailpro_pane_toggle_conversation_list')
         new_btn = page.query_selector('.o_mailpro_new')
-        if not rail_btn or not list_btn or not new_btn:
+        if not mailbox_btn or not list_btn or not new_btn:
             self.fail('folding the mailbox list and the conversation list together lost a button')
-        elif rail_btn.bounding_box()['x'] > new_btn.bounding_box()['x']:
+        elif mailbox_btn.bounding_box()['x'] > new_btn.bounding_box()['x']:
             self.fail('the pane toggles sit to the right of New Email')
         else:
             self.shot('inbox-two-folded.png')
-            rail_btn.click()
+            mailbox_btn.click()
             page.wait_for_timeout(400)
             if not self.visible('.o_mailpro_mailbox_list'):
                 self.fail('the menu button did not bring the mailbox list back')
@@ -1552,6 +1619,8 @@ def main():
         checks.menus()
         checks.conversation_view()
         checks.linking()
+        checks.preferences()
+        checks.mailbox_access()
         checks.provider_form()
         checks.connect_banner()
         browser.close()

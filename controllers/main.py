@@ -2,6 +2,7 @@
 import logging
 
 from odoo import http, _
+from odoo.exceptions import UserError, ValidationError
 from odoo.http import request
 
 from ..models.mail_provider_client import (
@@ -17,6 +18,38 @@ _logger = logging.getLogger(__name__)
 # `<app>` element in `res_config_settings_views.xml`; anything else lands on
 # the general settings page with no sign that a jump was intended.
 SETTINGS_URL = '/odoo/settings#pan_mail_pro'
+
+
+# What each rung means for the people around you, in the words of the person
+# reading it. The labels on the field say what Odoo does; these say what a
+# colleague ends up seeing, which is the half that decides the answer.
+def consent_seen():
+    """Built per call, so `_()` runs in the reader's language.
+
+    A module-level dict would be English forever: the constant is evaluated at
+    import time, and splicing it into a translated sentence leaves the half
+    that carries the meaning untranslated.
+    """
+    return {
+        'replies': _('answers to mail Odoo sent'),
+        'both': _('those answers, including the ones you write in your mail app'),
+        'contacts': _('that, plus new mail from contacts Odoo already knows'),
+        'everyone': _('that, plus new mail from anyone'),
+    }
+
+
+def _consent_page(mailbox):
+    """The one screen where somebody chooses what Odoo reads from their mail."""
+    seen = consent_seen()
+    levels = [
+        (code, label, seen.get(code, ''))
+        for code, label in mailbox._fields['sync_level'].selection
+    ]
+    return request.render('pan_mail_pro.oauth_consent', {
+        'mailbox': mailbox,
+        'levels': levels,
+        'current_seen': seen.get(mailbox.sync_level or 'replies', ''),
+    })
 
 
 def _result_page(success, title, message):
@@ -132,6 +165,12 @@ class MailProOAuthController(http.Controller):
                 _logger.exception('[OAuth] Connected %s, but its mailbox could not be '
                                   'claimed yet', email)
 
+            mailbox = self._own_mailbox(user, email)
+            if mailbox:
+                # The claim worked, so there is something to consent about.
+                # Without one (internal domains still unset, a shared address
+                # somebody else configured) there is nothing to ask yet.
+                return _consent_page(mailbox)
             return _result_page(True, _('Mailbox Connected'),
                                 _('Your email account has been connected successfully.'))
 
@@ -182,6 +221,53 @@ class MailProOAuthController(http.Controller):
             # the reason it exists, so it comes back.
             existing.write({'owner_user_id': user.id, 'active': True})
             _logger.info('[OAuth] Assigned existing mailbox %s to %s', email, user.login)
+
+    def _own_mailbox(self, user, email):
+        """This user's own personal mailbox for the address they authorized."""
+        if not email:
+            return request.env['pan.mail.mailbox']
+        mailbox = request.env['pan.mail.mailbox'].sudo().search(
+            [('email', '=ilike', email), ('owner_user_id', '=', user.id)], limit=1)
+        if mailbox.mailbox_type != 'personal' or mailbox.is_notification_mailbox:
+            return request.env['pan.mail.mailbox']
+        return mailbox
+
+    @http.route('/mail_pro/consent', type='http', auth='user', website=True,
+                methods=['POST'])
+    def set_consent(self, mailbox_id=None, level=None, **kwargs):
+        """Store the level its owner just picked.
+
+        The route is the boundary, not the form: an internal user has no write
+        access to `pan.mail.mailbox` at all, so the write is a sudo and this
+        check is the only thing between it and somebody else's mailbox.
+        """
+        user = request.env.user
+        mailbox = request.env['pan.mail.mailbox'].sudo().browse(
+            int(mailbox_id) if str(mailbox_id or '').isdigit() else 0).exists()
+        valid = dict(request.env['pan.mail.mailbox']._fields['sync_level'].selection)
+        if not mailbox or mailbox.owner_user_id != user or level not in valid:
+            _logger.warning('[OAuth] Refused a consent write by %s for mailbox %s',
+                            user.login, mailbox_id)
+            return _result_page(False, _('Not Saved'),
+                                _('That mailbox is not yours to change.'))
+        try:
+            # A savepoint, not a bare try: a constraint that fires after the
+            # UPDATE leaves the new value in the transaction, and swallowing
+            # the error would commit exactly the write that was refused.
+            with request.env.cr.savepoint():
+                mailbox.write({'sync_level': level})
+        except (UserError, ValidationError) as error:
+            # A mailbox can refuse to read more for reasons that have nothing
+            # to do with this person: no notification mailbox yet, no internal
+            # domains. The refusal is a sentence on this page, not a 422 in the
+            # tab a provider just handed back.
+            _logger.info('[OAuth] %s could not set %s to %s: %s',
+                         user.login, mailbox.email, level, error)
+            return _result_page(False, _('Not Saved'), str(error))
+        _logger.info('[OAuth] %s set %s to sync level %s', user.login, mailbox.email, level)
+        return _result_page(True, _('Mailbox Connected'), _(
+            'Odoo now reads %(what)s from your mailbox. You can change that '
+            'in My Preferences.', what=consent_seen().get(level, '')))
 
 
 class MailProPantalyticsController(http.Controller):

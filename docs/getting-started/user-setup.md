@@ -25,26 +25,28 @@ on a staging copy.
 ## Connect your mailbox
 
 1. Click your **profile picture** (top right) → **My Preferences**
-2. Go to the **Mail Pro** tab
-3. Click **Connect Mailbox**
-4. Sign in with your Microsoft 365 or Google Workspace account
-5. Grant the requested permissions
+2. Click **Connect Mailbox**
+3. Sign in with your Microsoft 365 or Google Workspace account
+4. Grant the requested permissions
+5. Choose what Odoo may read from your mailbox, on the page that comes back
 
 A personal mailbox is created for the address you signed in with, and set as
-your **Send from**.
+your **Send from**. The level you pick is yours: an administrator can lower it
+or disconnect the mailbox, and only you can let Odoo read more. Mail that has
+already landed on a record stays there when you lower it.
 
 An administrator can invite everybody at once with **Send Mail Pro Invite** on
 the Users list (Settings → Mail Pro → Users).
 
 ## Check it works
 
-On **My Preferences → Mail Pro**, press **Send Test Email**. It sends a message
+On **My Preferences**, press **Send Test Email**. It sends a message
 from your own mailbox to your own address, so a failure names the problem
 before a customer finds it. Every mailbox form has the same button.
 
 ## Set your default mailbox
 
-1. Go to **My Preferences → Mail Pro**
+1. Go to **My Preferences**
 2. Pick a mailbox in **Send from**
 3. Save
 
@@ -59,9 +61,15 @@ That mailbox is pre-selected in the composer. You can still change it per email.
 You see your own personal mailbox and every shared mailbox. On Microsoft 365 a
 shared mailbox also needs SendAs permission on the address.
 
+## Change what Odoo reads
+
+1. Go to **My Preferences**
+2. Pick a level in **Odoo reads**
+3. Save
+
 ## Disconnecting
 
-1. Go to **My Preferences → Mail Pro**
+1. Go to **My Preferences**
 2. Click **Disconnect** and confirm
 
 This removes your stored credentials. Odoo stops sending and receiving for that

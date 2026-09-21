@@ -33,6 +33,7 @@ from . import test_routing_log
 from . import test_linking
 from . import test_setup_flow
 from . import test_mailbox_permission
+from . import test_mailbox_consent
 from . import test_incoming_sync_gmail
 from . import test_mail_lens
 from . import test_mail_coverage

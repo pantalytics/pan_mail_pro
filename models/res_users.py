@@ -57,18 +57,81 @@ class ResUsers(models.Model):
         copy=False,
     )
 
+    # What Odoo reads from this person's own mailbox, on their own screen.
+    # The setting lives on `pan.mail.mailbox`, which an internal user may read
+    # and may not write -- and the one person who must be able to change it is
+    # exactly that user. So it is surfaced here, where My Preferences can write
+    # it, and the inverse is the boundary: you set your own, nobody else's.
+    x_pan_mail_sync_level = fields.Selection(
+        selection=lambda self: self.env['pan.mail.mailbox']._fields['sync_level'].selection,
+        string='Odoo reads',
+        compute='_compute_pan_mail_sync_level',
+        inverse='_inverse_pan_mail_sync_level',
+        help='How much of your own mailbox Odoo reads. Replies to mail Odoo '
+             'sent always land on their record; each level adds one more kind '
+             'of mail on top of that.',
+    )
+
     @property
     def SELF_READABLE_FIELDS(self):
         return super().SELF_READABLE_FIELDS + [
             'x_default_mailbox_id',
             'x_pan_mail_connected',
+            'x_pan_mail_sync_level',
         ]
 
     @property
     def SELF_WRITEABLE_FIELDS(self):
         return super().SELF_WRITEABLE_FIELDS + [
             'x_default_mailbox_id',
+            'x_pan_mail_sync_level',
         ]
+
+    def _own_personal_mailboxes(self):
+        """The mailbox that is this user's own mail, not the company's.
+
+        `sudo` on the search, not on what it is used for: a personal mailbox is
+        invisible to everyone but its owner and a mailbox manager, and the
+        administrator's overview reads this field for other people. What it
+        exposes is one selection value, never a message.
+        """
+        self.ensure_one()
+        # A form in the browser hands the compute a NewId, which no domain can
+        # be built from; `_origin` is the saved record behind it, or nothing.
+        user_id = self._origin.id
+        if not isinstance(user_id, int):
+            return self.env['pan.mail.mailbox']
+        mailboxes = self.env['pan.mail.mailbox'].sudo().search([
+            ('owner_user_id', '=', user_id),
+            ('is_notification_mailbox', '=', False),
+        ])
+        # The first one, in the model's own order, and never more: the screen
+        # shows one level, so writing one is the only thing it can honestly
+        # mean. A second personal address is rare, and its level is set on the
+        # mailbox itself. Raising a mailbox nobody was shown is the failure
+        # this returns a single record to avoid.
+        return mailboxes.filtered(lambda m: m.mailbox_type == 'personal')[:1]
+
+    @api.depends('x_pan_mail_account_ids.email')
+    def _compute_pan_mail_sync_level(self):
+        for user in self:
+            user.x_pan_mail_sync_level = user._own_personal_mailboxes().sync_level or False
+
+    def _inverse_pan_mail_sync_level(self):
+        for user in self:
+            if not self.env.su and user != self.env.user:
+                raise AccessError(_(
+                    'Only %(user)s can change what Odoo reads from their '
+                    'mailbox. You can lower it on the mailbox itself.',
+                    user=user.name))
+            if not user.x_pan_mail_sync_level:
+                continue
+            mailbox = user._own_personal_mailboxes()
+            if mailbox:
+                # sudo writes the value; the check above is the boundary, and
+                # `pan.mail.mailbox.write` stamps `consent_date` because the
+                # owner is still the acting user under sudo.
+                mailbox.sudo().write({'sync_level': user.x_pan_mail_sync_level})
 
     @api.depends('x_pan_mail_account_ids.connected')
     def _compute_pan_mail_connected(self):

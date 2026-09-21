@@ -1,6 +1,9 @@
 # Consent: who decides what a mailbox shares
 
-Status: **design only**, nothing below is built. Decisions taken 2026-09-21.
+Status: **built in 19.0.15.0.0**, except the administrator's overview being a
+screen of its own -- it is the Mailboxes list with three columns on it. The
+design below is what shipped; what it means for the code is in
+ARCHITECTURE.md §3.
 
 ## Azure is not the boundary; Odoo is
 
@@ -76,14 +79,17 @@ activity meter on a colleague.
 
 ## Where each screen lives
 
-Mail Pro's settings replace Odoo's own, they do not sit beside them. Today a
-banner is inserted *before* `email_servers_setting`, so the Discuss page shows
-the banner and the mail-server block together and a customer has two places
-that both look like the answer. The block is replaced instead -- one line and a
-button to the Mail Pro tab -- and Technical > Email > Outgoing / Incoming Mail
-Servers leaves the menu for as long as Mail Pro has taken over. Only the views
-change; `ir.mail_server` stays, and the uninstall hook already puts the servers
-back.
+Mail Pro's settings replace Odoo's own, they do not sit beside them. The
+banner used to be inserted *before* `email_servers_setting`, so the Discuss
+page showed the banner and the mail-server block together and a customer had
+two places that both looked like the answer. That block is now invisible and
+our line stands in its place. Hidden rather than removed: replacing the node
+would take its other inheritors down with it. Only the view changes;
+`ir.mail_server` stays, and the uninstall hook already puts the servers back.
+
+Technical > Email > Outgoing / Incoming Mail Servers stays in the menu. Hiding
+it would have to be undone on uninstall, which is a second thing to get right
+for a screen only an administrator who went looking ever opens.
 
 The tab itself stays where it is. One surface per job, and the setup checklist
 is on it.

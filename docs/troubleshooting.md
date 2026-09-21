@@ -17,7 +17,7 @@
 **Cause:** The user has not connected their account yet.
 
 **Solution:**
-1. Go to **My Preferences → Mail Pro** tab
+1. Go to **My Preferences**
 2. Click **Connect Mailbox** and complete the sign-in
 3. Press **Send Test Email** to confirm
 
@@ -131,7 +131,7 @@ mailbox that predates them.
 **Cause:** The refresh token expired (Microsoft: 90 days of inactivity) or the
 user revoked access.
 
-**Solution:** The user reconnects their account under **My Preferences → Mail Pro**.
+**Solution:** The user reconnects their account under **My Preferences**.
 
 Google only issues a refresh token on the first consent. If an account stops
 working an hour after connecting, it was authorized without one — disconnect and

@@ -89,8 +89,13 @@ call('pan.mail.license', 'create', {
     'status': 'active',
     'valid_until': (datetime.datetime.now(datetime.UTC)
                     + datetime.timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')})
+# One account per user per provider, and it carries the admin's own address:
+# that is what makes their own mailbox below personal rather than shared.
+# Credentials are resolved per person, not per address, so the notification
+# mailbox still reads and sends with this same account.
+call('res.users', 'write', [uid], {'email': 'admin@example.com'})
 call('pan.mail.account', 'create', {
-    'user_id': uid, 'provider': 'outlook', 'email': 'notifications@example.com',
+    'user_id': uid, 'provider': 'outlook', 'email': 'admin@example.com',
     'refresh_token': 'demo', 'access_token': 'demo'})
 ids = [call('pan.mail.mailbox', 'create', vals) for vals in (
     {'email': 'notifications@example.com', 'provider': 'outlook',
@@ -98,6 +103,14 @@ ids = [call('pan.mail.mailbox', 'create', vals) for vals in (
     {'email': 'support@example.com', 'provider': 'outlook', 'owner_user_id': uid},
     {'email': 'sales@example.com', 'provider': 'outlook', 'owner_user_id': uid})]
 call('pan.mail.mailbox', 'write', ids[1:], {'state': 'error'})
+# The admin's own mailbox, the only kind that has consent to give. Sequence 90
+# keeps it last in the mailbox list, where the checks that index into that list
+# do not trip over it. The level is set in a second call, as its owner, because
+# that is the write that dates the choice.
+own = call('pan.mail.mailbox', 'create', {
+    'email': 'admin@example.com', 'provider': 'outlook',
+    'owner_user_id': uid, 'sequence': 90})
+call('pan.mail.mailbox', 'write', [own], {'sync_level': 'contacts'})
 # Mail, so the Inbox screen shows the thing it is for rather than its empty
 # state. Three messages on one lead: a question, our answer, their reply.
 #

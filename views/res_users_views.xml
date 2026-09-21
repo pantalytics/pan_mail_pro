@@ -65,45 +65,54 @@
         </field>
     </record>
 
-    <!-- Extend My Preferences popup (view_users_form_simple_modif) -->
+    <!-- My Preferences: one mail block, where Odoo's own outgoing-server
+         field used to be. An internal user never opens Settings, so this is
+         the only screen where they can see or change what Odoo reads - and
+         two controls naming the route mail takes is one too many. -->
     <record id="view_users_preferences_inherit_mail_pro" model="ir.ui.view">
-        <field name="name">res.users.preferences.inherit.microsoft.oauth</field>
+        <field name="name">res.users.preferences.inherit.mail.pro</field>
         <field name="model">res.users</field>
         <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
         <field name="priority">20</field>
         <field name="arch" type="xml">
-            <xpath expr="//page[@name='page_security']" position="after">
-                <page string="Mail Pro" name="mail_pro">
-                    <field name="x_pan_mail_connected" invisible="1"/>
+            <!-- Mail Pro decides the route, so Odoo's own picker is not a
+                 second opinion, it is a contradiction. -->
+            <xpath expr="//field[@name='outgoing_mail_server_type']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
+            <xpath expr="//span[text()='Outgoing Mail Server']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
 
-                    <group invisible="x_pan_mail_connected">
-                        <div colspan="2">
-                            <div class="text-muted mb-3">Sign in so Odoo can send and read mail on your behalf</div>
-                            <button type="object"
-                                    name="action_connect_mailbox"
-                                    string="Connect Mailbox"
-                                    class="btn-primary" icon="fa-sign-in"/>
-                        </div>
-                    </group>
+            <xpath expr="//group[@name='other_preferences']" position="inside">
+                <field name="x_pan_mail_connected" invisible="1"/>
 
-                    <group invisible="not x_pan_mail_connected">
-                        <field name="x_default_mailbox_id"
-                               string="Send from"
-                               domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"
-                               options="{'no_create': True, 'no_open': True}"/>
-                        <div colspan="2">
-                            <button type="object"
-                                    name="action_test_send_mailbox"
-                                    string="Send Test Email"
-                                    class="btn-secondary" icon="fa-paper-plane"/>
-                            <button type="object"
-                                    name="action_disconnect_mailbox"
-                                    string="Disconnect"
-                                    class="oe_link text-danger ms-3"
-                                    confirm="Odoo will stop sending and receiving mail for this account until you connect it again."/>
-                        </div>
-                    </group>
-                </page>
+                <div colspan="2" class="mt-3" invisible="x_pan_mail_connected">
+                    <button type="object"
+                            name="action_connect_mailbox"
+                            string="Connect Mailbox"
+                            class="btn-primary" icon="fa-sign-in"/>
+                </div>
+
+                <field name="x_default_mailbox_id"
+                       string="Send from"
+                       invisible="not x_pan_mail_connected"
+                       domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"
+                       options="{'no_create': True, 'no_open': True}"/>
+                <field name="x_pan_mail_sync_level"
+                       string="Odoo reads"
+                       invisible="not x_pan_mail_connected or not x_pan_mail_sync_level"/>
+                <div colspan="2" invisible="not x_pan_mail_connected">
+                    <button type="object"
+                            name="action_test_send_mailbox"
+                            string="Send Test Email"
+                            class="btn-link ps-0"/>
+                    <button type="object"
+                            name="action_disconnect_mailbox"
+                            string="Disconnect mailbox"
+                            class="btn-link text-danger"
+                            confirm="Odoo will stop sending and receiving mail for this account until you connect it again. Mail already on a record stays there."/>
+                </div>
             </xpath>
         </field>
     </record>

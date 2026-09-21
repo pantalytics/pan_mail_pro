@@ -288,12 +288,21 @@
         <field name="inherit_id" ref="mail.res_config_settings_view_form"/>
         <field name="priority">99</field>
         <field name="arch" type="xml">
+            <!-- Hidden, not removed. Leaving Odoo's own mail-server block on
+                 the page beside a banner gives a customer two screens that each
+                 look like the place email is configured; replacing the node
+                 outright would take its other inheritors down with it and leave
+                 any later one without an anchor. It is invisible, and our line
+                 stands where it stood. -->
+            <xpath expr="//setting[@id='email_servers_setting']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
             <xpath expr="//setting[@id='email_servers_setting']" position="before">
                 <div class="alert alert-info mb-3" role="alert">
                     <i class="fa fa-info-circle me-2" title="Info"/>
-                    <strong>Mail Pro is installed.</strong>
-                    Outgoing and incoming email is handled by Mail Pro.
-                    <a href="/odoo/settings#pan_mail_pro" class="alert-link ms-1">Configure in Settings → Mail Pro</a>
+                    <strong>Email runs on Mail Pro.</strong>
+                    Outgoing and incoming email goes through your provider, not through an SMTP server.
+                    <a href="/odoo/settings#pan_mail_pro" class="alert-link ms-1">Open Mail Pro</a>
                 </div>
             </xpath>
         </field>

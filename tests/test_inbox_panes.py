@@ -49,6 +49,7 @@ class TestInboxPanes(TransactionCase):
         self.template = read('static', 'src', 'xml', 'conversation_view.xml')
         self.scss = read('static', 'src', 'scss', 'conversation_view.scss')
         self.architecture = read('ARCHITECTURE.md')
+        self.ui_check = read('tools', 'ui_check.py')
 
     def test_use_panes_knows_the_four_names(self):
         """The three lists a pane name has to be on to exist at all."""
@@ -83,6 +84,20 @@ class TestInboxPanes(TransactionCase):
             self.assertIn('o_mailpro_%s"' % name, self.template,
                           'no pane element carries o_mailpro_%s' % name)
 
+    def test_the_browser_check_uses_the_current_names(self):
+        """The fifth place a pane name lives, and the one that fails loudest.
+
+        The toggle's class is built from the pane key, so a rename that misses
+        `ui_check.py` leaves it querying classes nobody draws any more: every
+        lookup returns None and the job reports four missing buttons on a
+        screen that is fine. That is exactly what 19.0.14.1.0 shipped, and it
+        turned the default branch red.
+        """
+        for name in [pane for pane in PANES if pane != 'conversation']:
+            self.assertIn(
+                '.o_mailpro_pane_toggle_%s' % name, self.ui_check,
+                'the browser check does not know the %s toggle' % name)
+
     def test_architecture_documents_the_names(self):
         for name in PANES:
             self.assertIn('`o_mailpro_%s`' % name, self.architecture,
@@ -99,6 +114,7 @@ class TestInboxPanes(TransactionCase):
             read('static', 'src', 'js', 'conversation_view', 'conversation_view.js'),
             read('static', 'src', 'js', 'conversation_view', 'use_composer.js'),
             read('models', 'pan_mail_conversation.py'),
+            read('tools', 'ui_check.py'),
         ])
         for word in RETIRED:
             # Whole words: `rail` must not match "trailing".
