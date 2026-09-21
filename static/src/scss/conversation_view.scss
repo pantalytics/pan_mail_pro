@@ -291,6 +291,21 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         color: $mailpro-faint;
     }
 
+    // The way out of door 1's narrowing, next to the record's name.
+    .o_mailpro_record_clear {
+        display: inline-flex;
+        align-items: center;
+        border: 0;
+        background: none;
+        border-radius: 999px;
+        padding: 0 0.25rem;
+        font-size: 0.75rem;
+        color: $mailpro-faint;
+        cursor: pointer;
+
+        &:hover { background: rgba(0, 29, 33, 0.06); }
+    }
+
     .o_mailpro_filter_toggle {
         display: inline-flex;
         align-items: center;

@@ -64,7 +64,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, and whether to nudge them |
 | `models/res_config_settings.py` | The Settings page: the three checklist steps and the users block |
 | `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
-| `models/ir_http.py` | Two session flags: does this user still have to connect a mailbox, and may the Inbox report how it is used |
+| `models/ir_http.py` | Three session flags: does this user still have to connect a mailbox, may they open the Inbox at all, and may the Inbox report how it is used |
 | `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
 | `static/lib/posthog/` | posthog-js, vendored (MIT), pinned so the masking check in `tools/ui_check.py` proves the version that ships |
 | `tests/test_improve.py` | What the session carries once the workspace said yes: a host, a token, a pseudonym, nothing that names anyone |
@@ -72,6 +72,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_coverage.py` | Link-coverage measurement: the screen, and `counts_since()`, whose last 24 hours ride the heartbeat |
 | `models/pan_mail_conversation.py` | The read side of the Inbox: the RPC methods behind the screen, no table, no sudo for an answer |
 | `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, and the Followers button at its end that opens the chatter's own follower list |
+| `static/src/js/chatter_door.js` | Door 1: **Open in mail** in Odoo's own chatter, on a record that carries an emailed message. Counts the record's threads, then opens the Inbox on the conversation or on the record's list |
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (one round button per pane in the top bar, left of New Email, pressed while its pane is showing -- the dividers are widths to drag and nothing else), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from that same button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
 | `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, and the Send that saves it and calls `action_send_mail` |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
