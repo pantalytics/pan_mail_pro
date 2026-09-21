@@ -2,33 +2,27 @@
 <templates xml:space="preserve">
 
     <!--
-        Two steps, one box. The box is always the same control in the same
-        place, so the second step is the same gesture as the first rather than
-        a new screen: type, read, click.
+        Step one of two: the kind of record, as a search box over a short
+        list. Step two is Odoo's own record picker, so it has no template
+        here.
     -->
     <t t-name="pan_mail_pro.LinkDialog">
         <Dialog size="'md'" title="title" footer="false" contentClass="'o_mailpro_link_dialog'">
-            <div t-if="state.target" class="o_mailpro_link_back">
-                <button type="button" class="btn btn-link btn-sm p-0"
-                        t-on-click="() => this.back()">Back</button>
-            </div>
             <input type="text" class="form-control o_mailpro_link_search"
                    t-ref="search" autofocus="autofocus"
-                   t-att-placeholder="placeholder"
+                   placeholder="Search for a kind of record..."
                    t-on-input="onSearch"/>
-            <!--
-                Whose records these are, said once above the list. Without it
-                a list of three quotes on a screen that asked nothing reads as
-                the only three quotes in the database.
-            -->
-            <div t-if="state.related and !state.search" class="o_mailpro_link_hint">
-                <t t-esc="state.partner"/>
-            </div>
             <ul class="o_mailpro_link_list">
-                <li t-foreach="state.rows" t-as="entry" t-key="entry.key">
+                <li t-foreach="state.rows" t-as="row" t-key="row.model">
                     <button type="button" class="o_mailpro_link_row"
-                            t-on-click="() => this.choose(entry)">
-                        <t t-esc="entry.label"/>
+                            t-on-click="() => this.choose(row)">
+                        <!-- The app's tile, where the model has one: the same
+                             tile the Linked-to chips wear. The slot stays
+                             when it has not, so the labels line up. -->
+                        <span class="o_mailpro_link_icon">
+                            <img t-if="row.icon" t-att-src="row.icon" alt=""/>
+                        </span>
+                        <t t-esc="row.label"/>
                     </button>
                 </li>
             </ul>
