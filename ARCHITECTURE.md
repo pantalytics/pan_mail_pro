@@ -342,6 +342,14 @@ of the comment one and no recipients, so the screen still writes in exactly
 one place. The strip steps aside while somebody is writing: the pane has one
 job then, and a tab click would drop the draft.
 
+19.0.15.5.0 leaves the conversation *under* the composer instead of in its
+place. Outlook's shape: what is being written on top, the mail it answers
+below it, one scrollbar over both (`.o_mailpro_composing`). The stack is the
+same one the Mail tab draws -- `pan_mail_pro.ConversationMessages`, one
+template and two call sites -- so a message further down still opens where it
+is while the draft stays put. Replacing the thread with the composer had put
+the sentence somebody was answering behind a Discard.
+
 19.0.13.1.0 gives each tab one writing action instead of both: Reply on Mail,
 Log note on Mail + notes, and neither on Files or Activities, which are lists.
 Each action sits on the tab that shows what it produces, so nothing has to be

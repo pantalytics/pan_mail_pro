@@ -673,6 +673,18 @@ class Checks:
                 # whole reason this is a pane and not a dialog.
                 if not page.query_selector('.o_mailpro_odoo_record .o_form_view'):
                     self.fail('the record pane went away while replying')
+                # And so does the mail being answered: Outlook's shape, the
+                # reply on top and the conversation under it. Replacing the
+                # thread with the composer is what put the sentence somebody
+                # is answering behind a Discard.
+                history = page.query_selector(
+                    '.o_mailpro_composing .o_mailpro_messages .o_mailpro_message')
+                if not history:
+                    self.fail('the conversation went away while replying')
+                else:
+                    form = page.query_selector('.o_mailpro_composing .o_mailpro_composer')
+                    if history.bounding_box()['y'] <= form.bounding_box()['y']:
+                        self.fail('the conversation sits above the reply, not under it')
                 self.shot('inbox-reply.png')
                 # A dialog on top of the reply is this screen's failure mode:
                 # the pane renders, something throws behind it, and the next
@@ -688,6 +700,11 @@ class Checks:
                     self.fail('an open reply cannot be discarded')
                 else:
                     discard.click()
+                    # Not `.o_mailpro_messages`: the thread is on screen
+                    # while the reply is open too. What Discard closes is the
+                    # composer, so that is what has to go.
+                    page.wait_for_selector('.o_mailpro_composer', state='detached',
+                                           timeout=15000)
                     page.wait_for_selector('.o_mailpro_messages', timeout=15000)
                     page.wait_for_timeout(600)
             left_open = self.dialog_in_the_way()
@@ -725,6 +742,11 @@ class Checks:
                     '.o_mailpro_conversation_head button:has-text("Discard")')
                 if discard:
                     discard.click()
+                    # Not `.o_mailpro_messages`: the thread is on screen
+                    # while the reply is open too. What Discard closes is the
+                    # composer, so that is what has to go.
+                    page.wait_for_selector('.o_mailpro_composer', state='detached',
+                                           timeout=15000)
                     page.wait_for_selector('.o_mailpro_messages', timeout=15000)
                     page.wait_for_timeout(600)
 
