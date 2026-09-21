@@ -200,6 +200,18 @@
                                 The search covers this mailbox. Try another one, or clear it.
                             </p>
                         </div>
+                        <div t-elif="isLive and !state.liveConnected" class="o_mailpro_empty">
+                            <h3 class="o_mailpro_empty_title">This mailbox is not connected.</h3>
+                            <p class="o_mailpro_empty_text">
+                                Reading your own mailbox needs working credentials for it.
+                            </p>
+                        </div>
+                        <div t-elif="isLive" class="o_mailpro_empty">
+                            <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="listLabel"/>.</h3>
+                            <p class="o_mailpro_empty_text">
+                                This is your mailbox itself, read as it is right now.
+                            </p>
+                        </div>
                         <div t-else="" class="o_mailpro_empty">
                             <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="listLabel"/> yet.</h3>
                             <p class="o_mailpro_empty_text">
@@ -209,7 +221,7 @@
                     </t>
                     <t t-else="">
                         <button t-foreach="state.conversations" t-as="conversation"
-                                t-key="conversation.message_id"
+                                t-key="conversation.message_id or conversation.live_id"
                                 type="button"
                                 class="o_mailpro_item"
                                 t-att-class="{
@@ -244,7 +256,16 @@
                                     <span class="o_mailpro_meta d-flex align-items-center gap-2">
                                         <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
                                               t-esc="conversation.record_name"/>
-                                        <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
+                                        <!-- Only on a row from the mailbox
+                                             itself: in an imported folder
+                                             every row is in Odoo by
+                                             definition, so the chip would be
+                                             a word on every line that says
+                                             nothing. -->
+                                        <span t-if="conversation.live and !conversation.linked"
+                                              class="o_mailpro_chip o_mailpro_chip_live">Not in Odoo</span>
+                                        <span t-if="!conversation.live" class="o_mailpro_muted"
+                                              t-esc="messageCount(conversation.count)"/>
                                     </span>
                                 </span>
                             </div>
@@ -591,6 +612,44 @@
                                 </t>
                             </article>
                             </t>
+                        </div>
+                    </t>
+                    <!--
+                        A mail Odoo does not have. Not a conversation: no
+                        thread to draw, no record beside it, and nothing to
+                        reply to yet. What it shows is the mail and the one
+                        button that changes that, with the sentence that
+                        makes filing a decision rather than a click: until
+                        you press it this mail is yours alone, and after it
+                        the usual Odoo rights apply.
+                    -->
+                    <t t-elif="state.live">
+                        <div class="o_mailpro_conversation_head">
+                            <div class="d-flex align-items-start justify-content-between gap-3">
+                                <t t-call="pan_mail_pro.BackToList"/>
+                                <div class="min-w-0 flex-grow-1">
+                                    <h2 class="o_mailpro_conversation_title" t-esc="state.live.subject"/>
+                                    <div class="o_mailpro_conversation_sub">
+                                        <span t-esc="state.live.correspondent"/>
+                                        <span t-if="state.live.date">
+                                            &#183; <t t-esc="fullDate(state.live.date)"/>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                    <button type="button" class="btn btn-primary btn-sm"
+                                            t-att-disabled="state.liveBusy"
+                                            t-on-click="() => this.importLive()">Add to Odoo</button>
+                                </div>
+                            </div>
+                            <div class="o_mailpro_unlinked">
+                                <span class="o_mailpro_unlinked_title">Not in Odoo. Only you can see this email.</span>
+                            </div>
+                        </div>
+                        <div class="o_mailpro_messages">
+                            <article class="o_mailpro_message o_mailpro_message_open">
+                                <div class="o_mailpro_body" t-out="safeBody(state.live.body)"/>
+                            </article>
                         </div>
                     </t>
                     <div t-else="" class="o_mailpro_empty">

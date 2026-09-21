@@ -326,6 +326,11 @@ move because no mail crosses it. Two consequences are the whole design:
   internal-domain filters and lifts neither the duplicate guard nor the
   contact block list.
 
+On screen it is one folder, **All email**, under your own mailbox and no
+other, with a filter menu that asks the one question it exists for: in Odoo,
+or not. A row that is in Odoo opens the conversation that exists; one that is
+not opens read-only with **Add to Odoo** under it.
+
 The design, including what it deliberately does not do (no reply to a mail
 Odoo does not have, no paging past the first page, no shared mailboxes), is in
 `docs/plans/personal-mailbox.md`.

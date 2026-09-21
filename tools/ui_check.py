@@ -788,6 +788,121 @@ class Checks:
             if not self.visible(selector):
                 self.fail(f'{name} did not come back at {WIDE}px')
 
+    # The folder that is the mailbox itself rather than what Odoo imported,
+    # and the two questions it exists to answer.
+    LIVE_FILTERS = ('Not in Odoo', 'In Odoo')
+
+    def live_folder(self):
+        """Your own mailbox gets a third folder, and nobody else's does.
+
+        The seed cannot reach a provider -- the token is the word "demo" --
+        so what this proves is the half a browser can: the folder is offered
+        on the mailbox you own and on no other, the filter menu over it asks
+        about Odoo rather than about linking, and a folder that cannot reach
+        its provider says so instead of throwing. Who may call the methods
+        underneath is `tests/test_live_mailbox.py`, where it belongs.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            return  # `conversation_view` already said so.
+
+        page = self.page
+        # The checks after this one read the screen this one leaves, so both
+        # the window and the folder go back where they were found.
+        was = dict(page.viewport_size)
+        page.set_viewport_size({'width': 1600, 'height': 1000})
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
+        except Exception:
+            self.fail('the Inbox did not render for the live folder check')
+            page.set_viewport_size(was)
+            return
+        page.wait_for_timeout(2500)
+
+        def folders(block):
+            return [el.inner_text().split('\n')[0].strip()
+                    for el in block.query_selector_all('.o_mailpro_folder')]
+
+        # A mailbox renders its folders as a block next to its row, and only
+        # while it stands open. The screen opens on the first mailbox, which
+        # is a shared one: it has the two folders every mail client has and
+        # not the third.
+        open_blocks = page.query_selector_all('.o_mailpro_folders')
+        if not open_blocks:
+            self.fail('no mailbox stands open in the mailbox list')
+            self.leave_live_folder(was)
+            return
+        if 'All email' in folders(open_blocks[0]):
+            self.fail('a shared mailbox offers the folder that reads a mailbox in full')
+
+        mailboxes = page.query_selector_all('.o_mailpro_mailbox')
+        if len(mailboxes) < 2:
+            self.fail("the seed has no mailbox of this user's own to read")
+            self.leave_live_folder(was)
+            return
+        mailboxes[-1].click()
+        page.wait_for_timeout(2500)
+
+        own = folders(page.query_selector_all('.o_mailpro_folders')[-1])
+        if own[-1:] != ['All email']:
+            self.fail(f'the mailbox you own reads {own}, expected All email last')
+            self.leave_live_folder(was)
+            return
+
+        page.query_selector_all('.o_mailpro_folders')[-1] \
+            .query_selector_all('.o_mailpro_folder')[-1].click()
+        # This folder waits on a provider rather than on Postgres, and here
+        # it waits on one it cannot reach: a token that is the word "demo"
+        # against a network this container does not have. So the wait is the
+        # skeleton going away, generously, rather than a fixed pause.
+        try:
+            page.wait_for_selector(
+                '.o_mailpro_conversation_list .o_mailpro_skeleton',
+                state='detached', timeout=60000)
+        except Exception:
+            self.fail('the live folder never stopped loading')
+            self.leave_live_folder(was)
+            return
+        page.wait_for_timeout(500)
+        self.error_free('the live folder')
+
+        # An unreachable provider is this folder being unavailable, not this
+        # screen breaking. Asserted inside the list, because the pane next to
+        # it has an empty state of its own and it is always there.
+        if not page.query_selector(
+                '.o_mailpro_conversation_list .o_mailpro_empty'):
+            self.fail('the live folder neither listed mail nor said why not')
+
+        page.click('.o_mailpro_filter_toggle')
+        page.wait_for_timeout(800)
+        pills = [el.inner_text().strip()
+                 for el in page.query_selector_all(
+                     '.o_mailpro_filter_menu .o_mailpro_filter_item '
+                     '.o_mailpro_filter_label')]
+        if pills != list(self.LIVE_FILTERS):
+            self.fail(f'the live filter menu reads {pills}, expected {list(self.LIVE_FILTERS)}')
+        page.keyboard.press('Escape')
+        page.wait_for_timeout(500)
+        self.shot('inbox-live-folder.png')
+        self.leave_live_folder(was)
+
+    def leave_live_folder(self, viewport):
+        """Back to the first mailbox's Inbox, at the window we came in on."""
+        page = self.page
+        page.set_viewport_size(viewport)
+        page.wait_for_timeout(500)
+        mailboxes = page.query_selector_all('.o_mailpro_mailbox')
+        if mailboxes:
+            mailboxes[0].click()
+            page.wait_for_timeout(1500)
+        blocks = page.query_selector_all('.o_mailpro_folders')
+        if blocks:
+            folders = blocks[0].query_selector_all('.o_mailpro_folder')
+            if folders:
+                folders[0].click()
+                page.wait_for_timeout(2000)
+
     def linking(self):
         """The screen where a match is corrected, and the correction sticking.
 
@@ -1838,6 +1953,7 @@ def main():
         checks.settings_not_connected()
         checks.menus()
         checks.conversation_view()
+        checks.live_folder()
         checks.linking()
         checks.improve()
         checks.provider_form()

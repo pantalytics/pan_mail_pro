@@ -44,6 +44,7 @@ from odoo.exceptions import AccessError
 from odoo.fields import Domain
 from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import email_split, html2plaintext
+from odoo.tools.mail import html_sanitize
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
@@ -578,17 +579,28 @@ class PanMailConversation(models.AbstractModel):
         account = client.resolve_receiving_account(mailbox)
         if not account.connected:
             return {'rows': [], 'scanned': 0, 'connected': False}
-        messages = client.search_messages(
-            account=account, mailbox=mailbox, folder=folder,
-            query=search or None, limit=limit,
-        )
+        try:
+            messages = client.search_messages(
+                account=account, mailbox=mailbox, folder=folder,
+                query=search or None, limit=limit,
+            )
+        except Exception:
+            # A provider that cannot be reached right now -- an expired grant,
+            # a network that is down, a mailbox that moved -- is this folder
+            # being unavailable, not this screen breaking. The imported
+            # folders next to it still read, because they never leave the
+            # database.
+            _logger.warning(
+                "[Mail Pro] Live read failed for mailbox %s", mailbox.id,
+                exc_info=True)
+            return {'rows': [], 'scanned': 0, 'connected': False}
         links = self._links_for_live(messages)
         rows = []
         for message in messages:
             link = links.get(message.get('message_id') or '')
             if linked is not None and bool(link) != bool(linked):
                 continue
-            rows.append(self._live_row(message, link))
+            rows.append(self._live_row(mailbox, message, link))
         return {'rows': rows, 'scanned': len(messages), 'connected': True}
 
     @api.model
@@ -610,8 +622,14 @@ class PanMailConversation(models.AbstractModel):
         if not message:
             raise AccessError(_('That message is no longer in this mailbox.'))
         link = self._links_for_live([message]).get(message.get('message_id') or '')
-        row = self._live_row(message, link)
-        row['body'] = message.get('body_html') or ''
+        row = self._live_row(mailbox, message, link)
+        # Sanitized here, and this is the one body in the module that is not.
+        # Every other body on this screen reached `mail.message` through
+        # `message_post`, where the Html field sanitizes it on write; this one
+        # comes straight off the provider and is rendered in an Odoo session.
+        # Same call, one step earlier.
+        row['body'] = html_sanitize(message.get('body_html') or '')
+        row['linked_record'] = link or False
         row['to'] = [a.get('email') for a in (message.get('to') or []) if a.get('email')]
         return row
 
@@ -717,21 +735,35 @@ class PanMailConversation(models.AbstractModel):
                 names[(model, record.id)] = record.display_name
         return names
 
-    def _live_row(self, message, link):
-        """One row of the live list, in the shape the conversation list draws."""
+    def _live_row(self, mailbox, message, link):
+        """One row of the live list, in the shape the list already draws.
+
+        Deliberately the same keys as `_conversation_row`: the list is one
+        component, and a second row shape would be a second template, a second
+        empty state and a second way to be selected. What a live row adds is
+        `live_id` -- the provider's own handle, which is the only way back to
+        this message -- and `linked`, which is the whole point of the screen.
+        A live row has no `message_id` because Odoo has no message for it,
+        which is also how the client tells the two apart.
+        """
         sender = message.get('from') or {}
-        date = message.get('date')
         return {
-            'id': 'live:%s' % (message.get('provider_message_id') or ''),
+            'model': (link or {}).get('model') or False,
+            'res_id': (link or {}).get('res_id') or 0,
+            'message_id': False,
             'live': True,
-            'provider_message_id': message.get('provider_message_id'),
+            'live_id': message.get('provider_message_id'),
+            'linked': bool(link),
             'subject': message.get('subject') or _('(no subject)'),
+            'preview': self._live_preview(message),
             'correspondent': sender.get('name') or sender.get('email') or '',
             'email': sender.get('email') or '',
-            'date': date.isoformat() if isinstance(date, datetime) else (date or ''),
+            'partner_id': False,
+            'date': message.get('date') or False,
+            'count': 1,
+            'record_name': (link or {}).get('name') or '',
             'unread': not message.get('is_read'),
-            'preview': self._live_preview(message),
-            'linked': link or False,
+            'mailbox': mailbox.email or '',
         }
 
     def _live_preview(self, message):

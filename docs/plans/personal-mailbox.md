@@ -1,9 +1,8 @@
 # Your own mailbox, in the Inbox
 
-Status: **agreed, the read side ships in 19.0.16.0.0.** The backend methods
-(`live_messages`, `read_live_message`, `import_live_message`) and their tests
-are in; the screen that draws them is the next step and is described at the
-bottom.
+Status: **ships in 19.0.16.0.0**, read side and screen. What is deliberately
+not in it is under "What this is not"; nothing else of this file is
+outstanding.
 
 ## The problem
 
@@ -73,20 +72,30 @@ filters, never the objection.
 
 ## The screen
 
-One change to the mailbox list and one to the filter row.
+One folder and one filter menu, and that is the whole of it.
 
-- Under your own personal mailbox, Inbox and Sent read live when the mailbox
-  is yours. The rows look like today's rows, plus a chip: the record it is
-  filed on, or nothing.
-- The filter menu gains **Not in Odoo** beside the three it has. "In Odoo" is
-  the complement and is drawn as the same one-at-a-time choice the menu
-  already makes.
+- Under your own personal mailbox, below Inbox and Sent: **All email**. Only
+  there -- a shared mailbox does not offer it, which is the access rule
+  visible on screen. It carries no count: counting it means asking the
+  provider how much mail you have every time a mailbox is unfolded.
+- The rows are the rows the list already draws. What a live row adds is a
+  quiet **Not in Odoo** chip; what it lacks is a message id, which is how the
+  screen tells the two apart.
+- The filter menu over that folder asks the one question the folder exists
+  for: **Not in Odoo** / **In Odoo**. Crossing between an imported folder and
+  this one clears the filter rather than carrying a question the other menu
+  cannot show.
 - A row that is in Odoo opens the conversation that exists, with the record
   pane beside it: unchanged behaviour, reached from a longer list.
-- A row that is not opens the message read-only, with **Import into Odoo**
-  under it and the sentence about who will be able to read it once imported.
+- A row that is not opens the message read-only, with **Add to Odoo** under
+  it and the line that makes filing a decision: *Not in Odoo. Only you can
+  see this email.*
 
-Search stays where it is and reaches the provider instead of `mail.message`
-for a live folder, which is the one place a live folder is *better* than the
-imported list: it searches the whole mailbox rather than the part that was
-imported.
+Search reaches the provider instead of `mail.message` for that folder, which
+is the one place a live folder is better than the imported list: it searches
+the whole mailbox rather than the part that was imported.
+
+A folder that waits on a provider can fail in ways a folder that waits on
+Postgres cannot -- an expired grant, a network that is down. That is this
+folder being unavailable, not the screen breaking: it says the mailbox is not
+connected and the imported folders beside it still read.

@@ -353,6 +353,15 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         font-weight: 500;
     }
 
+    // A row from the mailbox itself that Odoo does not have. Quiet on
+    // purpose: it is a state, not a warning -- most of a mailbox is mail no
+    // ERP ever needs, and a red badge on two thirds of the list would say
+    // something is wrong when nothing is.
+    .o_mailpro_chip_live {
+        background: rgba(120, 120, 120, 0.14);
+        color: $mailpro-muted;
+    }
+
     .o_mailpro_chip_button {
         display: inline-flex;
         align-items: center;

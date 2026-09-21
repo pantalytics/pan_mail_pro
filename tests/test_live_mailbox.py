@@ -170,10 +170,14 @@ class TestLiveMailbox(TransactionCase):
         self.assertTrue(result['connected'])
         self.assertEqual(result['scanned'], 2)
         first, second = result['rows']
-        self.assertEqual(first['linked']['model'], 'res.partner')
-        self.assertEqual(first['linked']['res_id'], self.customer.id)
-        self.assertEqual(first['linked']['name'], self.customer.display_name)
+        self.assertTrue(first['linked'])
+        self.assertEqual(first['model'], 'res.partner')
+        self.assertEqual(first['res_id'], self.customer.id)
+        self.assertEqual(first['record_name'], self.customer.display_name)
         self.assertFalse(second['linked'])
+        # A live row carries no Odoo message id, which is how the list tells
+        # it apart from an imported one.
+        self.assertFalse(second['message_id'])
         self.assertEqual(second['subject'], 'Vraag over de levering')
         self.assertEqual(second['correspondent'], 'Bart')
         self.assertTrue(second['unread'])
@@ -189,8 +193,8 @@ class TestLiveMailbox(TransactionCase):
             missing = self._as_owner().live_messages(self.mailbox.id, linked=False)
             held = self._as_owner().live_messages(self.mailbox.id, linked=True)
 
-        self.assertEqual([r['provider_message_id'] for r in missing['rows']], ['BBB'])
-        self.assertEqual([r['provider_message_id'] for r in held['rows']], ['AAA'])
+        self.assertEqual([r['live_id'] for r in missing['rows']], ['BBB'])
+        self.assertEqual([r['live_id'] for r in held['rows']], ['AAA'])
         # A filtered page shows fewer rows than it read, and says so, because
         # the provider cannot be asked "is this in Odoo".
         self.assertEqual(missing['scanned'], 2)
@@ -208,9 +212,10 @@ class TestLiveMailbox(TransactionCase):
         # lead, and the ORM is what says so.
         self.assertFalse(self.lead.with_user(self.owner)._filtered_access('read'))
 
-        self.assertEqual(row['linked']['model'], 'crm.lead')
-        self.assertEqual(row['linked']['res_id'], self.lead.id)
-        self.assertEqual(row['linked']['name'], '')
+        self.assertTrue(row['linked'])
+        self.assertEqual(row['model'], 'crm.lead')
+        self.assertEqual(row['res_id'], self.lead.id)
+        self.assertEqual(row['record_name'], '')
 
     def test_the_id_odoo_stores_itself_counts_as_in_odoo(self):
         """The trap this lookup was written wrong for first. `message_post`
@@ -233,11 +238,22 @@ class TestLiveMailbox(TransactionCase):
         with search, get:
             row = self._as_owner().live_messages(self.mailbox.id)['rows'][0]
 
-        self.assertEqual(row['linked']['res_id'], self.customer.id)
+        self.assertEqual(row['res_id'], self.customer.id)
 
     def test_a_mailbox_with_no_credentials_says_so(self):
         self.account.password = False
         result = self._as_owner().live_messages(self.mailbox.id)
+        self.assertFalse(result['connected'])
+        self.assertEqual(result['rows'], [])
+
+    def test_a_provider_that_cannot_be_reached_is_not_a_broken_screen(self):
+        """An expired grant or a network that is down makes this folder
+        unavailable. The imported folders beside it still read, because they
+        never leave the database."""
+        with patch.object(type(self.env[CLIENT]), 'search_messages',
+                          side_effect=Exception('token expired')):
+            result = self._as_owner().live_messages(self.mailbox.id)
+
         self.assertFalse(result['connected'])
         self.assertEqual(result['rows'], [])
 
@@ -258,6 +274,19 @@ class TestLiveMailbox(TransactionCase):
         seen.assert_not_called()
         self.assertIn('levertijd', row['body'])
         self.assertEqual(row['to'], ['rutger@company.test'])
+
+    def test_the_body_is_sanitized_before_it_leaves(self):
+        """This body never passed through `message_post`, where the Html field
+        sanitizes on write, and it is rendered in an Odoo session. A mail from
+        anybody would otherwise run script as the reader."""
+        hostile = self._message(
+            body_html='<p>Hoi</p><script>window.stolen = 1</script>')
+        search, get = self._serving([hostile])
+        with search, get:
+            row = self._as_owner().read_live_message(self.mailbox.id, 'AAA')
+
+        self.assertIn('Hoi', row['body'])
+        self.assertNotIn('<script', row['body'])
 
     def test_reading_a_message_that_is_gone(self):
         search, get = self._serving([self._message()])
