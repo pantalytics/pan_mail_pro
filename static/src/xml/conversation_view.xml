@@ -149,6 +149,35 @@
                      t-att-inert="panes.folded('mailbox_list') or panes.state.zoom"
                      aria-label="Mailboxes and folders"
                      t-attf-style="flex-basis: {{panes.state.mailbox_list}}px">
+                    <!--
+                        Every mailbox at once, as a row and not as a chevron
+                        over a copy of the pane below it: Apple Mail folds its
+                        accounts away and ours are all drawn here already.
+                        Only with more than one mailbox, because with one it
+                        is the same folder twice.
+                    -->
+                    <t t-if="showAllMailboxes">
+                        <div class="o_mailpro_mailbox_row o_mailpro_all_row d-flex align-items-center">
+                            <button type="button" class="o_mailpro_mailbox_toggle flex-shrink-0"
+                                    t-att-aria-expanded="isExpanded(false) ? 'true' : 'false'"
+                                    t-attf-aria-label="{{ isExpanded(false) ? 'Hide folders of' : 'Show folders of' }} all mailboxes"
+                                    t-on-click="() => this.toggleMailbox(null)">
+                                <i class="fa" aria-hidden="true"
+                                   t-att-class="isExpanded(false) ? 'fa-caret-down' : 'fa-caret-right'"/>
+                            </button>
+                            <button type="button"
+                                    class="o_mailpro_mailbox o_mailpro_all_mailboxes d-flex align-items-center gap-2"
+                                    t-att-class="{ 'o_mailpro_mailbox_active': !state.mailboxId }"
+                                    t-att-aria-current="!state.mailboxId ? 'true' : undefined"
+                                    t-on-click="() => this.setMailbox(null)">
+                                <span class="o_mailpro_mailbox_name text-truncate">All mailboxes</span>
+                            </button>
+                        </div>
+                        <div t-if="isExpanded(false)" class="o_mailpro_folders">
+                            <t t-set="folderMailbox" t-value="false"/>
+                            <t t-call="pan_mail_pro.ConversationFolders"/>
+                        </div>
+                    </t>
                     <t t-foreach="state.mailboxes" t-as="mailbox" t-key="mailbox.id">
                         <div class="o_mailpro_mailbox_row d-flex align-items-center">
                             <button type="button" class="o_mailpro_mailbox_toggle flex-shrink-0"
@@ -238,9 +267,7 @@
                              exist, when it may be one mailbox over. -->
                         <div t-if="searching" class="o_mailpro_empty">
                             <h3 class="o_mailpro_empty_title">Nothing matches that search in <t t-esc="folderLabel"/>.</h3>
-                            <p class="o_mailpro_empty_text">
-                                The search covers this mailbox. Try another one, or clear it.
-                            </p>
+                            <p class="o_mailpro_empty_text" t-esc="searchScope"/>
                         </div>
                         <div t-else="" class="o_mailpro_empty">
                             <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel"/> yet.</h3>
@@ -327,6 +354,20 @@
                                             <span class="o_mailpro_subject d-block text-truncate" t-esc="conversation.subject"/>
                                             <span class="o_mailpro_preview d-block text-truncate" t-esc="conversation.preview"/>
                                             <span class="o_mailpro_meta d-flex align-items-center gap-2">
+                                                <!--
+                                                    Which mailbox this one is
+                                                    in, and only while the list
+                                                    spans more than one: the
+                                                    same address down thirty
+                                                    rows of a single mailbox is
+                                                    noise, so it is a property
+                                                    of the list and not of the
+                                                    row.
+                                                -->
+                                                <span t-if="spansMailboxes and conversation.mailbox"
+                                                      class="o_mailpro_mailbox_tag flex-shrink-0"
+                                                      t-att-title="conversation.mailbox"
+                                                      t-esc="mailboxLocal(conversation.mailbox)"/>
                                                 <span t-if="conversation.record_name" class="o_mailpro_chip text-truncate"
                                                       t-esc="conversation.record_name"/>
                                                 <span class="o_mailpro_muted" t-esc="messageCount(conversation.count)"/>
@@ -405,6 +446,16 @@
                                     <h2 class="o_mailpro_conversation_title" t-esc="state.selected.subject"/>
                                     <div class="o_mailpro_conversation_sub">
                                         <span t-esc="state.selected.correspondent"/>
+                                        <!--
+                                            The address this arrived on,
+                                            always: in one mailbox it answers
+                                            "am I in the right account", in
+                                            All mailboxes it answers "who is
+                                            about to reply".
+                                        -->
+                                        <span t-if="state.selected.mailbox">
+                                            &#183; <t t-esc="state.selected.mailbox"/>
+                                        </span>
                                         <span t-if="state.conversation.messages.length > 1">
                                             &#183; <t t-esc="messageCount(state.conversation.messages.length)"/>
                                         </span>

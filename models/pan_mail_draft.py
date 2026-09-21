@@ -238,6 +238,11 @@ class PanMailDraft(models.Model):
             'record_name': self._record_name(),
             'unread': False,
             'mailbox': self.mailbox_id.email or '',
+            # The same key `pan.mail.conversation._conversation_row` carries,
+            # for the same reason: under All mailboxes the screen has no
+            # mailbox of its own, and a Reply on the conversation behind a
+            # draft row must still answer from the address it arrived on.
+            'mailbox_id': self.mailbox_id.id or False,
         }
 
     def _record_name(self):
