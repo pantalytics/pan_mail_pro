@@ -312,6 +312,7 @@ reviewed is what leaves.
 | Model | Purpose |
 |-------|---------|
 | `pan.mail.conversation` | AbstractModel, no table. The queries behind the Inbox screen: folders, conversations, one thread with its files and follow-ups, a customer's timeline, and what the chatter's door needs |
+| `pan.mail.draft` | One saved composer: an unsent mail on the record it will be sent from. The only thing the Inbox stores, and private to its author |
 
 Every configuration and diagnostic screen lives under Settings → Technical →
 Email → **Mail Pro**. 19.0.4.0.0 gave the module a "Communication" application
@@ -327,6 +328,53 @@ checks before it answers. It also reaches two tables whose ACL is
 manager-only (`pan.mail.thread.link`, `pan.mail.routing.log`) with `sudo()`,
 after the message search that fences the result -- the sudo buys the lookup,
 never the answer.
+
+**The one exception is a draft.** `pan.mail.draft` is a table, because an
+unsent mail is the only thing on that screen that exists nowhere else: the
+chatter has no row for it, `mail.message` has none either -- a message people
+can read is a message that went out -- and the composer is a transient wizard
+that is gone the moment the pane closes. Four decisions keep it from becoming
+a second inbox to empty:
+
+- **Private, with no manager exception.** One rule on `user_id`, all four
+  operations, every group. The mailbox managers who may read every mail in a
+  shared mailbox may not read what a colleague has not sent.
+- **Filed before it is written.** `model` and `res_id` are required, which is
+  the same question Reply and New Email already answer before the composer
+  opens. So sending a draft is a non-event: it goes out on the record it was
+  saved on, through the parent message it was saved with, and the link the
+  conversation had is the link it keeps.
+- **It never sends itself.** No state, no cron, no queue. A draft leaves the
+  table when it is sent or when it is deleted.
+- **It is stored from the wizard, and reopened as one.** `save_from_composer`
+  takes the saved `mail.compose.message` and reads it, so a draft is the
+  record that would have been posted rather than a second reading of the form
+  in JavaScript. `open_composer` goes the other way and *creates* the wizard,
+  because the composer recomputes its own body and subject while a form
+  mounts: `_compute_body` resets the body whenever no template is chosen and
+  `_compute_subject` reaches for the parent's. A form opened empty on
+  `default_` values therefore recomputes a draft away before anybody sees it,
+  with nothing in the server log -- which is what the browser check caught.
+  Values passed to `create()` are protected from their own compute, so the
+  pane mounts its form on a record that already holds what was typed.
+
+**It is written on leaving, never on a timer.** Save draft stores one; so
+does leaving a composer that was typed in -- another conversation, the step
+back on a phone -- which is where an answer used to be lost. `isDirty()` is
+what separates "typed in" from "opened and thought better of", and it is the
+asynchronous one on purpose: it flushes the field changes the form has not
+notified yet, which on a composer is the body. An autosave on a timer was
+refused twice over: it writes a row for every Reply anybody ever opened, at
+the rate a person types. **Discard still discards.**
+
+It is **not** the provider's draft. `mail.provider.client.save_draft` puts a
+complete MIME message in the mailbox's own Drafts folder for another client to
+finish; this row is an Odoo composer somebody closed. Storing it in both
+places would leave two half-written copies of one answer and nothing to settle
+which is newer, so the Inbox's Drafts folder lists this table and Outlook's own
+Drafts stays Outlook's. What the Inbox drops with it: no autosave (Save draft
+is a button, and closing the pane without it loses the words, as it always
+did), and no drafts of internal notes.
 
 Beyond that it is a namespace, not storage. Two rules hold it together: every query starts at `mail.message` so the ORM applies the record
 rules before anything is grouped (the thread index is not access controlled, so
