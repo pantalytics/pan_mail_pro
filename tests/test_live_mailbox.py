@@ -293,12 +293,15 @@ class TestLiveMailbox(TransactionCase):
         `message_post`, so nothing turned its newlines into line breaks and
         the whole mail arrived as one block."""
         plain = self._message(
-            body_html='Hoi,\n\nKunnen jullie de levertijd bevestigen?',
+            body_html='Hoi,\n\nKunnen jullie de levertijd bevestigen?\nGraag voor vrijdag.',
             body_is_html=False)
         search, get = self._serving([plain])
         with search, get:
             row = self._as_owner().read_live_message(self.mailbox.id, 'AAA')
 
+        # A blank line is a paragraph, a single newline a line break -- the
+        # same two answers `plaintext2html` gives the imported bodies.
+        self.assertIn('</p><p>', row['body'])
         self.assertIn('<br', row['body'])
 
     def test_reading_a_message_that_is_gone(self):
