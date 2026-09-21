@@ -6,7 +6,7 @@
     tools/docs_to_knowledge.py 120       # one article
 
 `docs/` is the source. The published copy lives in the Pantalytics knowledge
-base at https://pantalytics.odoo.com/knowledge/article/116, one article per
+base at https://odoo.pantalytics.com/knowledge/article/116, one article per
 file, and Odoo has no importer: the body is written through the ORM. So this
 script does the half a machine can do, which is the conversion and the
 cross-links, and leaves the write to whoever has the credentials.
@@ -22,7 +22,7 @@ from pathlib import Path
 import markdown
 
 DOCS = Path(__file__).resolve().parent.parent / "docs"
-BASE = "https://pantalytics.odoo.com/knowledge/article/"
+BASE = "https://odoo.pantalytics.com/knowledge/article/"
 
 # docs/<path> -> knowledge.article id. Add a page here when you add a page.
 PAGES = {

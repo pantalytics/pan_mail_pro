@@ -66,7 +66,7 @@
 
         Documentation:
         --------------
-        Full setup guide: https://pantalytics.odoo.com/knowledge/article/116
+        Full setup guide: https://odoo.pantalytics.com/knowledge/article/116
 
         Setup Instructions:
         -------------------
