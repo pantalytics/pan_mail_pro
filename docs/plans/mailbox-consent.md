@@ -74,6 +74,25 @@ counts, no last-sync timestamps, no content. It answers "is this rolled out and
 who agreed to what", which is what an administrator needs, and it is not an
 activity meter on a colleague.
 
+## Where each screen lives
+
+Mail Pro's settings replace Odoo's own, they do not sit beside them. Today a
+banner is inserted *before* `email_servers_setting`, so the Discuss page shows
+the banner and the mail-server block together and a customer has two places
+that both look like the answer. The block is replaced instead -- one line and a
+button to the Mail Pro tab -- and Technical > Email > Outgoing / Incoming Mail
+Servers leaves the menu for as long as Mail Pro has taken over. Only the views
+change; `ir.mail_server` stays, and the uninstall hook already puts the servers
+back.
+
+The tab itself stays where it is. One surface per job, and the setup checklist
+is on it.
+
+**Users never see Settings.** Everything in the previous section reaches them
+through My Profile > Mail Pro, which exists, plus the one-time screen after the
+provider's sign-in. The administrator's overview is the only part that lives in
+Settings.
+
 ## Open
 
 - Where the consent screen lives: an Odoo page after the OAuth callback, or a
