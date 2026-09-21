@@ -11,3 +11,4 @@ access_pan_mail_domain_user,pan.mail.domain.user,model_pan_mail_domain,base.grou
 access_pan_mail_domain_manager,pan.mail.domain.manager,model_pan_mail_domain,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
 access_pan_mail_provider_admin,pan.mail.provider.admin,model_pan_mail_provider,base.group_system,1,1,1,1
 access_pan_mail_license_system,pan.mail.license.system,model_pan_mail_license,base.group_system,1,1,1,1
+access_pan_mail_draft_user,pan.mail.draft.user,model_pan_mail_draft,base.group_user,1,1,1,1

@@ -119,11 +119,15 @@ class TestConversationApi(TransactionCase):
 
         Our own states -- unread, and the two unlinked ones -- are questions
         about a list rather than places mail sits, so they are filters in the
-        Inbox's search view and the counts know nothing about them.
+        Inbox's search view and the counts know nothing about them. Drafts is
+        a folder by that same test: unsent mail is somewhere it sits, even
+        though the rows come from a table of our own rather than from
+        `mail.message`.
         """
         self._mail()
         folders = self.Conversation.folder_counts(mailbox_id=self.mailbox.id)
-        self.assertEqual([row['id'] for row in folders], ['inbox', 'sent'])
+        self.assertEqual([row['id'] for row in folders],
+                         ['inbox', 'sent', 'drafts'])
         by_id = {row['id']: row['count'] for row in folders}
         self.assertEqual(by_id['inbox'], 1)
         self.assertEqual(by_id['sent'], 0)
