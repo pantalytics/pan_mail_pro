@@ -19,7 +19,7 @@
  * over the screen; that lives in `use_composer.js`.
  */
 
-import { Component, useState, useSubEnv, onWillStart, onError, markup } from "@odoo/owl";
+import { Component, useState, useSubEnv, useRef, onWillStart, onError, markup } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useService } from "@web/core/utils/hooks";
@@ -194,6 +194,7 @@ export class ConversationView extends Component {
         // rather than bound to Enter: a list that only moves when you press a
         // key you were not told about reads as a search box that is broken.
         this.applySearch = useDebounced(() => this.runSearch(), SEARCH_DELAY);
+        this.searchRef = useRef("search");
 
         // Two request tokens, one per pane. Somebody who clicks three folders
         // in a second starts three reads, and without these the slowest answer
@@ -579,11 +580,31 @@ export class ConversationView extends Component {
             this.applySearch.cancel();
             this.runSearch();
         } else if (event.key === "Escape" && this.state.search) {
-            event.target.value = "";
-            this.state.search = "";
-            this.applySearch.cancel();
-            this.runSearch();
+            this.clearSearch();
         }
+    }
+
+    /**
+     * The whole box is the search field, the way Odoo's own search bar is:
+     * the magnifier, the padding and the border all land in the input.
+     */
+    focusSearch() {
+        this.searchRef.el?.focus();
+    }
+
+    /**
+     * The cross, and Escape: the folder back, in one click. The field is
+     * written to by hand because `t-att-value` sets the attribute and the
+     * browser is showing the property somebody typed into.
+     */
+    clearSearch() {
+        if (this.searchRef.el) {
+            this.searchRef.el.value = "";
+        }
+        this.state.search = "";
+        this.applySearch.cancel();
+        this.focusSearch();
+        return this.runSearch();
     }
 
     async runSearch() {
@@ -598,7 +619,31 @@ export class ConversationView extends Component {
 
     // --------------------------------------------------------------- render
 
+    /**
+     * A new mail is open in the pane. The composer is what says so: Discard
+     * closes it without a word to anyone else, so `state.compose` alone
+     * outlives the mail it describes.
+     */
+    get composingNew() {
+        return Boolean(this.state.compose)
+            && this.composer.state.open
+            && this.composer.state.mode === "new";
+    }
+
     get selectedRecord() {
+        // A new mail is written on a record that is picked, not read: the
+        // conversation behind the pane is still the one that was open, and
+        // its record is not the one this mail is about. The pick wins for as
+        // long as the new mail is open.
+        if (this.composingNew) {
+            const compose = this.state.compose;
+            return {
+                model: compose.model,
+                res_id: compose.res_id,
+                name: compose.label,
+                model_label: compose.model_label,
+            };
+        }
         const chips = this.state.conversation.records || [];
         return chips.length ? chips[0] : null;
     }
@@ -1104,18 +1149,24 @@ export class ConversationView extends Component {
     newEmail() {
         this.dialog.add(LinkDialog, {
             title: _t("New email on"),
-            onSelect: (model, resId, label) => this.composeOn(model, resId, label),
+            onSelect: (model, resId, label, modelLabel) =>
+                this.composeOn(model, resId, label, modelLabel),
         });
     }
 
     /** The pane composer, on the record just picked. */
-    async composeOn(model, resId, label) {
+    async composeOn(model, resId, label, modelLabel) {
         // The pane is hidden while the record has the screen to itself.
         if (this.panes.state.zoom) {
             this.panes.toggleZoom();
         }
         this.panes.showConversation();
-        this.state.compose = { model, res_id: resId, label: label || "" };
+        this.state.compose = {
+            model,
+            res_id: resId,
+            label: label || "",
+            model_label: modelLabel || "",
+        };
         // The record's own contact, the way a reply takes the last sender:
         // the composer fills "To" from nothing by itself, and a new mail that
         // opens addressed to nobody is a mail that is sent to nobody.
