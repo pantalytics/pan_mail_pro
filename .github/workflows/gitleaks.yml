@@ -1,12 +1,15 @@
 name: gitleaks
 
+# The mainline on `push`, everything else through the pull request that carries
+# it -- see the comment in ci.yml for why a branch no longer runs both. The two
+# scans differ: a push scans the full history, a pull request scans its own
+# diff, so the mainline keeps the deeper one.
 on:
   push:
-    # '**' and not '*': a single star does not match a '/', so feature branches
-    # like fix/parse-email-recipients would silently never be scanned.
-    branches: ['**']
+    branches: ['19.0']
   pull_request:
     branches: ['**']
+  merge_group:
 
 jobs:
   scan:
@@ -43,8 +46,12 @@ jobs:
             --redact \
             --log-opts="--no-merges ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
 
+      # Everything that is not a pull request, so a merge queue entry is scanned
+      # too. `== 'push'` would have left merge_group matching neither step: the
+      # job would go green having scanned nothing, which is the shape of green
+      # this repo distrusts most.
       - name: Run gitleaks (full history)
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         run: |
           gitleaks detect \
             --config .gitleaks.toml \

@@ -74,10 +74,21 @@ Both are repository settings, not code, and both have to be set once:
    **GitHub Actions** actor. Without it the bump is refused and the release job
    fails with a message saying so. Nothing else can push to `19.0`.
 2. **The merge queue is on for `19.0`**, with `Lint and Odoo 19 checklist`,
-   `Manifest version`, `Tests`, `UI checks` and both `Upgrade from …` jobs
-   required. The queue builds each pull request on top of the real base and
-   merges only if that is green, which is also the fix for the auto-merge
-   racing the slow jobs (#193).
+   `Manifest version`, `Tests`, `UI checks`, `Scan for secrets` and both
+   `Upgrade from …` jobs required. The queue builds each pull request on top of
+   the real base and merges only if that is green, which is also the fix for
+   the auto-merge racing the slow jobs (#193).
+
+   Both workflows already listen for `merge_group`, which is what the queue
+   waits on. Without that trigger the queue's required checks never report and
+   it stalls forever, so it is part of this change rather than something to
+   remember on the day.
+
+   The same change dropped `push` for every branch but `19.0`. A branch with an
+   open pull request matched `push` *and* `pull_request` and ran the whole
+   suite twice; a pull request is red if either copy is red, so the second run
+   only doubled the odds of a flake blocking a merge. A branch pushed before
+   its pull request exists now has no run, which is what `tools/ci.sh` is for.
 
 The required check was renamed from *Manifest version bumped* to
 **Manifest version** when it inverted, so the required-checks list has to be

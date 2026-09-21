@@ -1,15 +1,29 @@
 name: CI
 
+# `push` is the mainline only. A branch with an open pull request matches both
+# triggers, so every push to it used to start two identical ten-minute runs --
+# and because a pull request is red if *either* reports red, running twice made
+# a flaky check twice as likely to block a merge while proving nothing extra.
+# It happened on the pull request that wrote this comment: the two runs on one
+# commit disagreed. A branch pushed before its pull request exists now has no
+# run, which is the case `tools/ci.sh` covers locally.
+#
+# `merge_group` is what the merge queue on `19.0` waits for. Without it the
+# queue's required checks never report and it stalls forever, so it belongs
+# here in the same change that asks for the queue to be turned on.
 on:
   push:
-    branches: ['**']
+    branches: ['19.0']
   pull_request:
     branches: ['**']
+  merge_group:
 
-# Cancel superseded runs on the same branch — keeps mobile push-often workflows cheap.
+# Cancel superseded runs on the same branch — keeps mobile push-often workflows
+# cheap. Never on a merge queue entry: a cancelled check is one the queue keeps
+# waiting for, and the entry it belongs to is already the only one of its kind.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 # Nothing here writes to the repository; release.yml asks for contents:write
 # separately. Stated explicitly so a compromised action cannot use the default

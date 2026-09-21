@@ -292,8 +292,8 @@ Three workflows in `.github/workflows/`:
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release), and the UI checks in a real browser |
-| `gitleaks.yml` | every push + PR | secret scan |
+| `ci.yml` | PR, merge queue, push to `19.0` | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release), and the UI checks in a real browser |
+| `gitleaks.yml` | PR, merge queue, push to `19.0` | secret scan: its own diff on a PR, the full history otherwise |
 | `release.yml` | push to `19.0` | raises the manifest version (`tools/release_bump.sh`), then tags `v<version>` and publishes the release — all in one job, because a `GITHUB_TOKEN` push starts no second workflow run |
 
 ### How tests run
