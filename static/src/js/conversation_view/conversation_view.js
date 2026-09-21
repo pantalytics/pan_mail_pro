@@ -235,8 +235,10 @@ export class ConversationView extends Component {
         this.state = useState({
             loading: true,
             error: "",
-            // The banner says what broke, not only that something did.
+            // The banner says what broke, not only that something did, and
+            // what to do about it when the server can name it.
             errorReason: "",
+            errorRemedy: "",
             folder: "inbox",
             // Two dimensions, two controls: the mailbox list says where you are, the
             // filter row says what you are looking for in there. Naming our
@@ -409,6 +411,7 @@ export class ConversationView extends Component {
         this.state.loading = true;
         this.state.error = "";
         this.state.errorReason = "";
+        this.state.errorRemedy = "";
         if (!keepSelection) {
             // Another folder, filter or search is another list, and an
             // unfolded thread from the previous one would reopen under
@@ -480,12 +483,37 @@ export class ConversationView extends Component {
             if (seq === this.listSeq) {
                 this.state.error = _t("Could not load your conversations.");
                 this.state.errorReason = serverReason(error);
+                this.loadRemedy(error);
             }
             console.warn("[Mail Pro] conversation list failed", error);
         } finally {
             if (seq === this.listSeq) {
                 this.state.loading = false;
             }
+        }
+    }
+
+    /**
+     * What to do about the failure, under the line that reports it.
+     *
+     * Two cases can be named honestly and no more. A request that never got
+     * an answer is Odoo or the connection to it, and asking the server about
+     * it would fail the same way. Everything else is the server's to explain,
+     * so we ask it: the common answer is a database the deploy never
+     * upgraded, which no error message in the browser can diagnose.
+     */
+    async loadRemedy(error) {
+        if (!error?.data) {
+            this.state.errorRemedy = _t(
+                "Odoo did not answer. Check your connection and try again.");
+            return;
+        }
+        try {
+            this.state.errorRemedy = await this.orm.silent.call(
+                "pan.mail.conversation", "failure_remedy", []);
+        } catch {
+            // The reason is already on screen; a second failure adds nothing.
+            this.state.errorRemedy = "";
         }
     }
 
@@ -822,6 +850,7 @@ export class ConversationView extends Component {
             if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that conversation.");
                 this.state.errorReason = serverReason(error);
+                this.loadRemedy(error);
             }
             console.warn("[Mail Pro] conversation failed to open", error);
         }

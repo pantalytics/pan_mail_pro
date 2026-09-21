@@ -600,6 +600,41 @@ class TestConversationApi(TransactionCase):
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).search_conversations()
 
+    # ---------------------------------------------------------------- remedy
+
+    def test_a_database_behind_its_code_says_so_and_says_what_to_do(self):
+        """The failure a deploy without an upgrade produces is nameable.
+
+        Every query in this layer then dies on a missing column, and the
+        banner's own words cannot diagnose that. `failure_remedy` can, from
+        two version strings and no `pan_mail_*` table at all.
+        """
+        module = self.env['ir.module.module'].sudo().search(
+            [('name', '=', 'pan_mail_pro')], limit=1)
+        # `latest_version` is the string in the database, whatever its name
+        # suggests. Setting it back is what a deploy without an upgrade does.
+        module.write({'latest_version': '19.0.0.0.1'})
+        remedy = self.Conversation.failure_remedy()
+        self.assertIn('19.0.0.0.1', remedy, 'it names the version the database is on')
+        self.assertIn(module.installed_version, remedy, 'and the one on disk')
+        self.assertIn('Upgrade', remedy, 'and the button that fixes it')
+
+    def test_a_database_that_is_up_to_date_offers_no_remedy(self):
+        """A remedy we cannot name is worse than none: it sends the reader
+        somewhere that is not where the problem is."""
+        self.assertEqual(self.Conversation.failure_remedy(), '')
+
+    def test_the_remedy_is_for_people_who_read_a_mailbox(self):
+        """Same door as every other method here, for the same reason."""
+        stranger = self.env['res.users'].create({
+            'name': 'Nils Nobody',
+            'login': 'nils@company.test',
+            'email': 'nils@company.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        with self.assertRaises(AccessError):
+            self.Conversation.with_user(stranger).failure_remedy()
+
     def test_a_page_is_a_page(self):
         """`limit` arrives over RPC, and the queries under it are not free."""
         for index in range(3):

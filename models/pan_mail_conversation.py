@@ -288,6 +288,43 @@ class PanMailConversation(models.AbstractModel):
     # ------------------------------------------------------------------
 
     @api.model
+    def failure_remedy(self):
+        """What to do about the read that just failed, in one sentence.
+
+        The banner can repeat what the server said; it cannot know what to do
+        about it, and "Could not load your conversations" sends the reader to
+        a log for a line the browser already had. One cause is common enough
+        to be worth naming: code deployed without the module being upgraded.
+        The registry then holds fields the database has no columns for, every
+        query in here fails on a missing column, and nothing on screen says
+        so. Cloudpepper restarts on a push and never upgrades (issue #134),
+        so this is the normal shape of an inbox that broke by itself.
+
+        Nothing here reads a `pan_mail_*` table. This method has to answer on
+        exactly the databases where those are what is broken.
+        """
+        self._check_caller()
+        module = self.env['ir.module.module'].sudo().search(
+            [('name', '=', 'pan_mail_pro')], limit=1)
+        # Odoo's two version fields are named the other way round from how
+        # they read: `installed_version` is computed from the manifest on
+        # disk, `latest_version` is the string the last upgrade wrote into
+        # the database. The gap between them is the whole diagnosis.
+        on_disk = module.installed_version or ''
+        in_database = module.latest_version or ''
+        if module.state == 'to upgrade' or (on_disk and in_database and on_disk != in_database):
+            return _(
+                "Mail Pro %(on_disk)s is on the server, this database still "
+                "runs %(in_database)s. Open Apps, search for Mail Pro and "
+                "press Upgrade.",
+                on_disk=on_disk, in_database=in_database,
+            )
+        # Every other failure: the line the server gave is what there is. A
+        # remedy we cannot name is worse than none, because it sends the
+        # reader somewhere that is not where the problem is.
+        return ''
+
+    @api.model
     def folder_counts(self, mailbox_id=None, folder=None,
                       partner_id=None, search=None):
         """The numbers on the mailbox list, and on the filters of one folder.
