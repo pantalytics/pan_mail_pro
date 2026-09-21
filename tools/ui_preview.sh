@@ -98,6 +98,19 @@ ids = [call('pan.mail.mailbox', 'create', vals) for vals in (
     {'email': 'support@example.com', 'provider': 'outlook', 'owner_user_id': uid},
     {'email': 'sales@example.com', 'provider': 'outlook', 'owner_user_id': uid})]
 call('pan.mail.mailbox', 'write', ids[1:], {'state': 'error'})
+# One mailbox that is this user's own, so the folder that reads a mailbox in
+# full has somewhere to appear. `mailbox_type` is computed, not chosen: a
+# mailbox is personal when its address is one the owner signed in with or the
+# one on their user record. A second account is not the way to arrange that --
+# a user may hold one account per provider -- so the address on the user is.
+#
+# Last in the mailbox list, by sequence rather than by address: every check
+# below counts on the seeded mail being in the mailbox the screen opens on,
+# and an address that happens to sort first would quietly move it.
+call('res.users', 'write', [uid], {'email': 'rutger@example.com'})
+ids.append(call('pan.mail.mailbox', 'create', {
+    'email': 'rutger@example.com', 'provider': 'outlook',
+    'owner_user_id': uid, 'sequence': 20}))
 # Mail, so the Inbox screen shows the thing it is for rather than its empty
 # state. Three messages on one lead: a question, our answer, their reply.
 #

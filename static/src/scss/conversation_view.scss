@@ -605,6 +605,37 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         font-weight: 500;
     }
 
+    // A row from the mailbox itself that Odoo does not have. Quiet on
+    // purpose: it is a state, not a warning -- most of a mailbox is mail no
+    // ERP ever needs, and a red badge on two thirds of the list would say
+    // something is wrong when nothing is.
+    // The live folder's two questions. Quiet, and the one in use is filled
+    // rather than outlined: this is a state of the list, not an action.
+    .o_mailpro_live_filter {
+        padding: 0.0625rem 0.4375rem;
+        border: 1px solid $mailpro-line;
+        border-radius: 0.75rem;
+        background: transparent;
+        color: $mailpro-muted;
+        font-size: 0.6875rem;
+        line-height: 1.4;
+        white-space: nowrap;
+
+        &:hover { background: $mailpro-panel; }
+
+        &.o_mailpro_live_filter_active {
+            background: rgba(93, 91, 214, 0.14);
+            border-color: transparent;
+            color: $mailpro-accent-ink;
+            font-weight: 500;
+        }
+    }
+
+    .o_mailpro_chip_live {
+        background: rgba(120, 120, 120, 0.14);
+        color: $mailpro-muted;
+    }
+
     .o_mailpro_chip_button {
         display: inline-flex;
         align-items: center;
