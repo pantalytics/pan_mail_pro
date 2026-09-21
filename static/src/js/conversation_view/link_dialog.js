@@ -110,7 +110,11 @@ export class LinkDialog extends Component {
     /** A row: the model in step one, the destination in step two. */
     async choose(entry) {
         if (this.state.target) {
-            this.props.onSelect(this.state.target.model, entry.row.id, entry.label);
+            // The model's own label comes along: the caller shows the record
+            // in a pane whose head names the model above the record.
+            this.props.onSelect(
+                this.state.target.model, entry.row.id, entry.label, this.state.target.label
+            );
             this.props.close();
             return;
         }
