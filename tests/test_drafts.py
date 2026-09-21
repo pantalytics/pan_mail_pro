@@ -219,8 +219,7 @@ class TestDrafts(TransactionCase):
         rows = as_user.search_conversations(folder='drafts')
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['mailbox'], self.mailbox.email)
-        counts = as_user.folder_counts(folder='drafts')
-        drafts = [e for e in counts['folders'] if e['id'] == 'drafts']
+        drafts = [e for e in as_user.folder_counts() if e['id'] == 'drafts']
         self.assertEqual(drafts[0]['count'], 1)
 
     def test_a_record_that_is_gone_leaves_the_folder_standing(self):
