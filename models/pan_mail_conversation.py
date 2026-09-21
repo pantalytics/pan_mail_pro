@@ -340,9 +340,20 @@ class PanMailConversation(models.AbstractModel):
         ]
 
     @api.model
-    def read_conversation(self, model, res_id, mailbox_id=None,
-                          message_id=None, limit=50, offset=0, scope='mail'):
+    def read_conversation(self, model, res_id, message_id=None,
+                          limit=50, offset=0, scope='mail'):
         """One conversation, and everything the four tabs over it draw.
+
+        **The whole record's correspondence, never one mailbox's half of it.**
+        The list says which mail reached the mailbox you have open; the pane
+        says what the correspondence on this record is, and those are two
+        different questions. A thread with two colleagues in To and Cc is
+        synced by both mailboxes and the Message-ID dedup drops each message
+        in whichever mailbox fetched it first, so filtering the pane by
+        mailbox cut the thread in half along a line the reader cannot see --
+        and the half that was missing held the newest reply. There is no
+        access argument for the filter either: this runs without `sudo()`, so
+        every message it adds is one the reader may read anyway.
 
         `messages` is the thread, newest first. `records` is the chip row:
         every record this thread touched, newest first. `rejected` is what the
@@ -362,7 +373,7 @@ class PanMailConversation(models.AbstractModel):
         self._check_caller()
         limit, offset = self._page(limit, offset, default=50)
         Message = self.env['mail.message']
-        base = self._base_domain(mailbox_id)
+        base = self._base_domain()
         if model:
             target = [('model', '=', model), ('res_id', '=', res_id)]
             domain = Domain(base + target)
@@ -648,6 +659,11 @@ class PanMailConversation(models.AbstractModel):
             'res_id': message.res_id or 0,
             'record_name': message.x_document_name or message.record_name or '',
             'mailbox': message.x_mailbox_id.email or '',
+            # Which mailbox this one arrived in. The pane shows it once a
+            # thread spans more than one, and the reply leaves from the
+            # mailbox of the message it answers rather than from whichever
+            # mailbox the list has open.
+            'mailbox_id': message.x_mailbox_id.id or False,
             # The mail's own To/Cc when the sync or the send path wrote them,
             # and Odoo's notified partners for everything else (mail posted
             # from the chatter, and every message that predates the two

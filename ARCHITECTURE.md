@@ -294,6 +294,20 @@ own methods called on the record itself, unwrapped, so the reply path cannot
 drift from the chatter. The screen it serves is designed in
 `docs/plans/conversation-view.md`.
 
+**The list asks about a mailbox, the pane asks about a record.** The mailbox is
+a clause on every list query -- the folders, the counts, the rows -- and on
+none of the pane's. Both mailboxes on a thread sync it, and the Message-ID
+dedup leaves each message in whichever one fetched it first, so a thread two
+colleagues are on lands half in each; 19.0.15.1.0 stopped `read_conversation`
+filtering by mailbox, which had been cutting that thread along a line the
+reader cannot see. Nothing is widened by it: the pane runs without `sudo()`,
+so every message it adds is one the reader may read anyway. A thread that
+spans more than one mailbox says so per message, and the reply leaves from the
+mailbox of the message it answers rather than from the one the list has open.
+The row's date and count stay the mailbox's, because that is what the list is
+counting and what it sorts on; the conversation's own date is what "All
+mailboxes" (#198) is for.
+
 Replying happens in the conversation pane, not in a dialog over the screen: a
 dialog hides the list, the record and the mail being answered, which are the
 three things somebody looks at while writing. It is still `mail.compose.message`

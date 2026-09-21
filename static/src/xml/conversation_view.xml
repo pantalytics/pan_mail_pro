@@ -562,6 +562,18 @@
                                                     <span class="o_mailpro_meta_key">Cc</span>
                                                     <t t-esc="message.cc"/>
                                                 </t>
+                                                <!-- Which mailbox this one
+                                                     came in on, once the
+                                                     thread spans more than
+                                                     one. On a thread that
+                                                     reached a single mailbox
+                                                     it is the same answer on
+                                                     every line, so it is not
+                                                     drawn. -->
+                                                <t t-if="spansMailboxes and message.mailbox">
+                                                    <span class="o_mailpro_meta_key">Mailbox</span>
+                                                    <t t-esc="message.mailbox"/>
+                                                </t>
                                             </span>
                                             <i class="fa fa-chevron-down o_mailpro_meta_chevron flex-shrink-0"
                                                aria-hidden="true"/>
@@ -574,6 +586,10 @@
                                             <t t-if="message.cc">
                                                 <dt>Cc</dt>
                                                 <dd t-esc="message.cc"/>
+                                            </t>
+                                            <t t-if="spansMailboxes and message.mailbox">
+                                                <dt>Mailbox</dt>
+                                                <dd t-esc="message.mailbox"/>
                                             </t>
                                             <dt>Date</dt>
                                             <dd t-esc="fullDate(message.date)"/>
