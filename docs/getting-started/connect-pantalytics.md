@@ -33,8 +33,8 @@ administer, ask an administrator of that workspace to approve instead.
 
 - **Status: Active, plan free.** During the beta every connected instance is
   on the free plan and no sending limit is enforced. The intended limits are
-  25 mails a day on Free, 500 on Pro and 5,000 on Max; you will hear before any
-  of them takes effect.
+  100 mails a day on Free, 1,000 on Pro and 5,000 on Max; you will hear before
+  any of them takes effect.
 - **Once a day** the instance reports in and receives a signed answer. If
   Pantalytics cannot be reached, the last answer stays valid for 14 days;
   after that, incoming sync pauses until the next successful check. Sending

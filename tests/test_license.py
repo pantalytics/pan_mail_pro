@@ -332,6 +332,50 @@ class TestLicense(TransactionCase):
         self.assertIsInstance(body['corrections'], int)
         self.assertNotIn('Offerte', json.dumps(body))
 
+    def test_the_heartbeat_counts_what_this_module_sent_and_received(self):
+        """Two numbers off `x_direction`, so a note and a system log are
+        invisible to them and nothing but a count leaves."""
+        Message = self.env['mail.message'].sudo()
+        Message.create({
+            'message_type': 'email', 'subject': 'Offerte 1',
+            'x_direction': 'outgoing',
+            'model': 'res.partner', 'res_id': self.env.user.partner_id.id,
+        })
+        Message.create({
+            'message_type': 'email', 'subject': 'Re: Offerte 1',
+            'x_direction': 'incoming',
+            'model': 'res.partner', 'res_id': self.env.user.partner_id.id,
+        })
+        # A note this module never carried: counted by neither number.
+        Message.create({
+            'message_type': 'comment', 'subject': 'Bellen',
+            'model': 'res.partner', 'res_id': self.env.user.partner_id.id,
+        })
+        self.connected()
+        body = self.calls[-1]['json']
+        self.assertEqual(body['mails_sent_24h'], 1)
+        self.assertEqual(body['mails_received_24h'], 1)
+
+    def test_a_mail_from_last_week_is_not_in_todays_counts(self):
+        message = self.env['mail.message'].sudo().create({
+            'message_type': 'email', 'x_direction': 'outgoing',
+            'model': 'res.partner', 'res_id': self.env.user.partner_id.id,
+        })
+        message.date = datetime.now() - timedelta(days=7)
+        self.connected()
+        self.assertEqual(self.calls[-1]['json']['mails_sent_24h'], 0)
+
+    # --- usage and billing are read at Pantalytics -----------------------------
+
+    def test_the_settings_page_links_to_the_dashboard(self):
+        """One link out, and no usage screen here: the number that decides the
+        invoice is the one the server counted."""
+        url = self.env['pan.mail.license'].dashboard_url()
+        self.assertTrue(url.startswith('http'))
+        self.assertTrue(url.endswith('/instances'))
+        settings = self.env['res.config.settings'].create({})
+        self.assertEqual(settings.x_license_dashboard_url, url)
+
     # --- help improve Mail Pro -------------------------------------------------
 
     def test_the_improve_switch_is_stored_off_the_signed_answer(self):
