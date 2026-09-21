@@ -304,15 +304,23 @@ class Checks:
         page.keyboard.press('Escape')
         page.wait_for_timeout(500)
 
-        # Typing is the search: no Enter, no button, the list follows.
+        # Typing is the search: no Enter, no button, the list follows. The
+        # cross is the way back, the way Odoo's own search bar gives a facet
+        # back -- it only exists while there is something to clear.
+        if page.query_selector('.o_mailpro_search_clear'):
+            self.fail('the search shows a clear button with nothing to clear')
         page.fill('#o_mailpro_search', 'zzzznothingmatchesthis')
         page.wait_for_timeout(2500)
         if page.query_selector_all('.o_mailpro_item'):
             self.fail('typing in the search did not narrow the conversation list')
-        page.fill('#o_mailpro_search', '')
+        if not page.query_selector('.o_mailpro_search_clear'):
+            self.fail('the search has no way to clear what was typed')
+        page.click('.o_mailpro_search_clear')
         page.wait_for_timeout(2500)
         if not page.query_selector_all('.o_mailpro_item'):
             self.fail('clearing the search did not give the conversations back')
+        if page.eval_on_selector('#o_mailpro_search', 'el => el.value'):
+            self.fail('clearing the search left the typed text in the field')
         self.error_free('Inbox search')
 
         # New Email asks which record to write on before it opens anything:

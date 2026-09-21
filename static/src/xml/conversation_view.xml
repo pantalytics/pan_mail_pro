@@ -65,13 +65,40 @@
                     </button>
                 </div>
                 <div class="o_mailpro_search_zone flex-grow-1 d-flex justify-content-center">
-                    <input type="search" id="o_mailpro_search"
-                           class="o_mailpro_search form-control form-control-sm"
-                           aria-label="Search people and subjects"
-                           placeholder="Search mail"
-                           t-att-value="state.search"
-                           t-on-input="(ev) => this.onSearchInput(ev)"
-                           t-on-keydown="(ev) => this.onSearchKey(ev)"/>
+                    <!--
+                        The shape Odoo's own control panel search has: one
+                        bordered box, the magnifier inside it on the left, the
+                        text starting where the magnifier ends, and a cross
+                        that gives the whole folder back. The box is the
+                        target, not the input: clicking the border or the
+                        padding focuses the field, which is what a text
+                        cursor over the whole thing promises.
+
+                        The cross is why the field is a plain text input.
+                        `type="search"` draws a clear button of the browser's
+                        own, in the browser's own place, and two crosses a
+                        few pixels apart is the one thing worse than none.
+                    -->
+                    <div class="o_mailpro_searchview d-flex align-items-center gap-2"
+                         role="search"
+                         t-on-click="() => this.focusSearch()">
+                        <i class="fa fa-search o_mailpro_search_icon" aria-hidden="true"/>
+                        <input type="text" id="o_mailpro_search"
+                               class="o_mailpro_search" t-ref="search"
+                               autocomplete="off"
+                               aria-label="Search people and subjects"
+                               placeholder="Search mail"
+                               t-att-value="state.search"
+                               t-on-input="(ev) => this.onSearchInput(ev)"
+                               t-on-keydown="(ev) => this.onSearchKey(ev)"/>
+                        <button t-if="state.search" type="button"
+                                class="o_mailpro_search_clear"
+                                aria-label="Clear the search"
+                                title="Clear the search"
+                                t-on-click="() => this.clearSearch()">
+                            <i class="fa fa-times" aria-hidden="true"/>
+                        </button>
+                    </div>
                 </div>
                 <!-- The search stays in the middle of the window, which it
                      only does if both sides weigh the same. -->
