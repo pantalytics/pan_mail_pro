@@ -122,6 +122,21 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         font-size: 0.8125rem;
     }
 
+    // What to do about it, in the same weight as the failure itself: it is
+    // the line the reader acts on.
+    .o_mailpro_error_remedy { min-width: 0; }
+
+    // The server's own words, quieter than the two above them and on one
+    // line: a reason worth reading is short, and a wall of it pushes the
+    // retry off the screen.
+    .o_mailpro_error_reason {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: $mailpro-faint;
+    }
+
     // The pane row is the zoom's containing block: the record leaves the
     // flex line and covers it while it has the screen. It is also what clips
     // the slide -- an overlay the width of the whole row, parked one row to
