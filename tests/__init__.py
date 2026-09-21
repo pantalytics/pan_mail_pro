@@ -27,6 +27,7 @@ from . import test_recipient_columns
 from . import test_mail_matcher
 from . import test_outgoing_threading
 from . import test_thread_drift
+from . import test_inbox_panes
 from . import test_reply_sync
 from . import test_routing_log
 from . import test_linking

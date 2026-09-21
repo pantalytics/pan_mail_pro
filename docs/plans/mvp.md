@@ -44,7 +44,7 @@ routing log, and the boundary that an imported message notifies nobody
 (the Juffermans incident, closed in #37).
 
 **3. The conversation with the record beside it.** Built as of 19.0.10 and
-polished through 19.0.13: four panes, folder rail, filters, search, New
+polished through 19.0.13: four panes, mailbox list, filters, search, New
 Email, reply in the pane, the four tabs, linking in two steps, the
 suggestion chips. What the plans still call "on paper" and is actually
 built: New mail, search, filter, linking, the two triage rungs and the
@@ -80,7 +80,7 @@ healthy mailboxes, heartbeat today.
 - ~~**#96**~~: fixed 2026-09-20, one provider send per recipient partner
   (`mail.mail._one_send_per_recipient`).
 - **#149**: "Linked to nothing" is empty for everyone but the sender.
-- **#140**: attachments invisible in the thread pane.
+- **#140**: attachments invisible in the conversation pane.
 - **#134**: Cloudpepper never runs `-u`. Not only on mailpro-dev: production
   Pantalytics sits on 12.5.0 in the database with 13.1.0 on disk right now.
   Until this is understood, every version bump is a manual Upgrade click on

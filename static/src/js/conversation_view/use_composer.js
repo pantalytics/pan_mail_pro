@@ -3,7 +3,7 @@
  * The reply, in the pane instead of on top of it.
  *
  * A dialog over the Inbox hides the three things somebody looks at while
- * answering: the list, the thread and the record. So the composer takes the
+ * answering: the list, the conversation and the record. So the composer takes the
  * conversation pane, the way every mail client does it, and the rest of the
  * screen stays where it was.
  *
@@ -165,9 +165,9 @@ export function useComposer({ onSent }) {
          * the field. A send that fails raises, which is Odoo's own error
          * dialog -- and by then the reply is already posted: the chatter sends
          * after its commit, so the raise reaches the browser with the message
-         * in the thread and the failure on its envelope. Leaving the composer
+         * in the conversation and the failure on its envelope. Leaving the composer
          * open would let a second Send post the same reply again, so it
-         * closes and the thread refreshes before the dialog shows.
+         * closes and the conversation refreshes before the dialog shows.
          */
         async send() {
             const controller = handle.controller;
