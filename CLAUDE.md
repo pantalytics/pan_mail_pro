@@ -713,6 +713,31 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### All mailboxes (19.0.15.5.0)
+
+- **The unified inbox was a row and a label over a query that already
+  existed.** `_base_domain(mailbox_id=None)`, `folder_counts` keyed on mailbox
+  `0`, `mailboxKey()` returning `0` for "no mailbox" -- all of it shipped in
+  19.0.10 meaning "no mailbox is configured yet". With mailboxes it means all
+  of them, and the same key carries the counts and the folds. A feature that
+  needs no read path is a feature to check for before designing one.
+- **"Every mailbox" also means every mail with no mailbox.** All mailboxes
+  shows email-type messages that no `pan.mail.mailbox` owns -- chatter mail
+  from before the module was installed, Odoo's own. That is what the domain
+  says and it is honest, but it is why the row tag is empty on some rows and
+  why the UI check asserts the two seeded threads by name rather than counting
+  tags against rows.
+- **The reply's sender was the silent half.** The composer defaulted
+  `x_send_from_mailbox_id` to the folder's mailbox, which under All mailboxes
+  is null: the reply then fell through to `_resolve_route()` and could answer
+  from an address the customer never wrote to. Nothing errors, nothing logs.
+  The row carries `mailbox_id` now and the reply reads the row, never the
+  screen's state -- the mailbox of the *conversation*, not of the folder.
+- **A UI check that seeds one mailbox cannot see a bug about two.** Every
+  seeded mail was in one mailbox, so All mailboxes rendered identically to the
+  mailbox under it and would have passed with the tag code deleted. The seed
+  grew a thread in the second mailbox before the assertion was worth writing.
+
 ### Which pane takes the slack (19.0.15.2.0)
 
 - **The elastic pane is the one whose divider stops doing anything.** Capping

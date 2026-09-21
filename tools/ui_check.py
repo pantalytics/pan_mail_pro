@@ -453,6 +453,14 @@ class Checks:
             return [el.inner_text().strip() for el
                     in page.query_selector_all('.o_mailpro_item .o_mailpro_mailbox_tag')]
 
+        def tag_on(subject):
+            """The mailbox named on the row carrying this subject, or ''."""
+            for item in page.query_selector_all('.o_mailpro_item'):
+                if subject.lower() in item.inner_text().lower():
+                    tag = item.query_selector('.o_mailpro_mailbox_tag')
+                    return tag.inner_text().strip() if tag else ''
+            return None
+
         # Every mailbox at once, as the row above them. With two seeded
         # mailboxes it is where the reader lands, and each row says which one
         # it is in -- the part that is silent when it breaks, because a list
@@ -467,14 +475,18 @@ class Checks:
             if active_names() != ['All mailboxes']:
                 self.fail(f'the Inbox opens on {active_names()}, '
                           f'expected All mailboxes with two mailboxes seeded')
-            tags = row_mailboxes()
-            rows = len(page.query_selector_all('.o_mailpro_item'))
-            if len(tags) != rows:
-                self.fail(f'{len(tags)} of {rows} rows name their mailbox '
-                          f'under All mailboxes')
-            if len(set(tags)) < 2:
-                self.fail(f'All mailboxes shows rows from {sorted(set(tags))}, '
-                          f'expected both seeded mailboxes')
+            # The two seeded threads are one per mailbox, so this reads the
+            # whole promise in two lines: both are here, and each says which
+            # mailbox it is its own.
+            for subject, mailbox in (('Asafdichtingen', 'sales'),
+                                     ('Verlenging onderhoudscontract', 'support')):
+                found = tag_on(subject)
+                if found is None:
+                    self.fail(f'All mailboxes does not show "{subject}", '
+                              f'which is seeded in {mailbox}@example.com')
+                elif found != mailbox:
+                    self.fail(f'"{subject}" names the mailbox {found!r}, '
+                              f'expected {mailbox!r}')
             self.shot('inbox-all-mailboxes.png')
 
         names = mailbox_names()

@@ -289,9 +289,11 @@ class TestConversationApi(TransactionCase):
         self._mail(subject='Via support', record=second).x_mailbox_id = other
 
         rows = self.Conversation.search_conversations()
-        self.assertEqual(len(rows), 2, 'All mailboxes spans both')
+        mine = {row['res_id']: row for row in rows if row['model'] == 'crm.lead'}
+        self.assertEqual(set(mine), {self.lead.id, second.id},
+                         'All mailboxes spans both')
         self.assertEqual(
-            {row['mailbox'] for row in rows},
+            {row['mailbox'] for row in mine.values()},
             {'sales@company.test', 'support@company.test'},
             'every row says which mailbox it is in')
 
