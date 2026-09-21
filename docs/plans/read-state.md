@@ -42,6 +42,34 @@ personal mailbox there is one person anyway; on a shared mailbox it is the
 whole point, since four private unread flags is four people answering the same
 mail. **Per-user read state is dropped.** It cannot be mirrored from anything.
 
+## 1a. Odoo's own read state stays Odoo's
+
+Odoo already has a read state and we are not replacing it, syncing it, or
+reading it here. They answer different questions and both answers are right:
+
+| | Odoo's `mail.notification` | Mail Pro's dot |
+|---|---|---|
+| Question | does this Odoo notification still want *me* | has this *mailbox* read this mail |
+| Scope | one user | one mailbox, everyone who opens it |
+| Set by | a mention, a record you follow | the provider |
+| Cleared in | Discuss, the bell | Outlook, the phone, or Mail Pro |
+
+So the rules are:
+
+- **The Inbox stops reading `needaction`.** It never described the mailbox.
+- **Mail Pro never writes a `mail.notification` row.** The sync suppresses
+  notifications on purpose and that boundary does not move.
+- **Marking a conversation read in Mail Pro does not clear your Odoo Inbox.**
+  Opening a record in Odoo does not clear it either, so this is Odoo's own
+  behaviour left alone rather than a decision of ours. Your mention is yours,
+  and a colleague reading the shared mailbox is not you.
+- **No mentions filter in the Inbox.** That screen exists, it is Discuss.
+
+The two can therefore disagree on one message: unread in the mailbox and
+already ticked off in your Odoo Inbox, or the reverse. That is not drift, it is
+two facts. On a database whose mail arrives through Mail Pro the overlap is
+rare anyway, because only messages Odoo itself notified have a row at all.
+
 ## 2. Why the mirror exists at all
 
 `x_is_read` on `mail.message`, boolean, default `True`.
