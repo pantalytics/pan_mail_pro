@@ -32,7 +32,9 @@ code, the views and the documentation use the same one.
 | **Provider** | Where the mail lives: `outlook`, `gmail` or `imap` | `mail.provider.client`, `PROVIDER_SELECTION` |
 | **Outgoing** | Chatter → email. Odoo composes, the provider sends | `mail.mail` (`_resolve_route`, `send_message`) |
 | **Incoming** | Email → chatter. The provider is read, the matcher decides, Odoo posts | `pan.mail.fetcher`, `pan.mail.matcher` |
-| **Sync** | The user's word for reading a mailbox and its settings | `sync_level`, `last_sync_date`, "Sync Now" |
+| **Sync** | The user's word for reading a mailbox and its settings | `sync_level`, "Try again" |
+| **Cursor** | How far a folder has been read: the date of the newest message taken from it | `last_sync_date`, `last_sent_sync_date` |
+| **Heartbeat** | That a run finished, whether or not it read anything | `last_check_date` |
 | **Send From** | The mailbox a mail leaves through | `x_send_from_mailbox_id`, `x_default_mailbox_id` |
 | **Direction** | Which way an *email* went for its mailbox, whichever flow carried it | `mail.message.x_direction` |
 
@@ -646,7 +648,7 @@ condition of its own.
 | 3 | Mailboxes | a mailbox with `is_notification_mailbox` ticked that can send |
 
 All three are mandatory. There is no partial service: while the phase is `setup`
-the incoming cron returns without fetching, "Sync Now" refuses with the step
+the incoming cron returns without fetching, "Try again" refuses with the step
 that is missing, and internal notifications queue with a readable reason instead
 of being cancelled. Nothing here has an opinion once the phase is `syncing`.
 
@@ -1302,6 +1304,39 @@ Stripe webhooks use:
 4. If a folder came back empty, *its* cursor jumps to `now()` — caught up. Not
    when it stalled: that jump is exactly the skip the stall prevents
 
+**A cursor is not a heartbeat.** Both cursors answer "when did mail last
+arrive", and on a quiet mailbox both stand still for as long as nobody writes
+in. Nothing on the model answered "when did we last look", so the form showed
+`last_sync_date` under the label *Last synced* and read half an hour behind on
+a mailbox syncing every minute. `last_check_date` is the run itself, written by
+`_record_sync_success()` on every completed pass including the great majority
+that read nothing. It is the only field that can tell a quiet mailbox from a
+stopped one, which is the failure the module could not see before: Odoo
+deactivates a cron that keeps hitting its time limit, and until then that
+showed up as mail not arriving, on a form whose every indicator still read OK.
+Past `STALE_AFTER_MINUTES` it makes `health_status` a warning. An empty
+heartbeat is never stale -- a mailbox that has never completed a run is either
+in setup or freshly upgraded, and neither earns a mark the next cron minute
+clears.
+
+**Status is absence, and the sentence is written once.** `status_message` is
+empty on a healthy mailbox and carries the one sentence otherwise -- no
+credentials, the last error, the stale heartbeat, setup not finished. Both
+surfaces render on a truthy value and nothing at all on a falsy one, so neither
+gets to decide for itself what healthy looks like: the mailbox form draws an
+alert with **Try again** beside it, and the Inbox's mailbox list draws a mark
+against the mailbox's name. The Inbox is the important one. That is where mail
+is read, so that is where its absence is noticed; the mailbox form is plumbing
+somebody visits once. What the form keeps that the Inbox does not is the plain
+`last_check_date` line, for the admin configuring an address whose mail they
+will never read themselves.
+
+There is no manual sync on a working mailbox, and no countdown to the next one.
+The cron runs every minute, so a countdown never reaches sixty seconds: motion
+on a screen whose whole job is to be uneventful. `action_sync_now` survives as
+the **Try again** inside the alert -- a recovery action, in the only state that
+has anything to recover from.
+
 The two cursors used to be one, advanced to the **minimum** of both folders so
 the quieter folder could never be skipped. That made the quietest folder the
 pace of the whole mailbox: an address that received mail but sent none through
@@ -1721,7 +1756,7 @@ database at all, and re-authorizing in staging cannot write live credentials
 back in. `tests/test_provider_contract.py` holds a new provider to the same
 rule.
 
-**Where a sentence is owed.** The outgoing send, the sync cron and "Sync Now"
+**Where a sentence is owed.** The outgoing send, the sync cron and "Try again"
 each ask directly, so the refusal says *neutralized* instead of "account not
 connected". Only a caller that knows what it was attempting can say why it
 stopped.
@@ -2076,7 +2111,7 @@ server half lives in `pantalytics/mail-pro-admin`.
   exactly that, because the gate is a view modifier no Python test can see.
 - **Mail Pro works on a connected Odoo instance** (19.0.9.0.0, #126).
   `sync_allowed()` gates incoming sync (the cron, which marks the mailboxes
-  with the reason, and Sync Now) and creating a **new** `pan.mail.account`.
+  with the reason, and Try again) and creating a **new** `pan.mail.account`.
   Outgoing mail is never gated: the module took over Odoo's SMTP, so stopping
   sends would hold all of the instance's email hostage. Reconnecting an
   existing account is a `write` and stays allowed.

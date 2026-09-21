@@ -310,10 +310,14 @@ export class ConversationView extends Component {
         // The notification mailbox is the one the module sends *from*, not one
         // anybody reads. Opening the inbox on it shows an empty screen to
         // somebody whose mail is one dropdown away, which reads as broken.
+        // `status_message` is empty on a healthy mailbox, which is the whole
+        // interface: this pane shows a marker on a truthy value and nothing at
+        // all otherwise, rather than deciding for itself what healthy looks
+        // like. The mailbox form's alert reads the same string.
         this.state.mailboxes = await this.orm.searchRead(
             "pan.mail.mailbox",
             [["active", "=", true], ["is_notification_mailbox", "=", false]],
-            ["email"],
+            ["email", "status_message"],
             { limit: 50, order: "sequence, email" }
         );
         if (this.state.mailboxes.length) {
