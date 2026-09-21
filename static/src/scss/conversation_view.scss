@@ -22,6 +22,11 @@ $mailpro-accent: #5d5bd6;
 $mailpro-accent-ink: #4340b4;
 $mailpro-warn: #c0392b;
 
+// The chevron's column in the conversation list. One number: it is the
+// control's width and the indent of the mails it unfolds, so a row without
+// a chevron still lines up with the rows that have one.
+$mailpro-twist: 1.5rem;
+
 // One motion for every fold: long enough to read as a pane sliding, short
 // enough that a tap feels answered. Chosen once so the mailbox list, the record and
 // the drawer move the same way.
@@ -370,24 +375,80 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         &:hover { background: rgba(0, 29, 33, 0.06); }
     }
 
-    .o_mailpro_item {
-        display: block;
-        width: 100%;
-        border: 0;
+    // The line under a conversation is drawn by the pair -- chevron and row
+    // -- and no longer by the row alone, or it would stop short of the
+    // chevron's column and the list would read as two lists side by side.
+    .o_mailpro_group_head {
         border-bottom: 1px solid $mailpro-line-soft;
-        background: none;
-        text-align: left;
-        cursor: pointer;
 
         &:hover { background: rgba(0, 29, 33, 0.02); }
     }
 
-    .o_mailpro_item_active {
+    .o_mailpro_group_head_active {
         background: rgba(93, 91, 214, 0.08);
         box-shadow: inset 3px 0 0 0 $mailpro-accent;
 
         &:hover { background: rgba(93, 91, 214, 0.08); }
     }
+
+    .o_mailpro_item {
+        display: block;
+        border: 0;
+        background: none;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .o_mailpro_item_active { background: none; }
+
+    // The chevron's own column. Its width is what the unfolded mails indent
+    // by, so the two are one number and not two that drift.
+    .o_mailpro_twist {
+        width: $mailpro-twist;
+        padding: 0.4375rem 0;
+        border: 0;
+        background: none;
+        color: $mailpro-faint;
+        cursor: pointer;
+
+        &:hover { color: $mailpro-ink; }
+
+        &:focus-visible {
+            outline: 2px solid $mailpro-accent;
+            outline-offset: -2px;
+            border-radius: 0.25rem;
+        }
+    }
+
+    // A conversation of one mail has nothing to unfold, so it gets the column
+    // and not the control: the senders below each other stay in one line.
+    .o_mailpro_twist_blank { display: block; }
+
+    // One mail of an unfolded conversation. Indented under the chevron that
+    // opened it, quieter than the row above, and a way into the conversation
+    // pane on that message rather than on the newest.
+    .o_mailpro_child {
+        display: block;
+        width: 100%;
+        padding: 0.3125rem 0.5rem 0.3125rem $mailpro-twist;
+        border: 0;
+        border-bottom: 1px solid $mailpro-line-soft;
+        background: rgba(0, 29, 33, 0.015);
+        text-align: left;
+        cursor: pointer;
+
+        &:hover { background: rgba(0, 29, 33, 0.05); }
+
+        &:focus-visible {
+            outline: 2px solid $mailpro-accent;
+            outline-offset: -2px;
+            border-radius: 0.25rem;
+        }
+    }
+
+    .o_mailpro_child_unread .o_mailpro_from { font-weight: 700; }
+
+    .o_mailpro_thread_loading { padding: 0.3125rem 0.5rem 0.3125rem $mailpro-twist; }
 
     // Unread is weight, not a badge: the list still reads as one column.
     .o_mailpro_item_unread .o_mailpro_from,
@@ -586,6 +647,31 @@ $mailpro-fold: 0.28s cubic-bezier(0.2, 0, 0, 1);
         // where the Send button would have been in the dialog.
         .o_mailpro_composer_tools {
             padding-top: 0.5rem;
+            border-top: 1px solid $mailpro-line;
+        }
+    }
+
+    // Writing, Outlook's way round: the reply on top, the conversation it
+    // answers under it, and one scrollbar over both. Two scroll areas a
+    // border apart is how the sentence somebody is answering ends up
+    // unreachable from the box they are answering it in, so the two blocks
+    // give their own scrolling up to this wrapper.
+    .o_mailpro_composing {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden auto;
+
+        > .o_mailpro_composer,
+        .o_mailpro_messages {
+            flex: 0 0 auto;
+            overflow: visible;
+        }
+
+        // One column, so the rule is what says where the writing stops and
+        // the history starts.
+        .o_mailpro_messages {
             border-top: 1px solid $mailpro-line;
         }
     }

@@ -59,7 +59,7 @@ The screen is four panes:
    is never short for a reason nobody can see, and removed where it is named.
    A filter is a question about the folder you are in, so it survives a folder
    switch. 19.0.13.0.0 built that bar; 19.0.15.1.0 merged the two controls
-   into one; 19.0.16.0.0 replaced the imitation with Odoo's own `SearchBar`
+   into one; 19.0.17.0.0 replaced the imitation with Odoo's own `SearchBar`
    over a search view on `mail.message`, which is where the filters now live
    -- and with it came autocomplete per field, several filters at once, a date
    filter and a custom one.

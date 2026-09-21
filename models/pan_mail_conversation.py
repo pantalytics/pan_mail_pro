@@ -79,6 +79,9 @@ THREAD_CAP = 50
 # signature, an inline stylesheet and the whole quoted history; the preview is
 # 140 characters.
 PREVIEW_SOURCE = 8000
+# How many mails the chevron unfolds under a conversation. A thread past
+# this is one you read in the conversation pane, not one you scan in a list.
+THREAD_ROWS = 50
 # Where the quoted history starts, as the mail clients people write to us
 # from mark it. The same list the conversation pane folds, so the snippet and
 # the open message end "what they wrote" at the same place.
@@ -118,6 +121,12 @@ ROUTING_RULES = {
     'subject_participants': 'The same subject and the same people',
 }
 
+# The chatter posts that are correspondence once they have gone out. A reply
+# written on this screen is Odoo's own chatter post, so it is a `comment`, or
+# an `auto_comment` when a template wrote it. Nothing else a chatter produces
+# is a mail somebody typed.
+SENT_TYPES = ('comment', 'auto_comment')
+
 
 class PanMailConversation(models.AbstractModel):
     """Queries behind the conversation view. No table, no stored fact."""
@@ -129,18 +138,39 @@ class PanMailConversation(models.AbstractModel):
     # The domain every folder is built from
     # ------------------------------------------------------------------
 
-    def _base_domain(self, mailbox_id=None, partner_id=None, domain=None):
-        """Emails this user may read, optionally narrowed to one mailbox.
+    def _mail_domain(self):
+        """What this screen counts as correspondence.
 
-        `message_type = 'email'` is what keeps internal notes out of the list
-        and out of the Mail tab. They are one tab away, in Everything, which
-        is where the chatter's history went when the record pane lost it.
+        `message_type = 'email'` is the mail the sync imported, and it is what
+        keeps internal notes out of the list and out of the Mail tab. They are
+        one tab away, in Everything, which is where the chatter's history went
+        when the record pane lost it.
+
+        It is not the whole answer, because a reply written here never gets
+        that type: it is a chatter post, and Odoo types every chatter post
+        `comment` (or `auto_comment` for a template). The only column that
+        says it left the building is `x_direction`, which `mail.mail` stamps
+        once the provider accepted it. Asking for the type alone hid every
+        answer this module sent from the conversation it was sent in, from the
+        Sent folder, and from every count on this screen.
+
+        `is_internal` is what keeps the notes out of the second branch: a note
+        posted to followers is mailed to them, so it is outgoing too, and it
+        is not correspondence.
+        """
+        return ['|', ('message_type', '=', 'email'),
+                '&', '&', ('x_direction', '=', 'outgoing'),
+                ('message_type', 'in', SENT_TYPES),
+                ('is_internal', '=', False)]
+
+    def _base_domain(self, mailbox_id=None, partner_id=None, domain=None):
+        """Mail this user may read, optionally narrowed to one mailbox.
 
         `domain` is the search bar's, and it is the only thing the bar hands
         over: a facet, a typed word and a filter all arrive here as clauses on
         `mail.message`.
         """
-        base = [('message_type', '=', 'email')]
+        base = self._mail_domain()
         if mailbox_id:
             base.append(('x_mailbox_id', '=', mailbox_id))
         if partner_id:
@@ -414,6 +444,31 @@ class PanMailConversation(models.AbstractModel):
         }
 
     @api.model
+    def conversation_messages(self, model, res_id, message_id=None,
+                              mailbox_id=None, limit=THREAD_ROWS, offset=0):
+        """The mails inside one conversation, one line each, newest first.
+
+        What the chevron in the conversation list unfolds. It is the same set of
+        messages `read_conversation` returns for the `mail` tab, and deliberately
+        not the same rows: a line in a list needs a sender, a date and a
+        snippet, and a body per message would send the whole thread over the
+        wire to draw twenty lines of text. Asking `read_conversation` and
+        throwing the bodies away is the version of this that looks like reuse
+        and costs a thread's worth of HTML per chevron.
+
+        No `scope`: the list is correspondence. An internal note is not a mail
+        the conversation had, and the tab strip over the open conversation is
+        where that reading lives.
+        """
+        self._check_caller()
+        limit, offset = self._page(limit, offset, default=THREAD_ROWS)
+        messages = self.env['mail.message'].search(
+            self._conversation_domain(model, res_id, message_id, mailbox_id),
+            order='date desc, id desc', limit=limit, offset=offset,
+        )
+        return [self._thread_row(message) for message in messages]
+
+    @api.model
     def set_read(self, model, res_id, read=True, message_id=None,
                  mailbox_id=None):
         """Mark one conversation read or unread, everywhere it is recorded.
@@ -500,8 +555,7 @@ class PanMailConversation(models.AbstractModel):
         """
         self._check_caller()
         Message = self.env['mail.message']
-        base = [
-            ('message_type', '=', 'email'),
+        base = self._mail_domain() + [
             ('model', '=', model),
             ('res_id', '=', res_id),
         ]
@@ -689,9 +743,9 @@ class PanMailConversation(models.AbstractModel):
         """How many emails sit on these records, in one grouped query."""
         wanted = {(row['model'], row['res_id']) for row in records}
         groups = self.env['mail.message']._read_group(
-            [('message_type', '=', 'email'),
-             ('model', 'in', list({row['model'] for row in records})),
-             ('res_id', 'in', list({row['res_id'] for row in records}))],
+            self._mail_domain() + [
+                ('model', 'in', list({row['model'] for row in records})),
+                ('res_id', 'in', list({row['res_id'] for row in records}))],
             groupby=['model', 'res_id'], aggregates=['__count'],
         )
         # The two `in` clauses are a cross product, so only the pairs actually
@@ -734,6 +788,23 @@ class PanMailConversation(models.AbstractModel):
             # is what every mail client means by the dot.
             'unread': not newest.x_is_read,
             'mailbox': newest.x_mailbox_id.email or '',
+        }
+
+    def _thread_row(self, message):
+        """One mail under an unfolded conversation: who, when, one line.
+
+        The same three things the conversation row above it carries, about one
+        message instead of the newest. Everything else -- the body, the
+        recipients, the attachments -- belongs to the conversation pane, which
+        is what clicking this row opens.
+        """
+        return {
+            'id': message.id,
+            'author': message.author_id.display_name or message.email_from or '',
+            'author_id': message.author_id.id or False,
+            'date': message.date,
+            'preview': self._preview(message),
+            'unread': not message.x_is_read,
         }
 
     def _message_row(self, message):
