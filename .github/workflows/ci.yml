@@ -1,15 +1,29 @@
 name: CI
 
+# `push` is the mainline only. A branch with an open pull request matches both
+# triggers, so every push to it used to start two identical ten-minute runs --
+# and because a pull request is red if *either* reports red, running twice made
+# a flaky check twice as likely to block a merge while proving nothing extra.
+# It happened on the pull request that wrote this comment: the two runs on one
+# commit disagreed. A branch pushed before its pull request exists now has no
+# run, which is the case `tools/ci.sh` covers locally.
+#
+# `merge_group` is what the merge queue on `19.0` waits for. Without it the
+# queue's required checks never report and it stalls forever, so it belongs
+# here in the same change that asks for the queue to be turned on.
 on:
   push:
-    branches: ['**']
+    branches: ['19.0']
   pull_request:
     branches: ['**']
+  merge_group:
 
-# Cancel superseded runs on the same branch — keeps mobile push-often workflows cheap.
+# Cancel superseded runs on the same branch — keeps mobile push-often workflows
+# cheap. Never on a merge queue entry: a cancelled check is one the queue keeps
+# waiting for, and the entry it belongs to is already the only one of its kind.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 # Nothing here writes to the repository; release.yml asks for contents:write
 # separately. Stated explicitly so a compromised action cannot use the default
@@ -58,7 +72,18 @@ jobs:
           tools/ci_lint.sh
 
   # ---------------------------------------------------------------------------
-  # Kept as its own job because it is a required status check by name.
+  # That the version is *untouched*, not that it was raised: the mainline
+  # raises it after the merge (.github/workflows/release.yml), so a branch that
+  # writes it is a merge conflict waiting for whoever merges second. The one
+  # exception is a branch adding a migration, which has to name its version.
+  #
+  # Kept as its own job because it is a required status check by name -- and
+  # that name is why this one is wrong. The job asserts the version is
+  # *untouched*, so "bumped" describes the opposite; but branch protection on
+  # `19.0` matches the string, and a check that no longer reports under the
+  # name the rule names blocks every merge until somebody edits a repository
+  # setting. The honest name is one settings change away, and it is not worth
+  # holding a merge for.
   # Local equivalent: tools/ci_version_bump.sh origin/19.0
   # ---------------------------------------------------------------------------
   version-bump:

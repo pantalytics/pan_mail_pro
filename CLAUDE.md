@@ -33,7 +33,10 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 - [ ] Stored computed fields have `@api.depends` decorator
 - [ ] Use `groups` attribute for field access control
 - [ ] XML ids follow pattern: `module_name.record_name`
-- [ ] Bump version in `__manifest__.py` (format: `19.0.X.Y.Z`)
+- [ ] Leave `'version'` in `__manifest__.py` alone — `19.0` raises it after
+      the merge. Label the PR `bump:patch` or `bump:major` to change the step.
+      A PR **adding** `migrations/<version>/` is the exception: it names its own
+      version, and the two must match. See [docs/release.md](docs/release.md)
 
 ## Key Files
 
@@ -289,9 +292,9 @@ Three workflows in `.github/workflows/`:
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release), and the UI checks in a real browser |
-| `gitleaks.yml` | every push + PR | secret scan |
-| `release.yml` | push to `19.0` | tags the merge commit `v<manifest version>` if that tag does not exist yet |
+| `ci.yml` | PR, merge queue, push to `19.0` | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release), and the UI checks in a real browser |
+| `gitleaks.yml` | PR, merge queue, push to `19.0` | secret scan: its own diff on a PR, the full history otherwise |
+| `release.yml` | push to `19.0` | raises the manifest version (`tools/release_bump.sh`), then tags `v<version>` and publishes the release — all in one job, because a `GITHUB_TOKEN` push starts no second workflow run |
 
 ### How tests run
 
@@ -351,7 +354,9 @@ exists in a workflow file is a check nobody can run before pushing.
 |--------|------------|
 | `tools/ci.sh` | Entry point. `lint`, `test`, `upgrade` or all three |
 | `tools/ci_lint.sh` | Every static check the lint job runs, including that every `tests/test_*.py` is imported by `tests/__init__.py` — a file that is not on that list never runs, and nothing else can see that |
-| `tools/ci_version_bump.sh` | The manifest version bump, against a base ref |
+| `tools/ci_version_bump.sh` | That a branch has *not* written the manifest version, against a base ref. The mainline decides it |
+| `tools/version.py` | The manifest version: read it, raise it, write it back. The one place that knows the format |
+| `tools/release_bump.sh` | Raises the version on `19.0` once a merge has landed, and pushes it. Run by `release.yml`, not by you |
 | `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh` or `--mode=upgrade` |
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
@@ -428,7 +433,7 @@ without a desktop:
 git checkout -b feature/<name>
 # ... changes ...
 tools/ci.sh                     # the same checks CI will run, before pushing
-git commit -am "..."            # bump __manifest__.py version if code changed
+git commit -am "..."            # leave __manifest__.py alone; 19.0 raises it
 git push -u origin HEAD
 ```
 
@@ -632,6 +637,36 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **What CI never runs is where the bugs live.** `migrations/` was excluded from ruff *and* never executed by CI, because CI only ever installed fresh. Two blind spots stacked on the one directory that only ever runs on a customer's database, unattended.
 - **Test the provider you ship, not just the one you just wrote.** The Gmail client had 36 tests including the whole token lifecycle; the Graph client — 1100 lines, in production at every customer — had none for refresh, rotation or revocation. New code attracts tests; the code that already works quietly stops earning them.
 
+### Releasing without coordinating the branches
+
+- **A conflict whose resolution is always the same is a decision nobody is
+  making.** Every pull request had to raise `'version'` in `__manifest__.py`,
+  and the answer was always "the mainline's, plus one" — so two branches cut
+  from the same base wrote the same value and the second one conflicted. The
+  cost was not the conflict. It was that resolving it by keeping a side shipped
+  four merged pull requests (#222, #226, #227, #228) as `19.0.17.1.0`, and
+  `release.yml` skips a tag that already exists, so three of them were never
+  tagged at all. Two customers on "the same version" had different code. The
+  bump now happens on `19.0` after the merge, where the number is knowable.
+- **A push made with `GITHUB_TOKEN` starts no workflow run.** That is the rule
+  that decides the shape: a workflow that pushes a version commit cannot leave
+  the tagging to a second workflow listening for it, because nothing will ever
+  listen. Bump and tag in one job. It is also what makes the loop impossible
+  without a guard.
+- **Branch protection matches a check on its name, so a rename is a merge
+  freeze.** Inverting the version check earned it a better name, and renaming
+  the job to "Manifest version" made every merge fail with `Required status
+  check "Manifest version bumped" is expected` -- a check that no longer
+  reports under the name the rule names, fixable only from a repository
+  setting nothing in the repo can reach. The job kept the old, now wrong name.
+  Rename the job and the rule in the same sitting or not at all.
+- **"The newest tag that is not HEAD" meant "the previous release" only because
+  every branch carried a higher version than the mainline.** Once they stop,
+  the upgrade job can install a tag *above* the branch it is upgrading to,
+  which is a downgrade: Odoo records the lower number and runs no migration, so
+  the job goes green having proved nothing. `tools/ci_odoo.sh` now skips a tag
+  above the branch's own manifest version.
+
 ### Testing against a real server
 - **A fake proves the call, not the protocol.** `test_imap_provider.py` fakes
   imaplib and smtplib, which proves the client makes the right calls and cannot
@@ -713,6 +748,33 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   and in the code.
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
+
+### The record picker is Odoo's (19.0.21.0.0)
+
+- **A picker with one search box is a worse copy of a control the reader
+  already knows.** Step two of the link picker was a `name_search` over twelve
+  rows: no filters, no columns, no paging, and a search that could not tell
+  a company from its contact person. `SelectCreateDialog` is one import and
+  five props, and it arrives with the model's own list view, search bar and
+  filter menu -- the dialog every many2one on the database already opens.
+  Same lesson as the Inbox's search bar: ask what Odoo's control consumes
+  before building an imitation of it.
+- **A head start is a facet, not a domain.** Passing the correspondent's
+  records as `domain` makes it a wall; passing them as `dynamicFilters`
+  makes it a chip the reader takes off with one click. Same data, and only
+  one of the two keeps the promise that the seeding never has to be escaped.
+- **A service call from a destroyed component never answers.** `useService`
+  hands a component a protected handle: a call made after the component is
+  destroyed throws, and one made just before resolves into a promise that
+  never settles. `choose()` closed its own dialog and then awaited
+  `link_scope`, so the await hung and Odoo's picker never opened -- no
+  error, no log line, two red browser assertions. Fetch what the next
+  screen needs before closing this one, and hand a callback that outlives
+  the component the service itself (`env.services.orm`), not the handle.
+- **The tile a model wears was already computed for the chips.**
+  `_model_icon` answered "which app opens this model" for the Linked-to
+  chips; step one of the picker asked the same question and had no icon.
+  Reuse the answer before resolving it a second way.
 
 ### A bar on a phone, and the class it borrowed (19.0.20.2.0)
 
@@ -1047,6 +1109,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 | [README.md](README.md) | Setup and usage for the person installing the module |
 | [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) | UI conventions. Read before adding a field to a settings or mailbox screen |
 | [TESTPLAN.md](TESTPLAN.md) | Manual test plan for what CI cannot reach |
+| [docs/release.md](docs/release.md) | How a merge becomes a version: why the bump is not in the pull request, which label picks the step, and the two repository settings it depends on |
 | [docs/cloudpepper-deploy.md](docs/cloudpepper-deploy.md) | Deploying on Cloudpepper: the two update tracks, the order, and the white screens |
 | `docs/` | End-user documentation, per provider. The source. Customers read the copy in the Pantalytics knowledge base (`pantalytics.odoo.com/knowledge/article/116`); `tools/docs_to_knowledge.py` renders these pages into it, so refresh the article when you change one |
 | `docs/plans/` | Designs that are agreed but not built, and the half-shipped ones. [mvp.md](docs/plans/mvp.md) is the status review of 2026-09-18: what ships, what the MVP still needs, in what order. [conversation-view.md](docs/plans/conversation-view.md) is the current one, with [how it gets built](docs/plans/conversation-view-build.md) beside it. A plan carries a status line naming which parts ship; what has shipped moves into ARCHITECTURE.md, and the file leaves `docs/plans/` when the last step lands |
