@@ -74,7 +74,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_conversation.py` | The read side of the Inbox: the RPC methods behind the screen, no table, no sudo for an answer. `conversation_messages()` is the one the chevron in the conversation list unfolds, and it returns three fields per mail rather than a body |
 | `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, the Followers button at its end that opens the chatter's own follower list, the chevron in the conversation list that unfolds a conversation into its own mails and opens the pane on the one you pick, and Odoo's own `SearchBar` over the top: the filters are a search view (`view_pan_mail_inbox_search`), what it produces is a domain over `mail.message` |
 | `static/src/js/chatter_door.js` | Door 1: **Open in mail** in Odoo's own chatter, on a record that carries an emailed message. Counts the record's threads, then opens the Inbox on the conversation or on the record's list |
-| `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (the mailbox list from a round button in the top bar left of New Email, the conversation list and the Odoo record from a round button on their own divider), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the record's divider button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
+| `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (the mailbox list from a round button in the top bar left of New Email, the conversation list and the Odoo record from a round button on their own divider), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and which slides the record over the other three panes rather than replacing them (`--mailpro-zoom-from` is where it starts, measured by the screen), and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the record's divider button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
 | `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, the Send that saves it and calls `action_send_mail`, and the Save draft beside it that stores the same wizard as a `pan.mail.draft` |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
 | `tests/test_read_state.py` | Who decides whether a mail is read: the provider, mirrored onto `mail.message`, and the one way Odoo's own bell is cleared |
@@ -713,6 +713,39 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   and in the code.
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
+
+### All mailboxes (19.0.18.4.0)
+
+- **The unified inbox was a row and a label over a query that already
+  existed.** `_base_domain(mailbox_id=None)`, `folder_counts` keyed on mailbox
+  `0`, `mailboxKey()` returning `0` for "no mailbox" -- all of it shipped in
+  19.0.10 meaning "no mailbox is configured yet". With mailboxes it means all
+  of them, and the same key carries the counts and the folds. A feature that
+  needs no read path is a feature to check for before designing one.
+- **"No mailbox" meant two opposite things, and reusing the key hid it.**
+  `_base_domain(mailbox_id=None)` was door 1's question -- one record's mail
+  *wherever it arrived*, chatter mail included -- and All mailboxes borrowed
+  it. But a row labelled All mailboxes that lists mail no mailbox owns is
+  false to its own label, and on a database that used the chatter before Mail
+  Pro it buries the real mail. `in_a_mailbox` is the difference, off by
+  default so door 1 keeps what it needs. The seeded instance found it: Odoo's
+  own "Welcome to Odoo!" on a discuss channel became the conversation the
+  Inbox opened on.
+- **The reply's sender was the silent half.** The composer defaulted
+  `x_send_from_mailbox_id` to the folder's mailbox, which under All mailboxes
+  is null: the reply then fell through to `_resolve_route()` and could answer
+  from an address the customer never wrote to. Nothing errors, nothing logs.
+  The row carries `mailbox_id` now and the reply reads the row, never the
+  screen's state -- the mailbox of the *conversation*, not of the folder.
+- **A UI check that seeds one mailbox cannot see a bug about two.** Every
+  seeded mail was in one mailbox, so All mailboxes rendered identically to the
+  mailbox under it and would have passed with the tag code deleted. The seed
+  grew a thread in the second mailbox before the assertion was worth writing.
+- **The failure landed three steps away from its cause.** Changing where the
+  Inbox opens changed which conversation every later step works on, so the
+  draft and divider checks went red while the All mailboxes step passed. A
+  check that starts from "whatever is selected" inherits every earlier
+  decision about what that is.
 
 ### A user's own setting over somebody else's model (19.0.18.2.0)
 

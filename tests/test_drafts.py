@@ -207,6 +207,20 @@ class TestDrafts(TransactionCase):
         for key in ('model', 'res_id', 'message_id', 'preview', 'correspondent',
                     'date', 'count', 'unread', 'mailbox'):
             self.assertIn(key, rows[0])
+        # One kind of row means the same keys, and this is the one the reply
+        # reads: under All mailboxes the screen has no mailbox to fall back
+        # to, so a row without it answers from whatever the router picks.
+        self.assertEqual(rows[0]['mailbox_id'], self.mailbox.id)
+
+    def test_drafts_under_all_mailboxes_are_every_mailbox_s(self):
+        """No mailbox is all of them here too, and the rows still say which."""
+        self._save(self._composer())
+        as_user = self.Conversation.with_user(self.user)
+        rows = as_user.search_conversations(folder='drafts')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['mailbox'], self.mailbox.email)
+        drafts = [e for e in as_user.folder_counts() if e['id'] == 'drafts']
+        self.assertEqual(drafts[0]['count'], 1)
 
     def test_a_record_that_is_gone_leaves_the_folder_standing(self):
         """The record's name is a label on a row, never a reason to fail.
