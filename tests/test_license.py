@@ -28,7 +28,7 @@ POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
 HEARTBEAT_FIELDS = {
     'db_uuid', 'module_version', 'odoo_version', 'mailboxes_connected',
     'mails_sent_24h', 'mails_received_24h', 'sync_ok', 'errors',
-    'coverage', 'rules', 'corrections',
+    'coverage', 'rules', 'corrections', 'setup',
 }
 
 
@@ -331,6 +331,59 @@ class TestLicense(TransactionCase):
             self.assertEqual(set(row), {'rule', 'wins', 'corrected'})
         self.assertIsInstance(body['corrections'], int)
         self.assertNotIn('Offerte', json.dumps(body))
+
+    def test_the_heartbeat_carries_the_three_setup_answers(self):
+        """Three booleans, the same three the settings checklist draws: the
+        Get started line at Pantalytics ticks what is done here rather than
+        asking the customer to say it twice."""
+        self.connected()
+        setup = self.calls[-1]['json']['setup']
+        self.assertEqual(set(setup), {'provider', 'domains', 'mailboxes'})
+        for answer in setup.values():
+            self.assertIsInstance(answer, bool)
+
+    def test_a_setup_step_answered_reports_in_without_waiting_for_a_day(self):
+        """The line is read while somebody is still walking it, so the fetch
+        cron pushes a heartbeat the minute the answers change -- once per
+        change, whatever the server says back."""
+        link = self.connected()
+        self.assertEqual(
+            link.setup_reported,
+            pan_mail_license.setup_signature(self.env['pan.mail.setup'].answers()))
+        before = len(self.calls)
+
+        with patch(POST, side_effect=self.server()):
+            self.License._report_setup_if_changed()  # nothing changed
+            self.assertEqual(len(self.calls), before)
+
+            # As if a step had been answered since the last heartbeat.
+            link.setup_reported = 'something-else'
+            self.License._report_setup_if_changed()  # too soon after the last one
+            self.assertEqual(len(self.calls), before)
+
+            link.last_check = fields.Datetime.now() - timedelta(minutes=5)
+            self.License._report_setup_if_changed()
+            self.assertEqual(len(self.calls), before + 1)
+
+            # And not again on the next minute: one attempt per change.
+            link.last_check = fields.Datetime.now() - timedelta(minutes=5)
+            self.License._report_setup_if_changed()
+            self.assertEqual(len(self.calls), before + 1)
+
+    def test_a_setup_push_that_cannot_reach_the_server_is_not_retried_a_minute_later(self):
+        """The heartbeat records what it set out to report, so an unreachable
+        server costs the line a day of staleness rather than a heartbeat a
+        minute for as long as it is down."""
+        link = self.connected()
+        link.setup_reported = 'something-else'
+        link.last_check = fields.Datetime.now() - timedelta(minutes=5)
+        with patch(POST, side_effect=requests.RequestException('no route')) as post:
+            self.License._report_setup_if_changed()
+            self.assertEqual(post.call_count, 1)
+            self.assertTrue(link.last_error)
+            link.last_check = fields.Datetime.now() - timedelta(minutes=5)
+            self.License._report_setup_if_changed()
+            self.assertEqual(post.call_count, 1)
 
     def test_the_heartbeat_counts_what_this_module_sent_and_received(self):
         """Two numbers off `x_direction`, so a note and a system log are

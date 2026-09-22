@@ -2294,7 +2294,8 @@ server half lives in `pantalytics/mail-pro-admin`.
 
 - **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
   `_heartbeat_body()` and nothing else: database id, module and Odoo version,
-  connected accounts, whether sync is healthy, and for the last 24 hours how
+  connected accounts, whether sync is healthy, which of the three setup steps
+  are answered (`pan.mail.setup.answers()`, three booleans), and for the last 24 hours how
   many mails were sent and received (off `mail.message.x_direction`, so one
   message is one mail while the cap meters `mail.mail`, one per recipient:
   this is the trend, not the meter), the
@@ -2304,6 +2305,13 @@ server half lives in `pantalytics/mail-pro-admin`.
   `link_to` stamps), and the number of hand-made links. Counts and rule
   names. No address, subject, body or name. The manifest's Data Disclosure
   says the same, and has to change with it.
+
+- **A setup step answered does not wait for tomorrow.** Pantalytics draws the
+  three answers as the Get started line the customer is standing in front of,
+  so `_report_setup_if_changed()` (from the fetch cron, every minute) sends a
+  heartbeat as soon as the answers differ from the last one reported. One
+  attempt per change: the flag is stored before the call, so an unreachable
+  server costs the line a day, not a heartbeat a minute.
 - **The answer carries the workspace's "Help improve Mail Pro" switch**:
   `improve`, `improve_host` (our proxy, never PostHog) and `replay_sample`,
   stored on the row only when the signature checks out. `improve_active()`

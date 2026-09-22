@@ -91,7 +91,8 @@
           database under Settings -> Mail Pro -> Pantalytics Account. Once
           linked, the database reports once a day: its database id, the
           module and Odoo version, how many accounts are connected, whether
-          sync is healthy, and for the last 24 hours how many mails were
+          sync is healthy, which of the three setup steps are answered, and
+          for the last 24 hours how many mails were
           sent and received, how many were
           linked to a document, to a contact only, or to nothing, per
           matching rule how often it decided and how often a person
