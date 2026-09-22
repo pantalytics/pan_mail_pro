@@ -57,6 +57,27 @@ class TestConversationApi(TransactionCase):
             'x_mailbox_id': self.mailbox.id,
         })
 
+    def test_an_unconnected_instance_refuses_every_read(self):
+        """Mail Pro works on an Odoo linked to a Pantalytics account, and the
+        Inbox is not the exception: the screen draws one Connect button, and
+        this is the rule under it. A mailbox manager on an instance that is
+        not connected gets a refusal from the read layer, whatever they ask."""
+        manager = self.env['res.users'].create({
+            'name': 'Mira Manager',
+            'login': 'mira@company.test',
+            'email': 'mira@company.test',
+            'group_ids': [(6, 0, [
+                self.env.ref('base.group_user').id, self.manager_group.id])],
+        })
+        gated = self.Conversation.with_user(manager).with_context(
+            pan_mail_pro_real_gate=True)
+        with self.assertRaises(AccessError):
+            gated.folder_counts()
+        with self.assertRaises(AccessError):
+            gated.search_conversations()
+        with self.assertRaises(AccessError):
+            gated.record_conversations(self.lead._name, self.lead.id)
+
     def _search_filter(self, name):
         """One filter of the Inbox's search view, as the search bar sends it.
 

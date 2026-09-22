@@ -208,6 +208,54 @@ class Checks:
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
 
+    def inbox_not_connected(self):
+        """Without a Pantalytics account the Inbox is one button, not four panes.
+
+        The read layer refuses on an unconnected instance, so panes drawn over
+        that refusal would be a product that looks finished and is not. What
+        this asserts: no folder list, exactly one Connect button, and that the
+        button lands on the Settings tab where connecting happens.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            self.fail('there is no Inbox menu')
+            return
+        page = self.page
+        link = self.call('pan.mail.license', 'search', [])
+        self.call('pan.mail.license', 'unlink', link)
+        try:
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            try:
+                page.wait_for_selector('.o_mailpro_gate', timeout=30000)
+            except Exception:
+                self.fail('an unlinked database does not show the Inbox gate')
+                return
+            page.wait_for_timeout(800)
+            self.shot('inbox-not-connected.png')
+            if page.query_selector('.o_mailpro_folder'):
+                self.fail('an unlinked database still draws the mailbox list')
+            connect = [b for b in page.query_selector_all('.o_mailpro_gate button')
+                       if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
+            if len(connect) != 1:
+                self.fail(f'the Inbox gate shows {len(connect)} Connect buttons, expected 1')
+                return
+            connect[0].click()
+            # A full navigation to /odoo/settings#pan_mail_pro, the hash
+            # selecting the tab: the block is visible without a click here.
+            try:
+                page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+                page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
+                                       timeout=30000)
+            except Exception:
+                self.fail('the Inbox gate does not land on the Mail Pro settings')
+            self.error_free('Inbox without a Pantalytics account')
+        finally:
+            self.call('pan.mail.license', 'create', {
+                'status': 'active',
+                'valid_until': (datetime.datetime.now(datetime.UTC)
+                                + datetime.timedelta(days=14)
+                                ).strftime('%Y-%m-%d %H:%M:%S')})
+
     # -- Every menu this module adds -----------------------------------------
 
     def menus(self):
@@ -3005,6 +3053,7 @@ def main():
         checks.call = rpc_for(args.url, args.db)
         checks.settings()
         checks.settings_not_connected()
+        checks.inbox_not_connected()
         checks.menus()
         checks.conversation_view()
         checks.chatter_door()

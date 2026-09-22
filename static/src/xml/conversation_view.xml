@@ -20,6 +20,25 @@
              t-att-class="{ 'o_mailpro_small': panes.state.small, 'o_mailpro_narrow': panes.state.narrow }">
 
             <!--
+                Not connected: one button, nothing else. Mail Pro works on an
+                Odoo instance linked to a Pantalytics account, and the read
+                layer behind this screen refuses until it is. Drawing the four
+                panes over that refusal would show a product that looks
+                finished and is not. Connecting itself stays in Settings, where
+                the code, the fallback link and Check Approval already are.
+            -->
+            <div t-if="!state.connected" class="o_mailpro_gate d-flex flex-column align-items-center justify-content-center h-100 text-center">
+                <img src="/pan_mail_pro/static/description/icon.png" alt="" class="o_mailpro_gate_icon"/>
+                <h2 class="o_mailpro_gate_title">Connect this Odoo to Pantalytics</h2>
+                <p class="o_mailpro_gate_text">Mail Pro works on an Odoo instance that is connected to a Pantalytics account. The Inbox opens once it is.</p>
+                <button t-if="isAdmin" type="button" class="btn btn-primary o_mailpro_gate_connect"
+                        t-on-click="openConnectSettings">Connect to Pantalytics</button>
+                <p t-else="" class="o_mailpro_gate_text">Ask an administrator to connect it: Settings, Mail Pro.</p>
+                <a class="o_mailpro_gate_back" href="/odoo">Back to Odoo</a>
+            </div>
+            <t t-else="">
+
+            <!--
                 The bar every mail client has, in the order they all put it:
                 the way home and the one thing you start from on the left, the
                 one thing you look for with in the middle, the systray on the
@@ -864,6 +883,7 @@
                 </div>
 
             </div>
+            </t>
         </div>
     </t>
 
