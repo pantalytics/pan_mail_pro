@@ -240,7 +240,10 @@ class Checks:
                 self.fail(f'the Inbox gate shows {len(connect)} Connect buttons, expected 1')
                 return
             connect[0].click()
+            # A full navigation to /odoo/settings#pan_mail_pro, the hash
+            # selecting the tab: the block is visible without a click here.
             try:
+                page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
                 page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
                                        timeout=30000)
             except Exception:

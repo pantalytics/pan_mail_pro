@@ -440,10 +440,14 @@ export class ConversationView extends Component {
     }
 
     /** The one place connecting happens: Settings, Mail Pro, where the code
-     *  and Check Approval live. The gate does not copy that flow. */
+     *  and Check Approval live. The gate does not copy that flow. The same
+     *  URL the OAuth controller and the mailbox list send people to: the
+     *  hash is what selects the tab. */
     openConnectSettings() {
-        this.action.doAction("base_setup.action_general_configuration", {
-            additionalContext: { module: "pan_mail_pro" },
+        this.action.doAction({
+            type: "ir.actions.act_url",
+            url: "/odoo/settings#pan_mail_pro",
+            target: "self",
         });
     }
 
