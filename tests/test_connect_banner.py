@@ -166,6 +166,11 @@ class TestConnectBannerSession(HttpCase):
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
 
         self.assertTrue(info['pan_mail_inbox'])
+        # Whether the Inbox opens at all rides the same payload. The suite
+        # runs connected (tests/connected.py), so the answer here is yes;
+        # the no, and the screen it draws, is tools/ui_check.py's.
+        self.assertIn('pan_mail_connected', info)
+        self.assertTrue(info['pan_mail_connected'])
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

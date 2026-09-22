@@ -67,7 +67,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, whether to nudge them, and the one mailbox setting they own: the sync level of their own address, on My Preferences |
 | `models/res_config_settings.py` | The Settings page: the three checklist steps and the users block |
 | `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
-| `models/ir_http.py` | Three session flags: does this user still have to connect a mailbox, may they open the Inbox at all, and may the Inbox report how it is used |
+| `models/ir_http.py` | Four session flags: does this user still have to connect a mailbox, may they open the Inbox at all, is this Odoo connected to Pantalytics, and may the Inbox report how it is used |
 | `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
 | `static/lib/posthog/` | posthog-js, vendored (MIT), pinned so the masking check in `tools/ui_check.py` proves the version that ships |
 | `tests/test_improve.py` | What the session carries once the workspace said yes: a host, a token, a pseudonym, nothing that names anyone |

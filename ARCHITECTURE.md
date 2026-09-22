@@ -2286,6 +2286,13 @@ That is the device flow's shape: no redirect URI per customer database, so it
 works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
 server half lives in `pantalytics/mail-pro-admin`.
 
+- **Not connected, no Inbox.** `pan.mail.conversation._check_caller` refuses
+  every read while `sync_allowed()` is false, and the Inbox draws one card
+  with one button (Settings, Mail Pro, where connecting happens) instead of
+  four panes over a refusal. The screen reads the answer off the session
+  (`pan_mail_connected`) and asks once more when that says no, because the
+  session is a page load old and an admin who has just connected has not
+  reloaded anything.
 - **Usage and billing are read there, not here.** The settings page carries
   one link (`dashboard_url()`, the Odoo instances page), and this module has
   no usage screen of its own: the number that decides an invoice is the one

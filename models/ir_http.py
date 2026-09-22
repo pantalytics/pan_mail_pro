@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Three things in the session: does this user still have to connect a
-mailbox, may they open the Inbox at all, and may the Inbox report how it is
-used.
+"""Four things in the session: does this user still have to connect a
+mailbox, may they open the Inbox at all, is this Odoo connected to a
+Pantalytics account, and may the Inbox report how it is used.
 
 The webclient asks nothing extra for it. `session_info` is already fetched once
 per page load, so the banner knows whether to draw itself before the first
@@ -33,4 +33,10 @@ class IrHttp(models.AbstractModel):
             # time -- an AccessError per record open, in everybody's log.
             result['pan_mail_inbox'] = self.env.user.has_group(
                 'pan_mail_pro.group_mail_mailbox_manager')
+            # Whether the Inbox opens at all: Mail Pro works on a connected
+            # Odoo, and a screen full of panes on an instance that is not is
+            # a product that looks finished and is not. Stale by a page load
+            # like the rest; the Inbox asks once more when this says no, so
+            # an admin who has just connected is not shown the gate again.
+            result['pan_mail_connected'] = self.env['pan.mail.license'].sync_allowed()
         return result

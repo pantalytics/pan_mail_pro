@@ -270,6 +270,12 @@ class PanMailConversation(models.AbstractModel):
         """
         if not self.env.user.has_group('pan_mail_pro.group_mail_mailbox_manager'):
             raise AccessError(_("Mail Pro's inbox is for mailbox managers."))
+        # The screen refuses too, before it draws (`session.pan_mail_connected`),
+        # and this is what makes that refusal a rule rather than a courtesy:
+        # every read the Inbox makes comes through here.
+        if not self.env['pan.mail.license'].sync_allowed():
+            raise AccessError(_('Connect this Odoo to Pantalytics first: Settings, '
+                                'Mail Pro, Connect to Pantalytics.'))
 
     def _page(self, limit, offset, default=DEFAULT_LIMIT):
         """Clamp what the client asked for.
