@@ -99,3 +99,24 @@ class TestGraphSendPayload(TransactionCase):
             [r['emailAddress']['address'] for r in payload['ccRecipients']],
             ['cc@example.com'],
         )
+
+    def test_addresses_are_trimmed_and_lowercased(self):
+        """Stray capitals and spaces in partner data are tidied, nothing more."""
+        partner = self.env['res.partner'].create({
+            'name': 'Jan', 'email': ' Jan@Client.NL ',
+        })
+        mail = self._make_mail(
+            email_to='To@Example.com', email_cc='CC@Example.com',
+            recipient_ids=[(6, 0, partner.ids)],
+        )
+        result, payload = self._patched_send(mail)
+
+        self.assertTrue(result['success'])
+        self.assertEqual(
+            [r['emailAddress']['address'] for r in payload['toRecipients']],
+            ['to@example.com', 'jan@client.nl'],
+        )
+        self.assertEqual(
+            [r['emailAddress']['address'] for r in payload['ccRecipients']],
+            ['cc@example.com'],
+        )

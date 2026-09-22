@@ -551,6 +551,16 @@ class TestOutgoingCarriesNoBcc(TransactionCase):
         self.assertIsNone(msg['Bcc'])
         self.assertIsNone(msg['Resent-Bcc'])
 
+    def test_mime_recipients_are_trimmed_and_lowercased(self):
+        partner = self.env['res.partner'].create({
+            'name': 'Jan', 'email': ' Jan@Client.NL ',
+        })
+        self.assertEqual(
+            mime_utils.bare_addresses(
+                mime_utils.collect_recipients('To@Example.com, jan@client.nl', partner)),
+            ['to@example.com', 'jan@client.nl'],
+        )
+
     def test_the_smtp_envelope_is_exactly_to_plus_cc(self):
         """An address in the envelope but not in a header is a blind copy by
         another name."""
