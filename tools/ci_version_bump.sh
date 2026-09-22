@@ -30,7 +30,11 @@ if [ "$CODE_CHANGED" -eq 0 ]; then
     exit 0
 fi
 
-python3 - "$MERGE_BASE" <<'PY'
+# The version is compared with the mainline's tip, not the merge base: another
+# pull request may have taken the next number since this branch was cut. Branch
+# protection requires the branch to be up to date, so this runs again after
+# every merge and the second of two same-numbered branches has to bump again.
+python3 - "$BASE_REF" <<'PY'
 import ast, subprocess, sys
 base = sys.argv[1]
 
@@ -43,7 +47,8 @@ old = version_of(subprocess.run(['git', 'show', f'{base}:__manifest__.py'],
 if new <= old:
     print(f"::error file=__manifest__.py::Module code changed but version was not bumped "
           f"({'.'.join(map(str, old))} -> {'.'.join(map(str, new))}). "
-          f"Odoo skips the upgrade without a higher version.")
+          f"Odoo skips the upgrade without a higher version. "
+          f"If {base} moved on, take the next free number above it.")
     sys.exit(1)
 print(f"Version bumped: {'.'.join(map(str, old))} -> {'.'.join(map(str, new))}")
 PY
