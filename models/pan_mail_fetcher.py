@@ -125,6 +125,10 @@ class PanMailFetcher(models.AbstractModel):
         # meet a bad minute. The retry must not wait for a state it unblocks.
         License = self.env['pan.mail.license']
         License._retry_if_stuck()
+        # Same reason, the other direction: the setup answers ride the
+        # heartbeat, and the Get started line at Pantalytics is read while
+        # somebody is still answering them.
+        License._report_setup_if_changed()
         # Deliberately not filtered on an owner: whether a mailbox needs one is
         # the provider's business. A Gmail or IMAP shared mailbox is its own
         # account with nobody behind it, and requiring an owner here silently

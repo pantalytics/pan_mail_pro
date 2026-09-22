@@ -31,11 +31,16 @@ per-folder cursor catches up afterwards, so no mail is lost.
 
 **What leaves the database** is `_heartbeat_body()`, and the whole list is in
 that one method: the database id, two version strings, how many accounts are
-connected, whether sync is healthy, and for the last 24 hours how many mails
-were sent and received, the four link coverage counts, per matching rule how
-often it decided and how often a person overruled it, and how many
-conversations were linked by hand. Counts and rule names. No address, subject,
-body or name.
+connected, whether sync is healthy, which of the three setup steps are
+answered, and for the last 24 hours how many mails were sent and received, the
+four link coverage counts, per matching rule how often it decided and how often
+a person overruled it, and how many conversations were linked by hand. Counts,
+flags and rule names. No address, subject, body or name.
+
+**The setup answers do not wait for tomorrow.** Pantalytics draws them as the
+Get started line the customer is standing in front of, so a step answered here
+pushes a heartbeat within the minute (`_report_setup_if_changed`, from the
+fetch cron). Daily is right for counts and wrong for a checklist.
 
 **Usage and billing are read at Pantalytics, not here.** `dashboard_url()` is
 the link the settings page offers, and there is no usage screen in Odoo: a
@@ -99,6 +104,11 @@ DASHBOARD_PATH = '/instances'
 # The server accepts this many rule rows; the ladder has six, so the cap only
 # guards against a rule name that is somehow not one of ours.
 MAX_RULE_ENTRIES = 20
+
+# The floor under a setup push. It is the server's own minimum interval: a
+# second heartbeat inside a minute is refused there, so asking sooner buys
+# nothing and the cron is back in a minute anyway.
+SETUP_PUSH_SECONDS = 60
 
 # A connected instance whose entitlement has not arrived asks again this often
 # (from the fetch cron), instead of waiting for the daily heartbeat.
@@ -164,6 +174,11 @@ def _sample(value):
         return 0.0
 
 
+def setup_signature(answers):
+    """The answered setup steps as one string, to compare two heartbeats by."""
+    return ','.join(step for step, done in sorted(answers.items()) if done)
+
+
 def _naive_utc(iso_value):
     """An ISO timestamp from the server as the naive UTC datetime Odoo stores."""
     if not iso_value:
@@ -202,6 +217,11 @@ class PanMailLicense(models.Model):
 
     last_check = fields.Datetime(readonly=True, copy=False)
     last_error = fields.Char(readonly=True, copy=False)
+
+    # Which setup steps the last heartbeat carried, as `setup_signature()`
+    # writes them. Compared, never read for its own sake: it is how the module
+    # knows a step has been answered since it last said so.
+    setup_reported = fields.Char(readonly=True, copy=False)
 
     # Help improve Mail Pro, as the workspace decided it at Pantalytics. Read
     # off the signed entitlement and nowhere else; the local checkbox that
@@ -457,6 +477,7 @@ class PanMailLicense(models.Model):
             'entitlement_json': False,
             'signature': False,
             'last_error': False,
+            'setup_reported': False,
             'improve': False,
             'improve_host': False,
             'improve_token': False,
@@ -495,6 +516,33 @@ class PanMailLicense(models.Model):
             return
         link._heartbeat_guarded()
 
+    @api.model
+    def _report_setup_if_changed(self):
+        """Report in when a setup step has been answered since the last time.
+
+        The three answers ride the heartbeat so Pantalytics can draw the Get
+        started line, and that line is read while somebody is still walking
+        it: a step ticked in Odoo has to be ticked there within the minute.
+        Called from the fetch cron, which runs every minute and keeps running
+        during setup, when incoming sync does not.
+
+        `setup_reported` is written by the heartbeat itself, on the way out
+        rather than on a good answer: one attempt per change is the contract,
+        so a server that cannot be reached costs the line a day of staleness,
+        which the daily heartbeat corrects, rather than a heartbeat a minute
+        for as long as it stays down.
+        """
+        link = self.current()
+        if not link or not link.key_encrypted:
+            return
+        signature = setup_signature(self.env['pan.mail.setup'].answers())
+        if signature == (link.setup_reported or ''):
+            return
+        if link.last_check and fields.Datetime.now() - link.last_check < timedelta(
+                seconds=SETUP_PUSH_SECONDS):
+            return
+        link._heartbeat_guarded()
+
     def _heartbeat_guarded(self):
         """A heartbeat that cannot take the caller's transaction down with it."""
         try:
@@ -514,9 +562,15 @@ class PanMailLicense(models.Model):
             return
 
         now = fields.Datetime.now()
+        report = self._heartbeat_body()
+        # What this one is about to report, recorded before the answer comes
+        # back rather than after: `_report_setup_if_changed` reads it to know
+        # whether the setup answers have moved since we last said so, and an
+        # attempt that never arrives must not turn into one a minute.
+        self.setup_reported = setup_signature(report['setup'])
         try:
             code, body = self._post(
-                '/api/v1/license/heartbeat', self._heartbeat_body(), key=key)
+                '/api/v1/license/heartbeat', report, key=key)
         except UserError as error:
             # Offline keeps the cached answer: valid_until is the grace period.
             self.write({'last_check': now, 'last_error': str(error)})
@@ -600,6 +654,11 @@ class PanMailLicense(models.Model):
         (mail-pro-admin `docs/plans/mail-pro-paid.md`), and this is the trend,
         not the meter.
 
+        **The setup answers are three booleans, not a report.** They say which
+        of `pan.mail.setup`'s three steps this database has answered, so the
+        Get started line at Pantalytics can tick what is done instead of
+        asking the customer to tell it twice.
+
         The coverage counts and the rule counts are the two numbers a decision
         does wait on: whether linking gets better per release, and which rule
         earns its place. Both are the last 24 hours, the same slice as the
@@ -623,6 +682,11 @@ class PanMailLicense(models.Model):
                 [('x_direction', '=', 'incoming'), ('date', '>=', since)]),
             'sync_ok': (not Mailbox.search_count([('state', '=', 'error')])
                         if mailboxes else None),
+            # The three setup steps as `pan.mail.setup` answers them, which is
+            # the same answer the checklist on the settings page draws. Three
+            # booleans about this database's configuration; a step name can
+            # carry nothing else.
+            'setup': self.env['pan.mail.setup'].answers(),
             'coverage': self.env['pan.mail.coverage'].counts_since(since),
             'rules': rules[:MAX_RULE_ENTRIES],
             'corrections': sum(r['corrected'] for r in rules),
