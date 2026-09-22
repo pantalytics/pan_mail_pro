@@ -41,19 +41,28 @@ Odoo - send and receive with full control.
 
 ## Installation
 
-### As Git Submodule (Odoo.sh)
+Create a Pantalytics account at
+[app.mailpro.pantalytics.com/start](https://app.mailpro.pantalytics.com/start)
+(free up to 100 mails a day per Odoo instance), then add the module, branch
+`19.0`, to your Odoo. The full guide per host is
+[docs/getting-started/installation.md](docs/getting-started/installation.md).
 
-1. In Odoo.sh, go to **Settings → Submodules**
-2. Click **Add submodule**
-3. Enter: `git@github.com:pantalytics/pan_mail_pro.git`
-4. Copy the **Public Key** and add it as Deploy Key in GitHub
+**Odoo.sh**: Settings → Submodules → `git@github.com:pantalytics/pan_mail_pro.git`,
+or from your repository:
 
 ```bash
-# Local: add submodule
-git submodule add git@github.com:pantalytics/pan_mail_pro.git addons/pan_mail_pro
-git commit -m "Add pan_mail_pro submodule"
-git push
+git submodule add -b 19.0 https://github.com/pantalytics/pan_mail_pro addons/pan_mail_pro
+git commit -m "Add pan_mail_pro" && git push
 ```
+
+**Cloudpepper**: your instance → Modules → Git → add
+`https://github.com/pantalytics/pan_mail_pro`, branch `19.0`, restart.
+
+**Your own server or Docker**: `git clone -b 19.0
+https://github.com/pantalytics/pan_mail_pro` into a folder on `addons_path`,
+`pip install cryptography`, restart Odoo.
+
+Then **Apps → Update Apps List → Mail Pro → Install** on every host.
 
 ---
 
