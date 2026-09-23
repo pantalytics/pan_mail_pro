@@ -64,12 +64,11 @@ Azure shows two columns here: **Value** and **Secret ID**. Odoo needs the
    - **Application (client) ID**
    - **Client Secret Value** (the Value from Step 3, not the Secret ID)
    - **Directory (tenant) ID**
-4. Save
-5. Click **Test Credentials**. Azure answers whether these three are the ones
-   it issued. Nothing is sent and no mailbox is read.
-6. Click **Sign In Myself**. This walks the real consent screen, which is the
-   only check that also covers the Callback URL, the permissions from Step 4
-   and whether your tenant lets users consent at all.
+4. Save. A dialog connects to Microsoft and verifies the three values. If
+   Azure refuses them, it names the field to fix.
+5. Click **Sign in** in that dialog. This walks the real consent screen, which
+   is the only check that also covers the Callback URL, the permissions from
+   Step 4 and whether your tenant lets users consent at all.
 
 ## Next Steps
 

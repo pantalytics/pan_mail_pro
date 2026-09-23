@@ -2351,6 +2351,8 @@ class Checks:
                 for hidden in expected['hides']:
                     if hidden in text:
                         self.fail(f'the {code} form shows "{hidden}", which is not its')
+            self.call('pan.mail.provider', 'write', [row_id], {'provider': 'outlook'})
+            self.provider_verify(f'{self.base}/odoo/action-{action}/{row_id}')
         finally:
             self.call('pan.mail.provider', 'write', [row_id], {'provider': was})
 
@@ -2360,6 +2362,43 @@ class Checks:
                        + self.MICROSOFT_FIELDS + self.GOOGLE_ONLY):
             if hidden in text:
                 self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
+
+    def provider_verify(self, url):
+        """Saving a changed registration verifies it, in a dialog.
+
+        The form used to carry Test Credentials and Sign In Myself in its
+        header, even on a connected provider. Now it carries nothing, and a
+        save that touches the registration opens one dialog that ends in a
+        verdict. The seed's registration is fake, so the verdict here is a
+        refusal -- which is also the case that must say what to fix.
+        """
+        page = self.page
+        text = self.form_text(url)
+        for gone in ('Test Credentials', 'Sign In Myself'):
+            if gone in text:
+                self.fail(f'the provider form still offers "{gone}"')
+        field = page.query_selector('.o_field_widget[name=client_id] input')
+        if not field:
+            self.fail('the Microsoft provider form has no Application (client) ID input')
+            return
+        field.fill('00000000-0000-0000-0000-000000000001')
+        page.click('.o_form_button_save')
+        try:
+            page.wait_for_selector('.o_mailpro_provider_verify', timeout=10000)
+        except Exception:
+            self.fail('saving a changed registration opened no verify dialog: '
+                      + (self.dialog_in_the_way() or 'nothing on screen'))
+            return
+        page.wait_for_selector('.modal-footer button:not([disabled]):has-text("OK"), '
+                               '.modal-footer button:has-text("Sign in")', timeout=30000)
+        self.shot('provider-verify.png')
+        body = page.inner_text('.o_mailpro_provider_verify')
+        if 'Verifying credentials' not in body:
+            self.fail(f'the verify dialog never said it verified: {body!r}')
+        if page.query_selector('.modal-footer button:has-text("Sign in")'):
+            self.fail('a fake registration was verified and offered a sign-in')
+        page.click('.modal-footer button:has-text("OK")')
+        page.wait_for_timeout(400)
 
     # -- Status by absence ----------------------------------------------------
 
