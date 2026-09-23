@@ -93,11 +93,6 @@ class PanMailProvider(models.Model):
         help='Paste this into the provider console. Sign-in fails until it matches exactly.',
     )
     uses_oauth = fields.Boolean(compute='_compute_uses_oauth')
-    credentials_testable = fields.Boolean(
-        compute='_compute_uses_oauth',
-        help='Can this registration be checked against the provider before '
-             'anybody signs in?',
-    )
     # For IMAP these three read `pan.mail.account`, a different model, so
     # nothing declares that dependency to Odoo and nothing invalidates the
     # cache when an account changes. Fine for a view badge, which reads fresh
@@ -178,47 +173,46 @@ class PanMailProvider(models.Model):
             client = get_provider_client(
                 self.env, record.provider) if record.provider else None
             record.uses_oauth = bool(client is not None and client.uses_oauth)
-            record.credentials_testable = bool(
-                client is not None and client.supports_credential_test)
 
-    def action_test_credentials(self):
-        """Ask the provider whether the registration on this form is real.
+    def verify_registration(self):
+        """Ask the provider whether the registration just saved is real.
 
-        The only feedback this form had was `status`, which reads "Not
-        Connected" for a correct registration nobody has signed in to yet and
-        for three fields of nonsense alike. An admin discovers the difference
-        at the consent screen -- after mailing their users to go and sign in.
+        Called by the form right after a save that touched the registration,
+        so the admin sees the verdict in a dialog instead of discovering it at
+        the consent screen after mailing their users. `status` alone cannot
+        say it: "Not Connected" reads the same for a correct registration
+        nobody has signed in to yet and for three fields of nonsense.
+
+        Returns ``{'verified': bool | None, 'message': str}``. ``None`` means
+        this provider has no check that runs without a user (Google), so
+        signing in is the verification.
         """
         self.ensure_one()
         client = get_provider_client(self.env, self.provider)
-        if not client.supports_credential_test:
+        if not client.uses_oauth:
             raise UserError(_(
-                '%s has no application registration to test.'
+                '%s has no application registration to verify.'
             ) % client.provider_label())
+        if not client.supports_credential_test:
+            return {
+                'verified': None,
+                'message': _('%s checks these at sign-in.') % client.provider_label(),
+            }
         result = client.test_credentials()
         return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Credentials Accepted') if result.get('success')
-                         else _('Credentials Rejected'),
-                'message': result.get('message') or _('Unknown error'),
-                'type': 'success' if result.get('success') else 'danger',
-                'sticky': not result.get('success'),
-            },
+            'verified': bool(result.get('success')),
+            'message': result.get('message') or _('Unknown error'),
         }
 
     def action_connect_myself(self):
         """Walk the consent screen as the admin who is filling this form in.
 
-        The credential test proves the provider knows the registration. Only a
-        real sign-in proves the rest of it: that the Callback URL above matches
+        `verify_registration` proves the provider knows the registration. Only
+        a real sign-in proves the rest of it: that the Callback URL above matches
         the one in the provider console, that the permissions were granted, and
         that this tenant allows users to consent at all. It is also the first
-        connected account, which is what the mailbox setup needs next.
-
-        The button existed on the user form, where nobody configuring a
-        provider is looking.
+        connected account, which is what the mailbox setup needs next. The
+        verify dialog offers it as its one next step.
         """
         self.ensure_one()
         return self.env.user.action_connect_mailbox(provider=self.provider)

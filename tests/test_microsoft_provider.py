@@ -346,7 +346,7 @@ class TestGraphAuthorizationScopes(TransactionCase):
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestGraphCredentialTest(TransactionCase):
-    """The provider form's Test Credentials button.
+    """The check the provider form runs on save.
 
     Before it, the only feedback an Azure registration got was `status`, which
     reads "Not Connected" both for three correct fields nobody has signed in
@@ -424,18 +424,26 @@ class TestGraphCredentialTest(TransactionCase):
         self.assertFalse(result['success'])
         self.assertIn('Directory (tenant) ID', result['message'])
 
-    def test_the_button_reports_the_verdict(self):
+    def test_saving_reports_the_verdict(self):
         with patch(GRAPH_POST) as post:
             post.return_value = self._response(200, {'access_token': 'app-token'})
-            action = self.provider.action_test_credentials()
-        self.assertEqual(action['params']['type'], 'success')
+            result = self.provider.verify_registration()
+        self.assertIs(result['verified'], True)
 
         with patch(GRAPH_POST) as post:
             post.return_value = self._response(401, {'error': 'invalid_client'})
-            action = self.provider.action_test_credentials()
-        self.assertEqual(action['params']['type'], 'danger')
-        # A failure stays on screen: it is a sentence about what to change.
-        self.assertTrue(action['params']['sticky'])
+            result = self.provider.verify_registration()
+        self.assertIs(result['verified'], False)
+        self.assertTrue(result['message'])
+
+    def test_google_is_verified_by_signing_in(self):
+        """Google has no call that checks a client id and secret without a
+        user, so the dialog skips straight to the sign-in."""
+        self.provider.provider = 'gmail'
+        with patch(GRAPH_POST) as post:
+            result = self.provider.verify_registration()
+        post.assert_not_called()
+        self.assertIsNone(result['verified'])
 
     def test_signing_in_from_the_provider_form_is_the_consent_screen(self):
         """The credential test cannot check the Callback URL or the granted
@@ -445,10 +453,10 @@ class TestGraphCredentialTest(TransactionCase):
         self.assertIn('login.microsoftonline.com', action['url'])
         self.assertIn('11111111-2222-3333-4444-555555555555', action['url'])
 
-    def test_a_provider_without_a_registration_offers_no_button(self):
-        """IMAP has nothing to test, so the form hides it rather than
-        offering a test that cannot run."""
+    def test_a_provider_without_a_registration_has_nothing_to_verify(self):
+        """IMAP has no registration, so the form never opens the dialog and
+        the method refuses rather than pretending to check."""
         self.provider.provider = 'imap'
-        self.assertFalse(self.provider.credentials_testable)
+        self.assertFalse(self.provider.uses_oauth)
         with self.assertRaises(UserError):
-            self.provider.action_test_credentials()
+            self.provider.verify_registration()
