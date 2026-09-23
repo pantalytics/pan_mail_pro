@@ -415,6 +415,19 @@ class TestGraphCredentialTest(TransactionCase):
         self.assertFalse(result['success'])
         self.assertIn('Directory (tenant) ID', result['message'])
 
+    def test_inline_trace_ids_are_dropped_too(self):
+        """Some refusals carry the trace id on the same line as the sentence."""
+        with patch(GRAPH_POST) as post:
+            post.return_value = self._response(400, {
+                'error': 'invalid_request',
+                'error_description': 'AADSTS90002: Tenant not found. '
+                                     'Trace ID: abc Correlation ID: def',
+            })
+            result = self.client.test_credentials()
+
+        self.assertIn('AADSTS90002', result['message'])
+        self.assertNotIn('Trace ID', result['message'])
+
     def test_empty_fields_are_answered_without_calling_azure(self):
         self.provider.tenant_id = False
         with patch(GRAPH_POST) as post:

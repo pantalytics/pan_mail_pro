@@ -500,7 +500,10 @@ class MicrosoftGraphClient(models.AbstractModel):
         # Azure appends a trace id, a correlation id and a timestamp to every
         # description. They matter to a support ticket and to nobody reading a
         # toast, and they push the sentence that does matter off the screen.
-        headline = description.split('\r\n')[0].split('\n')[0].strip()
+        # Usually on a line of their own, but not always: some refusals carry
+        # them inline, so cut at the first one as well.
+        headline = re.split(r'\s*Trace ID:', description)[0]
+        headline = headline.split('\r\n')[0].split('\n')[0].strip()
 
         code = re.search(r'AADSTS\d+', description)
         hint = AADSTS_HINTS.get(code.group(0)) if code else None
