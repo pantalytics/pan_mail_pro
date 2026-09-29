@@ -1,30 +1,29 @@
-# The flow, the price and the trust line
+# The flow, the price and who can read the mail
 
-Status: **proposal, 2026-09-29, nothing decided.** Written to settle three
-things with Daniel in one sitting: where pricing appears in the product, how
-Mail Pro is priced, and what a customer has to be told about who can read
-their mail once it is in Odoo. Facts checked against the code and the two
-plan documents on that date. What is decided moves to
+Status: proposal, 2026-09-29. Nothing here is decided yet. It is meant for one
+conversation with Daniel about three things: where a customer meets the price,
+how we charge, and what we have to tell a customer about who can read their
+mail once it is in Odoo. I checked the facts against the code and the two plan
+documents on that date. Once something is decided, the price part goes to
 [mail-pro-paid.md](https://github.com/pantalytics/mail-pro-admin/blob/main/docs/plans/mail-pro-paid.md)
-(price) and [ARCHITECTURE.md §10](../../ARCHITECTURE.md) (trust); this file
-then goes.
+and the security part to ARCHITECTURE.md §10. Then this file can go.
 
-## The three calls, up front
+## Short version
 
-1. **Keep the daily send limit per Odoo instance. Sell it in people.** The
-   meter stays what is enforced; the pricing page says who each tier is for
-   (one person, a team, the company). No seat count, no seat cap.
-2. **Pricing has three doors, all for the administrator.** The public page,
-   the licence line under Settings, and the moment a mail is deferred. It
-   never appears on a user's own screens.
-3. **The sync level of a personal mailbox belongs to its owner alone**, and
-   the product says out loud, before the consent screen and on the ladder,
-   who in Odoo will read what it imports. That sentence is what makes the
-   Azure grant and the Odoo reality agree.
+1. Keep charging per Odoo database, on the number of mails sent per day. On
+   the pricing page, describe each plan by who it is for (one person, a team,
+   the whole company). Do not count seats.
+2. The price shows up in three places, all on the administrator's side: the
+   public pricing page, the licence line under Settings, and the message a
+   mail gets when it is held until tomorrow. Never on a normal user's screen.
+3. Only the owner of a personal mailbox may change how much of it Odoo reads.
+   And the product has to say, before the consent screen and next to the
+   setting, who in Odoo will be able to read what comes in. Right now it does
+   not say that anywhere.
 
-## 1. The flow as it is
+## 1. How people move through the product today
 
-Two people walk through the product, and they never meet on a screen.
+The administrator and the user never see the same screen.
 
 ```
 Administrator                                     User
@@ -33,7 +32,7 @@ app.mailpro.pantalytics.com/start
   └ install module
   └ Connect to Pantalytics (pairing code)   <── entitlement: plan, daily_send_limit
   └ Setup checklist
-      1 provider   (Azure app registration: the wall, #253)
+      1 provider   (Azure app registration, see #253)
       2 internal domains
       3 notification mailbox
   └ Users: Send Mail Pro Invite ─────────────────> banner: "Your mailbox is not connected yet"
@@ -43,168 +42,165 @@ app.mailpro.pantalytics.com/start
 Mailbox form (Sync Settings tab, all mailboxes)      Inbox (mailbox managers only)
 ```
 
-Where pricing touches it today: the licence line under Settings and one
-"Usage and billing" link that lands on the wrong page
-([#245](https://github.com/pantalytics/pan_mail_pro/issues/245)). The trial
-ends on unlicensed, and the module tells the administrator so in the same
-banner machinery the setup steps use.
+Today the price is visible in two places: the licence line under Settings, and
+a "Usage and billing" link that opens the wrong page
+([#245](https://github.com/pantalytics/pan_mail_pro/issues/245)). When the
+trial ends the administrator sees a banner, the same kind the setup steps use.
 
 ## 2. Price
 
-### The two models on the table
+### The two options
 
-| | Daily send limit per instance (decided 2026-09-16, built) | Per person (Daniel) |
+| | Send limit per database (decided 2026-09-16, built) | Per person (Daniel's preference) |
 |---|---|---|
-| Unit | one number per database | a connected account; the notification mailbox counts its owner |
-| What buyers already know | Brevo | Missive, Front, Odoo itself |
-| Revenue on a 40-person customer | EUR 39 or 100 | 40 × something |
-| Where it bites | a mail goes tomorrow, nobody is refused | the sixth colleague presses Connect on a five-seat plan |
-| What we run by hand | nothing | seats bought vs used, proration, the surprise invoice |
-| Built today | `daily_send_limit` is in the signed entitlement and the module reads it; the throttle is [#128](https://github.com/pantalytics/pan_mail_pro/issues/128) | nothing |
+| What we count | mails per day, one number per database | connected accounts; the notification mailbox counts as its owner |
+| Buyers know this from | Brevo | Missive, Front, Odoo itself |
+| A 40-person customer pays | EUR 39 or 100 | 40 times something |
+| What happens at the limit | a mail waits until tomorrow | the sixth colleague presses Connect and is refused |
+| Work for us | none | seats bought vs used, pro-rating, invoices nobody expected |
+| Already built | yes: `daily_send_limit` is in the signed entitlement and the module reads it. The hold-until-tomorrow part is [#128](https://github.com/pantalytics/pan_mail_pro/issues/128) | no |
 
-### The call
+### What I would do
 
-Keep the meter. The deciding line is the fifth row. A seat cap bites at the
-one moment that has to work: a new colleague, invited by the administrator
-five minutes ago, presses Connect and is refused. Either we refuse (the
-product reads as broken to the newest user) or we bill (the administrator gets
-an invoice they did not click). A deferred mail bites nobody in the face and
-is the mechanism the module already has for the not-configured-yet window.
+Keep the send limit. The row that decides it for me is "what happens at the
+limit". With seats, the limit hits a new colleague. The administrator invited
+them five minutes ago, they press Connect, and we say no. Or we say yes and
+send the administrator an invoice they did not ask for. Both are bad. A mail
+that waits until tomorrow is not great either, but nobody is locked out, and
+the module already does this while setup is unfinished.
 
-Daniel is right about the words, not the unit. Buyers think in people, so the
-pricing page says so and the meter stays underneath:
+Daniel has a point about the words. People think in people, not in mails per
+day. So the pricing page talks about people, and the mail count does the work
+underneath:
 
-| Plan | Who it is for | Mails a day | Price |
+| Plan | For | Mails a day | Price |
 |---|---|---|---|
 | Free | one person | 100 | EUR 0 |
 | Pro | a team | 1,000 | EUR 39 / month |
-| Max | the company | 5,000 | EUR 100 / month |
+| Max | the whole company | 5,000 | EUR 100 / month |
 
-"One person" and "a team" are guidance, not enforcement. The 100 was chosen
-because it carries one office worker and runs out when a second joins
-(mail-pro-paid.md), so the two models already agree at the bottom.
+"One person" and "a team" are a description, not a rule we enforce. The 100
+was picked because it is enough for one office worker and runs out when a
+second person joins (see mail-pro-paid.md). So at the bottom the two models
+agree anyway.
 
-**What we drop, named.** A 40-person customer on Pro pays a tenth of what
-Missive would charge them. Max at EUR 100 catches some of that by volume, not
-all of it. We take that until the first customer of that size exists; then
-the question is a price, not a model.
+What we give up: a 40-person company on Pro pays us about a tenth of what
+Missive would charge them. Max catches some of that, not all. I think we accept
+this until we have a customer that size. At that point we change a price, not
+the model.
 
-**Where a seat would be counted if we ever do.** Not in the module.
-[#253](https://github.com/pantalytics/pan_mail_pro/issues/253) puts every OAuth
-consent through app.mailpro.pantalytics.com, so a connected account becomes
-something we observe at the moment it is created, per workspace, with no
-reconciliation against a heartbeat. If per person ever wins, it wins there.
+If we ever do count seats, do it on our server, not in the module.
+[#253](https://github.com/pantalytics/pan_mail_pro/issues/253) routes every
+OAuth consent through app.mailpro.pantalytics.com. From then on we see each
+connected account the moment it is created, per workspace, without having to
+match it against a heartbeat.
 
-**Housekeeping.** [#176](https://github.com/pantalytics/pan_mail_pro/issues/176)
-already says the product brief and mvp.md contradict the decision; this file
-adds nothing to that, it repeats the decision with the reason Daniel asked
-for.
+One loose end: [#176](https://github.com/pantalytics/pan_mail_pro/issues/176)
+already notes that the product brief and mvp.md still say "per seat". This
+file does not fix that, it only repeats the decision with the reasoning.
 
-### Where pricing appears
+### Where the customer meets the price
 
-Three doors, all on the administrator's path, none on the user's.
+| Where | What it says |
+|---|---|
+| app.mailpro.pantalytics.com/pricing, linked from /start and the install doc | the table above |
+| The licence line under Settings: "Pro, 412 of 1,000 today", with one link to /billing (#245) | how much of the plan is used |
+| A held mail: the `failure_reason` on the mail, and a banner for managers | why it waits, and where to change the plan |
 
-| Door | Where | Says |
-|---|---|---|
-| Public | app.mailpro.pantalytics.com/pricing, linked from /start and the install doc | the table above |
-| Settings | the licence line: "Pro, 412 of 1,000 today", one link to /billing (#245) | how much of the plan is used |
-| The deferral | the moment a mail goes tomorrow: `failure_reason` on the mail and the banner for managers | why it waits and where the plan is |
+Nothing on My Preferences and nothing in the Inbox. A normal user did not buy
+the product and cannot upgrade it. A price on their screen only produces a
+question to a colleague, or a ticket to us.
 
-Nothing on My Preferences, nothing in the Inbox. The user did not buy it and
-cannot; a price on their screen is a question for a colleague and a ticket
-for us.
+## 3. Who can read the mail
 
-## 3. Trust: who can read the mail
+### Four questions, and the consent screen answers one
 
-### Four layers, and only the first is on the consent screen
-
-| Layer | Question | Answer today | Where it is visible |
+| | Question | Answer today | Where a customer can see this |
 |---|---|---|---|
-| 1 Provider grant | What may Mail Pro do in the mailbox? | Delegated, per user: read and write mail, send. `Mail.ReadWrite` + `Mail.Send`; `gmail.modify` + `gmail.send`. Never application permissions | Microsoft's or Google's consent screen; the customer's Azure admin |
-| 2 What the module does with it | What does it actually read, write, delete? | Reads replies always, more per `sync_level`. Sends as. Labels on Gmail. Never deletes, never moves. SMTP files its own Sent copy | docs/security.md, the ladder on the form |
-| 3 Who in Odoo reads the copy | Once imported, who sees it? | Whoever may read the record it landed on. **The fallback record is the sender's contact, and every internal user reads contacts** | Nowhere |
-| 4 Who may change 2 and 3 | Who can widen what is read, for whom? | The owner on My Preferences, **and any mailbox manager on the mailbox form, for anybody's personal mailbox** | Nowhere |
+| 1 | What may Mail Pro do in the mailbox? | Read and write mail, send mail. Always per user, never as the whole tenant. (`Mail.ReadWrite` + `Mail.Send`; `gmail.modify` + `gmail.send`) | The Microsoft or Google consent screen. The customer's Azure admin sees the app |
+| 2 | What does the module actually do with that? | Reads replies to Odoo's own mail, always. Reads more only if the sync level says so. Sends. Puts labels on Gmail. Never deletes or moves anything. On SMTP it stores its own copy in Sent | docs/security.md, and the sync level table on the form |
+| 3 | Once a mail is in Odoo, who can read it? | Anyone who can open the record it landed on. If there is no record, it lands on the sender's contact card, and every internal user can read contact cards | Nowhere |
+| 4 | Who can widen 2 and 3, and for whom? | The owner, on My Preferences. But also any mailbox manager, on the mailbox form, for anyone's personal mailbox | Nowhere |
 
-Layer 1 is what the customer's IT department reviews, and it understates
-layer 3 in one direction and overstates layer 2 in the other. "Read and write
-access to your mail" sounds like a machine that may empty your inbox; the
-truth is narrower (it never deletes) and wider (a colleague may end up reading
-it). That is the gap Rutger named: copying mail into Odoo can reach further
-than the Azure grant, and the grant cannot say so because Azure has no concept
-of what Odoo does with the copy.
+The customer's IT department looks at question 1. That answer is wrong in two
+directions. "Read and write access to your mail" sounds like the app could
+empty your inbox, which it never does. And it says nothing about colleagues
+reading the copy, which can happen. That is the problem Rutger named: copying
+mail into Odoo can go further than what the user agreed to in Azure, and Azure
+cannot warn about it because Azure does not know what Odoo does with the copy.
 
-### The escalation, concretely
+### How the widening happens, step by step
 
-A person consents to Mail Pro reading their mailbox, and picks *Replies only*.
-A mailbox manager opens Settings → Mail Pro → Mailboxes, opens that person's
-personal mailbox and sets the sync level to *Replies and new email, everyone*.
-From the next cron run, every new conversation in that inbox is imported with
-the owner's token; anything the matcher cannot place lands on the sender's
-contact, which the whole company reads, and the manager reads all of it in the
-Inbox. The owner is not told. The provider sees a token it issued being used
-within the scopes it granted. Nothing errors and nothing logs.
+Someone connects their mailbox and picks "Replies only". A mailbox manager
+opens Settings → Mail Pro → Mailboxes, opens that person's personal mailbox and
+sets the sync level to "Replies and new email, everyone". From the next sync
+run, every new conversation in that inbox is imported with the owner's own
+token. Whatever the matcher cannot place lands on the sender's contact card,
+which the whole company can read. The manager reads all of it in the Inbox.
+The owner is not told. Microsoft sees a token it issued being used within the
+scopes it granted. Nothing errors, nothing is logged.
 
-Two facts make this narrower than it sounds and one makes it worse. Narrower:
-the live read of a mailbox (*All email*) already refuses everybody but the
-owner, ownership rather than group, so the model knows this rule; and the
-manager group is the group that runs the mail setup, which is a small circle.
-Worse: on Microsoft the *shared* mailbox is read with a member's personal
-token too, so the same manager write reaches a colleague's grant twice.
+It is less bad than it sounds in two ways. The live read of a mailbox ("All
+email") already refuses everyone except the owner, so the code knows this
+rule. And mailbox managers are the people who set up mail, a small group. It
+is worse in one way: on Microsoft, a shared mailbox is also read with a
+member's personal token. So the same write by a manager reaches a colleague's
+consent twice.
 
-### The calls
+### What I would change
 
-1. **The sync level of a personal mailbox is writable by its owner only.** The
-   manager sees it read-only on the mailbox form, with a line saying whose
-   decision it is. One check in `pan.mail.mailbox.write`, next to the
-   `_check_mailbox_is_mine` the user side already runs. Dropped case: a manager
-   who needs it lowered for compliance disconnects the mailbox, which they
-   can already do; a separate "lower only" rule is a second rule for a case
-   nobody has had. Filed as
-   [#258](https://github.com/pantalytics/pan_mail_pro/issues/258), independent
-   of the rest of this file.
-2. **The ladder gets a third column: who in Odoo sees it.** The consequence
-   table on the mailbox form and on My Preferences says *Synced* / *Not
-   synced* per situation. It should also say where it lands and who reads it:
-   "on the record it answers, for the people who may open that record" for
-   replies; "on the sender's contact, for every colleague" for new mail
-   without a record. That is the sentence that turns a preference into an
-   informed one, and it is copy, not code.
-3. **One screen of ours before the provider's.** Connect Mailbox goes
-   straight to Microsoft or Google. One Odoo screen in between, three lines:
-   what Odoo will read (replies to its own mail, more only if you choose it),
-   where it lands (on the record, otherwise on the contact), who sees it (the
-   people who may open that record). Then the button. The provider's screen
-   then says less than ours, which is the right way round.
-4. **docs/security.md grows layers 3 and 4.** It documents the grant and the
-   encryption, which is the provider half. The customer's IT department reads
-   it to decide; it has to answer "who in Odoo can read this" in one table.
-5. **#253 changes layer 1 and the page has to be written for that shape.**
-   With one Pantalytics-owned app, the customer consents to *our* app and the
-   refresh token is minted for it. Either the exchange happens on our server
-   and we hold nothing afterwards, or the token lives only in their database
-   and our server never sees mail. Whichever #253 decides, the trust page
-   states it in one sentence, because from that day the honest answer to
-   "who can read my mail" includes Pantalytics until proven otherwise.
+1. Only the owner can change the sync level of a personal mailbox. A manager
+   sees it read-only on the mailbox form, with one line saying whose decision
+   it is. One check in `pan.mail.mailbox.write`, next to the
+   `_check_mailbox_is_mine` the user side already has. A manager who wants it
+   lower for compliance reasons can disconnect the mailbox, which they can
+   already do. I would not build a separate "lower only" rule for a case
+   nobody has asked for. Filed as
+   [#258](https://github.com/pantalytics/pan_mail_pro/issues/258), separate
+   from the rest of this file.
+2. Add a column to the sync level table: who in Odoo sees it. The table on the
+   mailbox form and on My Preferences now says "Synced" or "Not synced" per
+   situation. It should also say where the mail lands and who can read it.
+   For replies: "on the record it answers, for the people who can open that
+   record". For new mail without a record: "on the sender's contact card, for
+   every colleague". This is text, not code.
+3. One screen of ours before Microsoft's or Google's. Right now Connect
+   Mailbox jumps straight to the provider. Put one Odoo screen in between with
+   three lines: what Odoo reads (replies to its own mail, more only if you
+   choose that), where it lands (on the record, otherwise on the contact
+   card), who sees it (the people who can open that record). Then the button.
+4. Add questions 3 and 4 to docs/security.md. That page covers the consent
+   scopes and the encryption, which is the provider half. An IT department
+   reads it to decide. It should answer "who in Odoo can read this" in one
+   table.
+5. #253 changes question 1, and the page has to be written for that too. With
+   one Pantalytics-owned app, the customer consents to our app and the refresh
+   token belongs to it. Either the token exchange happens on our server and we
+   keep nothing afterwards, or the token lives only in their database and our
+   server never touches mail. Whichever way #253 goes, the page has to say it
+   in one sentence. From that day on, "who can read my mail" includes
+   Pantalytics until we show it does not.
 
-### What is fine and stays
+### What is fine as it is
 
-- **No sudo for an answer.** The Inbox and the conversation methods read as
-  the user; an imported message carries the ACL of its record. Nothing to
-  change, and it is the reason layer 3 is a sentence rather than a redesign.
-- **Ownership guards the live read.** `_own_mailbox` refuses a manager. Keep
-  that as the model for call 1.
-- **Never delete at the provider.** True on all three; on Google the scope is
-  wider than the use because Google has no narrower one that allows labels.
-  Say so, in one line, on the trust page.
-- **Internal mail is filtered, fail-closed.** The domain gate refuses sync
-  until the list exists. That is the boundary between correspondence and
-  colleagues' mail, and it holds.
+- The Inbox reads as the logged-in user, no sudo. An imported message has the
+  access rights of its record. That is why question 3 needs a sentence and not
+  a redesign.
+- The live read is guarded by ownership. `_own_mailbox` refuses a manager.
+  Change 1 copies that rule.
+- Nothing is ever deleted at the provider. True on all three. On Google the
+  scope is wider than what we use, because Google has no smaller scope that
+  allows labels. Worth one line on the page.
+- Internal mail is filtered, and sync refuses to run until the domain list
+  exists. That is the line between customer mail and colleagues' mail, and it
+  holds.
 
 ## Order
 
-1. #258, the write guard. Small, and it closes the escalation on its own.
-2. The third column and the pre-consent screen: one PR, copy and one view.
-3. docs/security.md layers 3 and 4, and the pricing page in people-words.
+1. #258, the write check. Small, and it closes the widening on its own.
+2. The extra column and the screen before the consent screen. One PR, text
+   and one view.
+3. docs/security.md questions 3 and 4, and the pricing page in people-words.
 4. #245, the billing link.
 
-Everything else here is a conversation, not a change.
+The rest of this file is something to talk about, not something to build.
