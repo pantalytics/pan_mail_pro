@@ -49,16 +49,28 @@ class TestImproveConfig(TransactionCase):
         self.env['ir.config_parameter'].sudo().set_param(IMPROVE_REFUSED_PARAM, True)
         self.assertFalse(self.License.improve_config())
 
-    def test_the_settings_page_shows_the_refusal_only_while_it_is_on(self):
+    def test_the_settings_page_shows_the_toggle_only_while_it_is_on(self):
         settings = self.env['res.config.settings'].create({})
         self.assertTrue(settings.x_improve_on)
+        self.assertTrue(settings.x_improve)
         self.assertFalse(settings.x_improve_refused)
-        settings.x_improve_refused = True
+        # Switching the toggle off is the refusal, and the refusal is what
+        # is stored: it has to survive a Disconnect and Connect.
+        settings.x_improve = False
+        self.assertTrue(settings.x_improve_refused)
         settings.execute()
         self.assertTrue(self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM))
         self.assertFalse(self.License.improve_config())
+        settings = self.env['res.config.settings'].create({})
+        self.assertFalse(settings.x_improve)
+        settings.x_improve = True
+        settings.execute()
+        self.assertFalse(self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM))
+        self.assertTrue(self.License.improve_config())
         self.link.write({'improve': False})
-        self.assertFalse(self.env['res.config.settings'].create({}).x_improve_on)
+        settings = self.env['res.config.settings'].create({})
+        self.assertFalse(settings.x_improve_on)
+        self.assertFalse(settings.x_improve)
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
