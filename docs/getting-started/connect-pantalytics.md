@@ -1,9 +1,9 @@
 # Connect to Pantalytics
 
 Mail Pro works on an Odoo instance that is connected to a Pantalytics account.
-Until it is, the Settings page shows one button and nothing else: sending
-through Odoo's own mail server keeps working, incoming mail is not synced and
-no mailbox can be connected.
+Until it is, the Settings page and the Inbox show one button and nothing
+else: sending through Odoo's own mail server keeps working, incoming mail is
+not synced and no mailbox can be connected.
 
 You need a Pantalytics account. If you do not have one yet, you create it on
 the page the button opens, or beforehand at

@@ -569,8 +569,8 @@ class MailProviderClient(models.AbstractModel):
 
         Only providers with `supports_credential_test` implement it: IMAP has
         no registration to test, and Google offers no call that checks a client
-        id and secret without a grant to go with them. The provider form hides
-        the button for the rest rather than offering a test that cannot run.
+        id and secret without a grant to go with them, so for Google the
+        sign-in is the verification.
 
         Returns:
             dict: {'success': bool, 'message': str}

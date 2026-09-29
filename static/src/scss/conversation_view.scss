@@ -102,6 +102,35 @@ $mailpro-band-gutter: 3.5rem;
     color: $mailpro-ink;
     overflow: hidden;
 
+    // Not connected: the whole screen is one card, centred, in the width a
+    // sentence reads at. The button is the only accent on it.
+    .o_mailpro_gate {
+        padding: 2rem 1.25rem;
+        gap: 0.75rem;
+    }
+    .o_mailpro_gate_icon {
+        width: 3rem;
+        height: 3rem;
+        margin-bottom: 0.5rem;
+    }
+    .o_mailpro_gate_title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .o_mailpro_gate_text {
+        max-width: 28rem;
+        margin: 0;
+        color: $mailpro-ink-soft;
+    }
+    .o_mailpro_gate_connect {
+        margin-top: 0.5rem;
+    }
+    .o_mailpro_gate_back {
+        margin-top: 1rem;
+        color: $mailpro-ink-soft;
+    }
+
     .o_mailpro_topbar {
         flex: 0 0 auto;
         height: 3.25rem;
