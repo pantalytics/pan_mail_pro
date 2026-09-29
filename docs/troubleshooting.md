@@ -19,7 +19,6 @@
 **Solution:**
 1. Go to **My Preferences → Mail Pro** tab
 2. Click **Connect Mailbox** and complete the sign-in
-3. Press **Send Test Email** to confirm
 
 On IMAP/SMTP there is nothing for the user to press: an administrator enters
 the server, login and password on the account. The banner is not shown at all
