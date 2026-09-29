@@ -2118,18 +2118,20 @@ page. The one behavioural change: choosing IMAP is now the same action as
 choosing any other provider — add the row — rather than an implicit fallback
 with no record of the choice at all.
 
-**Two buttons, in the order the mistakes happen.** `status` reads "Not
-Connected" for a correct registration nobody has signed in to yet and for
-three fields of nonsense alike, so the form had no feedback at all until the
-consent screen -- which is where an admin arrives after emailing their users
-to go and sign in. *Test Credentials* asks the provider whether the client id,
-secret and tenant are the ones it issued (Microsoft's client-credentials grant:
-no user, no consent, and the token is thrown away), and translates the AADSTS
-code into the field to fix. *Sign In Myself* is the same consent screen the
-user form offers, on the page where the provider is being configured, and it
-is the only check that also covers the Callback URL, the granted permissions
-and whether the tenant allows users to consent at all. The first is cheap and
-narrow, the second is the real thing.
+**Verified on save, no buttons.** `status` reads "Not Connected" for a
+correct registration nobody has signed in to yet and for three fields of
+nonsense alike, so the form had no feedback until the consent screen -- where
+an admin arrives after emailing their users to go and sign in. It then grew
+two header buttons, Test Credentials and Sign In Myself, which stayed on the
+form even once the provider was connected. Now the check runs when the fields
+change: a save that touches the registration opens one dialog
+(`static/src/js/provider_form.js`), which calls `verify_registration()` --
+Microsoft's client-credentials grant, no user, token thrown away, AADSTS code
+translated into the field to fix -- and ends in a verdict. On success its one
+button is the next step, **Sign in**, the only check that also covers the
+Callback URL, the granted permissions and whether the tenant allows consent.
+Google has no user-less check, so its dialog goes straight to the sign-in. A
+connected provider shows nothing to press.
 
 **The fields carry the console's own names.** Azure's Overview page says
 Application (client) ID and Directory (tenant) ID, and Certificates & secrets
@@ -2286,6 +2288,13 @@ That is the device flow's shape: no redirect URI per customer database, so it
 works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
 server half lives in `pantalytics/mail-pro-admin`.
 
+- **Not connected, no Inbox.** `pan.mail.conversation._check_caller` refuses
+  every read while `sync_allowed()` is false, and the Inbox draws one card
+  with one button (Settings, Mail Pro, where connecting happens) instead of
+  four panes over a refusal. The screen reads the answer off the session
+  (`pan_mail_connected`) and asks once more when that says no, because the
+  session is a page load old and an admin who has just connected has not
+  reloaded anything.
 - **Usage and billing are read there, not here.** The settings page carries
   one link (`dashboard_url()`, the Odoo instances page), and this module has
   no usage screen of its own: the number that decides an invoice is the one

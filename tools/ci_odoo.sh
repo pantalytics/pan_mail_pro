@@ -170,21 +170,12 @@ HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
 # is the customer who upgrades every time; a customer who skipped six releases
 # crosses six migration folders in one -u and nothing here would try that.
 TAG="${FROM_TAG:-}"
-MANIFEST_VERSION=$("$REPO/tools/version.py" read)
 for t in $(git -C "$REPO" tag -l "v${SERIES}.*" --sort=-v:refname); do
     [ -n "$TAG" ] && break
-    [ "$(git -C "$REPO" rev-parse "${t}^{commit}")" = "$HEAD_SHA" ] && continue
-    # Skip a tag above HEAD's own manifest version. Since the version is raised
-    # on the mainline after the merge, a branch cut before the last release
-    # carries a lower one -- and installing that tag and then "upgrading" to
-    # HEAD is a downgrade: Odoo records the lower number and runs no migration
-    # at all, which is a green job that proved nothing.
-    if [ "$(printf '%s\n%s\n' "${t#v}" "$MANIFEST_VERSION" | sort -V | tail -1)" != "$MANIFEST_VERSION" ]; then
-        echo "Skipping ${t}: above this branch's manifest version ${MANIFEST_VERSION}."
-        continue
+    if [ "$(git -C "$REPO" rev-parse "${t}^{commit}")" != "$HEAD_SHA" ]; then
+        TAG=$t
+        break
     fi
-    TAG=$t
-    break
 done
 if [ -z "$TAG" ]; then
     echo "No previous v${SERIES}.* tag — nothing to upgrade from."

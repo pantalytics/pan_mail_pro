@@ -23,6 +23,8 @@ import { Component, useState, useSubEnv, useRef, onWillStart, onError, markup } 
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useBus, useService } from "@web/core/utils/hooks";
+import { session } from "@web/session";
+import { user } from "@web/core/user";
 // The search bar is Odoo's own, over `mail.message`: the same box, the same
 // autocomplete, the same facets, the same filter menu. What it produces is a
 // domain, and a domain is all `pan.mail.conversation` ever wanted -- every
@@ -304,6 +306,11 @@ export class ConversationView extends Component {
 
         this.state = useState({
             loading: true,
+            // Whether this Odoo is connected to a Pantalytics account. Until
+            // it is, the screen is one button and nothing else: the read
+            // layer refuses anyway, and four empty panes over a refusal is a
+            // product that looks finished and is not.
+            connected: true,
             error: "",
             // The banner says what broke, not only that something did, and
             // what to do about it when the server can name it.
@@ -382,6 +389,16 @@ export class ConversationView extends Component {
         this.split = new Map();
 
         onWillStart(async () => {
+            // The session's answer is a page load old. When it says no, ask
+            // once more: an admin who connected in Settings a minute ago and
+            // came here has not reloaded anything, and must not meet the
+            // gate again.
+            this.state.connected = !!session.pan_mail_connected
+                || (await this.orm.call("pan.mail.license", "sync_allowed", []));
+            if (!this.state.connected) {
+                this.state.loading = false;
+                return;
+            }
             const [, searchViewId] = await Promise.all([
                 this.loadMailboxes(),
                 this.orm.call("pan.mail.conversation", "inbox_search_view_id", []),
@@ -416,6 +433,23 @@ export class ConversationView extends Component {
     }
 
     // ----------------------------------------------------------------- load
+
+    /** Only an administrator may connect, so only they get the button. */
+    get isAdmin() {
+        return user.isAdmin;
+    }
+
+    /** The one place connecting happens: Settings, Mail Pro, where the code
+     *  and Check Approval live. The gate does not copy that flow. The same
+     *  URL the OAuth controller and the mailbox list send people to: the
+     *  hash is what selects the tab. */
+    openConnectSettings() {
+        this.action.doAction({
+            type: "ir.actions.act_url",
+            url: "/odoo/settings#pan_mail_pro",
+            target: "self",
+        });
+    }
 
     async loadMailboxes() {
         // The notification mailbox is the one the module sends *from*, not one

@@ -49,7 +49,7 @@ patch(Chatter.prototype, {
     /** Is there mail on this record, and how many threads of it. */
     async loadMailProDoor(model, threadId) {
         this.mailPro.threads = 0;
-        if (!session.pan_mail_inbox || !model || !threadId) {
+        if (!session.pan_mail_inbox || !session.pan_mail_connected || !model || !threadId) {
             return;
         }
         try {

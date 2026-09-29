@@ -208,6 +208,54 @@ class Checks:
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
 
+    def inbox_not_connected(self):
+        """Without a Pantalytics account the Inbox is one button, not four panes.
+
+        The read layer refuses on an unconnected instance, so panes drawn over
+        that refusal would be a product that looks finished and is not. What
+        this asserts: no folder list, exactly one Connect button, and that the
+        button lands on the Settings tab where connecting happens.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            self.fail('there is no Inbox menu')
+            return
+        page = self.page
+        link = self.call('pan.mail.license', 'search', [])
+        self.call('pan.mail.license', 'unlink', link)
+        try:
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            try:
+                page.wait_for_selector('.o_mailpro_gate', timeout=30000)
+            except Exception:
+                self.fail('an unlinked database does not show the Inbox gate')
+                return
+            page.wait_for_timeout(800)
+            self.shot('inbox-not-connected.png')
+            if page.query_selector('.o_mailpro_folder'):
+                self.fail('an unlinked database still draws the mailbox list')
+            connect = [b for b in page.query_selector_all('.o_mailpro_gate button')
+                       if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
+            if len(connect) != 1:
+                self.fail(f'the Inbox gate shows {len(connect)} Connect buttons, expected 1')
+                return
+            connect[0].click()
+            # A full navigation to /odoo/settings#pan_mail_pro, the hash
+            # selecting the tab: the block is visible without a click here.
+            try:
+                page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+                page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
+                                       timeout=30000)
+            except Exception:
+                self.fail('the Inbox gate does not land on the Mail Pro settings')
+            self.error_free('Inbox without a Pantalytics account')
+        finally:
+            self.call('pan.mail.license', 'create', {
+                'status': 'active',
+                'valid_until': (datetime.datetime.now(datetime.UTC)
+                                + datetime.timedelta(days=14)
+                                ).strftime('%Y-%m-%d %H:%M:%S')})
+
     # -- Every menu this module adds -----------------------------------------
 
     def menus(self):
@@ -2303,6 +2351,8 @@ class Checks:
                 for hidden in expected['hides']:
                     if hidden in text:
                         self.fail(f'the {code} form shows "{hidden}", which is not its')
+            self.call('pan.mail.provider', 'write', [row_id], {'provider': 'outlook'})
+            self.provider_verify(f'{self.base}/odoo/action-{action}/{row_id}')
         finally:
             self.call('pan.mail.provider', 'write', [row_id], {'provider': was})
 
@@ -2312,6 +2362,43 @@ class Checks:
                        + self.MICROSOFT_FIELDS + self.GOOGLE_ONLY):
             if hidden in text:
                 self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
+
+    def provider_verify(self, url):
+        """Saving a changed registration verifies it, in a dialog.
+
+        The form used to carry Test Credentials and Sign In Myself in its
+        header, even on a connected provider. Now it carries nothing, and a
+        save that touches the registration opens one dialog that ends in a
+        verdict. The seed's registration is fake, so the verdict here is a
+        refusal -- which is also the case that must say what to fix.
+        """
+        page = self.page
+        text = self.form_text(url)
+        for gone in ('Test Credentials', 'Sign In Myself'):
+            if gone in text:
+                self.fail(f'the provider form still offers "{gone}"')
+        field = page.query_selector('.o_field_widget[name=client_id] input')
+        if not field:
+            self.fail('the Microsoft provider form has no Application (client) ID input')
+            return
+        field.fill('00000000-0000-0000-0000-000000000001')
+        page.click('.o_form_button_save')
+        try:
+            page.wait_for_selector('.o_mailpro_provider_verify', timeout=10000)
+        except Exception:
+            self.fail('saving a changed registration opened no verify dialog: '
+                      + (self.dialog_in_the_way() or 'nothing on screen'))
+            return
+        page.wait_for_selector('.modal-footer button:not([disabled]):has-text("OK"), '
+                               '.modal-footer button:has-text("Sign in")', timeout=30000)
+        self.shot('provider-verify.png')
+        body = page.inner_text('.o_mailpro_provider_verify')
+        if 'Verifying credentials' not in body:
+            self.fail(f'the verify dialog never said it verified: {body!r}')
+        if page.query_selector('.modal-footer button:has-text("Sign in")'):
+            self.fail('a fake registration was verified and offered a sign-in')
+        page.click('.modal-footer button:has-text("OK")')
+        page.wait_for_timeout(400)
 
     # -- Status by absence ----------------------------------------------------
 
@@ -3005,6 +3092,7 @@ def main():
         checks.call = rpc_for(args.url, args.db)
         checks.settings()
         checks.settings_not_connected()
+        checks.inbox_not_connected()
         checks.menus()
         checks.conversation_view()
         checks.chatter_door()

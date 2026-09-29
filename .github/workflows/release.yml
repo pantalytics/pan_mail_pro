@@ -1,20 +1,9 @@
 name: Release
 
-# Raises the manifest version, tags the result and publishes a release for it.
-#
-# The version is raised *here*, after the merge, and not in the pull request
-# that caused it. Odoo hosts decide whether to upgrade by comparing the
-# manifest version to the installed one, so every code change needs a higher
-# number -- but that number is always "the mainline's, plus one", which two
-# branches cut from the same base cannot both write. They conflicted on it, and
-# when the conflict was resolved by keeping a side, several merges shipped
-# under one version: 19.0.17.1.0 covers four pull requests and got one tag.
-# tools/ci_version_bump.sh now keeps the version out of pull requests entirely,
-# and this is the one place it moves.
-#
-# The tag gives every version a fixed point to deploy from or roll back to,
+# Tags the merge commit with the manifest version and publishes a release for
+# it. The tag gives every version a fixed point to deploy from or roll back to,
 # which matters because Odoo hosts (Odoo.sh, CloudPepper) pull a git ref rather
-# than a package. The release gives that ref a readable description -- up to
+# than a package. The release gives that ref a readable description — up to
 # 19.0.7.7.0 there were thirteen tags and no releases, so "what changed in the
 # version I am about to deploy" was a git log away instead of a click.
 on:
@@ -22,46 +11,33 @@ on:
     branches:
       - '19.0'
 
-# One release at a time, and never cancelled: two runs raising the version at
-# once would race for the same number, and a cancelled one would leave the
-# branch bumped but untagged.
-concurrency:
-  group: release-19.0
-  cancel-in-progress: false
-
 permissions:
   contents: write
-  # The bump step reads the merged pull request's labels to decide whether the
-  # step is a patch, a minor or a major.
-  pull-requests: read
 
 jobs:
-  release:
-    name: Bump, tag and release
+  tag:
+    name: Tag and release manifest version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      # Raises the version and pushes it. Everything it decides -- whether this
-      # push contains module code at all, which step the labels asked for, what
-      # to do when a branch brought its own version for a migration -- lives in
-      # the script, so it can be run and read outside a runner.
-      - name: Raise the manifest version
-        id: bump
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: '19.0'
-        run: tools/release_bump.sh
+      - name: Read manifest version
+        id: manifest
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import ast
+          print("version=" + ast.literal_eval(open('__manifest__.py').read())['version'])
+          PY
 
-      # In the same job as the bump on purpose: a push made with GITHUB_TOKEN
-      # does not start a new workflow run, so nothing would ever come along to
-      # tag the commit this workflow just pushed.
+      # Not every merge is a release — docs and CI changes land without a bump.
+      # Re-tagging an existing version would move the tag under anyone who
+      # already deployed it, so skip instead.
       - name: Create tag if new
         id: tag
         env:
-          VERSION: ${{ steps.bump.outputs.version }}
+          VERSION: ${{ steps.manifest.outputs.version }}
         run: |
           if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
             echo "Tag v${VERSION} already exists — nothing to release."
@@ -84,12 +60,12 @@ jobs:
         if: steps.tag.outputs.created == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.bump.outputs.version }}
+          VERSION: ${{ steps.manifest.outputs.version }}
         run: |
           gh release create "v${VERSION}" \
             --title "pan_mail_pro ${VERSION}" \
             --generate-notes \
-            --notes-file - <<EOFNOTES
+            --notes-file - <<EOF
           Odoo 19.0 · install from this tag:
 
           \`\`\`
@@ -98,4 +74,4 @@ jobs:
 
           Upgrading an existing database runs every migration between your
           installed version and this one: \`-u pan_mail_pro\`.
-          EOFNOTES
+          EOF
