@@ -118,7 +118,7 @@ question to a colleague, or a ticket to us.
 | | Question | Answer today | Where a customer can see this |
 |---|---|---|---|
 | 1 | What may Mail Pro do in the mailbox? | Read and write mail, send mail. Always per user, never as the whole tenant. (`Mail.ReadWrite` + `Mail.Send`; `gmail.modify` + `gmail.send`) | The Microsoft or Google consent screen. The customer's Azure admin sees the app |
-| 2 | What does the module actually do with that? | Reads replies to Odoo's own mail, always. Reads more only if the sync level says so. Sends. Puts labels on Gmail. Never deletes or moves anything. On SMTP it stores its own copy in Sent | docs/security.md, and the sync level table on the form |
+| 2 | What does the module actually do with that? | Reads replies to Odoo's own mail, always. Reads more only if the sync level says so. Sends. Puts labels on Gmail. Never deletes or moves anything. On SMTP it stores its own copy in Sent | docs/security.md, and the four sync level labels on the form |
 | 3 | Once a mail is in Odoo, who can read it? | Anyone who can open the record it landed on. If there is no record, it lands on the sender's contact card, and every internal user can read contact cards | Nowhere |
 | 4 | Who can widen 2 and 3, and for whom? | The owner, on My Preferences. But also any mailbox manager, on the mailbox form, for anyone's personal mailbox | Nowhere |
 
@@ -158,12 +158,12 @@ consent twice.
    nobody has asked for. Filed as
    [#258](https://github.com/pantalytics/pan_mail_pro/issues/258), separate
    from the rest of this file.
-2. Add a column to the sync level table: who in Odoo sees it. The table on the
-   mailbox form and on My Preferences now says "Synced" or "Not synced" per
-   situation. It should also say where the mail lands and who can read it.
-   For replies: "on the record it answers, for the people who can open that
-   record". For new mail without a record: "on the sender's contact card, for
-   every colleague". This is text, not code.
+2. Say under the sync level who in Odoo sees it. Since #257 the ladder is
+   four radio labels and one warning, on the mailbox form and on My
+   Preferences. Add one line under the chosen rung that says where the mail
+   lands and who can read it. For replies: "on the record it answers, for the
+   people who can open that record". For new mail without a record: "on the
+   sender's contact card, for every colleague". This is text, not code.
 3. One screen of ours before Microsoft's or Google's. Right now Connect
    Mailbox jumps straight to the provider. Put one Odoo screen in between with
    three lines: what Odoo reads (replies to its own mail, more only if you
@@ -198,7 +198,7 @@ consent twice.
 ## Order
 
 1. #258, the write check. Small, and it closes the widening on its own.
-2. The extra column and the screen before the consent screen. One PR, text
+2. The line under the rung and the screen before the consent screen. One PR, text
    and one view.
 3. docs/security.md questions 3 and 4, and the pricing page in people-words.
 4. #245, the billing link.
