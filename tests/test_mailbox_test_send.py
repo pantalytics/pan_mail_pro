@@ -74,28 +74,3 @@ class TestMailboxTestSend(MailProTestCase):
         outcome the reader can do something about."""
         with self.assertRaises(UserError):
             self.personal_mailbox.with_user(self.other_user).action_test_send()
-
-    # ------------------------------------------------------------------ #
-    # The same button on My Profile
-    # ------------------------------------------------------------------ #
-
-    def test_profile_button_uses_the_users_own_sending_address(self):
-        with self.mock_graph() as calls:
-            self.salesperson.with_user(
-                self.salesperson).action_test_send_mailbox()
-
-        self.assertEqual(
-            calls['draft']['from']['emailAddress']['address'],
-            self.shared_mailbox.email,
-        )
-
-    def test_profile_button_refuses_another_users_mailbox(self):
-        with self.assertRaises(UserError):
-            self.other_user.with_user(
-                self.salesperson).action_test_send_mailbox()
-
-    def test_profile_button_asks_for_a_sending_address_first(self):
-        self.assertFalse(self.other_user.x_default_mailbox_id)
-        with self.assertRaises(UserError):
-            self.other_user.with_user(
-                self.other_user).action_test_send_mailbox()

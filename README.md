@@ -131,8 +131,8 @@ straight on the consent screen.
 Until you connect, a banner sits above every screen with a button that goes
 straight to the consent screen. It is only shown where that button would work:
 an internal user, a provider that has a consent screen, and not on a staging
-copy. Once connected, **Send Test Email** on **My Preferences → Mail Pro** proves
-the address really sends. Every mailbox form has the same button.
+copy. Once connected there is nothing left to do: the address sends. An
+administrator who wants proof has **Send Test Email** on every mailbox form.
 
 **Note:** until your account is connected and a Send from mailbox is set, the
 email composer shows a warning banner saying so.
@@ -179,11 +179,8 @@ the Sent Items of your mail app like any other mail.
    | **Replies and new email, existing contacts only** | Also new conversations started by people who are already contacts |
    | **Replies and new email, everyone** | Also new conversations from strangers, who become contacts. Newsletters and private email included, so pick it only for an address that exists to hear from strangers |
 
-   Under the choice the form shows what happens in Odoo for each situation:
-   a reply from your contact, your reply from your mail app, new mail from
-   your contact, new mail from your mail app, new mail from a stranger. Mail
-   you start from your own mail app never enters, whatever the level: only
-   your replies do.
+   Mail you start from your own mail app never enters, whatever the level:
+   only your replies do.
 3. From the third level on, optionally **route new conversations to a team**
    (alias) so they create tickets or leads instead of landing on the sender's
    contact

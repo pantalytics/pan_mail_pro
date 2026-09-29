@@ -131,57 +131,9 @@
                                 address that exists to hear from strangers.
                             </div>
 
-                            <!-- The consequence, not help text: split by the
-                                 situation the reader recognises, and only the
-                                 right-hand column changes with the level.
-                                 Exactly one rung separates any two neighbouring
-                                 answers, which is what makes it a ladder. -->
-                            <table class="table table-sm o_mailpro_sync_table mt-4">
-                                <thead>
-                                    <tr>
-                                        <th class="text-muted fw-normal">What</th>
-                                        <th class="text-muted fw-normal">What happens in Odoo</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td>A reply from your contact</td>
-                                        <td>Synced</td>
-                                    </tr>
-                                    <tr>
-                                        <td>Your reply from your mail app</td>
-                                        <td>
-                                            <span invisible="sync_level == 'replies'">Synced</span>
-                                            <span class="text-muted" invisible="sync_level != 'replies'">Not synced</span>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td>New mail from your contact</td>
-                                        <td>
-                                            <span invisible="sync_level not in ('contacts', 'everyone')">Synced</span>
-                                            <span class="text-muted" invisible="sync_level in ('contacts', 'everyone')">Not synced</span>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td>New mail from your mail app</td>
-                                        <td>
-                                            <span invisible="sync_level not in ('contacts', 'everyone')">Synced</span>
-                                            <span class="text-muted" invisible="sync_level in ('contacts', 'everyone')">Not synced</span>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td>New mail from a stranger</td>
-                                        <td>
-                                            <span invisible="sync_level != 'everyone'">Synced</span>
-                                            <span class="text-muted" invisible="sync_level == 'everyone'">Not synced</span>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-
-                            <!-- Where a new conversation lands is the end of one
-                                 of those lines, so it lives here and appears
-                                 with the rung that lets new conversations in. -->
+                            <!-- Where a new conversation lands only matters
+                                 once new conversations come in, so it appears
+                                 with the rung that lets them in. -->
                             <div class="mt-3" invisible="sync_level not in ('contacts', 'everyone')">
                                 <label for="route_to_team" string="Route new conversations to a team"
                                        class="o_form_label me-2"/>
