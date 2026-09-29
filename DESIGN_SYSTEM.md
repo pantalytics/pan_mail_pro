@@ -329,6 +329,15 @@ in `text-muted`, while the step is open; once it is answered the answer beside
 the name explains it better than any sentence, and the line goes away.
 
 - **On screen**: the label, the field, the button, and that one line.
+- **The one exception is a switch whose label already says what it does.**
+  Help improve Mail Pro is a toggle at the bottom of the page: the label is
+  the explanation, and what it does *not* collect sits behind an info icon
+  with a `title`, the way Odoo's own settings mark a company-specific field
+  (Odoo forbids its `data-tooltip` attributes in an arch, so `title` is the
+  only tooltip a view can carry). It does not show on touch, and that is
+  acceptable only because the switch is answerable from its label alone.
+  Never for a control the reader has to understand before answering; the
+  lint exempts this one switch by its label.
 - **Still on screen, in `text-warning`**: a consequence somebody is about to
   walk into — a confidential-mail warning, a step that is blocking. One short
   line, not an `alert` box.

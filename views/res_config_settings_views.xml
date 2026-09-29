@@ -81,25 +81,6 @@
                                            readonly="1" options="{'website_path': False}"
                                            text="Usage and billing"/>
                                 </div>
-                                <!-- Help improve Mail Pro. Switched on at Pantalytics, for
-                                     the workspace; this page can only refuse it for this
-                                     instance. Shown only while it is on: a checkbox that
-                                     refuses something that is not happening is a puzzle. -->
-                                <div class="mt-3" invisible="not x_improve_on">
-                                    <div>
-                                        <span class="o_form_label">Help improve Mail Pro</span>
-                                    </div>
-                                    <div class="text-muted">
-                                        Switched on for your Pantalytics workspace: the Mail Pro inbox reports which
-                                        screens, tabs and buttons are used and records the session with every word
-                                        and every field masked. Never a mail, an address, a name or a subject.
-                                        Switch it off for every Odoo instance at app.mailpro.pantalytics.com, Settings.
-                                    </div>
-                                    <div class="mt-1">
-                                        <field name="x_improve_refused"/>
-                                        <label for="x_improve_refused" class="ms-1"/>
-                                    </div>
-                                </div>
                                 <div class="mt-2" invisible="not x_license_sync_blocked">
                                     <button name="action_license_check" type="object"
                                             string="Check again" class="btn-secondary"/>
@@ -300,6 +281,28 @@
                                 <a href="https://odoo.pantalytics.com/knowledge/article/116" target="_blank">
                                     <i class="fa fa-external-link me-1" title="Documentation"/>Documentation
                                 </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Help improve Mail Pro. Switched on at Pantalytics, for
+                         the workspace; this page can only refuse it for this
+                         instance, so the toggle exists only while it is on: a
+                         switch for something that is not happening is a puzzle.
+                         Last on the page, because nothing depends on it. The
+                         label says what it does; what it does not do is behind
+                         the icon, in a title, the way Odoo's own settings mark
+                         a company-specific field. Odoo's tooltip attributes are
+                         forbidden in an arch, so title is the only tooltip
+                         there is. -->
+                    <div class="row mt-3 o_settings_container" invisible="not x_improve_on">
+                        <div class="col-12 o_setting_box o_mailpro_about">
+                            <div class="d-flex align-items-center">
+                                <field name="x_improve" widget="boolean_toggle" nolabel="1"
+                                       class="d-inline-block"/>
+                                <label for="x_improve" class="o_form_label ms-2 mb-0"/>
+                                <i class="fa fa-info-circle text-muted ms-2" role="img"
+                                   title="On for your Pantalytics workspace. The Mail Pro inbox reports which screens, tabs and buttons are used, and records the session with every word and field masked. Never a mail, an address, a name or a subject. Off here refuses it for this Odoo instance only."/>
                             </div>
                         </div>
                     </div>
