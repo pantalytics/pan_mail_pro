@@ -291,8 +291,10 @@
                          switch for something that is not happening is a puzzle.
                          Last on the page, because nothing depends on it. The
                          label says what it does; what it does not do is behind
-                         the icon, in Odoo's own tooltip, which also opens on
-                         touch and is read out with the icon. -->
+                         the icon, in a title, the way Odoo's own settings mark
+                         a company-specific field. Odoo's tooltip attributes are
+                         forbidden in an arch, so title is the only tooltip
+                         there is. -->
                     <div class="row mt-3 o_settings_container" invisible="not x_improve_on">
                         <div class="col-12 o_setting_box o_mailpro_about">
                             <div class="d-flex align-items-center">
@@ -300,8 +302,7 @@
                                        class="d-inline-block"/>
                                 <label for="x_improve" class="o_form_label ms-2 mb-0"/>
                                 <i class="fa fa-info-circle text-muted ms-2" role="img"
-                                   aria-label="What Help improve Mail Pro reports"
-                                   data-tooltip="On for your Pantalytics workspace. The Mail Pro inbox reports which screens, tabs and buttons are used, and records the session with every word and field masked. Never a mail, an address, a name or a subject. Off here refuses it for this Odoo instance only."/>
+                                   title="On for your Pantalytics workspace. The Mail Pro inbox reports which screens, tabs and buttons are used, and records the session with every word and field masked. Never a mail, an address, a name or a subject. Off here refuses it for this Odoo instance only."/>
                             </div>
                         </div>
                     </div>
