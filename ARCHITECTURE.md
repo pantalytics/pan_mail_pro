@@ -2236,9 +2236,9 @@ pressed it, who can judge whether it arrived.
 That one rule covers all three mailbox types without a branch. On a personal
 mailbox the presser *is* the owner, because `_is_sendable_by` lets nobody else
 send from one; on a shared or notification mailbox it is whoever is testing.
-The same method backs the button on My Profile (`res.users
-.action_test_send_mailbox`), which is the moment after a consent screen where
-the question actually gets asked.
+The button lives on the mailbox form only. My Preferences had a copy until
+19.0.20.6.0; a user whose connection works has nothing to test, and one whose
+connection fails is told so by the banner and by the mail that did not go out.
 
 Two smaller decisions hold it together. The mail is routed with
 `x_send_from_mailbox_id` rather than left to `_resolve_route`, because a test
