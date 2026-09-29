@@ -15,6 +15,8 @@ import mimetypes
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid, parseaddr
 
+from ..mail_provider_client import tidy_address
+
 
 def collect_recipients(raw_list, partners=None):
     """Merge a comma-separated address string and Odoo partners into a
@@ -23,8 +25,9 @@ def collect_recipients(raw_list, partners=None):
     result = []
 
     def _add(name, address):
-        if address and address.lower() not in seen:
-            seen.add(address.lower())
+        address = tidy_address(address)
+        if address and address not in seen:
+            seen.add(address)
             result.append(formataddr((name, address)) if name else address)
 
     for raw in (raw_list or '').split(','):

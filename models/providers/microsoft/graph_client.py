@@ -14,6 +14,7 @@ from ...mail_provider_client import (
     FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
     ERROR_THROTTLED,
     ThrottledError,
+    tidy_address,
 )
 
 _logger = logging.getLogger(__name__)
@@ -738,7 +739,7 @@ class MicrosoftGraphClient(models.AbstractModel):
                     continue
                 name, address = parseaddr(raw)
                 if address:
-                    recipient = {'emailAddress': {'address': address}}
+                    recipient = {'emailAddress': {'address': tidy_address(address)}}
                     if name:
                         recipient['emailAddress']['name'] = name
                     result.append(recipient)
@@ -752,7 +753,7 @@ class MicrosoftGraphClient(models.AbstractModel):
                 if partner.email:
                     to_recipients.append({
                         'emailAddress': {
-                            'address': partner.email,
+                            'address': tidy_address(partner.email),
                             'name': partner.name
                         }
                     })

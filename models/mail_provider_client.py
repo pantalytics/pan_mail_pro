@@ -296,6 +296,16 @@ PARAM_SETUP_PROVIDER = 'pan_mail_pro.setup_provider'
 DEFAULT_PROVIDER = 'outlook'
 
 
+def tidy_address(address):
+    """Trim and lowercase an address before it goes on the wire.
+
+    Only cosmetic: "Jan@Client.nl " becomes "jan@client.nl". An address that
+    is wrong stays wrong; keeping partner data valid is the customer's job,
+    and the provider's rejection in the chatter tells them which one.
+    """
+    return (address or '').strip().lower()
+
+
 def get_provider_client(env, provider_code=DEFAULT_PROVIDER):
     """Resolve a provider code to its client model."""
     model_name = PROVIDER_CLIENTS.get(provider_code)
