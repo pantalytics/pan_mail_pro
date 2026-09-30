@@ -1433,15 +1433,18 @@ class Checks:
             page.click(ODOO_PICKER + ' .o_form_button_cancel')
             return
         create.click()
+        # The lead's title is a `text` widget, so a textarea and not an input.
+        name = '.modal .o_form_view .o_field_widget[name="name"] :is(input, textarea)'
         try:
-            page.wait_for_selector('.modal .o_form_view .o_field_widget[name="name"] input',
-                                   timeout=15000)
+            page.wait_for_selector(name, timeout=15000)
         except Exception:
-            self.fail('New opened no lead form')
+            modal = page.query_selector('.modal')
+            self.fail('New opened no lead form; on screen: %r'
+                      % (modal.inner_text()[:200] if modal else 'no dialog'))
             return
         page.wait_for_timeout(800)
         title = 'Afdichtingen, twee sets'
-        page.fill('.modal .o_form_view .o_field_widget[name="name"] input', title)
+        page.fill(name, title)
         self.shot('inbox-link-create.png')
         page.click('.modal .o_form_button_save')
         page.wait_for_timeout(3000)
