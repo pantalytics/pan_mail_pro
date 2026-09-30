@@ -1325,6 +1325,14 @@ class Checks:
         # Contacts always has a tile, so at least one row must carry one.
         if not dialog.query_selector('.o_mailpro_link_icon img'):
             self.fail('no kind of record in the picker wears an app icon')
+        # This conversation is on a contact, so the top row is the contact,
+        # marked as where the mail is now, and there is nothing to unlink.
+        if 'o_mailpro_link_row_current' not in (models[0].get_attribute('class') or ''):
+            self.fail('the first kind of record is not marked as where the mail is now')
+        if 'where it is now' not in models[0].inner_text():
+            self.fail('the current kind of record does not say so: %r' % models[0].inner_text())
+        if dialog.query_selector('.o_mailpro_link_row_unlink'):
+            self.fail('a conversation on a contact offers to unlink to the contact')
         self.shot('inbox-link-models.png')
 
         # Step two: Odoo's own record picker over the model just picked, with
@@ -1345,6 +1353,9 @@ class Checks:
             self.fail('step two of the picker has no search bar')
         if not picker.query_selector('.o_searchview_facet'):
             self.fail('step two opened without the correspondent as a facet')
+        # Never a New on the contact: the fetcher made one for every sender.
+        if picker.query_selector('.o_create_button'):
+            self.fail('the record picker offers to create a contact')
         self.shot('inbox-link-records.png')
 
         # Typing searches rather than filtering what is drawn: a term that
@@ -1385,6 +1396,76 @@ class Checks:
         if len(remaining) != 1:
             self.fail(f'{len(remaining)} conversations left on a contact after '
                       f'linking one, expected 1')
+            return
+        self.creating(page)
+
+    def creating(self, page):
+        """A lead made from the mail, from step two's own New button.
+
+        The one conversation still on a contact has no lead to link to, which
+        is exactly the case: the form opens on the sender, the reader types a
+        title, and the record saved is the record linked. Asserted in the
+        database, because after the move the folder is empty and the screen
+        has nothing left to show.
+        """
+        opener = page.query_selector('.o_mailpro_relink_toggle')
+        if not opener:
+            self.fail('the last contact-only conversation offers no way to link it')
+            return
+        opener.click()
+        page.wait_for_timeout(800)
+        page.fill('.o_mailpro_link_dialog .o_mailpro_link_search', 'Lead')
+        page.wait_for_timeout(1200)
+        row = page.query_selector('.o_mailpro_link_dialog .o_mailpro_link_row:has-text("Lead")')
+        if not row:
+            self.fail('a search for "Lead" offers no Lead in step one')
+            return
+        row.click()
+        try:
+            page.wait_for_selector(ODOO_PICKER, timeout=15000)
+        except Exception:
+            self.fail('step two did not open on Lead')
+            return
+        page.wait_for_timeout(800)
+        create = page.query_selector(ODOO_PICKER + ' .o_create_button')
+        if not create:
+            self.fail('the record picker on Lead offers no New')
+            page.click(ODOO_PICKER + ' .o_form_button_cancel')
+            return
+        create.click()
+        try:
+            page.wait_for_selector('.modal .o_form_view .o_field_widget[name="name"] input',
+                                   timeout=15000)
+        except Exception:
+            self.fail('New opened no lead form')
+            return
+        page.wait_for_timeout(800)
+        title = 'Afdichtingen, twee sets'
+        page.fill('.modal .o_form_view .o_field_widget[name="name"] input', title)
+        self.shot('inbox-link-create.png')
+        page.click('.modal .o_form_button_save')
+        page.wait_for_timeout(3000)
+        self.error_free('creating a lead from the picker')
+        if page.query_selector('.modal .o_form_view'):
+            self.fail('the lead form is still open after saving')
+            return
+
+        leads = self.call('crm.lead', 'search_read', [('name', '=', title)],
+                          fields=['email_from', 'partner_id'])
+        if len(leads) != 1:
+            self.fail(f'{len(leads)} leads named {title!r} after New, expected 1')
+            return
+        if leads[0]['email_from'] != 'inkoop@keersluis.example':
+            self.fail('the new lead does not carry the sender: %r' % leads[0]['email_from'])
+        moved = self.call('mail.message', 'search_count', [
+            ('model', '=', 'crm.lead'), ('res_id', '=', leads[0]['id']),
+            ('subject', '=', 'Nieuwe aanvraag afdichtingen')])
+        if moved != 1:
+            self.fail(f'{moved} messages on the new lead, expected the conversation')
+        remaining = page.query_selector_all('.o_mailpro_item')
+        if remaining:
+            self.fail(f'{len(remaining)} conversations still on a contact after '
+                      f'creating a lead for the last one')
 
     def visible(self, selector):
         el = self.page.query_selector(selector)
@@ -2636,6 +2717,63 @@ class Checks:
         if count() != before:
             self.fail('the followers count is %d after a round trip, expected %d'
                       % (count(), before))
+        self.unlinking(page, open_list)
+
+    def unlinking(self, page, open_list):
+        """Only the contact, with the follower list open -- and back.
+
+        The unlink row is the way to say "this belongs on no record", and it
+        moves the conversation to its contact. With the follower list open,
+        because that is the render that crashed: the Followers button read
+        the record's thread after linking had emptied the record, and the
+        screen was an error dialog. Then back onto the lead through step two,
+        so the rest of this check finds the conversation where it was.
+        """
+        if not open_list():
+            self.fail('the follower list does not open before unlinking')
+            return
+        page.click('.o_mailpro_relink_toggle')
+        page.wait_for_timeout(800)
+        unlink = page.query_selector('.o_mailpro_link_dialog .o_mailpro_link_row_unlink')
+        if not unlink:
+            self.fail('a conversation on a lead offers no way back to the contact')
+            page.keyboard.press('Escape')
+            return
+        if 'Vandermolen' not in unlink.inner_text():
+            self.fail('the unlink row does not name the contact: %r' % unlink.inner_text())
+        unlink.click()
+        page.wait_for_timeout(2500)
+        self.error_free('unlinking with the follower list open')
+        if page.query_selector('.o_mailpro_link_dialog') or page.query_selector(ODOO_PICKER):
+            self.fail('the unlink row opened step two instead of answering both steps')
+            return
+        chips = ' '.join(el.inner_text() for el in page.query_selector_all('.o_mailpro_chip_button'))
+        if 'Vandermolen' not in chips or 'Asafdichtingen' in chips:
+            self.fail('after unlinking the conversation is linked to %r' % chips)
+            return
+        self.shot('inbox-unlinked-to-contact.png')
+
+        # Back: Lead is the top row under the contact, and the facet leaves
+        # the customer's one lead as the only row in step two.
+        page.click('.o_mailpro_relink_toggle')
+        page.wait_for_timeout(800)
+        row = page.query_selector('.o_mailpro_link_dialog .o_mailpro_link_row:has-text("Lead")')
+        if not row:
+            self.fail('step one offers no Lead to link back to')
+            page.keyboard.press('Escape')
+            return
+        row.click()
+        try:
+            page.wait_for_selector(ODOO_PICKER + ' .o_data_row', timeout=15000)
+        except Exception:
+            self.fail('step two opened without the customer\'s lead')
+            return
+        page.click(ODOO_PICKER + ' .o_data_row')
+        page.wait_for_timeout(2500)
+        self.error_free('linking back to the lead')
+        chips = ' '.join(el.inner_text() for el in page.query_selector_all('.o_mailpro_chip_button'))
+        if 'Asafdichtingen' not in chips:
+            self.fail('after linking back the conversation is linked to %r' % chips)
 
     def check_files_tab(self, page):
         """The Files tab is Odoo's own attachment list, or it is a copy.

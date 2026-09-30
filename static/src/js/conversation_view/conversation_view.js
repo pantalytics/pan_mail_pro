@@ -1626,11 +1626,6 @@ export class ConversationView extends Component {
         this.recordThread?.fetchThreadData(["followers"]);
     }
 
-    get followersLabel() {
-        const thread = this.recordThread;
-        return thread?.selfFollower ? _t("Following") : _t("Followers");
-    }
-
     /** The wizard closed: whoever it added is on the list now. */
     onAddFollowers() {
         this.loadFollowers();
@@ -2228,7 +2223,9 @@ export class ConversationView extends Component {
         this.dialog.add(LinkDialog, {
             partnerId: this.state.selected?.partner_id || false,
             correspondent: this.state.selected?.correspondent || "",
-            onSelect: (model, resId) => this.linkTo(model, resId, "picker"),
+            currentModel: this.selectedRecord?.model || "",
+            onSelect: (model, resId, _label, _modelLabel, how) =>
+                this.linkTo(model, resId, how === "unlink" ? "unlink" : "picker"),
         });
     }
 
@@ -2244,6 +2241,10 @@ export class ConversationView extends Component {
         if (!messageIds.length) {
             return;
         }
+        // Read before the move: whether the correction stayed within one
+        // kind of record is the number that decides whether step one of the
+        // picker earns its click.
+        const sameModel = this.selectedRecord?.model === model;
         let linked;
         try {
             linked = await this.orm.call(
@@ -2255,13 +2256,16 @@ export class ConversationView extends Component {
             return;
         }
         this.notification.add(
-            _t("Linked to %s. The next mail in this thread lands here too.", linked.name),
+            via === "unlink"
+                ? _t("Linked to %s only. The next mail in this thread lands there too.", linked.name)
+                : _t("Linked to %s. The next mail in this thread lands here too.", linked.name),
             { type: "success" }
         );
-        // Which way the correction came: the one-click suggestion or the
-        // picker. The kind of record it went to is not sent, on purpose: a
-        // model name is a fact about the customer's Odoo, not about ours.
-        this.improve.capture("conversation_linked", { via });
+        // Which way the correction came: the one-click suggestion, the
+        // picker or the unlink row, and whether it stayed within one kind of
+        // record. The kind itself is not sent, on purpose: a model name is a
+        // fact about the customer's Odoo, not about ours; a boolean is not.
+        this.improve.capture("conversation_linked", { via, same_model: sameModel });
         // The conversation is somewhere else now, so it is addressed by the
         // record it moved to. `keepSelection` then does the right thing in
         // both folders it can be linked from: in the inbox the row is still
