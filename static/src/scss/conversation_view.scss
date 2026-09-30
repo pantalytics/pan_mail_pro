@@ -5,9 +5,9 @@
 // rather than colour. Palette from brand.pantalytics.com, the same values the
 // connect banner already uses.
 //
-// One accent colour, spent on exactly three things: the folder you are in, the
-// conversation you are reading, and the record chips. Everything else is ink
-// on white.
+// One accent colour, spent on exactly four things: the folder you are in, the
+// conversation you are reading, the record chips, and unread mail. Everything
+// else is ink on white.
 
 $mailpro-ink: #001d21;
 $mailpro-ink-soft: #22303a;
@@ -558,11 +558,12 @@ $mailpro-band-gutter: 3.5rem;
         &:hover { background: rgba(0, 29, 33, 0.02); }
     }
 
+    // Open is a fill, unread is the bar: Outlook's split. The bar used to mark
+    // the open row, which left unread nothing but weight and a dot.
     .o_mailpro_group_head_active {
-        background: rgba(93, 91, 214, 0.08);
-        box-shadow: inset 3px 0 0 0 $mailpro-accent;
+        background: rgba(93, 91, 214, 0.1);
 
-        &:hover { background: rgba(93, 91, 214, 0.08); }
+        &:hover { background: rgba(93, 91, 214, 0.1); }
     }
 
     // The padding is said here rather than left to the browser's own button
@@ -626,25 +627,25 @@ $mailpro-band-gutter: 3.5rem;
         }
     }
 
-    .o_mailpro_child_unread .o_mailpro_from { font-weight: 700; }
+    .o_mailpro_child_unread {
+        box-shadow: inset 3px 0 0 0 $mailpro-accent;
+
+        .o_mailpro_from { font-weight: 700; }
+    }
 
     .o_mailpro_thread_loading { padding: 0.3125rem 0.5rem 0.3125rem $mailpro-child-indent; }
 
-    // Unread is a dot and a weight. Weight alone was 600 against 700 on a row
-    // that is also the highlighted one, which is a difference nobody can see:
-    // Mark unread wrote the database, the provider and the class, and the
-    // screen said nothing back. Read rows drop to 500 so the two are telling
-    // apart at a glance, and the dot carries it on the active row.
+    // Unread the way Outlook draws it: a bar down the row's left edge, the
+    // sender and the subject bold, the subject in the accent. No tinted card
+    // (that is Gmail's, and here a fill already means "open"), no dot. The bar
+    // is what stays readable on the open row, where weight alone was a
+    // difference nobody could see.
+    .o_mailpro_group_head_unread { box-shadow: inset 3px 0 0 0 $mailpro-accent; }
+
     .o_mailpro_item_unread .o_mailpro_from,
     .o_mailpro_item_unread .o_mailpro_subject { font-weight: 700; }
 
-    .o_mailpro_unread_dot {
-        width: 0.5rem;
-        height: 0.5rem;
-        border-radius: 999px;
-        background: $mailpro-accent;
-        align-self: center;
-    }
+    .o_mailpro_item_unread .o_mailpro_subject { color: $mailpro-accent-ink; }
 
     // The same fact at the other end of the header: the one read-state button
     // wears the state it is offering to leave.

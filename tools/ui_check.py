@@ -2357,11 +2357,13 @@ class Checks:
             return
         if not active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
             self.fail('marking unread left the row reading as read')
-        # The class is not the point: the reader has to see it. A dot, because
-        # the row they marked is also the highlighted one and one font weight
-        # of difference on a highlighted row is invisible.
-        if not active.query_selector('.o_mailpro_unread_dot'):
-            self.fail('the row marked unread shows no unread dot')
+        # The class is not the point: the reader has to see it. Outlook's bar
+        # down the left edge, because the row they marked is also the open
+        # one, and one font weight of difference on a filled row is invisible.
+        head = page.query_selector('.o_mailpro_group_head_active')
+        if not head or head.evaluate(
+                'el => getComputedStyle(el).boxShadow') in ('', 'none'):
+            self.fail('the row marked unread shows no unread bar')
         after = unread_in_db()
         if after <= before:
             self.fail('marking unread wrote nothing to the database')
