@@ -1466,6 +1466,7 @@ class Checks:
         if remaining:
             self.fail(f'{len(remaining)} conversations still on a contact after '
                       f'creating a lead for the last one')
+        self.unlinking()
 
     def visible(self, selector):
         el = self.page.query_selector(selector)
@@ -2717,19 +2718,43 @@ class Checks:
         if count() != before:
             self.fail('the followers count is %d after a round trip, expected %d'
                       % (count(), before))
-        self.unlinking(page, open_list)
 
-    def unlinking(self, page, open_list):
+    def unlinking(self):
         """Only the contact, with the follower list open -- and back.
 
         The unlink row is the way to say "this belongs on no record", and it
         moves the conversation to its contact. With the follower list open,
         because that is the render that crashed: the Followers button read
         the record's thread after linking had emptied the record, and the
-        screen was an error dialog. Then back onto the lead through step two,
-        so the rest of this check finds the conversation where it was.
+        screen was an error dialog. Then back onto the lead through step two.
+
+        After `linking()`, on purpose: mail on a contact is one conversation
+        however many threads it holds, so unlinking onto a contact that still
+        carries a fallback mail merges the two, and linking back takes both.
+        By now the suggestion has moved that mail onto the lead, and the
+        contact is empty. The Inbox is reopened so it starts on the lead
+        thread the way every other check does.
         """
-        if not open_list():
+        page = self.page
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_chip_button', timeout=30000)
+        except Exception:
+            self.fail('the Inbox did not open on a linked conversation to unlink')
+            return
+        page.wait_for_timeout(1500)
+        chips = ' '.join(el.inner_text() for el in page.query_selector_all('.o_mailpro_chip_button'))
+        if 'Asafdichtingen' not in chips:
+            self.fail('the Inbox opened on %r, not on the lead thread' % chips)
+            return
+        button = page.query_selector('.o_mailpro_followers')
+        if not button:
+            self.fail('no Followers button to open before unlinking')
+            return
+        button.click()
+        page.wait_for_timeout(600)
+        if not page.query_selector('.o-mail-Followers-dropdown'):
             self.fail('the follower list does not open before unlinking')
             return
         page.click('.o_mailpro_relink_toggle')
