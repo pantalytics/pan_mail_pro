@@ -3,6 +3,12 @@
 Complete Microsoft 365, Google Workspace and IMAP/SMTP email integration for
 Odoo - send and receive with full control.
 
+
+
+https://github.com/user-attachments/assets/91bb494e-696d-4ede-85b5-4ac5cc826e5c
+
+
+
 **[Full documentation](https://odoo.pantalytics.com/knowledge/article/116)**
 
 ## Features
