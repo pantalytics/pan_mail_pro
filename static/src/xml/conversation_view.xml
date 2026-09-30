@@ -762,24 +762,35 @@
                                     tab whose whole content is three names is an
                                     empty screen with a list in the corner. The
                                     list itself is the chatter's own dropdown.
+
+                                    The thread is read once, here, and the
+                                    slots read the variable. A slot is
+                                    rendered by the Dropdown, after this
+                                    template's own render, and linking a
+                                    conversation empties the record between
+                                    the two: a slot that asked the getter
+                                    again found null and crashed on
+                                    `selfFollower`.
                                 -->
-                                <Dropdown t-if="recordThread" position="'bottom-end'"
+                                <t t-set="followerThread" t-value="recordThread"/>
+                                <Dropdown t-if="followerThread" position="'bottom-end'"
                                           menuClass="'o-mail-Followers-dropdown ' + mailStore.discussDropdownMenuClass(this)"
                                           state="followerListDropdown">
                                     <button type="button" class="o_mailpro_followers ms-auto"
-                                            t-att-class="{ 'o_mailpro_followers_following': recordThread.selfFollower }"
-                                            t-att-disabled="recordThread.hasReadAccess === false"
-                                            t-att-title="followersLabel">
+                                            t-att-class="{ 'o_mailpro_followers_following': followerThread.selfFollower }"
+                                            t-att-disabled="followerThread.hasReadAccess === false"
+                                            t-att-title="followerThread.selfFollower ? 'Following' : 'Followers'">
                                         <i class="fa fa-fw" aria-hidden="true"
-                                           t-att-class="recordThread.selfFollower ? 'fa-user' : 'fa-user-o'"/>
-                                        <span t-esc="followersLabel"/>
-                                        <span t-if="recordThread.followersCount" class="o_mailpro_tab_count"
-                                              t-esc="recordThread.followersCount"/>
+                                           t-att-class="followerThread.selfFollower ? 'fa-user' : 'fa-user-o'"/>
+                                        <t t-if="followerThread.selfFollower">Following</t>
+                                        <t t-else="">Followers</t>
+                                        <span t-if="followerThread.followersCount" class="o_mailpro_tab_count"
+                                              t-esc="followerThread.followersCount"/>
                                     </button>
                                     <t t-set-slot="content">
                                         <FollowerList onAddFollowers.bind="onAddFollowers"
                                                       onFollowerChanged.bind="onFollowerChanged"
-                                                      thread="recordThread"
+                                                      thread="followerThread"
                                                       dropdown="followerListDropdown"/>
                                     </t>
                                 </Dropdown>

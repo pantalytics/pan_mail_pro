@@ -1678,13 +1678,29 @@ carries the suggestion (rule 5, or the best proposal any rule made) with a
 `Link it here`, and a `Link to a record`. Both open the same picker, in two
 steps: a short list of the kinds of record, then Odoo's own record picker.
 
-**Step one, the kind of record.** `link_targets(search)` starts from what this
-database already links mail to — the mailboxes' routing targets and the models
-the log has seen — so the list is short and grows with use rather than being a
-dropdown of four hundred technical names on day one. A search widens it to
-every model with a chatter, the already-linked ones first, which is the way out
-for the model nobody has filed mail on yet. Each row wears the tile of the app
-that opens the model, the same one the Linked-to chips carry.
+**Step one, the kind of record.** `link_targets(search, current_model,
+partner_id)` starts from what this database already links mail to — the
+mailboxes' routing targets and the models the log has seen — so the list is
+short and grows with use rather than being a dropdown of four hundred technical
+names on day one. A search widens it to every model with a chatter, the
+already-linked ones first, which is the way out for the model nobody has filed
+mail on yet. Each row wears the tile of the app that opens the model, the same
+one the Linked-to chips carry.
+
+Two rows above that are about *this* conversation. Its current kind of record
+comes first, marked *where it is now*: a correction from a real record is
+mostly "the other quote of the same customer", and that row costs one click.
+Whether it is mostly that is not known yet, so `conversation_linked` carries a
+`same_model` boolean (never the model) and the answer decides later whether
+step one should be skipped. Then, on a conversation that is on something other
+than its contact, **Only <contact>**: the unlink. It skips step two and calls
+`link_to` with the contact, because "this belongs on no record" cannot mean
+*nothing* — a message with no model is readable by its author and nobody else
+— and the contact is where the fetcher lands unmatched mail, so it is the state
+the "On a contact only" folder, the coverage report and the suggestion already
+call unlinked. The thread link follows, the same as any other link. On a
+contact there is nothing to unlink and the row is absent; so is it without a
+contact to go back to.
 
 **Step two, the record.** Odoo's own `SelectCreateDialog` over the model's list
 view: the search bar, the filters, the columns and the paging every many2one
@@ -1697,9 +1713,14 @@ relations count and only two — a `partner_id` at a contact, or an `email_from`
 — read against the *commercial* partner, because mail from one employee is
 about the company's records. A model relating to a contact through anything
 else opens on the plain list; a third guess would be a rule nobody could
-predict from the screen. Creating a record from the picker stays off: linking
-is about where mail belongs, and a record invented to hold it is a different
-decision.
+predict from the screen. The dialog's own **New** is on where the reader may
+create on the model (`can_create`), and never on the contact, because the
+fetcher already made one for every sender. The form opens on the
+correspondent (`defaults`: a `partner_id`, or an `email_from` and a
+`contact_name`, the same two relations the facet reads), and the record saved
+is the record linked, through the same `onSelected` a picked row goes through.
+A mail from a new customer with no lead is the reason to make the lead, and
+the CRM app and back was the round trip the Inbox exists to remove.
 
 Both steps take the model from the caller, so both check it the same way:
 a chatter to carry the mail, and `write` on the model, because putting
@@ -2336,8 +2357,8 @@ server half lives in `pantalytics/mail-pro-admin`.
   sample). Then the Inbox, and only the Inbox, loads posthog-js from the lazy
   bundle `pan_mail_pro.assets_improve`, sends five named events
   (`inbox_opened`, `conversation_opened`, `tab_opened`, `reply_sent`,
-  `conversation_linked`, with a folder, a tab, a mode or a `via`, never
-  content) and records a wireframe: every text node, input and attribute
+  `conversation_linked`, with a folder, a tab, a mode, a `via` or a
+  `same_model` boolean, never content) and records a wireframe: every text node, input and attribute
   masked, images blocked, no network bodies, `ip: false`, no person profile,
   nothing persisted in the browser. Recording starts when the Inbox mounts
   and stops when it unmounts. `tools/ui_check.py` points a seeded Inbox at a

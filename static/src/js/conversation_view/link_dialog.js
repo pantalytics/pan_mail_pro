@@ -16,9 +16,16 @@
  * filter facet, on by default and one click to remove, so the seeding is a
  * head start and never a filter somebody has to escape.
  *
- * Creating a record from here stays off, as it was in the dialog this
- * replaced: linking is about where mail belongs, and a record invented to
- * hold it is a different decision.
+ * Two rows in step one are about this conversation rather than the database:
+ * the kind of record it is on now, first, and "Only <contact>", which is the
+ * way back to the contact and answers both steps at once. The server decides
+ * whether either is there; this side only says where the conversation is.
+ *
+ * Step two has Odoo's own New button. A mail from a new customer with no
+ * lead is the reason to make the lead, and sending someone to the CRM app
+ * and back is the round trip the Inbox exists to remove. The form opens on
+ * the correspondent, and the record saved is the record linked, through the
+ * same `onSelected` a picked row goes through.
  */
 
 import { Component, useState, useRef, onWillStart } from "@odoo/owl";
@@ -36,6 +43,9 @@ export class LinkDialog extends Component {
         // a conversation with no contact behind it still has to be linkable.
         partnerId: { type: [Number, Boolean], optional: true },
         correspondent: { type: String, optional: true },
+        // Where the conversation is now, for the two rows about it. Absent
+        // for New Email, which has no conversation yet.
+        currentModel: { type: String, optional: true },
         // What the dialog is for, when it is not linking an existing
         // conversation. New Email asks the same two questions.
         title: { type: String, optional: true },
@@ -74,6 +84,8 @@ export class LinkDialog extends Component {
         try {
             rows = await this.orm.call("pan.mail.conversation", "link_targets", [], {
                 search: this.state.search,
+                current_model: this.props.currentModel || false,
+                partner_id: this.props.partnerId || false,
             });
         } catch {
             // An empty list and a working dialog beats a traceback over the
@@ -100,7 +112,13 @@ export class LinkDialog extends Component {
      * the service itself.
      */
     async choose(target) {
-        let scope = { domain: false, partner: "" };
+        if (target.res_id) {
+            // A row that names a record answers both steps: the unlink row.
+            this.props.onSelect(target.model, target.res_id, target.label, target.label, "unlink");
+            this.props.close();
+            return;
+        }
+        let scope = { domain: false, partner: "", can_create: false, defaults: {} };
         try {
             scope = await this.orm.call("pan.mail.conversation", "link_scope", [], {
                 model: target.model,
@@ -115,7 +133,11 @@ export class LinkDialog extends Component {
             resModel: target.model,
             title: `${this.title}: ${target.label}`,
             multiSelect: false,
-            noCreate: true,
+            // New, where the reader may create on the model. The form opens
+            // on the correspondent, and the record saved comes back through
+            // `onSelected` like a picked one.
+            noCreate: !scope.can_create,
+            context: scope.defaults || {},
             // Whose records these are, as a facet the reader can take off.
             dynamicFilters: scope.domain
                 ? [{ description: scope.partner, domain: scope.domain }]

@@ -13,6 +13,7 @@ each of which would be a quiet regression rather than a failure: it must not
 subscribe anybody to the destination, it must not accept a caller who cannot
 write that destination, and it must not move a note.
 """
+import unittest.mock
 from datetime import timedelta
 
 from odoo import fields
@@ -215,6 +216,47 @@ class TestLinkTo(TransactionCase):
             self.Log.with_user(stranger).link_to([message.id], 'crm.lead', self.lead.id)
         self.assertEqual(message.model, 'res.partner')
 
+    # ------------------------------------------------------------------ #
+    # Unlink: back to the contact
+    # ------------------------------------------------------------------ #
+
+    def test_unlink_is_a_move_to_the_contact(self):
+        """"This belongs on no record" moves the conversation to its contact.
+
+        Not to nothing: a message with no model is readable by its author and
+        nobody else. The contact is where the fetcher lands unmatched mail,
+        so it is the state the folder, the report and the suggestion already
+        call unlinked -- and the thread link follows, so the next mail lands
+        there too instead of on the lead somebody just said it does not
+        belong to.
+        """
+        message = self.env['mail.message'].create({
+            'model': 'crm.lead', 'res_id': self.lead.id,
+            'message_type': 'email', 'subject': 'Storing aan de pers',
+            'body': '<p>De pers loopt vast.</p>',
+            'author_id': self.customer.id, 'email_from': self.customer.email,
+            'x_direction': 'incoming', 'x_mailbox_id': self.mailbox.id,
+        })
+        self.env['pan.mail.thread.link'].record(
+            mailbox=self.mailbox, thread_id=self.THREAD,
+            model='crm.lead', res_id=self.lead.id,
+            message=message, key_type='rfc',
+        )
+        self.Log.sudo().create({
+            'mailbox_id': self.mailbox.id, 'mail_message_id': message.id,
+            'outcome': 'threaded', 'subject': message.subject,
+            'email_from': self.customer.email, 'thread_id': self.THREAD,
+        })
+
+        result = self.Log.link_to([message.id], 'res.partner', self.customer.id)
+
+        self.assertEqual((message.model, message.res_id),
+                         ('res.partner', self.customer.id))
+        self.assertEqual(result['name'], self.customer.display_name)
+        link = self.env['pan.mail.thread.link'].sudo().search([
+            ('mailbox_id', '=', self.mailbox.id), ('thread_id', '=', self.THREAD)])
+        self.assertEqual((link.model, link.res_id), ('res.partner', self.customer.id))
+
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestLinkPicker(TransactionCase):
@@ -330,3 +372,77 @@ class TestLinkPicker(TransactionCase):
             self.Conversation.link_scope('ir.config_parameter')
         with self.assertRaises(AccessError):
             self.Conversation.link_scope('not.a.model')
+
+    # ------------------------------------- the two rows about *this* thread
+
+    def test_the_current_kind_of_record_comes_first(self):
+        """A correction from a real record is mostly "the other one of
+        these", so that row costs one click and says where the mail is."""
+        rows = self.Conversation.link_targets(current_model='crm.lead')
+        self.assertEqual(rows[0]['model'], 'crm.lead')
+        self.assertTrue(rows[0].get('current'))
+        self.assertFalse(any(row.get('current') for row in rows[1:]))
+
+    def test_without_a_current_record_no_row_is_marked(self):
+        rows = self.Conversation.link_targets()
+        self.assertFalse(any(row.get('current') for row in rows))
+
+    def test_the_unlink_row_offers_the_contact_on_a_lead(self):
+        rows = self.Conversation.link_targets(
+            current_model='crm.lead', partner_id=self.customer.id)
+        unlink = [row for row in rows if row.get('unlink')]
+        self.assertEqual(len(unlink), 1)
+        self.assertEqual(rows[1], unlink[0], 'the unlink row sits under the current kind')
+        self.assertEqual(unlink[0]['model'], 'res.partner')
+        self.assertEqual(unlink[0]['res_id'], self.customer.id)
+        self.assertIn(self.customer.display_name, unlink[0]['label'])
+
+    def test_the_unlink_row_is_absent_on_a_contact(self):
+        """On a contact there is nothing to unlink; Change is the only action."""
+        rows = self.Conversation.link_targets(
+            current_model='res.partner', partner_id=self.customer.id)
+        self.assertFalse(any(row.get('unlink') for row in rows))
+
+    def test_the_unlink_row_is_absent_without_a_contact(self):
+        rows = self.Conversation.link_targets(current_model='crm.lead')
+        self.assertFalse(any(row.get('unlink') for row in rows))
+
+    def test_the_unlink_row_is_absent_under_a_search(self):
+        """A search is a question about the rest of the list."""
+        rows = self.Conversation.link_targets(
+            search='Lead', current_model='crm.lead', partner_id=self.customer.id)
+        self.assertFalse(any(row.get('unlink') or row.get('current') for row in rows))
+
+    # -------------------------------------------------- step two: creating
+
+    def test_create_is_offered_where_the_reader_may_create(self):
+        scope = self.Conversation.link_scope('crm.lead', partner_id=self.contact.id)
+        self.assertTrue(scope['can_create'])
+
+    def test_a_contact_is_never_created_from_the_picker(self):
+        """The fetcher already made one for every sender; a second is a
+        duplicate."""
+        scope = self.Conversation.link_scope('res.partner', partner_id=self.contact.id)
+        self.assertFalse(scope['can_create'])
+        self.assertEqual(scope['defaults'], {})
+
+    def test_a_new_record_opens_on_the_correspondent(self):
+        """A lead made from a mail starts with its sender filled in."""
+        scope = self.Conversation.link_scope('crm.lead', partner_id=self.contact.id)
+        self.assertEqual(scope['defaults'], {'default_partner_id': self.contact.id})
+
+    def test_a_model_without_a_partner_gets_the_address(self):
+        """The `email_from` relation, the second of the two the facet reads."""
+        Model = self.env['crm.lead']
+        fields_ = dict(Model._fields)
+        fields_.pop('partner_id')
+        with unittest.mock.patch.object(type(Model), '_fields', fields_):
+            scope = self.Conversation.link_scope('crm.lead', partner_id=self.contact.id)
+        self.assertEqual(scope['defaults'], {
+            'default_email_from': self.contact.email,
+            'default_contact_name': self.contact.name,
+        })
+
+    def test_without_a_correspondent_a_new_record_starts_empty(self):
+        scope = self.Conversation.link_scope('crm.lead')
+        self.assertEqual(scope['defaults'], {})
