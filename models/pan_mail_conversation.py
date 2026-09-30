@@ -1548,7 +1548,7 @@ class PanMailConversation(models.AbstractModel):
         return False
 
     @api.model
-    def link_targets(self, search=None):
+    def link_targets(self, search=None, current_model=None, partner_id=None):
         """Step one of the picker: which kind of record this mail belongs to.
 
         What this database already links mail to comes first -- the mailboxes'
@@ -1563,11 +1563,32 @@ class PanMailConversation(models.AbstractModel):
         A search widens to every model with a chatter, matched on its label,
         the already-linked ones still first: a search for "lead" should offer
         the model the log knows before the ones nobody has filed a mail on.
+
+        Two rows about *this* conversation sit above all of that when the
+        caller says where it is now. Its current kind of record comes first,
+        marked as such, because a correction from a real record is mostly
+        "the other quote of the same customer" and that row should cost one
+        click. Then, on a conversation that is on something other than its
+        contact, an **unlink** row: *Only <contact>*, which skips step two and
+        moves the conversation back to the contact. Not to nothing -- a
+        message with no model is readable by its author and nobody else -- but
+        to the fallback state the rest of the module already calls unlinked:
+        the "On a contact only" folder, the coverage report, the suggestion.
+        Neither row shows under a search: a search is a question about the
+        rest of the list.
         """
         self._check_caller()
         known = self._known_link_models()
         if not search:
-            return self._link_target_rows(known + self._other_mail_models())
+            rows = self._link_target_rows(
+                ([current_model] if current_model else []) + known
+                + self._other_mail_models())
+            if rows and current_model and rows[0]['model'] == current_model:
+                rows[0]['current'] = True
+            unlink = self._unlink_row(current_model, partner_id)
+            if unlink:
+                rows.insert(1 if rows and rows[0].get('current') else 0, unlink)
+            return rows
 
         found = self.env['ir.model'].sudo().search([
             ('is_mail_thread', '=', True),
@@ -1577,6 +1598,27 @@ class PanMailConversation(models.AbstractModel):
         ordered = ([name for name in known if name in found]
                    + [name for name in found if name not in known])
         return self._link_target_rows(ordered)
+
+    def _unlink_row(self, current_model, partner_id):
+        """The way back to the contact, or nothing.
+
+        Nothing on a conversation that is on a contact already (there is
+        nothing to unlink) and nothing without a contact to go back to: the
+        option is absent rather than refused. The row carries a `res_id`,
+        which is what tells the client it answers both steps at once.
+        """
+        if not partner_id or not current_model or current_model == 'res.partner':
+            return None
+        partner = self.env['res.partner'].browse(int(partner_id)).exists()
+        if not partner or not partner.has_access('write'):
+            return None
+        return {
+            'model': 'res.partner',
+            'res_id': partner.id,
+            'label': _("Only %s", partner.display_name),
+            'icon': self._model_icon('res.partner'),
+            'unlink': True,
+        }
 
     def _known_link_models(self):
         """The models this database already files mail on, best first."""
@@ -1662,20 +1704,52 @@ class PanMailConversation(models.AbstractModel):
         The answer is a domain and a name, and the client hands both to the
         dialog as a filter facet: on by default, one click to remove, so the
         seeding is a head start and never a filter somebody has to escape.
+
+        Two more keys are about the dialog's New button. `can_create` says
+        whether it is there at all: the reader may create on the model, and
+        the model is not the contact, because the fetcher already made a
+        contact for every sender and a second one is a duplicate. `defaults`
+        is the form's context when it opens: the correspondent, through the
+        same two relations the facet is built from, so a lead made from a
+        mail opens with its sender filled in and the reader types a title.
         """
         self._check_caller()
         Model = self._link_model(model)
         partner = self.env['res.partner']
         if partner_id:
             partner = partner.browse(int(partner_id)).exists()
+        scope = {
+            'can_create': Model._name != 'res.partner' and Model.has_access('create'),
+            'defaults': self._create_defaults(Model, partner),
+        }
         domain = self._candidate_domain(Model, partner)
         if domain is None:
-            return {'domain': False, 'partner': ''}
+            return {'domain': False, 'partner': '', **scope}
         # The company, not the person who wrote: it is whose records these are,
         # and a facet reading one employee's name over the company's quotes
         # reads as a mistake.
         family = partner.commercial_partner_id or partner
-        return {'domain': domain, 'partner': family.display_name}
+        return {'domain': domain, 'partner': family.display_name, **scope}
+
+    def _create_defaults(self, Model, partner):
+        """What a record created from the picker starts with.
+
+        The same two relations `_candidate_domain` reads and nothing cleverer:
+        a `partner_id` gets the correspondent, an `email_from` gets their
+        address (and `contact_name` their name, where the model has one).
+        """
+        if not partner or Model._name == 'res.partner':
+            return {}
+        fields_ = Model._fields
+        field = fields_.get('partner_id')
+        if field and field.type == 'many2one' and field.comodel_name == 'res.partner':
+            return {'default_partner_id': partner.id}
+        defaults = {}
+        if 'email_from' in fields_ and partner.email:
+            defaults['default_email_from'] = partner.email
+        if 'contact_name' in fields_ and partner.name:
+            defaults['default_contact_name'] = partner.name
+        return defaults
 
     @api.model
     def new_mail_recipients(self, model, res_id):

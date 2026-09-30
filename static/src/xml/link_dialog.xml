@@ -13,8 +13,9 @@
                    placeholder="Search for a kind of record..."
                    t-on-input="onSearch"/>
             <ul class="o_mailpro_link_list">
-                <li t-foreach="state.rows" t-as="row" t-key="row.model">
+                <li t-foreach="state.rows" t-as="row" t-key="row.model + (row.unlink ? '-unlink' : '')">
                     <button type="button" class="o_mailpro_link_row"
+                            t-att-class="{ o_mailpro_link_row_current: row.current, o_mailpro_link_row_unlink: row.unlink }"
                             t-on-click="() => this.choose(row)">
                         <!-- The app's tile, where the model has one: the same
                              tile the Linked-to chips wear. The slot stays
@@ -23,6 +24,9 @@
                             <img t-if="row.icon" t-att-src="row.icon" alt=""/>
                         </span>
                         <t t-esc="row.label"/>
+                        <!-- Where the conversation is now, so the top row
+                             reads as "another one of these". -->
+                        <span t-if="row.current" class="o_mailpro_link_row_note">where it is now</span>
                     </button>
                 </li>
             </ul>

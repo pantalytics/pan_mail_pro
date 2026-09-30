@@ -1642,6 +1642,14 @@ $mailpro-band-gutter: 3.5rem;
         &:hover { background: $mailpro-panel; color: $mailpro-accent-ink; }
     }
 
+    // "where it is now", after the top row's label: quieter than the label,
+    // so the row still reads as a kind of record first.
+    .o_mailpro_link_row_note {
+        margin-left: auto;
+        font-size: 0.75rem;
+        color: $mailpro-muted;
+    }
+
     // The app tile at text height, the same size as on the Linked-to chip.
     // A slot rather than an image, so a model without a tile keeps its
     // label in the same column as the rest.
