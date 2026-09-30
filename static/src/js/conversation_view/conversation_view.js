@@ -1031,8 +1031,9 @@ export class ConversationView extends Component {
      * error over a conversation the reader has in front of them.
      */
     async markRead(conversation) {
+        let result;
         try {
-            await this.orm.silent.call(
+            result = await this.orm.silent.call(
                 "pan.mail.conversation", "set_read", [], {
                     model: conversation.model,
                     res_id: conversation.res_id,
@@ -1044,7 +1045,7 @@ export class ConversationView extends Component {
             console.warn("[Mail Pro] could not mark the conversation read", error);
             return;
         }
-        this.setUnreadLocally(conversation, false);
+        this.setUnreadLocally(conversation, false, result.message_ids);
     }
 
     /** Is the open conversation one the mailbox still calls unread? */
@@ -1076,8 +1077,9 @@ export class ConversationView extends Component {
             return;
         }
         const read = this.selectedUnread;
+        let result;
         try {
-            await this.orm.call("pan.mail.conversation", "set_read", [], {
+            result = await this.orm.call("pan.mail.conversation", "set_read", [], {
                 model: conversation.model,
                 res_id: conversation.res_id,
                 message_id: conversation.message_id,
@@ -1089,11 +1091,17 @@ export class ConversationView extends Component {
                          error);
             return;
         }
-        this.setUnreadLocally(conversation, !read);
+        this.setUnreadLocally(conversation, !read, result.message_ids);
     }
 
-    /** The dot on the row and the button in the header, without a reload. */
-    setUnreadLocally(conversation, unread) {
+    /**
+     * The dot on the row and the button in the header, without a reload.
+     *
+     * `messageIds` are the mails the server marked: all of them on read, only
+     * the newest incoming one on unread (see `set_read`), so the rows under
+     * the chevron follow exactly what the mailbox now says.
+     */
+    setUnreadLocally(conversation, unread, messageIds = []) {
         for (const row of this.state.conversations) {
             if (this.sameConversation(row, conversation)) {
                 row.unread = unread;
@@ -1103,10 +1111,11 @@ export class ConversationView extends Component {
             && this.sameConversation(this.state.selected, conversation)) {
             this.state.selected.unread = unread;
         }
-        // Reading a conversation reads every mail in it, so the rows under
-        // the chevron cannot keep a dot the row above them just lost.
+        const marked = new Set(messageIds);
         for (const row of this.threadOf(conversation)) {
-            row.unread = unread;
+            if (marked.has(row.id)) {
+                row.unread = unread;
+            }
         }
     }
 

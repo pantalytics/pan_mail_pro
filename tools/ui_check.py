@@ -2357,10 +2357,11 @@ class Checks:
             return
         if not active.evaluate('el => el.classList.contains("o_mailpro_item_unread")'):
             self.fail('marking unread left the row reading as read')
-        # The class is not the point: the reader has to see it. A dot, because
-        # the row they marked is also the highlighted one and one font weight
-        # of difference on a highlighted row is invisible.
-        if not active.query_selector('.o_mailpro_unread_dot'):
+        # The class is not the point: the reader has to see it. A dot in the
+        # gutter, because the row they marked is also the open one, and one
+        # font weight of difference on a filled row is invisible.
+        head = page.query_selector('.o_mailpro_group_head_active')
+        if not head or not head.query_selector('.o_mailpro_unread_dot'):
             self.fail('the row marked unread shows no unread dot')
         after = unread_in_db()
         if after <= before:

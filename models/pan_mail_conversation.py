@@ -490,10 +490,11 @@ class PanMailConversation(models.AbstractModel):
         if not newest:
             return []
 
-        counts = self._counts_per_group(base, newest)
+        counts, unread = self._counts_per_group(base, newest)
         return [
             self._conversation_row(
-                message, counts.get((message.model, message.res_id), 1))
+                message, counts.get((message.model, message.res_id), 1),
+                unread=(message.model, message.res_id) in unread)
             for message in newest
         ]
 
@@ -581,54 +582,44 @@ class PanMailConversation(models.AbstractModel):
     @api.model
     def set_read(self, model, res_id, read=True, message_id=None,
                  mailbox_id=None):
-        """Mark one conversation read or unread, everywhere it is recorded.
+        """Mark one conversation read or unread, the way Gmail and Outlook do.
 
-        Three writes, in the order that survives a failure: the mirror in
-        Odoo, then the reader's own Odoo Inbox rows, then the provider. The
-        first is what the screen draws, the last is best effort by design (see
-        `pan.mail.mailbox.push_read_state`), and a refresh settles any
-        disagreement in favour of the provider a minute later.
+        A conversation and a message are not the same thing to mark:
 
-        Per conversation, because reading is: nobody reads the fourth message
-        of a thread and not the fifth.
+        - **Read** marks every message in it. Nobody reads the fourth message
+          of a thread and not the fifth; both clients do the same.
+        - **Unread** marks the newest mail that came *in*, and nothing else.
+          The row is unread when any message is, so one is enough to put the
+          dot back, and the mailbox then says which mail wants you -- not that
+          the whole history of the thread went unread overnight. Gmail's list
+          does this; Outlook marks all of them, which is the case dropped.
+
+        Single messages, and many at once, go through `mail.message.mark_read`
+        / `mark_unread`. Either way the provider hears about it from
+        `mail.message.write`, best effort (see `push_read_state`), and a
+        refresh settles any disagreement in favour of the provider.
 
         Returns:
-            dict: `read` as it now stands and `count`, the messages touched.
+            dict: `read` as it now stands, `count` the messages that changed,
+                and `message_ids` the messages marked, so the unfolded rows
+                under the conversation can follow without a reload.
         """
         self._check_caller()
+        read = bool(read)
         # Searched as the caller, so a conversation they may not read is a
         # conversation they cannot mark. Odoo's own rules over `mail.message`
         # do that work and this must not step around them.
         messages = self.env['mail.message'].search(
-            self._conversation_domain(model, res_id, message_id, mailbox_id))
-        if not messages:
-            return {'read': bool(read), 'count': 0}
-
-        # Only what actually moves. The Inbox calls this every time a
-        # conversation is opened, and a conversation that was already read
-        # must not cost a provider call for saying so again.
-        changing = messages.filtered(lambda m: m.x_is_read != bool(read))
-
-        # Written with sudo: read state is a fact about the mailbox, not about
-        # the document, and a reader with no write access to somebody's sale
-        # order may still have read their mail. The search above is what
-        # decided they may touch these messages at all.
-        changing.sudo().write({'x_is_read': bool(read)})
-
-        if read:
-            # Your own Odoo Inbox rows for these messages, and nobody else's:
-            # `set_message_done` works from `env.user`, and it sends the bus
-            # message that makes the bell count down while you read. Asked of
-            # every message, not only the ones that moved -- the notification
-            # row and the mailbox's read state are two different facts, and
-            # the bell can still be ringing for a mail the mailbox calls read.
-            messages.set_message_done()
-
-        for mailbox in changing.mapped('x_mailbox_id'):
-            mailbox.push_read_state(
-                changing.filtered(lambda m: m.x_mailbox_id == mailbox),
-                read=bool(read))
-        return {'read': bool(read), 'count': len(changing)}
+            self._conversation_domain(model, res_id, message_id, mailbox_id),
+            order='date desc, id desc')
+        if not read:
+            messages = (messages.filtered(
+                lambda m: m.x_direction != 'outgoing')[:1] or messages[:1])
+        # Asked of every message, not only the ones that moved: the reader's
+        # own Odoo Inbox rows are cleared on read, and the bell can still be
+        # ringing for a mail the mailbox already calls read.
+        count = messages._mark_read_state(read) if messages else 0
+        return {'read': read, 'count': count, 'message_ids': messages.ids}
 
     @api.model
     def refresh_read_state(self, mailbox_id=None):
@@ -1108,13 +1099,14 @@ class PanMailConversation(models.AbstractModel):
         return Message.browse(ordered)
 
     def _counts_per_group(self, base, messages):
-        """How many messages each of these conversations holds, in one query.
+        """How many messages each of these conversations holds, and which of
+        them still hold an unread one, in one query.
 
         Counted over the base domain, so "3 messages" is the size of the
         conversation rather than the size of the folder's slice of it.
         """
         if not messages:
-            return {}
+            return {}, set()
         keys = Domain.OR(
             Domain([('model', '=', message.model or False),
                     ('res_id', '=', message.res_id or False)])
@@ -1122,9 +1114,12 @@ class PanMailConversation(models.AbstractModel):
         )
         groups = self.env['mail.message']._read_group(
             Domain.AND([Domain(base), keys]),
-            groupby=['model', 'res_id'], aggregates=['__count'],
+            groupby=['model', 'res_id'], aggregates=['__count', 'x_is_read:bool_and'],
         )
-        return {(model, res_id): count for model, res_id, count in groups}
+        counts = {(model, res_id): count for model, res_id, count, _read in groups}
+        unread = {(model, res_id) for model, res_id, _count, all_read in groups
+                  if not all_read}
+        return counts, unread
 
     def _count_on_records(self, records):
         """How many emails sit on these records, in one grouped query."""
@@ -1155,7 +1150,7 @@ class PanMailConversation(models.AbstractModel):
     # Row builders
     # ------------------------------------------------------------------
 
-    def _conversation_row(self, newest, count):
+    def _conversation_row(self, newest, count, unread=None):
         """One line in the list, built from the newest message of the group."""
         record_name = newest.x_document_name or newest.record_name or ''
         return {
@@ -1170,10 +1165,11 @@ class PanMailConversation(models.AbstractModel):
             'date': newest.date,
             'count': count,
             'record_name': record_name,
-            # The newest message speaks for the conversation: a thread whose
-            # last mail you have read is a thread you are up to date on, which
-            # is what every mail client means by the dot.
-            'unread': not newest.x_is_read,
+            # Unread while any message in it is, which is what Gmail and
+            # Outlook both draw, and what the Unread filter already finds: a
+            # row that filter lists must not then be drawn read. `unread` is
+            # that answer from the grouping; a one-message row is its own.
+            'unread': (not newest.x_is_read) if unread is None else unread,
             'mailbox': newest.x_mailbox_id.email or '',
             # Which mailbox this conversation arrived on, beside the address
             # the row draws. It is what the reply sends from: under All

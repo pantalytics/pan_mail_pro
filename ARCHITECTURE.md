@@ -2431,7 +2431,25 @@ read state and Odoo mirrors it.**
   message unread instead would light the whole database up on the first
   screen.
 - **At most `UNREAD_CAP` handles per refresh.** A mailbox sitting on thousands
-  of unread mails gets a truthful subset and the rest stays as it was.
+  of unread mails gets a truthful subset and the rest stays as it was: a
+  capped answer skips the "no longer unread" sweep, because a mail missing
+  from a full page is older, not read.
+- **Every write to `x_is_read` is pushed, from `mail.message.write`.** The
+  Inbox, `mark_read()` / `mark_unread()` over the API and a plain field write
+  from an integration all pass there, grouped into one `set_seen()` per
+  mailbox, so a bulk mark of forty mails is one provider call. A write that
+  copies the provider in (the import, the refresh) carries `READ_MIRROR_CTX`
+  and is not pushed back. Only a mailbox manager may write it, as only one may
+  read the Inbox.
+
+**A conversation and a message are marked differently**, the way Gmail and
+Outlook do it. A conversation is unread while *any* of its messages is (both
+clients draw it so, and it is what the Unread filter finds). Marking it read
+marks every message; marking it unread marks only the newest incoming one --
+Gmail's list behaviour, and the smaller write. Outlook marks the whole
+conversation unread; that is the case dropped. A single message, or any set of
+them, goes through `mail.message.mark_read()` / `mark_unread()`, which touch
+exactly the ids named.
 
 **Odoo's own `mail.notification` needaction row is a different fact**, and the
 Inbox no longer reads it. It is per user and answers "does this Odoo
@@ -2443,9 +2461,12 @@ They can disagree on one message and neither is wrong.
 read-state control is a toggle: Mark unread over a conversation you have read,
 Mark read over one you have not. It used to be a single Mark unread, on the
 argument that reading a mail is what reads a mail, so a second click did
-nothing at all. The list says it too, with a dot and not only a font weight:
-the row being marked is also the highlighted one, and 600 against 700 on a
-highlighted row is a change nobody can see. 19.0.17.1.0; the button was writing
+nothing at all. The list says it too, with the cues Outlook uses, in our own
+accent rather than Microsoft's blue: a dot in the gutter, sender and subject
+bold, the subject and the time in the accent, the preview left muted. An
+unread mail under an unfolded conversation gets the dot, the weight, the
+accent time and a tint over its row. The open row is a fill; weight alone on
+a filled row is a change nobody can see, which is what the dot is for. 19.0.17.1.0; the button was writing
 the database and the provider correctly the whole time.
 
 There is exactly one bridge, and it runs one way: **reading a conversation in
