@@ -17,8 +17,9 @@ from unittest.mock import patch
 from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, new_test_user, tagged
 
+from odoo.addons.pan_mail_pro.models.mail_message import READ_MIRROR_CTX
 from odoo.addons.pan_mail_pro.models.mail_provider_client import (
-    FOLDER_INBOX, get_provider_client,
+    FOLDER_INBOX, UNREAD_CAP, get_provider_client,
 )
 from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import READ_STATE_TTL
 
@@ -35,9 +36,12 @@ class TestReadState(TransactionCase):
         super().setUpClass()
         cls.env['pan.mail.domain'].set_domains(['company.test'])
         cls.Conversation = cls.env['pan.mail.conversation']
+        # Reads the leads too: `mark_read` asks whether the caller may read
+        # the mail, and Odoo answers that from the document it hangs on.
         cls.manager = new_test_user(
             cls.env, login='read_manager',
-            groups='base.group_user,pan_mail_pro.group_mail_mailbox_manager')
+            groups='base.group_user,pan_mail_pro.group_mail_mailbox_manager,'
+                   'sales_team.group_sale_salesman_all_leads')
         cls.colleague = new_test_user(
             cls.env, login='read_colleague',
             groups='base.group_user,pan_mail_pro.group_mail_mailbox_manager')
@@ -82,7 +86,8 @@ class TestReadState(TransactionCase):
                           return_value=1) as push:
             result = self.Conversation.set_read('crm.lead', self.lead.id, read=True)
 
-        self.assertEqual(result, {'read': True, 'count': 1})
+        self.assertEqual(result, {'read': True, 'count': 1,
+                                  'message_ids': message.ids})
         self.assertTrue(message.x_is_read)
         self.assertEqual(push.call_count, 1)
         self.assertTrue(push.call_args.kwargs['read'])
@@ -125,6 +130,107 @@ class TestReadState(TransactionCase):
             self.Conversation.with_user(plain).set_read('crm.lead', self.lead.id)
         with self.assertRaises(AccessError):
             self.Conversation.with_user(plain).refresh_read_state()
+
+    # -- a conversation is not a message ---------------------------------- #
+
+    def _reply(self, handle='INBOX:42:9', read=True):
+        message = self._mail(handle=handle, read=read, subject='Re: Offerte')
+        message.write({'x_direction': 'outgoing', 'author_id': False})
+        return message
+
+    def test_marking_a_conversation_unread_marks_only_the_newest_incoming_mail(self):
+        """Gmail's list does this, and it is the smaller write.
+
+        The row is unread while any message is, so one mail is enough to put
+        the dot back; marking the whole history unread would make the mailbox
+        say every old mail in the thread is waiting for somebody. Our own
+        reply is never the one: nobody has to read what they sent.
+        """
+        older = self._mail(handle='INBOX:42:7')
+        newest_in = self._mail(handle='INBOX:42:8', subject='Re: Offerte')
+        reply = self._reply()
+        reply.date = newest_in.date + timedelta(minutes=5)
+        with patch.object(type(self.mailbox), 'push_read_state',
+                          return_value=1) as push:
+            result = self.Conversation.set_read('crm.lead', self.lead.id, read=False)
+
+        self.assertEqual(result['message_ids'], newest_in.ids)
+        self.assertFalse(newest_in.x_is_read)
+        self.assertTrue(older.x_is_read)
+        self.assertTrue(reply.x_is_read)
+        self.assertEqual(push.call_args.args[0], newest_in)
+
+    def test_a_conversation_is_unread_while_any_message_in_it_is(self):
+        """What the Unread filter finds, the row must draw as unread."""
+        self._mail(handle='INBOX:42:7', read=False)
+        newest = self._mail(handle='INBOX:42:8', subject='Re: Offerte')
+        newest.date = newest.date + timedelta(minutes=5)
+        row = self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id)[0]
+        self.assertEqual(row['message_id'], newest.id)
+        self.assertTrue(row['unread'])
+
+    # -- one message, many messages, any caller -------------------------- #
+
+    def test_mark_read_and_unread_work_on_exactly_the_messages_named(self):
+        """The API's way in, for one mail or a hundred: no conversation logic."""
+        first = self._mail(handle='INBOX:42:7', read=False)
+        second = self._mail(handle='INBOX:42:8', read=False, subject='Re: Offerte')
+        with patch.object(type(self.mailbox), 'push_read_state', return_value=1):
+            self.assertEqual(first.with_user(self.manager).mark_read(), 1)
+        self.assertTrue(first.x_is_read)
+        self.assertFalse(second.x_is_read)
+
+        with patch.object(type(self.mailbox), 'push_read_state', return_value=2):
+            both = (first | second).with_user(self.manager)
+            self.assertEqual(both.mark_unread(), 1)
+        self.assertFalse(first.x_is_read)
+
+    def test_bulk_is_one_provider_call_per_mailbox(self):
+        """Forty messages are one `set_seen` per mailbox, not forty."""
+        other = self.env['pan.mail.mailbox'].create({
+            'email': 'support@company.test', 'provider': 'imap',
+            'mailbox_type': 'shared',
+        })
+        here = self._mail(handle='INBOX:42:7', read=False) \
+            | self._mail(handle='INBOX:42:8', read=False)
+        there = self._mail(handle='INBOX:43:1', read=False)
+        there.x_mailbox_id = other
+        with patch.object(type(self.mailbox), 'push_read_state',
+                          return_value=1) as push:
+            (here | there).with_user(self.manager).mark_read()
+        self.assertEqual(push.call_count, 2)
+        pushed = sorted(len(call.args[0]) for call in push.call_args_list)
+        self.assertEqual(pushed, [1, 2])
+
+    def test_a_plain_write_reaches_the_provider_too(self):
+        """An integration that writes the field is marking the mailbox.
+
+        Without this, `update_record` over the API changes the dot and the
+        next refresh quietly changes it back.
+        """
+        message = self._mail(read=False)
+        with patch.object(type(self.mailbox), 'push_read_state',
+                          return_value=1) as push:
+            message.with_user(self.manager).sudo().write({'x_is_read': True})
+        self.assertEqual(push.call_count, 1)
+        self.assertTrue(push.call_args.kwargs['read'])
+
+    def test_a_copy_of_the_provider_is_not_pushed_back_to_it(self):
+        message = self._mail(read=False)
+        with patch.object(type(self.mailbox), 'push_read_state') as push:
+            message.with_context(**READ_MIRROR_CTX).write({'x_is_read': True})
+            self._refresh(['INBOX:42:7'], force=True)
+        push.assert_not_called()
+        self.assertFalse(message.x_is_read)
+
+    def test_marking_mail_is_a_managers_act_over_the_api_too(self):
+        message = self._mail(read=False)
+        plain = new_test_user(self.env, login='mark_plain', groups='base.group_user')
+        with self.assertRaises(AccessError):
+            message.with_user(plain).mark_read()
+        with self.assertRaises(AccessError):
+            message.with_user(plain).write({'x_is_read': True})
 
     # -- the bridge to Odoo's own notifications --------------------------- #
 
@@ -206,6 +312,14 @@ class TestReadState(TransactionCase):
         self.assertTrue(opened.x_is_read)
         self.assertFalse(untouched.x_is_read)
         self.assertEqual(ask.call_args.args[2], FOLDER_INBOX)
+
+    def test_a_capped_answer_does_not_read_the_rest_of_the_pile(self):
+        """A full page is the newest unread, not all of them. A mail that
+        missed the page is older, not read, and must keep its dot."""
+        older = self._mail(handle='INBOX:42:1', read=False)
+        handles = ['INBOX:42:%d' % n for n in range(2, UNREAD_CAP + 2)]
+        self._refresh(handles)
+        self.assertFalse(older.x_is_read)
 
     def test_the_refresh_is_throttled_per_mailbox(self):
         """The Inbox asks on every visit; the provider is asked once a minute."""

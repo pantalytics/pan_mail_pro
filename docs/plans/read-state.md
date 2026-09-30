@@ -18,6 +18,11 @@ Three things landed differently from the plan below, each for a reason:
   one `unread_message_ids()` per mailbox is cheaper than that compromise and
   correct for the whole mailbox. Nothing refreshes on the cron: a mirror
   nobody is looking at does not need to be right.
+- **Conversation vs message, 19.0.21.1.0.** A conversation is unread while any
+  message is; marking it unread marks only its newest incoming mail (Gmail's
+  list). Single messages and bulk go through `mail.message.mark_read()` /
+  `mark_unread()`, and every write of the mirror is pushed from
+  `mail.message.write`, so an API caller syncs the provider too.
 - **No `u` shortcut**, and no toggle. There is one quiet button on the open
   conversation, Mark unread, because the way to mark something read is to
   read it.

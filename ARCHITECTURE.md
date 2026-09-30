@@ -2431,7 +2431,25 @@ read state and Odoo mirrors it.**
   message unread instead would light the whole database up on the first
   screen.
 - **At most `UNREAD_CAP` handles per refresh.** A mailbox sitting on thousands
-  of unread mails gets a truthful subset and the rest stays as it was.
+  of unread mails gets a truthful subset and the rest stays as it was: a
+  capped answer skips the "no longer unread" sweep, because a mail missing
+  from a full page is older, not read.
+- **Every write to `x_is_read` is pushed, from `mail.message.write`.** The
+  Inbox, `mark_read()` / `mark_unread()` over the API and a plain field write
+  from an integration all pass there, grouped into one `set_seen()` per
+  mailbox, so a bulk mark of forty mails is one provider call. A write that
+  copies the provider in (the import, the refresh) carries `READ_MIRROR_CTX`
+  and is not pushed back. Only a mailbox manager may write it, as only one may
+  read the Inbox.
+
+**A conversation and a message are marked differently**, the way Gmail and
+Outlook do it. A conversation is unread while *any* of its messages is (both
+clients draw it so, and it is what the Unread filter finds). Marking it read
+marks every message; marking it unread marks only the newest incoming one --
+Gmail's list behaviour, and the smaller write. Outlook marks the whole
+conversation unread; that is the case dropped. A single message, or any set of
+them, goes through `mail.message.mark_read()` / `mark_unread()`, which touch
+exactly the ids named.
 
 **Odoo's own `mail.notification` needaction row is a different fact**, and the
 Inbox no longer reads it. It is per user and answers "does this Odoo
