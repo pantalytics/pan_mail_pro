@@ -409,8 +409,8 @@
                                 -->
                                 <div class="o_mailpro_group_head d-flex align-items-start"
                                      t-att-class="{ 'o_mailpro_group_head_active': state.selected
-                                         and sameConversation(conversation, state.selected),
-                                         'o_mailpro_group_head_unread': conversation.unread }">
+                                         and sameConversation(conversation, state.selected) }">
+                                    <span t-if="conversation.unread" class="o_mailpro_unread_dot" aria-hidden="true"/>
                                     <!--
                                         The chevron, and only where there is something
                                         behind it: a one-mail conversation that offers to
@@ -500,6 +500,7 @@
                                             class="o_mailpro_child"
                                             t-att-class="{ 'o_mailpro_child_unread': message.unread }"
                                             t-on-click="() => this.pickMessage(conversation, message)">
+                                        <span t-if="message.unread" class="o_mailpro_unread_dot" aria-hidden="true"/>
                                         <span t-if="message.unread" class="visually-hidden">Unread. </span>
                                         <span class="d-flex justify-content-between align-items-baseline gap-2">
                                             <span class="o_mailpro_from text-truncate" t-esc="message.author"/>

@@ -558,8 +558,7 @@ $mailpro-band-gutter: 3.5rem;
         &:hover { background: rgba(0, 29, 33, 0.02); }
     }
 
-    // Open is a fill, unread is the bar: Outlook's split. The bar used to mark
-    // the open row, which left unread nothing but weight and a dot.
+    // Open is a fill; unread is the dot and the accent (below).
     .o_mailpro_group_head_active {
         background: rgba(93, 91, 214, 0.1);
 
@@ -627,25 +626,47 @@ $mailpro-band-gutter: 3.5rem;
         }
     }
 
+    // An unread mail under an unfolded conversation: the dot, the weight, the
+    // time in the accent, and a tint over the whole row.
     .o_mailpro_child_unread {
-        box-shadow: inset 3px 0 0 0 $mailpro-accent;
+        background: rgba(93, 91, 214, 0.06);
+
+        &:hover { background: rgba(93, 91, 214, 0.1); }
 
         .o_mailpro_from { font-weight: 700; }
+
+        .o_mailpro_date { color: $mailpro-accent-ink; font-weight: 700; }
+
+        .o_mailpro_unread_dot { left: calc(#{$mailpro-child-indent} - 1rem); top: 0.6875rem; }
     }
 
     .o_mailpro_thread_loading { padding: 0.3125rem 0.5rem 0.3125rem $mailpro-child-indent; }
 
-    // Unread the way Outlook draws it: a bar down the row's left edge, the
-    // sender and the subject bold, the subject in the accent. No tinted card
-    // (that is Gmail's, and here a fill already means "open"), no dot. The bar
-    // is what stays readable on the open row, where weight alone was a
-    // difference nobody could see.
-    .o_mailpro_group_head_unread { box-shadow: inset 3px 0 0 0 $mailpro-accent; }
+    // Unread the way Outlook draws it, in our own accent: a dot in the gutter,
+    // sender and subject bold, the subject and the time in the accent. The
+    // preview stays muted. The fill is the open row's, so the dot is what
+    // stays readable when the open row is also the unread one.
+    .o_mailpro_group_head,
+    .o_mailpro_child { position: relative; }
+
+    .o_mailpro_unread_dot {
+        position: absolute;
+        left: 0.5rem;
+        top: 2.125rem;
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 999px;
+        background: $mailpro-accent;
+        pointer-events: none;
+    }
 
     .o_mailpro_item_unread .o_mailpro_from,
     .o_mailpro_item_unread .o_mailpro_subject { font-weight: 700; }
 
-    .o_mailpro_item_unread .o_mailpro_subject { color: $mailpro-accent-ink; }
+    .o_mailpro_item_unread .o_mailpro_subject,
+    .o_mailpro_item_unread .o_mailpro_date { color: $mailpro-accent-ink; }
+
+    .o_mailpro_item_unread .o_mailpro_date { font-weight: 700; }
 
     // The same fact at the other end of the header: the one read-state button
     // wears the state it is offering to leave.

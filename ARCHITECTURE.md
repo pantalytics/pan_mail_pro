@@ -2461,11 +2461,12 @@ They can disagree on one message and neither is wrong.
 read-state control is a toggle: Mark unread over a conversation you have read,
 Mark read over one you have not. It used to be a single Mark unread, on the
 argument that reading a mail is what reads a mail, so a second click did
-nothing at all. The list says it too, the way Outlook does: a bar in the
-accent down the row's left edge, sender and subject bold, the subject in the
-accent. The open row is a fill, not a bar, so the two never collide; weight
-alone on a filled row is a change nobody can see. (A dot did this job until
-19.0.21.1.0; Outlook has none, and the bar says the same thing.) 19.0.17.1.0; the button was writing
+nothing at all. The list says it too, with the cues Outlook uses, in our own
+accent rather than Microsoft's blue: a dot in the gutter, sender and subject
+bold, the subject and the time in the accent, the preview left muted. An
+unread mail under an unfolded conversation gets the dot, the weight, the
+accent time and a tint over its row. The open row is a fill; weight alone on
+a filled row is a change nobody can see, which is what the dot is for. 19.0.17.1.0; the button was writing
 the database and the provider correctly the whole time.
 
 There is exactly one bridge, and it runs one way: **reading a conversation in
