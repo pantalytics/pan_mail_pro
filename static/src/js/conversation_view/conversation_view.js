@@ -863,6 +863,42 @@ export class ConversationView extends Component {
         await opened;
     }
 
+    /**
+     * The row menu: the ⋮ on the row, and right-click on it, the way Outlook
+     * does it. Right-click alone is invisible and has no touch equivalent, so
+     * it only opens the button's menu. Odoo's spreadsheet version history uses
+     * the same pairing.
+     */
+    rowMenuItems(conversation) {
+        return [
+            { id: "open", label: _t("Open"), onSelected: () => this.pick(conversation) },
+            {
+                id: "read",
+                label: conversation.unread ? _t("Mark read") : _t("Mark unread"),
+                onSelected: () => this.setRead(conversation, conversation.unread),
+            },
+            {
+                id: "link",
+                label: _t("Link to…"),
+                onSelected: async () => {
+                    await this.pick(conversation);
+                    this.openLinkDialog();
+                },
+            },
+        ];
+    }
+
+    openRowMenu(ev, conversation) {
+        // Drafts and rows read live from the mailbox have no menu, and keep
+        // the browser's own.
+        const button = ev.currentTarget.querySelector(".o_mailpro_row_menu");
+        if (!button || conversation.draft_id || conversation.live) {
+            return;
+        }
+        ev.preventDefault();
+        button.click();
+    }
+
     /** The key a conversation's unfolded thread is cached under. */
     conversationKey(conversation) {
         // A live row has no Odoo message to key on. It is also never
@@ -1072,11 +1108,13 @@ export class ConversationView extends Component {
      * conversation they are reading jump into the list under them.
      */
     async toggleRead() {
-        const conversation = this.state.selected;
-        if (!conversation) {
-            return;
+        if (this.state.selected) {
+            await this.setRead(this.state.selected, this.selectedUnread);
         }
-        const read = this.selectedUnread;
+    }
+
+    /** Mark one conversation read or unread, open or not. */
+    async setRead(conversation, read) {
         let result;
         try {
             result = await this.orm.call("pan.mail.conversation", "set_read", [], {

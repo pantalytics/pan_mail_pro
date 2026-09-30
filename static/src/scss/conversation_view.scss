@@ -579,6 +579,33 @@ $mailpro-band-gutter: 3.5rem;
 
     .o_mailpro_item_active { background: none; }
 
+    // The row menu's button: there on hover, on focus and while its menu is
+    // open, and always on a touch screen, which has no hover and no right-click.
+    .o_mailpro_row_menu {
+        width: 1.75rem;
+        padding: 0.4375rem 0;
+        border: 0;
+        background: none;
+        color: $mailpro-faint;
+        cursor: pointer;
+        opacity: 0;
+
+        &:hover { color: $mailpro-ink; }
+
+        &:focus-visible {
+            opacity: 1;
+            outline: 2px solid $mailpro-accent;
+            outline-offset: -2px;
+            border-radius: 0.25rem;
+        }
+
+        &[aria-expanded="true"] { opacity: 1; }
+
+        @media (hover: none) { opacity: 1; }
+    }
+
+    .o_mailpro_group_head:hover .o_mailpro_row_menu { opacity: 1; }
+
     // The chevron's own column. Its width is what the unfolded mails indent
     // by, so the two are one number and not two that drift.
     .o_mailpro_twist {

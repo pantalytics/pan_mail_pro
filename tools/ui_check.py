@@ -2383,6 +2383,25 @@ class Checks:
             self.fail('marking it read again left the row reading as unread')
         if unread_in_db() != before:
             self.fail('marking it read again did not clear it in the database')
+
+        # Right-click on a row opens the row menu, the way Outlook does, and
+        # Mark unread from it reaches the database without opening anything.
+        head = page.query_selector('.o_mailpro_group_head_active')
+        if not head:
+            self.fail('no open row to right-click')
+            return
+        head.click(button='right')
+        try:
+            item = page.wait_for_selector(
+                '.o-dropdown-item:has-text("Mark unread")', timeout=5000)
+        except Exception:
+            self.fail('right-clicking a row opens no menu with Mark unread')
+            return
+        item.click()
+        page.wait_for_timeout(1500)
+        if unread_in_db() <= before:
+            self.fail('Mark unread from the row menu wrote nothing to the database')
+        self.shot('inbox-row-menu.png')
         self.error_free('Inbox read state')
 
     # -- The provider form ----------------------------------------------------

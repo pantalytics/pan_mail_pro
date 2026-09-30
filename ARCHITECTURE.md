@@ -2466,7 +2466,14 @@ accent rather than Microsoft's blue: a dot in the gutter, sender and subject
 bold, the subject and the time in the accent, the preview left muted. An
 unread mail under an unfolded conversation gets the dot, the weight, the
 accent time and a tint over its row. The open row is a fill; weight alone on
-a filled row is a change nobody can see, which is what the dot is for. 19.0.17.1.0; the button was writing
+a filled row is a change nobody can see, which is what the dot is for.
+
+**The row menu** is the same actions without opening the conversation: a
+⋮ on each row (shown on hover, always on touch) and right-click on the row,
+which opens that same menu, as in Outlook. Open, Mark read / unread, Link to.
+Odoo's own `Dropdown`; there is no context-menu service in the web client, and
+the pairing is the one Odoo's spreadsheet version history uses. Drafts and
+live rows have none. No multi-select: bulk stays on the API. 19.0.17.1.0; the button was writing
 the database and the provider correctly the whole time.
 
 There is exactly one bridge, and it runs one way: **reading a conversation in
