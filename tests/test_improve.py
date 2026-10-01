@@ -20,7 +20,7 @@ class TestImproveConfig(TransactionCase):
         self.link = self.License.sudo().create({
             'status': 'active',
             'improve': True,
-            'improve_host': 'https://app.mailpro.pantalytics.test/i/7-abc',
+            'improve_host': 'https://mcp.pantalytics.test/i/7-abc',
             'improve_token': 'phc_test',
             'replay_sample': 0.5,
         })
@@ -28,7 +28,7 @@ class TestImproveConfig(TransactionCase):
     def test_the_session_config_names_the_proxy_and_a_pseudonym(self):
         config = self.License.improve_config()
         self.assertEqual(set(config), {'host', 'token', 'user', 'sample', 'version'})
-        self.assertEqual(config['host'], 'https://app.mailpro.pantalytics.test/i/7-abc')
+        self.assertEqual(config['host'], 'https://mcp.pantalytics.test/i/7-abc')
         self.assertEqual(config['token'], 'phc_test')
         self.assertEqual(config['sample'], 0.5)
         self.assertRegex(config['user'], r'^u:[0-9a-f]{12}$')
@@ -69,7 +69,7 @@ class TestImproveSession(HttpCase):
     def test_the_session_carries_the_config_for_an_internal_user(self):
         self.env['pan.mail.license'].sudo().create({
             'status': 'active', 'improve': True,
-            'improve_host': 'https://app.mailpro.pantalytics.test/i/7-abc',
+            'improve_host': 'https://mcp.pantalytics.test/i/7-abc',
             'improve_token': 'phc_test', 'replay_sample': 1.0,
         })
         self.env['res.users'].create({

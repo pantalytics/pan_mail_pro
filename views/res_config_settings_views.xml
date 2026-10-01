@@ -93,7 +93,7 @@
                                         Switched on for your Pantalytics workspace: the Mail Pro inbox reports which
                                         screens, tabs and buttons are used and records the session with every word
                                         and every field masked. Never a mail, an address, a name or a subject.
-                                        Switch it off for every Odoo instance at app.mailpro.pantalytics.com, Settings.
+                                        Switch it off for every Odoo instance at mcp.pantalytics.com, Workspace settings.
                                     </div>
                                     <div class="mt-1">
                                         <field name="x_improve_refused"/>

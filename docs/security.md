@@ -128,7 +128,7 @@ User → Odoo → Microsoft Graph API / Gmail API / IMAP+SMTP host
 4. Call made to the provider
 5. Response processed in Odoo
 
-The one exception is the daily heartbeat to `app.mailpro.pantalytics.com`, the
+The one exception is the daily heartbeat to `mcp.pantalytics.com`, the
 whole of which is: the database id, the Mail Pro and Odoo version, how many
 accounts are connected, whether sync is healthy, and the last 24 hours of link
 coverage as counts and rule names; plus the Odoo URL once, when the instance

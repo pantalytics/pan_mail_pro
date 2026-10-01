@@ -2307,7 +2307,9 @@ their Odoo, which collects the key (**Check Approval** does the same by hand). T
 carries `daily_send_limit`, the number the plan is metered on.
 That is the device flow's shape: no redirect URI per customer database, so it
 works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
-server half lives in `pantalytics/mail-pro-admin`.
+server half runs on the Pantalytics platform at mcp.pantalytics.com
+(`pantalytics/odoo-mcp-pro-admin`); app.mailpro.pantalytics.com, the host
+releases before 19.0.22.0.0 call, stays an alias of it.
 
 - **Not connected, no Inbox.** `pan.mail.conversation._check_caller` refuses
   every read while `sync_allowed()` is false, and the Inbox draws one card
@@ -2317,10 +2319,10 @@ server half lives in `pantalytics/mail-pro-admin`.
   session is a page load old and an admin who has just connected has not
   reloaded anything.
 - **Usage and billing are read there, not here.** The settings page carries
-  one link (`dashboard_url()`, the Odoo instances page), and this module has
-  no usage screen of its own: the number that decides an invoice is the one
-  our server counted from the heartbeats, and a second copy in Odoo is a
-  second number to keep true.
+  one link (`dashboard_url()`, the workspace's Mail Pro page at
+  mcp.pantalytics.com), and this module has no usage screen of its own: the
+  number that decides an invoice is the one our server counted from the
+  heartbeats, and a second copy in Odoo is a second number to keep true.
 
 - **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
   `_heartbeat_body()` and nothing else: database id, module and Odoo version,
