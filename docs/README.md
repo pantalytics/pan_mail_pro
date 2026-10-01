@@ -50,7 +50,7 @@ See [Security](security.md) for the full picture.
 ## Getting Started
 
 1. Create your Pantalytics account at
-   <a href="https://app.mailpro.pantalytics.com/start" target="_blank">app.mailpro.pantalytics.com/start</a>.
+   <a href="https://mcp.pantalytics.com/admin/mail-pro" target="_blank">mcp.pantalytics.com/admin/mail-pro</a>.
    Free up to 100 mails a day per Odoo instance
 2. [Installation](getting-started/installation.md), add the module to your Odoo
    instance: Odoo.sh, Cloudpepper or your own server

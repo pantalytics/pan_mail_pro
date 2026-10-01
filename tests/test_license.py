@@ -425,7 +425,7 @@ class TestLicense(TransactionCase):
         invoice is the one the server counted."""
         url = self.env['pan.mail.license'].dashboard_url()
         self.assertTrue(url.startswith('http'))
-        self.assertTrue(url.endswith('/instances'))
+        self.assertTrue(url.endswith('/admin/mail-pro'))
         settings = self.env['res.config.settings'].create({})
         self.assertEqual(settings.x_license_dashboard_url, url)
 
