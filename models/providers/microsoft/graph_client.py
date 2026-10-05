@@ -406,31 +406,16 @@ class MicrosoftGraphClient(models.AbstractModel):
 
     @api.model
     def test_connection(self, account):
-        """Test Graph API connection by fetching user info"""
-        token = self.get_valid_token(account)
-
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/json',
-        }
-
+        """Does this sign-in still work: a token, and `/me` answering to it."""
         try:
-            response = requests.get('https://graph.microsoft.com/v1.0/me', headers=headers, timeout=10)
-            response.raise_for_status()
-            user_info = response.json()
-
-            return {
-                'success': True,
-                'display_name': user_info.get('displayName'),
-                'email': user_info.get('mail') or user_info.get('userPrincipalName'),
-                'id': user_info.get('id'),
-            }
-        except requests.exceptions.RequestException as e:
-            _logger.error(f"Graph API connection test failed: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-            }
+            token = self.get_valid_token(account)
+        except UserError as e:
+            return {'success': False, 'error': str(e), 'email': None, 'name': None}
+        identity = self.read_user_info(token)
+        if not identity.get('email'):
+            return {'success': False, 'error': _('Microsoft 365 did not name the '
+                    'signed-in account.'), **identity}
+        return {'success': True, 'error': None, **identity}
 
     @api.model
     def check_mailbox_access(self, account, mailbox):
@@ -1450,31 +1435,28 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise last_exception
         raise requests.exceptions.RequestException("Max retries exceeded")
 
-    def get_user_email(self, token):
-        """
-        Get the email address of the authenticated Microsoft user.
+    @api.model
+    def read_user_info(self, token):
+        """Who this token is: Graph's `/me` (see contract).
 
-        Args:
-            token: Valid OAuth access token
-
-        Returns:
-            str: Email address or None if not available
+        `mail` is the primary SMTP address; `userPrincipalName` is the sign-in
+        and stands in when the directory has no mail attribute.
         """
         try:
             headers = {
                 'Authorization': f'Bearer {token}',
                 'Content-Type': 'application/json',
             }
-
             response = requests.get('https://graph.microsoft.com/v1.0/me', headers=headers, timeout=10)
             response.raise_for_status()
             user_info = response.json()
-
-            return user_info.get('mail') or user_info.get('userPrincipalName')
-
         except Exception as e:
-            _logger.warning(f"[Graph API] Could not fetch user email: {e}")
-            return None
+            _logger.warning(f"[Graph API] Could not read the signed-in user: {e}")
+            return {'email': None, 'name': None}
+        return {
+            'email': user_info.get('mail') or user_info.get('userPrincipalName'),
+            'name': user_info.get('displayName'),
+        }
 
     # -------------------------------------------------------------------------
     # Mailbox actions — contract implementation

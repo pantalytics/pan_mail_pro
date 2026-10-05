@@ -327,6 +327,29 @@ the two would disagree about inline images within a release. `send_draft` sends
 the stored message rather than rebuilding it from Odoo's fields, so what was
 reviewed is what leaves.
 
+### The account actions
+
+The mailbox actions are what can be done *to a mailbox*. A sign-in is a
+`pan.mail.account`, and three things can be asked *of one*. They sit on the
+contract for the same reason the mailbox actions do: the question is the same
+at every provider and only the call behind it differs, so a caller that asked
+the provider directly would be the second copy of that difference.
+
+| Action | Asks | Microsoft 365 | Gmail | IMAP/SMTP |
+|---|---|---|---|---|
+| `read_user_info(token)` | who is this sign-in | `/me`: `mail` or `userPrincipalName`, `displayName` | `users/me/profile`: `emailAddress`, no name | nobody: the address is configuration |
+| `test_connection(account)` | does it still work | a token, and `/me` answering to it | a token, and the profile answering to it | an IMAP login and an SMTP login, each named when it fails |
+| `check_mailbox_access(account, mailbox)` | can it reach that shared mailbox | `GET /users/{mailbox}/mailFolders/inbox` with the person's token: Exchange's Full Access | `None`: a shared address is its own account | `None`: a shared address is its own login |
+
+Every answer is one shape: the normalized identity `{'email', 'name'}`, with
+`success` and `error` in front of it for `test_connection`, and `None` for
+each field a provider cannot fill rather than a key it invented. The consent
+callback stores what `read_user_info` reports, which is what *Connected as*
+shows (§2); the account form's Test Connection reads the same two fields; and
+*Check shared mailboxes* on a user's Mail Pro tab is `check_mailbox_access`
+over every shared mailbox on that provider, hidden where the provider answers
+`None`. `tests/test_provider_contract.py::TestAccountActions` holds the shape.
+
 ### Model map
 
 **The contract and its implementations**
