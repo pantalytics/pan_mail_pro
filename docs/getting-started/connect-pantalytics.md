@@ -68,9 +68,9 @@ a wireframe, never a mail, an address, a name or a subject. It covers Mail
 Pro's own screens and nothing else in your Odoo, and it goes to Pantalytics
 only, never to a third party directly. Recordings are kept 30 days.
 
-An Odoo administrator can refuse it for one instance under **Settings, Mail
-Pro, Pantalytics Account**, with **Not on this Odoo instance**. Telling the
-people who use your Odoo is your part.
+An Odoo administrator can refuse it for one instance by switching off **Help
+improve Mail Pro** at the bottom of **Settings, Mail Pro**. Telling the people
+who use your Odoo is your part.
 
 ## Problems
 

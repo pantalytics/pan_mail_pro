@@ -78,6 +78,17 @@ UPDATE ir_model_data
    SET module = 'pan_mail_pro'
  WHERE module = 'pan_outlook_pro';
 
+-- The module record's own XML id lives under `base`, not under the module, so
+-- the statement above never sees it. Left alone, `base.module_pan_mail_pro`
+-- does not exist and `env.ref()` on it fails. Skipped when a half-renamed
+-- database already has the new id, to keep the unique (module, name) index.
+UPDATE ir_model_data
+   SET name = 'module_pan_mail_pro'
+ WHERE module = 'base'
+   AND name = 'module_pan_outlook_pro'
+   AND NOT EXISTS (SELECT 1 FROM ir_model_data
+                    WHERE module = 'base' AND name = 'module_pan_mail_pro');
+
 -- Other modules declaring a dependency on it.
 UPDATE ir_module_module_dependency
    SET name = 'pan_mail_pro'
@@ -91,6 +102,12 @@ UPDATE ir_ui_view
    SET key = replace(key, 'pan_outlook_pro.', 'pan_mail_pro.')
  WHERE key LIKE 'pan_outlook_pro.%';
 
+-- The old OAuth wizard was a TransientModel. The upgrade deletes its ir.model
+-- row, but cannot drop the table because the model is no longer in the
+-- registry, so an empty `microsoft_oauth_wizard` stays behind for good.
+-- Nothing references it; a wizard row is never worth keeping.
+DROP TABLE IF EXISTS microsoft_oauth_wizard;
+
 COMMIT;
 
 -- Asset bundles need no attention here: Odoo invalidates and regenerates them
@@ -102,6 +119,9 @@ SELECT 'ir_module_module'            AS table_name, count(*) AS leftover
 UNION ALL
 SELECT 'ir_model_data',              count(*)
   FROM ir_model_data               WHERE module = 'pan_outlook_pro'
+UNION ALL
+SELECT 'base.module_pan_outlook_pro', count(*)
+  FROM ir_model_data               WHERE module = 'base' AND name = 'module_pan_outlook_pro'
 UNION ALL
 SELECT 'ir_module_module_dependency', count(*)
   FROM ir_module_module_dependency WHERE name = 'pan_outlook_pro'
