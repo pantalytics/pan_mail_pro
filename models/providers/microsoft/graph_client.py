@@ -433,6 +433,72 @@ class MicrosoftGraphClient(models.AbstractModel):
             }
 
     @api.model
+    def check_mailbox_access(self, account, mailbox):
+        """Can this account's token reach `mailbox`? One GET on its inbox.
+
+        Reading a shared mailbox's folders with a person's delegated token is
+        what Exchange's *Full Access* delegation grants, and it is the first of
+        the two delegations a send from that address needs: the draft is
+        created in `/users/{mailbox}/messages` before `/send` asks for *Send
+        As*. Graph has no endpoint that lists Send As, so this is the half an
+        admin can see before anybody presses Send; a Send As missing on its
+        own surfaces at the first send, worded by `_delegation_denied_reason`.
+
+        403 and 404 both mean no: Exchange answers the first on a mailbox it
+        knows and the second on one it will not even name to this token.
+        """
+        token = self.get_valid_token(account)
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json',
+        }
+        url = f'https://graph.microsoft.com/v1.0/users/{mailbox.email}/mailFolders/inbox'
+        try:
+            response = self._request_with_retry(
+                'get', url, headers, timeout=10, params={'$select': 'id'})
+            if response.status_code in (403, 404):
+                return False
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            detail = self._extract_graph_error(e)
+            _logger.error('[Graph API] Access check on %s for %s failed: %s',
+                          mailbox.email, account.email, detail)
+            raise UserError(_('Microsoft 365 refused the request: %s') % detail)
+        return True
+
+    # Exchange's own words for the two delegations a shared mailbox needs:
+    # `ErrorAccessDenied` on the draft when Full Access is missing,
+    # `ErrorSendAsDenied` on the send when Send As is.
+    _DELEGATION_ERRORS = ('ErrorAccessDenied', 'ErrorSendAsDenied')
+
+    def _delegation_denied_reason(self, exception, account, mailbox):
+        """The sentence for a send Exchange refused on delegation, or None.
+
+        Names the address on the *account*, which is the identity Exchange
+        refused and the one an admin has to grant rights to. The Odoo user
+        may be connected as somebody else entirely, and the raw Graph line
+        sent admins looking at the wrong person.
+        """
+        if self._graph_error_code(exception) not in self._DELEGATION_ERRORS:
+            return None
+        return _(
+            '%(who)s cannot send from %(mailbox)s. An administrator grants '
+            'Full Access and Send As on that address in the Exchange admin '
+            'center.', who=account.email, mailbox=mailbox.email)
+
+    @staticmethod
+    def _graph_error_code(exception):
+        """The `error.code` in a Graph error body, or None."""
+        response = getattr(exception, 'response', None)
+        if response is None:
+            return None
+        try:
+            error = response.json().get('error')
+        except (ValueError, AttributeError):
+            return None
+        return error.get('code') if isinstance(error, dict) else None
+
+    @api.model
     def test_credentials(self):
         """Ask Azure whether the client id, secret and tenant are its own.
 
@@ -956,6 +1022,10 @@ class MicrosoftGraphClient(models.AbstractModel):
             return {'success': False, 'error': str(e), 'error_code': ERROR_THROTTLED,
                     'retry_after': e.wait}
         except requests.exceptions.RequestException as e:
+            denied = self._delegation_denied_reason(e, account, mailbox)
+            if denied:
+                _logger.warning('[Graph API] %s', denied)
+                return {'success': False, 'error': denied}
             error_detail = str(e)
             if hasattr(e, 'response') and e.response is not None:
                 try:

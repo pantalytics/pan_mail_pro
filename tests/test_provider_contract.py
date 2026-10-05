@@ -137,6 +137,27 @@ class TestProviderCapabilities(TransactionCase):
         for mailbox_type in ('personal', 'shared'):
             self.client.check_mailbox_supported(mailbox_type)
 
+    def test_a_provider_that_lends_a_sign_in_can_check_where_it_reaches(self):
+        """`check_mailbox_access` answers only where a person's own token is
+        what sends from a shared address. A provider whose shared address is
+        its own account has nothing to check and says `None`, which is the
+        contract's default -- so the provider that *does* lend a sign-in must
+        not be running on that default."""
+        contract = type(self.env['mail.provider.client'])
+        mailbox = self.env['pan.mail.mailbox'].create({'email': 'team@gate-fixture.test'})
+        for code in PROVIDER_CLIENTS:
+            client = get_provider_client(self.env, code)
+            with self.subTest(provider=code):
+                if client.supports_shared_mailbox:
+                    self.assertIsNot(
+                        getattr(type(client), 'check_mailbox_access'),
+                        contract.check_mailbox_access,
+                        f"'{code}' lends a sign-in but cannot say where it reaches")
+                else:
+                    account = self.env['pan.mail.account'].sudo().create({
+                        'email': f'{code}@gate-fixture.test', 'provider': code})
+                    self.assertIsNone(client.check_mailbox_access(account, mailbox))
+
     def test_unsupported_mailbox_type_is_rejected(self):
         with self.assertRaises(UserError):
             self.client.check_mailbox_supported('carrier-pigeon')

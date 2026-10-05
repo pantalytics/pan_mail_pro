@@ -514,6 +514,22 @@ class MailProviderClient(models.AbstractModel):
         """
         return bool(account.refresh_token_encrypted)
 
+    @api.model
+    def check_mailbox_access(self, account, mailbox):
+        """Whether `account`'s credentials reach `mailbox` on the provider.
+
+        Asked from the user's own Mail Pro tab, for every shared mailbox the
+        provider lets a person send from with their own token. On Microsoft
+        that is a delegation granted in Exchange, invisible from Odoo until a
+        send fails; this is the one call that shows it before then.
+
+        Returns True for access, False for none, and None where the question
+        does not arise: a Gmail or IMAP shared address is its own account, so
+        a person's credentials never reach it and there is nothing to check.
+        The default is None; a provider with `supports_shared_mailbox` answers.
+        """
+        return None
+
     # -------------------------------------------------------------------------
     # Authentication
     #

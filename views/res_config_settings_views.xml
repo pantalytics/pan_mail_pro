@@ -242,6 +242,12 @@
                                             The rest still send as the Odoo instance, not as themselves.
                                             Select them in Users and press "Send Mail Pro Invite".
                                         </div>
+                                        <!-- Only when it happens. A person who signs in to
+                                             Odoo as a colleague connects whichever identity
+                                             they consent with; the Users list says which. -->
+                                        <div class="o_mailpro_step_msg" invisible="not x_users_elsewhere_note">
+                                            <field name="x_users_elsewhere_note" nolabel="1" readonly="1"/>
+                                        </div>
                                     </div>
                                     <button type="action" name="%(base.action_res_users)d"
                                             icon="oi-arrow-right" title="Users"

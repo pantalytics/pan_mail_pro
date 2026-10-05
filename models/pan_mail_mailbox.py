@@ -515,6 +515,40 @@ class PanMailMailbox(models.Model):
         for record in self:
             record.routing_log_count = counts.get(record.id, 0)
 
+    sends_with = fields.Char(
+        compute='_compute_sends_with',
+        help='Whose sign-in a mail from this address leaves with.',
+    )
+
+    @api.depends('mailbox_type', 'is_notification_mailbox', 'provider',
+                 'owner_user_id.name', 'owner_user_id.x_pan_mail_connected_as')
+    def _compute_sends_with(self):
+        """`_resolve_sending_account` in one sentence the reader can see.
+
+        A personal mailbox and the notification mailbox send with their
+        owner's token, whatever that owner is connected as -- which is the
+        address named here, because it is the one the provider has to allow.
+        A Microsoft shared mailbox sends with whoever writes; a Gmail or IMAP
+        shared address is its own account.
+        """
+        for record in self:
+            if record.mailbox_type == 'personal' or record.is_notification_mailbox:
+                owner = record.owner_user_id
+                if not owner:
+                    record.sends_with = False
+                elif owner.x_pan_mail_connected_as:
+                    record.sends_with = _(
+                        "Sends with %(owner)s's sign-in, %(address)s",
+                        owner=owner.name, address=owner.x_pan_mail_connected_as)
+                else:
+                    record.sends_with = _(
+                        "Sends with %(owner)s's sign-in, not connected yet",
+                        owner=owner.name)
+            elif record.provider and record._get_client().supports_shared_mailbox:
+                record.sends_with = _("Sends with each sender's own sign-in")
+            else:
+                record.sends_with = _('Sends with its own account')
+
     @api.depends('mailbox_type', 'owner_user_id', 'is_notification_mailbox')
     def _compute_subtitle(self):
         """The identity in one grey line under the address: read, not filled in."""

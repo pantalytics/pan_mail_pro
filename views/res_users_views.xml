@@ -21,7 +21,10 @@
                 </header>
             </xpath>
             <xpath expr="//field[@name='login']" position="after">
-                <field name="x_pan_mail_connected" string="Mailbox Connected" optional="show"/>
+                <!-- The address, not a tick: an empty cell is "not connected",
+                     and a filled one says which identity this user sends as,
+                     which a tick never could. -->
+                <field name="x_pan_mail_connected_as" string="Connected as" optional="show"/>
             </xpath>
         </field>
     </record>
@@ -48,6 +51,26 @@
                     </group>
 
                     <group invisible="not x_pan_mail_connected">
+                        <field name="x_pan_mail_connected_elsewhere" invisible="1"/>
+                        <field name="x_pan_mail_can_check_access" invisible="1"/>
+                        <label for="x_pan_mail_connected_as" string="Connected as"/>
+                        <div>
+                            <field name="x_pan_mail_connected_as" nolabel="1" readonly="1"
+                                   class="d-inline-block"/>
+                            <!-- Only when it differs. Connecting as somebody else
+                                 is sometimes deliberate; the line says so, nothing
+                                 refuses it. -->
+                            <div class="text-muted mt-1" invisible="not x_pan_mail_connected_elsewhere">
+                                Not the address of this Odoo user.
+                            </div>
+                            <!-- Nothing is stored: the answer is the provider's,
+                                 right now, with this sign-in. -->
+                            <button type="object"
+                                    name="action_check_mailbox_access"
+                                    string="Check shared mailboxes"
+                                    class="btn-link ps-0"
+                                    invisible="not x_pan_mail_can_check_access"/>
+                        </div>
                         <field name="x_default_mailbox_id"
                                string="Send from"
                                domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"
@@ -99,6 +122,26 @@
                     </group>
 
                     <group invisible="not x_pan_mail_connected">
+                        <field name="x_pan_mail_connected_elsewhere" invisible="1"/>
+                        <field name="x_pan_mail_can_check_access" invisible="1"/>
+                        <label for="x_pan_mail_connected_as" string="Connected as"/>
+                        <div>
+                            <field name="x_pan_mail_connected_as" nolabel="1" readonly="1"
+                                   class="d-inline-block"/>
+                            <!-- Only when it differs. Connecting as somebody else
+                                 is sometimes deliberate; the line says so, nothing
+                                 refuses it. -->
+                            <div class="text-muted mt-1" invisible="not x_pan_mail_connected_elsewhere">
+                                Not the address of this Odoo user.
+                            </div>
+                            <!-- Nothing is stored: the answer is the provider's,
+                                 right now, with this sign-in. -->
+                            <button type="object"
+                                    name="action_check_mailbox_access"
+                                    string="Check shared mailboxes"
+                                    class="btn-link ps-0"
+                                    invisible="not x_pan_mail_can_check_access"/>
+                        </div>
                         <field name="x_default_mailbox_id"
                                string="Send from"
                                domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"

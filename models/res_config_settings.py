@@ -90,6 +90,11 @@ class ResConfigSettings(models.TransientModel):
     # -------------------------------------------------------------------------
     x_users_summary = fields.Char(compute='_compute_users_status')
     x_users_pending = fields.Integer(compute='_compute_users_status')
+    x_users_elsewhere_note = fields.Char(
+        compute='_compute_users_status',
+        help='How many connected users signed in with an address that is not '
+             'their own. Empty when nobody did, which is the normal case.',
+    )
     x_users_relevant = fields.Boolean(
         compute='_compute_users_status',
         help='Whether users connect themselves at all. On a provider without a '
@@ -303,7 +308,7 @@ class ResConfigSettings(models.TransientModel):
         relevant = bool(provider) and get_provider_client(
             self.env, provider).uses_oauth
 
-        total = connected = 0
+        total = connected = elsewhere = 0
         if relevant:
             Users = self.env['res.users'].sudo()
             domain = [
@@ -313,12 +318,18 @@ class ResConfigSettings(models.TransientModel):
                 ('partner_id.email', '!=', False),
             ]
             total = Users.search_count(domain)
-            connected = Users.search_count(
+            connected_users = Users.search(
                 domain + [('x_pan_mail_connected', '=', True)])
+            connected = len(connected_users)
+            elsewhere = len(connected_users.filtered('x_pan_mail_connected_elsewhere'))
 
         summary = _('%(connected)s of %(total)s connected',
                     connected=connected, total=total) if total else ''
+        elsewhere_note = _(
+            '%(count)s connected as another address than their Odoo user',
+            count=elsewhere) if elsewhere else ''
         for record in self:
             record.x_users_relevant = relevant and bool(total)
             record.x_users_summary = summary
             record.x_users_pending = total - connected
+            record.x_users_elsewhere_note = elsewhere_note

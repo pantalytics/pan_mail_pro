@@ -3115,6 +3115,15 @@ class Checks:
                     self.fail(f'My Preferences does not offer "{rung}"')
             if 'Send from' not in text:
                 self.fail('My Preferences lost Send from')
+            # Connected as: the address, where "connected" used to be a tick.
+            # This user consented as their own address, so the line that
+            # says otherwise must not be drawn.
+            if login not in text:
+                self.fail('My Preferences does not say which address the user is connected as')
+            if 'Not the address of this Odoo user' in text:
+                self.fail('My Preferences says the connected address is not the user\'s own, and it is')
+            if 'Check shared mailboxes' not in text:
+                self.fail('My Preferences has no Check shared mailboxes button')
 
             widest = page.query_selector(
                 '.modal .o_form_view label:has-text("Replies and new email, everyone")')

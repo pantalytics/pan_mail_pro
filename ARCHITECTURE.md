@@ -957,6 +957,41 @@ owner's token, and only one may be active. **Required before any mailbox can
 enable incoming sync**, because mail triggered by an external author has to go
 out from somewhere.
 
+### Connected as
+
+The address the provider reported at consent is the account's `email`, and it
+is not necessarily the user's own: a person who signs in to Odoo as a
+colleague connects whichever identity they consent with. Since 19.0.24.0.0
+that address is what "connected" shows, rather than a tick --
+`res.users.x_pan_mail_connected_as` on My Preferences, on the user form and
+as the Users list column -- with one muted line only when it is not the
+address on the Odoo user, and one line on the settings page counting such
+users, absent when there are none. Nothing refuses it: `_store_tokens`
+already refuses the one case that breaks things, switching identity while
+the old one still works.
+
+Whether that identity may send from a shared mailbox is a delegation granted
+in Exchange, invisible from Odoo until a send fails. Two things make it
+visible before then:
+
+- **Check shared mailboxes**, a button under *Connected as*, asks the
+  provider with the stored token for every shared mailbox on it, plus the
+  notification mailbox when this user owns it (`check_mailbox_access` on the
+  contract; Microsoft reads `/users/{mailbox}/mailFolders/inbox`, Gmail and
+  IMAP answer `None` and the button is hidden). It proves *Full Access*,
+  which is what the draft step needs first; Graph cannot list *Send As*.
+  Nothing is stored: a stored answer is wrong the moment an admin changes a
+  delegation, and a stale "no" would hide a mailbox that works.
+- A send Exchange refuses on delegation (`ErrorAccessDenied` on the draft,
+  `ErrorSendAsDenied` on the send) lands in `failure_reason` as a sentence
+  naming the **account's** address, the identity Exchange refused, rather
+  than the Odoo user, who may be somebody else.
+
+The mailbox form says the same rule from its side: `sends_with` is
+`_resolve_sending_account` in one sentence -- the owner's sign-in and its
+address on a personal or notification mailbox, each sender's own on a
+Microsoft shared one, its own account on Gmail and IMAP.
+
 ---
 
 ## 3. Sync modes and filtering
