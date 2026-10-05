@@ -19,10 +19,6 @@ user. Grant the rights to that one.
 4. **Delegation → Read and manage (Full Access)** → Add the user
 5. **Delegation → Send As** → Add the user
 
-To see which shared mailboxes a sign-in can reach before anybody sends,
-press **Check shared mailboxes** on that user's Mail Pro tab. It shows Full
-Access; a missing Send As shows up at the first send, with the message above.
-
 ### "Mailbox not connected" warning, or the banner will not go away
 
 **Cause:** The user has not connected their account yet.

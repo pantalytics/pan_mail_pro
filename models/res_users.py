@@ -56,13 +56,6 @@ class ResUsers(models.Model):
         compute='_compute_pan_mail_connected_elsewhere',
         help='The connected address is not the one on this Odoo user.',
     )
-    x_pan_mail_can_check_access = fields.Boolean(
-        compute='_compute_pan_mail_can_check_access',
-        help='Whether a provider this user is connected to lets a person send '
-             'from a shared mailbox with their own sign-in, which is the one '
-             'case where there is access to check.',
-    )
-
     x_default_mailbox_id = fields.Many2one(
         'pan.mail.mailbox',
         string='Default mailbox',
@@ -110,7 +103,6 @@ class ResUsers(models.Model):
             'x_pan_mail_connected',
             'x_pan_mail_connected_as',
             'x_pan_mail_connected_elsewhere',
-            'x_pan_mail_can_check_access',
             'x_pan_mail_personal_mailbox_id',
             'x_pan_mail_sync_level',
         ]
@@ -138,72 +130,6 @@ class ResUsers(models.Model):
             connected_as = (user.x_pan_mail_connected_as or '').strip().lower()
             user.x_pan_mail_connected_elsewhere = bool(
                 connected_as) and connected_as not in own
-
-    @api.depends('x_pan_mail_account_ids.connected', 'x_pan_mail_account_ids.provider')
-    def _compute_pan_mail_can_check_access(self):
-        for user in self:
-            user.x_pan_mail_can_check_access = any(
-                get_provider_client(self.env, account.provider).supports_shared_mailbox
-                for account in user.x_pan_mail_account_ids.filtered('connected'))
-
-    def action_check_mailbox_access(self):
-        """Which shared mailboxes this user's sign-in can reach, right now.
-
-        Asked of the provider with the stored token, one call per mailbox,
-        and answered in one notification. Nothing is stored: a delegation an
-        admin changes in Exchange would make a stored answer wrong the moment
-        it changed, and a stale "no" hides a mailbox that works.
-
-        The notification mailbox is included when this user owns it, because
-        it sends with its owner's token like a personal one. A personal
-        mailbox is not: the address is the sign-in's own.
-
-        Runs with the stored token whoever presses it, so an administrator can
-        check a colleague's rights from that user's form without them.
-        """
-        self.ensure_one()
-        self._check_mailbox_is_mine()
-        Mailbox = self.env['pan.mail.mailbox'].sudo()
-        reachable, denied, who = [], [], None
-        for account in self.sudo().x_pan_mail_account_ids.filtered('connected'):
-            client = get_provider_client(self.env, account.provider)
-            if not client.supports_shared_mailbox:
-                continue
-            who = who or account.email
-            mailboxes = Mailbox.search([
-                ('provider', '=', account.provider),
-                '|', ('mailbox_type', '=', 'shared'),
-                '&', ('is_notification_mailbox', '=', True),
-                ('owner_user_id', '=', self.id),
-            ], order='sequence, email')
-            for mailbox in mailboxes:
-                answer = client.check_mailbox_access(account, mailbox)
-                if answer is None:
-                    continue
-                (reachable if answer else denied).append(mailbox.email)
-
-        if not reachable and not denied:
-            message = _('There is no shared mailbox to check.')
-        else:
-            parts = []
-            if reachable:
-                parts.append(_('%(who)s can send from %(mailboxes)s.',
-                               who=who, mailboxes=', '.join(reachable)))
-            if denied:
-                parts.append(_('No access to %(mailboxes)s. Ask an administrator '
-                               'for Full Access and Send As on that address.',
-                               mailboxes=', '.join(denied)))
-            message = ' '.join(parts)
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Shared mailboxes'),
-                'message': message,
-                'type': 'warning' if denied else 'success',
-                'sticky': bool(denied),
-            },
-        }
 
     # Not the mailbox's own fields: a dependency on a path through an unstored
     # many2one makes the ORM search `res.users` by that field to find whose

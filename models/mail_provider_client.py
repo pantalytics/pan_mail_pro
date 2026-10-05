@@ -108,16 +108,13 @@ Normalized identity (returned by read_user_info / test_connection)
 
 The account actions
 -------------------
-A sign-in is a `pan.mail.account`, and three things can be asked of one. They
+A sign-in is a `pan.mail.account`, and two things can be asked of one. They
 sit on the contract because the question is the same at every provider and
-only the call behind it differs -- a shared mailbox on Microsoft is a
-delegation in Exchange, on Gmail its own account, on IMAP a login -- and a
-caller that asked the provider directly would be the second copy of that
-difference:
+only the call behind it differs, and a caller that asked the provider
+directly would be the second copy of that difference:
 
     read_user_info        who is this sign-in, at the provider
     test_connection       does this sign-in still work
-    check_mailbox_access  can this sign-in reach that shared mailbox
 
 `read_user_info` is what "Connected as" stores at consent: the address the
 provider reports, which is not necessarily the address on the Odoo user who
@@ -608,22 +605,6 @@ class MailProviderClient(models.AbstractModel):
             -- the normalized identity, plus whether it could be read.
         """
         raise NotImplementedError
-
-    @api.model
-    def check_mailbox_access(self, account, mailbox):
-        """Whether `account`'s credentials reach `mailbox` on the provider.
-
-        Asked from the user's own Mail Pro tab, for every shared mailbox the
-        provider lets a person send from with their own token. On Microsoft
-        that is a delegation granted in Exchange, invisible from Odoo until a
-        send fails; this is the one call that shows it before then.
-
-        Returns True for access, False for none, and None where the question
-        does not arise: a Gmail or IMAP shared address is its own account, so
-        a person's credentials never reach it and there is nothing to check.
-        The default is None; a provider with `supports_shared_mailbox` answers.
-        """
-        return None
 
     @api.model
     def test_credentials(self):

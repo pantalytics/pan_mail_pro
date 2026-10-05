@@ -330,7 +330,7 @@ reviewed is what leaves.
 ### The account actions
 
 The mailbox actions are what can be done *to a mailbox*. A sign-in is a
-`pan.mail.account`, and three things can be asked *of one*. They sit on the
+`pan.mail.account`, and two things can be asked *of one*. They sit on the
 contract for the same reason the mailbox actions do: the question is the same
 at every provider and only the call behind it differs, so a caller that asked
 the provider directly would be the second copy of that difference.
@@ -339,16 +339,13 @@ the provider directly would be the second copy of that difference.
 |---|---|---|---|---|
 | `read_user_info(token)` | who is this sign-in | `/me`: `mail` or `userPrincipalName`, `displayName` | `users/me/profile`: `emailAddress`, no name | nobody: the address is configuration |
 | `test_connection(account)` | does it still work | a token, and `/me` answering to it | a token, and the profile answering to it | an IMAP login and an SMTP login, each named when it fails |
-| `check_mailbox_access(account, mailbox)` | can it reach that shared mailbox | `GET /users/{mailbox}/mailFolders/inbox` with the person's token: Exchange's Full Access | `None`: a shared address is its own account | `None`: a shared address is its own login |
 
 Every answer is one shape: the normalized identity `{'email', 'name'}`, with
 `success` and `error` in front of it for `test_connection`, and `None` for
 each field a provider cannot fill rather than a key it invented. The consent
 callback stores what `read_user_info` reports, which is what *Connected as*
-shows (§2); the account form's Test Connection reads the same two fields; and
-*Check shared mailboxes* on a user's Mail Pro tab is `check_mailbox_access`
-over every shared mailbox on that provider, hidden where the provider answers
-`None`. `tests/test_provider_contract.py::TestAccountActions` holds the shape.
+shows (§2), and the account form's Test Connection reads the same two fields.
+`tests/test_provider_contract.py::TestAccountActions` holds the shape.
 
 ### Model map
 
@@ -987,28 +984,20 @@ is not necessarily the user's own: a person who signs in to Odoo as a
 colleague connects whichever identity they consent with. Since 19.0.24.0.0
 that address is what "connected" shows, rather than a tick --
 `res.users.x_pan_mail_connected_as` on My Preferences, on the user form and
-as the Users list column -- with one muted line only when it is not the
-address on the Odoo user, and one line on the settings page counting such
-users, absent when there are none. Nothing refuses it: `_store_tokens`
-already refuses the one case that breaks things, switching identity while
-the old one still works.
+as the Users list column -- and one line on the settings page counts the
+users whose connected address is not the one on their Odoo user, absent when
+there are none. Nothing refuses it: `_store_tokens` already refuses the one
+case that breaks things, switching identity while the old one still works.
 
 Whether that identity may send from a shared mailbox is a delegation granted
-in Exchange, invisible from Odoo until a send fails. Two things make it
-visible before then:
-
-- **Check shared mailboxes**, a button under *Connected as*, asks the
-  provider with the stored token for every shared mailbox on it, plus the
-  notification mailbox when this user owns it (`check_mailbox_access` on the
-  contract; Microsoft reads `/users/{mailbox}/mailFolders/inbox`, Gmail and
-  IMAP answer `None` and the button is hidden). It proves *Full Access*,
-  which is what the draft step needs first; Graph cannot list *Send As*.
-  Nothing is stored: a stored answer is wrong the moment an admin changes a
-  delegation, and a stale "no" would hide a mailbox that works.
-- A send Exchange refuses on delegation (`ErrorAccessDenied` on the draft,
-  `ErrorSendAsDenied` on the send) lands in `failure_reason` as a sentence
-  naming the **account's** address, the identity Exchange refused, rather
-  than the Odoo user, who may be somebody else.
+in Exchange, and Graph has no endpoint that lists it, so the module does not
+pretend to know before a send: a check button was built and taken out again
+in the same release, because a person who cannot send from a shared mailbox
+finds out at the send, and the right place for the answer is that refusal.
+A send Exchange refuses on delegation (`ErrorAccessDenied` on the draft,
+`ErrorSendAsDenied` on the send) lands in `failure_reason` as a sentence
+naming the **account's** address, the identity Exchange refused, rather than
+the Odoo user, who may be somebody else, and the two rights to grant.
 
 The mailbox form says the same rule from its side: `sends_with` is
 `_resolve_sending_account` in one sentence -- the owner's sign-in and its

@@ -345,15 +345,13 @@ class TestGraphAuthorizationScopes(TransactionCase):
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestGraphMailboxAccess(TransactionCase):
+class TestGraphDelegationRefused(TransactionCase):
     """What a shared mailbox refuses, said in words that name the right person.
 
     Exchange refuses a send on a shared address with `ErrorAccessDenied`
     (no Full Access, on the draft) or `ErrorSendAsDenied` (no Send As, on
     the send). The identity it refused is the account's address, which is
     not always the Odoo user's: the raw Graph line sent admins to the wrong
-    person. The probe behind *Check shared mailboxes* is the same question
-    asked before anybody presses Send.
     """
 
     @classmethod
@@ -385,29 +383,6 @@ class TestGraphMailboxAccess(TransactionCase):
         exc.response = resp
         resp.raise_for_status.side_effect = exc
         return resp
-
-    def test_access_is_a_readable_inbox(self):
-        with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
-                patch(GRAPH_GET, return_value=self._response(200, {'id': 'inbox'})) as get:
-            self.assertTrue(self.client.check_mailbox_access(self.account, self.mailbox))
-        url = get.call_args[0][0]
-        self.assertIn('/users/sales@test.local/mailFolders/inbox', url)
-
-    def test_a_refused_or_unknown_mailbox_is_no_access(self):
-        for status in (403, 404):
-            with self.subTest(status=status), \
-                    patch.object(type(self.client), 'get_valid_token', return_value='t'), \
-                    patch(GRAPH_GET, return_value=self._response(status)):
-                self.assertFalse(self.client.check_mailbox_access(self.account, self.mailbox))
-
-    def test_any_other_failure_is_raised_not_read_as_no(self):
-        """A server error is not "no access": it would send an admin to the
-        Exchange console over an outage."""
-        with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
-                patch(GRAPH_GET, return_value=self._refusal('InternalServerError', 500)), \
-                patch('odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.time.sleep'):
-            with self.assertRaises(UserError):
-                self.client.check_mailbox_access(self.account, self.mailbox)
 
     def _send(self, refusal):
         mail = self.env['mail.mail'].create({

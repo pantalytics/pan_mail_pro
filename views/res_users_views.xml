@@ -59,26 +59,11 @@
                          (brand.pantalytics.com/product-ui), in Odoo's own
                          group markup. -->
                     <group string="Connected account" invisible="not x_pan_mail_connected">
-                        <field name="x_pan_mail_connected_elsewhere" invisible="1"/>
-                        <field name="x_pan_mail_can_check_access" invisible="1"/>
                         <label for="x_pan_mail_connected_as" string="Connected as"/>
                         <div>
                             <field name="x_pan_mail_connected_as" nolabel="1" readonly="1"
                                    class="d-inline-block"/>
-                            <!-- Only when it differs. Connecting as somebody else
-                                 is sometimes deliberate; the line says so, nothing
-                                 refuses it. -->
-                            <div class="text-muted mt-1" invisible="not x_pan_mail_connected_elsewhere">
-                                Not the address of this Odoo user.
-                            </div>
-                            <div class="d-flex flex-wrap gap-3 mt-1">
-                                <!-- Nothing is stored: the answer is the provider's,
-                                     right now, with this sign-in. -->
-                                <button type="object"
-                                        name="action_check_mailbox_access"
-                                        string="Check shared mailboxes"
-                                        class="btn-link p-0"
-                                        invisible="not x_pan_mail_can_check_access"/>
+                            <div class="mt-1">
                                 <button type="object"
                                         name="action_disconnect_mailbox"
                                         string="Disconnect"
@@ -146,26 +131,11 @@
                          (brand.pantalytics.com/product-ui), in Odoo's own
                          group markup. -->
                     <group string="Connected account" invisible="not x_pan_mail_connected">
-                        <field name="x_pan_mail_connected_elsewhere" invisible="1"/>
-                        <field name="x_pan_mail_can_check_access" invisible="1"/>
                         <label for="x_pan_mail_connected_as" string="Connected as"/>
                         <div>
                             <field name="x_pan_mail_connected_as" nolabel="1" readonly="1"
                                    class="d-inline-block"/>
-                            <!-- Only when it differs. Connecting as somebody else
-                                 is sometimes deliberate; the line says so, nothing
-                                 refuses it. -->
-                            <div class="text-muted mt-1" invisible="not x_pan_mail_connected_elsewhere">
-                                Not the address of this Odoo user.
-                            </div>
-                            <div class="d-flex flex-wrap gap-3 mt-1">
-                                <!-- Nothing is stored: the answer is the provider's,
-                                     right now, with this sign-in. -->
-                                <button type="object"
-                                        name="action_check_mailbox_access"
-                                        string="Check shared mailboxes"
-                                        class="btn-link p-0"
-                                        invisible="not x_pan_mail_can_check_access"/>
+                            <div class="mt-1">
                                 <button type="object"
                                         name="action_disconnect_mailbox"
                                         string="Disconnect"
