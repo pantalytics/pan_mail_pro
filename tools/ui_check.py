@@ -125,8 +125,12 @@ class Checks:
         self.shot('settings-mail-pro.png')
 
         steps = page.query_selector_all('.o_mailpro_step')
-        if len(steps) != 3:
-            self.fail(f'the checklist has {len(steps)} steps, expected 3')
+        if len(steps) != 4:
+            self.fail(f'the checklist has {len(steps)} steps, expected 4')
+        names = [s.query_selector('.o_mailpro_step_name').inner_text().strip() for s in steps]
+        if names != ['1. Pantalytics Account', '2. Email Provider',
+                     '3. Internal Domains', '4. Mailboxes']:
+            self.fail(f'the steps read {names}')
 
         for index, step in enumerate(steps, start=1):
             width = step.bounding_box()['width']
@@ -153,8 +157,11 @@ class Checks:
         if 'Pantalytics B.V.' not in text:
             self.fail('About does not carry the copyright line')
 
-        # Pantalytics Account, connected: one way out and nothing of the
-        # not-connected or pending states leaking onto the screen.
+        # Step 1, connected: one way out and nothing of the not-connected or
+        # pending states leaking onto the screen. Who connected is on the
+        # line, because the seed says so.
+        if 'Connected by' not in steps[0].inner_text():
+            self.fail('step 1 does not say who connected')
         for leaked in ('Connect to Pantalytics', 'Check Approval'):
             if any(b.is_visible() and b.inner_text().strip() == leaked
                    for b in block.query_selector_all('button')):
@@ -211,7 +218,7 @@ class Checks:
         self.call('ir.config_parameter', 'set_param', 'pan_mail_pro.improve_refused', False)
 
     def settings_not_connected(self):
-        """Without a Pantalytics account the page is one button and nothing else.
+        """Without a Pantalytics account the page is step 1 and nothing else.
 
         Every step below it configures a product that will not run, and a
         checklist you cannot finish reads as the thing that is broken. The
@@ -235,13 +242,16 @@ class Checks:
                 self.fail(f'an unlinked database shows {len(connect)} Connect '
                           f'buttons, expected 1')
             steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
-            if steps:
+            if len(steps) != 1:
                 self.fail(f'an unlinked database shows {len(steps)} setup steps, '
-                          f'expected none')
+                          f'expected only step 1')
+            if not steps[0].query_selector('button:has-text("Connect to Pantalytics")'):
+                self.fail('the Connect button is not on step 1')
             text = block.inner_text()
             # About (the version and the licence line) stays: a support mail
             # and the documentation link are wanted before connecting too.
-            for leaked in ('1. Email Provider', '2. Internal Domains', 'Connect Mailbox'):
+            for leaked in ('2. Email Provider', '3. Internal Domains', 'Connect Mailbox',
+                           'Connected mailboxes'):
                 if leaked in text:
                     self.fail(f'an unlinked database still shows "{leaked}"')
             for wanted in ('Elastic License', manifest_version(), 'Documentation'):
@@ -251,6 +261,8 @@ class Checks:
         finally:
             self.call('pan.mail.license', 'create', {
                 'status': 'active',
+                'connected_account': 'seed@pantalytics.test',
+                'connected_on': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
                 'valid_until': (datetime.datetime.now(datetime.UTC)
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
@@ -299,6 +311,8 @@ class Checks:
         finally:
             self.call('pan.mail.license', 'create', {
                 'status': 'active',
+                'connected_account': 'seed@pantalytics.test',
+                'connected_on': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
                 'valid_until': (datetime.datetime.now(datetime.UTC)
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})

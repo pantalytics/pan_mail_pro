@@ -20,35 +20,19 @@ class TestConnectedAs(MailProTestCase):
         """The fixture salesperson consented as sales@company.test on a user
         record that says sales@test.local, which is the customer case."""
         self.assertEqual(self.salesperson.x_pan_mail_connected_as, 'sales@company.test')
-        self.assertTrue(self.salesperson.x_pan_mail_connected_elsewhere)
 
-    def test_own_address_is_not_elsewhere(self):
+    def test_own_address_is_the_address(self):
         self.assertEqual(self.other_user.x_pan_mail_connected_as, 'other@test.local')
-        self.assertFalse(self.other_user.x_pan_mail_connected_elsewhere)
 
     def test_disconnecting_clears_the_address(self):
         self.disconnect(self.other_user)
         self.assertFalse(self.other_user.x_pan_mail_connected_as)
-        self.assertFalse(self.other_user.x_pan_mail_connected_elsewhere)
 
     def test_the_user_may_read_their_own(self):
         """Self-readable, or My Preferences cannot show it."""
         me = self.salesperson.with_user(self.salesperson)
         self.assertEqual(me.read(['x_pan_mail_connected_as'])[0]['x_pan_mail_connected_as'],
                          'sales@company.test')
-        self.assertTrue(me.read(['x_pan_mail_connected_elsewhere'])[0]['x_pan_mail_connected_elsewhere'])
-
-    def test_the_settings_page_counts_who_is_connected_elsewhere(self):
-        """One line, only when it happens."""
-        self.env['pan.mail.provider'].create({
-            'provider': 'outlook', 'client_id': 'id', 'client_secret': 'secret',
-            'tenant_id': 'common',
-        })
-        Settings = self.env['res.config.settings']
-        self.assertIn('1 connected as another address', Settings.create({}).x_users_elsewhere_note)
-
-        self.salesperson.sudo().x_pan_mail_account_ids.write({'email': 'sales@test.local'})
-        self.assertFalse(Settings.create({}).x_users_elsewhere_note)
 
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')

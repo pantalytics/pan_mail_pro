@@ -9,6 +9,10 @@ page names this Odoo, and approves; the button back to their Odoo lands on
 copies a key, and there is still no redirect URI to register per customer:
 the way back is an ordinary link to this Odoo, not an OAuth redirect.
 **Check Approval** on the settings page does the same collection by hand.
+Collecting the key also records who did it: the Pantalytics account that
+approved, when the poll answer names it (`account_email`), the Odoo user who
+pressed the button, and the time. The settings page shows it on the account
+line, so a second administrator can see whose workspace this Odoo is in.
 
 After that, one heartbeat a day: counts out, a signed entitlement back. The
 server side runs on the Pantalytics platform (`pantalytics/odoo-mcp-pro-admin`,
@@ -221,6 +225,19 @@ class PanMailLicense(models.Model):
     last_check = fields.Datetime(readonly=True, copy=False)
     last_error = fields.Char(readonly=True, copy=False)
 
+    # Who connected, and when: written the moment the key is collected, so
+    # the settings page can say "connected by rutger@pantalytics.com on ..."
+    # a year later. `connected_account` is the Pantalytics login that pressed
+    # Approve, as the poll answer names it (`account_email`); it is the person
+    # Pantalytics knows, which the Odoo user who pressed Connect need not be
+    # (a consultant connecting a customer's Odoo is logged in there as the
+    # customer's admin). `connected_user_id` is that Odoo user, the fallback
+    # when an older server does not name the account.
+    connected_account = fields.Char(readonly=True, copy=False)
+    connected_user_id = fields.Many2one('res.users', readonly=True, copy=False,
+                                        ondelete='set null')
+    connected_on = fields.Datetime(readonly=True, copy=False)
+
     # Which setup steps the last heartbeat carried, as `setup_signature()`
     # writes them. Compared, never read for its own sake: it is how the module
     # knows a step has been answered since it last said so.
@@ -265,6 +282,12 @@ class PanMailLicense(models.Model):
             and self.valid_until
             and self.valid_until > fields.Datetime.now()
         )
+
+    def connected_by(self):
+        """Who connected this Odoo, as one string for the settings page: the
+        Pantalytics account when the server named it, else the Odoo user."""
+        self.ensure_one()
+        return self.connected_account or self.connected_user_id.name or ''
 
     @api.model
     def sync_allowed(self):
@@ -430,6 +453,9 @@ class PanMailLicense(models.Model):
             self.write({
                 'key_encrypted': encryption_utils.encrypt_value(self.env, body['key']),
                 'status': 'active',
+                'connected_account': (body.get('account_email') or '')[:255] or False,
+                'connected_user_id': self.env.user.id,
+                'connected_on': fields.Datetime.now(),
             })
             self._clear_pairing()
             # Guarded: the server has handed the key over exactly once. An
@@ -485,6 +511,9 @@ class PanMailLicense(models.Model):
             'signature': False,
             'last_error': False,
             'setup_reported': False,
+            'connected_account': False,
+            'connected_user_id': False,
+            'connected_on': False,
             'improve': False,
             'improve_host': False,
             'improve_token': False,

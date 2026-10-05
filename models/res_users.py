@@ -51,11 +51,6 @@ class ResUsers(models.Model):
         store=True,
         help='The address the provider reported when this user signed in.',
     )
-    x_pan_mail_connected_elsewhere = fields.Boolean(
-        string='Connected as another address',
-        compute='_compute_pan_mail_connected_elsewhere',
-        help='The connected address is not the one on this Odoo user.',
-    )
     x_default_mailbox_id = fields.Many2one(
         'pan.mail.mailbox',
         string='Default mailbox',
@@ -102,7 +97,6 @@ class ResUsers(models.Model):
             'x_default_mailbox_id',
             'x_pan_mail_connected',
             'x_pan_mail_connected_as',
-            'x_pan_mail_connected_elsewhere',
             'x_pan_mail_personal_mailbox_id',
             'x_pan_mail_sync_level',
         ]
@@ -122,14 +116,6 @@ class ResUsers(models.Model):
             # One account per provider, and almost always one provider: the
             # first connected one is the identity this user sends as.
             user.x_pan_mail_connected_as = connected[:1].email or False
-
-    @api.depends('x_pan_mail_connected_as', 'email', 'login')
-    def _compute_pan_mail_connected_elsewhere(self):
-        for user in self:
-            own = {(a or '').strip().lower() for a in (user.email, user.login)}
-            connected_as = (user.x_pan_mail_connected_as or '').strip().lower()
-            user.x_pan_mail_connected_elsewhere = bool(
-                connected_as) and connected_as not in own
 
     # Not the mailbox's own fields: a dependency on a path through an unstored
     # many2one makes the ORM search `res.users` by that field to find whose
