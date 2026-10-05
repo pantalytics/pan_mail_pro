@@ -52,6 +52,12 @@ class TestImproveConfig(TransactionCase):
         for it once: the answer changes with the code, which is a restart
         or an upgrade, and both start the cache over."""
         Module = self.env['ir.module.module']
+        # The first `improve_config` on a fresh database mints the encryption
+        # key, and a config-parameter write clears the registry cache. Warm
+        # it before counting, so what is counted is the lookup and not the
+        # key: the upgrade job met exactly that order and read "searched
+        # again" on a cache the key had just emptied.
+        self.License.improve_config()
         version = self.License._module_version()
         self.assertEqual(version, Module.sudo().search(
             [('name', '=', 'pan_mail_pro')], limit=1).installed_version)
