@@ -1678,13 +1678,29 @@ carries the suggestion (rule 5, or the best proposal any rule made) with a
 `Link it here`, and a `Link to a record`. Both open the same picker, in two
 steps: a short list of the kinds of record, then Odoo's own record picker.
 
-**Step one, the kind of record.** `link_targets(search)` starts from what this
-database already links mail to — the mailboxes' routing targets and the models
-the log has seen — so the list is short and grows with use rather than being a
-dropdown of four hundred technical names on day one. A search widens it to
-every model with a chatter, the already-linked ones first, which is the way out
-for the model nobody has filed mail on yet. Each row wears the tile of the app
-that opens the model, the same one the Linked-to chips carry.
+**Step one, the kind of record.** `link_targets(search, current_model,
+partner_id)` starts from what this database already links mail to — the
+mailboxes' routing targets and the models the log has seen — so the list is
+short and grows with use rather than being a dropdown of four hundred technical
+names on day one. A search widens it to every model with a chatter, the
+already-linked ones first, which is the way out for the model nobody has filed
+mail on yet. Each row wears the tile of the app that opens the model, the same
+one the Linked-to chips carry.
+
+Two rows above that are about *this* conversation. Its current kind of record
+comes first, marked *where it is now*: a correction from a real record is
+mostly "the other quote of the same customer", and that row costs one click.
+Whether it is mostly that is not known yet, so `conversation_linked` carries a
+`same_model` boolean (never the model) and the answer decides later whether
+step one should be skipped. Then, on a conversation that is on something other
+than its contact, **Only <contact>**: the unlink. It skips step two and calls
+`link_to` with the contact, because "this belongs on no record" cannot mean
+*nothing* — a message with no model is readable by its author and nobody else
+— and the contact is where the fetcher lands unmatched mail, so it is the state
+the "On a contact only" folder, the coverage report and the suggestion already
+call unlinked. The thread link follows, the same as any other link. On a
+contact there is nothing to unlink and the row is absent; so is it without a
+contact to go back to.
 
 **Step two, the record.** Odoo's own `SelectCreateDialog` over the model's list
 view: the search bar, the filters, the columns and the paging every many2one
@@ -1697,9 +1713,14 @@ relations count and only two — a `partner_id` at a contact, or an `email_from`
 — read against the *commercial* partner, because mail from one employee is
 about the company's records. A model relating to a contact through anything
 else opens on the plain list; a third guess would be a rule nobody could
-predict from the screen. Creating a record from the picker stays off: linking
-is about where mail belongs, and a record invented to hold it is a different
-decision.
+predict from the screen. The dialog's own **New** is on where the reader may
+create on the model (`can_create`), and never on the contact, because the
+fetcher already made one for every sender. The form opens on the
+correspondent (`defaults`: a `partner_id`, or an `email_from` and a
+`contact_name`, the same two relations the facet reads), and the record saved
+is the record linked, through the same `onSelected` a picked row goes through.
+A mail from a new customer with no lead is the reason to make the lead, and
+the CRM app and back was the round trip the Inbox exists to remove.
 
 Both steps take the model from the caller, so both check it the same way:
 a chatter to carry the mail, and `write` on the model, because putting
@@ -2286,7 +2307,9 @@ their Odoo, which collects the key (**Check Approval** does the same by hand). T
 carries `daily_send_limit`, the number the plan is metered on.
 That is the device flow's shape: no redirect URI per customer database, so it
 works the same on localhost, Cloudpepper, odoo.sh and behind a proxy. The
-server half lives in `pantalytics/mail-pro-admin`.
+server half runs on the Pantalytics platform at mcp.pantalytics.com
+(`pantalytics/odoo-mcp-pro-admin`); app.mailpro.pantalytics.com, the host
+releases before 19.0.22.0.0 call, stays an alias of it.
 
 - **Not connected, no Inbox.** `pan.mail.conversation._check_caller` refuses
   every read while `sync_allowed()` is false, and the Inbox draws one card
@@ -2296,10 +2319,10 @@ server half lives in `pantalytics/mail-pro-admin`.
   session is a page load old and an admin who has just connected has not
   reloaded anything.
 - **Usage and billing are read there, not here.** The settings page carries
-  one link (`dashboard_url()`, the Odoo instances page), and this module has
-  no usage screen of its own: the number that decides an invoice is the one
-  our server counted from the heartbeats, and a second copy in Odoo is a
-  second number to keep true.
+  one link (`dashboard_url()`, the workspace's Mail Pro page at
+  mcp.pantalytics.com), and this module has no usage screen of its own: the
+  number that decides an invoice is the one our server counted from the
+  heartbeats, and a second copy in Odoo is a second number to keep true.
 
 - **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
   `_heartbeat_body()` and nothing else: database id, module and Odoo version,
@@ -2336,8 +2359,8 @@ server half lives in `pantalytics/mail-pro-admin`.
   sample). Then the Inbox, and only the Inbox, loads posthog-js from the lazy
   bundle `pan_mail_pro.assets_improve`, sends five named events
   (`inbox_opened`, `conversation_opened`, `tab_opened`, `reply_sent`,
-  `conversation_linked`, with a folder, a tab, a mode or a `via`, never
-  content) and records a wireframe: every text node, input and attribute
+  `conversation_linked`, with a folder, a tab, a mode, a `via` or a
+  `same_model` boolean, never content) and records a wireframe: every text node, input and attribute
   masked, images blocked, no network bodies, `ip: false`, no person profile,
   nothing persisted in the browser. Recording starts when the Inbox mounts
   and stops when it unmounts. `tools/ui_check.py` points a seeded Inbox at a
@@ -2410,7 +2433,25 @@ read state and Odoo mirrors it.**
   message unread instead would light the whole database up on the first
   screen.
 - **At most `UNREAD_CAP` handles per refresh.** A mailbox sitting on thousands
-  of unread mails gets a truthful subset and the rest stays as it was.
+  of unread mails gets a truthful subset and the rest stays as it was: a
+  capped answer skips the "no longer unread" sweep, because a mail missing
+  from a full page is older, not read.
+- **Every write to `x_is_read` is pushed, from `mail.message.write`.** The
+  Inbox, `mark_read()` / `mark_unread()` over the API and a plain field write
+  from an integration all pass there, grouped into one `set_seen()` per
+  mailbox, so a bulk mark of forty mails is one provider call. A write that
+  copies the provider in (the import, the refresh) carries `READ_MIRROR_CTX`
+  and is not pushed back. Only a mailbox manager may write it, as only one may
+  read the Inbox.
+
+**A conversation and a message are marked differently**, the way Gmail and
+Outlook do it. A conversation is unread while *any* of its messages is (both
+clients draw it so, and it is what the Unread filter finds). Marking it read
+marks every message; marking it unread marks only the newest incoming one --
+Gmail's list behaviour, and the smaller write. Outlook marks the whole
+conversation unread; that is the case dropped. A single message, or any set of
+them, goes through `mail.message.mark_read()` / `mark_unread()`, which touch
+exactly the ids named.
 
 **Odoo's own `mail.notification` needaction row is a different fact**, and the
 Inbox no longer reads it. It is per user and answers "does this Odoo
@@ -2422,9 +2463,19 @@ They can disagree on one message and neither is wrong.
 read-state control is a toggle: Mark unread over a conversation you have read,
 Mark read over one you have not. It used to be a single Mark unread, on the
 argument that reading a mail is what reads a mail, so a second click did
-nothing at all. The list says it too, with a dot and not only a font weight:
-the row being marked is also the highlighted one, and 600 against 700 on a
-highlighted row is a change nobody can see. 19.0.17.1.0; the button was writing
+nothing at all. The list says it too, with the cues Outlook uses, in our own
+accent rather than Microsoft's blue: a dot in the gutter, sender and subject
+bold, the subject and the time in the accent, the preview left muted. An
+unread mail under an unfolded conversation gets the dot, the weight, the
+accent time and a tint over its row. The open row is a fill; weight alone on
+a filled row is a change nobody can see, which is what the dot is for.
+
+**The row menu** is the same actions without opening the conversation: a
+⋮ on each row (shown on hover, always on touch) and right-click on the row,
+which opens that same menu, as in Outlook. Open, Mark read / unread, Link to.
+Odoo's own `Dropdown`; there is no context-menu service in the web client, and
+the pairing is the one Odoo's spreadsheet version history uses. Drafts and
+live rows have none. No multi-select: bulk stays on the API. 19.0.17.1.0; the button was writing
 the database and the provider correctly the whole time.
 
 There is exactly one bridge, and it runs one way: **reading a conversation in

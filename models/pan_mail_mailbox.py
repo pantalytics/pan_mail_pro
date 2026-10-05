@@ -6,8 +6,10 @@ from odoo.exceptions import AccessError, ValidationError, UserError
 from .mail_provider_client import (
     FOLDER_INBOX,
     PROVIDER_SELECTION,
+    UNREAD_CAP,
     get_provider_client,
 )
+from .mail_message import READ_MIRROR_CTX
 from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
@@ -804,7 +806,9 @@ class PanMailMailbox(models.Model):
         # reader who triggered the refresh may hold no write access to the
         # documents these messages hang on. What they may *see* is decided by
         # the Inbox's own read methods, not here.
-        Message = self.env['mail.message'].sudo()
+        # READ_MIRROR_CTX: this copies the provider in, and must not push the
+        # copy straight back out to it.
+        Message = self.env['mail.message'].sudo().with_context(**READ_MIRROR_CTX)
         mine = [('x_mailbox_id', '=', self.id)]
         changed = 0
 
@@ -819,8 +823,14 @@ class PanMailMailbox(models.Model):
         # Everything this mailbox still calls unread that the provider did not
         # name. A message read in another folder counts as read here, which is
         # what a reader who moved it out of the Inbox meant.
-        stale = Message.search(mine + [('x_is_read', '=', False)])
-        stale = stale.filtered(lambda m: m.x_provider_message_id not in unread)
+        #
+        # Not when the answer was capped: a full page is the newest unread,
+        # not all of them, and "not named" then means "older", not "read".
+        stale = Message
+        if len(unread) < UNREAD_CAP:
+            stale = Message.search(mine + [('x_is_read', '=', False)])
+            stale = stale.filtered(
+                lambda m: m.x_provider_message_id not in unread)
         if stale:
             stale.write({'x_is_read': True})
             changed += len(stale)

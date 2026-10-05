@@ -18,6 +18,7 @@ from odoo import models, api, fields, _
 from odoo.exceptions import UserError
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT, ThrottledError
+from .mail_message import READ_MIRROR_CTX
 from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
@@ -1062,7 +1063,10 @@ class PanMailFetcher(models.AbstractModel):
             # not depend on these: `mail.mail._record_sent()` writes the same
             # three fields for outgoing mail.
             if message:
-                message.write({
+                # READ_MIRROR_CTX: the read flag below is the provider's own
+                # answer, and pushing it straight back would be a write to
+                # the mailbox for every mail the sync imports.
+                message.with_context(**READ_MIRROR_CTX).write({
                     'x_direction': 'outgoing' if is_outgoing else 'incoming',
                     'x_mailbox_id': mailbox.id,
                     'x_account_id': account.id,

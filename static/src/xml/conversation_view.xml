@@ -407,9 +407,12 @@
                                     the pair rather than on the row, or the chevron
                                     column stays white next to the mail you have open.
                                 -->
+                                <t t-set="hasRowMenu" t-value="!conversation.draft_id and !conversation.live"/>
                                 <div class="o_mailpro_group_head d-flex align-items-start"
                                      t-att-class="{ 'o_mailpro_group_head_active': state.selected
-                                         and sameConversation(conversation, state.selected) }">
+                                         and sameConversation(conversation, state.selected) }"
+                                     t-on-contextmenu="(ev) => this.openRowMenu(ev, conversation)">
+                                    <span t-if="conversation.unread" class="o_mailpro_unread_dot" aria-hidden="true"/>
                                     <!--
                                         The chevron, and only where there is something
                                         behind it: a one-mail conversation that offers to
@@ -451,19 +454,6 @@
                                                   aria-hidden="true" t-esc="initials(conversation.correspondent)"/>
                                             <span class="flex-grow-1 min-w-0">
                                                 <span class="d-flex justify-content-between align-items-baseline gap-2">
-                                                    <!--
-                                                        Unread is a dot as well as
-                                                        weight. The open
-                                                        conversation is the
-                                                        highlighted row, and a
-                                                        highlighted row that goes
-                                                        one font weight heavier
-                                                        says nothing at all, which
-                                                        is what Mark unread looked
-                                                        like.
-                                                    -->
-                                                    <span t-if="conversation.unread"
-                                                          class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
                                                     <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
                                                     <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
                                                           t-esc="day(conversation.date)"/>
@@ -501,6 +491,13 @@
                                             </span>
                                         </div>
                                     </button>
+                                    <Dropdown t-if="hasRowMenu" position="'bottom-end'"
+                                              items="rowMenuItems(conversation)">
+                                        <button type="button" class="o_mailpro_row_menu flex-shrink-0"
+                                                title="Actions" aria-label="Actions">
+                                            <i class="fa fa-ellipsis-v" aria-hidden="true"/>
+                                        </button>
+                                    </Dropdown>
                                 </div>
                                 <t t-if="isUnfolded(conversation)">
                                     <div t-if="isThreadLoading(conversation)" class="o_mailpro_thread_loading">
@@ -512,10 +509,9 @@
                                             class="o_mailpro_child"
                                             t-att-class="{ 'o_mailpro_child_unread': message.unread }"
                                             t-on-click="() => this.pickMessage(conversation, message)">
+                                        <span t-if="message.unread" class="o_mailpro_unread_dot" aria-hidden="true"/>
                                         <span t-if="message.unread" class="visually-hidden">Unread. </span>
                                         <span class="d-flex justify-content-between align-items-baseline gap-2">
-                                            <span t-if="message.unread"
-                                                  class="o_mailpro_unread_dot flex-shrink-0" aria-hidden="true"/>
                                             <span class="o_mailpro_from text-truncate" t-esc="message.author"/>
                                             <span class="o_mailpro_date" t-att-title="fullDate(message.date)"
                                                   t-esc="day(message.date)"/>
@@ -762,24 +758,35 @@
                                     tab whose whole content is three names is an
                                     empty screen with a list in the corner. The
                                     list itself is the chatter's own dropdown.
+
+                                    The thread is read once, here, and the
+                                    slots read the variable. A slot is
+                                    rendered by the Dropdown, after this
+                                    template's own render, and linking a
+                                    conversation empties the record between
+                                    the two: a slot that asked the getter
+                                    again found null and crashed on
+                                    `selfFollower`.
                                 -->
-                                <Dropdown t-if="recordThread" position="'bottom-end'"
+                                <t t-set="followerThread" t-value="recordThread"/>
+                                <Dropdown t-if="followerThread" position="'bottom-end'"
                                           menuClass="'o-mail-Followers-dropdown ' + mailStore.discussDropdownMenuClass(this)"
                                           state="followerListDropdown">
                                     <button type="button" class="o_mailpro_followers ms-auto"
-                                            t-att-class="{ 'o_mailpro_followers_following': recordThread.selfFollower }"
-                                            t-att-disabled="recordThread.hasReadAccess === false"
-                                            t-att-title="followersLabel">
+                                            t-att-class="{ 'o_mailpro_followers_following': followerThread.selfFollower }"
+                                            t-att-disabled="followerThread.hasReadAccess === false"
+                                            t-att-title="followerThread.selfFollower ? 'Following' : 'Followers'">
                                         <i class="fa fa-fw" aria-hidden="true"
-                                           t-att-class="recordThread.selfFollower ? 'fa-user' : 'fa-user-o'"/>
-                                        <span t-esc="followersLabel"/>
-                                        <span t-if="recordThread.followersCount" class="o_mailpro_tab_count"
-                                              t-esc="recordThread.followersCount"/>
+                                           t-att-class="followerThread.selfFollower ? 'fa-user' : 'fa-user-o'"/>
+                                        <t t-if="followerThread.selfFollower">Following</t>
+                                        <t t-else="">Followers</t>
+                                        <span t-if="followerThread.followersCount" class="o_mailpro_tab_count"
+                                              t-esc="followerThread.followersCount"/>
                                     </button>
                                     <t t-set-slot="content">
                                         <FollowerList onAddFollowers.bind="onAddFollowers"
                                                       onFollowerChanged.bind="onFollowerChanged"
-                                                      thread="recordThread"
+                                                      thread="followerThread"
                                                       dropdown="followerListDropdown"/>
                                     </t>
                                 </Dropdown>

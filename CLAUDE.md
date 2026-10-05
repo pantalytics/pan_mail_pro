@@ -714,6 +714,36 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### Unlink, New, and a slot that read a getter (19.0.21.0.0)
+
+- **A slot is rendered by the child, later than the parent's `t-if`.** The
+  Followers button was the toggle slot of a `Dropdown`, guarded by
+  `t-if="recordThread"` on the `Dropdown` and reading `recordThread` again
+  inside. The guard runs when the Inbox renders; the slot runs when the
+  `Dropdown` renders, after its own `willUpdateProps`, and `linkTo()` had
+  emptied the record in between. `Cannot read properties of null (reading
+  'selfFollower')`, reported as an Owl lifecycle error because the render
+  that failed was the child's. `t-set` the value once and let the slots
+  read the variable: a `t-set` is captured with the slot when the parent
+  renders, so the child cannot see a value the parent never rendered with.
+- **"Unlink" cannot mean nothing.** A `mail.message` with no model is
+  readable by its author and nobody else, so unlinking to nothing makes the
+  conversation vanish for everyone but the person who did it. The contact is
+  where the fetcher lands unmatched mail, and the state the folder, the
+  report and the suggestion already call unlinked. So unlink is `link_to`
+  with the contact: one row in step one, no new backend, no new state.
+- **Turn a control's own button on before building one.** Create was off in
+  the picker on the argument that a record invented to hold mail is a
+  different decision. For triage it is the same decision: a mail from a new
+  customer with no lead is the reason to make the lead. `noCreate: false`
+  plus a `context` of defaults, and Odoo's `SelectCreateDialog` already
+  hands the saved record to `onSelected`.
+- **Measure before adding a shortcut.** Whether a correction mostly stays in
+  one kind of record decides whether step one should be skipped, and nobody
+  knows. The current kind is the top row, and `conversation_linked` carries
+  a `same_model` boolean: a boolean says nothing about the customer's Odoo,
+  which is the rule the event's `via` was already written under.
+
 ### The record picker is Odoo's (19.0.21.0.0)
 
 - **A picker with one search box is a worse copy of a control the reader

@@ -11,8 +11,9 @@ the way back is an ordinary link to this Odoo, not an OAuth redirect.
 **Check Approval** on the settings page does the same collection by hand.
 
 After that, one heartbeat a day: counts out, a signed entitlement back. The
-server side and the reasons behind it live in `pantalytics/mail-pro-admin`
-(`docs/plans/mail-pro-paid.md`).
+server side runs on the Pantalytics platform (`pantalytics/odoo-mcp-pro-admin`,
+`mcp_server_odoo_admin/apps/`); the reasons behind it are in
+`pantalytics/mail-pro-admin` (`docs/plans/mail-pro-paid.md`).
 
 **There is one row**, created the first time somebody connects, the same shape
 as `pan.mail.provider`: `current()` is the answer.
@@ -79,11 +80,13 @@ from .neutralization import database_is_neutralized
 
 _logger = logging.getLogger(__name__)
 
-LICENSE_URL = 'https://app.mailpro.pantalytics.com'
+LICENSE_URL = 'https://mcp.pantalytics.com'
 
-# The verifying half of the key app.mailpro.pantalytics.com signs entitlements
-# with (generated 2026-09-15 by mail-pro-admin's deploy/bootstrap.sh; the private
-# half lives only in that server's deploy/.env). Publishing it is safe: it can
+# The verifying half of the key Pantalytics signs entitlements with (generated
+# 2026-09-15 by mail-pro-admin's deploy/bootstrap.sh; the platform at
+# mcp.pantalytics.com signs with the same private half, which lives only in
+# its server's environment). The old host, app.mailpro.pantalytics.com, stays
+# an alias of the platform, so releases that still call it keep working. Publishing it is safe: it can
 # only check a signature, never make one. Rotating the signing key means
 # shipping a module with the new value here.
 PUBLIC_KEY = 'ZWLGGpks2iRjFguGsGlhpDl64ekFiDCM7L/O/g3xK/8='
@@ -96,10 +99,10 @@ ENV_PUBLIC_KEY = 'PAN_MAIL_PRO_LICENSE_PUBLIC_KEY'
 
 TIMEOUT = 15
 
-# Where usage and billing are read. The page that carries the counts this
-# heartbeat sends, so the link lands on the number rather than on a home page
-# somebody then has to navigate from.
-DASHBOARD_PATH = '/instances'
+# Where usage and billing are read: the workspace's Mail Pro page on the
+# platform, which carries the counts this heartbeat sends, so the link lands on
+# the number rather than on a home page somebody then has to navigate from.
+DASHBOARD_PATH = '/admin/mail-pro'
 
 # The server accepts this many rule rows; the ladder has six, so the cap only
 # guards against a rule name that is somehow not one of ours.
@@ -144,7 +147,7 @@ def _public_key():
 
 
 def canonical_json(payload):
-    """The bytes the server signed. Must match `mailpro_admin.signing` exactly."""
+    """The bytes the server signed. Must match the platform's `apps/signing.py` exactly."""
     return json.dumps(
         payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
     ).encode('utf-8')
@@ -643,7 +646,7 @@ class PanMailLicense(models.Model):
         Counts, flags and rule names only.
 
         **Sent and received are two numbers, not a list of mail.** They are
-        what the plan is metered on and what the Odoo instances page draws a
+        what the plan is metered on and what the Mail Pro page draws a
         fortnight of, so the customer and we read the same number. They are
         counted off `mail.message.x_direction`, which is set on every mail
         this module carried and on nothing else: a note, a system log and mail

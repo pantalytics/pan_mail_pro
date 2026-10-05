@@ -2,7 +2,7 @@
 
 Two steps: put the module on your Odoo, then connect it to your Pantalytics
 account. If you have not created that account yet, do it first at
-<a href="https://app.mailpro.pantalytics.com/start" target="_blank">app.mailpro.pantalytics.com/start</a>:
+<a href="https://mcp.pantalytics.com/admin/mail-pro" target="_blank">mcp.pantalytics.com/admin/mail-pro</a>:
 it takes a work email address and a minute, and the page you land on repeats
 the steps below for the host you run.
 
@@ -84,7 +84,7 @@ for example `./addons:/mnt/extra-addons`, and put `/mnt/extra-addons` in
 ## Step 2: Connect to Pantalytics
 
 Go to **Settings → Mail Pro** and press **Connect to Pantalytics**. A tab opens
-on `app.mailpro.pantalytics.com` with a code already filled in; sign in, check
+on `mcp.pantalytics.com` with a code already filled in; sign in, check
 that the page names this Odoo, and approve. The full walk-through, and what
 happens if the tab does not open, is in
 [Connect to Pantalytics](connect-pantalytics.md).

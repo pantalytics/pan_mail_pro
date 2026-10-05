@@ -490,10 +490,11 @@ class PanMailConversation(models.AbstractModel):
         if not newest:
             return []
 
-        counts = self._counts_per_group(base, newest)
+        counts, unread = self._counts_per_group(base, newest)
         return [
             self._conversation_row(
-                message, counts.get((message.model, message.res_id), 1))
+                message, counts.get((message.model, message.res_id), 1),
+                unread=(message.model, message.res_id) in unread)
             for message in newest
         ]
 
@@ -581,54 +582,44 @@ class PanMailConversation(models.AbstractModel):
     @api.model
     def set_read(self, model, res_id, read=True, message_id=None,
                  mailbox_id=None):
-        """Mark one conversation read or unread, everywhere it is recorded.
+        """Mark one conversation read or unread, the way Gmail and Outlook do.
 
-        Three writes, in the order that survives a failure: the mirror in
-        Odoo, then the reader's own Odoo Inbox rows, then the provider. The
-        first is what the screen draws, the last is best effort by design (see
-        `pan.mail.mailbox.push_read_state`), and a refresh settles any
-        disagreement in favour of the provider a minute later.
+        A conversation and a message are not the same thing to mark:
 
-        Per conversation, because reading is: nobody reads the fourth message
-        of a thread and not the fifth.
+        - **Read** marks every message in it. Nobody reads the fourth message
+          of a thread and not the fifth; both clients do the same.
+        - **Unread** marks the newest mail that came *in*, and nothing else.
+          The row is unread when any message is, so one is enough to put the
+          dot back, and the mailbox then says which mail wants you -- not that
+          the whole history of the thread went unread overnight. Gmail's list
+          does this; Outlook marks all of them, which is the case dropped.
+
+        Single messages, and many at once, go through `mail.message.mark_read`
+        / `mark_unread`. Either way the provider hears about it from
+        `mail.message.write`, best effort (see `push_read_state`), and a
+        refresh settles any disagreement in favour of the provider.
 
         Returns:
-            dict: `read` as it now stands and `count`, the messages touched.
+            dict: `read` as it now stands, `count` the messages that changed,
+                and `message_ids` the messages marked, so the unfolded rows
+                under the conversation can follow without a reload.
         """
         self._check_caller()
+        read = bool(read)
         # Searched as the caller, so a conversation they may not read is a
         # conversation they cannot mark. Odoo's own rules over `mail.message`
         # do that work and this must not step around them.
         messages = self.env['mail.message'].search(
-            self._conversation_domain(model, res_id, message_id, mailbox_id))
-        if not messages:
-            return {'read': bool(read), 'count': 0}
-
-        # Only what actually moves. The Inbox calls this every time a
-        # conversation is opened, and a conversation that was already read
-        # must not cost a provider call for saying so again.
-        changing = messages.filtered(lambda m: m.x_is_read != bool(read))
-
-        # Written with sudo: read state is a fact about the mailbox, not about
-        # the document, and a reader with no write access to somebody's sale
-        # order may still have read their mail. The search above is what
-        # decided they may touch these messages at all.
-        changing.sudo().write({'x_is_read': bool(read)})
-
-        if read:
-            # Your own Odoo Inbox rows for these messages, and nobody else's:
-            # `set_message_done` works from `env.user`, and it sends the bus
-            # message that makes the bell count down while you read. Asked of
-            # every message, not only the ones that moved -- the notification
-            # row and the mailbox's read state are two different facts, and
-            # the bell can still be ringing for a mail the mailbox calls read.
-            messages.set_message_done()
-
-        for mailbox in changing.mapped('x_mailbox_id'):
-            mailbox.push_read_state(
-                changing.filtered(lambda m: m.x_mailbox_id == mailbox),
-                read=bool(read))
-        return {'read': bool(read), 'count': len(changing)}
+            self._conversation_domain(model, res_id, message_id, mailbox_id),
+            order='date desc, id desc')
+        if not read:
+            messages = (messages.filtered(
+                lambda m: m.x_direction != 'outgoing')[:1] or messages[:1])
+        # Asked of every message, not only the ones that moved: the reader's
+        # own Odoo Inbox rows are cleared on read, and the bell can still be
+        # ringing for a mail the mailbox already calls read.
+        count = messages._mark_read_state(read) if messages else 0
+        return {'read': read, 'count': count, 'message_ids': messages.ids}
 
     @api.model
     def refresh_read_state(self, mailbox_id=None):
@@ -1108,13 +1099,14 @@ class PanMailConversation(models.AbstractModel):
         return Message.browse(ordered)
 
     def _counts_per_group(self, base, messages):
-        """How many messages each of these conversations holds, in one query.
+        """How many messages each of these conversations holds, and which of
+        them still hold an unread one, in one query.
 
         Counted over the base domain, so "3 messages" is the size of the
         conversation rather than the size of the folder's slice of it.
         """
         if not messages:
-            return {}
+            return {}, set()
         keys = Domain.OR(
             Domain([('model', '=', message.model or False),
                     ('res_id', '=', message.res_id or False)])
@@ -1122,9 +1114,12 @@ class PanMailConversation(models.AbstractModel):
         )
         groups = self.env['mail.message']._read_group(
             Domain.AND([Domain(base), keys]),
-            groupby=['model', 'res_id'], aggregates=['__count'],
+            groupby=['model', 'res_id'], aggregates=['__count', 'x_is_read:bool_and'],
         )
-        return {(model, res_id): count for model, res_id, count in groups}
+        counts = {(model, res_id): count for model, res_id, count, _read in groups}
+        unread = {(model, res_id) for model, res_id, _count, all_read in groups
+                  if not all_read}
+        return counts, unread
 
     def _count_on_records(self, records):
         """How many emails sit on these records, in one grouped query."""
@@ -1155,7 +1150,7 @@ class PanMailConversation(models.AbstractModel):
     # Row builders
     # ------------------------------------------------------------------
 
-    def _conversation_row(self, newest, count):
+    def _conversation_row(self, newest, count, unread=None):
         """One line in the list, built from the newest message of the group."""
         record_name = newest.x_document_name or newest.record_name or ''
         return {
@@ -1170,10 +1165,11 @@ class PanMailConversation(models.AbstractModel):
             'date': newest.date,
             'count': count,
             'record_name': record_name,
-            # The newest message speaks for the conversation: a thread whose
-            # last mail you have read is a thread you are up to date on, which
-            # is what every mail client means by the dot.
-            'unread': not newest.x_is_read,
+            # Unread while any message in it is, which is what Gmail and
+            # Outlook both draw, and what the Unread filter already finds: a
+            # row that filter lists must not then be drawn read. `unread` is
+            # that answer from the grouping; a one-message row is its own.
+            'unread': (not newest.x_is_read) if unread is None else unread,
             'mailbox': newest.x_mailbox_id.email or '',
             # Which mailbox this conversation arrived on, beside the address
             # the row draws. It is what the reply sends from: under All
@@ -1548,7 +1544,7 @@ class PanMailConversation(models.AbstractModel):
         return False
 
     @api.model
-    def link_targets(self, search=None):
+    def link_targets(self, search=None, current_model=None, partner_id=None):
         """Step one of the picker: which kind of record this mail belongs to.
 
         What this database already links mail to comes first -- the mailboxes'
@@ -1563,11 +1559,32 @@ class PanMailConversation(models.AbstractModel):
         A search widens to every model with a chatter, matched on its label,
         the already-linked ones still first: a search for "lead" should offer
         the model the log knows before the ones nobody has filed a mail on.
+
+        Two rows about *this* conversation sit above all of that when the
+        caller says where it is now. Its current kind of record comes first,
+        marked as such, because a correction from a real record is mostly
+        "the other quote of the same customer" and that row should cost one
+        click. Then, on a conversation that is on something other than its
+        contact, an **unlink** row: *Only <contact>*, which skips step two and
+        moves the conversation back to the contact. Not to nothing -- a
+        message with no model is readable by its author and nobody else -- but
+        to the fallback state the rest of the module already calls unlinked:
+        the "On a contact only" folder, the coverage report, the suggestion.
+        Neither row shows under a search: a search is a question about the
+        rest of the list.
         """
         self._check_caller()
         known = self._known_link_models()
         if not search:
-            return self._link_target_rows(known + self._other_mail_models())
+            rows = self._link_target_rows(
+                ([current_model] if current_model else []) + known
+                + self._other_mail_models())
+            if rows and current_model and rows[0]['model'] == current_model:
+                rows[0]['current'] = True
+            unlink = self._unlink_row(current_model, partner_id)
+            if unlink:
+                rows.insert(1 if rows and rows[0].get('current') else 0, unlink)
+            return rows
 
         found = self.env['ir.model'].sudo().search([
             ('is_mail_thread', '=', True),
@@ -1577,6 +1594,27 @@ class PanMailConversation(models.AbstractModel):
         ordered = ([name for name in known if name in found]
                    + [name for name in found if name not in known])
         return self._link_target_rows(ordered)
+
+    def _unlink_row(self, current_model, partner_id):
+        """The way back to the contact, or nothing.
+
+        Nothing on a conversation that is on a contact already (there is
+        nothing to unlink) and nothing without a contact to go back to: the
+        option is absent rather than refused. The row carries a `res_id`,
+        which is what tells the client it answers both steps at once.
+        """
+        if not partner_id or not current_model or current_model == 'res.partner':
+            return None
+        partner = self.env['res.partner'].browse(int(partner_id)).exists()
+        if not partner or not partner.has_access('write'):
+            return None
+        return {
+            'model': 'res.partner',
+            'res_id': partner.id,
+            'label': _("Only %s", partner.display_name),
+            'icon': self._model_icon('res.partner'),
+            'unlink': True,
+        }
 
     def _known_link_models(self):
         """The models this database already files mail on, best first."""
@@ -1662,20 +1700,52 @@ class PanMailConversation(models.AbstractModel):
         The answer is a domain and a name, and the client hands both to the
         dialog as a filter facet: on by default, one click to remove, so the
         seeding is a head start and never a filter somebody has to escape.
+
+        Two more keys are about the dialog's New button. `can_create` says
+        whether it is there at all: the reader may create on the model, and
+        the model is not the contact, because the fetcher already made a
+        contact for every sender and a second one is a duplicate. `defaults`
+        is the form's context when it opens: the correspondent, through the
+        same two relations the facet is built from, so a lead made from a
+        mail opens with its sender filled in and the reader types a title.
         """
         self._check_caller()
         Model = self._link_model(model)
         partner = self.env['res.partner']
         if partner_id:
             partner = partner.browse(int(partner_id)).exists()
+        scope = {
+            'can_create': Model._name != 'res.partner' and Model.has_access('create'),
+            'defaults': self._create_defaults(Model, partner),
+        }
         domain = self._candidate_domain(Model, partner)
         if domain is None:
-            return {'domain': False, 'partner': ''}
+            return {'domain': False, 'partner': '', **scope}
         # The company, not the person who wrote: it is whose records these are,
         # and a facet reading one employee's name over the company's quotes
         # reads as a mistake.
         family = partner.commercial_partner_id or partner
-        return {'domain': domain, 'partner': family.display_name}
+        return {'domain': domain, 'partner': family.display_name, **scope}
+
+    def _create_defaults(self, Model, partner):
+        """What a record created from the picker starts with.
+
+        The same two relations `_candidate_domain` reads and nothing cleverer:
+        a `partner_id` gets the correspondent, an `email_from` gets their
+        address (and `contact_name` their name, where the model has one).
+        """
+        if not partner or Model._name == 'res.partner':
+            return {}
+        fields_ = Model._fields
+        field = fields_.get('partner_id')
+        if field and field.type == 'many2one' and field.comodel_name == 'res.partner':
+            return {'default_partner_id': partner.id}
+        defaults = {}
+        if 'email_from' in fields_ and partner.email:
+            defaults['default_email_from'] = partner.email
+        if 'contact_name' in fields_ and partner.name:
+            defaults['default_contact_name'] = partner.name
+        return defaults
 
     @api.model
     def new_mail_recipients(self, model, res_id):

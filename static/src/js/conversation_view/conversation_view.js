@@ -863,6 +863,42 @@ export class ConversationView extends Component {
         await opened;
     }
 
+    /**
+     * The row menu: the ⋮ on the row, and right-click on it, the way Outlook
+     * does it. Right-click alone is invisible and has no touch equivalent, so
+     * it only opens the button's menu. Odoo's spreadsheet version history uses
+     * the same pairing.
+     */
+    rowMenuItems(conversation) {
+        return [
+            { id: "open", label: _t("Open"), onSelected: () => this.pick(conversation) },
+            {
+                id: "read",
+                label: conversation.unread ? _t("Mark read") : _t("Mark unread"),
+                onSelected: () => this.setRead(conversation, conversation.unread),
+            },
+            {
+                id: "link",
+                label: _t("Link to…"),
+                onSelected: async () => {
+                    await this.pick(conversation);
+                    this.openLinkDialog();
+                },
+            },
+        ];
+    }
+
+    openRowMenu(ev, conversation) {
+        // Drafts and rows read live from the mailbox have no menu, and keep
+        // the browser's own.
+        const button = ev.currentTarget.querySelector(".o_mailpro_row_menu");
+        if (!button || conversation.draft_id || conversation.live) {
+            return;
+        }
+        ev.preventDefault();
+        button.click();
+    }
+
     /** The key a conversation's unfolded thread is cached under. */
     conversationKey(conversation) {
         // A live row has no Odoo message to key on. It is also never
@@ -1031,8 +1067,9 @@ export class ConversationView extends Component {
      * error over a conversation the reader has in front of them.
      */
     async markRead(conversation) {
+        let result;
         try {
-            await this.orm.silent.call(
+            result = await this.orm.silent.call(
                 "pan.mail.conversation", "set_read", [], {
                     model: conversation.model,
                     res_id: conversation.res_id,
@@ -1044,7 +1081,7 @@ export class ConversationView extends Component {
             console.warn("[Mail Pro] could not mark the conversation read", error);
             return;
         }
-        this.setUnreadLocally(conversation, false);
+        this.setUnreadLocally(conversation, false, result.message_ids);
     }
 
     /** Is the open conversation one the mailbox still calls unread? */
@@ -1071,13 +1108,16 @@ export class ConversationView extends Component {
      * conversation they are reading jump into the list under them.
      */
     async toggleRead() {
-        const conversation = this.state.selected;
-        if (!conversation) {
-            return;
+        if (this.state.selected) {
+            await this.setRead(this.state.selected, this.selectedUnread);
         }
-        const read = this.selectedUnread;
+    }
+
+    /** Mark one conversation read or unread, open or not. */
+    async setRead(conversation, read) {
+        let result;
         try {
-            await this.orm.call("pan.mail.conversation", "set_read", [], {
+            result = await this.orm.call("pan.mail.conversation", "set_read", [], {
                 model: conversation.model,
                 res_id: conversation.res_id,
                 message_id: conversation.message_id,
@@ -1089,11 +1129,17 @@ export class ConversationView extends Component {
                          error);
             return;
         }
-        this.setUnreadLocally(conversation, !read);
+        this.setUnreadLocally(conversation, !read, result.message_ids);
     }
 
-    /** The dot on the row and the button in the header, without a reload. */
-    setUnreadLocally(conversation, unread) {
+    /**
+     * The dot on the row and the button in the header, without a reload.
+     *
+     * `messageIds` are the mails the server marked: all of them on read, only
+     * the newest incoming one on unread (see `set_read`), so the rows under
+     * the chevron follow exactly what the mailbox now says.
+     */
+    setUnreadLocally(conversation, unread, messageIds = []) {
         for (const row of this.state.conversations) {
             if (this.sameConversation(row, conversation)) {
                 row.unread = unread;
@@ -1103,10 +1149,11 @@ export class ConversationView extends Component {
             && this.sameConversation(this.state.selected, conversation)) {
             this.state.selected.unread = unread;
         }
-        // Reading a conversation reads every mail in it, so the rows under
-        // the chevron cannot keep a dot the row above them just lost.
+        const marked = new Set(messageIds);
         for (const row of this.threadOf(conversation)) {
-            row.unread = unread;
+            if (marked.has(row.id)) {
+                row.unread = unread;
+            }
         }
     }
 
@@ -1624,11 +1671,6 @@ export class ConversationView extends Component {
      */
     loadFollowers() {
         this.recordThread?.fetchThreadData(["followers"]);
-    }
-
-    get followersLabel() {
-        const thread = this.recordThread;
-        return thread?.selfFollower ? _t("Following") : _t("Followers");
     }
 
     /** The wizard closed: whoever it added is on the list now. */
@@ -2228,7 +2270,9 @@ export class ConversationView extends Component {
         this.dialog.add(LinkDialog, {
             partnerId: this.state.selected?.partner_id || false,
             correspondent: this.state.selected?.correspondent || "",
-            onSelect: (model, resId) => this.linkTo(model, resId, "picker"),
+            currentModel: this.selectedRecord?.model || "",
+            onSelect: (model, resId, _label, _modelLabel, how) =>
+                this.linkTo(model, resId, how === "unlink" ? "unlink" : "picker"),
         });
     }
 
@@ -2244,6 +2288,10 @@ export class ConversationView extends Component {
         if (!messageIds.length) {
             return;
         }
+        // Read before the move: whether the correction stayed within one
+        // kind of record is the number that decides whether step one of the
+        // picker earns its click.
+        const sameModel = this.selectedRecord?.model === model;
         let linked;
         try {
             linked = await this.orm.call(
@@ -2255,13 +2303,16 @@ export class ConversationView extends Component {
             return;
         }
         this.notification.add(
-            _t("Linked to %s. The next mail in this thread lands here too.", linked.name),
+            via === "unlink"
+                ? _t("Linked to %s only. The next mail in this thread lands there too.", linked.name)
+                : _t("Linked to %s. The next mail in this thread lands here too.", linked.name),
             { type: "success" }
         );
-        // Which way the correction came: the one-click suggestion or the
-        // picker. The kind of record it went to is not sent, on purpose: a
-        // model name is a fact about the customer's Odoo, not about ours.
-        this.improve.capture("conversation_linked", { via });
+        // Which way the correction came: the one-click suggestion, the
+        // picker or the unlink row, and whether it stayed within one kind of
+        // record. The kind itself is not sent, on purpose: a model name is a
+        // fact about the customer's Odoo, not about ours; a boolean is not.
+        this.improve.capture("conversation_linked", { via, same_model: sameModel });
         // The conversation is somewhere else now, so it is addressed by the
         // record it moved to. `keepSelection` then does the right thing in
         // both folders it can be linked from: in the inbox the row is still

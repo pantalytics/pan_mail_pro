@@ -23,7 +23,12 @@ each field below justifies its storage. Partial indexes keep the index off the
 rows that are notes and system logs, which are the overwhelming majority.
 """
 from odoo import api, fields, models, _
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
+
+# Written on a `mail.message` write that copies the provider's read state in
+# (the import, the refresh), so it is not pushed straight back out to the
+# provider it came from.
+READ_MIRROR_CTX = {'pan_mail_read_mirror': True}
 
 
 class MailMessage(models.Model):
@@ -81,6 +86,70 @@ class MailMessage(models.Model):
         help='Whether the mailbox has read this message. Mirrored from the '
              'provider; not a per-user flag.',
     )
+
+    def write(self, vals):
+        """Every write to `x_is_read` reaches the provider, whoever made it.
+
+        The Inbox, `mark_read()` over the API and a plain `write` from an
+        integration are three ways to say the same thing, and a mirror that
+        only one of them updates at the provider is a mirror the next refresh
+        silently undoes. So the push lives here, the one place all three pass,
+        and a write that is itself a copy of the provider says so with
+        `READ_MIRROR_CTX`.
+        """
+        if 'x_is_read' not in vals or self.env.context.get('pan_mail_read_mirror'):
+            return super().write(vals)
+        self._check_read_state_writer()
+        read = bool(vals['x_is_read'])
+        # Only what actually moves: saying "read" about a read mail must not
+        # cost a provider call.
+        moving = self.filtered(lambda m: m.x_is_read != read)
+        result = super().write(vals)
+        for mailbox in moving.sudo().x_mailbox_id:
+            mailbox.push_read_state(
+                moving.sudo().filtered(lambda m: m.x_mailbox_id == mailbox),
+                read=read)
+        return result
+
+    def mark_read(self):
+        """Mark these messages read, here and at the provider. Bulk by ids.
+
+        The API's way in, for an agent or an integration: the same fact the
+        Inbox writes, on exactly the messages named, and nothing about the
+        rest of their conversations. Also clears the caller's own Odoo Inbox
+        rows for them, the one bridge described in ARCHITECTURE.md 9.18.
+
+        Returns:
+            int: how many messages changed state.
+        """
+        return self._mark_read_state(True)
+
+    def mark_unread(self):
+        """Put these messages back to unread, here and at the provider.
+
+        Returns:
+            int: how many messages changed state.
+        """
+        return self._mark_read_state(False)
+
+    def _mark_read_state(self, read):
+        self._check_read_state_writer()
+        # Searched or browsed by the caller, so the caller must be able to
+        # read them; the write below is sudo because read state is a fact about
+        # the mailbox, not about the document the mail hangs on.
+        self.check_access('read')
+        moving = self.filtered(lambda m: m.x_is_read != read)
+        moving.sudo().write({'x_is_read': read})
+        if read:
+            # As the caller: `set_message_done` clears `env.user`'s rows only.
+            self.set_message_done()
+        return len(moving)
+
+    def _check_read_state_writer(self):
+        """Marking a mailbox's mail is a mailbox manager's act, like reading it."""
+        if not self.env.su and not self.env.user.has_group(
+                'pan_mail_pro.group_mail_mailbox_manager'):
+            raise AccessError(_('Only a mailbox manager may mark mail read or unread.'))
 
     # -------------------------------------------------------------------------
     # Communication lens
