@@ -2,15 +2,22 @@
 
 ## Sending Issues
 
-### "Permission denied when sending" (Microsoft 365)
+### "… cannot send from …" (Microsoft 365)
 
-**Cause:** User lacks SendAs permission on the mailbox in Microsoft 365.
+**Cause:** The sign-in named in the message lacks a delegation on the shared
+mailbox in Microsoft 365. Sending from a shared address needs two: **Full
+Access** and **Send As**.
+
+The address named is the one the user is connected as (**My Preferences →
+Mail Pro → Connected as**), which is not always the address on their Odoo
+user. Grant the rights to that one.
 
 **Solution:**
 1. Go to [Exchange Admin Center](https://admin.exchange.microsoft.com)
 2. Navigate to **Recipients → Mailboxes**
 3. Select the shared mailbox
-4. **Delegation → Send As** → Add the user
+4. **Delegation → Read and manage (Full Access)** → Add the user
+5. **Delegation → Send As** → Add the user
 
 ### "Mailbox not connected" warning, or the banner will not go away
 
@@ -18,7 +25,7 @@
 
 **Solution:**
 1. Go to **My Preferences → Mail Pro** tab
-2. Click **Connect Mailbox** and complete the sign-in
+2. Click **Connect mailbox** and complete the sign-in
 
 On IMAP/SMTP there is nothing for the user to press: an administrator enters
 the server, login and password on the account. The banner is not shown at all

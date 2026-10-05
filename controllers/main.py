@@ -108,7 +108,7 @@ class MailProOAuthController(http.Controller):
         try:
             tokens = client._exchange_code_for_tokens(
                 code, oauth_redirect_uri(request.env, provider))
-            email = client.get_user_email(tokens['access_token'])
+            email = client.read_user_info(tokens['access_token']).get('email')
 
             request.env['pan.mail.account'].sudo()._store_tokens(
                 provider, user, email,

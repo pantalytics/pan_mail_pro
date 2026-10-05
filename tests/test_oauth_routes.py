@@ -130,7 +130,7 @@ class TestOAuthCallback(HttpCase):
         tokens = {'access_token': 'at', 'refresh_token': 'rt',
                   'token_expiry': '2030-01-01 00:00:00'}
         with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
-             patch(f'{GRAPH}.get_user_email', return_value='nora@company.test'):
+             patch(f'{GRAPH}.read_user_info', return_value={'email': 'nora@company.test', 'name': None}):
             response = self._callback(code='authcode', state='nonce-123')
 
         self.assertEqual(response.status_code, 200)
@@ -158,7 +158,7 @@ class TestOAuthCallback(HttpCase):
         tokens = {'access_token': 'at', 'refresh_token': 'rt',
                   'token_expiry': '2030-01-01 00:00:00'}
         with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
-             patch(f'{GRAPH}.get_user_email', return_value='nora@company.test'):
+             patch(f'{GRAPH}.read_user_info', return_value={'email': 'nora@company.test', 'name': None}):
             self._callback(code='authcode', state='nonce-123')
 
         mailbox.invalidate_recordset()
@@ -183,7 +183,7 @@ class TestOAuthCallback(HttpCase):
         tokens = {'access_token': 'at', 'refresh_token': 'rt',
                   'token_expiry': '2030-01-01 00:00:00'}
         with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
-             patch(f'{GRAPH}.get_user_email', return_value='nora@company.test'):
+             patch(f'{GRAPH}.read_user_info', return_value={'email': 'nora@company.test', 'name': None}):
             self._callback(code='authcode', state='nonce-123')
             replay = self._callback(code='authcode', state='nonce-123')
 
@@ -231,7 +231,7 @@ class TestOAuthCallback(HttpCase):
         tokens = {'access_token': 'at', 'refresh_token': 'rt',
                   'token_expiry': '2030-01-01 00:00:00'}
         with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
-             patch(f'{GRAPH}.get_user_email', return_value='nora@company.test'):
+             patch(f'{GRAPH}.read_user_info', return_value={'email': 'nora@company.test', 'name': None}):
             response = self._callback(code='authcode', state='nonce-123')
         self.assertIn('Mailbox Connected', response.text)
         self.assertEqual(len(self._accounts()), 1)
@@ -251,7 +251,7 @@ class TestOAuthCallback(HttpCase):
         tokens = {'access_token': 'at', 'refresh_token': 'rt',
                   'token_expiry': '2030-01-01 00:00:00'}
         with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
-             patch(f'{GRAPH}.get_user_email', return_value='customer@example.test'):
+             patch(f'{GRAPH}.read_user_info', return_value={'email': 'customer@example.test', 'name': None}):
             response = self._callback(code='authcode', state='nonce-portal')
         self.assertIn('Only internal users', response.text)
         self.assertFalse(self.env['pan.mail.account'].sudo().search(
@@ -268,7 +268,7 @@ class TestOAuthCallback(HttpCase):
         tokens = {'access_token': 'at', 'refresh_token': 'rt',
                   'token_expiry': '2030-01-01 00:00:00'}
         with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
-             patch(f'{GRAPH}.get_user_email', return_value='info@company.test'):
+             patch(f'{GRAPH}.read_user_info', return_value={'email': 'info@company.test', 'name': None}):
             self._callback(code='authcode', state='nonce-123')
 
         shared.invalidate_recordset()

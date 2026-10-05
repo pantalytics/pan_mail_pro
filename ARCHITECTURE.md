@@ -327,6 +327,26 @@ the two would disagree about inline images within a release. `send_draft` sends
 the stored message rather than rebuilding it from Odoo's fields, so what was
 reviewed is what leaves.
 
+### The account actions
+
+The mailbox actions are what can be done *to a mailbox*. A sign-in is a
+`pan.mail.account`, and two things can be asked *of one*. They sit on the
+contract for the same reason the mailbox actions do: the question is the same
+at every provider and only the call behind it differs, so a caller that asked
+the provider directly would be the second copy of that difference.
+
+| Action | Asks | Microsoft 365 | Gmail | IMAP/SMTP |
+|---|---|---|---|---|
+| `read_user_info(token)` | who is this sign-in | `/me`: `mail` or `userPrincipalName`, `displayName` | `users/me/profile`: `emailAddress`, no name | nobody: the address is configuration |
+| `test_connection(account)` | does it still work | a token, and `/me` answering to it | a token, and the profile answering to it | an IMAP login and an SMTP login, each named when it fails |
+
+Every answer is one shape: the normalized identity `{'email', 'name'}`, with
+`success` and `error` in front of it for `test_connection`, and `None` for
+each field a provider cannot fill rather than a key it invented. The consent
+callback stores what `read_user_info` reports, which is what *Connected as*
+shows (§2), and the account form's Test Connection reads the same two fields.
+`tests/test_provider_contract.py::TestAccountActions` holds the shape.
+
 ### Model map
 
 **The contract and its implementations**
@@ -957,6 +977,32 @@ no owner; nothing is borrowed from the sender.
 owner's token, and only one may be active. **Required before any mailbox can
 enable incoming sync**, because mail triggered by an external author has to go
 out from somewhere.
+
+### Connected as
+
+The address the provider reported at consent is the account's `email`, and it
+is not necessarily the user's own: a person who signs in to Odoo as a
+colleague connects whichever identity they consent with. Since 19.0.25.0.0
+that address is what "connected" shows, rather than a tick --
+`res.users.x_pan_mail_connected_as` on My Preferences, on the user form and
+as the Users list column, where the administrator reads at a glance that one
+user sends as somebody else. Nothing refuses it: `_store_tokens` already refuses the one
+case that breaks things, switching identity while the old one still works.
+
+Whether that identity may send from a shared mailbox is a delegation granted
+in Exchange, and Graph has no endpoint that lists it, so the module does not
+pretend to know before a send: a check button was built and taken out again
+in the same release, because a person who cannot send from a shared mailbox
+finds out at the send, and the right place for the answer is that refusal.
+A send Exchange refuses on delegation (`ErrorAccessDenied` on the draft,
+`ErrorSendAsDenied` on the send) lands in `failure_reason` as a sentence
+naming the **account's** address, the identity Exchange refused, rather than
+the Odoo user, who may be somebody else, and the two rights to grant.
+
+The mailbox form says the same rule from its side: `sends_with` is
+`_resolve_sending_account` in one sentence -- the owner's sign-in and its
+address on a personal or notification mailbox, each sender's own on a
+Microsoft shared one, its own account on Gmail and IMAP.
 
 ---
 

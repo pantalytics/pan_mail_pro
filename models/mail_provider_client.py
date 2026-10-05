@@ -99,6 +99,28 @@ Normalized folder (returned by list_folders)
         'role': str or None,     # one of FOLDER_ROLES, when the folder claims one
     }
 
+Normalized identity (returned by read_user_info / test_connection)
+-------------------------------------------------------------------
+    {
+        'email': str or None,    # the address this sign-in is, at the provider
+        'name':  str or None,    # what the provider calls the person, if it does
+    }
+
+The account actions
+-------------------
+A sign-in is a `pan.mail.account`, and two things can be asked of one. They
+sit on the contract because the question is the same at every provider and
+only the call behind it differs, and a caller that asked the provider
+directly would be the second copy of that difference:
+
+    read_user_info        who is this sign-in, at the provider
+    test_connection       does this sign-in still work
+
+`read_user_info` is what "Connected as" stores at consent: the address the
+provider reports, which is not necessarily the address on the Odoo user who
+consented. Where a provider cannot answer (IMAP has no token to ask), the
+identity is configuration and the fields are None.
+
 The mailbox actions
 -------------------
 Everything above is what Odoo needs to *run* on a mailbox: send a mail, read
@@ -552,9 +574,25 @@ class MailProviderClient(models.AbstractModel):
         """Return a usable access token, refreshing it first if needed."""
         raise NotImplementedError
 
+    # -------------------------------------------------------------------------
+    # Account actions
+    #
+    # What can be asked of a sign-in, as the mailbox actions are what can be
+    # done to a mailbox. See the module docstring for the vocabulary.
+    # -------------------------------------------------------------------------
+
     @api.model
-    def get_user_email(self, token):
-        """Return the email address the token authenticates as, or None."""
+    def read_user_info(self, token):
+        """Who `token` is at the provider: the normalized identity.
+
+        Asked with a bare token rather than an account because its first use
+        is the consent callback, before the account exists: the address it
+        reports is what decides whether this is a new sign-in, the same one
+        again, or somebody else on the same Odoo user (`_store_tokens`).
+
+        Never raises: an identity the provider will not name is
+        `{'email': None, 'name': None}`, and the caller says what that means.
+        """
         raise NotImplementedError
 
     @api.model
@@ -562,7 +600,9 @@ class MailProviderClient(models.AbstractModel):
         """Verify the stored credentials still work.
 
         Returns:
-            dict: {'success': bool, 'error': str, 'email': str, ...}
+            dict: {'success': bool, 'error': str or None,
+                   'email': str or None, 'name': str or None}
+            -- the normalized identity, plus whether it could be read.
         """
         raise NotImplementedError
 

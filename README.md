@@ -125,10 +125,10 @@ filed there, so it shows up in your own mail client too.
 ### Connect your mailbox
 
 1. Go to **My Preferences** → **Mail Pro**
-2. Click **Connect Mailbox**
+2. Click **Connect mailbox**
 3. Sign in and grant permissions
 4. A personal mailbox is created for the address you signed in with, and set as
-   your **Send from**
+   your **Default mailbox**
 
 An admin can also send everybody the invitation with **Send Mail Pro Invite**
 on the Users list (Settings → Mail Pro → Users); the link in it drops each user
@@ -140,7 +140,7 @@ an internal user, a provider that has a consent screen, and not on a staging
 copy. Once connected there is nothing left to do: the address sends. An
 administrator who wants proof has **Send Test Email** on every mailbox form.
 
-**Note:** until your account is connected and a Send from mailbox is set, the
+**Note:** until your account is connected and a default mailbox is set, the
 email composer shows a warning banner saying so.
 
 ---
