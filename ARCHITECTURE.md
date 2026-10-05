@@ -376,6 +376,7 @@ reviewed is what leaves.
 |-------|---------|
 | `pan.mail.routing.log` | One row per delivered mail: rule, confidence, rejected candidates |
 | `pan.mail.coverage` | Transient report: how much mail actually lands on a document |
+| `pan.mail.error` | One row per failure the module caught: a code from a fixed list, the flow, the mailbox, the exception and its traceback. Written on its own cursor so a rolled-back transaction keeps its row; thirty days. The codes of the last 24 hours ride the heartbeat (§7, §9.17) |
 
 **Reading it**
 
@@ -1785,6 +1786,55 @@ is one table for notes, emails, system logs and chats. "Where did this email end
 up?" has no answer in standard Odoo. These fields give it one, with partial
 indexes so the index stays off the note and log rows that are the vast majority.
 
+### `pan.mail.error` — why did it not work?
+
+The routing log says where a mail went and the coverage report says how often
+that was somewhere useful. Neither says anything about the mail that did not
+arrive, the reply that did not leave, or the Inbox that drew an error instead
+of a conversation. Those were lines in the server log: on Cloudpepper and
+odoo.sh a file nobody opens, rotated away within days, and the one place a
+customer cannot look while telling us "mail stopped on Tuesday".
+
+So every failure the module catches is also **recorded**, as one row with a
+**code** from a fixed list (`pan_mail_error.CODES`: `incoming.mailbox_failed`,
+`outgoing.send_failed`, `oauth.token_revoked`, `inbox.rpc_failed`, ...), the
+flow, the mailbox or account it concerned, the exception's first line and its
+traceback. The list is under Settings → Technical → Email → Mail Pro →
+**Errors**, grouped by code, and a row opens on the traceback. The server log
+line stays; this is the copy that survives the week and can be read from a
+screen by the person who runs the database.
+
+Three decisions:
+
+- **Written on a cursor of its own.** The failures worth recording are the
+  ones whose transaction is about to roll back: the cron that raised, the
+  request that answered 500. A row written inside that transaction dies with
+  it. `record()` opens its own cursor and commits, the way Odoo's `ir.logging`
+  handler does, and never raises: a failure to record a failure is a log
+  line, not a second failure.
+- **The code is the only part that leaves the database.** `codes_since()`
+  groups the last 24 hours by code and the heartbeat carries that list as
+  `errors` (§9.17); the server turns each into a `heartbeat_error` event in
+  PostHog. A code is a fixed string: no address, subject, exception text or
+  traceback travels, and `tests/test_errors.py` asserts the body carries no
+  `@`. A code not seen in the last day is reported within the minute
+  (`_report_errors_if_new`), because during a beta a new kind of failure is
+  the thing to hear about today, not tomorrow; a code ageing out changes the
+  set too, so the bound is a handful of heartbeats a day, never one per failure.
+- **Requests are caught at the door.** `ir.http._handle_error` records every
+  exception whose traceback passes through this module as `inbox.rpc_failed`,
+  except the ones a request may end in on purpose (`UserError` and its family,
+  `AccessDenied`, HTTP redirects and 404s). That is how a broken Inbox method
+  is seen without a `try` in every RPC method.
+
+**Not OpenTelemetry.** Traces and metrics need a collector and a backend the
+customer's Odoo would have to reach, a Python dependency the module cannot
+install on Cloudpepper or odoo.sh, and a second system for a team with no one
+to watch it. What a beta needs is the kind, the count and the traceback of
+each failure, and a daily series per installation: a table, a heartbeat and
+PostHog's error tracking cover that. The browser side is the same decision in
+the other direction: PostHog's `$exception` (§9.17) rather than a second SDK.
+
 ---
 
 ## 8. No AI seam
@@ -2334,9 +2384,17 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   four link coverage counts (`pan.mail.coverage.counts_since`), per matching
   rule how often it decided and how often a person overruled it
   (`pan.mail.routing.log.rule_counts_since`, off `corrected_at`, which
-  `link_to` stamps), and the number of hand-made links. Counts and rule
-  names. No address, subject, body or name. The manifest's Data Disclosure
-  says the same, and has to change with it.
+  `link_to` stamps), the number of hand-made links, and which kinds of
+  failure happened how often (`pan.mail.error.codes_since`: a code from the
+  fixed list in `pan_mail_error.CODES` and a count each, at most twenty, §7).
+  Counts, rule names and error codes. No address, subject, body, name,
+  exception text or traceback. The manifest's Data Disclosure says the same,
+  and has to change with it.
+- **A kind of failure not seen in the last day does not wait for tomorrow
+  either.** `_report_errors_if_new()` (same cron, same shape as the setup
+  push) compares the set of codes of the last 24 hours with the set the last
+  heartbeat carried (`errors_reported`) and reports when they differ. One
+  attempt per change, stored before the call, like the setup answers.
 
 - **A setup step answered does not wait for tomorrow.** Pantalytics draws the
   three answers as the Get started line the customer is standing in front of,
@@ -2360,12 +2418,21 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   bundle `pan_mail_pro.assets_improve`, sends five named events
   (`inbox_opened`, `conversation_opened`, `tab_opened`, `reply_sent`,
   `conversation_linked`, with a folder, a tab, a mode, a `via` or a
-  `same_model` boolean, never content) and records a wireframe: every text node, input and attribute
+  `same_model` boolean, never content), reports the errors the Inbox meets
+  as PostHog `$exception` events (what escaped every handler while the Inbox
+  was open, and what its own `catch` blocks turned into a line on the
+  screen, each with a fixed `where`: the exception's class and stack, and
+  its message run through `scrubExceptionEvent` first, one line, every
+  address and every quoted string gone, because an Odoo error message is
+  written for its reader and may name a record or a sender), and records a
+  wireframe: every text node, input and attribute
   masked, images blocked, no network bodies, `ip: false`, no person profile,
   nothing persisted in the browser. Recording starts when the Inbox mounts
   and stops when it unmounts. `tools/ui_check.py` points a seeded Inbox at a
-  sink and reads every byte back: a seeded subject or address on the wire is
-  the failure, which is the only way a masking promise stays true across
+  sink and reads every byte back, then throws an error on the page whose
+  message is a seeded address and subject: a seeded subject or address on
+  the wire is the failure, and the `$exception` has to arrive without them,
+  which is the only way a masking promise stays true across
   posthog-js upgrades.
 - **Only a signed answer is stored.** Ed25519 against `PUBLIC_KEY`, and its
   `db_uuid` must be this database's. An unreachable server keeps the cached
@@ -2564,7 +2631,7 @@ For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 | Authentication | OAuth 2.0 (Microsoft Entra ID, Google) — or login + password on IMAP |
 | Token storage | Encrypted at rest (Fernet) |
 | Token refresh | Automatic |
-| Data egress | Provider APIs, plus one daily heartbeat to Pantalytics: counts and versions only (§9.17) |
+| Data egress | Provider APIs, plus one daily heartbeat to Pantalytics: counts, versions and error codes from a fixed list (§9.17); the Inbox's events and errors to Pantalytics only on an opted-in workspace, messages scrubbed |
 
 ---
 

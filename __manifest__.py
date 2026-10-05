@@ -96,8 +96,11 @@
           sent and received, how many were
           linked to a document, to a contact only, or to nothing, per
           matching rule how often it decided and how often a person
-          overruled it, and how many conversations were linked by hand.
-          Counts and rule names. Never an address, subject, body or name.
+          overruled it, how many conversations were linked by hand, and
+          which kinds of failure happened how often (a fixed list of error
+          codes such as "outgoing.send_failed", with a count each).
+          Counts, rule names and error codes. Never an address, subject,
+          body, name, exception text or traceback.
         - Help improve Mail Pro is a switch on the Pantalytics workspace, off
           until an administrator turns it on there. When it is on, the Mail
           Pro inbox in the browser reports which screens, tabs and buttons
@@ -112,7 +115,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.22.1.0',
+    'version': '19.0.23.0.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -128,6 +131,7 @@
         'views/pan_mail_conversation_views.xml',
         'views/pan_mail_mailbox_views.xml',
         'views/pan_mail_routing_log_views.xml',
+        'views/pan_mail_error_views.xml',
         'views/pan_mail_provider_views.xml',
         'views/pan_mail_account_views.xml',
         'views/mail_message_views.xml',

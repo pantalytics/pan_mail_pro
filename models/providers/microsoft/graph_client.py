@@ -372,6 +372,9 @@ class MicrosoftGraphClient(models.AbstractModel):
             permanent_errors = ('invalid_grant',)
             if error_code in permanent_errors:
                 _logger.warning(f"[OAuth] Permanent token failure for {account.email}, clearing tokens")
+                self.env['pan.mail.error'].record(
+                    'oauth.token_revoked', account=account,
+                    detail=f'{error_code}: {error_description}')
                 # Clear invalid tokens so user can reconnect
                 account.sudo().write({
                     'access_token_encrypted': False,

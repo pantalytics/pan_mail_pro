@@ -284,6 +284,8 @@ class GoogleGmailClient(models.AbstractModel):
             # invalid_grant: refresh token revoked, expired, or consent withdrawn.
             if error_code == 'invalid_grant':
                 _logger.warning('[Gmail API] Permanent token failure for %s, clearing tokens', account.email)
+                self.env['pan.mail.error'].record(
+                    'oauth.token_revoked', e, account=account)
                 account.sudo().write({
                     'access_token_encrypted': False,
                     'refresh_token_encrypted': False,

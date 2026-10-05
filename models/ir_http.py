@@ -19,14 +19,23 @@ back to "no" and the log says to upgrade, so Odoo itself keeps working and only
 Mail Pro waits for the upgrade.
 """
 import logging
+import traceback
 
 from psycopg2 import errors
+from werkzeug.exceptions import HTTPException
 
 from odoo import models
+from odoo.exceptions import AccessDenied, UserError
+from odoo.http import request
 
 _logger = logging.getLogger(__name__)
 
 SCHEMA_BEHIND = (errors.UndefinedTable, errors.UndefinedColumn)
+
+# What a request may end in on purpose: a refusal, a validation message, a
+# redirect. None of them is a defect, and recording them would bury the ones
+# that are under every "not connected" the Inbox answers.
+EXPECTED = (UserError, AccessDenied, HTTPException)
 
 
 class IrHttp(models.AbstractModel):
@@ -50,6 +59,32 @@ class IrHttp(models.AbstractModel):
                 self.env.invalidate_all()
             result.update(flags)
         return result
+
+    @classmethod
+    def _handle_error(cls, exception):
+        """A request that failed inside this module leaves a row in
+        `pan.mail.error` (code `inbox.rpc_failed`) before Odoo answers it.
+
+        The Inbox is RPC methods on `pan.mail.conversation` and the composer;
+        an exception there used to reach the reader as a dialog and us never,
+        because the request's transaction rolls back and the server log is
+        the customer's. Only exceptions whose traceback passes through this
+        module, and never the expected ones (`EXPECTED`).
+        """
+        cls._pan_mail_record_failure(exception)
+        return super()._handle_error(exception)
+
+    @classmethod
+    def _pan_mail_record_failure(cls, exception):
+        try:
+            if isinstance(exception, EXPECTED) or not request:
+                return
+            frames = traceback.extract_tb(exception.__traceback__)
+            if not any('pan_mail_pro' in frame.filename for frame in frames):
+                return
+            request.env['pan.mail.error'].record('inbox.rpc_failed', exception)
+        except Exception:  # noqa: BLE001 - never a second failure on top of the first
+            _logger.exception('[Mail Pro] Could not record the failed request')
 
     def _pan_mail_session_flags(self):
         result = {}

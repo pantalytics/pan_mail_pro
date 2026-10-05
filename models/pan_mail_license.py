@@ -225,6 +225,10 @@ class PanMailLicense(models.Model):
     # writes them. Compared, never read for its own sake: it is how the module
     # knows a step has been answered since it last said so.
     setup_reported = fields.Char(readonly=True, copy=False)
+    # The error codes of the last 24 hours as the last heartbeat carried them
+    # (`pan.mail.error.signature_since`), for the same comparison: a code not
+    # in it is a kind of failure Pantalytics has not heard of yet.
+    errors_reported = fields.Char(readonly=True, copy=False)
 
     # Help improve Mail Pro, as the workspace decided it at Pantalytics. Read
     # off the signed entitlement and nowhere else; the local checkbox that
@@ -546,6 +550,29 @@ class PanMailLicense(models.Model):
             return
         link._heartbeat_guarded()
 
+    @api.model
+    def _report_errors_if_new(self):
+        """Report in when a kind of failure appears that the last day had not.
+
+        Same shape as `_report_setup_if_changed`: the fetch cron asks every
+        minute, the signature is the set of error codes of the last 24 hours,
+        and it is stored on the way out so an unreachable server costs one
+        attempt, not one a minute. A code ageing out changes the set too, so
+        the bound is a handful of heartbeats a day, never one per failure: a
+        mailbox failing a hundred times today is one code, reported once.
+        """
+        link = self.current()
+        if not link or not link.key_encrypted:
+            return
+        since = fields.Datetime.now() - timedelta(hours=24)
+        signature = self.env['pan.mail.error'].signature_since(since)
+        if signature == (link.errors_reported or ''):
+            return
+        if link.last_check and fields.Datetime.now() - link.last_check < timedelta(
+                seconds=SETUP_PUSH_SECONDS):
+            return
+        link._heartbeat_guarded()
+
     def _heartbeat_guarded(self):
         """A heartbeat that cannot take the caller's transaction down with it."""
         try:
@@ -554,6 +581,7 @@ class PanMailLicense(models.Model):
         except Exception as error:  # noqa: BLE001 - recorded, never raised
             _logger.exception('[License] Heartbeat failed')
             self.write({'last_check': fields.Datetime.now(), 'last_error': str(error)})
+            self.env['pan.mail.error'].record('license.heartbeat_failed', error)
 
     def _heartbeat(self):
         """Report in, and store the answer if, and only if, it is ours."""
@@ -571,12 +599,17 @@ class PanMailLicense(models.Model):
         # whether the setup answers have moved since we last said so, and an
         # attempt that never arrives must not turn into one a minute.
         self.setup_reported = setup_signature(report['setup'])
+        self.errors_reported = ','.join(sorted(e['code'] for e in report['errors']))
         try:
             code, body = self._post(
                 '/api/v1/license/heartbeat', report, key=key)
         except UserError as error:
             # Offline keeps the cached answer: valid_until is the grace period.
             self.write({'last_check': now, 'last_error': str(error)})
+            # A warning, not an error: nothing is lost yet. It cannot reach us
+            # today by definition; the next heartbeat that does carries it.
+            self.env['pan.mail.error'].record(
+                'license.heartbeat_failed', error, level='warning')
             return
 
         if code == 403 and body.get('status') == 'wrong_database':
@@ -693,6 +726,11 @@ class PanMailLicense(models.Model):
             'coverage': self.env['pan.mail.coverage'].counts_since(since),
             'rules': rules[:MAX_RULE_ENTRIES],
             'corrections': sum(r['corrected'] for r in rules),
+            # What failed here in the last day, as codes and counts
+            # (`pan.mail.error.CODES`): the server draws one `heartbeat_error`
+            # per code, which is how a release that breaks sending for one
+            # provider shows up the same day instead of in a ticket.
+            'errors': self.env['pan.mail.error'].codes_since(since),
         }
 
     # -------------------------------------------------------------------------

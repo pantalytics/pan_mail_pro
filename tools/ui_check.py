@@ -2922,6 +2922,12 @@ class Checks:
         any of it is the failure this check exists for. It also asserts the
         SDK fetched nothing (the recorder is in the bundle) and that the
         person is the server's `u:` pseudonym.
+
+        Then it throws an error on the page whose message *is* a seeded
+        address and subject, and reads the `$exception` back: the error has
+        to arrive (that is how a broken Inbox is seen from here) and the
+        message has to arrive scrubbed, which only a real posthog-js running
+        our `before_send` can prove.
         """
         sink = start_sink()
         link = self.call('pan.mail.license', 'search', [])
@@ -2978,6 +2984,21 @@ class Checks:
                 page.screenshot(path=os.path.join(self.out, 'inbox-improve.png'), full_page=True)
             if page.query_selector('.o_error_dialog, .o_dialog_error'):
                 self.fail('the Inbox with Help improve Mail Pro on opened an error dialog')
+            # Now break something on purpose, with the seeded secrets in the
+            # message. Odoo's error service shows its dialog for it, which is
+            # right and why this comes after the dialog assertion above.
+            page.evaluate("""([address, subject]) => {
+                const error = new Error(`Could not open "${subject}" from ${address}`);
+                window.dispatchEvent(new ErrorEvent('error', {
+                    error, message: error.message, filename: 'ui_check.js', lineno: 1, colno: 1,
+                }));
+            }""", [self.SEEDED[2], self.SEEDED[3]])
+            for _ in range(10):
+                page.wait_for_timeout(1000)
+                if sink.saw('/e/', '$exception'):
+                    break
+            if not sink.saw('/e/', '$exception'):
+                self.fail('an error thrown on the Inbox never reached the sink as $exception')
 
             if not sink.saw('/e/', 'inbox_opened'):
                 self.fail('inbox_opened never reached the sink '

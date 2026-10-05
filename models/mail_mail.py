@@ -469,6 +469,7 @@ class MailMail(models.Model):
             "[Outgoing Mail] Email %s: subject=%r to=%r", self.id, self.subject, self.email_to
         )
 
+        mailbox = None
         try:
             mailbox, account = self._resolve_route()
             reply_context = self._build_reply_context(mailbox)
@@ -479,10 +480,10 @@ class MailMail(models.Model):
                 reply_context=reply_context,
             )
         except RoutingError as e:
-            return self._fail(str(e))
+            return self._fail(str(e), code='outgoing.no_route', error=e)
         except Exception as e:
             _logger.exception(f"[Outgoing Mail] Exception sending mail {self.id}")
-            reason = self._fail(self._readable_reason(e))
+            reason = self._fail(self._readable_reason(e), error=e, mailbox=mailbox)
             if raise_exception:
                 raise
             return reason
@@ -504,6 +505,9 @@ class MailMail(models.Model):
                 'scheduled_date': fields.Datetime.now() + timedelta(seconds=wait),
             })
             _logger.warning("[Outgoing Mail] Mail %s waits %ss: provider throttled", self.id, wait)
+            self.env['pan.mail.error'].record(
+                'outgoing.throttled', level='warning', mailbox=mailbox, account=account,
+                detail=result.get('error'))
             return None
 
         if result.get('error_code') == ERROR_NO_RECIPIENTS:
@@ -518,7 +522,8 @@ class MailMail(models.Model):
 
         # The client caught the transport error itself and handed back its
         # text: the same sentence-making applies as to one that escaped.
-        return self._fail(self._readable_reason(result.get('error') or _('Failed to send email.')))
+        return self._fail(self._readable_reason(result.get('error') or _('Failed to send email.')),
+                          mailbox=mailbox)
 
     def _sync_notifications(self):
         """Bring the `mail.notification` rows in line with the mail's state.
@@ -544,8 +549,12 @@ class MailMail(models.Model):
                 'notification_status': self._get_notification_status(),
             })
 
-    def _fail(self, reason):
+    def _fail(self, reason, code='outgoing.send_failed', error=None, mailbox=None):
         """Record why this mail did not go out, and hand the reason back.
+
+        The reason goes onto the mail for its author; the `code` goes into
+        `pan.mail.error` for whoever asks later why sending fails on this
+        database, and from there, as a count, onto the heartbeat.
 
         The `mail.notification` rows are marked failed too, through Odoo's own
         `_postprocess_sent_message`. That is what puts the red "message not
@@ -563,6 +572,7 @@ class MailMail(models.Model):
             failure_type='unknown',
         )
         _logger.error(f"[Outgoing Mail] Mail {self.id} not sent: {reason}")
+        self.env['pan.mail.error'].record(code, error, mailbox=mailbox, detail=reason)
         return reason
 
     def _record_sent(self, result, mailbox, account, reply_context=None):
