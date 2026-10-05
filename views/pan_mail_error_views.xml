@@ -71,13 +71,14 @@
                 <filter name="outgoing" string="Outgoing" domain="[('flow', '=', 'outgoing')]"/>
                 <filter name="inbox" string="Inbox" domain="[('flow', '=', 'inbox')]"/>
                 <separator/>
-                <filter name="today" string="Last 24 hours"
-                        domain="[('create_date', '>=', (context_today() - datetime.timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S'))]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_code" string="Code" context="{'group_by': 'code'}"/>
-                    <filter name="group_mailbox" string="Mailbox" context="{'group_by': 'mailbox_id'}"/>
-                    <filter name="group_day" string="Day" context="{'group_by': 'create_date:day'}"/>
-                </group>
+                <filter name="today" string="Today"
+                        domain="[('create_date', '&gt;=', datetime.datetime.combine(context_today(), datetime.time(0, 0, 0)))]"/>
+                <separator/>
+                <!-- Group-by filters at top level: Odoo 19's search schema
+                     rejects `expand` on group (see pan_mail_routing_log_views). -->
+                <filter name="group_code" string="Code" context="{'group_by': 'code'}"/>
+                <filter name="group_mailbox" string="Mailbox" context="{'group_by': 'mailbox_id'}"/>
+                <filter name="group_day" string="Day" context="{'group_by': 'create_date:day'}"/>
             </search>
         </field>
     </record>
