@@ -2,6 +2,14 @@
 
 Design guidelines for Pantalytics Odoo modules. Combines Apple's user experience with Odoo's framework.
 
+The brand guide at [brand.pantalytics.com/product-ui](https://brand.pantalytics.com/product-ui)
+is the source: the five page types, the element rules, the writing standards.
+This file is what applies inside Odoo, where a settings page is a `<group
+string>` with rows rather than a card, and a danger zone is a red link with a
+confirm. Capitalize only the first letter of a label, a button or a heading;
+a button is verb plus object; no explanatory text under a title; stay silent
+when it works.
+
 ## Philosophy
 
 ### From Apple we learn:

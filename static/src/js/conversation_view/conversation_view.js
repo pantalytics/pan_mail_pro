@@ -686,6 +686,7 @@ export class ConversationView extends Component {
         } catch (error) {
             // Keep what the reader was looking at; say one line and offer a
             // retry rather than clearing the pane.
+            this.improve.failed("conversation_list", error);
             if (seq === this.listSeq) {
                 this.state.error = _t("Could not load your conversations.");
                 this.state.errorReason = serverReason(error);
@@ -756,6 +757,7 @@ export class ConversationView extends Component {
                 this.state.live = message;
             }
         } catch (error) {
+            this.improve.failed("live_message", error);
             if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that email.");
             }
@@ -797,6 +799,7 @@ export class ConversationView extends Component {
                 record_name: result.linked.name,
             });
         } catch (error) {
+            this.improve.failed("live_import", error);
             this.state.error = _t("Could not file that email.");
             console.warn("[Mail Pro] live import failed", error);
         } finally {
@@ -968,6 +971,7 @@ export class ConversationView extends Component {
             // Fold it back rather than leave an empty box standing open: the
             // row above it still opens the conversation, which is the way in
             // that matters.
+            this.improve.failed("unfold", error);
             this.state.unfolded[key] = false;
             this.notification.add(
                 _t("Could not read that conversation."), { type: "warning" });
@@ -1213,6 +1217,7 @@ export class ConversationView extends Component {
             this.loadActivities(seq);
             this.loadFollowers();
         } catch (error) {
+            this.improve.failed("conversation", error);
             if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that conversation.");
                 this.state.errorReason = serverReason(error);
@@ -2162,6 +2167,7 @@ export class ConversationView extends Component {
             }
             this.composer.open({}, "reply", draftId, composerId);
         } catch (error) {
+            this.improve.failed("draft", error);
             this.notification.add(_t("Could not open that draft."), { type: "danger" });
             console.warn("[Mail Pro] draft failed to open", error);
         }
@@ -2298,6 +2304,7 @@ export class ConversationView extends Component {
                 "pan.mail.routing.log", "link_to", [messageIds, model, resId]
             );
         } catch (error) {
+            this.improve.failed("link", error);
             this.notification.add(_t("Could not link this conversation."), { type: "danger" });
             console.warn("[Mail Pro] linking failed", error);
             return;

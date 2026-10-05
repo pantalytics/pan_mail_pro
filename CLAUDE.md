@@ -55,19 +55,21 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_matcher.py` | Thread matching: which Odoo record does this mail belong to |
 | `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |
 | `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
+| `models/pan_mail_error.py` | Why it did not work: one row per failure the module caught, under a code from `CODES`. `record()` writes on its own cursor so a rolled-back transaction keeps its row; `codes_since()` is what the heartbeat carries. Adding a failure to catch is adding a code to the list and one `record()` call at the catch site |
 | `models/pan_mail_domain.py` | Internal domain list + the fail-closed gate on incoming sync |
 | `models/pan_mail_provider.py` | The application registration of the provider this database runs on. One row, no toggle |
-| `models/pan_mail_setup.py` | The three mandatory setup steps and the phase (`setup` / `syncing`) they add up to |
-| `models/pan_mail_license.py` | Link to a Pantalytics account: Connect, the signed entitlement, the daily heartbeat, and `sync_allowed()`: incoming sync and new accounts need a connected instance |
+| `models/pan_mail_setup.py` | Setup steps 2 to 4 and the phase (`setup` / `syncing`) they add up to. Step 1 is the account, below |
+| `models/pan_mail_license.py` | Step 1: the link to a Pantalytics account. Connect, who connected and when, the signed entitlement, the daily heartbeat, and `sync_allowed()`: incoming sync and new accounts need a connected instance |
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, whether to nudge them, and the one mailbox setting they own: the sync level of their own address, on My Preferences |
-| `models/res_config_settings.py` | The Settings page: the three checklist steps and the users block |
+| `models/res_config_settings.py` | The Settings page: the four checklist steps |
 | `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
 | `models/ir_http.py` | Four session flags: does this user still have to connect a mailbox, may they open the Inbox at all, is this Odoo connected to Pantalytics, and may the Inbox report how it is used |
-| `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
+| `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, the errors the Inbox meets as `$exception` with the message scrubbed (`scrubExceptionEvent`), a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
 | `static/lib/posthog/` | posthog-js, vendored (MIT), pinned so the masking check in `tools/ui_check.py` proves the version that ships |
 | `tests/test_improve.py` | What the session carries once the workspace said yes: a host, a token, a pseudonym, nothing that names anyone |
+| `tests/test_errors.py` | The error ledger: every code a call site uses is in the list, a row survives, the heartbeat carries codes and counts and no address, a new code is reported within the minute |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement: the screen, and `counts_since()`, whose last 24 hours ride the heartbeat |
 | `models/pan_mail_draft.py` | The one thing the Inbox stores: a saved composer, on the record its mail will be sent from, private to its author. Not the provider's draft -- see ARCHITECTURE.md §1 |
@@ -80,6 +82,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `tests/test_read_state.py` | Who decides whether a mail is read: the provider, mirrored onto `mail.message`, and the one way Odoo's own bell is cleared |
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_connect_banner.py` | Who is asked to connect a mailbox, and who is left alone |
+| `tests/test_connected_as.py` | Which identity a user is connected as, and whose sign-in a mailbox sends with |
 | `tests/test_oauth_routes.py` | Every route this module opens, who may call it, and what the OAuth callback stores when it works and when it refuses |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
 | `tests/test_mail_matcher.py` | Unit tests for the matching ladder |
@@ -356,7 +359,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user, and the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user beside the address they are connected as, and the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
@@ -469,7 +472,9 @@ typo; `tools/ci.sh` gives the same verdict locally in the same container.
 4. Return the normalized shape from `mail_provider_client.py`, not Graph's
 
 ### Debugging email issues
-1. Check Odoo logs for `[Outgoing Mail]` and `[Incoming Mail]` tags
+1. Open Settings → Technical → Email → Mail Pro → Errors: every failure the
+   module caught, thirty days, grouped by code, traceback on the row. Then
+   the Odoo log for `[Outgoing Mail]` and `[Incoming Mail]` tags
 2. Verify credentials: `user.x_pan_mail_connected`, or ask the mailbox itself
    with `mailbox._has_working_credentials()`
 3. Check mailbox state: should be 'active'

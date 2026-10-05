@@ -125,8 +125,12 @@ class Checks:
         self.shot('settings-mail-pro.png')
 
         steps = page.query_selector_all('.o_mailpro_step')
-        if len(steps) != 3:
-            self.fail(f'the checklist has {len(steps)} steps, expected 3')
+        if len(steps) != 4:
+            self.fail(f'the checklist has {len(steps)} steps, expected 4')
+        names = [s.query_selector('.o_mailpro_step_name').inner_text().strip() for s in steps]
+        if names != ['1. Pantalytics Account', '2. Email Provider',
+                     '3. Internal Domains', '4. Mailboxes']:
+            self.fail(f'the steps read {names}')
 
         for index, step in enumerate(steps, start=1):
             width = step.bounding_box()['width']
@@ -153,8 +157,11 @@ class Checks:
         if 'Pantalytics B.V.' not in text:
             self.fail('About does not carry the copyright line')
 
-        # Pantalytics Account, connected: one way out and nothing of the
-        # not-connected or pending states leaking onto the screen.
+        # Step 1, connected: one way out and nothing of the not-connected or
+        # pending states leaking onto the screen. Who connected is on the
+        # line, because the seed says so.
+        if 'Connected by' not in steps[0].inner_text():
+            self.fail('step 1 does not say who connected')
         for leaked in ('Connect to Pantalytics', 'Check Approval'):
             if any(b.is_visible() and b.inner_text().strip() == leaked
                    for b in block.query_selector_all('button')):
@@ -211,7 +218,7 @@ class Checks:
         self.call('ir.config_parameter', 'set_param', 'pan_mail_pro.improve_refused', False)
 
     def settings_not_connected(self):
-        """Without a Pantalytics account the page is one button and nothing else.
+        """Without a Pantalytics account the page is step 1 and nothing else.
 
         Every step below it configures a product that will not run, and a
         checklist you cannot finish reads as the thing that is broken. The
@@ -235,13 +242,16 @@ class Checks:
                 self.fail(f'an unlinked database shows {len(connect)} Connect '
                           f'buttons, expected 1')
             steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
-            if steps:
+            if len(steps) != 1:
                 self.fail(f'an unlinked database shows {len(steps)} setup steps, '
-                          f'expected none')
+                          f'expected only step 1')
+            if not steps[0].query_selector('button:has-text("Connect to Pantalytics")'):
+                self.fail('the Connect button is not on step 1')
             text = block.inner_text()
             # About (the version and the licence line) stays: a support mail
             # and the documentation link are wanted before connecting too.
-            for leaked in ('1. Email Provider', '2. Internal Domains', 'Connect Mailbox'):
+            for leaked in ('2. Email Provider', '3. Internal Domains', 'Connect Mailbox',
+                           'Connected mailboxes'):
                 if leaked in text:
                     self.fail(f'an unlinked database still shows "{leaked}"')
             for wanted in ('Elastic License', manifest_version(), 'Documentation'):
@@ -251,6 +261,8 @@ class Checks:
         finally:
             self.call('pan.mail.license', 'create', {
                 'status': 'active',
+                'connected_account': 'seed@pantalytics.test',
+                'connected_on': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
                 'valid_until': (datetime.datetime.now(datetime.UTC)
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
@@ -299,6 +311,8 @@ class Checks:
         finally:
             self.call('pan.mail.license', 'create', {
                 'status': 'active',
+                'connected_account': 'seed@pantalytics.test',
+                'connected_on': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
                 'valid_until': (datetime.datetime.now(datetime.UTC)
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
@@ -2922,6 +2936,12 @@ class Checks:
         any of it is the failure this check exists for. It also asserts the
         SDK fetched nothing (the recorder is in the bundle) and that the
         person is the server's `u:` pseudonym.
+
+        Then it throws an error on the page whose message *is* a seeded
+        address and subject, and reads the `$exception` back: the error has
+        to arrive (that is how a broken Inbox is seen from here) and the
+        message has to arrive scrubbed, which only a real posthog-js running
+        our `before_send` can prove.
         """
         sink = start_sink()
         link = self.call('pan.mail.license', 'search', [])
@@ -2978,6 +2998,21 @@ class Checks:
                 page.screenshot(path=os.path.join(self.out, 'inbox-improve.png'), full_page=True)
             if page.query_selector('.o_error_dialog, .o_dialog_error'):
                 self.fail('the Inbox with Help improve Mail Pro on opened an error dialog')
+            # Now break something on purpose, with the seeded secrets in the
+            # message. Odoo's error service shows its dialog for it, which is
+            # right and why this comes after the dialog assertion above.
+            page.evaluate("""([address, subject]) => {
+                const error = new Error(`Could not open "${subject}" from ${address}`);
+                window.dispatchEvent(new ErrorEvent('error', {
+                    error, message: error.message, filename: 'ui_check.js', lineno: 1, colno: 1,
+                }));
+            }""", [self.SEEDED[2], self.SEEDED[3]])
+            for _ in range(10):
+                page.wait_for_timeout(1000)
+                if sink.saw('/e/', '$exception'):
+                    break
+            if not sink.saw('/e/', '$exception'):
+                self.fail('an error thrown on the Inbox never reached the sink as $exception')
 
             if not sink.saw('/e/', 'inbox_opened'):
                 self.fail('inbox_opened never reached the sink '
@@ -3092,8 +3127,14 @@ class Checks:
                          'Replies and new email, everyone'):
                 if rung not in text:
                     self.fail(f'My Preferences does not offer "{rung}"')
-            if 'Send from' not in text:
-                self.fail('My Preferences lost Send from')
+            # A group's title is drawn in capitals (innerText keeps the
+            # transform), so the sections are matched without case.
+            for section in ('Connected account', 'Default mailbox', 'Personal mailbox'):
+                if section.lower() not in text.lower():
+                    self.fail(f'My Preferences lost "{section}"')
+            # Connected as: the address, where "connected" used to be a tick.
+            if login not in text:
+                self.fail('My Preferences does not say which address the user is connected as')
 
             widest = page.query_selector(
                 '.modal .o_form_view label:has-text("Replies and new email, everyone")')

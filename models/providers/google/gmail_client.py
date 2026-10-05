@@ -284,6 +284,8 @@ class GoogleGmailClient(models.AbstractModel):
             # invalid_grant: refresh token revoked, expired, or consent withdrawn.
             if error_code == 'invalid_grant':
                 _logger.warning('[Gmail API] Permanent token failure for %s, clearing tokens', account.email)
+                self.env['pan.mail.error'].record(
+                    'oauth.token_revoked', e, account=account)
                 account.sudo().write({
                     'access_token_encrypted': False,
                     'refresh_token_encrypted': False,
@@ -689,34 +691,20 @@ class GoogleGmailClient(models.AbstractModel):
         try:
             token = self.get_valid_token(account)
         except UserError as e:
-            return {'success': False, 'error': str(e)}
-        try:
-            response = requests.get(
-                'https://gmail.googleapis.com/gmail/v1/users/me/profile',
-                headers={'Authorization': f'Bearer {token}'},
-                timeout=10,
-            )
-            response.raise_for_status()
-            profile = response.json()
-        except requests.exceptions.RequestException as e:
-            return {'success': False, 'error': self._error_detail(e)}
-        email = profile.get('emailAddress')
-        return {
-            'success': True,
-            'error': None,
-            'email': email,
-            # Gmail's profile carries no display name; the address is the identity.
-            'display_name': email,
-            'id': email,
-        }
+            return {'success': False, 'error': str(e), 'email': None, 'name': None}
+        identity = self.read_user_info(token)
+        if not identity.get('email'):
+            return {'success': False, 'error': _('Google did not name the '
+                    'signed-in account.'), **identity}
+        return {'success': True, 'error': None, **identity}
 
     @api.model
-    def get_user_email(self, access_token):
-        """Return the authenticated account's own address.
+    def read_user_info(self, access_token):
+        """Who this token is: the Gmail profile (see contract).
 
-        Used right after the OAuth exchange to auto-create the personal mailbox,
-        the same way the Graph client does. The Gmail profile endpoint is covered
-        by the gmail.modify scope we already hold, so no extra consent.
+        The profile endpoint is covered by the gmail.modify scope we already
+        hold, so no extra consent. It carries no display name; the address
+        is the identity.
         """
         try:
             response = requests.get(
@@ -725,10 +713,10 @@ class GoogleGmailClient(models.AbstractModel):
                 timeout=10,
             )
             response.raise_for_status()
-            return response.json().get('emailAddress')
+            return {'email': response.json().get('emailAddress'), 'name': None}
         except requests.exceptions.RequestException as e:
-            _logger.warning('[Gmail API] Could not fetch user email: %s', self._error_detail(e))
-            return None
+            _logger.warning('[Gmail API] Could not read the signed-in user: %s', self._error_detail(e))
+            return {'email': None, 'name': None}
 
     # -------------------------------------------------------------------------
     # Error helpers

@@ -41,10 +41,20 @@ class ResUsers(models.Model):
         help='Whether this user has a connected email account on any provider.',
     )
 
+    # The address the provider reported at consent, which is not necessarily
+    # the user's own: a person who signs in to Odoo as a colleague connects
+    # whichever identity they consent with, and until this field nothing on
+    # any screen said which. The account row always knew.
+    x_pan_mail_connected_as = fields.Char(
+        string='Connected as',
+        compute='_compute_pan_mail_connected',
+        store=True,
+        help='The address the provider reported when this user signed in.',
+    )
     x_default_mailbox_id = fields.Many2one(
         'pan.mail.mailbox',
-        string='Default Send From',
-        help='Mailbox this user sends from unless they pick another one in the composer.',
+        string='Default mailbox',
+        help='The mailbox this user sends from unless they pick another one in the composer.',
     )
 
     # CSRF nonce for one authorization round trip. It lives here rather than on
@@ -86,6 +96,7 @@ class ResUsers(models.Model):
         return super().SELF_READABLE_FIELDS + [
             'x_default_mailbox_id',
             'x_pan_mail_connected',
+            'x_pan_mail_connected_as',
             'x_pan_mail_personal_mailbox_id',
             'x_pan_mail_sync_level',
         ]
@@ -97,11 +108,14 @@ class ResUsers(models.Model):
             'x_pan_mail_sync_level',
         ]
 
-    @api.depends('x_pan_mail_account_ids.connected')
+    @api.depends('x_pan_mail_account_ids.connected', 'x_pan_mail_account_ids.email')
     def _compute_pan_mail_connected(self):
         for user in self:
-            user.x_pan_mail_connected = any(
-                account.connected for account in user.x_pan_mail_account_ids)
+            connected = user.x_pan_mail_account_ids.filtered('connected')
+            user.x_pan_mail_connected = bool(connected)
+            # One account per provider, and almost always one provider: the
+            # first connected one is the identity this user sends as.
+            user.x_pan_mail_connected_as = connected[:1].email or False
 
     # Not the mailbox's own fields: a dependency on a path through an unstored
     # many2one makes the ORM search `res.users` by that field to find whose

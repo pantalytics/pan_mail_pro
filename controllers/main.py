@@ -108,7 +108,7 @@ class MailProOAuthController(http.Controller):
         try:
             tokens = client._exchange_code_for_tokens(
                 code, oauth_redirect_uri(request.env, provider))
-            email = client.get_user_email(tokens['access_token'])
+            email = client.read_user_info(tokens['access_token']).get('email')
 
             request.env['pan.mail.account'].sudo()._store_tokens(
                 provider, user, email,
@@ -137,6 +137,7 @@ class MailProOAuthController(http.Controller):
 
         except Exception as exception:
             _logger.exception('[OAuth] Failed to handle the %s callback', provider)
+            request.env['pan.mail.error'].record('oauth.callback_failed', exception)
             return _result_page(False, _('Connection Failed'), str(exception))
 
     def _retry_error_mailboxes(self, user, provider):

@@ -372,6 +372,9 @@ class MicrosoftGraphClient(models.AbstractModel):
             permanent_errors = ('invalid_grant',)
             if error_code in permanent_errors:
                 _logger.warning(f"[OAuth] Permanent token failure for {account.email}, clearing tokens")
+                self.env['pan.mail.error'].record(
+                    'oauth.token_revoked', account=account,
+                    detail=f'{error_code}: {error_description}')
                 # Clear invalid tokens so user can reconnect
                 account.sudo().write({
                     'access_token_encrypted': False,
@@ -403,31 +406,48 @@ class MicrosoftGraphClient(models.AbstractModel):
 
     @api.model
     def test_connection(self, account):
-        """Test Graph API connection by fetching user info"""
-        token = self.get_valid_token(account)
-
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/json',
-        }
-
+        """Does this sign-in still work: a token, and `/me` answering to it."""
         try:
-            response = requests.get('https://graph.microsoft.com/v1.0/me', headers=headers, timeout=10)
-            response.raise_for_status()
-            user_info = response.json()
+            token = self.get_valid_token(account)
+        except UserError as e:
+            return {'success': False, 'error': str(e), 'email': None, 'name': None}
+        identity = self.read_user_info(token)
+        if not identity.get('email'):
+            return {'success': False, 'error': _('Microsoft 365 did not name the '
+                    'signed-in account.'), **identity}
+        return {'success': True, 'error': None, **identity}
 
-            return {
-                'success': True,
-                'display_name': user_info.get('displayName'),
-                'email': user_info.get('mail') or user_info.get('userPrincipalName'),
-                'id': user_info.get('id'),
-            }
-        except requests.exceptions.RequestException as e:
-            _logger.error(f"Graph API connection test failed: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-            }
+    # Exchange's own words for the two delegations a shared mailbox needs:
+    # `ErrorAccessDenied` on the draft when Full Access is missing,
+    # `ErrorSendAsDenied` on the send when Send As is.
+    _DELEGATION_ERRORS = ('ErrorAccessDenied', 'ErrorSendAsDenied')
+
+    def _delegation_denied_reason(self, exception, account, mailbox):
+        """The sentence for a send Exchange refused on delegation, or None.
+
+        Names the address on the *account*, which is the identity Exchange
+        refused and the one an admin has to grant rights to. The Odoo user
+        may be connected as somebody else entirely, and the raw Graph line
+        sent admins looking at the wrong person.
+        """
+        if self._graph_error_code(exception) not in self._DELEGATION_ERRORS:
+            return None
+        return _(
+            '%(who)s cannot send from %(mailbox)s. An administrator grants '
+            'Full Access and Send As on that address in the Exchange admin '
+            'center.', who=account.email, mailbox=mailbox.email)
+
+    @staticmethod
+    def _graph_error_code(exception):
+        """The `error.code` in a Graph error body, or None."""
+        response = getattr(exception, 'response', None)
+        if response is None:
+            return None
+        try:
+            error = response.json().get('error')
+        except (ValueError, AttributeError):
+            return None
+        return error.get('code') if isinstance(error, dict) else None
 
     @api.model
     def test_credentials(self):
@@ -953,6 +973,10 @@ class MicrosoftGraphClient(models.AbstractModel):
             return {'success': False, 'error': str(e), 'error_code': ERROR_THROTTLED,
                     'retry_after': e.wait}
         except requests.exceptions.RequestException as e:
+            denied = self._delegation_denied_reason(e, account, mailbox)
+            if denied:
+                _logger.warning('[Graph API] %s', denied)
+                return {'success': False, 'error': denied}
             error_detail = str(e)
             if hasattr(e, 'response') and e.response is not None:
                 try:
@@ -1377,31 +1401,28 @@ class MicrosoftGraphClient(models.AbstractModel):
             raise last_exception
         raise requests.exceptions.RequestException("Max retries exceeded")
 
-    def get_user_email(self, token):
-        """
-        Get the email address of the authenticated Microsoft user.
+    @api.model
+    def read_user_info(self, token):
+        """Who this token is: Graph's `/me` (see contract).
 
-        Args:
-            token: Valid OAuth access token
-
-        Returns:
-            str: Email address or None if not available
+        `mail` is the primary SMTP address; `userPrincipalName` is the sign-in
+        and stands in when the directory has no mail attribute.
         """
         try:
             headers = {
                 'Authorization': f'Bearer {token}',
                 'Content-Type': 'application/json',
             }
-
             response = requests.get('https://graph.microsoft.com/v1.0/me', headers=headers, timeout=10)
             response.raise_for_status()
             user_info = response.json()
-
-            return user_info.get('mail') or user_info.get('userPrincipalName')
-
         except Exception as e:
-            _logger.warning(f"[Graph API] Could not fetch user email: {e}")
-            return None
+            _logger.warning(f"[Graph API] Could not read the signed-in user: {e}")
+            return {'email': None, 'name': None}
+        return {
+            'email': user_info.get('mail') or user_info.get('userPrincipalName'),
+            'name': user_info.get('displayName'),
+        }
 
     # -------------------------------------------------------------------------
     # Mailbox actions — contract implementation

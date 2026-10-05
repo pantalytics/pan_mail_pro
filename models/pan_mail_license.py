@@ -9,6 +9,10 @@ page names this Odoo, and approves; the button back to their Odoo lands on
 copies a key, and there is still no redirect URI to register per customer:
 the way back is an ordinary link to this Odoo, not an OAuth redirect.
 **Check Approval** on the settings page does the same collection by hand.
+Collecting the key also records who did it: the Pantalytics account that
+approved, when the poll answer names it (`account_email`), the Odoo user who
+pressed the button, and the time. The settings page shows it on the account
+line, so a second administrator can see whose workspace this Odoo is in.
 
 After that, one heartbeat a day: counts out, a signed entitlement back. The
 server side runs on the Pantalytics platform (`pantalytics/odoo-mcp-pro-admin`,
@@ -221,10 +225,27 @@ class PanMailLicense(models.Model):
     last_check = fields.Datetime(readonly=True, copy=False)
     last_error = fields.Char(readonly=True, copy=False)
 
+    # Who connected, and when: written the moment the key is collected, so
+    # the settings page can say "connected by rutger@pantalytics.com on ..."
+    # a year later. `connected_account` is the Pantalytics login that pressed
+    # Approve, as the poll answer names it (`account_email`); it is the person
+    # Pantalytics knows, which the Odoo user who pressed Connect need not be
+    # (a consultant connecting a customer's Odoo is logged in there as the
+    # customer's admin). `connected_user_id` is that Odoo user, the fallback
+    # when an older server does not name the account.
+    connected_account = fields.Char(readonly=True, copy=False)
+    connected_user_id = fields.Many2one('res.users', readonly=True, copy=False,
+                                        ondelete='set null')
+    connected_on = fields.Datetime(readonly=True, copy=False)
+
     # Which setup steps the last heartbeat carried, as `setup_signature()`
     # writes them. Compared, never read for its own sake: it is how the module
     # knows a step has been answered since it last said so.
     setup_reported = fields.Char(readonly=True, copy=False)
+    # The error codes of the last 24 hours as the last heartbeat carried them
+    # (`pan.mail.error.signature_since`), for the same comparison: a code not
+    # in it is a kind of failure Pantalytics has not heard of yet.
+    errors_reported = fields.Char(readonly=True, copy=False)
 
     # Help improve Mail Pro, as the workspace decided it at Pantalytics. Read
     # off the signed entitlement and nowhere else; the local checkbox that
@@ -261,6 +282,12 @@ class PanMailLicense(models.Model):
             and self.valid_until
             and self.valid_until > fields.Datetime.now()
         )
+
+    def connected_by(self):
+        """Who connected this Odoo, as one string for the settings page: the
+        Pantalytics account when the server named it, else the Odoo user."""
+        self.ensure_one()
+        return self.connected_account or self.connected_user_id.name or ''
 
     @api.model
     def sync_allowed(self):
@@ -426,6 +453,9 @@ class PanMailLicense(models.Model):
             self.write({
                 'key_encrypted': encryption_utils.encrypt_value(self.env, body['key']),
                 'status': 'active',
+                'connected_account': (body.get('account_email') or '')[:255] or False,
+                'connected_user_id': self.env.user.id,
+                'connected_on': fields.Datetime.now(),
             })
             self._clear_pairing()
             # Guarded: the server has handed the key over exactly once. An
@@ -481,6 +511,9 @@ class PanMailLicense(models.Model):
             'signature': False,
             'last_error': False,
             'setup_reported': False,
+            'connected_account': False,
+            'connected_user_id': False,
+            'connected_on': False,
             'improve': False,
             'improve_host': False,
             'improve_token': False,
@@ -546,6 +579,29 @@ class PanMailLicense(models.Model):
             return
         link._heartbeat_guarded()
 
+    @api.model
+    def _report_errors_if_new(self):
+        """Report in when a kind of failure appears that the last day had not.
+
+        Same shape as `_report_setup_if_changed`: the fetch cron asks every
+        minute, the signature is the set of error codes of the last 24 hours,
+        and it is stored on the way out so an unreachable server costs one
+        attempt, not one a minute. A code ageing out changes the set too, so
+        the bound is a handful of heartbeats a day, never one per failure: a
+        mailbox failing a hundred times today is one code, reported once.
+        """
+        link = self.current()
+        if not link or not link.key_encrypted:
+            return
+        since = fields.Datetime.now() - timedelta(hours=24)
+        signature = self.env['pan.mail.error'].signature_since(since)
+        if signature == (link.errors_reported or ''):
+            return
+        if link.last_check and fields.Datetime.now() - link.last_check < timedelta(
+                seconds=SETUP_PUSH_SECONDS):
+            return
+        link._heartbeat_guarded()
+
     def _heartbeat_guarded(self):
         """A heartbeat that cannot take the caller's transaction down with it."""
         try:
@@ -554,6 +610,7 @@ class PanMailLicense(models.Model):
         except Exception as error:  # noqa: BLE001 - recorded, never raised
             _logger.exception('[License] Heartbeat failed')
             self.write({'last_check': fields.Datetime.now(), 'last_error': str(error)})
+            self.env['pan.mail.error'].record('license.heartbeat_failed', error)
 
     def _heartbeat(self):
         """Report in, and store the answer if, and only if, it is ours."""
@@ -571,12 +628,17 @@ class PanMailLicense(models.Model):
         # whether the setup answers have moved since we last said so, and an
         # attempt that never arrives must not turn into one a minute.
         self.setup_reported = setup_signature(report['setup'])
+        self.errors_reported = ','.join(sorted(e['code'] for e in report['errors']))
         try:
             code, body = self._post(
                 '/api/v1/license/heartbeat', report, key=key)
         except UserError as error:
             # Offline keeps the cached answer: valid_until is the grace period.
             self.write({'last_check': now, 'last_error': str(error)})
+            # A warning, not an error: nothing is lost yet. It cannot reach us
+            # today by definition; the next heartbeat that does carries it.
+            self.env['pan.mail.error'].record(
+                'license.heartbeat_failed', error, level='warning')
             return
 
         if code == 403 and body.get('status') == 'wrong_database':
@@ -693,6 +755,11 @@ class PanMailLicense(models.Model):
             'coverage': self.env['pan.mail.coverage'].counts_since(since),
             'rules': rules[:MAX_RULE_ENTRIES],
             'corrections': sum(r['corrected'] for r in rules),
+            # What failed here in the last day, as codes and counts
+            # (`pan.mail.error.CODES`): the server draws one `heartbeat_error`
+            # per code, which is how a release that breaks sending for one
+            # provider shows up the same day instead of in a ticket.
+            'errors': self.env['pan.mail.error'].codes_since(since),
         }
 
     # -------------------------------------------------------------------------

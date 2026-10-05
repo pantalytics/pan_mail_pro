@@ -78,26 +78,26 @@ After installing the module, go to **Settings** → scroll to **Mail Pro** and
 press **Connect to Pantalytics** (see
 [docs/getting-started/connect-pantalytics.md](docs/getting-started/connect-pantalytics.md)).
 
-The page is then a checklist of three steps; the arrow on each line opens the
-table where it is answered:
+The page is a checklist of four steps. Step 1 is that connection; the arrow
+on each of the other lines opens the table where it is answered:
 
-1. **Email provider** - where your mail is hosted (Microsoft 365, Google
+2. **Email provider** - where your mail is hosted (Microsoft 365, Google
    Workspace or IMAP/SMTP), with the app registration or OAuth client that
    goes with it. The redirect URI to paste back into the provider's console
    is shown on that form. IMAP/SMTP has no global credential; see below.
-2. **Internal domains** - your own email domains. Required: no mailbox can sync
+3. **Internal domains** - your own email domains. Required: no mailbox can sync
    until this is answered. Odoo suggests them from your mailboxes, company
    email and alias domains.
-3. **Mailboxes** - create the first mailbox, tick it as the notification
+4. **Mailboxes** - create the first mailbox, tick it as the notification
    mailbox, and configure sending and incoming sync.
 
-Below the checklist, **Users** shows who has connected a mailbox and invites
-the rest. A database runs on one provider; switching means editing that row,
+Who has connected a mailbox, and the invite for the rest, are on the user
+list. A database runs on one provider; switching means editing that row,
 and the provider's console issues a new client secret for it.
 
 You can invite users before any of this is finished. Mail Pro leaves SMTP alone
 until the first mailbox exists, and once it does, invitations and password
-resets wait in the queue until step 3 is done rather than being dropped.
+resets wait in the queue until step 4 is done rather than being dropped.
 
 ### IMAP/SMTP mailboxes (Soverin and friends)
 
@@ -125,10 +125,10 @@ filed there, so it shows up in your own mail client too.
 ### Connect your mailbox
 
 1. Go to **My Preferences** → **Mail Pro**
-2. Click **Connect Mailbox**
+2. Click **Connect mailbox**
 3. Sign in and grant permissions
 4. A personal mailbox is created for the address you signed in with, and set as
-   your **Send from**
+   your **Default mailbox**
 
 An admin can also send everybody the invitation with **Send Mail Pro Invite**
 on the Users list (Settings → Mail Pro → Users); the link in it drops each user
@@ -140,7 +140,7 @@ an internal user, a provider that has a consent screen, and not on a staging
 copy. Once connected there is nothing left to do: the address sends. An
 administrator who wants proof has **Send Test Email** on every mailbox form.
 
-**Note:** until your account is connected and a Send from mailbox is set, the
+**Note:** until your account is connected and a default mailbox is set, the
 email composer shows a warning banner saying so.
 
 ---

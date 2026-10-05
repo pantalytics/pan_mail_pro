@@ -82,11 +82,13 @@ call('pan.mail.provider', 'create', {
 for name in ('example.com', 'example.odoo.com'):
     call('pan.mail.domain', 'create', {'name': name})
 # The instance stays connected: accounts are only created on a connected one,
-# and the settings page shows nothing but the Connect button until it is.
+# and the settings page shows nothing but step 1 until it is.
 # `tools/ui_check.py` disconnects it itself to look at that state.
 import datetime
 call('pan.mail.license', 'create', {
     'status': 'active',
+    'connected_account': 'seed@pantalytics.test',
+    'connected_on': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
     'valid_until': (datetime.datetime.now(datetime.UTC)
                     + datetime.timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')})
 call('pan.mail.account', 'create', {
