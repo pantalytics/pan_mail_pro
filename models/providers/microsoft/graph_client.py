@@ -58,6 +58,9 @@ AADSTS_HINTS = {
 MAX_RETRIES = 3
 # Longer than this, the cron does not wait: see _request_with_retry.
 MAX_RETRY_AFTER_SECONDS = 15
+# Microsoft's own ceiling on `internetMessageHeaders`: a sixth custom header
+# is refused with InvalidInternetMessageHeaderCollection on the draft.
+GRAPH_MAX_CUSTOM_HEADERS = 5
 INITIAL_BACKOFF_SECONDS = 2
 
 # Attachment size threshold: Graph API allows max 3MB per direct attachment upload.
@@ -96,7 +99,6 @@ class MicrosoftGraphClient(models.AbstractModel):
     # Microsoft 365 supports send-as on shared mailboxes: a user sends with
     # their own delegated token, given SendAs rights in Exchange.
     supports_shared_mailbox = True
-    supports_delegation = False
     supported_mailbox_types = ('personal', 'shared')
     # Azure answers "are these three fields the ones I issued?" on its own
     # token endpoint, with no user and no consent — see `test_credentials`.
@@ -368,19 +370,16 @@ class MicrosoftGraphClient(models.AbstractModel):
                         hint or error_code))
 
             # invalid_grant: token revoked, expired, or user changed password.
-            # This one is the user's, and only a new consent fixes it.
+            # This one is the user's, and only a new consent fixes it. The
+            # clear is committed on its own cursor (see the contract): the
+            # raise below rolls this transaction back, and a clear that
+            # rolled back with it kept the account "connected" forever.
             permanent_errors = ('invalid_grant',)
             if error_code in permanent_errors:
-                _logger.warning(f"[OAuth] Permanent token failure for {account.email}, clearing tokens")
-                self.env['pan.mail.error'].record(
+                self.env['pan.mail.error']._record(
                     'oauth.token_revoked', account=account,
                     detail=f'{error_code}: {error_description}')
-                # Clear invalid tokens so user can reconnect
-                account.sudo().write({
-                    'access_token_encrypted': False,
-                    'refresh_token_encrypted': False,
-                    'token_expiry': False,
-                })
+                self._revoke_refresh_token(account)
                 raise UserError(_(
                     'Your Microsoft connection has expired or been revoked. '
                     'Please reconnect your Microsoft account.'
@@ -815,6 +814,24 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'value': str(mail_record.mail_message_id.id)
             })
 
+        # Which database stamped the headers above. Without it the loop guard
+        # would take another Mail Pro customer's mail for our own sent copy;
+        # see `pan_mail_fetcher.odoo_db_marker`.
+        db_marker = self.env['pan.mail.fetcher']._odoo_db_marker()
+        if db_marker:
+            internet_message_headers.append({
+                'name': 'X-Odoo-Db',
+                'value': db_marker,
+            })
+        # Graph refuses a message carrying more than five custom headers
+        # (InvalidInternetMessageHeaderCollection). A record-bound reply
+        # carries exactly five now, so the next header has to replace one of
+        # these rather than join them; this is where that would surface, as a
+        # failed send in every test above rather than in production.
+        assert len(internet_message_headers) <= GRAPH_MAX_CUSTOM_HEADERS, (
+            'Graph accepts at most %s custom headers; %s were built'
+            % (GRAPH_MAX_CUSTOM_HEADERS, len(internet_message_headers)))
+
         # Process body: convert /web/image/ URLs to cid: inline attachments
         # This embeds images directly in the email so they work regardless
         # of whether the Odoo server is publicly accessible
@@ -890,13 +907,17 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'microsoft_conversation_id': str (conversationId from Microsoft)
             }
         """
+        # Set before the try so the except branches can tell whether a draft
+        # exists to discard: a failed send leaves one in the user's Drafts
+        # otherwise, and a throttled mail that is retried leaves one per try.
+        draft_id = None
+        headers = None
+        graph_user_id = mailbox.email
         try:
             # Use the account's delegated token (principle of least privilege)
             token = self.get_valid_token(account)
 
-            # Get the correct identifier for Graph API (UPN or email)
             # Graph addresses a mailbox by its email in /users/{id}/...
-            graph_user_id = mailbox.email
             mailbox_email = mailbox.email
 
             _logger.info(f"[Graph API] Using delegated token for {account.email} to send from mailbox: {mailbox_email}")
@@ -970,9 +991,13 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         except ThrottledError as e:
             # Not a failure: the mail waits for the pause Microsoft asked for.
+            if send and draft_id:
+                self._discard_draft(headers, graph_user_id, draft_id)
             return {'success': False, 'error': str(e), 'error_code': ERROR_THROTTLED,
                     'retry_after': e.wait}
         except requests.exceptions.RequestException as e:
+            if send and draft_id:
+                self._discard_draft(headers, graph_user_id, draft_id)
             denied = self._delegation_denied_reason(e, account, mailbox)
             if denied:
                 _logger.warning('[Graph API] %s', denied)
@@ -993,10 +1018,36 @@ class MicrosoftGraphClient(models.AbstractModel):
             }
         except Exception as e:
             _logger.exception("Unexpected error sending email via Graph API")
+            if send and draft_id:
+                self._discard_draft(headers, graph_user_id, draft_id)
             return {
                 'success': False,
                 'error': str(e)
             }
+
+    @api.model
+    def _discard_draft(self, headers, graph_user_id, draft_id):
+        """Delete the draft of a send that did not go through. Best-effort.
+
+        Graph's send is draft-then-send, so everything that fails after the
+        first POST -- an attachment refused, a 429 on `/send`, a connection
+        that dropped -- leaves a finished draft in the user's Outlook Drafts.
+        `mail.mail` reschedules a throttled mail, so one stuck send grew a
+        draft per minute until somebody noticed the folder.
+
+        Never raises and never changes the result: the caller is reporting
+        the send's own failure, and that is the one the user needs to see.
+        One plain DELETE, no retry -- a throttled mailbox would only throttle
+        the cleanup too, and the next send will leave its own draft to clean.
+        """
+        url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}'
+        try:
+            response = requests.delete(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            _logger.info('[Graph API] Discarded draft %s of a send that failed', draft_id)
+        except Exception as e:  # noqa: BLE001 - must not mask the failed send
+            _logger.warning('[Graph API] Could not discard draft %s after a failed '
+                            'send: %s', draft_id, e)
 
     @api.model
     def send_message(self, mail_record, mailbox, account, reply_context=None):
@@ -1285,7 +1336,11 @@ class MicrosoftGraphClient(models.AbstractModel):
         except requests.exceptions.RequestException as e:
             error_detail = self._extract_graph_error(e)
             _logger.error(f"[Graph API] Failed to get attachments: {error_detail}")
-            return []  # Don't fail the whole process for attachment errors
+            # Contract: an attachment failure must not sink the message. It is
+            # recorded, because the mail then reads as complete when it is not.
+            self.env['pan.mail.error']._record(
+                'incoming.attachments_failed', e, level='warning', account=account)
+            return []
 
     @api.model
     def _extract_graph_error(self, exception):

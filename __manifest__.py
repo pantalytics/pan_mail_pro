@@ -7,13 +7,14 @@
         ====================================================
 
         Full control over your email - Microsoft 365, Google Workspace or any
-        IMAP/SMTP mailbox. Send from any mailbox, receive everything.
+        IMAP/SMTP mailbox. Send from your own address, and read back as much
+        of the mailbox as you choose.
 
         Key Benefits:
         -------------
         - **Full sender control**: Choose exactly which mailbox to send from
         - **Secure**: OAuth 2.0 where the provider offers it, encrypted credential storage
-        - **2-way sync**: Incoming and outgoing emails synced to Odoo chatter
+        - **Replies land**: An answer to a mail Odoo sent lands on its record, with no setting
         - **Proper addresses**: No confusing "notifications@..." or reply-to aliases
 
         Features:
@@ -25,11 +26,15 @@
         - Correct From and Reply-To headers
 
         **Incoming Email:**
-        - Automatic sync from your mailboxes, whatever the provider
-        - 2-way sync: both Inbox and Sent Items
-        - Automatic threading via In-Reply-To headers
-        - Auto-create contacts for unknown senders
-        - Activity creation for team assignment
+        - Automatic sync from your mailboxes, every minute, whatever the provider
+        - One sync level per mailbox, each keeping strictly more than the one above:
+          replies only (default); also your own replies from the Sent folder;
+          also new email from existing contacts; also new email from everyone,
+          who then become contacts
+        - Threading by our own headers, then the References chain, then the
+          provider's thread id
+        - Route new conversations to a team alias, so they create a lead or a ticket
+        - Internal email, between your own domains, is never synced
 
         **Providers:**
         - Microsoft 365 via the Graph API (OAuth 2.0)
@@ -50,9 +55,10 @@
         3. Set your default mailbox in: Settings → Users → Your User → Mail Pro tab
 
         **Receiving:**
-        1. Go to Settings → Technical → Email → Mail Pro → Mailboxes
-        2. Open a mailbox and switch on Receiving
-        3. Emails will appear in the partner's chatter automatically
+        1. Replies to mail Odoo sent land on their record with no setting at all
+        2. For more, go to Settings → Technical → Email → Mail Pro → Mailboxes,
+           open a mailbox and pick a Sync level on the Sync Settings tab
+        3. New email lands on the sender's contact, or on the team you route it to
 
         Why this module?
         ----------------
@@ -115,7 +121,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.25.0.2',
+    'version': '19.0.26.0.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {

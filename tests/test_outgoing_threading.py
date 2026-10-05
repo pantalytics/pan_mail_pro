@@ -23,6 +23,10 @@ import requests
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models.mail_mail import REPLY_CHAIN_LIMIT
+from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import odoo_db_marker
+from odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client import GRAPH_MAX_CUSTOM_HEADERS
+
+from .common import MailProTestCase, send_and_capture
 
 GMAIL_POST = 'odoo.addons.pan_mail_pro.models.providers.google.gmail_client.requests.post'
 GRAPH_POST = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.post'
@@ -256,6 +260,25 @@ class TestGmailOutgoingThreading(OutgoingThreadingCase):
         self.assertIsNone(mime['In-Reply-To'])
         self.assertNotIn('threadId', captured['json'])
 
+    def test_the_mail_names_the_database_that_sent_it(self):
+        """X-Odoo-Model says an Odoo sent this; X-Odoo-Db says which one.
+
+        Every Mail Pro stamps the same four X-Odoo-* headers, so without the
+        marker a customer's own Mail Pro writing to us reads as our sent copy
+        coming back: refused, and its ids re-indexed onto our rows.
+        """
+        mailbox, account = self._sendable()
+
+        cm, captured = self._capture_send()
+        with cm:
+            mailbox._get_client().send_message(
+                self._outgoing_mail(), mailbox, account)
+
+        mime = self._mime(captured)
+        self.assertEqual(mime['X-Odoo-Db'], odoo_db_marker(self.env))
+        self.assertEqual(mime['X-Odoo-Model'], 'res.partner',
+                         "the marker is added to the loop guard, not in place of it")
+
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestGraphOutgoingThreading(OutgoingThreadingCase):
@@ -375,3 +398,155 @@ class TestGraphOutgoingThreading(OutgoingThreadingCase):
         self.assertTrue(result['success'])
         self.assertIsNotNone(calls['plain_draft'])
         self.assertFalse(any('/createReply' in u for u in calls['urls']))
+
+    def test_the_draft_names_the_database_that_sent_it(self):
+        """Graph takes the loop guard as `internetMessageHeaders`; the marker
+        rides in the same list, so both senders stamp the same thing."""
+        _result, calls = self._send({
+            'in_reply_to': None, 'references': [],
+            'thread_id': None, 'provider_message_id': None,
+        })
+
+        headers = {
+            h['name']: h['value']
+            for h in calls['plain_draft']['internetMessageHeaders']
+        }
+        self.assertEqual(headers.get('X-Odoo-Db'), odoo_db_marker(self.env))
+        self.assertEqual(headers.get('X-Odoo-Model'), 'res.partner')
+        # A record-bound reply is the full house: model, record, mail,
+        # message, database. That is Graph's ceiling, so the count is pinned
+        # here rather than discovered as a refused send.
+        self.assertEqual(len(calls['plain_draft']['internetMessageHeaders']),
+                         GRAPH_MAX_CUSTOM_HEADERS)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestOneContextPerMessage(MailProTestCase):
+    """A post to three followers is three sends and one reply context.
+
+    `_one_send_per_recipient` makes a `mail.mail` per follower, and each
+    used to build its own context -- the same walk up the parent chain, one
+    search per ancestor -- and index the same message again. One batch now
+    shares the context per message and mailbox and writes the shared index
+    rows once; the rows that differ per copy (the provider's own Message-ID
+    for each send) are still one per copy, because each recipient's reply
+    names the one they got.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.second_partner = self.env['res.partner'].create({
+            'name': 'Second Customer', 'email': 'second@elsewhere.example',
+        })
+        self.third_partner = self.env['res.partner'].create({
+            'name': 'Third Customer', 'email': 'third@elsewhere.example',
+        })
+        self.record = self.env['res.partner'].create({
+            'name': 'The Record', 'email': 'record@elsewhere.example',
+        })
+        # What the followers are answering: a mail that came in on the record.
+        self.parent = self.record.with_context(
+            mail_create_nosubscribe=True, mail_notrack=True,
+        ).message_post(
+            body='<p>question</p>', subject='Order 12', message_type='email',
+            subtype_xmlid='mail.mt_comment', message_id='<parent@example.com>',
+        )
+        self.sends = []
+
+    def _fake_send(self):
+        """One provider Message-ID per send, one thread per record (as a
+        reply's copies share the parent's conversation), and the reply
+        context each send was handed."""
+        sends = self.sends
+
+        def send_message(client_self, mail_record, mailbox, account, reply_context=None):
+            sends.append({'mail': mail_record, 'reply_context': reply_context})
+            return {'success': True, 'message_id': f'<sent{len(sends)}@outlook.test>',
+                    'thread_id': f'CONV-{mail_record.res_id}'}
+        return patch.object(
+            type(self.env['microsoft.graph.client']), 'send_message', send_message)
+
+    def _post_to(self, partners, **vals):
+        base = {
+            'subject': 'Re: Order 12',
+            'body_html': '<p>Answer</p>',
+            'author_id': self.salesperson.partner_id.id,
+            'x_send_from_mailbox_id': self.shared_mailbox.id,
+            'model': 'res.partner',
+            'res_id': self.record.id,
+            # The follower mails Odoo creates for a chatter post.
+            'is_notification': True,
+            'recipient_ids': [(6, 0, partners.ids)],
+        }
+        base.update(vals)
+        return self.env['mail.mail'].create(base)
+
+    def test_three_followers_share_one_context_and_one_index(self):
+        Mail = type(self.env['mail.mail'])
+        Link = type(self.env['pan.mail.thread.link'])
+        mail = self._post_to(self.external_partner | self.second_partner | self.third_partner)
+        message = mail.mail_message_id
+
+        with self._fake_send(), \
+             patch.object(Mail, '_build_reply_context', autospec=True,
+                          side_effect=Mail._build_reply_context) as build, \
+             patch.object(Link, 'record_all', autospec=True,
+                          side_effect=Link.record_all) as record_all:
+            self.assertIsNone(send_and_capture(mail))
+
+        self.assertEqual(len(self.sends), 3)
+        self.assertEqual(build.call_count, 1)
+        self.assertEqual(record_all.call_count, 1)
+
+        # The three copies left as answers to the same mail.
+        contexts = [send['reply_context'] for send in self.sends]
+        for context in contexts:
+            self.assertEqual(context['in_reply_to'], '<parent@example.com>')
+            self.assertEqual(context['references'], ['<parent@example.com>'])
+        self.assertEqual(
+            {send['mail'].recipient_ids.email for send in self.sends},
+            {'customer@example.com', 'second@elsewhere.example', 'third@elsewhere.example'})
+
+        # What is indexed: the message's own Message-ID once, the provider's
+        # three (one per send, each a reply may come back under), and the
+        # conversation's two thread keys once each.
+        refs = self.env['pan.mail.message.ref'].sudo().search(
+            [('mail_message_id', '=', message.id)])
+        self.assertEqual(
+            sorted(refs.filtered(lambda r: r.source == 'odoo').mapped('message_id')),
+            [message.message_id])
+        self.assertEqual(
+            sorted(refs.filtered(lambda r: r.source == 'provider').mapped('message_id')),
+            ['<sent1@outlook.test>', '<sent2@outlook.test>', '<sent3@outlook.test>'])
+        links = self.env['pan.mail.thread.link'].sudo().search([
+            ('mailbox_id', '=', self.shared_mailbox.id),
+            ('model', '=', 'res.partner'), ('res_id', '=', self.record.id)])
+        self.assertEqual(
+            {(link.thread_id, link.key_type) for link in links},
+            {(f'CONV-{self.record.id}', 'provider'), ('<parent@example.com>', 'rfc')})
+
+    def test_a_mixed_batch_keeps_one_context_per_message(self):
+        """Two messages in one batch are two contexts and two sets of links:
+        the memo is per message, not per batch."""
+        Mail = type(self.env['mail.mail'])
+        other = self.env['res.partner'].create({
+            'name': 'Other Record', 'email': 'other-record@elsewhere.example',
+        })
+        first = self._post_to(self.external_partner | self.second_partner)
+        second = self._post_to(self.third_partner, res_id=other.id)
+
+        with self._fake_send(), \
+             patch.object(Mail, '_build_reply_context', autospec=True,
+                          side_effect=Mail._build_reply_context) as build:
+            self.assertIsNone(send_and_capture(first | second))
+
+        self.assertEqual(len(self.sends), 3)
+        self.assertEqual(build.call_count, 2)
+        by_record = {send['mail'].res_id: send['reply_context'] for send in self.sends}
+        self.assertEqual(by_record[self.record.id]['in_reply_to'], '<parent@example.com>')
+        self.assertIsNone(by_record[other.id]['in_reply_to'])
+        links = self.env['pan.mail.thread.link'].sudo().search(
+            [('mailbox_id', '=', self.shared_mailbox.id)])
+        self.assertEqual(
+            {(link.model, link.res_id) for link in links},
+            {('res.partner', self.record.id), ('res.partner', other.id)})

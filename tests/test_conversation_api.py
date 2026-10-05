@@ -9,6 +9,7 @@ on, because a missing key here is a blank pane in the browser and an empty
 server log.
 """
 from ast import literal_eval
+from datetime import timedelta
 from unittest.mock import patch
 
 from lxml import etree
@@ -305,6 +306,56 @@ class TestConversationApi(TransactionCase):
         keys = [(row['model'], row['res_id']) for row in first + second]
         self.assertEqual(len(keys), 3)
         self.assertEqual(len(set(keys)), 3, 'no conversation on two pages')
+
+    def test_a_page_starts_where_the_last_one_ended(self):
+        """`offset` is the page the client asks for, and nothing before it.
+
+        Page two is the next conversations and none of page one's; the page
+        after the last is empty rather than an error; and a negative offset
+        is page one, because `offset` arrives over RPC like `limit` does.
+        """
+        leads = [self.lead] + [self.env['crm.lead'].create({
+            'name': f'Lead {index}', 'partner_id': self.customer.id,
+        }) for index in range(4)]
+        for index, lead in enumerate(leads):
+            message = self._mail(record=lead)
+            message.date = message.date - timedelta(minutes=index)
+        newest_first = [('crm.lead', lead.id) for lead in leads]
+
+        def page(offset):
+            return [(row['model'], row['res_id'])
+                    for row in self.Conversation.search_conversations(
+                        mailbox_id=self.mailbox.id, limit=2, offset=offset)]
+
+        self.assertEqual(page(0), newest_first[:2])
+        self.assertEqual(page(2), newest_first[2:4], 'the next two, not the first two')
+        self.assertEqual(page(4), newest_first[4:], 'the last page is what is left')
+        self.assertEqual(page(6), [], 'past the end is empty, not an error')
+        self.assertEqual(page(-5), newest_first[:2], 'a negative offset is page one')
+
+    def test_the_batch_queries_cover_the_page_and_not_what_came_before_it(self):
+        """Loading page two costs page two.
+
+        The newest-message and count queries are built as one OR over the
+        groups of the page, so if they were built over everything from the
+        first page on, every later page would cost every earlier one again.
+        """
+        for index in range(4):
+            self._mail(record=self.env['crm.lead'].create({
+                'name': f'Lead {index}', 'partner_id': self.customer.id,
+            }))
+        Conversation = type(self.Conversation)
+        with patch.object(Conversation, '_newest_per_group', autospec=True,
+                          side_effect=Conversation._newest_per_group) as newest, \
+             patch.object(Conversation, '_counts_per_group', autospec=True,
+                          side_effect=Conversation._counts_per_group) as counts:
+            rows = self.Conversation.search_conversations(
+                mailbox_id=self.mailbox.id, limit=2, offset=2)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(newest.call_args.args[2]), 2,
+                         'the newest-message query is built over the page\'s groups')
+        self.assertEqual(len(counts.call_args.args[2]), 2,
+                         'the count query is built over the page\'s messages')
 
     def test_a_search_narrows_the_list_and_the_rail_together(self):
         self._mail(subject='Offerte asafdichtingen')
@@ -633,6 +684,64 @@ class TestConversationApi(TransactionCase):
             mailbox_id=self.mailbox.id)}
         self.assertEqual(counts['sent'], 1)
 
+    def test_inbox_and_sent_are_counted_from_one_query_and_the_cap_holds_for_both(self):
+        """One grouping query answers both numbers, and the cap on it must
+        not lose Sent.
+
+        The query returns `COUNT_CAP + 1` conversations at most, so a count
+        that read them newest-first would miss a Sent conversation older than
+        the page. They come back Sent-first instead: with the cap at two and
+        the one conversation we wrote in the oldest of four, Inbox is capped
+        and Sent still says one.
+        """
+        oldest = self.env['crm.lead'].create({
+            'name': 'Oudste', 'partner_id': self.customer.id})
+        written = self._mail(record=oldest, direction='outgoing', subject='Offerte')
+        written.date = written.date - timedelta(days=1)
+        for index in range(3):
+            self._mail(record=self.env['crm.lead'].create({
+                'name': f'Lead {index}', 'partner_id': self.customer.id,
+            }))
+        with patch('odoo.addons.pan_mail_pro.models.pan_mail_conversation.COUNT_CAP', 2):
+            folders = {row['id']: row for row in self.Conversation.folder_counts(
+                mailbox_id=self.mailbox.id)}
+        self.assertEqual((folders['inbox']['count'], folders['inbox']['capped']),
+                         (2, True))
+        self.assertEqual((folders['sent']['count'], folders['sent']['capped']),
+                         (1, False), 'the oldest conversation is still in Sent')
+
+        # And the same numbers, uncapped, agree with the lists they sit beside.
+        folders = {row['id']: row for row in self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id)}
+        self.assertEqual(folders['inbox']['count'], 4)
+        self.assertEqual(folders['sent']['count'], len(
+            self.Conversation.search_conversations(
+                mailbox_id=self.mailbox.id, folder='sent')))
+
+    def test_the_sent_count_reads_the_direction_that_sorts_last(self):
+        """The one-query count takes the maximum direction per conversation
+        and calls it Sent when that is `outgoing`. That holds while
+        `outgoing` is the value that sorts last; a third value or a rename
+        that breaks it must fail here and not on a customer's mailbox list.
+        """
+        values = [value for value, _label in
+                  self.env['mail.message']._fields['x_direction'].selection]
+        self.assertIn('outgoing', values)
+        self.assertEqual(max(values), 'outgoing')
+
+    def test_the_unlinked_counts_count_messages_in_both_folders(self):
+        """Under the filter that stops grouping, Sent counts the outgoing
+        messages the way Inbox counts all of them."""
+        for direction in ('incoming', 'incoming', 'outgoing'):
+            self.env['mail.message'].create({
+                'model': False, 'message_type': 'email', 'subject': 'Stranger',
+                'body': '<p>Who is this</p>', 'email_from': 'nobody@elsewhere.test',
+                'x_direction': direction, 'x_mailbox_id': self.mailbox.id,
+            })
+        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id, **self._search_filter('unlinked'))}
+        self.assertEqual((counts['inbox'], counts['sent']), (3, 1))
+
     def test_a_template_mail_is_correspondence_too(self):
         """A quote sent from the record is an `auto_comment`, and the customer
         reads it as mail like any other."""
@@ -701,6 +810,52 @@ class TestConversationApi(TransactionCase):
         self.assertIn(on_contact.id, ids)
         self.assertNotIn(self.lead.message_ids[:1].id, ids,
                          'the lead is not theirs, on the timeline either')
+
+    def test_a_record_the_reader_may_not_open_is_closed_on_every_door(self):
+        """The four reads that go further than `read_conversation` and could
+        each leak on their own: marking read writes, unfolding lists, door 1
+        counts through a `sudo()` index, and the Files tab reads attachments
+        through a `sudo()`. Each one starts from a search as the reader, so a
+        lead they may not open gives every one of them nothing -- and the
+        unread mail on it stays unread, because a conversation you cannot
+        read is a conversation you cannot mark.
+        """
+        attachment = self.env['ir.attachment'].create({
+            'name': 'vertrouwelijk.pdf', 'datas': b'JVBERi0=',
+        })
+        message = self._mail(subject='Not for Sam')
+        message.write({'attachment_ids': [(6, 0, attachment.ids)],
+                       'x_is_read': False})
+        self.env['ir.attachment'].create({
+            'name': 'tekening.pdf', 'datas': b'JVBERi0=',
+            'res_model': 'crm.lead', 'res_id': self.lead.id,
+        })
+        reader = self._mailbox_manager('sam.doors@company.test')
+        as_reader = self.Conversation.with_user(reader)
+
+        marked = as_reader.set_read('crm.lead', self.lead.id)
+        self.assertEqual(marked['count'], 0)
+        self.assertEqual(marked['message_ids'], [])
+        self.assertFalse(message.x_is_read, 'nothing was marked read')
+        marked = as_reader.set_read('crm.lead', self.lead.id, read=False)
+        self.assertEqual(marked['count'], 0)
+
+        self.assertEqual(as_reader.conversation_messages('crm.lead', self.lead.id), [])
+
+        door = as_reader.record_conversations('crm.lead', self.lead.id)
+        self.assertEqual(door['here'], 0)
+        self.assertEqual(door['threads'], 0, 'the index is not asked for a record they cannot read')
+        self.assertEqual(door['conversations'], 0)
+
+        thread = as_reader.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual(thread['files'], {'ids': [], 'store': {}},
+                         'neither the file on the mail nor the one on the record')
+
+        # The positive control: the same calls by someone who may open it.
+        self.assertEqual(self.Conversation.record_conversations(
+            'crm.lead', self.lead.id)['here'], 1)
+        self.assertEqual(len(self.Conversation.read_conversation(
+            'crm.lead', self.lead.id)['files']['ids']), 2)
 
     def test_the_inbox_is_for_people_who_read_a_mailbox(self):
         """A group on a menu is not an access rule, so the methods check too."""
@@ -983,6 +1138,45 @@ class TestConversationApi(TransactionCase):
         with self.assertRaises(AccessError):
             # No chatter, so no place for a mail: the model step refuses it.
             self.Conversation.new_mail_recipients('ir.config_parameter', 1)
+
+    def test_a_new_mail_s_to_on_a_colleague_s_lead_makes_no_contact(self):
+        """The record-level half of the check above.
+
+        A salesperson sees their own leads and nobody else's (crm's own rule
+        on "own documents only"), and may write on the model, so the model
+        step lets them through. The record step must not: asking "who does
+        a new mail on this lead go to" on a colleague's lead would answer
+        with a colleague's prospect -- and, on a lead with only an address,
+        would create the contact for it on the way.
+        """
+        reader = self._mailbox_manager('sam.sales@company.test')
+        reader.write({'group_ids': [(4, self.env.ref('sales_team.group_sale_salesman').id)]})
+        theirs = self.env['crm.lead'].create({
+            'name': 'Koelinstallatie',
+            'email_from': 'Piet de Vries <piet@devries.test>',
+            'user_id': self.env.user.id,
+        })
+        self.assertFalse(theirs.with_user(reader).has_access('read'),
+                         'the fixture: a lead the reader may not open')
+        as_reader = self.Conversation.with_user(reader)
+
+        with self.assertRaises(AccessError):
+            as_reader.new_mail_recipients('crm.lead', theirs.id)
+        self.assertFalse(self.env['res.partner'].search(
+            [('email_normalized', '=', 'piet@devries.test')]),
+            'no contact was made for an address they may not see')
+
+        # The positive control: on their own lead the same call answers,
+        # so it is the record check that refused and not the model step.
+        mine = self.env['crm.lead'].create({
+            'name': 'Eigen lead',
+            'email_from': 'Anna Jansen <anna@jansen.test>',
+            'user_id': reader.id,
+        })
+        ids = as_reader.new_mail_recipients('crm.lead', mine.id)
+        self.assertEqual(len(ids), 1)
+        self.assertEqual(self.env['res.partner'].browse(ids).email_normalized,
+                         'anna@jansen.test')
 
     def test_customer_timeline_merges_and_orders(self):
         self._mail(subject='Oldest')

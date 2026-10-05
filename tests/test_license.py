@@ -7,10 +7,12 @@ that makes a cached licence worth anything.
 """
 import base64
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import requests
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
@@ -18,7 +20,7 @@ from odoo import fields
 from odoo.exceptions import UserError
 from odoo.tests import HttpCase, TransactionCase, new_test_user, tagged
 
-from odoo.addons.pan_mail_pro.models import pan_mail_license
+from odoo.addons.pan_mail_pro.models import encryption_utils, pan_mail_license
 from odoo.addons.pan_mail_pro.models.pan_mail_license import canonical_json
 
 POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
@@ -104,6 +106,12 @@ class TestLicense(TransactionCase):
             link = self.License.action_connect()
             link.action_check_approval()
         return link
+
+    def ledger(self):
+        """The heartbeat's rows in the error ledger (tests/ledger.py keeps
+        them in this transaction)."""
+        return self.env['pan.mail.error'].search(
+            [('code', '=', 'license.heartbeat_failed')])
 
     # --- pairing ------------------------------------------------------------
 
@@ -219,6 +227,11 @@ class TestLicense(TransactionCase):
         self.assertTrue(link.key_encrypted)
         self.assertFalse(link.is_entitled())
         self.assertTrue(link.last_error)
+        # A bad minute on our side: in the ledger, but as a warning.
+        row = self.ledger()
+        self.assertEqual(len(row), 1)
+        self.assertEqual(row.level, 'warning')
+        self.assertIn('503', row.message)
         self.assertIn('failed', self.License.not_allowed_error())
         self.assertNotIn('Connect this Odoo instance', self.License.not_allowed_error())
 
@@ -247,6 +260,23 @@ class TestLicense(TransactionCase):
         self.assertFalse(link.is_entitled())
         self.assertIn('another Odoo database', link.last_error)
         self.assertIn('no longer recognises', self.License.not_allowed_error())
+        row = self.ledger()
+        self.assertEqual(row.level, 'error')
+        self.assertIn('another Odoo database', row.message)
+
+    def test_the_daily_cron_survives_a_heartbeat_that_raises(self):
+        """The cron is a caller like any other. A heartbeat that raises is a
+        sentence on the link and a row in the ledger, not a cron whose
+        transaction rolls back and forgets what it had set out to report."""
+        link = self.connected()
+        with patch.object(type(link), '_heartbeat', side_effect=RuntimeError('boom')):
+            self.License._cron_heartbeat()
+        self.assertIn('boom', link.last_error)
+        self.assertTrue(link.last_check)
+        row = self.ledger()
+        self.assertEqual(len(row), 1)
+        self.assertEqual(row.level, 'error')
+        self.assertTrue(row.message.startswith('RuntimeError'))
 
     def test_the_refusal_names_the_state_it_is_in(self):
         License = self.License
@@ -293,6 +323,9 @@ class TestLicense(TransactionCase):
         self.assertNotEqual(link.daily_send_limit, 999)
         self.assertFalse(link.is_entitled())
         self.assertTrue(link.last_error)
+        row = self.ledger()
+        self.assertEqual(row.level, 'error')
+        self.assertIn('not signed', row.message)
 
     def test_an_edited_answer_is_not_stored(self):
         body = self.signed(self.entitlement())
@@ -316,6 +349,12 @@ class TestLicense(TransactionCase):
             link._heartbeat()
         self.assertEqual(link.status, 'invalid')
         self.assertFalse(link.is_entitled())
+        # And is in the ledger: the next heartbeat that does get through
+        # carries the code, and the Errors screen groups it.
+        row = self.ledger()
+        self.assertEqual(len(row), 1)
+        self.assertEqual(row.level, 'error')
+        self.assertIn('no longer recognises', row.message)
 
     def test_an_unreachable_server_keeps_the_cached_answer(self):
         link = self.connected()
@@ -621,3 +660,72 @@ class TestLicenseReturnRoute(HttpCase):
         with patch.object(type(self.link), 'collect_on_return', autospec=True) as collect:
             self.url_open('/mail_pro/pantalytics/return', allow_redirects=False)
         self.assertEqual(collect.call_count, 0)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestEncryptionKey(TransactionCase):
+    """Reading a credential never mints the key it is read with.
+
+    Encrypting on a database with no key generates one: that is the
+    zero-configuration promise. Decrypting on one is a different event. There
+    is ciphertext, so a key existed and is gone, and a fresh key reads none of
+    it while making the next encrypt look fine -- every stored credential
+    orphaned by the one function meant to read them. The three refusals are
+    three repairs (set the key back, fix its format, reconnect), and each
+    sentence names its own.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.Param = self.env['ir.config_parameter'].sudo()
+        env_patch = patch.dict(os.environ)
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        os.environ.pop(encryption_utils.ENV_KEY_VAR, None)
+        # Whatever this database holds; the transaction rolls it back.
+        self.Param.set_param(encryption_utils.AUTO_KEY_PARAM, False)
+        self.Param.set_param(encryption_utils.LEGACY_KEY_PARAM, False)
+
+    def stored_key(self):
+        return self.Param.get_param(encryption_utils.AUTO_KEY_PARAM)
+
+    def ciphertext(self, key=None):
+        """Something encrypted under `key`, or under a key nobody kept."""
+        return Fernet(key or Fernet.generate_key()).encrypt(b'a-refresh-token').decode()
+
+    def test_decrypting_without_a_key_refuses_and_mints_nothing(self):
+        with self.assertRaisesRegex(UserError, encryption_utils.ENV_KEY_VAR) as caught:
+            encryption_utils.decrypt_value(self.env, self.ciphertext())
+        self.assertIn(encryption_utils.AUTO_KEY_PARAM, str(caught.exception))
+        self.assertFalse(self.stored_key(), 'a key was minted to decrypt with')
+
+    def test_encrypting_still_mints_the_key_on_first_use(self):
+        ciphertext = encryption_utils.encrypt_value(self.env, 'a-refresh-token')
+        self.assertTrue(self.stored_key())
+        self.assertEqual(encryption_utils.decrypt_value(self.env, ciphertext), 'a-refresh-token')
+
+    def test_the_old_parameter_name_is_adopted_before_refusing(self):
+        """Code that runs ahead of the 19.0.6.0.0 migration finds the key
+        under its old name, and the credentials under it stay readable."""
+        key = Fernet.generate_key()
+        self.Param.set_param(encryption_utils.LEGACY_KEY_PARAM, key.decode())
+        self.assertEqual(
+            encryption_utils.decrypt_value(self.env, self.ciphertext(key)), 'a-refresh-token')
+        self.assertEqual(self.stored_key(), key.decode())
+        self.assertFalse(self.Param.get_param(encryption_utils.LEGACY_KEY_PARAM))
+
+    def test_a_malformed_key_names_the_format_and_not_the_data(self):
+        """Fernet refuses the key before it looks at the data. The repair is
+        the key's spelling, so "reconnect the account" would be the wrong
+        advice."""
+        os.environ[encryption_utils.ENV_KEY_VAR] = 'not-a-fernet-key'
+        with self.assertRaisesRegex(UserError, 'not a valid Fernet key') as caught:
+            encryption_utils.decrypt_value(self.env, self.ciphertext())
+        self.assertIn(encryption_utils.ENV_KEY_VAR, str(caught.exception))
+        self.assertNotIn('reconnect', str(caught.exception))
+
+    def test_the_wrong_key_says_so_and_not_that_there_is_none(self):
+        self.Param.set_param(encryption_utils.AUTO_KEY_PARAM, Fernet.generate_key().decode())
+        with self.assertRaisesRegex(UserError, 'may have changed') as caught:
+            encryption_utils.decrypt_value(self.env, self.ciphertext())
+        self.assertNotIn(encryption_utils.ENV_KEY_VAR, str(caught.exception))

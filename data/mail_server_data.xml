@@ -17,15 +17,21 @@
         noupdate: databases that were installed before this change already have
         it active and configured; an upgrade must not silently re-open SMTP
         there.
+
+        These values are the source. `SMTP_PLACEHOLDER_VALUES` in
+        models/pan_mail_mailbox.py is the copy the takeover recreates the
+        record from when an administrator has deleted it, and
+        tests/test_onboarding.py reads this file to assert the two agree, so
+        a change here is a change there.
     -->
     <data noupdate="1">
         <record id="mail_server_disabled" model="ir.mail_server">
             <field name="name">[Mail Pro] SMTP Disabled</field>
-            <field name="smtp_host">invalid.outlook-pro.disabled</field>
+            <field name="smtp_host">invalid.mail-pro.disabled</field>
             <field name="smtp_port">25</field>
             <field name="smtp_encryption">none</field>
             <field name="smtp_authentication">login</field>
-            <field name="smtp_user">disabled-by-outlook-pro</field>
+            <field name="smtp_user">disabled-by-mail-pro</field>
             <field name="smtp_pass">disabled</field>
             <field name="sequence">0</field>
             <field name="active" eval="False"/>

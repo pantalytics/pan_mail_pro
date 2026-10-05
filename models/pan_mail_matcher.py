@@ -211,11 +211,17 @@ class PanMailMatcher(models.AbstractModel):
         for rule_method in self._match_rules():
             try:
                 found = getattr(self, rule_method)(ctx) or []
-            except Exception:
+            except Exception as error:
                 # A broken rule must not stop the mail. Drop it and continue
                 # down the ladder — a weaker match beats an unhandled traceback
-                # in the middle of a cron batch.
+                # in the middle of a cron batch. Recorded as well as logged: a
+                # mail that lands lower than it should is otherwise invisible
+                # from everywhere but the server log, and the ledger is what
+                # the heartbeat carries.
                 _logger.exception("[Mail Matcher] Rule %s raised, skipping it", rule_method)
+                self.env['pan.mail.error']._record(
+                    'incoming.rule_failed', error, level='warning',
+                    mailbox=mailbox or None)
                 continue
             ctx['candidates'].extend(found)
             if found and found[0]['confidence'] >= AUTO_ROUTE_CONFIDENCE:
@@ -294,11 +300,24 @@ class PanMailMatcher(models.AbstractModel):
         Exact by construction. The fetcher's loop guard drops most of these
         before the matcher ever sees them, but a forward or a re-send that
         survives with the headers intact should still land on the right record.
+
+        Only when `X-Odoo-Db` says this database wrote them. Every Odoo running
+        this module stamps the same model and record id, and a customer who
+        also runs Mail Pro numbers their records from one, exactly as we do: a
+        mail from them carries a model and an id that name one of *our* rows
+        by coincidence. A rule that answers at 1.0 gets no benefit of the
+        doubt, so a missing marker counts as foreign here. The loop guard's
+        allowance for the pre-marker Sent folder is not needed in this rule:
+        that copy is refused by the gate and never reaches the matcher.
         """
         headers = ctx['headers']
         model = headers.get('x-odoo-model')
         res_id = headers.get('x-odoo-record-id')
         if not model or not res_id:
+            return []
+        marker = headers.get('x-odoo-db')
+        own = self.env['pan.mail.fetcher']._odoo_db_marker()
+        if not marker or not own or marker != own:
             return []
         try:
             res_id = int(res_id)
@@ -615,12 +634,6 @@ class PanMailMatcher(models.AbstractModel):
         if rfc_key and rfc_key not in keys:
             keys.append(rfc_key)
         return keys
-
-    @api.model
-    def _effective_thread_id(self, message, reference_ids=None):
-        """The single handle to report as *the* thread id. See `thread_keys`."""
-        keys = self.thread_keys(message, reference_ids)
-        return keys[0] if keys else False
 
     @api.model
     def _reference_ids(self, headers):

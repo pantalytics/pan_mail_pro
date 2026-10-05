@@ -19,7 +19,7 @@
  * over the screen; that lives in `use_composer.js`.
  */
 
-import { Component, useState, useSubEnv, useRef, onWillStart, onError, markup } from "@odoo/owl";
+import { Component, useState, useSubEnv, useRef, onWillStart, onPatched, onError, markup } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useBus, useService } from "@web/core/utils/hooks";
@@ -304,6 +304,16 @@ export class ConversationView extends Component {
         this.listSeq = 0;
         this.conversationSeq = 0;
 
+        // Where the keyboard goes once the screen has redrawn. Several
+        // controls here remove themselves when pressed -- Reply when the
+        // composer opens, Send when it closes, the step back on a phone --
+        // and a removed control drops focus on <body>, so the next Tab
+        // starts from the top of the page. The element to land on exists
+        // only after the patch, so the wish is noted here and honoured in
+        // `onPatched`, which runs once the DOM is in place.
+        this.pendingFocus = null;
+        onPatched(() => this.applyPendingFocus());
+
         this.state = useState({
             loading: true,
             // Whether this Odoo is connected to a Pantalytics account. Until
@@ -353,6 +363,8 @@ export class ConversationView extends Component {
             record: null,
             limit: PAGE,
             hasMore: false,
+            // The next page is on its way: Load more is pressed once.
+            loadingMore: false,
             selected: null,
             // The chevron, the way Outlook draws a conversation list: a row
             // says how many mails are in there, and unfolding it says which.
@@ -597,14 +609,58 @@ export class ConversationView extends Component {
                     mailbox_id: this.state.mailboxId,
                 });
             if (changed) {
-                await this.refresh({ keepSelection: true });
+                // The numbers in the mailbox list only move with the read
+                // state under a filter on it, so they are recounted only then.
+                await this.refresh({
+                    keepSelection: true, counts: this.countsFollowReadState,
+                });
             }
         } catch (error) {
             console.warn("[Mail Pro] could not refresh read state", error);
         }
     }
 
-    async refresh({ keepSelection = false, select = true } = {}) {
+    /**
+     * Whether the numbers in the mailbox list move when a mail is marked read.
+     *
+     * The folders count mail, and reading a mail moves it to no other folder.
+     * The one exception is the search bar asking for unread mail: then the
+     * row just opened leaves the count. `x_is_read` is the mirror that
+     * filter reads (`view_pan_mail_inbox_search`), so its presence in the
+     * domain is the whole test.
+     */
+    get countsFollowReadState() {
+        return JSON.stringify(this.searchModel.domain || []).includes("x_is_read");
+    }
+
+    /**
+     * What every read of the list takes: the mailbox, the search, and door
+     * 1's record when the list is one record's mail.
+     */
+    listArgs() {
+        const record = this.state.record
+            ? { record_model: this.state.record.model,
+                record_id: this.state.record.res_id }
+            : {};
+        return {
+            mailbox_id: this.state.mailboxId,
+            ...this.searchArgs(),
+            in_a_mailbox: this.allMailboxes,
+            ...record,
+            folder: this.state.folder,
+        };
+    }
+
+    /**
+     * Re-read the list, and the numbers beside the folders when asked.
+     *
+     * `counts` is on by default and off where the mailbox list cannot have
+     * changed: another folder of the same mailbox, the next page, a narrower
+     * live folder. The counts take the mailbox and the search and not the
+     * folder, so a folder switch that recounts asks the same question again
+     * once per unfolded mailbox and gets the same answer.
+     */
+    async refresh({ keepSelection = false, select = true, counts = true } = {}) {
         const seq = ++this.listSeq;
         this.state.loading = true;
         this.state.error = "";
@@ -619,23 +675,15 @@ export class ConversationView extends Component {
             this.state.threadLoading = {};
         }
         try {
-            const args = {
-                mailbox_id: this.state.mailboxId,
-                ...this.searchArgs(),
-                in_a_mailbox: this.allMailboxes,
-            };
-            const record = this.state.record
-                ? { record_model: this.state.record.model,
-                    record_id: this.state.record.res_id }
-                : {};
+            const args = this.listArgs();
             // One count query per mailbox that is standing open. A folded
             // mailbox is not counted, which is what keeps a mailbox list of six
             // accounts from costing six times the queries of one.
-            const keys = this.expandedKeys();
-            const [counts, conversations] = await Promise.all([
+            const keys = counts ? this.expandedKeys() : [];
+            const [countRows, conversations] = await Promise.all([
                 Promise.all(keys.map((key) => this.orm.call(
                     "pan.mail.conversation", "folder_counts", [], {
-                        ...args,
+                        ...this.searchArgs(),
                         mailbox_id: key || null,
                         // The All mailboxes row counts what clicking it
                         // shows, whichever mailbox the list is in.
@@ -648,16 +696,16 @@ export class ConversationView extends Component {
                     ? this.readLiveFolder()
                     : this.orm.call("pan.mail.conversation", "search_conversations", [], {
                         ...args,
-                        ...record,
-                        folder: this.state.folder,
                         limit: this.state.limit,
                     }),
             ]);
             if (seq !== this.listSeq) {
                 return; // A newer request is already on its way.
             }
-            this.state.counts = Object.fromEntries(
-                keys.map((key, index) => [key, counts[index]]));
+            if (counts) {
+                this.state.counts = Object.fromEntries(
+                    keys.map((key, index) => [key, countRows[index]]));
+            }
             this.state.conversations = conversations;
             // The live folder is the newest page and has no next one: the
             // provider contract's search takes a limit and no offset, so
@@ -800,7 +848,7 @@ export class ConversationView extends Component {
             });
         } catch (error) {
             this.improve.failed("live_import", error);
-            this.state.error = _t("Could not file that email.");
+            this.state.error = _t("Could not add that email to Odoo.");
             console.warn("[Mail Pro] live import failed", error);
         } finally {
             this.state.liveBusy = false;
@@ -851,6 +899,7 @@ export class ConversationView extends Component {
      */
     async pick(conversation) {
         this.panes.showConversation();
+        this.focusNewPane(".o_mailpro_conversation_title");
         this.foldOthers(conversation);
         if (conversation.draft_id) {
             // A row in Drafts is an unsent mail, and there is one thing to do
@@ -874,7 +923,7 @@ export class ConversationView extends Component {
      */
     rowMenuItems(conversation) {
         return [
-            { id: "open", label: _t("Open"), onSelected: () => this.pick(conversation) },
+            { id: "open", label: _t("Open conversation"), onSelected: () => this.pick(conversation) },
             {
                 id: "read",
                 label: conversation.unread ? _t("Mark read") : _t("Mark unread"),
@@ -994,14 +1043,53 @@ export class ConversationView extends Component {
     /** A mail picked from under the chevron: the pane opens on that one. */
     async pickMessage(conversation, message) {
         this.panes.showConversation();
+        this.focusNewPane(".o_mailpro_conversation_title");
         await this.select(conversation, { openMessageId: message.id });
     }
 
     /** The step back, on a phone. Nothing is deselected: the list marks it. */
     async backToList() {
+        this.focusNewPane(".o_mailpro_conversation_list_title");
         await this.leaveComposer();
         this.state.compose = null;
         this.panes.showConversationList();
+    }
+
+    /**
+     * On a phone a pane replaces the one the reader pressed in, so the
+     * control they pressed is gone with it. The new pane's heading is where
+     * the keyboard lands then. Elsewhere both panes stay up and the control
+     * keeps the focus it had.
+     */
+    focusNewPane(selector) {
+        if (this.panes.state.small) {
+            this.focusAfterRender(selector);
+        }
+    }
+
+    /** Put the keyboard on `selector` once the screen has redrawn. */
+    focusAfterRender(selector) {
+        this.pendingFocus = selector;
+    }
+
+    /**
+     * The `onPatched` half of `focusAfterRender`: the DOM is in place now.
+     *
+     * Nothing is assumed to be there. The heading asked for may be behind a
+     * fold, inside an inert pane, or not rendered at all, and a focus that
+     * cannot land is simply not given.
+     */
+    applyPendingFocus() {
+        const selector = this.pendingFocus;
+        if (!selector) {
+            return;
+        }
+        this.pendingFocus = null;
+        const root = this.panesRef.el;
+        const target = root && root.querySelector(selector);
+        if (target && typeof target.focus === "function") {
+            target.focus();
+        }
     }
 
     /**
@@ -1021,6 +1109,21 @@ export class ConversationView extends Component {
             await this.loadCounts(this.mailboxKey());
         }
         return stored;
+    }
+
+    /**
+     * Discard, or Close on a stored draft: the pane goes back to reading.
+     *
+     * The button pressed leaves with the composer, so the keyboard is put on
+     * the conversation's head, next to the Reply that comes back.
+     */
+    async discardComposer() {
+        this.focusAfterRender(".o_mailpro_conversation_title");
+        if (this.composer.state.draftId) {
+            await this.leaveComposer();
+        } else {
+            this.composer.close();
+        }
     }
 
     /**
@@ -1055,17 +1158,21 @@ export class ConversationView extends Component {
             return;
         }
         await this.readConversation();
-        await this.markRead(conversation);
+        if (!conversation.draft_id) {
+            await this.markRead(conversation);
+        }
     }
 
     /**
      * Opening a conversation reads it, the way every mail client means it.
      *
-     * Always asked, even for a conversation the list already drew as read:
-     * the mailbox's read state and your own Odoo Inbox rows are two different
-     * facts, and the bell can still be ringing for a mail the mailbox calls
-     * read. The server marks only what moved, so saying so twice costs one
-     * query and no provider call.
+     * Asked on every open, not only when the row is drawn unread. The row
+     * carries the mailbox's answer (`unread` on `search_conversations`); the
+     * reader's own bell is a different question, and a conversation the
+     * mailbox already calls read can still hold a notification for this
+     * reader that opening it is meant to clear (ARCHITECTURE §9.18). The
+     * server searches only what has to move, so on a read conversation with
+     * no bell the call is one empty search and no write.
      *
      * Silent on failure. A dot that is a second out of date is not worth an
      * error over a conversation the reader has in front of them.
@@ -1086,6 +1193,26 @@ export class ConversationView extends Component {
             return;
         }
         this.setUnreadLocally(conversation, false, result.message_ids);
+        await this.recountAfterReadChange(result);
+    }
+
+    /**
+     * The numbers beside the folders, after a read state changed.
+     *
+     * `set_read` answers with what it marked and not with new counts, so
+     * when the counts can have moved they are asked again -- which is only
+     * under a filter on read state, and only when something was marked.
+     * Every other click leaves the mailbox list alone.
+     */
+    async recountAfterReadChange(result) {
+        if (result && result.count && this.countsFollowReadState) {
+            await this.reloadCounts();
+        }
+    }
+
+    /** Recount every mailbox standing open in the mailbox list. */
+    async reloadCounts() {
+        await Promise.all(this.expandedKeys().map((key) => this.loadCounts(key)));
     }
 
     /** Is the open conversation one the mailbox still calls unread? */
@@ -1134,6 +1261,7 @@ export class ConversationView extends Component {
             return;
         }
         this.setUnreadLocally(conversation, !read, result.message_ids);
+        await this.recountAfterReadChange(result);
     }
 
     /**
@@ -1256,7 +1384,9 @@ export class ConversationView extends Component {
         // the filters over `mail.message` simply do not reach them -- only
         // the words somebody typed do.
         this.state.limit = PAGE;
-        await this.refresh();
+        // Not recounted: the numbers are per mailbox and search, and
+        // another folder of the same mailbox changes neither.
+        await this.refresh({ counts: false });
     }
 
     /** Fold a mailbox away, or open it, without leaving the one you are in. */
@@ -1325,7 +1455,8 @@ export class ConversationView extends Component {
     /** Narrow the live folder, or clear it with a second click. */
     async setLiveFilter(filter) {
         this.state.liveFilter = this.state.liveFilter === filter ? null : filter;
-        await this.refresh();
+        // The live folder is counted nowhere, so narrowing it recounts nothing.
+        await this.refresh({ counts: false });
     }
 
     /** Open another mailbox, from the mailbox list. Folders are per mailbox. */
@@ -1421,9 +1552,44 @@ export class ConversationView extends Component {
         await this.refresh();
     }
 
+    /**
+     * The next page, under the rows already on screen.
+     *
+     * Asked from where the list ends and not from the top again: a fourth
+     * page that re-reads the first three draws every row the reader has
+     * scrolled past a fourth time. The counts are not asked at all, because
+     * a longer list is the same mailbox. `limit` still grows with the
+     * screen, so a later re-read of the list -- a reply going out -- keeps
+     * its length instead of cutting it back to one page.
+     *
+     * Not while the list is being re-read: the rows would be appended to a
+     * list about to be replaced, or twice to the same one.
+     */
     async loadMore() {
-        this.state.limit += PAGE;
-        await this.refresh({ keepSelection: true });
+        if (this.state.loading || this.state.loadingMore || this.isLive) {
+            return;
+        }
+        const seq = this.listSeq;
+        this.state.loadingMore = true;
+        try {
+            const rows = await this.orm.call(
+                "pan.mail.conversation", "search_conversations", [], {
+                    ...this.listArgs(),
+                    limit: PAGE,
+                    offset: this.state.conversations.length,
+                });
+            if (seq !== this.listSeq) {
+                return; // The list was re-read meanwhile; these rows are its old shape.
+            }
+            this.state.conversations.push(...rows);
+            this.state.limit += PAGE;
+            this.state.hasMore = rows.length >= PAGE;
+        } catch (error) {
+            this.improve.failed("conversation_list", error);
+            console.warn("[Mail Pro] the next page of conversations failed", error);
+        } finally {
+            this.state.loadingMore = false;
+        }
     }
 
     // --------------------------------------------------------------- render
@@ -1529,6 +1695,9 @@ export class ConversationView extends Component {
 
     showOdooRecordScreen() {
         if (!this.panes.state.zoom) {
+            // The button pressed leaves with the conversation's head, so the
+            // keyboard lands on the record's name once it is on screen.
+            this.focusNewPane(".o_mailpro_odoo_record_name");
             this.toggleZoom();
         }
     }
@@ -1546,6 +1715,9 @@ export class ConversationView extends Component {
      */
     toggleZoom() {
         if (this.panes.state.zoom) {
+            // On a phone the record pane leaves with the button that was
+            // pressed; the conversation's head is where the reader is back.
+            this.focusNewPane(".o_mailpro_conversation_title");
             this.panes.toggleZoom(); // The way back retraces the way in.
             return;
         }
@@ -2083,6 +2255,15 @@ export class ConversationView extends Component {
      */
     async onReplySent() {
         this.improve.capture("reply_sent", { mode: this.composer.state.mode });
+        // Said out loud, the way "Draft saved." is: the button that was
+        // pressed is gone with the composer, and the message appearing in
+        // the thread is something a screen reader is never told about.
+        this.notification.add(
+            this.composer.state.mode === "note" ? _t("Note logged.") : _t("Email sent."),
+            { type: "success" });
+        // Send left with the composer; the conversation's head is what the
+        // keyboard goes back to.
+        this.focusAfterRender(".o_mailpro_conversation_title");
         if (this.composer.state.mode === "new") {
             // A new mail belongs to no open thread. The list is re-read, and
             // the mail shows up there if it landed in the folder on screen.
@@ -2210,6 +2391,7 @@ export class ConversationView extends Component {
     async onDraftSaved() {
         this.state.compose = null;
         this.notification.add(_t("Draft saved."), { type: "success" });
+        this.focusAfterRender(".o_mailpro_conversation_title");
         await this.readConversation();
         await this.refresh({ keepSelection: true });
     }
@@ -2310,9 +2492,7 @@ export class ConversationView extends Component {
             return;
         }
         this.notification.add(
-            via === "unlink"
-                ? _t("Linked to %s only. The next mail in this thread lands there too.", linked.name)
-                : _t("Linked to %s. The next mail in this thread lands here too.", linked.name),
+            _t("Linked to %s. The next mail in this conversation lands there too.", linked.name),
             { type: "success" }
         );
         // Which way the correction came: the one-click suggestion, the

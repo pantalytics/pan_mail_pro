@@ -8,7 +8,7 @@ page names this Odoo, and approves; the button back to their Odoo lands on
 `/mail_pro/pantalytics/return`, which collects the key. Nobody types a code or
 copies a key, and there is still no redirect URI to register per customer:
 the way back is an ordinary link to this Odoo, not an OAuth redirect.
-**Check Approval** on the settings page does the same collection by hand.
+**Check approval** on the settings page does the same collection by hand.
 Collecting the key also records who did it: the Pantalytics account that
 approved, when the poll answer names it (`account_email`), the Odoo user who
 pressed the button, and the time. The settings page shows it on the account
@@ -76,7 +76,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from odoo import _, api, fields, models, release
+from odoo import _, api, fields, models, release, tools
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 from . import encryption_utils
@@ -291,12 +291,21 @@ class PanMailLicense(models.Model):
 
     @api.model
     def sync_allowed(self):
-        """May this instance sync incoming mail and connect new accounts?"""
-        link = self.current()
+        """May this instance sync incoming mail and connect new accounts?
+
+        Asked on the model it finds the link; asked on the link itself
+        (`current().sync_allowed()`) it answers for that row without looking
+        it up again. `ir.http` asks three questions of one row on every page
+        load, and this is how it pays for one search rather than four. The
+        row rather than a keyword because the test suite replaces this
+        method with a `(self)`-only yes (tests/connected.py), and a keyword
+        it does not know would end every test in a TypeError.
+        """
+        link = self or self.current()
         return bool(link) and link.is_entitled()
 
     @api.model
-    def improve_active(self):
+    def improve_active(self, link=None):
         """May the Inbox in this browser report how it is used and record?
 
         Four yeses, any no wins: the workspace switched it on, the answer named
@@ -304,8 +313,12 @@ class PanMailLicense(models.Model):
         this is not a neutralized copy. The host check matters on its own: an
         older server that says yes without saying where would otherwise leave
         the browser to guess.
+
+        `link` is the row when the caller has it already (`ir.http`, once per
+        page load); left out, it is looked up. `None` means not looked up:
+        an empty recordset is an answer, and it is "no".
         """
-        link = self.current()
+        link = self.current() if link is None else link
         if not link or not link.improve or not link.improve_host or not link.improve_token:
             return False
         if self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM):
@@ -313,7 +326,7 @@ class PanMailLicense(models.Model):
         return not database_is_neutralized(self.env)
 
     @api.model
-    def improve_config(self):
+    def improve_config(self, link=None):
         """What the browser needs to report, or False. Read into `session_info`
         by `ir.http`, so the Inbox knows before its first paint and makes no
         call of its own to find out.
@@ -322,10 +335,12 @@ class PanMailLicense(models.Model):
         encryption key over the database id and the user id, twelve hex
         characters. Two users are two ids, a user is the same id tomorrow, and
         nothing we hold turns it back into a person.
+
+        `link` as in `improve_active`: the row when the caller holds it.
         """
-        if not self.improve_active():
+        link = self.current() if link is None else link
+        if not self.improve_active(link=link):
             return False
-        link = self.current()
         return {
             'host': link.improve_host,
             'token': link.improve_token,
@@ -359,7 +374,7 @@ class PanMailLicense(models.Model):
                      'Settings, Mail Pro, Connect to Pantalytics.')
         elif status == 'pending':
             head = _('The connection to Pantalytics is waiting for approval: '
-                     'Settings, Mail Pro, Check Approval.')
+                     'Settings, Mail Pro, Check approval.')
         elif status == 'invalid':
             head = _('Pantalytics no longer recognises the key of this Odoo '
                      'instance: Settings, Mail Pro, Disconnect, then Connect to '
@@ -534,9 +549,13 @@ class PanMailLicense(models.Model):
 
     @api.model
     def _cron_heartbeat(self):
+        # Guarded, like every other caller: a heartbeat that raises would
+        # otherwise take the cron's transaction with it, and with it the
+        # `setup_reported` / `errors_reported` it had just written, so the
+        # fetch cron would push the same report again a minute later.
         link = self.current()
         if link:
-            link._heartbeat()
+            link._heartbeat_guarded()
 
     @api.model
     def _retry_if_stuck(self):
@@ -610,7 +629,7 @@ class PanMailLicense(models.Model):
         except Exception as error:  # noqa: BLE001 - recorded, never raised
             _logger.exception('[License] Heartbeat failed')
             self.write({'last_check': fields.Datetime.now(), 'last_error': str(error)})
-            self.env['pan.mail.error'].record('license.heartbeat_failed', error)
+            self.env['pan.mail.error']._record('license.heartbeat_failed', error)
 
     def _heartbeat(self):
         """Report in, and store the answer if, and only if, it is ours."""
@@ -637,34 +656,46 @@ class PanMailLicense(models.Model):
             self.write({'last_check': now, 'last_error': str(error)})
             # A warning, not an error: nothing is lost yet. It cannot reach us
             # today by definition; the next heartbeat that does carries it.
-            self.env['pan.mail.error'].record(
+            self.env['pan.mail.error']._record(
                 'license.heartbeat_failed', error, level='warning')
             return
 
+        # Every refusal from here on is a row in the error ledger as well as
+        # `last_error`: the settings page shows the sentence to whoever opens
+        # it, the ledger is what the next heartbeat carries and what the
+        # Errors screen groups, so a key refused at a hundred customers on the
+        # morning of a release shows up as one code, that morning.
+        Error = self.env['pan.mail.error']
         if code == 403 and body.get('status') == 'wrong_database':
             # The key was paired for another database uuid: this is a copy
             # (a restore under another name, a staging clone). It gets no
             # entitlement, and it says so instead of looking connected.
             _logger.warning('[License] The key belongs to another Odoo database')
+            reason = _('This key was issued to another Odoo database. A copy '
+                       'needs its own connection: Settings, Mail Pro, '
+                       'Disconnect, then Connect to Pantalytics.')
             self.write({
-                'status': 'invalid', 'last_check': now,
-                'last_error': _('This key was issued to another Odoo database. A copy '
-                                'needs its own connection: Settings, Mail Pro, '
-                                'Disconnect, then Connect to Pantalytics.'),
+                'status': 'invalid', 'last_check': now, 'last_error': reason,
                 'entitlement_json': False, 'signature': False, 'valid_until': False,
             })
+            Error._record('license.heartbeat_failed', detail=reason)
             return
         if code == 401:
             _logger.warning('[License] Pantalytics refused the key for this database')
+            reason = _('Pantalytics no longer recognises this key.')
             self.write({
-                'status': 'invalid', 'last_check': now,
-                'last_error': _('Pantalytics no longer recognises this key.'),
+                'status': 'invalid', 'last_check': now, 'last_error': reason,
                 'entitlement_json': False, 'signature': False, 'valid_until': False,
             })
+            Error._record('license.heartbeat_failed', detail=reason)
             return
         if code != 200:
-            self.write({'last_check': now,
-                        'last_error': _('Heartbeat failed (HTTP %s).') % code})
+            reason = _('Heartbeat failed (HTTP %s).') % code
+            self.write({'last_check': now, 'last_error': reason})
+            # A 5xx is a bad minute on our side, retried in ten; anything
+            # else is an answer this module did not expect and should hear of.
+            Error._record('license.heartbeat_failed', detail=reason,
+                          level='warning' if code >= 500 else 'error')
             return
 
         payload = body.get('entitlement') or {}
@@ -673,6 +704,7 @@ class PanMailLicense(models.Model):
         if problem:
             _logger.warning('[License] Ignored an entitlement: %s', problem)
             self.write({'last_check': now, 'last_error': problem})
+            Error._record('license.heartbeat_failed', detail=problem)
             return
 
         status = payload.get('status')
@@ -801,7 +833,15 @@ class PanMailLicense(models.Model):
         return self.env['ir.config_parameter'].sudo().get_param('database.uuid', '')
 
     @api.model
+    @tools.ormcache()
     def _module_version(self):
+        """The version of the module that is running, as the manifest says.
+
+        Cached per registry: it rides every page load in `improve_config`,
+        and the answer only changes when the code does, which is a restart
+        (a new registry) or an upgrade (which clears the cache). A plain
+        string, never a recordset, for the same reason as every ormcache.
+        """
         return self.env['ir.module.module'].sudo().search(
             [('name', '=', 'pan_mail_pro')], limit=1).installed_version or ''
 

@@ -14,10 +14,19 @@ Two changes are pinned here:
 - internal notifications are queued, not cancelled, while notifications@ is
   still missing
 """
+import ast
+import os
+from xml.etree import ElementTree
+
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
+from odoo.tools import mute_logger
 
 from odoo.addons.pan_mail_pro.models.mail_mail import NOTIFICATION_PENDING_REASON
+from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import (
+    SMTP_PLACEHOLDER_VALUES,
+    SMTP_PLACEHOLDER_XMLID,
+)
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -82,6 +91,50 @@ class TestSmtpTakeover(TransactionCase):
         self.Mailbox.create({'email': 'sales@takeover.test'})
 
         self.assertTrue(self.customer_smtp.active)
+
+    @mute_logger('odoo.addons.pan_mail_pro.models.pan_mail_mailbox')
+    def test_a_deleted_placeholder_is_recreated_before_the_takeover(self):
+        """An administrator can delete the placeholder. The takeover then
+        used to deactivate every other server and record itself as done,
+        leaving zero active servers -- which is not "no SMTP": anything still
+        on Odoo's own path falls through to the smtp_server in odoo.conf,
+        silently. The placeholder is put back first, under its own xml id,
+        so exactly one server is active afterwards and it is this one."""
+        self.placeholder.unlink()
+        self.assertFalse(self.env.ref(SMTP_PLACEHOLDER_XMLID, raise_if_not_found=False))
+
+        self.Mailbox.create({'email': 'info@takeover.test'})
+
+        active = self.MailServer.search([('active', '=', True)])
+        self.assertEqual(len(active), 1, 'one door open, never none')
+        self.assertEqual(active.name, SMTP_PLACEHOLDER_VALUES['name'])
+        self.assertEqual(active.smtp_host, SMTP_PLACEHOLDER_VALUES['smtp_host'])
+        self.assertEqual(self.env.ref(SMTP_PLACEHOLDER_XMLID), active,
+                         'under its xml id, so the uninstall hook retires it too')
+        self.assertFalse(self.customer_smtp.active)
+        params = self.env['ir.config_parameter'].sudo()
+        self.assertEqual(params.get_param('pan_mail_pro.smtp_takeover_done'), 'True')
+
+    def test_the_recreated_placeholder_is_the_one_the_data_file_ships(self):
+        """The data file is the source of the placeholder's values and the
+        Python copy is what the takeover rebuilds it from; this is the check
+        that they are one record and not two."""
+        path = os.path.join(os.path.dirname(__file__), '..', 'data', 'mail_server_data.xml')
+        record = ElementTree.parse(path).getroot().find(".//record[@model='ir.mail_server']")
+        self.assertEqual(f"pan_mail_pro.{record.get('id')}", SMTP_PLACEHOLDER_XMLID)
+        shipped = {}
+        for field in record.findall('field'):
+            if field.get('eval') is not None:
+                shipped[field.get('name')] = ast.literal_eval(field.get('eval'))
+            else:
+                shipped[field.get('name')] = field.text
+        self.assertEqual(set(shipped), set(SMTP_PLACEHOLDER_VALUES))
+        for name, value in SMTP_PLACEHOLDER_VALUES.items():
+            with self.subTest(field=name):
+                expected = shipped[name]
+                self.assertEqual(
+                    value if isinstance(expected, bool) else str(value),
+                    expected if isinstance(expected, bool) else str(expected))
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

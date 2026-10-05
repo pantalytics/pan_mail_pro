@@ -39,16 +39,21 @@ import logging
 import re
 from datetime import datetime
 
-from odoo import models, api, _
+from odoo import models, api, tools, _
 from odoo.exceptions import AccessError
 from odoo.fields import Domain
 from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import email_split, html2plaintext
 from odoo.tools.mail import html_sanitize, plaintext2html
+from odoo.tools.translate import LazyTranslate
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
 _logger = logging.getLogger(__name__)
+# Module-level strings that reach the screen are translated when they are
+# read, not when the module is imported: the reader's language is only
+# known inside a request.
+_lt = LazyTranslate(__name__)
 
 # What the Files tab draws at most. A tab, not a document archive: past this
 # many, the record's own Files box is the screen for it.
@@ -129,14 +134,19 @@ UNGROUPED_KEY = 'pan_mail_ungrouped'
 
 KINDS = {value: 'folder' for value, _label in MAILBOX_FOLDERS}
 
-# The matcher's rule names, in words. The screen shows why a mail was not
-# filed, and `subject_participants` is not why anything happened.
+# The matcher's rule names, in words: one label per rule `_match_rules()`
+# can return, in the vocabulary of the screen that shows it (a conversation is
+# *linked*, never filed). The "Why?" line under an unlinked conversation reads
+# these, and a rule without a label would show its code there instead.
+# `tests/test_linking.py` keeps the two lists the same length.
 ROUTING_RULES = {
-    'odoo_headers': 'Our own headers on a reply',
-    'references': 'The reply headers of the thread',
-    'thread_link': 'A thread already filed on this record',
-    'thread_link_legacy': 'An older thread id for this record',
-    'subject_participants': 'The same subject and the same people',
+    'odoo_headers': _lt('Our own headers on a reply'),
+    'references': _lt('The reply headers of this conversation'),
+    'thread_link': _lt('A conversation already linked to this record'),
+    'thread_link_legacy': _lt('An older conversation id for this record'),
+    'record_reference': _lt('A document number in the subject'),
+    'only_open_record': _lt("The one open record of this contact"),
+    'subject_participants': _lt('The same subject and the same people'),
 }
 
 # The chatter posts that are correspondence once they have gone out. A reply
@@ -368,26 +378,56 @@ class PanMailConversation(models.AbstractModel):
         """
         self._check_caller()
         base = self._base_domain(mailbox_id, partner_id, domain, in_a_mailbox)
-        return [self._count_entry(base, value, label,
-                                  self._folder_domain(value), ungrouped)
+        totals = self._folder_totals(base, ungrouped)
+        return [self._count_entry(value, label, totals[value])
                 if value != DRAFTS
                 else self._draft_entry(value, label, mailbox_id, search)
                 for value, label in MAILBOX_FOLDERS]
 
-    def _count_entry(self, domain, value, label, extra, ungrouped=False):
-        """One number beside a folder in the mailbox list, capped."""
-        groups = self.env['mail.message']._read_group(
-            domain + extra, groupby=['model', 'res_id'],
-            aggregates=['__count', 'date:max'],
-            order='date:max DESC, model ASC, res_id ASC',
+    def _folder_totals(self, domain, ungrouped=False):
+        """Inbox and Sent, from one grouping query over the mailbox's mail.
+
+        Inbox is every conversation the domain finds. Sent is the subset
+        that holds a mail we wrote, which is what `_folder_domain('sent')`
+        says in clauses: a thread the customer answered is still one you
+        sent in. Two queries used to answer that, one per folder, and each
+        one aggregated the mailbox's whole mail on every click.
+
+        One does both. Grouped per conversation with the direction that
+        sorts last in each, which is `outgoing` -- the selection has two
+        values and `mail_message.py` says so beside it, because this is the
+        one place that leans on it. Sent conversations are ordered first so
+        the cap holds for both numbers at once: when more than `COUNT_CAP`
+        rows come back, Inbox is capped, and the Sent rows among them are
+        either all of Sent or more than the cap.
+
+        Under `ungrouped` the list is not grouping either, so the numbers
+        count messages: grouped by direction, Inbox is all of them and Sent
+        is the outgoing bucket. Three rows at most, so no cap is needed.
+
+        Returns:
+            dict: the uncapped total per folder, `inbox` and `sent`.
+        """
+        Message = self.env['mail.message']
+        if ungrouped:
+            counts = {direction: count for direction, count in Message._read_group(
+                domain, groupby=['x_direction'], aggregates=['__count'])}
+            return {'inbox': sum(counts.values()),
+                    'sent': counts.get('outgoing', 0)}
+        groups = Message._read_group(
+            domain, groupby=['model', 'res_id'],
+            aggregates=['x_direction:max'],
+            order='x_direction:max DESC NULLS LAST, model ASC, res_id ASC',
             limit=COUNT_CAP + 1,
         )
-        if ungrouped:
-            # The list is not grouping either, so the number has to count
-            # what the list will show: messages, not conversations.
-            total = sum(count for _model, _res_id, count, _date in groups)
-        else:
-            total = len(groups)
+        return {
+            'inbox': len(groups),
+            'sent': sum(1 for _model, _res_id, direction in groups
+                        if direction == 'outgoing'),
+        }
+
+    def _count_entry(self, value, label, total):
+        """One number beside a folder in the mailbox list, capped."""
         return {
             'id': value,
             'name': label,
@@ -438,6 +478,14 @@ class PanMailConversation(models.AbstractModel):
         names of the records. The newest messages come back as one
         recordset on purpose, so the ORM prefetches their authors, mailboxes
         and document names for the whole page instead of once per row.
+
+        `limit` and `offset` are a page, and the page is the unit of every
+        query here: the grouping takes both, and the two batch queries after
+        it are built over the groups it returned and nothing before them.
+        Loading page two is the cost of page two, not of pages one and two.
+        Both arrive over RPC and go through `_page`: a limit past `MAX_LIMIT`
+        is `MAX_LIMIT`, a negative offset is 0, an offset past the end is an
+        empty list.
         """
         self._check_caller()
         limit, offset = self._page(limit, offset)
@@ -599,27 +647,50 @@ class PanMailConversation(models.AbstractModel):
         `mail.message.write`, best effort (see `push_read_state`), and a
         refresh settles any disagreement in favour of the provider.
 
+        Only what has to move is read. The Inbox asks this on every open, and
+        a conversation of three hundred read mails used to be three hundred
+        rows searched, access-checked and filtered to find that nothing had
+        changed. Read asks for the mails the mailbox still calls unread, and
+        for the ones the reader's own bell still rings for (`needaction` is
+        Odoo's search over their unread notification rows); unread asks for
+        the newest incoming mail, and nothing else. On Graph every message
+        that changes state is one synchronous PATCH inside this request, so
+        the rows this touches are the rows the provider hears about.
+
         Returns:
             dict: `read` as it now stands, `count` the messages that changed,
-                and `message_ids` the messages marked, so the unfolded rows
-                under the conversation can follow without a reload.
+                and `message_ids` the ids of exactly those, so the unfolded
+                rows under the conversation can follow without a reload. A
+                mail that was already in the asked-for state is in neither.
         """
         self._check_caller()
         read = bool(read)
+        Message = self.env['mail.message']
         # Searched as the caller, so a conversation they may not read is a
         # conversation they cannot mark. Odoo's own rules over `mail.message`
         # do that work and this must not step around them.
-        messages = self.env['mail.message'].search(
-            self._conversation_domain(model, res_id, message_id, mailbox_id),
-            order='date desc, id desc')
-        if not read:
-            messages = (messages.filtered(
-                lambda m: m.x_direction != 'outgoing')[:1] or messages[:1])
-        # Asked of every message, not only the ones that moved: the reader's
-        # own Odoo Inbox rows are cleared on read, and the bell can still be
-        # ringing for a mail the mailbox already calls read.
+        domain = self._conversation_domain(model, res_id, message_id, mailbox_id)
+        if read:
+            # The unread ones, plus the ones the bell still rings for: the
+            # reader's own Odoo Inbox rows are cleared on read, and the bell
+            # can still be ringing for a mail the mailbox already calls read.
+            # Neither set is ever the size of the thread.
+            messages = Message.search(
+                domain + ['|', ('x_is_read', '=', False),
+                          ('needaction', '=', True)],
+                order='date desc, id desc')
+        else:
+            # The newest mail that came in, whatever its state: if it is
+            # unread already, nothing moves, and an older one must not be
+            # marked in its place. A thread we only ever wrote in has no
+            # incoming mail, so its newest mail is the one.
+            messages = Message.search(
+                domain + [('x_direction', '!=', 'outgoing')],
+                order='date desc, id desc', limit=1,
+            ) or Message.search(domain, order='date desc, id desc', limit=1)
+        moving = messages.filtered(lambda m: m.x_is_read != read)
         count = messages._mark_read_state(read) if messages else 0
-        return {'read': read, 'count': count, 'message_ids': messages.ids}
+        return {'read': read, 'count': count, 'message_ids': moving.ids}
 
     @api.model
     def refresh_read_state(self, mailbox_id=None):
@@ -770,7 +841,7 @@ class PanMailConversation(models.AbstractModel):
     # ------------------------------------------------------------------
     # Your own mailbox, read from the provider
     #
-    # The design is in `docs/plans/personal-mailbox.md`. Two rules, and they
+    # The design is in `docs/research/personal-mailbox.md`. Two rules, and they
     # are the whole of why this is allowed to exist:
     #
     # **Nothing is stored.** These methods read the mailbox through the client
@@ -1418,16 +1489,24 @@ class PanMailConversation(models.AbstractModel):
             return False
         return '/%s/static/description/icon.png' % module
 
-    def _app_icon_by_menu(self, model):
-        """The `web_icon` of the first app whose menu opens `model`, or False.
+    @tools.ormcache('model_name')
+    def _app_icon_by_menu(self, model_name):
+        """The `web_icon` of the first app whose menu opens `model_name`, or False.
 
         `sudo` because the question is which tile, not whether the reader
         may open it: the chip carries the name of a record they can already
         read. An archived root (Sales without sale_management) is skipped,
         which is what the search does on its own.
+
+        Cached per registry: the answer is three searches over actions and
+        menus, asked once per model on every read of a conversation, and it
+        only changes when an app is installed or a menu moves -- both of
+        which signal the registry, which clears the cache. The value is a
+        plain string or False, never a recordset, because a cached recordset
+        would carry the environment of whoever asked first.
         """
         actions = self.env['ir.actions.act_window'].sudo().search(
-            [('res_model', '=', model)])
+            [('res_model', '=', model_name)])
         if not actions:
             return False
         Menu = self.env['ir.ui.menu'].sudo()
@@ -1503,7 +1582,9 @@ class PanMailConversation(models.AbstractModel):
             'id': log.id,
             'outcome': log.outcome,
             'rule': log.rule or '',
-            'rule_label': ROUTING_RULES.get(log.rule, log.rule or _('No rule')),
+            # `str()` because the label is a lazy translation and the row
+            # goes over the wire: JSON knows strings, not translations.
+            'rule_label': str(ROUTING_RULES.get(log.rule) or log.rule or _('No rule')),
             'reason': log.reason or '',
             'candidates': log.candidate_count,
         } for log in logs]

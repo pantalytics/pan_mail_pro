@@ -5,7 +5,7 @@
         <field name="name">pan.mail.account.list</field>
         <field name="model">pan.mail.account</field>
         <field name="arch" type="xml">
-            <list string="Email Accounts" decoration-muted="not connected">
+            <list string="Email accounts" decoration-muted="not connected">
                 <field name="email"/>
                 <field name="provider"/>
                 <field name="user_id" optional="show"/>
@@ -21,10 +21,10 @@
         <field name="name">pan.mail.account.form</field>
         <field name="model">pan.mail.account</field>
         <field name="arch" type="xml">
-            <form string="Email Account">
+            <form string="Email account">
                 <header>
                     <button name="action_test_connection" type="object"
-                            string="Test Connection" class="btn-primary" icon="fa-plug"/>
+                            string="Test connection" class="btn-primary" icon="fa-plug"/>
                 </header>
                 <sheet>
                     <widget name="web_ribbon" title="Connected" bg_color="text-bg-success"
@@ -102,13 +102,13 @@
         <field name="name">pan.mail.account.search</field>
         <field name="model">pan.mail.account</field>
         <field name="arch" type="xml">
-            <search string="Email Accounts">
+            <search string="Email accounts">
                 <field name="email"/>
                 <field name="user_id"/>
                 <filter name="filter_connected" string="Connected" domain="[('connected', '=', True)]"/>
-                <filter name="filter_disconnected" string="Not Connected" domain="[('connected', '=', False)]"/>
+                <filter name="filter_disconnected" string="Not connected" domain="[('connected', '=', False)]"/>
                 <separator/>
-                <filter name="filter_service" string="Shared Address"
+                <filter name="filter_service" string="Shared address"
                         domain="[('user_id', '=', False)]"/>
                 <!-- Group-by lives in a bare <group>: Odoo 19's search RNG
                      rejects the older expand="0" string="Group By" form. -->

@@ -1,6 +1,6 @@
 # The conversation view
 
-Status: **mostly built**, 19.0.13.1.0. The inbox itself ships: the mailbox list,
+Status: **mostly built**. The inbox itself ships: the mailbox list,
 the conversation list with its filters and search, New Email, the thread with
 its four-position tab strip, linking in two steps with the suggestion chips,
 and the record pane without its chatter, reading through
@@ -15,11 +15,13 @@ folder in the mailbox list, a **Save draft** beside Send, and the unsent answer
 on the conversation it belongs to. *All mailboxes*, the one folder that spans
 them, ships in 19.0.18.4.0: the row, the mailbox on every list row that needs
 one, and the reply that answers from the conversation's mailbox rather than the
-folder's. Also still on paper: the composer's
+folder's. New Email opens in the conversation pane, as decided below: the
+record is picked first, in the same two-step dialog linking uses, and the
+pane composer opens on it with To filled from the record's own contact
+(`newEmail()` / `composeOn()`). Still on paper: the composer's
 **Cc/followers block**. Reply opens Odoo's own composer with To filled from
-the newest inbound message and Cc not filled at all. New Email opens the same
-composer in a dialog after the record is picked, rather than in pane 3 as
-decided below. What the MVP needs of this file is in [mvp.md](mvp.md).
+the newest inbound message and Cc not filled at all. What the MVP needs of
+this file is in [mvp.md](mvp.md).
 
 Canvas: https://claude.ai/artifact/KsLjy3wNcx7q3dX34Gh3hB -- six artboards:
 the inbox, an unfiled conversation, the model, the chatter with its door to the

@@ -7,6 +7,7 @@ would not work is a case where the module nags about something the reader
 cannot do.
 """
 from datetime import timedelta
+from unittest.mock import patch
 
 from odoo import fields
 from odoo.addons.pan_mail_pro.controllers.main import SETTINGS_URL
@@ -171,6 +172,74 @@ class TestConnectBannerSession(HttpCase):
         # the no, and the screen it draws, is tools/ui_check.py's.
         self.assertIn('pan_mail_connected', info)
         self.assertTrue(info['pan_mail_connected'])
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestSessionFlagsCost(TransactionCase):
+    """The four session flags look the Pantalytics link up once.
+
+    Three of them are questions about that row, and `session_info` runs for
+    every internal user on every page load. Each question used to search
+    for the row itself -- four times a page, and `improve_config` a search
+    of the module table on top. `_pan_mail_session_flags` finds the row
+    once now and hands it to every question, and the answers are the ones
+    the questions give when asked on their own.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # The real gate (tests/connected.py answers yes without looking), on
+        # a connected instance that said yes to Help improve Mail Pro: the
+        # state in which every flag has the row to read.
+        self.env = self.env(context=dict(self.env.context, pan_mail_pro_real_gate=True))
+        self.env['pan.mail.domain'].set_domains(['company.test'])
+        self.env['pan.mail.provider'].create({
+            'provider': 'gmail', 'client_id': 'id', 'client_secret': 'secret',
+        })
+        self.env['pan.mail.license'].sudo().create({
+            'status': 'active',
+            'valid_until': fields.Datetime.now() + timedelta(days=14),
+            'improve': True,
+            'improve_host': 'https://mcp.pantalytics.test/i/7-abc',
+            'improve_token': 'phc_test',
+            'replay_sample': 0.5,
+        })
+        user = self.env['res.users'].create({
+            'name': 'Nora Employee',
+            'login': 'nora@company.test',
+            'email': 'nora@company.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        self.env = self.env(user=user)
+
+    def test_the_flags_cost_one_lookup_and_say_what_the_questions_say(self):
+        License = self.env['pan.mail.license']
+        expected = {
+            'pan_mail_connect_prompt': self.env.user._pan_mail_should_prompt_connect(),
+            'pan_mail_improve': License.improve_config(),
+            'pan_mail_inbox': self.env.user.has_group(
+                'pan_mail_pro.group_mail_mailbox_manager'),
+            'pan_mail_connected': License.sync_allowed(),
+        }
+        # The state the test is about: every question has a yes to find.
+        self.assertTrue(expected['pan_mail_connect_prompt'])
+        self.assertTrue(expected['pan_mail_connected'])
+        self.assertEqual(expected['pan_mail_improve']['token'], 'phc_test')
+
+        current = type(License).current
+        with patch.object(type(License), 'current', autospec=True,
+                          side_effect=current) as lookups:
+            flags = self.env['ir.http']._pan_mail_session_flags()
+
+        self.assertEqual(lookups.call_count, 1)
+        self.assertEqual(flags, expected)
+
+    def test_an_unconnected_instance_answers_no_the_same_way(self):
+        self.env['pan.mail.license'].sudo().search([]).unlink()
+        flags = self.env['ir.http']._pan_mail_session_flags()
+        self.assertFalse(flags['pan_mail_connect_prompt'])
+        self.assertFalse(flags['pan_mail_improve'])
+        self.assertFalse(flags['pan_mail_connected'])
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

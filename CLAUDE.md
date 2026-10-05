@@ -55,7 +55,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_matcher.py` | Thread matching: which Odoo record does this mail belong to |
 | `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |
 | `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
-| `models/pan_mail_error.py` | Why it did not work: one row per failure the module caught, under a code from `CODES`. `record()` writes on its own cursor so a rolled-back transaction keeps its row; `codes_since()` is what the heartbeat carries. Adding a failure to catch is adding a code to the list and one `record()` call at the catch site |
+| `models/pan_mail_error.py` | Why it did not work: one row per failure the module caught, under a code from `CODES`. `_record()` writes on its own cursor so a rolled-back transaction keeps its row; `codes_since()` is what the heartbeat carries. Adding a failure to catch is adding a code to the list and one `_record()` call at the catch site |
 | `models/pan_mail_domain.py` | Internal domain list + the fail-closed gate on incoming sync |
 | `models/pan_mail_provider.py` | The application registration of the provider this database runs on. One row, no toggle |
 | `models/pan_mail_setup.py` | Setup steps 2 to 4 and the phase (`setup` / `syncing`) they add up to. Step 1 is the account, below |
@@ -88,6 +88,9 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `tests/test_mail_matcher.py` | Unit tests for the matching ladder |
 | `tests/test_imap_provider.py` | IMAP/SMTP client (fake imaplib/smtplib, no sockets) |
 | `tests/test_imap_live.py` | The same client against a real IMAP/SMTP server (GreenMail in a container). Skips itself when `PAN_TEST_IMAP_HOST` is unset |
+
+The test files above are the ones worth knowing by name. ARCHITECTURE.md §12
+is the full inventory, every `tests/test_*.py` in its group.
 
 ## Provider Architecture
 
@@ -143,14 +146,15 @@ the seam; a new provider must satisfy the same assertions.
 ### Adding a gate (a reason to refuse incoming mail)
 
 1. Write `_gate_<name>(self, ctx)` on `pan_mail_fetcher`, returning `None` to
-   pass or `Skip(reason, detail, record=...)` to refuse
+   pass or `Skip(reason, detail, quiet=...)` to refuse
 2. Add its name to `_gate_rules()`, in the position its assumptions require
 3. Say in the docstring what it refuses **and why it sits where it sits** —
    order is the contract, and a gate that moves silently changes what the
    gates after it may assume
-4. Decide `record`: does a person want this one back? Only the sync-mode gate
-   does today. A gate that refuses on the contact's own objection must leave
-   no trace at all
+4. Decide `quiet`: is this refusal the system working, so often that INFO
+   would drown the log? Only the duplicate gate says yes today. Every refusal
+   is one log line and nothing else; there is no queue to file into, and a
+   gate that refuses on the contact's own objection must leave no other trace
 5. Document it in the ladder table in ARCHITECTURE.md §3
 
 Nowhere else. A `return False` inside `_process_message` is the thing this
@@ -503,6 +507,12 @@ to `now()`, which dates a historical import to the day it ran and destroys the
 timeline. The normalized message carries the provider's own date.
 
 ## Odoo Settings Page Layout (res.config.settings)
+
+The Mail Pro settings page itself does not use the two-column pattern below:
+the setup checklist is a single `col-12` column of `o_mailpro_step` blocks,
+capped at 46rem, on purpose, and DESIGN_SYSTEM.md (*The checklist is one
+column*) says why. The pattern here is for when two equal blocks of fields have to sit
+side by side.
 
 ### Two-column layout in settings - WHAT WORKS
 

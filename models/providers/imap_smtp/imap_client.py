@@ -113,7 +113,6 @@ class ImapSmtpClient(models.AbstractModel):
     # mailbox is therefore its own account, the way a Gmail one is, and every
     # mailbox type is serviceable as long as somebody enters its credentials.
     supports_shared_mailbox = False
-    supports_delegation = False
     supported_mailbox_types = ('personal', 'shared')
     # There is no consent screen: credentials are a server, a login and a
     # password, typed in once on the account.
@@ -421,6 +420,22 @@ class ImapSmtpClient(models.AbstractModel):
         return f'{folder}:{uidvalidity}:{uid}'
 
     @api.model
+    def _synthetic_message_id(self, folder, uidvalidity, uid):
+        """A stable Message-ID for a mail that carries none.
+
+        Dedup is on Message-ID and the fetch is inclusive on the cursor date,
+        so a mail without the header was fetched again every run and imported
+        again every time. The same triple `_message_ref` stores as the
+        provider id is stable for as long as the server keeps the UID, which
+        is exactly the lifetime the duplicate gate needs; the domain names
+        what minted it, so it can never collide with a real header.
+        """
+        if isinstance(uid, bytes):
+            uid = uid.decode()
+        safe_folder = re.sub(r'[^A-Za-z0-9._-]', '-', str(folder))
+        return f'<{safe_folder}.{uidvalidity}.{uid}@pan-mail-pro.imap>'
+
+    @api.model
     def _parse_message_ref(self, provider_message_id):
         try:
             folder, uidvalidity, uid = (provider_message_id or '').split(':')
@@ -495,17 +510,26 @@ class ImapSmtpClient(models.AbstractModel):
         A host that files its own copy gets one, not two: the folder is probed
         for the Message-ID first and only an absent copy is APPENDed. A failed
         probe counts as absent — a duplicate in Sent beats no copy at all.
+
+        A failed APPEND is recorded (`outgoing.sent_copy_failed`, a warning):
+        the send succeeded, but a Sent folder with holes is something the
+        admin wants to hear about once, with the folder that was tried, rather
+        than from a user who cannot find what Odoo sent.
         """
+        folder = account.imap_sent_folder or FOLDER_ROLES[FOLDER_SENT]
         try:
             with self._imap(account) as conn:
-                folder = (account.imap_sent_folder
-                          or self._detect_sent_folder(conn) or 'Sent')
+                if not account.imap_sent_folder:
+                    folder = self._detect_sent_folder(conn) or folder
                 if self._sent_copy_exists(conn, folder, msg['Message-ID']):
                     return
                 conn.append(self._quote(folder), '\\Seen', None, msg.as_bytes())
         except Exception as e:
-            _logger.warning('[IMAP] Could not file sent copy for %s: %s',
-                            account.email, self._error_text(e))
+            _logger.warning('[IMAP] Could not file sent copy for %s in folder %r: %s',
+                            account.email, folder, self._error_text(e))
+            self.env['pan.mail.error']._record(
+                'outgoing.sent_copy_failed', e, level='warning', account=account,
+            )
 
     @api.model
     def _sent_copy_exists(self, conn, folder, message_id):
@@ -669,9 +693,12 @@ class ImapSmtpClient(models.AbstractModel):
                     'content_id': content_id or None,
                 })
         except Exception as e:
-            # Contract: an attachment failure must not sink the message.
+            # Contract: an attachment failure must not sink the message. It is
+            # recorded, because the mail then reads as complete when it is not.
             _logger.warning('[IMAP] Could not fetch attachments for %s: %s',
                             provider_message_id, self._error_text(e))
+            self.env['pan.mail.error']._record(
+                'incoming.attachments_failed', e, level='warning', account=account)
             return []
         return attachments
 
@@ -751,7 +778,8 @@ class ImapSmtpClient(models.AbstractModel):
         headers = {name.lower(): str(value) for name, value in msg.items()}
         body_html, body_is_html = self._extract_body(msg)
         body_html, body_is_html = self.normalize_body(body_html, body_is_html)
-        message_id = headers.get('message-id')
+        message_id = (headers.get('message-id')
+                      or self._synthetic_message_id(folder, uidvalidity, item['uid']))
 
         return {
             'provider_message_id': self._message_ref(folder, uidvalidity, item['uid']),

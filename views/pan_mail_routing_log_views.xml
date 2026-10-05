@@ -102,7 +102,7 @@
                 <filter name="needs_review" string="Needs Review"
                         domain="[('needs_review', '=', True), ('reviewed', '=', False)]"/>
                 <separator/>
-                <filter name="outcome_threaded" string="Threaded"
+                <filter name="outcome_threaded" string="Linked"
                         domain="[('outcome', '=', 'threaded')]"/>
                 <filter name="outcome_created" string="New Record"
                         domain="[('outcome', '=', 'created')]"/>

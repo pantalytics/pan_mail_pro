@@ -50,7 +50,7 @@
                               invisible="x_license_state == 'connected'"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
-                                <span class="o_mailpro_step_name">1. Pantalytics Account</span>
+                                <span class="o_mailpro_step_name">1. Pantalytics account</span>
                                 <span class="o_mailpro_step_value" invisible="x_license_state != 'not_connected'">Not connected</span>
                                 <span class="o_mailpro_step_value" invisible="x_license_state != 'pending'">Waiting for approval</span>
                                 <span class="o_mailpro_step_value" invisible="x_license_state != 'connected'">
@@ -75,7 +75,7 @@
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_state != 'pending'">
                                 <button name="action_license_check" type="object"
-                                        string="Check Approval" class="btn-secondary"/>
+                                        string="Check approval" class="btn-secondary"/>
                                 <button name="action_license_disconnect" type="object"
                                         string="Cancel" class="btn-link"/>
                             </div>
@@ -134,7 +134,7 @@
                               invisible="x_setup_provider_done"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
-                                <span class="o_mailpro_step_name">2. Email Provider</span>
+                                <span class="o_mailpro_step_name">2. Email provider</span>
                                 <span class="o_mailpro_step_value" invisible="not x_setup_provider_done">
                                     <field name="x_active_provider_id" nolabel="1" readonly="1" options="{'no_open': True}"/>
                                 </span>
@@ -171,7 +171,7 @@
                               invisible="x_setup_domains_done"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
-                                <span class="o_mailpro_step_name">3. Internal Domains</span>
+                                <span class="o_mailpro_step_name">3. Internal domains</span>
                                 <span class="o_mailpro_step_value" invisible="not x_setup_domains_done">
                                     <field name="x_internal_domains_summary" nolabel="1" readonly="1"/>
                                 </span>
@@ -194,7 +194,7 @@
                             </div>
                         </div>
                         <button type="action" name="%(action_pan_mail_domain)d"
-                                icon="oi-arrow-right" title="Internal Domains"
+                                icon="oi-arrow-right" title="Internal domains"
                                 class="oe_link o_mailpro_step_edit"/>
                     </div>
 

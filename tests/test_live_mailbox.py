@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Your own mailbox, read live, and who else may read it.
 
-The design is in `docs/plans/personal-mailbox.md`. Nothing here is stored, so
+The design is in `docs/research/personal-mailbox.md`. Nothing here is stored, so
 there is no state to assert; what there is to assert is the access rule, which
 is the whole of why the feature is allowed to exist. Ownership is the check --
 not a group, not a menu -- so a colleague with every Mail Pro right there is

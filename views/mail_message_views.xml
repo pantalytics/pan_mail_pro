@@ -86,7 +86,7 @@
                      children only and has no `expand` attribute; wrapping
                      them, the pre-19 idiom, fails RelaxNG validation and
                      takes the whole view — and the install — down with it. -->
-                <filter name="group_document" string="Linked document"
+                <filter name="group_document" string="Linked record"
                         context="{'group_by': 'x_res_model_id'}"/>
                 <filter name="group_mailbox" string="Mailbox"
                         context="{'group_by': 'x_mailbox_id'}"/>

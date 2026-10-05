@@ -72,7 +72,7 @@ class PanMailRoutingLog(models.Model):
 
     outcome = fields.Selection(
         [
-            ('threaded', 'Threaded onto existing record'),
+            ('threaded', 'Linked to an existing record'),
             ('created', 'New record created'),
             ('fallback', 'Contact chatter (no match)'),
             ('sent_item', 'Sent item logged on contact'),

@@ -70,9 +70,13 @@ CODES = {
     'incoming.mailbox_failed': 'A sync run of a mailbox raised',
     'incoming.message_failed': 'One message could not be processed; the cursor stalls on it',
     'incoming.throttled': 'The provider asked the sync to wait',
+    'incoming.rule_failed': 'A matching rule raised and was skipped; the mail may have landed lower',
+    'incoming.index_failed': 'The Message-ID or thread index could not be written; later replies may not thread',
+    'incoming.attachments_failed': 'The attachments of a message could not be fetched; the mail was imported without them',
     'outgoing.no_route': 'No mailbox could send this mail',
     'outgoing.send_failed': 'The provider refused the send or the send raised',
     'outgoing.throttled': 'The provider asked the send to wait',
+    'outgoing.sent_copy_failed': 'The mail went out but its copy could not be filed in the Sent folder',
     'oauth.callback_failed': 'The consent round came back and could not be stored',
     'oauth.token_revoked': 'A refresh token was refused for good; the account must reconnect',
     'license.heartbeat_failed': 'The heartbeat to Pantalytics raised or was refused',
@@ -111,7 +115,7 @@ class PanMailError(models.Model):
     # ------------------------------------------------------------------ #
 
     @api.model
-    def record(self, code, error=None, *, level='error', mailbox=None, account=None,
+    def _record(self, code, error=None, *, level='error', mailbox=None, account=None,
                detail=None):
         """One row for one failure, committed on its own, never raising.
 

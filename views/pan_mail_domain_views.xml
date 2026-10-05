@@ -6,7 +6,7 @@
         <field name="name">pan.mail.domain.list</field>
         <field name="model">pan.mail.domain</field>
         <field name="arch" type="xml">
-            <list string="Internal Domains" editable="bottom">
+            <list string="Internal domains" editable="bottom">
                 <field name="name" placeholder="company.com"/>
             </list>
         </field>

@@ -36,6 +36,28 @@ READ_STATE_TTL = 60
 # five minutes is still inside this window.
 STALE_AFTER_MINUTES = 15
 
+# The placeholder outgoing mail server the SMTP takeover puts in front of
+# Odoo's own. Its record ships in `data/mail_server_data.xml`
+# (`pan_mail_pro.mail_server_disabled`), and that file is the source of these
+# values: this is the copy `_activate_smtp_takeover` creates the record from
+# when an administrator has deleted it, and `tests/test_onboarding.py` reads
+# the data file to assert the two agree. A takeover that deactivates every
+# server and then finds no placeholder to activate leaves zero active servers,
+# which is not "no SMTP": anything still on Odoo's own path then falls through
+# to the `smtp_server` in odoo.conf, silently.
+SMTP_PLACEHOLDER_XMLID = 'pan_mail_pro.mail_server_disabled'
+SMTP_PLACEHOLDER_VALUES = {
+    'name': '[Mail Pro] SMTP Disabled',
+    'smtp_host': 'invalid.mail-pro.disabled',
+    'smtp_port': 25,
+    'smtp_encryption': 'none',
+    'smtp_authentication': 'login',
+    'smtp_user': 'disabled-by-mail-pro',
+    'smtp_pass': 'disabled',
+    'sequence': 0,
+    'active': False,
+}
+
 
 
 class PanMailMailbox(models.Model):
@@ -978,13 +1000,13 @@ class PanMailMailbox(models.Model):
             return
 
         MailServer = self.env['ir.mail_server'].sudo().with_context(active_test=False)
-        placeholder = self.env.ref(
-            'pan_mail_pro.mail_server_disabled', raise_if_not_found=False
-        )
+        placeholder = self.env.ref(SMTP_PLACEHOLDER_XMLID, raise_if_not_found=False)
+        if not placeholder:
+            # Before the others go: the takeover is "every door but this one
+            # shut", and with no placeholder it would be every door shut.
+            placeholder = self._recreate_smtp_placeholder()
 
-        others = MailServer.search([('active', '=', True)])
-        if placeholder:
-            others -= placeholder
+        others = MailServer.search([('active', '=', True)]) - placeholder
         # Remembered, empty or not, so an uninstall can give exactly these
         # back and not every server somebody switched off on purpose.
         IrConfigParameter.set_param(
@@ -998,12 +1020,35 @@ class PanMailMailbox(models.Model):
                     f'[Mail Pro] Disabled SMTP server{extra_info}: {server.name} ({server.smtp_host})'
                 )
 
-        if placeholder and not placeholder.active:
+        if not placeholder.active:
             placeholder.write({'active': True})
 
         IrConfigParameter.set_param('base_setup.default_external_email_server', 'False')
         IrConfigParameter.set_param('pan_mail_pro.smtp_takeover_done', 'True')
         _logger.info('[Mail Pro] SMTP takeover active — all email routes through the provider API')
+
+    @api.model
+    def _recreate_smtp_placeholder(self):
+        """Put the placeholder server back, under its own xml id.
+
+        An administrator can delete the data record, and the takeover used to
+        shrug: it deactivated every other server, recorded itself as done, and
+        left the database with no active `ir.mail_server` at all, which Odoo
+        reads as "use the smtp_server in odoo.conf". Recreated from the same
+        values the data file ships (`SMTP_PLACEHOLDER_VALUES`), and under the
+        same xml id, so the uninstall hook retires it like the original. Not
+        a ledger row: nothing failed, and the log line says what was done.
+        """
+        placeholder = self.env['ir.mail_server'].sudo().create(dict(SMTP_PLACEHOLDER_VALUES))
+        self.env['ir.model.data'].sudo()._update_xmlids([{
+            'xml_id': SMTP_PLACEHOLDER_XMLID, 'record': placeholder, 'noupdate': True,
+        }])
+        _logger.warning(
+            '[Mail Pro] The placeholder outgoing mail server (%s) was missing and has '
+            'been recreated, so the SMTP takeover leaves one active server and not none',
+            SMTP_PLACEHOLDER_XMLID,
+        )
+        return placeholder
 
     def write(self, vals):
         """Reset both folder cursors when sync_start_date moves earlier."""

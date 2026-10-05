@@ -99,10 +99,10 @@
                         client on a phone draws compose as an icon.
                     -->
                     <button type="button" class="btn btn-primary btn-sm o_mailpro_new"
-                            aria-label="New Email" title="New Email"
+                            aria-label="New email" title="New email"
                             t-on-click="() => this.newEmail()">
                         <i class="fa fa-pencil-square-o" aria-hidden="true"/>
-                        <span class="o_mailpro_new_label ms-1">New Email</span>
+                        <span class="o_mailpro_new_label ms-1">New email</span>
                     </button>
                 </div>
                 <div class="o_mailpro_search_zone flex-grow-1 d-flex justify-content-center">
@@ -317,7 +317,10 @@
                     -->
                     <div class="o_mailpro_conversation_list_head d-flex align-items-center justify-content-between gap-2">
                         <div class="d-flex align-items-center gap-1 min-w-0">
-                            <span class="o_mailpro_conversation_list_title text-truncate" t-esc="folderLabel"/>
+                            <!-- A heading, and focusable by script only:
+                                 the step back on a phone lands here, since
+                                 the arrow pressed leaves with the pane. -->
+                            <h2 class="o_mailpro_conversation_list_title text-truncate" tabindex="-1" t-esc="folderLabel"/>
                             <!-- Arrived from a record's chatter: the list is
                                  that record's mail, and this is the way back
                                  to the whole mailbox. Escapable, because a
@@ -522,6 +525,7 @@
                             </div>
                             <div t-if="state.hasMore" class="o_mailpro_more">
                                 <button type="button" class="btn btn-link btn-sm"
+                                        t-att-disabled="state.loadingMore"
                                         t-on-click="() => this.loadMore()">Load more</button>
                             </div>
                         </t>
@@ -549,7 +553,10 @@
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <t t-call="pan_mail_pro.BackToList"/>
                                 <div class="min-w-0 flex-grow-1">
-                                    <h2 class="o_mailpro_conversation_title">New email</h2>
+                                    <!-- tabindex -1: where the keyboard is
+                                         put when Send, Discard or Save
+                                         draft leaves with the composer. -->
+                                    <h2 class="o_mailpro_conversation_title" tabindex="-1">New email</h2>
                                     <div class="o_mailpro_conversation_sub">
                                         <span t-esc="state.compose and state.compose.label"/>
                                     </div>
@@ -557,7 +564,8 @@
                                 <t t-call="pan_mail_pro.ComposerButtons"/>
                             </div>
                         </div>
-                        <div class="o_mailpro_composer" role="region" aria-label="New email">
+                        <div class="o_mailpro_composer" role="region" aria-label="New email"
+                             t-att-aria-busy="composer.state.sending ? 'true' : undefined">
                             <ComposerForm t-props="composer.formProps"/>
                         </div>
                     </t>
@@ -566,7 +574,7 @@
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <t t-call="pan_mail_pro.BackToList"/>
                                 <div class="min-w-0 flex-grow-1">
-                                    <h2 class="o_mailpro_conversation_title" t-esc="state.selected.subject"/>
+                                    <h2 class="o_mailpro_conversation_title" tabindex="-1" t-esc="state.selected.subject"/>
                                     <div class="o_mailpro_conversation_sub">
                                         <span t-esc="state.selected.correspondent"/>
                                         <!--
@@ -611,7 +619,6 @@
                                             class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
                                             t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
                                             t-att-title="readToggleLabel"
-                                            t-att-aria-pressed="selectedUnread ? 'true' : 'false'"
                                             t-on-click="() => this.toggleRead()">
                                         <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
                                            aria-hidden="true"/>
@@ -808,7 +815,8 @@
                         -->
                         <div t-if="composer.state.open" class="o_mailpro_composing">
                             <div class="o_mailpro_composer"
-                                 role="region" t-att-aria-label="composer.state.mode === 'note' ? 'Internal note' : 'Reply'">
+                                 role="region" t-att-aria-label="composer.state.mode === 'note' ? 'Internal note' : 'Reply'"
+                                 t-att-aria-busy="composer.state.sending ? 'true' : undefined">
                                 <ComposerForm t-props="composer.formProps"/>
                             </div>
                             <t t-call="pan_mail_pro.ConversationMessages"/>
@@ -837,7 +845,7 @@
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <t t-call="pan_mail_pro.BackToList"/>
                                 <div class="min-w-0 flex-grow-1">
-                                    <h2 class="o_mailpro_conversation_title" t-esc="state.live.subject"/>
+                                    <h2 class="o_mailpro_conversation_title" tabindex="-1" t-esc="state.live.subject"/>
                                     <div class="o_mailpro_conversation_sub">
                                         <span t-esc="state.live.correspondent"/>
                                         <span t-if="state.live.date">
@@ -1085,8 +1093,8 @@
             <FileUploader t-if="selectedRecord" multiUpload="true"
                           onUploaded.bind="onFileUploaded">
                 <t t-set-slot="toggler">
-                    <button class="btn btn-link" type="button">
-                        <i class="fa fa-plus-square"/>
+                    <button class="btn btn-secondary btn-sm" type="button">
+                        <i class="fa fa-paperclip me-1" aria-hidden="true"/>
                         Attach files
                     </button>
                 </t>
@@ -1109,7 +1117,10 @@
         <div class="o_mailpro_activities">
             <div t-if="selectedRecord" class="o_mailpro_activities_head">
                 <button type="button" class="btn btn-secondary btn-sm"
-                        t-on-click="() => this.scheduleActivity()">Schedule</button>
+                        t-on-click="() => this.scheduleActivity()">
+                    <i class="fa fa-clock-o me-1" aria-hidden="true"/>
+                    Schedule activity
+                </button>
             </div>
             <t t-if="state.conversation.activities.length">
                 <t t-foreach="activities" t-as="activity" t-key="activity.id">
@@ -1202,7 +1213,7 @@
                 is the one case where losing it is the point.
             -->
             <button type="button" class="btn btn-link btn-sm"
-                    t-on-click="() => composer.state.draftId ? this.leaveComposer() : composer.close()">
+                    t-on-click="() => this.discardComposer()">
                 <t t-if="composer.state.draftId">Close</t>
                 <t t-else="">Discard</t>
             </button>
@@ -1215,10 +1226,20 @@
             <button t-if="canSaveDraft" type="button" class="btn btn-secondary btn-sm"
                     t-att-disabled="composer.state.saving or composer.state.sending"
                     t-on-click="() => composer.saveDraft()">Save draft</button>
+            <!--
+                While it goes out the button says so. A disabled button
+                alone is a screen that went quiet for the length of a
+                send, and a screen reader hears nothing of a disabled
+                attribute changing.
+            -->
             <button type="button" class="btn btn-primary btn-sm"
                     t-att-disabled="composer.state.sending"
                     t-on-click="() => composer.send()">
-                <t t-if="composer.state.mode === 'note'">Log</t>
+                <t t-if="composer.state.sending">
+                    <t t-if="composer.state.mode === 'note'">Logging…</t>
+                    <t t-else="">Sending…</t>
+                </t>
+                <t t-elif="composer.state.mode === 'note'">Log</t>
                 <t t-else="">Send</t>
             </button>
         </div>
@@ -1248,7 +1269,7 @@
                      t-on-dblclick="() => this.props.onToggleZoom()">
                     <div class="min-w-0">
                         <div class="o_mailpro_label" t-esc="props.record.model_label"/>
-                        <h2 class="o_mailpro_odoo_record_name text-truncate" t-esc="props.record.name"/>
+                        <h2 class="o_mailpro_odoo_record_name text-truncate" tabindex="-1" t-esc="props.record.name"/>
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-shrink-0">
                         <!--
@@ -1286,7 +1307,7 @@
                 <h3 class="o_mailpro_empty_title" t-esc="props.record.name"/>
                 <p class="o_mailpro_empty_text">This record could not be shown here.</p>
                 <button type="button" class="btn btn-secondary btn-sm"
-                        t-on-click="() => this.openRecord()">Open</button>
+                        t-on-click="() => this.openRecord()">Open record</button>
             </div>
         </div>
     </t>

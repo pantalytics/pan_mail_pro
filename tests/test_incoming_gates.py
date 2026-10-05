@@ -25,7 +25,7 @@ from unittest.mock import patch
 from odoo.tests import tagged
 
 from ..models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
-from ..models.pan_mail_fetcher import Skip
+from ..models.pan_mail_fetcher import Skip, odoo_db_marker
 from .common import MailProTestCase
 
 CUSTOMER = 'customer@example.com'
@@ -281,7 +281,10 @@ class TestIncomingGates(MailProTestCase):
 
     def test_the_ladder_stops_at_the_first_refusal(self):
         """Gate 2 refuses, so gate 3 never resolves a counterpart."""
-        ctx = self._ctx(headers={'x-odoo-model': 'crm.lead'})
+        ctx = self._ctx(headers={
+            'x-odoo-model': 'crm.lead',
+            'x-odoo-db': odoo_db_marker(self.env),
+        })
 
         skip = self.processor._refuse(ctx)
 
@@ -536,3 +539,170 @@ class TestSentEmailOnlyEntersAsAReply(MailProTestCase):
         ))
 
         self.assertIsNone(skip)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestTheLoopGuardKnowsItsOwnDatabase(MailProTestCase):
+    """X-Odoo-* headers say "an Odoo sent this". `X-Odoo-Db` says which one.
+
+    Every Odoo running this module stamps the same four headers, and every
+    Odoo numbers its rows from one. A customer who also runs Mail Pro wrote to
+    us, the loop guard took their mail for our own sent copy, refused it, and
+    first re-indexed *their* message and record ids onto whichever of our rows
+    carried the same numbers -- so the next reply in that conversation matched
+    at 1.0 onto a record that had nothing to do with it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.processor = self.env['pan.mail.fetcher']
+        self.mailbox = self.personal_mailbox
+        self.mailbox.write({'sync_level': 'everyone'})
+        # One of our own rows, which a foreign database's ids may name by
+        # coincidence: the message they would have been re-indexed onto.
+        self.local_message = self.external_partner.with_context(
+            mail_create_nosubscribe=True, mail_notrack=True,
+        ).message_post(body='<p>ours</p>', message_type='email',
+                       subtype_xmlid='mail.mt_comment')
+        self.own = odoo_db_marker(self.env)
+        self.foreign = 'f' * len(self.own)
+        self.refs_before = self._refs_on(self.local_message)
+
+    def _refs_on(self, message):
+        return self.env['pan.mail.message.ref'].sudo().search_count([
+            ('mail_message_id', '=', message.id),
+        ])
+
+    def _ctx(self, folder=FOLDER_INBOX, marker=None):
+        """An inbound mail wearing X-Odoo-* headers that name our own rows."""
+        headers = {
+            'x-odoo-model': 'res.partner',
+            'x-odoo-record-id': str(self.external_partner.id),
+            'x-odoo-message-id': str(self.local_message.id),
+        }
+        if marker:
+            headers['x-odoo-db'] = marker
+        full_message = {
+            'provider_message_id': 'X-DB-1',
+            'message_id': '<from-another-odoo@example.com>',
+            'thread_id': 'CONV-FOREIGN',
+            'date': '2026-02-01 10:30:00',
+            'subject': 'Question about my order',
+            'from': {'email': CUSTOMER, 'name': 'External Customer'},
+            'to': [{'email': self.mailbox.email, 'name': 'Sales'}],
+            'cc': [],
+            'headers': headers,
+            'has_attachments': False,
+            'body_html': '<p>Sent from our Odoo to yours</p>',
+        }
+        return {
+            'mailbox': self.mailbox,
+            'folder': folder,
+            'message': {'message_id': full_message['message_id'],
+                        'provider_message_id': 'X-DB-1'},
+            'full_message': full_message,
+            'internet_message_id': full_message['message_id'],
+            'is_outgoing': folder == FOLDER_SENT,
+            'force_import': False,
+        }
+
+    def _nothing_was_reindexed(self):
+        self.assertEqual(
+            self._refs_on(self.local_message), self.refs_before,
+            "a foreign database's X-Odoo-Message-Id must not put a ref on "
+            "whichever of our messages carries that number",
+        )
+        self.assertFalse(
+            self.env['pan.mail.thread.link'].sudo().search_count([
+                ('mailbox_id', '=', self.mailbox.id),
+                ('thread_id', '=', 'CONV-FOREIGN'),
+            ]),
+            "a foreign database's record id must not link its thread to one "
+            "of our records",
+        )
+
+    # --- the marker itself ---------------------------------------------------
+    def test_the_marker_is_stable_and_names_nothing(self):
+        """Thirty-two hex characters, the same on every call, and not the uuid
+        itself: identity, not a secret, and not a leak of one either."""
+        uuid = self.env['ir.config_parameter'].sudo().get_param('database.uuid')
+        self.assertTrue(uuid, "the fixture database has no database.uuid")
+        self.assertEqual(len(self.own), 32)
+        self.assertTrue(all(c in '0123456789abcdef' for c in self.own))
+        self.assertEqual(self.own, odoo_db_marker(self.env))
+        self.assertNotIn(uuid, self.own)
+        self.assertNotIn(self.own, uuid)
+
+    def test_another_database_gets_another_marker(self):
+        self.env['ir.config_parameter'].sudo().set_param(
+            'database.uuid', '00000000-0000-4000-8000-000000000000')
+        self.assertNotEqual(odoo_db_marker(self.env), self.own)
+
+    # --- the gate --------------------------------------------------------------
+    def test_our_own_marker_is_refused_as_before(self):
+        skip = self.processor._refuse(self._ctx(marker=self.own))
+
+        self.assertEqual(skip.reason, 'odoo_originated')
+
+    def test_a_foreign_marker_is_ordinary_incoming_mail(self):
+        """The case that was refused and re-indexed: another Mail Pro writing
+        to us. It passes the whole ladder, because nothing else about it is
+        objectionable, and it touches none of our indexes on the way."""
+        skip = self.processor._refuse(self._ctx(marker=self.foreign))
+
+        self.assertIsNone(skip, skip and skip.reason)
+        self._nothing_was_reindexed()
+
+    def test_a_foreign_marker_in_the_sent_folder_is_not_ours_either(self):
+        ctx = self._ctx(folder=FOLDER_SENT, marker=self.foreign)
+
+        self.assertIsNone(self.processor._gate_odoo_originated(ctx))
+        self._nothing_was_reindexed()
+
+    def test_no_marker_in_the_inbox_is_somebody_else_s_odoo(self):
+        """A Mail Pro that has not stamped a marker yet is still another Odoo
+        when its mail lands in our inbox. The only pre-marker mail of our own
+        that arrives there came back by Cc, and the duplicate gate refuses
+        that by its Message-ID, one rung down."""
+        skip = self.processor._refuse(self._ctx())
+
+        self.assertIsNone(skip, skip and skip.reason)
+        self._nothing_was_reindexed()
+
+    def test_no_marker_in_the_sent_folder_is_still_our_own_copy(self):
+        """The upgrade window. The Sent folder holds what this account sent,
+        so our headers there with no marker are a mail this database sent
+        before it stamped one -- and the re-index that reads the provider's
+        real handles off that copy must still run on it."""
+        skip = self.processor._gate_odoo_originated(self._ctx(folder=FOLDER_SENT))
+
+        self.assertEqual(skip.reason, 'odoo_originated')
+        self.assertTrue(
+            self.env['pan.mail.thread.link'].sudo().search_count([
+                ('mailbox_id', '=', self.mailbox.id),
+                ('thread_id', '=', 'CONV-FOREIGN'),
+            ]),
+            "the pre-marker sent copy is still re-indexed",
+        )
+
+    def test_a_marker_of_our_own_in_the_sent_folder_still_reindexes(self):
+        skip = self.processor._gate_odoo_originated(
+            self._ctx(folder=FOLDER_SENT, marker=self.own))
+
+        self.assertEqual(skip.reason, 'odoo_originated')
+        self.assertEqual(
+            self.env['pan.mail.matcher']._resolve_message_id(
+                '<from-another-odoo@example.com>'),
+            self.local_message,
+            "the wire Message-ID of our own copy is indexed onto its message",
+        )
+
+    def test_the_marker_is_read_through_the_contract(self):
+        """A header the allow-list drops is a marker nobody can read: every
+        client would hand back X-Odoo-Model without the one header that says
+        whose it is, and the gate would refuse all of it as foreign."""
+        client = self.env['mail.provider.client']
+        kept = client.normalize_headers({
+            'X-Odoo-Model': 'res.partner', 'X-Odoo-Db': self.own,
+        })
+        self.assertEqual(kept.get('x-odoo-db'), self.own)

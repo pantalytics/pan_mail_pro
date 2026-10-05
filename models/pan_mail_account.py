@@ -2,7 +2,7 @@
 import logging
 
 from odoo import fields, models, api, _
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from . import encryption_utils
 from .mail_provider_client import PROVIDER_SELECTION, get_provider_client
@@ -293,6 +293,68 @@ class PanMailAccount(models.Model):
         if not License.sync_allowed():
             raise UserError(License.not_allowed_error())
         return super().create(vals_list)
+
+    # The two fields that say whose credentials these are.
+    IDENTITY_FIELDS = ('user_id', 'email')
+
+    def write(self, vals):
+        """Whose account this is, is not a mailbox manager's to change.
+
+        A manager writes every account (`rule_mail_account_manager_all`, and
+        the manager row in the ACL), and the only guard on the row is the
+        `groups=` on the credential columns. `user_id` and `email` carry no
+        such guard, because the account form has to show them -- but moving
+        either *is* taking the credentials. A manager who writes a colleague's
+        `user_id` to themselves, then makes the colleague's mailbox their own,
+        has `_compute_mailbox_type` call it personal and `_is_sendable_by` let
+        them send with the colleague's token. So once an account names a
+        person or an address, changing either is refused to anyone below
+        `base.group_system`, as an AccessError and not as a hidden field: the
+        row stays readable and the rest of it stays theirs to configure.
+
+        The superuser is exempt, the way it is from every guard in the module.
+        That covers the one legitimate path that moves `email`: the OAuth
+        callback through `_store_tokens`, which runs sudo and rewrites the
+        address of a *disconnected* account only. Creating is untouched: a
+        manager's own account and a service account start out with the right
+        values on them, and a row that never had them has nothing to take.
+        """
+        moved = [name for name in self.IDENTITY_FIELDS if name in vals]
+        if moved and not self.env.su and not self.env.user.has_group('base.group_system'):
+            for account in self:
+                for name in moved:
+                    if not account._identity_changes(name, vals[name]):
+                        # The value it already holds, or the same address in
+                        # another case: not a change, and not a rewrite either.
+                        # The stored spelling is what `_service_account` and
+                        # the mailbox-type compute match on, exactly.
+                        if name == 'email' and len(self) == 1:
+                            vals = {k: v for k, v in vals.items() if k != 'email'}
+                        continue
+                    _logger.warning(
+                        '[Mail Pro] User %s (id=%s) tried to change %s of account %s (user %s)',
+                        self.env.user.login, self.env.user.id, name,
+                        account.email, account.user_id.login or '-',
+                    )
+                    raise AccessError(_(
+                        'Only an administrator may change the user or the address '
+                        'of an email account. %(email)s stays with whoever connected it.',
+                        email=account.email,
+                    ))
+        return super().write(vals)
+
+    def _identity_changes(self, name, value):
+        """Does writing `value` to `name` point this row at somebody else?
+
+        Only a row that already names a person or an address has an identity
+        to take, and writing the value it already holds is not a change.
+        """
+        self.ensure_one()
+        if not (self.user_id or self.email):
+            return False
+        if name == 'user_id':
+            return (value or False) != (self.user_id.id or False)
+        return (value or '').strip().lower() != (self.email or '').strip().lower()
 
     @api.model
     def _for_users(self, users, provider):

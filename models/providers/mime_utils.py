@@ -97,6 +97,12 @@ def build_message(mail_record, from_email, to_addrs, cc_addrs, message_id,
     msg['X-Odoo-Mail-Id'] = str(mail_record.id)
     if mail_record.mail_message_id:
         msg['X-Odoo-Message-Id'] = str(mail_record.mail_message_id.id)
+    # Which database stamped the four above. Without it the loop guard would
+    # take another Mail Pro customer's mail for our own sent copy; see
+    # `pan_mail_fetcher.odoo_db_marker`.
+    db_marker = mail_record.env['pan.mail.fetcher']._odoo_db_marker()
+    if db_marker:
+        msg['X-Odoo-Db'] = db_marker
 
     body_html = mail_record.body_html or mail_record.body or ''
     # What Odoo's own SMTP path does before sending: a pasted image is

@@ -11,7 +11,7 @@ Before enabling incoming sync:
 
 ## Enabling Sync
 
-1. Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow on step 3 of the checklist)
+1. Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow on step 4 of the checklist)
 2. Open a mailbox
 3. Replies to email sent from Odoo always land on the record they answer, with
    no setting at all. On the **Sync Settings** tab, pick a **Sync level** for

@@ -29,12 +29,14 @@ https://github.com/user-attachments/assets/91bb494e-696d-4ede-85b5-4ac5cc826e5c
 
 **Incoming Email:**
 - Automatic sync from every configured mailbox (1 min interval)
-- 2-way sync: Inbox and Sent Items
+- Replies to mail Odoo sent always land on their record, with no setting
+- One **sync level** per mailbox, each keeping strictly more than the one
+  above: replies only; also your own replies, read back from the Sent folder;
+  also new email from existing contacts; also new email from everyone, who
+  then become contacts
 - Reply threading: our own headers, then the References chain, then the
   provider's thread id, then subject and participants as a suggestion
 - Historical email sync with configurable start date
-- Known partners filter: only sync email from existing contacts, or from
-  anyone, creating contacts as needed
 - Per-contact block list to exclude specific senders
 - Route a mailbox to a team alias so new email creates a lead or a ticket
   instead of landing on the sender's contact
@@ -131,7 +133,7 @@ filed there, so it shows up in your own mail client too.
    your **Default mailbox**
 
 An admin can also send everybody the invitation with **Send Mail Pro Invite**
-on the Users list (Settings → Mail Pro → Users); the link in it drops each user
+on the Users list (Settings → Users & Companies → Users); the link in it drops each user
 straight on the consent screen.
 
 Until you connect, a banner sits above every screen with a button that goes
@@ -147,7 +149,7 @@ email composer shows a warning banner saying so.
 
 ## Mailbox Configuration
 
-Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow on step 3 of the checklist)
+Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow on step 4 of the checklist)
 
 ### Mailbox Types
 
@@ -201,12 +203,16 @@ the Sent Items of your mail app like any other mail.
 - There is no way to switch this off, globally or per mailbox. A mail with any
   outside recipient is correspondence and is still logged, so "internal" means
   every party is one of your own domains
+- The one exception is by hand: the owner of a personal mailbox can open it
+  live in the Inbox and press **Add to Odoo** on one internal mail. It then
+  lands where any mail lands, usually on the sender's contact, and is readable
+  by whoever can read that record. The sync itself never does this
 - Emails sync automatically every minute
 - Set a sync start date to import historical emails (default: sync from now)
 
 **Per-contact block list:**
-- Go to a contact's form view → Email Sync tab
-- Enable "Block Email Sync" to exclude that contact from all mailbox sync
+- Go to a contact's form view → **Mail Pro** tab
+- Tick **Block Sync** to exclude that contact from all mailbox sync
 
 ---
 
@@ -305,10 +311,10 @@ docker-compose run --rm odoo python -m odoo -c /etc/odoo/odoo.conf \
 docker-compose start odoo
 ```
 
-41 test files cover five areas: the provider contract, each provider's
-wire behaviour, the incoming pipeline (fetch → filter → match → post),
-sending, threading, the composer and onboarding, and the migration scripts.
-See ARCHITECTURE.md §12.
+The suite covers the provider contract, each provider's wire behaviour, the
+incoming pipeline (fetch → filter → match → post), sending and threading, the
+composer and the screens, the Inbox, the routes, and the migration scripts.
+ARCHITECTURE.md §12 lists every file.
 
 ---
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """End-to-end cover for the incoming sync pipeline.
 
-test_incoming_mail.py covers the helpers (_is_duplicate, _find_partner,
+test_incoming_mail.py covers the helpers (_duplicate_of, _find_partner,
 _is_internal_domain, _route_email_via_alias) but never drives _process_mailbox,
 so the orchestration itself - fetch, normalize, route, post - had no coverage at
 all. This file fills that gap.
@@ -12,9 +12,13 @@ refactor, so the same tests pass before and after and can prove the refactor
 preserved behaviour rather than merely not crashing.
 """
 import base64
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
+from odoo import fields
 from odoo.tests import tagged
+
+from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import FETCH_BATCH_SIZE, odoo_db_marker
 
 from .common import MailProTestCase
 
@@ -88,6 +92,9 @@ class TestIncomingSync(MailProTestCase):
             'last_sync_date': '2026-01-01 00:00:00',
         })
         self.fetched_urls = []
+        # The same calls with their query string, for the tests that ask what
+        # the listing was told rather than only which folder it hit.
+        self.fetched_requests = []
 
     # ------------------------------------------------------------------ #
     # Graph fakes
@@ -137,6 +144,7 @@ class TestIncomingSync(MailProTestCase):
 
         def fake_get(url, headers=None, params=None, timeout=None, **kwargs):
             self.fetched_urls.append(url)
+            self.fetched_requests.append((url, dict(params or {})))
             if '/mailFolders/Inbox/messages' in url:
                 return self._response({'value': inbox_value})
             if '/mailFolders/SentItems/messages' in url:
@@ -153,12 +161,14 @@ class TestIncomingSync(MailProTestCase):
         )
 
     def _sync(self, **mock_kwargs):
+        """Run one sync of the mailbox; hands back what `_process_mailbox`
+        returned (None, or why the cursor is held)."""
         processor = self.env['pan.mail.fetcher']
         with patch.object(
             type(self.env['microsoft.graph.client']), 'get_valid_token',
             autospec=True, return_value='fake-bearer-token',
         ), self._mock_graph_get(**mock_kwargs):
-            processor._process_mailbox(self.mailbox)
+            return processor._process_mailbox(self.mailbox)
 
     def _messages_on(self, partner):
         return self.env['mail.message'].search([
@@ -166,6 +176,24 @@ class TestIncomingSync(MailProTestCase):
             ('res_id', '=', partner.id),
             ('message_type', '=', 'email'),
         ])
+
+    def _inbox_listings(self):
+        """The query parameters of every listing of the Inbox folder, in order."""
+        return [params for url, params in self.fetched_requests
+                if '/mailFolders/Inbox/messages' in url]
+
+    def _lead_alias(self, defaults):
+        """An alias on crm.lead, as a sales team's alias is, with the given
+        `alias_defaults`. `crm` is a dependency, so unlike the Helpdesk class in
+        test_incoming_mail.py this runs on the community image CI uses."""
+        return self.env['mail.alias'].create({
+            'alias_name': 'leads-fixture',
+            'alias_model_id': self.env['ir.model']._get_id('crm.lead'),
+            'alias_defaults': defaults,
+        })
+
+    def _lead_for(self, partner):
+        return self.env['crm.lead'].search([('partner_id', '=', partner.id)])
 
     # ------------------------------------------------------------------ #
     # Tests
@@ -299,6 +327,7 @@ class TestIncomingSync(MailProTestCase):
         full = self._full_message(internetMessageHeaders=[
             {'name': 'Message-ID', 'value': INTERNET_ID},
             {'name': 'X-Odoo-Model', 'value': 'res.partner'},
+            {'name': 'X-Odoo-Db', 'value': odoo_db_marker(self.env)},
         ])
         self._sync(full=full)
 
@@ -423,3 +452,138 @@ class TestIncomingSync(MailProTestCase):
             [url for url in self.fetched_urls if url.endswith('/attachments')],
             "a duplicate must not trigger an attachment fetch",
         )
+
+    # ------------------------------------------------------------------ #
+    # The first sync
+    # ------------------------------------------------------------------ #
+    def test_first_sync_without_start_date_only_probes_the_connection(self):
+        """A mailbox that has never synced and names no start date is not
+        read: the first run asks the provider for one message to prove the
+        credentials work, imports nothing, and plants the cursor at now, so
+        the next run starts from there. Without the probe a wrong tenant or
+        a revoked consent would surface a minute later, on a run that also
+        had mail to lose."""
+        self.mailbox.write({'last_sync_date': False, 'sync_start_date': False})
+        before = fields.Datetime.now()
+
+        self._sync()
+
+        listings = self._inbox_listings()
+        self.assertEqual(len(listings), 1, "exactly one listing: the probe")
+        self.assertEqual(listings[0]['$top'], 1, "the probe asks for one message")
+        self.assertNotIn('$filter', listings[0],
+                         "there is no cursor yet, so nothing to filter on")
+        self.assertFalse(
+            [url for url in self.fetched_urls if f'/messages/{MSG_ID}' in url],
+            "the probe must not fetch the message it listed")
+        self.assertFalse(
+            [url for url in self.fetched_urls if '/SentItems/' in url],
+            "the first run stops after the probe; no folder is read")
+        self.assertFalse(self._messages_on(self.external_partner),
+                         "nothing is imported on the probe run")
+        self.assertTrue(self.mailbox.last_sync_date)
+        self.assertGreaterEqual(self.mailbox.last_sync_date, before)
+        self.assertLessEqual(self.mailbox.last_sync_date - before, timedelta(minutes=1),
+                             "the cursor is planted at now, not at the message")
+
+    def test_first_sync_with_start_date_imports_from_that_date(self):
+        """With a start date the first run is a real one: the listing is asked
+        from that date, with the full batch size rather than the probe's one,
+        the mail behind it is imported, and the cursor then advances past the
+        start date to the newest message read."""
+        self.mailbox.write({'last_sync_date': False,
+                            'sync_start_date': '2026-01-15 00:00:00'})
+
+        self._sync()
+
+        listings = self._inbox_listings()
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(listings[0]['$filter'],
+                         'receivedDateTime gt 2026-01-15T00:00:00Z',
+                         "the cursor the listing reads is the start date")
+        self.assertEqual(listings[0]['$top'], FETCH_BATCH_SIZE,
+                         "a historical sync reads a batch, not a probe")
+        self.assertEqual(len(self._messages_on(self.external_partner)), 1,
+                         "the mail behind the start date is imported")
+        self.assertEqual(str(self.mailbox.last_sync_date), '2026-02-01 10:30:00',
+                         "the cursor moves on from the start date to the newest "
+                         "message read")
+
+    # ------------------------------------------------------------------ #
+    # Alias routing, on a model CI has
+    # ------------------------------------------------------------------ #
+    def test_new_conversation_is_routed_to_a_lead_via_the_alias(self):
+        """`_route_email_via_alias` creates the record through `message_new`
+        with the alias's own defaults, and posts the mail under the import
+        boundary. Until now that path was only asserted on a Helpdesk ticket,
+        in a class that skips itself on the community image CI runs. A lead
+        is the same path on a model that is always installed."""
+        alias = self._lead_alias(repr({'user_id': self.salesperson.id}))
+        self.mailbox.write({'route_to_team': True, 'alias_id': alias.id})
+        Mail = self.env['mail.mail'].sudo()
+        last_mail_id = max(Mail.with_context(active_test=False).search([]).ids or [0])
+
+        self._sync()
+
+        lead = self._lead_for(self.external_partner)
+        self.assertEqual(len(lead), 1, "one lead for the new conversation")
+        self.assertEqual(lead.name, 'Question about my order')
+        self.assertEqual(lead.user_id, self.salesperson,
+                         "alias_defaults is parsed and reaches message_new")
+        self.assertFalse(self._messages_on(self.external_partner),
+                         "routed to the lead, not to the contact's chatter")
+
+        message = self.env['mail.message'].search([
+            ('model', '=', 'crm.lead'), ('res_id', '=', lead.id),
+            ('message_type', '=', 'email'),
+        ])
+        self.assertEqual(len(message), 1, "the mail is posted on the lead once")
+        self.assertIn('Where is it?', message.body)
+        self.assertEqual(str(message.date), '2026-02-01 10:30:00',
+                         "the post carries the provider's date")
+        self.assertEqual(message.author_id, self.external_partner)
+
+        # The sender is not a follower (mail_create_nosubscribe) and gets
+        # nothing back (IMPORT_CTX drops the notification pass): the two
+        # things the native message_new() flow was chosen for.
+        self.assertNotIn(self.external_partner, lead.message_partner_ids,
+                         "the sender must not be subscribed to the record")
+        self.assertFalse(message.notification_ids,
+                         "an imported post notifies nobody")
+        queued = Mail.with_context(active_test=False).search([('id', '>', last_mail_id)])
+        for mail in queued:
+            self.assertNotIn('customer@example.com', mail.email_to or '',
+                             "no mail.mail may be queued to the sender")
+            self.assertNotIn(self.external_partner, mail.recipient_ids,
+                             "no mail.mail may be queued to the sender")
+
+        log = self.env['pan.mail.routing.log'].search([
+            ('mailbox_id', '=', self.mailbox.id)])
+        self.assertEqual(log.outcome, 'created')
+        self.assertEqual(log.model, 'crm.lead')
+        self.assertEqual(log.res_id, lead.id)
+
+    def test_broken_alias_defaults_does_not_stop_the_import(self):
+        """`alias_defaults` is a Python literal typed by an administrator.
+        `mail.alias` refuses a broken one on write, but a row can carry one
+        from before that check or from a direct update; the route then
+        creates the record without the defaults rather than failing the
+        message, which would stall the mailbox on it."""
+        alias = self._lead_alias(repr({'user_id': self.salesperson.id}))
+        # Past the constraint, the way a stale row would be.
+        self.env.cr.execute(
+            "UPDATE mail_alias SET alias_defaults = %s WHERE id = %s",
+            ("{'user_id': ", alias.id))
+        alias.invalidate_recordset(['alias_defaults'])
+        self.assertEqual(alias.alias_defaults, "{'user_id': ")
+        self.mailbox.write({'route_to_team': True, 'alias_id': alias.id})
+
+        stall = self._sync()
+
+        self.assertIsNone(stall, "a broken default is not a stalled mailbox")
+        lead = self._lead_for(self.external_partner)
+        self.assertEqual(len(lead), 1, "the lead is still created")
+        self.assertEqual(lead.name, 'Question about my order')
+        self.assertEqual(str(self.mailbox.last_sync_date), '2026-02-01 10:30:00',
+                         "the cursor moves past the message")
+

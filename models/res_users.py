@@ -6,7 +6,6 @@ from odoo.exceptions import AccessError, UserError
 from .neutralization import database_is_neutralized
 from .mail_provider_client import (
     get_provider_client,
-    get_setup_provider,
     oauth_redirect_uri,
 )
 
@@ -212,7 +211,7 @@ class ResUsers(models.Model):
             # asks who consented, so this is where a customer's Gmail is kept
             # from becoming a company mailbox the cron syncs.
             raise AccessError(_('Only internal users connect a mailbox.'))
-        provider = provider or get_setup_provider(self.env)
+        provider = provider or self.env['pan.mail.provider'].current().provider
         if not provider:
             raise UserError(_(
                 'No email provider is set up yet. An administrator picks one '
@@ -243,7 +242,7 @@ class ResUsers(models.Model):
             'target': 'new',
         }
 
-    def _pan_mail_should_prompt_connect(self):
+    def _pan_mail_should_prompt_connect(self, link=None):
         """Should this user be shown the "connect your mailbox" banner?
 
         Only where the button behind it would work. Four things have to be
@@ -262,17 +261,22 @@ class ResUsers(models.Model):
         connect is usually the administrator who is on step 3 and needs an
         owner for the notification mailbox, so a banner that waits for setup to
         be done waits for the thing it is meant to unblock.
+
+        `link` is the Pantalytics link when the caller has it (`ir.http`
+        resolves it once per page load and asks every question of that row);
+        left out, `sync_allowed` looks it up.
         """
         self.ensure_one()
         if not self._is_internal() or self.x_pan_mail_connected:
             return False
         if database_is_neutralized(self.env):
             return False
-        if not self.env['pan.mail.license'].sync_allowed():
+        License = self.env['pan.mail.license'] if link is None else link
+        if not License.sync_allowed():
             # A new account is refused on an unconnected instance, so the
             # button would end in a refusal after the consent screen.
             return False
-        provider = get_setup_provider(self.env)
+        provider = self.env['pan.mail.provider'].current().provider
         if not provider:
             return False
         if not get_provider_client(self.env, provider).uses_oauth:

@@ -6,6 +6,8 @@ The consent chain is tested in test_license.py (`improve_active`). This asks
 what reaches the browser once it says yes: a host, a token, a pseudonymous
 person, and nothing that names anyone.
 """
+from unittest.mock import patch
+
 from odoo.tests import HttpCase, TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models.pan_mail_license import IMPROVE_REFUSED_PARAM
@@ -44,6 +46,27 @@ class TestImproveConfig(TransactionCase):
         theirs = self.License.with_user(other).improve_config()['user']
         self.assertNotEqual(mine, theirs)
         self.assertEqual(mine, self.License.improve_config()['user'])
+
+    def test_the_version_is_read_once_per_registry(self):
+        """`version` rides every page load, and the module table is searched
+        for it once: the answer changes with the code, which is a restart
+        or an upgrade, and both start the cache over."""
+        Module = self.env['ir.module.module']
+        # The first `improve_config` on a fresh database mints the encryption
+        # key, and a config-parameter write clears the registry cache. Warm
+        # it before counting, so what is counted is the lookup and not the
+        # key: the upgrade job met exactly that order and read "searched
+        # again" on a cache the key had just emptied.
+        self.License.improve_config()
+        version = self.License._module_version()
+        self.assertEqual(version, Module.sudo().search(
+            [('name', '=', 'pan_mail_pro')], limit=1).installed_version)
+        self.assertTrue(version)
+        with patch.object(type(Module), 'search', autospec=True,
+                          side_effect=AssertionError('searched again')) as search:
+            self.assertEqual(self.License._module_version(), version)
+            self.assertEqual(self.License.improve_config()['version'], version)
+        search.assert_not_called()
 
     def test_a_refusal_here_empties_the_session(self):
         self.env['ir.config_parameter'].sudo().set_param(IMPROVE_REFUSED_PARAM, True)

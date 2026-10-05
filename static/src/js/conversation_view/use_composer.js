@@ -29,7 +29,7 @@
  *   no business thinking it is in a dialog.
  */
 
-import { Component, useState, useSubEnv, onWillDestroy } from "@odoo/owl";
+import { Component, useState, useSubEnv, onMounted, onWillDestroy } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
@@ -41,6 +41,30 @@ const INLINE_FORM = "pan_mail_pro.mail_compose_message_inline_form";
 // editing. `mail_composer_form` is the js_class the composer arch itself
 // names; the fallback keeps the Inbox working if mail ever renames it.
 const COMPOSER_VIEW = registry.category("views").get("mail_composer_form", formView);
+
+/**
+ * Put the keyboard in the composer: the body if the editor is up, else the
+ * first field that can be typed in.
+ *
+ * Reply, Log note and New email leave the screen when the composer opens,
+ * and a control that is gone drops focus on <body>. The form renders its
+ * fields after this mount and the editor later still, so whatever is there
+ * is taken as it stands and nothing is assumed to be. A reader who already
+ * put the keyboard somewhere in the form keeps it there.
+ */
+function focusFirstField(root) {
+    if (!root || root.contains(document.activeElement)) {
+        return;
+    }
+    const visible = (el) => el.offsetParent !== null && !el.disabled;
+    const body = [...root.querySelectorAll('.odoo-editor-editable, [contenteditable="true"]')]
+        .find(visible);
+    const field = body || [...root.querySelectorAll(
+        'input:not([type="hidden"]):not([type="checkbox"]), textarea')].find(visible);
+    if (field && typeof field.focus === "function") {
+        field.focus();
+    }
+}
 
 class InlineComposerController extends COMPOSER_VIEW.Controller {
     setup() {
@@ -55,6 +79,10 @@ class InlineComposerController extends COMPOSER_VIEW.Controller {
                 handle.controller = null;
             }
         });
+        // `rootRef` is the form controller's own ref to its root; a release
+        // that renames it still finds the pane the composer is in.
+        onMounted(() => focusFirstField(
+            this.rootRef?.el || document.querySelector(".o_mailpro_composer")));
     }
 }
 

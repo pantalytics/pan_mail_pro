@@ -10,6 +10,7 @@
         <Dialog size="'md'" title="title" footer="false" contentClass="'o_mailpro_link_dialog'">
             <input type="text" class="form-control o_mailpro_link_search"
                    t-ref="search" autofocus="autofocus"
+                   aria-label="Search for a kind of record"
                    placeholder="Search for a kind of record..."
                    t-on-input="onSearch"/>
             <ul class="o_mailpro_link_list">
@@ -30,10 +31,14 @@
                     </button>
                 </li>
             </ul>
-            <p t-if="!state.rows.length and !state.loading" class="o_mailpro_link_empty">
-                <t t-if="state.search">Nothing matches that.</t>
-                <t t-else="">Nothing to link to here.</t>
-            </p>
+            <!-- The region is always there, so a screen reader hears the
+                 empty result arrive instead of meeting it on the next tab. -->
+            <div aria-live="polite">
+                <p t-if="!state.rows.length and !state.loading" class="o_mailpro_link_empty">
+                    <t t-if="state.search">Nothing matches that.</t>
+                    <t t-else="">Nothing to link to here.</t>
+                </p>
+            </div>
         </Dialog>
     </t>
 

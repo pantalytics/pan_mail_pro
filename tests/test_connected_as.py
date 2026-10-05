@@ -8,7 +8,9 @@ consents with their own Microsoft identity was invisible on every screen:
 that named the wrong person. The refusal itself is worded in the Microsoft
 client (`_delegation_denied_reason`); this file is the screens.
 """
+from odoo.exceptions import AccessError
 from odoo.tests import tagged
+from odoo.tools import mute_logger
 
 from .common import MailProTestCase
 
@@ -33,6 +35,25 @@ class TestConnectedAs(MailProTestCase):
         me = self.salesperson.with_user(self.salesperson)
         self.assertEqual(me.read(['x_pan_mail_connected_as'])[0]['x_pan_mail_connected_as'],
                          'sales@company.test')
+
+    @mute_logger('odoo.addons.pan_mail_pro.models.pan_mail_account')
+    def test_the_address_is_the_providers_word_and_not_a_managers(self):
+        """The account's `email` is what "connected as" shows, and it is
+        what `_compute_mailbox_type` reads to call a mailbox personal. A
+        mailbox manager may read the row; rewriting the address is refused
+        (`pan.mail.account.write`), so what the screen says somebody is
+        connected as stays what the provider said at consent."""
+        manager = self.env['res.users'].with_context(no_reset_password=True).create({
+            'name': 'Manager', 'login': 'manager@company.test',
+            'email': 'manager@company.test',
+            'group_ids': [(6, 0, [
+                self.env.ref('base.group_user').id,
+                self.env.ref('pan_mail_pro.group_mail_mailbox_manager').id])],
+        })
+        account = self.salesperson.x_pan_mail_account_ids
+        with self.assertRaises(AccessError):
+            account.with_user(manager).write({'email': 'manager@company.test'})
+        self.assertEqual(self.salesperson.x_pan_mail_connected_as, 'sales@company.test')
 
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')

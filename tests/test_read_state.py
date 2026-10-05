@@ -123,6 +123,51 @@ class TestReadState(TransactionCase):
         self.assertTrue(first.x_is_read)
         self.assertTrue(second.x_is_read)
 
+    def test_marking_read_touches_only_the_mail_that_has_to_move(self):
+        """Three read mails and two unread is two rows, not five.
+
+        The Inbox asks this on every open. What is searched, access-checked,
+        written and pushed is the mail that has to change: on Graph every one
+        of those is a PATCH inside this request, so the rows touched are the
+        rows paid for. The answer names exactly those, so the rows under the
+        chevron can follow, and a second open of the same conversation finds
+        nothing to do and asks the provider nothing.
+        """
+        for handle in ('INBOX:42:1', 'INBOX:42:2', 'INBOX:42:3'):
+            self._mail(handle=handle, read=True)
+        unread = (self._mail(handle='INBOX:42:4', read=False)
+                  | self._mail(handle='INBOX:42:5', read=False, subject='Re: Offerte'))
+
+        with patch.object(type(self.mailbox), 'push_read_state',
+                          return_value=2) as push:
+            result = self.Conversation.set_read('crm.lead', self.lead.id, read=True)
+
+        self.assertEqual(result['count'], 2)
+        self.assertEqual(set(result['message_ids']), set(unread.ids),
+                         'the two that moved, and not the three that did not')
+        self.assertTrue(all(unread.mapped('x_is_read')))
+        self.assertEqual(push.call_count, 1)
+        self.assertEqual(set(push.call_args.args[0].ids), set(unread.ids),
+                         'the provider hears about the two that moved and nothing else')
+
+        with patch.object(type(self.mailbox), 'push_read_state') as push:
+            again = self.Conversation.set_read('crm.lead', self.lead.id, read=True)
+        self.assertEqual(again, {'read': True, 'count': 0, 'message_ids': []})
+        push.assert_not_called()
+
+    def test_marking_unread_names_only_what_moved(self):
+        """The newest incoming mail is the one marked; if it is unread
+        already there is nothing to mark, and an older mail must not be
+        marked in its place."""
+        older = self._mail(handle='INBOX:42:7', read=True)
+        newest = self._mail(handle='INBOX:42:8', read=False, subject='Re: Offerte')
+        newest.date = older.date + timedelta(minutes=5)
+        with patch.object(type(self.mailbox), 'push_read_state') as push:
+            result = self.Conversation.set_read('crm.lead', self.lead.id, read=False)
+        self.assertEqual(result, {'read': False, 'count': 0, 'message_ids': []})
+        self.assertTrue(older.x_is_read, 'the older mail is left alone')
+        push.assert_not_called()
+
     def test_reading_a_mailbox_is_a_managers_act(self):
         self._mail(read=False)
         plain = new_test_user(self.env, login='read_plain', groups='base.group_user')
