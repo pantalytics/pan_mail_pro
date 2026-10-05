@@ -317,7 +317,10 @@
                     -->
                     <div class="o_mailpro_conversation_list_head d-flex align-items-center justify-content-between gap-2">
                         <div class="d-flex align-items-center gap-1 min-w-0">
-                            <span class="o_mailpro_conversation_list_title text-truncate" t-esc="folderLabel"/>
+                            <!-- A heading, and focusable by script only:
+                                 the step back on a phone lands here, since
+                                 the arrow pressed leaves with the pane. -->
+                            <h2 class="o_mailpro_conversation_list_title text-truncate" tabindex="-1" t-esc="folderLabel"/>
                             <!-- Arrived from a record's chatter: the list is
                                  that record's mail, and this is the way back
                                  to the whole mailbox. Escapable, because a
@@ -522,6 +525,7 @@
                             </div>
                             <div t-if="state.hasMore" class="o_mailpro_more">
                                 <button type="button" class="btn btn-link btn-sm"
+                                        t-att-disabled="state.loadingMore"
                                         t-on-click="() => this.loadMore()">Load more</button>
                             </div>
                         </t>
@@ -549,7 +553,10 @@
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <t t-call="pan_mail_pro.BackToList"/>
                                 <div class="min-w-0 flex-grow-1">
-                                    <h2 class="o_mailpro_conversation_title">New email</h2>
+                                    <!-- tabindex -1: where the keyboard is
+                                         put when Send, Discard or Save
+                                         draft leaves with the composer. -->
+                                    <h2 class="o_mailpro_conversation_title" tabindex="-1">New email</h2>
                                     <div class="o_mailpro_conversation_sub">
                                         <span t-esc="state.compose and state.compose.label"/>
                                     </div>
@@ -557,7 +564,8 @@
                                 <t t-call="pan_mail_pro.ComposerButtons"/>
                             </div>
                         </div>
-                        <div class="o_mailpro_composer" role="region" aria-label="New email">
+                        <div class="o_mailpro_composer" role="region" aria-label="New email"
+                             t-att-aria-busy="composer.state.sending ? 'true' : undefined">
                             <ComposerForm t-props="composer.formProps"/>
                         </div>
                     </t>
@@ -566,7 +574,7 @@
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <t t-call="pan_mail_pro.BackToList"/>
                                 <div class="min-w-0 flex-grow-1">
-                                    <h2 class="o_mailpro_conversation_title" t-esc="state.selected.subject"/>
+                                    <h2 class="o_mailpro_conversation_title" tabindex="-1" t-esc="state.selected.subject"/>
                                     <div class="o_mailpro_conversation_sub">
                                         <span t-esc="state.selected.correspondent"/>
                                         <!--
@@ -807,7 +815,8 @@
                         -->
                         <div t-if="composer.state.open" class="o_mailpro_composing">
                             <div class="o_mailpro_composer"
-                                 role="region" t-att-aria-label="composer.state.mode === 'note' ? 'Internal note' : 'Reply'">
+                                 role="region" t-att-aria-label="composer.state.mode === 'note' ? 'Internal note' : 'Reply'"
+                                 t-att-aria-busy="composer.state.sending ? 'true' : undefined">
                                 <ComposerForm t-props="composer.formProps"/>
                             </div>
                             <t t-call="pan_mail_pro.ConversationMessages"/>
@@ -836,7 +845,7 @@
                             <div class="d-flex align-items-start justify-content-between gap-3">
                                 <t t-call="pan_mail_pro.BackToList"/>
                                 <div class="min-w-0 flex-grow-1">
-                                    <h2 class="o_mailpro_conversation_title" t-esc="state.live.subject"/>
+                                    <h2 class="o_mailpro_conversation_title" tabindex="-1" t-esc="state.live.subject"/>
                                     <div class="o_mailpro_conversation_sub">
                                         <span t-esc="state.live.correspondent"/>
                                         <span t-if="state.live.date">
@@ -1204,7 +1213,7 @@
                 is the one case where losing it is the point.
             -->
             <button type="button" class="btn btn-link btn-sm"
-                    t-on-click="() => composer.state.draftId ? this.leaveComposer() : composer.close()">
+                    t-on-click="() => this.discardComposer()">
                 <t t-if="composer.state.draftId">Close</t>
                 <t t-else="">Discard</t>
             </button>
@@ -1217,10 +1226,20 @@
             <button t-if="canSaveDraft" type="button" class="btn btn-secondary btn-sm"
                     t-att-disabled="composer.state.saving or composer.state.sending"
                     t-on-click="() => composer.saveDraft()">Save draft</button>
+            <!--
+                While it goes out the button says so. A disabled button
+                alone is a screen that went quiet for the length of a
+                send, and a screen reader hears nothing of a disabled
+                attribute changing.
+            -->
             <button type="button" class="btn btn-primary btn-sm"
                     t-att-disabled="composer.state.sending"
                     t-on-click="() => composer.send()">
-                <t t-if="composer.state.mode === 'note'">Log</t>
+                <t t-if="composer.state.sending">
+                    <t t-if="composer.state.mode === 'note'">Logging…</t>
+                    <t t-else="">Sending…</t>
+                </t>
+                <t t-elif="composer.state.mode === 'note'">Log</t>
                 <t t-else="">Send</t>
             </button>
         </div>
@@ -1250,7 +1269,7 @@
                      t-on-dblclick="() => this.props.onToggleZoom()">
                     <div class="min-w-0">
                         <div class="o_mailpro_label" t-esc="props.record.model_label"/>
-                        <h2 class="o_mailpro_odoo_record_name text-truncate" t-esc="props.record.name"/>
+                        <h2 class="o_mailpro_odoo_record_name text-truncate" tabindex="-1" t-esc="props.record.name"/>
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-shrink-0">
                         <!--

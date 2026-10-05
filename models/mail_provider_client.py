@@ -269,6 +269,7 @@ BODY_NEWLINE = re.compile(r'\r\n|\r|\n')
 HEADER_ALLOWLIST = frozenset({
     'in-reply-to',
     'references',
+    'x-odoo-db',
     'x-odoo-mail-id',
     'x-odoo-message-id',
     'x-odoo-model',

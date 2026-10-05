@@ -29,9 +29,11 @@ Odoo migration instead:
   module migration renames them to `pan_mail_pro.*` in the same transaction
   as the code that reads the new names, and `get_encryption_key()` adopts a
   key still stored under the old name rather than minting a new one.
-- **XML record ids** such as `mail_server_disabled`, and the
-  `invalid.outlook-pro.disabled` sentinel mail server host that `__init__.py`
-  filters on by value.
+- **XML record ids** such as `mail_server_disabled`. The uninstall hook finds
+  the placeholder by that id, so its sentinel host is cosmetic: a fresh
+  install since 19.0.26.0.0 ships `invalid.mail-pro.disabled`, a database that
+  took the placeholder earlier keeps `invalid.outlook-pro.disabled`, because
+  the record is `noupdate`, and both are retired the same way.
 
 Both can be renamed later as isolated changes with their own migrations.
 

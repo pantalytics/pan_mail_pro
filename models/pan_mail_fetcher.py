@@ -10,6 +10,7 @@ in `mail_provider_client.py`. No Graph, Gmail or other wire-specific key should
 ever appear below this line.
 """
 from datetime import datetime
+import hashlib
 import logging
 from typing import NamedTuple
 from markupsafe import Markup
@@ -41,6 +42,38 @@ FETCH_BATCH_SIZE = 200
 # read once per run, so the gate does set membership per party instead of a
 # search. See `_internal_domains()`.
 INTERNAL_DOMAINS_CTX = 'pan_mail_internal_domains'
+
+# Which database stamped the X-Odoo-* headers on a mail. The four of them name
+# a model, a record and two row ids, and every Odoo numbers its rows from one,
+# so on their own they say "an Odoo sent this" and never "this Odoo did". A
+# mail from another Mail Pro customer carried the same headers, so the loop
+# guard refused it as our own sent copy and, before refusing, re-indexed its
+# ids onto whichever local message and record happened to carry the same
+# numbers -- after which replies in that conversation matched at 1.0 onto the
+# wrong record. The marker is a salted SHA-256 of `database.uuid`, hex, cut to
+# 32 characters: identity, not authentication. It is not secret and need not
+# be, because the question it answers is "did we send this" and a forged yes
+# buys nobody anything; the salt only keeps the uuid itself off the wire.
+# Written by both MIME senders (`providers/mime_utils.build_message`) and the
+# Graph sender, read by `_gate_odoo_originated` and matcher rule 1.
+DB_MARKER_HEADER = 'X-Odoo-Db'
+DB_MARKER_SALT = 'pan_mail_pro'
+DB_MARKER_LENGTH = 32
+
+
+def odoo_db_marker(env):
+    """This database's marker, as written on outgoing mail and read back.
+
+    Empty when `database.uuid` is unset, which no installed Odoo has. An empty
+    marker is written nowhere and matches nothing, so such a database treats
+    every X-Odoo-* mail as somebody else's and leaves the duplicate gate to
+    catch its own sent copies.
+    """
+    uuid = env['ir.config_parameter'].sudo().get_param('database.uuid', '')
+    if not uuid:
+        return ''
+    digest = hashlib.sha256(f'{DB_MARKER_SALT}:{uuid}'.encode()).hexdigest()
+    return digest[:DB_MARKER_LENGTH]
 
 # Every post the sync makes carries this context, and `pan_mail_imported` is
 # the whole of the boundary in ARCHITECTURE.md §9.10: it means "this post is an
@@ -649,6 +682,12 @@ class PanMailFetcher(models.AbstractModel):
         very Message-ID in the index. Behind it, the re-index could only ever
         run when the provider changed the id between draft and send, which
         Microsoft does not do.
+
+        "Our own" is decided by `X-Odoo-Db`, not by the headers being there:
+        every Odoo running this module writes the same four, and a customer of
+        ours who also runs Mail Pro writes them on the mail they send *to* us.
+        That mail is ordinary incoming mail. It goes on down the ladder, its
+        ids are never read, and matcher rule 1 ignores them too.
         """
         if not self._may_be_own_copy(ctx):
             return None
@@ -657,8 +696,33 @@ class PanMailFetcher(models.AbstractModel):
                 or headers.get('x-odoo-mail-id')
                 or headers.get('x-odoo-message-id')):
             return None
+        if not self._is_own_odoo_mail(ctx, headers):
+            return None
         self._reindex_own_message(ctx, headers)
         return Skip('odoo_originated', _('Odoo sent this message itself.'))
+
+    def _odoo_db_marker(self):
+        """`odoo_db_marker()` for callers that hold a model and not the env."""
+        return odoo_db_marker(self.env)
+
+    def _is_own_odoo_mail(self, ctx, headers):
+        """Did *this* database stamp the X-Odoo-* headers on this mail?
+
+        The marker answers when it is there: equal to ours is ours, anything
+        else is another Odoo's. Without one the folder answers, and only one
+        way. The Sent folder holds what this account sent, so X-Odoo-* headers
+        there with no marker are the copy of a mail this database sent before
+        it stamped one -- the upgrade window, and the one case the re-index
+        still has to see. In the inbox the same headers with no marker are
+        somebody else's Odoo writing to us, or a pre-marker mail of our own
+        that came back by Cc; the first is the mail this check exists to let
+        in, and the second is refused one gate later, by its Message-ID.
+        """
+        marker = headers.get('x-odoo-db')
+        if marker:
+            own = self._odoo_db_marker()
+            return bool(own) and marker == own
+        return bool(ctx.get('is_outgoing'))
 
     def _reindex_own_message(self, ctx, headers):
         """Correct the indexes from the copy the provider actually sent.
@@ -1088,9 +1152,16 @@ class PanMailFetcher(models.AbstractModel):
                     f"by rule '{match['rule']}'"
                 )
                 outcome = 'threaded'
-            elif is_outgoing and not mailbox.route_to_team:
+            elif is_outgoing:
                 # Sent item we could not thread: the correspondent's chatter is
-                # the only sensible home for it.
+                # the only sensible home for it, in either routing mode. The
+                # alias path below creates a lead or ticket *from* `msg_dict`,
+                # whose author is the correspondent -- so a reply our user
+                # wrote in their mail client became a ticket opened by the
+                # customer, with the customer shown as the sender of our own
+                # words. In team mode the matcher was told to keep contact
+                # chatter out of its answers, which is how a sent reply to a
+                # conversation held on a contact ended up here with no match.
                 outcome = 'sent_item'
                 target_record = partner
                 message = target_record.with_context(**IMPORT_CTX).message_post(
@@ -1106,8 +1177,11 @@ class PanMailFetcher(models.AbstractModel):
                 )
                 _logger.info(f"[Incoming Mail] Posted sent item to partner {partner.name}")
             else:
-                # Nothing to thread onto → new record via alias, or the
-                # contact's chatter when no alias is configured.
+                # Incoming and nothing to thread onto → new record via alias,
+                # or the contact's chatter when no alias is configured. Only
+                # the inbox reaches this: a record created here takes its
+                # author and contact from the mail's From, which is only the
+                # correspondent when the mail came in.
                 target_record, message = self._route_email_via_alias(
                     mailbox=mailbox,
                     partner=partner,

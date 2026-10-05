@@ -5,7 +5,7 @@ refresh token dat na een uur nog werkt, en of een provider de mail werkelijk
 aflevert. Alles wat wél te automatiseren is, hoort in `tests/` — zie
 ARCHITECTURE.md §12 voor wat daar al staat.
 
-**Huidige versie:** 19.0.7.12.0
+**Huidige versie:** 19.0.26.0.0
 **Ringen:** lokaal → testinstance → dogfood → klanten
 
 > **IMAP/SMTP is sinds 19.0.6.5.5 geautomatiseerd.** `tools/ci_odoo.sh` start
@@ -64,8 +64,10 @@ hierboven kunnen letterlijk worden overgenomen.
 ### A2. Unit tests lokaal
 - [x] `--test-enable --test-tags=pan_mail_pro`: 0 failed, 0 errors van 148 tests
       tegen de ge-upgradede database (30-07)
-- [ ] Opnieuw draaien op 19.0.5.0.1 — het zijn er inmiddels 440, en Helpdesk
-      (Enterprise) is alleen hier bereikbaar. Zie A″ voor wat dat specifiek dekt.
+- [ ] Opnieuw draaien op 19.0.26.0.0 — Helpdesk (Enterprise) is alleen hier
+      bereikbaar. Zie A3 voor wat dat specifiek dekt; de alias-routing zelf
+      (`alias_defaults`, geen follower, geen kopie naar de afzender) draait in
+      CI op een `crm.lead` (`tests/test_incoming_sync.py`).
 
 ### A3. Alias-routing naar Helpdesk (alleen lokaal mogelijk)
 
@@ -86,17 +88,46 @@ derdepartij-`helpdesk_community` helpt dus niet.
 Instance: **https://mailpro-dev.cloudpepper.site** — nieuw aangemaakt, niet
 bean-forge, zodat demo-data niet in de weg zit. Server `Pantalytics Demo`
 (Odoo 19.0 community). Login `admin`, wachtwoord in Bitwarden Secrets Manager
-als `MAILPRO_ODOO_ADMIN_PASSWORD` (project `dev`).
+als `CLOUDPEPPER_MAILPRO_DEV_ADMIN_PASSWORD` (project `prod`).
 
 - [x] Testinstance aangemaakt (30-07) — `mailpro-dev`, 1 worker
 - [x] `pan_mail_pro` gedeployed via git addons attach op branch `19.0` (30-07) —
-      webhook + auto-upgrade aan, dus een merge naar `19.0` is binnen ~1 minuut
-      live. Log schoon bij eerste start.
-- [ ] Bijwerken naar 19.0.5.0.1
+      webhook aan, dus een merge naar `19.0` is binnen ~1 minuut live. Log
+      schoon bij eerste start.
+- [ ] Bijwerken naar 19.0.26.0.0. Een push herstart, maar upgradet niet
+      (issue #134): na een merge met versiebump Apps → Mail Pro → Upgrade, en
+      daarna in `ir_module_module` controleren dat de nieuwe versie er staat.
 
 Voordelen t.o.v. lokaal: echte https-URL (geen localhost-uitzonderingen in
 Azure/Google), bereikbaar vanuit cloud-sessies, en de omgeving lijkt op wat
 klanten draaien. Wat hier niet kan: unit tests en alles wat Helpdesk raakt (A3).
+
+### A′0. Het echte consent-scherm (OAuth)
+
+CI mockt elke HTTP-call naar Microsoft en Google; het consent-scherm, de
+redirect-URI en wat de callback daarna opslaat zijn alleen hier te zien. De
+dev-instance heeft een publieke https-URL met dezelfde vorm als productie, wat
+`localhost:8069` nooit heeft.
+
+- [ ] Instellingen → Mail Pro, stap 2: provider kiezen, client ID / secret
+      (en bij Microsoft de tenant) invullen, opslaan. Het verificatiedialoog
+      zegt of de registratie klopt, en biedt daarna het inloggen aan
+- [ ] De **Callback URL** op het providerformulier letterlijk kopiëren naar
+      Azure / Google Cloud Console. Een afwijkende URI faalt pas op het
+      consent-scherm, nooit in Odoo
+- [ ] Als admin inloggen via Mijn Profiel → Mail Pro → **Connect mailbox**:
+      consent-scherm, terug in Odoo, "Connected as" toont het adres waarmee
+      is ingelogd (niet per se het Odoo-adres)
+- [ ] Instellingen → Technisch → E-mail → Mail Pro → Email accounts: één
+      account per adres per provider, `connected` aan
+- [ ] Consent weigeren of annuleren op het providerscherm: terug in Odoo op
+      de pagina "Connection Failed" met een leesbare reden, geen half
+      account. Een callback die wél een code had maar daarna faalt (token
+      ruil, `/me` zonder adres) staat als `oauth.callback_failed` in Errors
+- [ ] Terwijl je verbonden bent als A nog eens consent geven als B: geweigerd
+      met de melding dat je als A verbonden bent, de rij blijft A. Na
+      **Disconnect** wordt B aangenomen, de persoonlijke mailbox van A
+      gearchiveerd en is hij niet meer de standaardmailbox
 
 ### A′1. Microsoft 365 — regressie, was al productie
 - [ ] Config invullen (client ID, tenant ID, secret van de bestaande Azure-app)
@@ -155,14 +186,34 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
 - [ ] De mailwachtrij loopt door: laat een onrouteerbare mail staan en
       controleer dat de cron de mails erachter alsnog verstuurt.
 
-### Eén sync-instelling per mailbox (19.0.5.0.0)
-- [ ] Het mailboxformulier toont "Inkomende mail" met drie keuzes in plaats van
-      vier schakelaars. Controleer op een **bestaande** database dat de keuze
-      bewaard is (`sync_mode` is niet gemigreerd, alleen de afgeleide velden
-      zijn weg).
-- [ ] Verbinden/loskoppelen via Mijn Profiel → Mail Pro, per provider die de
-      klant gebruikt. De knoppen heten "Connect Mailbox" / "Disconnect" en zijn
-      niet meer per provider.
+### Eén sync-ladder per mailbox (19.0.8.0.0)
+
+Het mailboxformulier vraagt één ding: hoeveel van deze mailbox leest Odoo
+terug (`sync_level`, tab Sync settings). Vier treden, elke trede houdt strikt
+meer dan de vorige. Replies op mail die Odoo al heeft komen op élke trede
+binnen; dat is geen instelling.
+
+- [ ] **Replies, in Odoo only** (standaard): een reply van een klant op een
+      mail uit Odoo landt op het record; een nieuwe mail van dezelfde klant
+      komt niet binnen; de Sent-map wordt niet gelezen
+- [ ] **Replies, in Odoo and your mail app**: een antwoord dat de eigenaar in
+      Outlook/Gmail op een Odoo-thread typt, verschijnt op het record; een
+      nieuwe mail die hij vanuit zijn mailclient start blijft buiten
+- [ ] **Replies and new email, existing contacts only**: een nieuwe mail van
+      een bestaand contact komt binnen (contact-chatter, of team-alias als
+      "Route new conversations to a team" aanstaat); van een onbekende
+      afzender niet, en in het log staat één regel met de mailbox, de
+      Message-ID en de reden
+- [ ] **Replies and new email, everyone**: dezelfde mail van de onbekende
+      afzender komt alsnog binnen en de afzender wordt een contact. De
+      waarschuwing over nieuwsbrieven en privémail staat onder de keuze
+- [ ] Op een **bestaande** database na de upgrade: de oude keuze is op de
+      juiste trede gezet (`migrations/19.0.8.0.0/`, `tests/test_sync_level_migration.py`)
+- [ ] Mijn Profiel → Mail Pro: een gewone gebruiker ziet dezelfde ladder voor
+      zijn eigen persoonlijke mailbox en kan hem opslaan zonder Mailbox
+      Manager te zijn; de melding bij "everyone" staat ook daar
+- [ ] Verbinden/loskoppelen via Mijn Profiel → Mail Pro. De knoppen heten
+      "Connect mailbox" / "Disconnect" en zijn niet per provider.
 
 ### Interne domeinen zijn een slot (19.0.3.4.0)
 - [ ] Op een database zonder interne domeinen: een mailbox op sync zetten moet
@@ -184,12 +235,13 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
 - [ ] Na de upgrade bestaat de tegel **Communication** op het beginscherm niet
       meer; All Communication, Link Coverage, Internal Domains en Mail Routing
       staan onder Settings → Technical → Email → Mail Pro
-- [ ] Een mail van een onbekende afzender op een mailbox met sync-modus
-      "alleen bestaande contacten" wordt geweigerd. In het log staat één regel
-      met de mailbox, de Message-ID en `unknown_contact`; er wordt niets
-      opgeslagen
-- [ ] Zet de mailbox op "van iedereen" en sync opnieuw: dezelfde mail komt
-      alsnog binnen. Dit is de vervanger van de triage-wachtrij
+- [ ] Een mail van een onbekende afzender op een mailbox op trede "Replies
+      and new email, existing contacts only" wordt geweigerd. In het log
+      staat één regel met de mailbox, de Message-ID en `unknown_contact`; er
+      wordt niets opgeslagen
+- [ ] Zet de mailbox op "Replies and new email, everyone" en sync opnieuw:
+      dezelfde mail komt alsnog binnen. Dit is de vervanger van de
+      triage-wachtrij
 - [ ] `pan_mail_item` bestaat niet meer als tabel, en er zijn geen
       AI-cronjobs of AI-modellen over
 
@@ -200,6 +252,99 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
       één middag te staan.
 - [ ] Al eerder geïmporteerde mail blijft de oude (foute) datum houden — de fix
       werkt alleen vooruit. Bepaal per klant of een herimport de moeite is.
+
+### Eigen mailbox live lezen en "Add to Odoo" (19.0.16.0.0)
+
+CI test dit tegen gemockte providers (`tests/test_live_mailbox.py`); wat
+alleen een echte mailbox laat zien is of de lijst klopt met wat Outlook/Gmail
+toont, en of er werkelijk niets wordt opgeslagen.
+
+- [ ] Inbox openen als eigenaar van een **persoonlijke** mailbox: onder die
+      mailbox staat de map **All email**, en onder geen andere. Een gedeelde
+      mailbox heeft hem niet, ook niet voor een Mailbox Manager
+- [ ] De lijst is de echte inbox van de provider, nieuwste eerst, met het
+      filter "in Odoo / not in Odoo". Een mail die wel in Odoo staat opent de
+      bestaande conversatie
+- [ ] Een mail die niet in Odoo staat opent alleen-lezen met **Add to Odoo**
+      eronder; geen Reply. Na de klik staat hij op het juiste record (of op
+      het contact) en verdwijnt hij uit "not in Odoo"
+- [ ] Een mail van een intern domein of van een geblokkeerd contact: Add to
+      Odoo importeert wel bij intern domein (de knop is de bewuste
+      uitzondering), **nooit** bij een geblokkeerd contact
+- [ ] `mail_message` groeit niet door alleen bladeren: tel de rijen voor en na
+      een minuut lezen zonder Add to Odoo
+
+### Leesstatus heen en terug (19.0.15.4.0, ARCHITECTURE.md §9.18)
+
+De provider is eigenaar van gelezen/ongelezen; Odoo spiegelt. CI bewijst de
+schrijfpaden met een fake; of Outlook en Gmail het ook zo zien kan alleen hier.
+
+- [ ] Markeer in Outlook (of Gmail) een gesyncte mail ongelezen, open de
+      Inbox in Odoo: de conversatie heeft de stip en is vet (verversing bij
+      openen, hooguit één provider-call per mailbox per minuut)
+- [ ] Open de conversatie in Odoo: in Outlook/Gmail is de mail nu gelezen
+- [ ] **Mark unread** in Odoo (knop in de conversatie of rijmenu ⋮): in
+      Outlook/Gmail is alleen de nieuwste inkomende mail ongelezen, niet de
+      hele conversatie
+- [ ] Odoo's eigen bel: een @-vermelding op het record verdwijnt bij het
+      lezen in de Inbox; Mark unread brengt hem **niet** terug
+- [ ] Provider tijdelijk onbereikbaar (token intrekken): Mark read/unread
+      werkt in Odoo, geeft geen fout, en de volgende verversing met werkend
+      token zet de provider leidend
+
+### Koppeling met Pantalytics (sinds 19.0.14.1.2, verplicht sinds #126)
+
+De server staat op mcp.pantalytics.com; CI mockt elke call ernaartoe. Connect,
+goedkeuring en de dagelijkse heartbeat zijn alleen tegen de echte server te
+zien.
+
+- [ ] Nieuwe database: Instellingen → Mail Pro toont alleen stap 1 met
+      **Connect to Pantalytics**; de Inbox toont één kaart met één knop en
+      geen panes; de sync-cron haalt niets op
+- [ ] **Connect to Pantalytics**: nieuw tabblad op Pantalytics met de code al
+      in de link, inloggen, controleren dat de pagina déze Odoo noemt,
+      goedkeuren, knop terug naar Odoo (`/mail_pro/pantalytics/return`). Stap
+      1 zegt nu "Connected by" met het Pantalytics-account, de Odoo-gebruiker
+      en het tijdstip
+- [ ] Terugknop niet gebruiken maar het tabblad sluiten: in Odoo staat de
+      koppeling op "Waiting for approval"; **Check approval** haalt de sleutel
+      alsnog op. Te vroeg drukken geeft een melding, geen fout
+- [ ] Na verbinden: Inbox en sync werken binnen een minuut, zonder herladen
+      van de instellingenpagina
+- [ ] Cron **Mail Pro: Pantalytics Heartbeat** handmatig draaien: de
+      workspace op Pantalytics toont de database, versies, aantallen en de
+      drie setup-antwoorden. Wat er over de lijn gaat is `_heartbeat_body()`,
+      niets anders: geen adres, onderwerp of naam
+- [ ] Pantalytics onbereikbaar maken (hosts-file): de heartbeat faalt met
+      één rij in Errors (`license.heartbeat_failed`), de sync blijft werken op
+      de gecachte entitlement; na 14 dagen zonder antwoord niet meer
+- [ ] **Disconnect** op stap 1: sync stopt, Inbox toont weer de kaart,
+      uitgaande mail blijft werken (nooit gegijzeld)
+- [ ] Op een geneutraliseerde kopie (backup terugzetten): geen Connect-knop,
+      geen heartbeat, Sync Now zegt waarom
+
+### Het Errors-scherm (19.0.23.0.0)
+
+Instellingen → Technisch → E-mail → Mail Pro → **Errors**: elke fout die de
+module vangt, dertig dagen, gegroepeerd op code, met de traceback op de rij.
+CI bewijst dat elke code in de lijst staat en dat een rij een rollback
+overleeft; of het scherm leest, niet.
+
+- [ ] Een sync laten falen (token intrekken): binnen een minuut een rij
+      `incoming.mailbox_failed` met mailbox, provider en traceback; de
+      mailbox zelf staat op error met dezelfde reden
+- [ ] Een mail laten falen (mailbox zonder credentials als afzender): rij
+      `outgoing.no_route` of `outgoing.send_failed`, en in Odoo's E-mails
+      dezelfde reden in `failure_reason`
+- [ ] Standaardweergave is gegroepeerd op code; filters Errors / Warnings,
+      Incoming / Outgoing / Inbox en Today werken; een rij openen toont
+      "What happened" met de traceback
+- [ ] Een throttle (`incoming.throttled`) is een waarschuwing, geen fout: de
+      rij is grijs en de mailbox-badge wordt niet rood
+- [ ] Na een nieuwe soort fout gaat binnen een minuut een heartbeat uit met
+      alleen de code en een aantal; op Pantalytics verschijnt een
+      `heartbeat_error`-event. Rijen ouder dan dertig dagen zijn weg na de
+      opruimcron
 
 ---
 

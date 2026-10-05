@@ -892,3 +892,110 @@ class TestPerFolderCursor(MailProTestCase):
         self.mailbox.write({'sync_level': 'contacts'})
 
         self.assertEqual(self.mailbox.last_sent_sync_date, datetime(2026, 1, 1))
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestSentItemIsNeverCreatedThroughTheAlias(MailProTestCase):
+    """A reply our user wrote in their mail client must not open a lead.
+
+    With `route_to_team` on, a sent item the matcher could not place fell
+    through to the alias path, which creates a record *from* `msg_dict` -- and
+    `msg_dict` is built from the correspondent's side: the customer as author,
+    the customer as From. So our own words became a lead opened by the
+    customer, shown as sent by them. The reply reaches that branch whenever
+    the conversation it answers lives on the contact's chatter, because in
+    team mode the matcher is told to keep `res.partner` out of its answers.
+
+    The fix is the smaller one: a sent item that threads nowhere lands on the
+    correspondent with the owner as author, in either routing mode, which is
+    what the non-team branch already did.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.processor = cls.env['pan.mail.fetcher']
+        cls.mailbox = cls.personal_mailbox
+        alias = cls.env['mail.alias'].create({
+            'alias_name': 'sent-item-fixture',
+            'alias_model_id': cls.env['ir.model']._get('crm.lead').id,
+        })
+        cls.mailbox.write({
+            'sync_level': 'both',
+            'route_to_team': True,
+            'alias_id': alias.id,
+        })
+        # The question Odoo already holds, on the contact: what the owner is
+        # answering from their mail client. A sent item enters only as a
+        # reply, and this is the parent that lets it in.
+        cls.parent = cls.external_partner.with_context(
+            mail_create_nosubscribe=True, mail_notrack=True,
+        ).message_post(
+            body='<p>Can you help?</p>', message_type='email',
+            subtype_xmlid='mail.mt_comment',
+            author_id=cls.external_partner.id,
+            message_id='<question@example.com>',
+        )
+
+    def _sent_copy(self):
+        return {
+            'provider_message_id': 'GRAPH-SENT-REPLY',
+            'message_id': '<our-reply@outlook.com>',
+            'thread_id': 'CONV-REPLY',
+            'subject': 'Re: Can you help?',
+            'from': {'email': self.mailbox.email, 'name': 'Sales Person'},
+            'to': [{'email': self.external_partner.email,
+                    'name': self.external_partner.name}],
+            'cc': [],
+            'date': datetime(2026, 2, 1, 10, 30, 0),
+            'body_html': '<p>Of course.</p>',
+            'body_is_html': True,
+            'has_attachments': False,
+            'headers': {'in-reply-to': '<question@example.com>'},
+            'is_read': True,
+        }
+
+    def _process(self):
+        full = self._sent_copy()
+        GraphClient = type(self.env['microsoft.graph.client'])
+        preview = {
+            'provider_message_id': full['provider_message_id'],
+            'message_id': full['message_id'],
+            'subject': full['subject'],
+            'date': full['date'],
+            'is_read': True,
+        }
+        with patch.object(GraphClient, 'get_message', autospec=True,
+                          return_value=full):
+            return self.processor._process_message(
+                self.mailbox, preview, FOLDER_SENT)
+
+    def test_the_reply_lands_on_the_contact_with_the_owner_as_author(self):
+        leads_before = self.env['crm.lead'].search_count([])
+
+        self.assertTrue(self._process())
+
+        self.assertEqual(
+            self.env['crm.lead'].search_count([]), leads_before,
+            "a sent item must not open a lead through the alias",
+        )
+        message = self.env['mail.message'].search([
+            ('message_id', '=', '<our-reply@outlook.com>'),
+        ])
+        self.assertEqual(len(message), 1)
+        self.assertEqual(message.model, 'res.partner')
+        self.assertEqual(message.res_id, self.external_partner.id)
+        self.assertEqual(
+            message.author_id, self.salesperson.partner_id,
+            "our user wrote it, so our user is its author",
+        )
+        self.assertEqual(message.x_direction, 'outgoing')
+
+    def test_the_log_calls_it_a_sent_item(self):
+        self._process()
+
+        log = self.env['pan.mail.routing.log'].search([
+            ('internet_message_id', '=', '<our-reply@outlook.com>'),
+        ])
+        self.assertEqual(log.outcome, 'sent_item')
+        self.assertEqual(log.model, 'res.partner')

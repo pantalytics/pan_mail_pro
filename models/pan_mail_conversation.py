@@ -378,26 +378,56 @@ class PanMailConversation(models.AbstractModel):
         """
         self._check_caller()
         base = self._base_domain(mailbox_id, partner_id, domain, in_a_mailbox)
-        return [self._count_entry(base, value, label,
-                                  self._folder_domain(value), ungrouped)
+        totals = self._folder_totals(base, ungrouped)
+        return [self._count_entry(value, label, totals[value])
                 if value != DRAFTS
                 else self._draft_entry(value, label, mailbox_id, search)
                 for value, label in MAILBOX_FOLDERS]
 
-    def _count_entry(self, domain, value, label, extra, ungrouped=False):
-        """One number beside a folder in the mailbox list, capped."""
-        groups = self.env['mail.message']._read_group(
-            domain + extra, groupby=['model', 'res_id'],
-            aggregates=['__count', 'date:max'],
-            order='date:max DESC, model ASC, res_id ASC',
+    def _folder_totals(self, domain, ungrouped=False):
+        """Inbox and Sent, from one grouping query over the mailbox's mail.
+
+        Inbox is every conversation the domain finds. Sent is the subset
+        that holds a mail we wrote, which is what `_folder_domain('sent')`
+        says in clauses: a thread the customer answered is still one you
+        sent in. Two queries used to answer that, one per folder, and each
+        one aggregated the mailbox's whole mail on every click.
+
+        One does both. Grouped per conversation with the direction that
+        sorts last in each, which is `outgoing` -- the selection has two
+        values and `mail_message.py` says so beside it, because this is the
+        one place that leans on it. Sent conversations are ordered first so
+        the cap holds for both numbers at once: when more than `COUNT_CAP`
+        rows come back, Inbox is capped, and the Sent rows among them are
+        either all of Sent or more than the cap.
+
+        Under `ungrouped` the list is not grouping either, so the numbers
+        count messages: grouped by direction, Inbox is all of them and Sent
+        is the outgoing bucket. Three rows at most, so no cap is needed.
+
+        Returns:
+            dict: the uncapped total per folder, `inbox` and `sent`.
+        """
+        Message = self.env['mail.message']
+        if ungrouped:
+            counts = {direction: count for direction, count in Message._read_group(
+                domain, groupby=['x_direction'], aggregates=['__count'])}
+            return {'inbox': sum(counts.values()),
+                    'sent': counts.get('outgoing', 0)}
+        groups = Message._read_group(
+            domain, groupby=['model', 'res_id'],
+            aggregates=['x_direction:max'],
+            order='x_direction:max DESC NULLS LAST, model ASC, res_id ASC',
             limit=COUNT_CAP + 1,
         )
-        if ungrouped:
-            # The list is not grouping either, so the number has to count
-            # what the list will show: messages, not conversations.
-            total = sum(count for _model, _res_id, count, _date in groups)
-        else:
-            total = len(groups)
+        return {
+            'inbox': len(groups),
+            'sent': sum(1 for _model, _res_id, direction in groups
+                        if direction == 'outgoing'),
+        }
+
+    def _count_entry(self, value, label, total):
+        """One number beside a folder in the mailbox list, capped."""
         return {
             'id': value,
             'name': label,
@@ -448,6 +478,14 @@ class PanMailConversation(models.AbstractModel):
         names of the records. The newest messages come back as one
         recordset on purpose, so the ORM prefetches their authors, mailboxes
         and document names for the whole page instead of once per row.
+
+        `limit` and `offset` are a page, and the page is the unit of every
+        query here: the grouping takes both, and the two batch queries after
+        it are built over the groups it returned and nothing before them.
+        Loading page two is the cost of page two, not of pages one and two.
+        Both arrive over RPC and go through `_page`: a limit past `MAX_LIMIT`
+        is `MAX_LIMIT`, a negative offset is 0, an offset past the end is an
+        empty list.
         """
         self._check_caller()
         limit, offset = self._page(limit, offset)
@@ -609,27 +647,50 @@ class PanMailConversation(models.AbstractModel):
         `mail.message.write`, best effort (see `push_read_state`), and a
         refresh settles any disagreement in favour of the provider.
 
+        Only what has to move is read. The Inbox asks this on every open, and
+        a conversation of three hundred read mails used to be three hundred
+        rows searched, access-checked and filtered to find that nothing had
+        changed. Read asks for the mails the mailbox still calls unread, and
+        for the ones the reader's own bell still rings for (`needaction` is
+        Odoo's search over their unread notification rows); unread asks for
+        the newest incoming mail, and nothing else. On Graph every message
+        that changes state is one synchronous PATCH inside this request, so
+        the rows this touches are the rows the provider hears about.
+
         Returns:
             dict: `read` as it now stands, `count` the messages that changed,
-                and `message_ids` the messages marked, so the unfolded rows
-                under the conversation can follow without a reload.
+                and `message_ids` the ids of exactly those, so the unfolded
+                rows under the conversation can follow without a reload. A
+                mail that was already in the asked-for state is in neither.
         """
         self._check_caller()
         read = bool(read)
+        Message = self.env['mail.message']
         # Searched as the caller, so a conversation they may not read is a
         # conversation they cannot mark. Odoo's own rules over `mail.message`
         # do that work and this must not step around them.
-        messages = self.env['mail.message'].search(
-            self._conversation_domain(model, res_id, message_id, mailbox_id),
-            order='date desc, id desc')
-        if not read:
-            messages = (messages.filtered(
-                lambda m: m.x_direction != 'outgoing')[:1] or messages[:1])
-        # Asked of every message, not only the ones that moved: the reader's
-        # own Odoo Inbox rows are cleared on read, and the bell can still be
-        # ringing for a mail the mailbox already calls read.
+        domain = self._conversation_domain(model, res_id, message_id, mailbox_id)
+        if read:
+            # The unread ones, plus the ones the bell still rings for: the
+            # reader's own Odoo Inbox rows are cleared on read, and the bell
+            # can still be ringing for a mail the mailbox already calls read.
+            # Neither set is ever the size of the thread.
+            messages = Message.search(
+                domain + ['|', ('x_is_read', '=', False),
+                          ('needaction', '=', True)],
+                order='date desc, id desc')
+        else:
+            # The newest mail that came in, whatever its state: if it is
+            # unread already, nothing moves, and an older one must not be
+            # marked in its place. A thread we only ever wrote in has no
+            # incoming mail, so its newest mail is the one.
+            messages = Message.search(
+                domain + [('x_direction', '!=', 'outgoing')],
+                order='date desc, id desc', limit=1,
+            ) or Message.search(domain, order='date desc, id desc', limit=1)
+        moving = messages.filtered(lambda m: m.x_is_read != read)
         count = messages._mark_read_state(read) if messages else 0
-        return {'read': read, 'count': count, 'message_ids': messages.ids}
+        return {'read': read, 'count': count, 'message_ids': moving.ids}
 
     @api.model
     def refresh_read_state(self, mailbox_id=None):

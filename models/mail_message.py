@@ -154,6 +154,11 @@ class MailMessage(models.Model):
     # -------------------------------------------------------------------------
     # Communication lens
     # -------------------------------------------------------------------------
+    # The two values sort with `outgoing` last, and the mailbox list's counts
+    # lean on that: `pan.mail.conversation._folder_totals` reads the maximum
+    # direction per conversation to count Inbox and Sent in one query. A third
+    # value, or a renamed one, has to keep `outgoing` the maximum or move that
+    # count back to a query of its own. `tests/test_conversation_api.py` pins it.
     x_direction = fields.Selection(
         [('incoming', 'Incoming'), ('outgoing', 'Outgoing')],
         string='Direction',

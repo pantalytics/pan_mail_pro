@@ -2571,7 +2571,7 @@ class Checks:
     def mailbox_status(self):
         """A working mailbox offers nothing, a stopped one explains itself.
 
-        The form used to carry Sync Now and Send Test Email in its header on
+        The form used to carry Sync Now and Send test email in its header on
         every mailbox, and its one status counter read `last_sync_date` under
         the label "Last synced" -- the fetch cursor, which on a quiet mailbox
         stands still for weeks while every run completes. So the screen could
@@ -2620,7 +2620,7 @@ class Checks:
             quiet = marks()
             text = self.form_text(url)
             self.shot('mailbox-healthy.png')
-            for gone in ('Sync Now', 'Send Test Email', 'Try again'):
+            for gone in ('Sync Now', 'Send test email', 'Try again'):
                 if gone in text:
                     self.fail(f'a working mailbox still offers "{gone}"')
             if 'Last checked' not in text:

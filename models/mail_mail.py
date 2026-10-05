@@ -241,11 +241,19 @@ class MailMail(models.Model):
 
         mails = mails._one_send_per_recipient()
 
+        # What the sends of one batch may share. A message split into one
+        # send per follower is still one message: its reply context is built
+        # once per message and mailbox (`_reply_context_for`), and the index
+        # rows every copy would write alike are written once
+        # (`_index_sent_message`). Per batch, never longer: the next batch
+        # starts from the database again.
+        batch = {'reply_contexts': {}, 'indexed': set()}
         failures = []
         failed_messages = set()
         for mail in mails:
             reason = mail._send_one(raise_exception=raise_exception,
-                                    post_send_callback=post_send_callback)
+                                    post_send_callback=post_send_callback,
+                                    batch=batch)
             if reason:
                 # One reason per message the person wrote, not per send it
                 # was split into: "3 more emails" for two mails is a lie.
@@ -457,11 +465,14 @@ class MailMail(models.Model):
             ),
         })
 
-    def _send_one(self, raise_exception=False, post_send_callback=None):
+    def _send_one(self, raise_exception=False, post_send_callback=None, batch=None):
         """Send one mail. Returns the failure reason, or None when it went out.
 
         Never raises on a failure of its own: the reason goes onto the mail and
         back to `send()`, which decides what the batch as a whole does about it.
+
+        `batch` is what `send()` lets the sends of one batch share (see there);
+        without it, a send is on its own and asks the database for everything.
         """
         self.ensure_one()
         _logger.info("[Outgoing Mail] Processing email %s", self.id)
@@ -472,7 +483,7 @@ class MailMail(models.Model):
         mailbox = None
         try:
             mailbox, account = self._resolve_route()
-            reply_context = self._build_reply_context(mailbox)
+            reply_context = self._reply_context_for(mailbox, batch)
             result = mailbox._get_client().send_message(
                 mail_record=self,
                 mailbox=mailbox,
@@ -489,7 +500,7 @@ class MailMail(models.Model):
             return reason
 
         if result['success']:
-            self._record_sent(result, mailbox, account, reply_context)
+            self._record_sent(result, mailbox, account, reply_context, batch=batch)
             if post_send_callback:
                 post_send_callback(self)
             return None
@@ -575,7 +586,7 @@ class MailMail(models.Model):
         self.env['pan.mail.error']._record(code, error, mailbox=mailbox, detail=reason)
         return reason
 
-    def _record_sent(self, result, mailbox, account, reply_context=None):
+    def _record_sent(self, result, mailbox, account, reply_context=None, batch=None):
         """Store the provider's ids so replies thread onto this message."""
         self.ensure_one()
         message_id = result.get('message_id')
@@ -624,7 +635,7 @@ class MailMail(models.Model):
                     ', '.join(filter(None, [self.mail_message_id.x_email_cc, self.email_cc]))),
             })
 
-        self._index_sent_message(mailbox, message_id, thread_id, reply_context)
+        self._index_sent_message(mailbox, message_id, thread_id, reply_context, batch=batch)
         _logger.info(f"[Outgoing Mail] Mail {self.id} sent from {mailbox.email} "
                      f"(message {message_id}, thread {thread_id})")
 
@@ -651,6 +662,33 @@ class MailMail(models.Model):
             if address and address not in seen:
                 seen.append(address)
         return ', '.join(seen)
+
+    def _reply_context_for(self, mailbox, batch=None):
+        """`_build_reply_context`, once per message and mailbox in a batch.
+
+        A chatter post to three followers is three `mail.mail` on one
+        `mail.message` (`_one_send_per_recipient`), and the context is a
+        function of that message, its record and the sending mailbox: the
+        same walk up the parent chain three times, one search per ancestor
+        up to REPLY_CHAIN_WALK_LIMIT, plus the thread-link lookup. The
+        mailbox is in the key because the copies need not route alike (an
+        internal follower's copy leaves from notifications@) and a thread
+        link is scoped to its mailbox. The copies then leave with one
+        context, which is also the only correct one: the context the second
+        copy would have built after the first was indexed named the first
+        copy's thread, not the conversation's.
+
+        The dict is shared between the sends, and read only: every client
+        takes what it can honour and writes nothing back.
+        """
+        self.ensure_one()
+        if batch is None or not self.mail_message_id:
+            return self._build_reply_context(mailbox)
+        key = (self.mail_message_id.id, mailbox.id)
+        contexts = batch['reply_contexts']
+        if key not in contexts:
+            contexts[key] = self._build_reply_context(mailbox)
+        return contexts[key]
 
     def _build_reply_context(self, mailbox):
         """Everything a provider needs to send this mail *inside* its thread.
@@ -753,7 +791,7 @@ class MailMail(models.Model):
         return ref.message_id or message.message_id
 
     def _index_sent_message(self, mailbox, provider_message_id, provider_thread_id,
-                            reply_context=None):
+                            reply_context=None, batch=None):
         """Make this outgoing mail findable when the recipient replies.
 
         The wire Message-ID is rarely the one Odoo generated. Microsoft Graph
@@ -771,27 +809,47 @@ class MailMail(models.Model):
         that still matches when the provider's has moved, which on Microsoft is
         the normal case rather than the exception — Graph reports the *draft's*
         conversationId, and the reply arrives under another.
+
+        A message sent once per follower is indexed once for what the copies
+        share and once per copy for what they do not. The Odoo Message-ID is
+        the message's, and the thread keys of a reply are the conversation's:
+        those are written on the first copy and remembered in `batch`
+        (`send()` keeps it for the batch), because a second `record` of a
+        known key is a search that finds it and a write that refreshes it.
+        The provider's Message-ID is minted per send, and each recipient's
+        reply names the one they received, so that row is one per copy; so
+        is the thread link of a copy the provider started a thread for.
         """
         self.ensure_one()
         message = self.mail_message_id
         if not message:
             return
 
+        indexed = batch['indexed'] if batch is not None else set()
         Ref = self.env['pan.mail.message.ref']
-        if message.message_id:
+        if message.message_id and ('ref', message.id) not in indexed:
+            indexed.add(('ref', message.id))
             Ref.record(message, message.message_id, source='odoo')
         if provider_message_id:
             Ref.record(message, provider_message_id, source='provider')
 
         if self.model and self.res_id:
-            self.env['pan.mail.thread.link'].record_all(
-                mailbox=mailbox,
-                thread_ids=self._sent_thread_keys(
-                    provider_thread_id, provider_message_id, reply_context),
-                model=self.model,
-                res_id=self.res_id,
-                message=message,
-            )
+            keys = self._sent_thread_keys(
+                provider_thread_id, provider_message_id, reply_context)
+            links = {('link', mailbox.id, key) for key in keys}
+            if links - indexed:
+                # One key new to the batch is written with the other: the
+                # keys are positional for `record_all` (the provider's handle
+                # first), and this is the rare copy whose provider started a
+                # thread of its own inside a conversation that has a root.
+                indexed.update(links)
+                self.env['pan.mail.thread.link'].record_all(
+                    mailbox=mailbox,
+                    thread_ids=keys,
+                    model=self.model,
+                    res_id=self.res_id,
+                    message=message,
+                )
 
     def _sent_thread_keys(self, provider_thread_id, provider_message_id,
                           reply_context=None):

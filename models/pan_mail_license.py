@@ -76,7 +76,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from odoo import _, api, fields, models, release
+from odoo import _, api, fields, models, release, tools
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 from . import encryption_utils
@@ -291,12 +291,21 @@ class PanMailLicense(models.Model):
 
     @api.model
     def sync_allowed(self):
-        """May this instance sync incoming mail and connect new accounts?"""
-        link = self.current()
+        """May this instance sync incoming mail and connect new accounts?
+
+        Asked on the model it finds the link; asked on the link itself
+        (`current().sync_allowed()`) it answers for that row without looking
+        it up again. `ir.http` asks three questions of one row on every page
+        load, and this is how it pays for one search rather than four. The
+        row rather than a keyword because the test suite replaces this
+        method with a `(self)`-only yes (tests/connected.py), and a keyword
+        it does not know would end every test in a TypeError.
+        """
+        link = self or self.current()
         return bool(link) and link.is_entitled()
 
     @api.model
-    def improve_active(self):
+    def improve_active(self, link=None):
         """May the Inbox in this browser report how it is used and record?
 
         Four yeses, any no wins: the workspace switched it on, the answer named
@@ -304,8 +313,12 @@ class PanMailLicense(models.Model):
         this is not a neutralized copy. The host check matters on its own: an
         older server that says yes without saying where would otherwise leave
         the browser to guess.
+
+        `link` is the row when the caller has it already (`ir.http`, once per
+        page load); left out, it is looked up. `None` means not looked up:
+        an empty recordset is an answer, and it is "no".
         """
-        link = self.current()
+        link = self.current() if link is None else link
         if not link or not link.improve or not link.improve_host or not link.improve_token:
             return False
         if self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM):
@@ -313,7 +326,7 @@ class PanMailLicense(models.Model):
         return not database_is_neutralized(self.env)
 
     @api.model
-    def improve_config(self):
+    def improve_config(self, link=None):
         """What the browser needs to report, or False. Read into `session_info`
         by `ir.http`, so the Inbox knows before its first paint and makes no
         call of its own to find out.
@@ -322,10 +335,12 @@ class PanMailLicense(models.Model):
         encryption key over the database id and the user id, twelve hex
         characters. Two users are two ids, a user is the same id tomorrow, and
         nothing we hold turns it back into a person.
+
+        `link` as in `improve_active`: the row when the caller holds it.
         """
-        if not self.improve_active():
+        link = self.current() if link is None else link
+        if not self.improve_active(link=link):
             return False
-        link = self.current()
         return {
             'host': link.improve_host,
             'token': link.improve_token,
@@ -818,7 +833,15 @@ class PanMailLicense(models.Model):
         return self.env['ir.config_parameter'].sudo().get_param('database.uuid', '')
 
     @api.model
+    @tools.ormcache()
     def _module_version(self):
+        """The version of the module that is running, as the manifest says.
+
+        Cached per registry: it rides every page load in `improve_config`,
+        and the answer only changes when the code does, which is a restart
+        (a new registry) or an upgrade (which clears the cache). A plain
+        string, never a recordset, for the same reason as every ormcache.
+        """
         return self.env['ir.module.module'].sudo().search(
             [('name', '=', 'pan_mail_pro')], limit=1).installed_version or ''
 

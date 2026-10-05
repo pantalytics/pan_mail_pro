@@ -16,7 +16,7 @@
             <xpath expr="//list" position="inside">
                 <header>
                     <button name="action_send_connect_invite" type="object"
-                            string="Send Mail Pro Invite"
+                            string="Send Mail Pro invite"
                             groups="base.group_system"/>
                 </header>
             </xpath>

@@ -88,12 +88,20 @@ class IrHttp(models.AbstractModel):
 
     def _pan_mail_session_flags(self):
         result = {}
+        # Three of the four flags are questions about the Pantalytics link,
+        # and this runs for every internal user on every page load: the row
+        # is looked up once here and handed to each question, rather than
+        # searched for once per question. Not cached across requests -- the
+        # link changes on Connect and Disconnect, and a page load is the
+        # staleness this whole method already accepts.
+        License = self.env['pan.mail.license']
+        link = License.current()
         result['pan_mail_connect_prompt'] = \
-            self.env.user._pan_mail_should_prompt_connect()
+            self.env.user._pan_mail_should_prompt_connect(link=link)
         # Help improve Mail Pro, for the same reason and with the same
         # staleness: the answer changes once a day at most, and the Inbox
         # reads it before its first paint (pan_mail_license.improve_config).
-        result['pan_mail_improve'] = self.env['pan.mail.license'].improve_config()
+        result['pan_mail_improve'] = License.improve_config(link=link)
         # Door 1's button, in every chatter. Asked here rather than over
         # RPC per record: without it the chatter would call the read
         # layer on every form a plain user opens, and be refused every
@@ -105,5 +113,5 @@ class IrHttp(models.AbstractModel):
         # a product that looks finished and is not. Stale by a page load
         # like the rest; the Inbox asks once more when this says no, so
         # an admin who has just connected is not shown the gate again.
-        result['pan_mail_connected'] = self.env['pan.mail.license'].sync_allowed()
+        result['pan_mail_connected'] = link.sync_allowed()
         return result

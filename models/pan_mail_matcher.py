@@ -300,11 +300,24 @@ class PanMailMatcher(models.AbstractModel):
         Exact by construction. The fetcher's loop guard drops most of these
         before the matcher ever sees them, but a forward or a re-send that
         survives with the headers intact should still land on the right record.
+
+        Only when `X-Odoo-Db` says this database wrote them. Every Odoo running
+        this module stamps the same model and record id, and a customer who
+        also runs Mail Pro numbers their records from one, exactly as we do: a
+        mail from them carries a model and an id that name one of *our* rows
+        by coincidence. A rule that answers at 1.0 gets no benefit of the
+        doubt, so a missing marker counts as foreign here. The loop guard's
+        allowance for the pre-marker Sent folder is not needed in this rule:
+        that copy is refused by the gate and never reaches the matcher.
         """
         headers = ctx['headers']
         model = headers.get('x-odoo-model')
         res_id = headers.get('x-odoo-record-id')
         if not model or not res_id:
+            return []
+        marker = headers.get('x-odoo-db')
+        own = self.env['pan.mail.fetcher']._odoo_db_marker()
+        if not marker or not own or marker != own:
             return []
         try:
             res_id = int(res_id)

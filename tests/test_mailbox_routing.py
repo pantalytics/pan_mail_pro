@@ -174,6 +174,27 @@ class TestMailboxRouting(MailProTestCase):
             mail._resolve_route()
         self.assertIn(self.salesperson.name, str(ctx.exception))
 
+    @mute_logger('odoo.addons.pan_mail_pro.models.mail_mail')
+    def test_a_default_mailbox_you_may_not_use_is_refused_at_the_route(self):
+        """`x_default_mailbox_id` is self-writeable (My Preferences), and the
+        preference's domain is a convenience: over RPC a plain user can name
+        a colleague's personal mailbox as their own default, and nothing on
+        `res.users` refuses the write. Row 3 goes through `_mailbox_route`
+        exactly as the dropdown does, so the mail is refused and names the
+        mailbox, rather than leaving with the colleague's token."""
+        self.other_user.with_user(self.other_user).write({
+            'x_default_mailbox_id': self.personal_mailbox.id})
+        self.assertEqual(self.other_user.x_default_mailbox_id, self.personal_mailbox,
+                         'the preference itself is not where the refusal lives')
+
+        mail = self._make_mail(author_id=self.other_user.partner_id.id)
+        with self.assertRaises(RoutingError) as ctx:
+            mail._resolve_route()
+        self.assertIn(self.personal_mailbox.email, str(ctx.exception))
+        self.assertIn(self.other_user.name, str(ctx.exception))
+        self.assertIn('A personal mailbox can only be used by its owner',
+                      str(ctx.exception))
+
     # ------------------------------------------------------------------ #
     # 4. System mail with nobody behind it
     # ------------------------------------------------------------------ #

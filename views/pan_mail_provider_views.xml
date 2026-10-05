@@ -40,7 +40,7 @@
                         </group>
                     </group>
 
-                    <group string="Application Registration" invisible="not uses_oauth">
+                    <group string="Application registration" invisible="not uses_oauth">
                         <group>
                             <!-- Microsoft's own words, copied from the app
                                  registration's Overview page. A field labelled

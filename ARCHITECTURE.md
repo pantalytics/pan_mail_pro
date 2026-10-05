@@ -1069,6 +1069,15 @@ question the module cannot answer yet, and guessing it wrong scatters chatter
 across records nobody asked for. Answering something Odoo already holds has one
 obvious home, so that is the case that syncs.
 
+A sent item the matcher cannot place lands on the correspondent as a
+`sent_item`, with the owner as its author, in either routing mode. It never
+creates a lead or ticket through the alias: that path builds the record from
+the mail's From, which for a sent item is us -- so a reply our user wrote
+became a ticket opened by the customer, showing the customer as the sender of
+our own words. The case is real in team mode, where the matcher is told to
+keep `res.partner` out of its answers and a reply to a conversation held on a
+contact therefore matches nothing.
+
 **The Sent folder is opt-in and the Inbox is not**, because nothing in Sent is
 ever waiting for Odoo: every sent item is either mail Odoo itself sent (dropped
 by the loop guard) or a copy of correspondence Odoo was never part of. The Inbox
@@ -1136,7 +1145,7 @@ resolved in the context for the ones after it.
 
 | # | Gate | Refuses | Leaves a trace | Quiet |
 |---|------|---------|----------------|-------|
-| 1 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back | no | no |
+| 1 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back, and `X-Odoo-Db` says they are ours | no | no |
 | 2 | `_gate_duplicate` | Message-ID already in `mail.message` | no | **yes** |
 | 3 | `_gate_counterpart` | a sent item with no recipient | no | no |
 | 4 | `_gate_internal_domain` | every party to the mail is ours | no | no |
@@ -1173,6 +1182,21 @@ the id the provider minted when *we* sent the mail — as well as
 `mail.message.message_id`. So a mail Odoo sent, filed in Sent by the provider
 and read back on the next run, is refused there rather than needing a rule of
 its own.
+
+Gate 1 reads `X-Odoo-Db` (§11) before it believes the other four headers.
+Every Odoo running this module writes the same `X-Odoo-Model` and
+`X-Odoo-Message-Id`, and every Odoo numbers its rows from one, so a customer
+who also runs Mail Pro writes to us with headers that name *our* rows by
+coincidence. Before the marker existed the gate refused that mail as our own
+sent copy and, before refusing, re-indexed their ids onto our message and
+record, after which the rest of that conversation threaded onto the wrong
+record at 1.0. A marker that is not ours makes the mail ordinary incoming
+mail: it goes on down the ladder and nothing reads its ids. A mail with no
+marker is foreign in the inbox and ours in the Sent folder -- that folder
+holds only what this account sent, so our headers there without a marker are
+a copy from before the marker existed, the one pre-marker case the re-index
+still has to see. Our own pre-marker mail that comes back to the inbox by Cc
+is refused one gate later, by its Message-ID.
 
 ### The counterpart rule
 
@@ -1325,11 +1349,14 @@ Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
 | 5 | `only_open_record` | 0.6 | the sender's single open record in the mailbox's routing target — proposal only |
 | 6 | `subject_participants` | 0.5 | normalised subject + same partner — proposal only |
 
-Rules 1 and 2 are RFC 5322, so they behave identically on Microsoft 365, Gmail
-and IMAP. Rule 3 is the only provider concept, and it is treated as *a hint
-valid only inside one mailbox* — which is what a `conversationId` or `threadId`
-actually is. Below the threshold `match()` returns candidates but leaves `model`
-empty, so a caller can branch on `model` alone and never route on a guess.
+Rule 1 answers only when `X-Odoo-Db` carries this database's marker (§11):
+without it the model and record id are some other Odoo's rows, and a rule that
+answers at 1.0 gets no benefit of the doubt. Rules 1 and 2 are RFC 5322, so
+they behave identically on Microsoft 365, Gmail and IMAP. Rule 3 is the only
+provider concept, and it is treated as *a hint valid only inside one mailbox*
+— which is what a `conversationId` or `threadId` actually is. Below the
+threshold `match()` returns candidates but leaves `model` empty, so a caller
+can branch on `model` alone and never route on a guess.
 
 No rung is trusted alone. Rule 2 resolves a Message-ID through the ref index
 *and* through Odoo's own `message_id`; rule 3 tries every key the conversation
@@ -2774,6 +2801,14 @@ by URL and every public model method answers `call_kw`, so the Inbox's read
 methods and the live mailbox check ownership themselves (§1,
 `tests/test_rpc_surface.py`).
 
+One write is narrower than its ACL on purpose. A Mailbox Manager may write
+every account, but not *whose* it is: `user_id` and `email` on
+`pan.mail.account` change only as an administrator once they are set
+(`write()` refuses with AccessError). Moving a colleague's account onto
+yourself and then taking over their mailbox would have made it personal to
+you, with their token behind it; the manager group was split off from
+administration so that this exact door stays shut.
+
 ---
 
 ### The takeover is one-sided
@@ -2821,6 +2856,16 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 | `X-Odoo-Record-Id` | `123` | Source record id |
 | `X-Odoo-Mail-Id` | `456` | `mail.mail` record id |
 | `X-Odoo-Message-Id` | `789` | `mail.message` record id |
+| `X-Odoo-Db` | `3f1a…` (32 hex) | Which database wrote the four above: a salted SHA-256 of `database.uuid`, `pan_mail_fetcher.odoo_db_marker()` |
+
+The ids are only meaningful to the database that minted them, which is what
+`X-Odoo-Db` says. It is identity, not authentication: the question it answers
+is "did we send this", and a forged yes buys nobody anything, so the value is
+not secret and the salt only keeps the uuid itself off the wire. Both MIME
+senders and the Graph sender write it through the same helper; the loop guard
+and matcher rule 1 read it, and `normalize_headers()` lets it past the
+boundary. Every reader treats a header that fails the check as a header that
+is not there.
 
 ### Log tags
 

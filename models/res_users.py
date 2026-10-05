@@ -242,7 +242,7 @@ class ResUsers(models.Model):
             'target': 'new',
         }
 
-    def _pan_mail_should_prompt_connect(self):
+    def _pan_mail_should_prompt_connect(self, link=None):
         """Should this user be shown the "connect your mailbox" banner?
 
         Only where the button behind it would work. Four things have to be
@@ -261,13 +261,18 @@ class ResUsers(models.Model):
         connect is usually the administrator who is on step 3 and needs an
         owner for the notification mailbox, so a banner that waits for setup to
         be done waits for the thing it is meant to unblock.
+
+        `link` is the Pantalytics link when the caller has it (`ir.http`
+        resolves it once per page load and asks every question of that row);
+        left out, `sync_allowed` looks it up.
         """
         self.ensure_one()
         if not self._is_internal() or self.x_pan_mail_connected:
             return False
         if database_is_neutralized(self.env):
             return False
-        if not self.env['pan.mail.license'].sync_allowed():
+        License = self.env['pan.mail.license'] if link is None else link
+        if not License.sync_allowed():
             # A new account is refused on an unconnected instance, so the
             # button would end in a refusal after the consent screen.
             return False

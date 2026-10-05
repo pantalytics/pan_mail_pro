@@ -20,6 +20,8 @@ from unittest.mock import MagicMock, patch
 
 from odoo.tests import tagged
 
+from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import odoo_db_marker
+
 from .common import MailProTestCase
 
 GMAIL_ID = 'gmail_msg_0001'
@@ -198,7 +200,10 @@ class TestGmailIncomingSync(MailProTestCase):
     def test_odoo_originated_gmail_is_not_reimported(self):
         """We stamp X-Odoo-* on everything we send; Gmail hands it back in SENT."""
         message = self._message(
-            payload=self._payload(extra_headers=(('X-Odoo-Model', 'res.partner'),)),
+            payload=self._payload(extra_headers=(
+                ('X-Odoo-Model', 'res.partner'),
+                ('X-Odoo-Db', odoo_db_marker(self.env)),
+            )),
         )
         self._sync(message=message)
 

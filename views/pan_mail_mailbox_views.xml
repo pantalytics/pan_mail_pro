@@ -25,8 +25,8 @@
                 <field name="sync_level" string="Sync" optional="hide"/>
                 <!-- The cursor, named as one. It used to say "Last Synced"
                      here too, which is the question the next column answers. -->
-                <field name="last_sync_date" string="Newest Mail Read" optional="hide"/>
-                <field name="last_check_date" string="Last Checked" optional="hide"/>
+                <field name="last_sync_date" string="Newest mail read" optional="hide"/>
+                <field name="last_check_date" string="Last checked" optional="hide"/>
                 <field name="error_message" string="Error" optional="hide"/>
             </list>
         </field>
@@ -106,7 +106,7 @@
                     <notebook>
                         <!-- Hidden for the notification mailbox: it carries the
                              system email and syncs nothing itself. -->
-                        <page string="Sync Settings" name="sync"
+                        <page string="Sync settings" name="sync"
                               invisible="is_notification_mailbox">
                             <!-- Sending is stated, not asked. Whether this
                                  address is used is decided per message, in the
@@ -206,7 +206,7 @@
                                          this address. -->
                                     <div>
                                         <button name="action_test_send" type="object"
-                                                string="Send Test Email" class="btn-link ps-0"
+                                                string="Send test email" class="btn-link ps-0"
                                                 icon="fa-paper-plane"/>
                                         <div class="text-muted mt-1">
                                             Sends one email to you, to prove this address
@@ -215,7 +215,7 @@
                                     </div>
                                     <div invisible="provider != 'imap'">
                                         <button name="action_open_account" type="object"
-                                                string="Server Credentials" class="btn-link ps-0"
+                                                string="Server credentials" class="btn-link ps-0"
                                                 icon="fa-key"/>
                                         <div class="text-muted mt-1">
                                             This address is reached with a server, a login and a

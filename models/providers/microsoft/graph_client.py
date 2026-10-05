@@ -58,6 +58,9 @@ AADSTS_HINTS = {
 MAX_RETRIES = 3
 # Longer than this, the cron does not wait: see _request_with_retry.
 MAX_RETRY_AFTER_SECONDS = 15
+# Microsoft's own ceiling on `internetMessageHeaders`: a sixth custom header
+# is refused with InvalidInternetMessageHeaderCollection on the draft.
+GRAPH_MAX_CUSTOM_HEADERS = 5
 INITIAL_BACKOFF_SECONDS = 2
 
 # Attachment size threshold: Graph API allows max 3MB per direct attachment upload.
@@ -810,6 +813,24 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'name': 'X-Odoo-Message-Id',
                 'value': str(mail_record.mail_message_id.id)
             })
+
+        # Which database stamped the headers above. Without it the loop guard
+        # would take another Mail Pro customer's mail for our own sent copy;
+        # see `pan_mail_fetcher.odoo_db_marker`.
+        db_marker = self.env['pan.mail.fetcher']._odoo_db_marker()
+        if db_marker:
+            internet_message_headers.append({
+                'name': 'X-Odoo-Db',
+                'value': db_marker,
+            })
+        # Graph refuses a message carrying more than five custom headers
+        # (InvalidInternetMessageHeaderCollection). A record-bound reply
+        # carries exactly five now, so the next header has to replace one of
+        # these rather than join them; this is where that would surface, as a
+        # failed send in every test above rather than in production.
+        assert len(internet_message_headers) <= GRAPH_MAX_CUSTOM_HEADERS, (
+            'Graph accepts at most %s custom headers; %s were built'
+            % (GRAPH_MAX_CUSTOM_HEADERS, len(internet_message_headers)))
 
         # Process body: convert /web/image/ URLs to cid: inline attachments
         # This embeds images directly in the email so they work regardless

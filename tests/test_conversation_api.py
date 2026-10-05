@@ -9,6 +9,7 @@ on, because a missing key here is a blank pane in the browser and an empty
 server log.
 """
 from ast import literal_eval
+from datetime import timedelta
 from unittest.mock import patch
 
 from lxml import etree
@@ -305,6 +306,56 @@ class TestConversationApi(TransactionCase):
         keys = [(row['model'], row['res_id']) for row in first + second]
         self.assertEqual(len(keys), 3)
         self.assertEqual(len(set(keys)), 3, 'no conversation on two pages')
+
+    def test_a_page_starts_where_the_last_one_ended(self):
+        """`offset` is the page the client asks for, and nothing before it.
+
+        Page two is the next conversations and none of page one's; the page
+        after the last is empty rather than an error; and a negative offset
+        is page one, because `offset` arrives over RPC like `limit` does.
+        """
+        leads = [self.lead] + [self.env['crm.lead'].create({
+            'name': f'Lead {index}', 'partner_id': self.customer.id,
+        }) for index in range(4)]
+        for index, lead in enumerate(leads):
+            message = self._mail(record=lead)
+            message.date = message.date - timedelta(minutes=index)
+        newest_first = [('crm.lead', lead.id) for lead in leads]
+
+        def page(offset):
+            return [(row['model'], row['res_id'])
+                    for row in self.Conversation.search_conversations(
+                        mailbox_id=self.mailbox.id, limit=2, offset=offset)]
+
+        self.assertEqual(page(0), newest_first[:2])
+        self.assertEqual(page(2), newest_first[2:4], 'the next two, not the first two')
+        self.assertEqual(page(4), newest_first[4:], 'the last page is what is left')
+        self.assertEqual(page(6), [], 'past the end is empty, not an error')
+        self.assertEqual(page(-5), newest_first[:2], 'a negative offset is page one')
+
+    def test_the_batch_queries_cover_the_page_and_not_what_came_before_it(self):
+        """Loading page two costs page two.
+
+        The newest-message and count queries are built as one OR over the
+        groups of the page, so if they were built over everything from the
+        first page on, every later page would cost every earlier one again.
+        """
+        for index in range(4):
+            self._mail(record=self.env['crm.lead'].create({
+                'name': f'Lead {index}', 'partner_id': self.customer.id,
+            }))
+        Conversation = type(self.Conversation)
+        with patch.object(Conversation, '_newest_per_group', autospec=True,
+                          side_effect=Conversation._newest_per_group) as newest, \
+             patch.object(Conversation, '_counts_per_group', autospec=True,
+                          side_effect=Conversation._counts_per_group) as counts:
+            rows = self.Conversation.search_conversations(
+                mailbox_id=self.mailbox.id, limit=2, offset=2)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(newest.call_args.args[2]), 2,
+                         'the newest-message query is built over the page\'s groups')
+        self.assertEqual(len(counts.call_args.args[2]), 2,
+                         'the count query is built over the page\'s messages')
 
     def test_a_search_narrows_the_list_and_the_rail_together(self):
         self._mail(subject='Offerte asafdichtingen')
@@ -632,6 +683,64 @@ class TestConversationApi(TransactionCase):
         counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
             mailbox_id=self.mailbox.id)}
         self.assertEqual(counts['sent'], 1)
+
+    def test_inbox_and_sent_are_counted_from_one_query_and_the_cap_holds_for_both(self):
+        """One grouping query answers both numbers, and the cap on it must
+        not lose Sent.
+
+        The query returns `COUNT_CAP + 1` conversations at most, so a count
+        that read them newest-first would miss a Sent conversation older than
+        the page. They come back Sent-first instead: with the cap at two and
+        the one conversation we wrote in the oldest of four, Inbox is capped
+        and Sent still says one.
+        """
+        oldest = self.env['crm.lead'].create({
+            'name': 'Oudste', 'partner_id': self.customer.id})
+        written = self._mail(record=oldest, direction='outgoing', subject='Offerte')
+        written.date = written.date - timedelta(days=1)
+        for index in range(3):
+            self._mail(record=self.env['crm.lead'].create({
+                'name': f'Lead {index}', 'partner_id': self.customer.id,
+            }))
+        with patch('odoo.addons.pan_mail_pro.models.pan_mail_conversation.COUNT_CAP', 2):
+            folders = {row['id']: row for row in self.Conversation.folder_counts(
+                mailbox_id=self.mailbox.id)}
+        self.assertEqual((folders['inbox']['count'], folders['inbox']['capped']),
+                         (2, True))
+        self.assertEqual((folders['sent']['count'], folders['sent']['capped']),
+                         (1, False), 'the oldest conversation is still in Sent')
+
+        # And the same numbers, uncapped, agree with the lists they sit beside.
+        folders = {row['id']: row for row in self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id)}
+        self.assertEqual(folders['inbox']['count'], 4)
+        self.assertEqual(folders['sent']['count'], len(
+            self.Conversation.search_conversations(
+                mailbox_id=self.mailbox.id, folder='sent')))
+
+    def test_the_sent_count_reads_the_direction_that_sorts_last(self):
+        """The one-query count takes the maximum direction per conversation
+        and calls it Sent when that is `outgoing`. That holds while
+        `outgoing` is the value that sorts last; a third value or a rename
+        that breaks it must fail here and not on a customer's mailbox list.
+        """
+        values = [value for value, _label in
+                  self.env['mail.message']._fields['x_direction'].selection]
+        self.assertIn('outgoing', values)
+        self.assertEqual(max(values), 'outgoing')
+
+    def test_the_unlinked_counts_count_messages_in_both_folders(self):
+        """Under the filter that stops grouping, Sent counts the outgoing
+        messages the way Inbox counts all of them."""
+        for direction in ('incoming', 'incoming', 'outgoing'):
+            self.env['mail.message'].create({
+                'model': False, 'message_type': 'email', 'subject': 'Stranger',
+                'body': '<p>Who is this</p>', 'email_from': 'nobody@elsewhere.test',
+                'x_direction': direction, 'x_mailbox_id': self.mailbox.id,
+            })
+        counts = {row['id']: row['count'] for row in self.Conversation.folder_counts(
+            mailbox_id=self.mailbox.id, **self._search_filter('unlinked'))}
+        self.assertEqual((counts['inbox'], counts['sent']), (3, 1))
 
     def test_a_template_mail_is_correspondence_too(self):
         """A quote sent from the record is an `auto_comment`, and the customer

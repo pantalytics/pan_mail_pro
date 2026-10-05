@@ -16,6 +16,7 @@ from unittest.mock import patch
 from odoo import fields
 from odoo.tests import TransactionCase, tagged
 
+from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import odoo_db_marker
 from odoo.addons.pan_mail_pro.models.pan_mail_matcher import (
     AUTO_ROUTE_CONFIDENCE,
     RULE_ODOO_HEADERS,
@@ -118,11 +119,42 @@ class TestMailMatcher(TransactionCase):
         decision = self.matcher._match(self._message(headers={
             'X-Odoo-Model': 'crm.lead',
             'X-Odoo-Record-Id': str(self.lead.id),
+            'X-Odoo-Db': odoo_db_marker(self.env),
         }), mailbox=self.mailbox)
 
         self.assertEqual(decision['model'], 'crm.lead')
         self.assertEqual(decision['res_id'], self.lead.id)
         self.assertEqual(decision['rule'], RULE_ODOO_HEADERS)
+
+    def test_another_database_s_headers_are_not_ours(self):
+        """A customer who also runs Mail Pro numbers their leads from one, as
+        we do. Their mail names *their* lead 7; rule 1 used to route it onto
+        ours at 1.0, past every other rule, and the loop guard then indexed
+        their ids onto our rows so the rest of the thread followed."""
+        decision = self.matcher._match(self._message(headers={
+            'X-Odoo-Model': 'crm.lead',
+            'X-Odoo-Record-Id': str(self.lead.id),
+            'X-Odoo-Db': 'f' * 32,
+        }), mailbox=self.mailbox)
+
+        self.assertFalse(decision['model'])
+        self.assertFalse(
+            [c for c in decision['candidates'] if c['rule'] == RULE_ODOO_HEADERS],
+            "a foreign database's headers must not even be proposed",
+        )
+
+    def test_headers_without_a_marker_are_not_ours(self):
+        """A rule that answers at 1.0 gets no benefit of the doubt. The only
+        pre-marker mail of our own with these headers is the Sent copy, and
+        the loop guard refuses that before the matcher sees it."""
+        decision = self.matcher._match(self._message(headers={
+            'X-Odoo-Model': 'crm.lead',
+            'X-Odoo-Record-Id': str(self.lead.id),
+        }), mailbox=self.mailbox)
+
+        self.assertFalse(decision['model'])
+        self.assertFalse(
+            [c for c in decision['candidates'] if c['rule'] == RULE_ODOO_HEADERS])
 
     def test_odoo_headers_pointing_at_a_deleted_record_do_not_match(self):
         """A stale reference must not resurrect a record that no longer exists.
