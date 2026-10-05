@@ -26,12 +26,14 @@ on a staging copy.
 
 1. Click your **profile picture** (top right) → **My Preferences**
 2. Go to the **Mail Pro** tab
-3. Click **Connect Mailbox**
+3. Click **Connect mailbox**
 4. Sign in with your Microsoft 365 or Google Workspace account
 5. Grant the requested permissions
 
 A personal mailbox is created for the address you signed in with, and set as
-your **Send from**.
+your **Default mailbox**. The tab shows which address you are connected as;
+that is the identity your mail provider knows, which is not always the one on
+your Odoo user.
 
 An administrator can invite everybody at once with **Send Mail Pro Invite** on
 the Users list (Settings → Mail Pro → Users).
@@ -45,7 +47,7 @@ before a customer finds it. Every mailbox form has the same button.
 ## Set your default mailbox
 
 1. Go to **My Preferences → Mail Pro**
-2. Pick a mailbox in **Send from**
+2. Pick a mailbox in **Default mailbox**
 3. Save
 
 That mailbox is pre-selected in the composer. You can still change it per email.

@@ -65,8 +65,8 @@ class ResUsers(models.Model):
 
     x_default_mailbox_id = fields.Many2one(
         'pan.mail.mailbox',
-        string='Default Send From',
-        help='Mailbox this user sends from unless they pick another one in the composer.',
+        string='Default mailbox',
+        help='The mailbox this user sends from unless they pick another one in the composer.',
     )
 
     # CSRF nonce for one authorization round trip. It lives here rather than on

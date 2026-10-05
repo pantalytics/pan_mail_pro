@@ -29,7 +29,7 @@ Access; a missing Send As shows up at the first send, with the message above.
 
 **Solution:**
 1. Go to **My Preferences → Mail Pro** tab
-2. Click **Connect Mailbox** and complete the sign-in
+2. Click **Connect mailbox** and complete the sign-in
 
 On IMAP/SMTP there is nothing for the user to press: an administrator enters
 the server, login and password on the account. The banner is not shown at all

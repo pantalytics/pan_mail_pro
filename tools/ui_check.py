@@ -3113,8 +3113,9 @@ class Checks:
                          'Replies and new email, everyone'):
                 if rung not in text:
                     self.fail(f'My Preferences does not offer "{rung}"')
-            if 'Send from' not in text:
-                self.fail('My Preferences lost Send from')
+            for section in ('Connected account', 'Default mailbox', 'Personal mailbox'):
+                if section not in text:
+                    self.fail(f'My Preferences lost "{section}"')
             # Connected as: the address, where "connected" used to be a tick.
             # This user consented as their own address, so the line that
             # says otherwise must not be drawn.

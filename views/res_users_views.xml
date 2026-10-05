@@ -45,12 +45,20 @@
                             <div class="text-muted mb-3">Sign in so Odoo can send and read mail on your behalf</div>
                             <button type="object"
                                     name="action_connect_mailbox"
-                                    string="Connect Mailbox"
+                                    string="Connect mailbox"
                                     class="btn-primary" icon="fa-sign-in"/>
                         </div>
                     </group>
 
-                    <group invisible="not x_pan_mail_connected">
+                    <!-- Three things a person owns here, in the order they
+                         matter: which sign-in this is, which address it sends
+                         from unless they pick another, and how much of their
+                         own mailbox Odoo reads back. Section headers, rows,
+                         the one destructive action red and confirmed: the
+                         shape the brand guide gives a settings page
+                         (brand.pantalytics.com/product-ui), in Odoo's own
+                         group markup. -->
+                    <group string="Connected account" invisible="not x_pan_mail_connected">
                         <field name="x_pan_mail_connected_elsewhere" invisible="1"/>
                         <field name="x_pan_mail_can_check_access" invisible="1"/>
                         <label for="x_pan_mail_connected_as" string="Connected as"/>
@@ -63,22 +71,37 @@
                             <div class="text-muted mt-1" invisible="not x_pan_mail_connected_elsewhere">
                                 Not the address of this Odoo user.
                             </div>
-                            <!-- Nothing is stored: the answer is the provider's,
-                                 right now, with this sign-in. -->
-                            <button type="object"
-                                    name="action_check_mailbox_access"
-                                    string="Check shared mailboxes"
-                                    class="btn-link ps-0"
-                                    invisible="not x_pan_mail_can_check_access"/>
+                            <div class="d-flex flex-wrap gap-3 mt-1">
+                                <!-- Nothing is stored: the answer is the provider's,
+                                     right now, with this sign-in. -->
+                                <button type="object"
+                                        name="action_check_mailbox_access"
+                                        string="Check shared mailboxes"
+                                        class="btn-link p-0"
+                                        invisible="not x_pan_mail_can_check_access"/>
+                                <button type="object"
+                                        name="action_disconnect_mailbox"
+                                        string="Disconnect"
+                                        class="btn-link p-0 text-danger"
+                                        confirm="Odoo will stop sending and receiving mail for this account until you connect it again."/>
+                            </div>
                         </div>
                         <field name="x_default_mailbox_id"
-                               string="Send from"
+                               string="Default mailbox"
                                domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
-                        <field name="x_pan_mail_personal_mailbox_id" invisible="1"/>
-                        <label for="x_pan_mail_sync_level"
-                               invisible="not x_pan_mail_personal_mailbox_id"/>
-                        <div invisible="not x_pan_mail_personal_mailbox_id">
+                    </group>
+
+                    <!-- The one mailbox setting that is the person's own.
+                         Absent until the connect flow has claimed their
+                         address, which it cannot before the internal domains
+                         are set. -->
+                    <group string="Personal mailbox"
+                           invisible="not x_pan_mail_connected or not x_pan_mail_personal_mailbox_id">
+                        <field name="x_pan_mail_personal_mailbox_id" string="Mailbox"
+                               readonly="1" options="{'no_open': True}"/>
+                        <label for="x_pan_mail_sync_level"/>
+                        <div>
                             <field name="x_pan_mail_sync_level" widget="radio" nolabel="1"/>
                             <div class="alert alert-warning mt-2 mb-0" role="alert"
                                  invisible="x_pan_mail_sync_level != 'everyone'">
@@ -86,13 +109,6 @@
                                 and private email included. Pick this only for an
                                 address that exists to hear from strangers.
                             </div>
-                        </div>
-                        <div colspan="2">
-                            <button type="object"
-                                    name="action_disconnect_mailbox"
-                                    string="Disconnect"
-                                    class="oe_link text-danger"
-                                    confirm="Odoo will stop sending and receiving mail for this account until you connect it again."/>
                         </div>
                     </group>
                 </page>
@@ -116,12 +132,20 @@
                             <div class="text-muted mb-3">Sign in so Odoo can send and read mail on your behalf</div>
                             <button type="object"
                                     name="action_connect_mailbox"
-                                    string="Connect Mailbox"
+                                    string="Connect mailbox"
                                     class="btn-primary" icon="fa-sign-in"/>
                         </div>
                     </group>
 
-                    <group invisible="not x_pan_mail_connected">
+                    <!-- Three things a person owns here, in the order they
+                         matter: which sign-in this is, which address it sends
+                         from unless they pick another, and how much of their
+                         own mailbox Odoo reads back. Section headers, rows,
+                         the one destructive action red and confirmed: the
+                         shape the brand guide gives a settings page
+                         (brand.pantalytics.com/product-ui), in Odoo's own
+                         group markup. -->
+                    <group string="Connected account" invisible="not x_pan_mail_connected">
                         <field name="x_pan_mail_connected_elsewhere" invisible="1"/>
                         <field name="x_pan_mail_can_check_access" invisible="1"/>
                         <label for="x_pan_mail_connected_as" string="Connected as"/>
@@ -134,22 +158,37 @@
                             <div class="text-muted mt-1" invisible="not x_pan_mail_connected_elsewhere">
                                 Not the address of this Odoo user.
                             </div>
-                            <!-- Nothing is stored: the answer is the provider's,
-                                 right now, with this sign-in. -->
-                            <button type="object"
-                                    name="action_check_mailbox_access"
-                                    string="Check shared mailboxes"
-                                    class="btn-link ps-0"
-                                    invisible="not x_pan_mail_can_check_access"/>
+                            <div class="d-flex flex-wrap gap-3 mt-1">
+                                <!-- Nothing is stored: the answer is the provider's,
+                                     right now, with this sign-in. -->
+                                <button type="object"
+                                        name="action_check_mailbox_access"
+                                        string="Check shared mailboxes"
+                                        class="btn-link p-0"
+                                        invisible="not x_pan_mail_can_check_access"/>
+                                <button type="object"
+                                        name="action_disconnect_mailbox"
+                                        string="Disconnect"
+                                        class="btn-link p-0 text-danger"
+                                        confirm="Odoo will stop sending and receiving mail for this account until you connect it again."/>
+                            </div>
                         </div>
                         <field name="x_default_mailbox_id"
-                               string="Send from"
+                               string="Default mailbox"
                                domain="['|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"/>
-                        <field name="x_pan_mail_personal_mailbox_id" invisible="1"/>
-                        <label for="x_pan_mail_sync_level"
-                               invisible="not x_pan_mail_personal_mailbox_id"/>
-                        <div invisible="not x_pan_mail_personal_mailbox_id">
+                    </group>
+
+                    <!-- The one mailbox setting that is the person's own.
+                         Absent until the connect flow has claimed their
+                         address, which it cannot before the internal domains
+                         are set. -->
+                    <group string="Personal mailbox"
+                           invisible="not x_pan_mail_connected or not x_pan_mail_personal_mailbox_id">
+                        <field name="x_pan_mail_personal_mailbox_id" string="Mailbox"
+                               readonly="1" options="{'no_open': True}"/>
+                        <label for="x_pan_mail_sync_level"/>
+                        <div>
                             <field name="x_pan_mail_sync_level" widget="radio" nolabel="1"/>
                             <div class="alert alert-warning mt-2 mb-0" role="alert"
                                  invisible="x_pan_mail_sync_level != 'everyone'">
@@ -157,13 +196,6 @@
                                 and private email included. Pick this only for an
                                 address that exists to hear from strangers.
                             </div>
-                        </div>
-                        <div colspan="2">
-                            <button type="object"
-                                    name="action_disconnect_mailbox"
-                                    string="Disconnect"
-                                    class="oe_link text-danger"
-                                    confirm="Odoo will stop sending and receiving mail for this account until you connect it again."/>
                         </div>
                     </group>
                 </page>
