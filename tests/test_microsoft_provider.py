@@ -345,6 +345,73 @@ class TestGraphAuthorizationScopes(TransactionCase):
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestGraphDelegationRefused(TransactionCase):
+    """What a shared mailbox refuses, said in words that name the right person.
+
+    Exchange refuses a send on a shared address with `ErrorAccessDenied`
+    (no Full Access, on the draft) or `ErrorSendAsDenied` (no Send As, on
+    the send). The identity it refused is the account's address, which is
+    not always the Odoo user's: the raw Graph line sent admins to the wrong
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.client = get_provider_client(cls.env, 'outlook')
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.user = cls.env['res.users'].create({
+            'name': 'Anna', 'login': 'anna@test.local', 'email': 'anna@test.local',
+        })
+        # Connected as somebody else: the customer case.
+        cls.account = cls.env['pan.mail.account'].create({
+            'email': 'danielle@test.local', 'provider': 'outlook',
+            'user_id': cls.user.id, 'refresh_token': 'r', 'access_token': 'a',
+        })
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({'email': 'sales@test.local'})
+
+    def _response(self, status_code, payload=None):
+        resp = MagicMock()
+        resp.status_code = status_code
+        resp.json.return_value = payload or {}
+        resp.raise_for_status.return_value = None
+        return resp
+
+    def _refusal(self, code, status_code=403):
+        """A response whose raise_for_status raises with a Graph error body."""
+        resp = self._response(status_code, {'error': {'code': code, 'message': 'denied'}})
+        exc = requests.exceptions.HTTPError(f'{status_code} Client Error')
+        exc.response = resp
+        resp.raise_for_status.side_effect = exc
+        return resp
+
+    def _send(self, refusal):
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>Hi</p>', 'email_to': 'to@example.com',
+            'author_id': self.user.partner_id.id,
+        })
+        with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
+                patch(GRAPH_POST, return_value=refusal):
+            return self.client.send_email_via_graph(mail, self.mailbox, self.account)
+
+    def test_a_denied_send_names_the_identity_exchange_refused(self):
+        for code in ('ErrorSendAsDenied', 'ErrorAccessDenied'):
+            with self.subTest(code=code):
+                result = self._send(self._refusal(code))
+                self.assertFalse(result['success'])
+                self.assertEqual(
+                    result['error'],
+                    'danielle@test.local cannot send from sales@test.local. An '
+                    'administrator grants Full Access and Send As on that address '
+                    'in the Exchange admin center.')
+
+    def test_another_refusal_keeps_graphs_own_words(self):
+        result = self._send(self._refusal('ErrorMessageSizeExceeded'))
+        self.assertFalse(result['success'])
+        self.assertNotIn('Full Access', result['error'])
+        self.assertIn('Graph API error', result['error'])
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestGraphCredentialTest(TransactionCase):
     """The check the provider form runs on save.
 

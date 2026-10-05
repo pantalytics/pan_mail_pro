@@ -204,10 +204,10 @@ class ImapSmtpClient(models.AbstractModel):
         raise self._no_oauth_error()
 
     @api.model
-    def get_user_email(self, token):
+    def read_user_info(self, token):
         """No token authenticates anybody here; the address is configuration,
         not something the server tells us."""
-        return None
+        return {'email': None, 'name': None}
 
     @api.model
     def test_connection(self, account):
@@ -221,18 +221,19 @@ class ImapSmtpClient(models.AbstractModel):
             with self._imap(account) as conn:
                 conn.select('INBOX', readonly=True)
         except Exception as e:
-            return {'success': False, 'error': _('IMAP: %s') % self._error_text(e)}
+            return {'success': False, 'error': _('IMAP: %s') % self._error_text(e),
+                    'email': address, 'name': None}
         try:
             with self._smtp(account):
                 pass
         except Exception as e:
-            return {'success': False, 'error': _('SMTP: %s') % self._error_text(e)}
+            return {'success': False, 'error': _('SMTP: %s') % self._error_text(e),
+                    'email': address, 'name': None}
         return {
             'success': True,
             'error': None,
             'email': address,
-            'display_name': address,
-            'id': address,
+            'name': None,
         }
 
     # -------------------------------------------------------------------------

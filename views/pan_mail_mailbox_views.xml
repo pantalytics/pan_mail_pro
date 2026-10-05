@@ -159,7 +159,20 @@
                         <page string="Setup" name="setup">
                             <group>
                                 <group>
-                                    <field name="owner_user_id" required="is_notification_mailbox"/>
+                                    <label for="owner_user_id"/>
+                                    <div>
+                                        <field name="owner_user_id" nolabel="1" class="d-inline-block"
+                                               required="is_notification_mailbox"/>
+                                        <!-- Whose sign-in the mail leaves with: the
+                                             owner's on a personal or notification
+                                             mailbox, each sender's own on a shared one.
+                                             The address named is the one the provider
+                                             has to allow, which is not always the
+                                             owner's own. -->
+                                        <div class="text-muted mt-1" invisible="not sends_with">
+                                            <field name="sends_with" nolabel="1" readonly="1"/>
+                                        </div>
+                                    </div>
                                     <!-- Derived, not asked: see _compute_mailbox_type. -->
                                     <label for="mailbox_type" string="Type"/>
                                     <div>

@@ -198,7 +198,7 @@ class PanMailAccount(models.Model):
                 'tag': 'display_notification',
                 'params': {
                     'title': _('Connection Successful'),
-                    'message': _('Connected as %s.') % (result.get('email') or self.email),
+                    'message': _('Connected as %s.') % self._identity_label(result),
                     'type': 'success',
                     'sticky': False,
                 },
@@ -213,6 +213,13 @@ class PanMailAccount(models.Model):
                 'sticky': True,
             },
         }
+
+    def _identity_label(self, identity):
+        """A normalized identity as one string: the name with the address
+        behind it where the provider gives a name, the address alone otherwise."""
+        email = identity.get('email') or self.email
+        name = identity.get('name')
+        return f'{name} ({email})' if name and name != email else email
 
     @api.model
     def _store_tokens(self, provider, user, email, access_token, refresh_token, token_expiry):

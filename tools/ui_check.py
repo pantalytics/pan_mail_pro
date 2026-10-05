@@ -3127,8 +3127,14 @@ class Checks:
                          'Replies and new email, everyone'):
                 if rung not in text:
                     self.fail(f'My Preferences does not offer "{rung}"')
-            if 'Send from' not in text:
-                self.fail('My Preferences lost Send from')
+            # A group's title is drawn in capitals (innerText keeps the
+            # transform), so the sections are matched without case.
+            for section in ('Connected account', 'Default mailbox', 'Personal mailbox'):
+                if section.lower() not in text.lower():
+                    self.fail(f'My Preferences lost "{section}"')
+            # Connected as: the address, where "connected" used to be a tick.
+            if login not in text:
+                self.fail('My Preferences does not say which address the user is connected as')
 
             widest = page.query_selector(
                 '.modal .o_form_view label:has-text("Replies and new email, everyone")')
