@@ -1,9 +1,9 @@
 # Connect to Pantalytics
 
 Mail Pro works on an Odoo instance that is connected to a Pantalytics account.
-Until it is, the Settings page and the Inbox show one button and nothing
-else: sending through Odoo's own mail server keeps working, incoming mail is
-not synced and no mailbox can be connected.
+It is step 1 of the setup checklist. Until it is done, the Settings page shows
+that one step and the Inbox one button: sending through Odoo's own mail server
+keeps working, incoming mail is not synced and no mailbox can be connected.
 
 You need a Pantalytics account. If you do not have one yet, you create it on
 the page the button opens, or beforehand at
@@ -19,8 +19,8 @@ workspace afterwards, under **Members**.
    with a short code already filled in; the same code is shown in Odoo
 3. Sign in with your Pantalytics account, or create one
 4. Check that the page names this Odoo instance, and press **Approve**
-5. Press the button back to your Odoo. The Settings page now shows
-   **Status: Active** and the setup checklist appears below it
+5. Press the button back to your Odoo. Step 1 now reads **Active**, with
+   who connected it and when, and steps 2 to 4 appear below it
 
 No tab opened? The Settings page shows the link under the code. Approved but
 Odoo still says it is waiting? Press **Check Approval**. Connected, but the
@@ -55,8 +55,10 @@ sync is healthy, and for the last 24 hours how many mails were linked to a
 document, to a contact only, or to nothing, per matching rule how often it
 decided and how often somebody overruled it, and how many conversations were
 linked by hand. Counts and rule names. When you connect, the Odoo URL is sent
-too so the approval page can name this instance. Never an address, a subject,
-a body or a name. See [Security](../security.md).
+too so the approval page can name this instance, and the email address of the
+Pantalytics account that approved is stored in Odoo, on the Settings page.
+Never an address from your mail, a subject, a body or a name. See
+[Security](../security.md).
 
 ## Help improve Mail Pro
 

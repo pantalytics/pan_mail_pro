@@ -3,7 +3,8 @@
 
 The provider's own picker and credential-completeness rules moved to
 `tests/test_pan_mail_provider.py` with the fields they guard — this file is
-only about the three-step phase built on top of them.
+only about the three-step phase built on top of them, which the settings
+page numbers 2 to 4 after the Pantalytics account.
 """
 from unittest.mock import patch
 
@@ -43,10 +44,18 @@ class TestSetupPhase(TransactionCase):
             ['provider', 'domains', 'mailboxes'],
         )
 
+    def test_the_steps_are_numbered_after_the_account(self):
+        """The Pantalytics account is step 1 on the settings page and a gate
+        of its own, so the first step here is 2 and the banner says "of 4"."""
+        self.assertEqual(pan_mail_setup.ACCOUNT_STEP, 1)
+        answers = self._answers(provider=False)
+        self.assertEqual(self.Setup.blocking_step(answers)[:2], (2, 'provider'))
+        self.assertIn('Step 2 of 4', self.Setup.blocking_step_label(answers))
+
     def test_every_step_is_mandatory(self):
         """Each one on its own is enough to hold the whole phase back, and the
         status names that step rather than a generic "not configured"."""
-        for index, (code, label) in enumerate(pan_mail_setup.STEPS, start=1):
+        for index, (code, label) in enumerate(pan_mail_setup.STEPS, start=2):
             answers = self._answers(**{code: False})
             self.assertEqual(self.Setup.phase(answers), pan_mail_setup.PHASE_SETUP,
                              f'missing {code} must keep the module in setup')
@@ -64,7 +73,7 @@ class TestSetupPhase(TransactionCase):
         """The banner names the step to do next, not the last one that failed."""
         answers = self._answers(domains=False, mailboxes=False)
         index, code, _label = self.Setup.blocking_step(answers)
-        self.assertEqual((index, code), (2, 'domains'))
+        self.assertEqual((index, code), (3, 'domains'))
 
     def test_connection_is_about_the_database_not_about_you(self):
         """`provider_is_connected` still answers for the database rather than
@@ -89,7 +98,7 @@ class TestSetupPhase(TransactionCase):
         self.assertFalse(self.Setup.answers(provider='outlook')['provider'])
 
     def test_a_provider_row_answers_the_step(self):
-        """Once `pan.mail.provider` has a complete row, step 1 reads as
+        """Once `pan.mail.provider` has a complete row, step 2 reads as
         answered — this is the seam `res.config.settings` reads too."""
         self.env['pan.mail.provider'].create({
             'provider': 'gmail',
@@ -127,51 +136,3 @@ class TestSetupPhase(TransactionCase):
             with self.assertRaises(UserError):
                 mailbox.action_sync_now()
 
-
-@tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestUsersLine(TransactionCase):
-    """The line under the checklist: how many people have connected.
-
-    Not a fourth step — the phase is answered without it — but the question the
-    three steps leave open. A database where only the administrator ever signed
-    in works, and looks broken to everybody else.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.env['pan.mail.domain'].set_domains(['company.test'])
-        cls.Settings = cls.env['res.config.settings']
-
-    def _employee(self, name, login):
-        return self.env['res.users'].create({
-            'name': name, 'login': login, 'email': login,
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
-        })
-
-    def test_hidden_without_a_provider(self):
-        """Nothing to connect to, so nothing to report."""
-        self.assertFalse(self.Settings.create({}).x_users_relevant)
-
-    def test_hidden_on_a_provider_with_no_consent_screen(self):
-        """An IMAP password is typed in by an administrator. Asking a user to
-        connect would be asking them for something they cannot give."""
-        self.env['pan.mail.provider'].create({'provider': 'imap'})
-        self.assertFalse(self.Settings.create({}).x_users_relevant)
-
-    def test_counts_who_still_has_to_connect(self):
-        self.env['pan.mail.provider'].create({
-            'provider': 'gmail', 'client_id': 'id', 'client_secret': 'secret',
-        })
-        user = self._employee('Nora Employee', 'nora@company.test')
-        before = self.Settings.create({}).x_users_pending
-
-        self.env['pan.mail.account'].create({
-            'provider': 'gmail', 'user_id': user.id,
-            'email': user.email, 'refresh_token': 'token',
-        })
-        settings = self.Settings.create({})
-
-        self.assertTrue(settings.x_users_relevant)
-        self.assertEqual(settings.x_users_pending, before - 1)
-        self.assertIn(' of ', settings.x_users_summary)

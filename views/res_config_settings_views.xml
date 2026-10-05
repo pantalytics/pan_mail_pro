@@ -13,8 +13,9 @@
                     <field name="x_setup_domains_done" invisible="1"/>
                     <field name="x_setup_notification_done" invisible="1"/>
                     <field name="x_internal_domain_ids" invisible="1" widget="many2many_tags"/>
-                    <field name="x_users_relevant" invisible="1"/>
-                    <field name="x_users_pending" invisible="1"/>
+                    <field name="x_setup_account_done" invisible="1"/>
+                    <field name="x_license_state" invisible="1"/>
+                    <field name="x_license_sync_blocked" invisible="1"/>
 
                     <!-- The checklist sits in Odoo's own settings container so
                          it is capped and indented like every other block on this
@@ -22,75 +23,100 @@
                          window and the arrow ended up a screen away from the
                          name it belongs to.
 
-                         The three steps, in one shape: a coloured dot on the
-                         left, the name, the answer, and the way to the place you
-                         change it. All three are tables now, so that way is
-                         always a link to the table — nothing is typed on this
-                         page. Anything longer than an answer — a warning, a fix
-                         — goes on its own line under the name, never beside it,
-                         so the column of dots and names stays a column. -->
-                    <h2>Pantalytics Account</h2>
-                    <!-- Not a setup step: mail flows without it. One primary
-                         action per state, and the code is the biggest thing on
-                         screen while it is waiting, because it gets read off
-                         here and typed somewhere else. -->
+                         Four steps, in one shape: a coloured dot on the left,
+                         the name, the answer, and the way to the place you
+                         change it. Steps 2 to 4 are tables, so that way is a
+                         link to the table — nothing is typed on this page.
+                         Step 1 is a pairing with our server, so its way is a
+                         button on the line itself. Anything longer than an
+                         answer — a warning, a fix — goes on its own line under
+                         the name, never beside it, so the column of dots and
+                         names stays a column. -->
+                    <h2>Setup</h2>
                     <div class="row mt-3 o_settings_container">
-                        <div class="col-12 o_setting_box o_mailpro_about">
-                            <div invisible="x_license_state != 'not_connected'">
+                    <div class="col-12 o_setting_box o_mailpro_steps">
+
+                    <!-- Step 1. One primary action per state, and the code is
+                         the biggest thing on screen while it is waiting,
+                         because it gets read off here and typed somewhere
+                         else. Red once it was connected and broke: a lapsed
+                         or revoked link is a stopped step, not an open one. -->
+                    <div class="o_mailpro_step">
+                        <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
+                              invisible="not x_setup_account_done"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
+                              invisible="x_license_state != 'connected' or x_setup_account_done"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
+                              invisible="x_license_state == 'connected'"/>
+                        <div class="o_mailpro_step_body">
+                            <div class="o_mailpro_step_head">
+                                <span class="o_mailpro_step_name">1. Pantalytics Account</span>
+                                <span class="o_mailpro_step_value" invisible="x_license_state != 'not_connected'">Not connected</span>
+                                <span class="o_mailpro_step_value" invisible="x_license_state != 'pending'">Waiting for approval</span>
+                                <span class="o_mailpro_step_value" invisible="x_license_state != 'connected'">
+                                    <field name="x_license_status" nolabel="1" readonly="1" class="d-inline"/>
+                                </span>
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="x_license_state != 'not_connected'">
+                                Mail Pro runs on an Odoo instance that is connected to a Pantalytics account.
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="x_license_state != 'not_connected'">
                                 <button name="action_license_connect" type="object"
                                         string="Connect to Pantalytics" class="btn-primary"/>
                             </div>
-                            <div invisible="x_license_state != 'pending'">
-                                <div class="mb-1">
-                                    Approve the connection in the Pantalytics tab that just opened.
-                                    It shows this code:
-                                    <field name="x_license_user_code" nolabel="1" readonly="1" class="fw-bold ms-1"/>
-                                </div>
-                                <div class="text-muted">
-                                    No tab? <field name="x_license_verify_url" widget="url" nolabel="1" readonly="1"
-                                                   options="{'website_path': False}" text="Open it again"/>
-                                </div>
-                                <div class="mt-2">
-                                    <button name="action_license_check" type="object"
-                                            string="Check Approval" class="btn-secondary"/>
-                                    <button name="action_license_disconnect" type="object"
-                                            string="Cancel" class="btn-link"/>
-                                </div>
+                            <div class="o_mailpro_step_msg" invisible="x_license_state != 'pending'">
+                                Approve the connection in the Pantalytics tab that just opened.
+                                It shows this code:
+                                <field name="x_license_user_code" nolabel="1" readonly="1" class="fw-bold ms-1"/>
                             </div>
-                            <div invisible="x_license_state != 'connected'">
-                                <div>
-                                    <span class="o_form_label">Status</span>
-                                    <field name="x_license_status" nolabel="1" readonly="1" class="ms-1"/>
-                                </div>
-                                <div class="text-muted" invisible="not x_license_message">
-                                    <field name="x_license_message" nolabel="1" readonly="1"/>
-                                </div>
-                                <div class="text-muted" invisible="not x_license_valid_until">
-                                    Valid until <field name="x_license_valid_until" nolabel="1" readonly="1"/>
-                                </div>
-                                <!-- Usage and the invoice live at Pantalytics. A link, not a
-                                     copy of the numbers: the count that decides the invoice is
-                                     the one that server kept. -->
-                                <div class="mt-2">
-                                    <field name="x_license_dashboard_url" widget="url" nolabel="1"
-                                           readonly="1" options="{'website_path': False}"
-                                           text="Usage and billing"/>
-                                </div>
-                                <div class="mt-2" invisible="not x_license_sync_blocked">
-                                    <button name="action_license_check" type="object"
-                                            string="Check again" class="btn-secondary"/>
-                                </div>
+                            <div class="o_mailpro_step_msg" invisible="x_license_state != 'pending'">
+                                No tab? <field name="x_license_verify_url" widget="url" nolabel="1" readonly="1"
+                                               options="{'website_path': False}" text="Open it again"/>
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="x_license_state != 'pending'">
+                                <button name="action_license_check" type="object"
+                                        string="Check Approval" class="btn-secondary"/>
                                 <button name="action_license_disconnect" type="object"
-                                        string="Disconnect" class="btn-link text-danger ps-0"
-                                        confirm="This Odoo instance forgets its Pantalytics key. You can connect again at any time."/>
+                                        string="Cancel" class="btn-link"/>
                             </div>
-                            <div class="alert alert-warning mt-2 mb-0" role="alert"
-                                 invisible="not x_license_sync_blocked or x_license_state == 'not_connected'">
+                            <!-- Who connected, and when: the Pantalytics
+                                 account that approved, so a second
+                                 administrator knows whose workspace this Odoo
+                                 is in. -->
+                            <div class="o_mailpro_step_msg"
+                                 invisible="x_license_state != 'connected' or not x_license_connected_by">
+                                Connected by <field name="x_license_connected_by" nolabel="1" readonly="1" class="d-inline"/>
+                                on <field name="x_license_connected_on" nolabel="1" readonly="1" class="d-inline"/>
+                            </div>
+                            <div class="o_mailpro_step_msg"
+                                 invisible="x_license_state != 'connected' or not x_license_message">
+                                <field name="x_license_message" nolabel="1" readonly="1"/>
+                            </div>
+                            <div class="o_mailpro_step_msg"
+                                 invisible="x_license_state != 'connected' or not x_license_valid_until">
+                                Valid until <field name="x_license_valid_until" nolabel="1" readonly="1" class="d-inline"/>
+                            </div>
+                            <div class="o_mailpro_step_msg o_mailpro_msg_warn"
+                                 invisible="not x_license_sync_blocked or x_license_state != 'connected'">
                                 Incoming mail is not synced and no new mailbox can be connected until this
                                 Odoo instance is connected. Sending keeps working.
                             </div>
-                            <div class="text-warning mt-2" invisible="not x_license_last_error">
+                            <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_license_last_error">
                                 <field name="x_license_last_error" nolabel="1" readonly="1"/>
+                            </div>
+                            <!-- Usage and the invoice live at Pantalytics. A link, not a
+                                 copy of the numbers: the count that decides the invoice is
+                                 the one that server kept. -->
+                            <div class="o_mailpro_step_msg" invisible="x_license_state != 'connected'">
+                                <field name="x_license_dashboard_url" widget="url" nolabel="1"
+                                       readonly="1" options="{'website_path': False}"
+                                       text="Usage and billing" class="me-3"/>
+                                <button name="action_license_check" type="object"
+                                        string="Check again" class="btn-link p-0 me-3"
+                                        invisible="not x_license_sync_blocked"/>
+                                <button name="action_license_disconnect" type="object"
+                                        string="Disconnect" class="btn-link text-danger p-0"
+                                        confirm="This Odoo instance forgets its Pantalytics key. You can connect again at any time."/>
                             </div>
                         </div>
                     </div>
@@ -101,9 +127,6 @@
                          reads as the thing that is broken. One screen, one
                          action: connect. -->
                     <div invisible="x_license_state != 'connected'">
-                    <h2>Setup</h2>
-                    <div class="row mt-3 o_settings_container">
-                    <div class="col-12 o_setting_box o_mailpro_steps">
                     <div class="o_mailpro_step">
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
                               invisible="not x_setup_provider_done"/>
@@ -111,7 +134,7 @@
                               invisible="x_setup_provider_done"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
-                                <span class="o_mailpro_step_name">1. Email Provider</span>
+                                <span class="o_mailpro_step_name">2. Email Provider</span>
                                 <span class="o_mailpro_step_value" invisible="not x_setup_provider_done">
                                     <field name="x_active_provider_id" nolabel="1" readonly="1" options="{'no_open': True}"/>
                                 </span>
@@ -148,7 +171,7 @@
                               invisible="x_setup_domains_done"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
-                                <span class="o_mailpro_step_name">2. Internal Domains</span>
+                                <span class="o_mailpro_step_name">3. Internal Domains</span>
                                 <span class="o_mailpro_step_value" invisible="not x_setup_domains_done">
                                     <field name="x_internal_domains_summary" nolabel="1" readonly="1"/>
                                 </span>
@@ -187,7 +210,7 @@
                               invisible="x_setup_notification_done or x_mailboxes_alert"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
-                                <span class="o_mailpro_step_name">3. Mailboxes</span>
+                                <span class="o_mailpro_step_name">4. Mailboxes</span>
                                 <!-- The address alone does not say why one of
                                      several is the one on this line. The value
                                      answers the step, so it has to say which
@@ -213,42 +236,6 @@
                     </div>
 
                     </div>
-                    </div>
-
-                    <!-- Not a fourth step, and deliberately not a fourth dot:
-                         setup is finished without it. It is the answer to the
-                         question the three steps leave open — whether anybody
-                         but the administrator can send from their own address —
-                         in the same shape as the steps: the answer, and the way
-                         to the list where something is done about it. The
-                         invite button stays on that list.
-
-                         Hidden entirely on a provider with no consent screen,
-                         where an administrator types the credentials and there
-                         is nothing to ask a user for. -->
-                    <div invisible="not x_users_relevant">
-                        <h2>Users</h2>
-                        <div class="row mt-3 o_settings_container">
-                            <div class="col-12 o_setting_box o_mailpro_steps">
-                                <div class="o_mailpro_team">
-                                    <div class="o_mailpro_step_body">
-                                        <div class="o_mailpro_step_head">
-                                            <span class="o_mailpro_step_name">Connected mailboxes</span>
-                                            <span class="o_mailpro_step_value">
-                                                <field name="x_users_summary" nolabel="1" readonly="1"/>
-                                            </span>
-                                        </div>
-                                        <div class="o_mailpro_step_msg" invisible="not x_users_pending">
-                                            The rest still send as the Odoo instance, not as themselves.
-                                            Select them in Users and press "Send Mail Pro Invite".
-                                        </div>
-                                    </div>
-                                    <button type="action" name="%(base.action_res_users)d"
-                                            icon="oi-arrow-right" title="Users"
-                                            class="oe_link o_mailpro_step_edit"/>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                     </div>
 

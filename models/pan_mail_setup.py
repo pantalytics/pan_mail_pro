@@ -8,12 +8,19 @@ answered which domains are internal.
 
 Three things have to be true:
 
-1. provider   — a provider is chosen and its application credentials are
+2. provider   — a provider is chosen and its application credentials are
                 complete, which is one answer: half a provider is no provider
-2. domains    — which domains are ours, so colleagues can be told from
+3. domains    — which domains are ours, so colleagues can be told from
                 customers (there is no opt-out; see ARCHITECTURE.md §9.12)
-3. mailboxes  — one mailbox ticked as the one system mail goes out from, and
+4. mailboxes  — one mailbox ticked as the one system mail goes out from, and
                 able to send
+
+They are numbered from 2 because step 1 on the settings page is the
+Pantalytics account, and that one is not in this tuple on purpose: it is a
+gate of its own (`pan.mail.license.sync_allowed()`), asked by the same
+callers with a refusal that names the exact state the link is in, which a
+generic "step 1 is open" would hide. This model only numbers its own steps
+after it, so the banner and the page agree on which step is which.
 
 Two questions used to be steps and are not. "Are the credentials filled in" is
 not separate from "which provider": a provider without its registration cannot
@@ -47,6 +54,10 @@ _logger = logging.getLogger(__name__)
 
 PHASE_SETUP = 'setup'
 PHASE_SYNCING = 'syncing'
+
+# Step 1 on the settings page: the Pantalytics account. Not in STEPS (see the
+# module docstring); the three below are numbered after it.
+ACCOUNT_STEP = 1
 
 # The three, in the order they have to be answered. This tuple is the order:
 # the settings page numbers its sections from it, and a step that moves changes
@@ -126,10 +137,14 @@ class PanMailSetup(models.AbstractModel):
 
     @api.model
     def blocking_step(self, answers=None):
-        """The first unanswered step as (index, code, label), or None."""
+        """The first unanswered step as (index, code, label), or None.
+
+        The index is the number on the settings page, where the Pantalytics
+        account is step 1, so the first step here is 2.
+        """
         if answers is None:
             answers = self.answers()
-        for index, (code, label) in enumerate(STEPS, start=1):
+        for index, (code, label) in enumerate(STEPS, start=ACCOUNT_STEP + 1):
             if not answers.get(code):
                 return index, code, label
         return None
@@ -152,7 +167,7 @@ class PanMailSetup(models.AbstractModel):
             return ''
         index, _code, label = blocking
         return _('Step %(index)s of %(total)s — %(label)s',
-                 index=index, total=len(STEPS), label=label)
+                 index=index, total=ACCOUNT_STEP + len(STEPS), label=label)
 
     # -------------------------------------------------------------------------
     # Something broke after setup

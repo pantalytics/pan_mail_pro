@@ -159,6 +159,28 @@ class TestLicense(TransactionCase):
         self.assertTrue(link.is_entitled())
         self.assertEqual(link.daily_send_limit, 25)
 
+    def test_approval_records_who_connected_and_when(self):
+        """The Pantalytics account that approved, as the poll answer names it,
+        the Odoo user who collected the key, and the time: a second
+        administrator reads whose workspace this Odoo is in off the settings
+        page a year later."""
+        link = self.connected(poll=_response(200, {
+            'status': 'linked', 'key': 'mpk_live_key',
+            'account_email': 'rutger@pantalytics.com'}))
+        self.assertEqual(link.connected_account, 'rutger@pantalytics.com')
+        self.assertEqual(link.connected_user_id, self.env.user)
+        self.assertTrue(link.connected_on)
+        self.assertEqual(link.connected_by(), 'rutger@pantalytics.com')
+        settings = self.env['res.config.settings'].create({})
+        self.assertEqual(settings.x_license_connected_by, 'rutger@pantalytics.com')
+        self.assertEqual(settings.x_license_connected_on, link.connected_on)
+        self.assertTrue(settings.x_setup_account_done)
+
+    def test_an_older_server_that_names_no_account_leaves_the_odoo_user(self):
+        link = self.connected()
+        self.assertFalse(link.connected_account)
+        self.assertEqual(link.connected_by(), self.env.user.name)
+
     def test_checking_before_approval_changes_nothing(self):
         with patch(POST, side_effect=self.server(
                 poll=_response(200, {'status': 'pending'}))):
@@ -258,6 +280,9 @@ class TestLicense(TransactionCase):
         self.assertEqual(link.status, 'not_connected')
         self.assertFalse(link.key_encrypted)
         self.assertFalse(link.is_entitled())
+        self.assertFalse(link.connected_user_id)
+        self.assertFalse(link.connected_on)
+        self.assertFalse(link.connected_by())
 
     # --- trust --------------------------------------------------------------
 

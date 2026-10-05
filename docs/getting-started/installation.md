@@ -95,8 +95,8 @@ workspace.
 
 ## Next Steps
 
-Once connected, the Settings page shows a checklist of three steps. Step 1
-opens the provider form; pick yours and follow its guide:
+The Settings page is a checklist of four steps, and connecting was step 1.
+Step 2 opens the provider form; pick yours and follow its guide:
 
 - [Microsoft 365 Setup](azure-setup.md)
 - [Google Workspace Setup](google-setup.md)

@@ -1,28 +1,30 @@
 # -*- coding: utf-8 -*-
 """The setup page.
 
-Three mandatory steps in a fixed order, each of which reports whether the
-*next* one can succeed — not whether somebody filled in a field. A
-notification mailbox whose owner's token expired is not a done step. The
-steps themselves, and the rule that turns them into a phase, live in
+Four steps in a fixed order, each of which reports whether the *next* one can
+succeed — not whether somebody filled in a field. A notification mailbox
+whose owner's token expired is not a done step.
+
+Step 1 is the Pantalytics account (`pan_mail_license.py`): nothing below it
+exists until it is answered, because every step after it configures a product
+that will not run, and a checklist you cannot finish reads as the thing that
+is broken. Steps 2 to 4, and the rule that turns them into a phase, live in
 `pan_mail_setup.py`; this file is the checklist in front of them.
 
-All three steps are tables now — providers, internal domains, mailboxes —
-so this page only shows the answer and a way to reach the table where it is
-actually edited. Nothing is typed here any more.
+Steps 2 to 4 are tables — providers, internal domains, mailboxes — so this
+page only shows the answer and a way to reach the table where it is actually
+edited. Nothing is typed here any more. Step 1 is the exception: its answer
+is a button, because the thing it edits is a pairing with our server, not a
+row.
 
-Inviting colleagues to connect is a real job but not a setup step, and its
-button stays on the user list, next to the column that says who is still
-missing. What this page adds is the *answer* -- how many have connected -- in
-the same shape as the three steps: the number, and the way to the list where
-something is done about it. Without it, setup finished on a page that never
-mentioned the people the product is for.
+Who has connected is not on this page: the invite button and the column that
+says who is still missing are on the user list, and a count here repeated it.
 """
 import logging
 
 from odoo import _, api, fields, models
 
-from .mail_provider_client import get_provider_client, get_setup_provider
+from .mail_provider_client import get_provider_client
 from .pan_mail_license import IMPROVE_REFUSED_PARAM, STATUS_SELECTION
 
 _logger = logging.getLogger(__name__)
@@ -32,7 +34,7 @@ class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
     # -------------------------------------------------------------------------
-    # Step 1 — the provider. Credentials and status live on `pan.mail.provider`,
+    # Step 2 — the provider. Credentials and status live on `pan.mail.provider`,
     # its own table; this is a read-only pointer to the in-use row.
     # -------------------------------------------------------------------------
     x_active_provider_id = fields.Many2one(
@@ -47,7 +49,7 @@ class ResConfigSettings(models.TransientModel):
     x_setup_provider_needs_account = fields.Boolean(compute='_compute_setup_status')
 
     # -------------------------------------------------------------------------
-    # Step 2 — internal domains
+    # Step 3 — internal domains
     #
     # The one setting whose absence leaks data, so it is a gate rather than a
     # preference: incoming sync cannot be switched on until it is answered, one
@@ -62,7 +64,7 @@ class ResConfigSettings(models.TransientModel):
     x_internal_domains_suggested = fields.Char(compute='_compute_internal_domains_status')
 
     # -------------------------------------------------------------------------
-    # Step 3 — the notification mailbox
+    # Step 4 — the notification mailbox
     # -------------------------------------------------------------------------
     x_notification_mailbox_id = fields.Many2one(
         'pan.mail.mailbox',
@@ -81,26 +83,13 @@ class ResConfigSettings(models.TransientModel):
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
 
     # -------------------------------------------------------------------------
-    # After the three steps — the people
-    #
-    # Not a fourth step: the phase is answered without it, and mail flows for
-    # whoever has connected. But a database where only the administrator ever
-    # signed in is the most common way Mail Pro looks broken to everybody else,
-    # and until now this page never said so.
+    # Step 1 — the Pantalytics account, see pan_mail_license.py. Done when the
+    # link is entitled; a link that lapsed or was revoked is the red dot, not
+    # the open one: it was answered and then broke, like a stopped mailbox.
     # -------------------------------------------------------------------------
-    x_users_summary = fields.Char(compute='_compute_users_status')
-    x_users_pending = fields.Integer(compute='_compute_users_status')
-    x_users_relevant = fields.Boolean(
-        compute='_compute_users_status',
-        help='Whether users connect themselves at all. On a provider without a '
-             'consent screen an administrator types the credentials, so there '
-             'is nothing to ask them.',
-    )
-
-    # -------------------------------------------------------------------------
-    # Pantalytics account -- see pan_mail_license.py. Not a setup step: mail
-    # flows without it, so it must not turn the checklist's dot red.
-    # -------------------------------------------------------------------------
+    x_setup_account_done = fields.Boolean(compute='_compute_license')
+    x_license_connected_by = fields.Char(string='Connected by', compute='_compute_license')
+    x_license_connected_on = fields.Datetime(string='Connected on', compute='_compute_license')
     x_license_state = fields.Selection([
         ('not_connected', 'Not Connected'),
         ('pending', 'Pending'),
@@ -188,6 +177,9 @@ class ResConfigSettings(models.TransientModel):
         for record in self:
             record.x_license_sync_blocked = blocked
             record.x_license_state = state
+            record.x_setup_account_done = state == 'connected' and not blocked
+            record.x_license_connected_by = link.connected_by() if link else ''
+            record.x_license_connected_on = link.connected_on
             record.x_license_status = link.status or 'not_connected'
             record.x_license_user_code = link.user_code
             record.x_license_verify_url = link.verify_url
@@ -286,39 +278,3 @@ class ResConfigSettings(models.TransientModel):
             record.x_setup_notification_done = answers['mailboxes']
             record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()
             record.x_mailboxes_alert = alert
-
-    # -------------------------------------------------------------------------
-    # Who has connected
-    # -------------------------------------------------------------------------
-
-    def _compute_users_status(self):
-        """How many of the people who need an account have one.
-
-        Counted with the stored `x_pan_mail_connected` rather than by asking
-        every user the banner's question, which is a per-user provider lookup
-        this page has no reason to pay for. The population is the one the
-        invitation reaches: internal, active, and with an address to mail.
-        """
-        provider = get_setup_provider(self.env)
-        relevant = bool(provider) and get_provider_client(
-            self.env, provider).uses_oauth
-
-        total = connected = 0
-        if relevant:
-            Users = self.env['res.users'].sudo()
-            domain = [
-                ('share', '=', False),
-                ('active', '=', True),
-                ('id', '!=', self.env.ref('base.user_root').id),
-                ('partner_id.email', '!=', False),
-            ]
-            total = Users.search_count(domain)
-            connected = Users.search_count(
-                domain + [('x_pan_mail_connected', '=', True)])
-
-        summary = _('%(connected)s of %(total)s connected',
-                    connected=connected, total=total) if total else ''
-        for record in self:
-            record.x_users_relevant = relevant and bool(total)
-            record.x_users_summary = summary
-            record.x_users_pending = total - connected

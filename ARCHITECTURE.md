@@ -346,9 +346,9 @@ reviewed is what leaves.
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
-| `pan.mail.setup` | The three setup steps and the phase they add up to (abstract) |
-| `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key and the last signed entitlement. One row, created on the first Connect. `sync_allowed()` gates incoming sync and new accounts (§9.17) |
-| `res.config.settings` | The setup checklist — three lines, each a link to the table that answers it. Holds no credentials of its own |
+| `pan.mail.setup` | Setup steps 2 to 4 and the phase they add up to (abstract). Step 1, the Pantalytics account, is `pan.mail.license` |
+| `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key, who connected and when, and the last signed entitlement. One row, created on the first Connect. `sync_allowed()` gates incoming sync and new accounts (§9.17) |
+| `res.config.settings` | The setup checklist — four lines: the account, then three each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
 
@@ -832,7 +832,7 @@ pan_mail_pro/
 │   ├── pan_mail_account.py        # Per-address credentials
 │   ├── pan_mail_provider.py       # Per-provider application registration + in-use flag
 │   ├── pan_mail_domain.py         # Internal domains + the fail-closed gate
-│   ├── pan_mail_setup.py          # Setup vs syncing: the three mandatory steps
+│   ├── pan_mail_setup.py          # Setup vs syncing: steps 2 to 4 of the checklist
 │   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral)
 │   ├── pan_mail_matcher.py        # Thread matching rule ladder
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
@@ -862,11 +862,12 @@ condition of its own.
 
 | # | Step | Answered by |
 |---|------|-------------|
-| 1 | Email provider | the in-use `pan.mail.provider` row, with its application registration complete — or, for IMAP, its accounts |
-| 2 | Internal domains | at least one `pan.mail.domain` row |
-| 3 | Mailboxes | a mailbox with `is_notification_mailbox` ticked that can send |
+| 1 | Pantalytics account | `pan.mail.license.sync_allowed()` — a gate of its own, not in `pan.mail.setup`, because its refusal names the state the link is in (§9.17). Steps 2 to 4 are hidden until it is answered |
+| 2 | Email provider | the in-use `pan.mail.provider` row, with its application registration complete — or, for IMAP, its accounts |
+| 3 | Internal domains | at least one `pan.mail.domain` row |
+| 4 | Mailboxes | a mailbox with `is_notification_mailbox` ticked that can send |
 
-All three are mandatory. There is no partial service: while the phase is `setup`
+All four are mandatory. There is no partial service: while the phase is `setup`
 the incoming cron returns without fetching, "Try again" refuses with the step
 that is missing, and internal notifications queue with a readable reason instead
 of being cancelled. Nothing here has an opinion once the phase is `syncing`.
@@ -874,10 +875,10 @@ of being cancelled. Nothing here has an opinion once the phase is `syncing`.
 Three properties are worth naming, because each was a bug first:
 
 - **The checklist is the status.** There is no banner at the top of the
-  settings page. Three lines, each a dot (green: answered, red: answered but
+  settings page. Four lines, each a dot (green: answered, red: answered but
   broken, outlined: not yet) with its answer beside it, say in one look whether
   the module is in service — and a mailbox that stopped shows as a red dot on
-  the mailboxes line rather than as a fourth thing to read. A separate status block repeated what the
+  the mailboxes line rather than as a fifth thing to read. A separate status block repeated what the
   lines already said.
 - **Half a provider is no provider.** Choosing one and filling in its
   application registration were two steps; a provider without its registration
@@ -2376,8 +2377,9 @@ releases before 19.0.22.0.0 call, stays an alias of it.
 
 - **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
   `_heartbeat_body()` and nothing else: database id, module and Odoo version,
-  connected accounts, whether sync is healthy, which of the three setup steps
-  are answered (`pan.mail.setup.answers()`, three booleans), and for the last 24 hours how
+  connected accounts, whether sync is healthy, which of setup steps 2 to 4
+  are answered (`pan.mail.setup.answers()`, three booleans; step 1 is the row
+  the heartbeat is sent under), and for the last 24 hours how
   many mails were sent and received (off `mail.message.x_direction`, so one
   message is one mail while the cap meters `mail.mail`, one per recipient:
   this is the trend, not the meter), the
@@ -2441,11 +2443,19 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   unreadable anyway because it goes through `decrypt_value`.
 - **Check Approval is a button, not a poll loop.** The admin knows when they
   approved. Dropped: the page does not refresh itself.
-- **Until it is connected, the settings page is one button and About.** The
-  checklist and the users block are hidden while the state is anything but
-  connected: every one of them configures a product that will not sync, and a
-  checklist you cannot finish reads as the broken thing on the screen. One
-  screen, one action. About stays, because the version and the documentation
+- **The account is step 1 of the checklist, and until it is answered the
+  page is that step and About.** Steps 2 to 4 are hidden while the state is
+  anything but connected: every one of them configures a product that will
+  not sync, and a checklist you cannot finish reads as the broken thing on
+  the screen. One screen, one action. Step 1 is not in `pan.mail.setup`'s
+  tuple: `sync_allowed()` is asked by the same callers with a refusal that
+  names the exact state, which a generic "step 1 is open" would hide; the
+  tuple only numbers its steps after it.
+- **Who connected is on the line.** Collecting the key records the
+  Pantalytics account that approved (`account_email` in the poll answer),
+  the Odoo user who pressed the button, and the time. The first is the one
+  shown: a consultant connecting a customer's Odoo is logged in there as the
+  customer's admin, and the workspace is theirs, not the admin's. About stays, because the version and the documentation
   link are what a support mail and a first-time admin need before they can
   connect. `tools/ui_check.py` disconnects the seeded instance and asserts
   exactly that, because the gate is a view modifier no Python test can see.

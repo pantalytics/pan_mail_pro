@@ -58,12 +58,12 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_error.py` | Why it did not work: one row per failure the module caught, under a code from `CODES`. `record()` writes on its own cursor so a rolled-back transaction keeps its row; `codes_since()` is what the heartbeat carries. Adding a failure to catch is adding a code to the list and one `record()` call at the catch site |
 | `models/pan_mail_domain.py` | Internal domain list + the fail-closed gate on incoming sync |
 | `models/pan_mail_provider.py` | The application registration of the provider this database runs on. One row, no toggle |
-| `models/pan_mail_setup.py` | The three mandatory setup steps and the phase (`setup` / `syncing`) they add up to |
-| `models/pan_mail_license.py` | Link to a Pantalytics account: Connect, the signed entitlement, the daily heartbeat, and `sync_allowed()`: incoming sync and new accounts need a connected instance |
+| `models/pan_mail_setup.py` | Setup steps 2 to 4 and the phase (`setup` / `syncing`) they add up to. Step 1 is the account, below |
+| `models/pan_mail_license.py` | Step 1: the link to a Pantalytics account. Connect, who connected and when, the signed entitlement, the daily heartbeat, and `sync_allowed()`: incoming sync and new accounts need a connected instance |
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
 | `models/res_partner.py` | Contact block list field |
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, whether to nudge them, and the one mailbox setting they own: the sync level of their own address, on My Preferences |
-| `models/res_config_settings.py` | The Settings page: the three checklist steps and the users block |
+| `models/res_config_settings.py` | The Settings page: the four checklist steps |
 | `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
 | `models/ir_http.py` | Four session flags: does this user still have to connect a mailbox, may they open the Inbox at all, is this Odoo connected to Pantalytics, and may the Inbox report how it is used |
 | `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, the errors the Inbox meets as `$exception` with the message scrubbed (`scrubExceptionEvent`), a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
