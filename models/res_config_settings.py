@@ -123,10 +123,15 @@ class ResConfigSettings(models.TransientModel):
     # page can only say no: the yes lives where the contract was signed.
     x_improve_on = fields.Boolean(compute='_compute_license')
     x_improve_refused = fields.Boolean(
-        string='Not on this Odoo instance',
         config_parameter=IMPROVE_REFUSED_PARAM,
         help='Refuse it for this Odoo instance, whatever the workspace decided. '
              'Nothing is reported or recorded from this instance while this is ticked.',
+    )
+    # The toggle on the page. It reads the positive way round, so what is
+    # stored is its inverse: off here is the refusal.
+    x_improve = fields.Boolean(
+        string='Help improve Mail Pro',
+        compute='_compute_improve', inverse='_inverse_improve',
     )
 
     # -------------------------------------------------------------------------
@@ -192,6 +197,15 @@ class ResConfigSettings(models.TransientModel):
             record.x_license_dashboard_url = dashboard
             record.x_improve_on = bool(
                 link.improve and link.improve_host and link.improve_token)
+
+    @api.depends('x_improve_on', 'x_improve_refused')
+    def _compute_improve(self):
+        for record in self:
+            record.x_improve = record.x_improve_on and not record.x_improve_refused
+
+    def _inverse_improve(self):
+        for record in self:
+            record.x_improve_refused = not record.x_improve
 
     def action_license_connect(self):
         link = self.env['pan.mail.license'].action_connect()

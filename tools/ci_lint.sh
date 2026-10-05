@@ -91,9 +91,12 @@ fi
 # info tip may not be a crutch for a label that does not carry its own meaning.
 # So the sentence goes on the screen, in a `text-muted` line under the control.
 # A decorative icon on an alert that is already visible is fine, which is why
-# this looks for the pairing rather than for the icon.
+# this looks for the pairing rather than for the icon. The one exception is
+# the Help improve Mail Pro switch (DESIGN_SYSTEM.md): its label is the
+# explanation, and the title carries only what it does not collect. The
+# exemption is keyed on the first words of that title.
 step "UI — no setting explained only inside a tooltip"
-if grep -rn -A 2 'fa-info-circle' --include='*.xml' views/ | grep -E 'title="[^"]{40,}'; then
+if grep -rn -A 2 'fa-info-circle' --include='*.xml' views/ | grep -v 'On for your Pantalytics workspace' | grep -E 'title="[^"]{40,}'; then
     fail "Put the sentence on the screen as a text-muted line, not in a title attribute."
 else
     echo "OK: no setting hidden in a tooltip."

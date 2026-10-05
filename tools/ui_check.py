@@ -163,6 +163,53 @@ class Checks:
                    for b in block.query_selector_all('button')):
             self.fail('a connected database offers no way to disconnect')
 
+        # Help improve Mail Pro is the workspace's yes; the seed says no, so
+        # the switch that could only refuse it is not on the page at all.
+        if self.improve_toggle(block):
+            self.fail('Help improve Mail Pro is off for the workspace, yet the page shows its switch')
+
+    def improve_toggle(self, block):
+        """The Help improve Mail Pro switch, or None while it is not on the page."""
+        toggle = block.query_selector('.o_field_widget[name=x_improve] input')
+        return toggle if toggle and toggle.is_visible() else None
+
+    def settings_improve(self):
+        """The switch, once the workspace said yes: last on the page, on, and its
+        off saves the refusal. Called from improve(), which is what switches
+        the workspace on."""
+        page = self.page
+        page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+        page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+        page.click('a.tab[data-key=pan_mail_pro]')
+        page.wait_for_selector('.o_mailpro_step', timeout=30000)
+        page.wait_for_timeout(800)
+        self.shot('settings-improve.png')
+        block = page.query_selector('div.app_settings_block[data-key=pan_mail_pro]')
+        toggle = self.improve_toggle(block)
+        if not toggle:
+            self.fail('Help improve Mail Pro is on for the workspace, yet the page shows no switch')
+            return
+        if not toggle.is_checked():
+            self.fail('the Help improve Mail Pro switch is off on an instance that has not refused it')
+        boxes = block.query_selector_all('.o_setting_box')
+        if not boxes or not boxes[-1].query_selector('.o_field_widget[name=x_improve]'):
+            self.fail('the Help improve Mail Pro switch is not the last block on the page')
+        icon = block.query_selector('.o_field_widget[name=x_improve] ~ .fa-info-circle')
+        if not icon or len(icon.get_attribute('title') or '') < 40:
+            self.fail('the info icon beside the switch carries no explanation')
+        text = block.inner_text()
+        if 'records the session' in text:
+            self.fail('the explanation is on the page, not behind the icon')
+        # Off, saved, is the refusal, and the refusal is a config parameter.
+        toggle.click()
+        page.wait_for_timeout(300)
+        page.click('.o_form_button_save')
+        page.wait_for_timeout(2500)
+        refused = self.call('ir.config_parameter', 'get_param', 'pan_mail_pro.improve_refused')
+        if refused != 'True':
+            self.fail(f'switching Help improve Mail Pro off saved {refused!r}, not the refusal')
+        self.call('ir.config_parameter', 'set_param', 'pan_mail_pro.improve_refused', False)
+
     def settings_not_connected(self):
         """Without a Pantalytics account the page is one button and nothing else.
 
@@ -2885,6 +2932,7 @@ class Checks:
             'improve': True, 'improve_host': sink.host,
             'improve_token': 'phc_ui_check', 'replay_sample': 1.0,
         })
+        self.settings_improve()
         # Its own browser context, looking like a person's browser: the SDK
         # drops every event from a bot, and "HeadlessChrome" in the user
         # agent, `navigator.webdriver`, and "HeadlessChrome" among the client
