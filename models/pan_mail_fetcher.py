@@ -130,6 +130,9 @@ class PanMailFetcher(models.AbstractModel):
         # heartbeat, and the Get started line at Pantalytics is read while
         # somebody is still answering them.
         License._report_setup_if_changed()
+        # And a kind of failure not seen in the last day: during a beta that
+        # is the thing to hear about today (pan.mail.error).
+        License._report_errors_if_new()
         # Deliberately not filtered on an owner: whether a mailbox needs one is
         # the provider's business. A Gmail or IMAP shared mailbox is its own
         # account with nobody behind it, and requiring an owner here silently
@@ -211,11 +214,15 @@ class PanMailFetcher(models.AbstractModel):
                 # minutes must not turn its badge red.
                 _logger.info("[Incoming Mail] Mailbox %s throttled: %s", mailbox.id, e)
                 mailbox.write({'error_message': str(e)})
+                self.env['pan.mail.error'].record(
+                    'incoming.throttled', e, level='warning', mailbox=mailbox)
             except Exception as e:
                 # Savepoint rolled back: the cursor is usable again, so the
                 # error write below won't hit "current transaction is aborted".
                 _logger.exception(f"[Incoming Mail] Error processing mailbox {mailbox.email}")
                 mailbox._record_sync_failure(str(e))
+                self.env['pan.mail.error'].record(
+                    'incoming.mailbox_failed', e, mailbox=mailbox)
 
             if in_cron:
                 cron._commit_progress(processed=1, remaining=len(mailboxes) - index - 1)
@@ -431,6 +438,8 @@ class PanMailFetcher(models.AbstractModel):
                 )
                 if stalled_on is None:
                     stalled_on = message
+                self.env['pan.mail.error'].record(
+                    'incoming.message_failed', error, mailbox=mailbox)
                 continue
 
             # The rest of the batch is still processed -- refusing to read the

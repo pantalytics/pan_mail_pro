@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from . import connected  # first: see its docstring
+from . import ledger  # second: the error ledger in the test's transaction
 from . import test_mail_account
 from . import test_account_migration
 from . import test_google_provider
@@ -54,6 +55,7 @@ from . import test_rpc_surface
 from . import test_recipient_split
 from . import test_conversation_api
 from . import test_improve
+from . import test_errors
 from . import test_oauth_routes
 from . import test_mailbox_actions
 from . import test_user_sync_level

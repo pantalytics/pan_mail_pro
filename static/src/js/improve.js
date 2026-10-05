@@ -5,11 +5,18 @@
  * Off unless the server put `pan_mail_improve` in the session, which it only
  * does when the Pantalytics workspace switched it on, the signed answer named
  * where to send it, and nobody here refused it (`pan.mail.license
- * .improve_active`). Then, and only inside the Inbox: five named events and a
- * wireframe recording. Every text node, every input and every attribute
- * masked, no network bodies, no IP, a person id that is an HMAC the server
- * minted and nothing stored in the browser. We give up reading the screen; we
- * keep the shape of the interaction.
+ * .improve_active`). Then, and only inside the Inbox: five named events, the
+ * errors the screen meets, and a wireframe recording. Every text node, every
+ * input and every attribute masked, no network bodies, no IP, a person id
+ * that is an HMAC the server minted and nothing stored in the browser. We
+ * give up reading the screen; we keep the shape of the interaction.
+ *
+ * An error is reported as PostHog's `$exception`: its class, its stack (file
+ * names and function names of our own bundles) and where in the Inbox it
+ * happened. Its message is scrubbed first (`scrubExceptionEvent`): one line,
+ * every address and every quoted string gone, because an Odoo error message
+ * is written for the person reading it and may name a record or a sender.
+ * Odoo's own error dialog keeps the full text; only the shape travels.
  *
  * The SDK is a lazy bundle, so a screen that never records never loads it,
  * and it is told to send to `config.host` -- our own proxy -- never to
@@ -36,6 +43,44 @@ let sampled = null;
 const EVENTS = new Set([
     "inbox_opened", "conversation_opened", "tab_opened", "reply_sent", "conversation_linked",
 ]);
+
+const EMAIL = /[\w.+-]+@[\w-]+(\.[\w-]+)+/g;
+const QUOTED = /(["'`“‘]).*?(["'`”’])/g;
+const MAX_VALUE = 200;
+
+/** An error message with nothing in it that could name a person or a record. */
+export function scrubValue(value) {
+    const line = String(value ?? "").split("\n")[0];
+    return line.replace(EMAIL, "<email>").replace(QUOTED, "$1…$2").slice(0, MAX_VALUE);
+}
+
+/**
+ * posthog-js `before_send`: every `$exception` leaves with its messages
+ * scrubbed; every other event passes untouched. Returning `null` would drop
+ * the event, so a shape this does not recognise is still sent, scrubbed of
+ * the two message properties the SDK is known to set.
+ */
+export function scrubExceptionEvent(event) {
+    if (!event || event.event !== "$exception" || !event.properties) {
+        return event;
+    }
+    const props = event.properties;
+    for (const item of props.$exception_list || []) {
+        if (item && "value" in item) {
+            item.value = scrubValue(item.value);
+        }
+    }
+    if ("$exception_message" in props) {
+        props.$exception_message = scrubValue(props.$exception_message);
+    }
+    return event;
+}
+
+/** The name Odoo gave a server-side error, when there is one, and nothing else of it. */
+function odooExceptionName(error) {
+    const name = error?.data?.name;
+    return typeof name === "string" ? name.slice(0, MAX_VALUE) : undefined;
+}
 
 function init(config) {
     if (loading) {
@@ -64,6 +109,10 @@ function init(config) {
             disable_session_recording: true,
             ip: false,
             person_profiles: "never",
+            // Errors are reported by hand (`report` below): the SDK's own
+            // capture would fetch an extension, and nothing is fetched.
+            capture_exceptions: false,
+            before_send: scrubExceptionEvent,
             // Nothing lands in the customer's browser storage: a page load is
             // a session, and the id is the server's HMAC, not a cookie.
             persistence: "memory",
@@ -101,16 +150,38 @@ function rollSample(share) {
 export function useImprove() {
     const config = session.pan_mail_improve;
     if (!config || !config.host || !config.token) {
-        return { capture() {} };
+        return { capture() {}, failed() {} };
     }
     let posthog = null;
     let recording = false;
+
+    const report = (error, where) => {
+        if (!posthog || !posthog.captureException) {
+            return;
+        }
+        try {
+            const value = error instanceof Error ? error : new Error(scrubValue(error));
+            posthog.captureException(value, {
+                where,
+                odoo_exception: odooExceptionName(error),
+            });
+        } catch (_) {
+            // Reporting an error must never be a second one.
+        }
+    };
+    // What escapes every handler while the Inbox is open: an Owl render that
+    // threw, a promise nobody awaited. Odoo's error service shows the dialog;
+    // this says it happened.
+    const onWindowError = (event) => report(event.error || event.message, "window");
+    const onUnhandledRejection = (event) => report(event.reason, "promise");
 
     onMounted(async () => {
         posthog = await init(config);
         if (!posthog) {
             return;
         }
+        window.addEventListener("error", onWindowError);
+        window.addEventListener("unhandledrejection", onUnhandledRejection);
         if (rollSample(config.sample) && !posthog.sessionRecordingStarted?.()) {
             posthog.startSessionRecording();
             recording = true;
@@ -119,6 +190,8 @@ export function useImprove() {
     });
 
     onWillUnmount(() => {
+        window.removeEventListener("error", onWindowError);
+        window.removeEventListener("unhandledrejection", onUnhandledRejection);
         if (posthog && recording) {
             // Only the Inbox is recorded. Leaving it ends the recording, even
             // though the SDK stays loaded for the next visit.
@@ -133,6 +206,15 @@ export function useImprove() {
                 return;
             }
             posthog.capture(event, properties);
+        },
+        /**
+         * An error the Inbox caught and turned into a line on the screen. The
+         * screen says "could not load"; this says which call, with what, so a
+         * failure that one customer sees twice a day is a chart and not a
+         * ticket. `where` is a fixed string from the call site.
+         */
+        failed(where, error) {
+            report(error, where);
         },
     };
 }

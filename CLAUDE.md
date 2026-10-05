@@ -55,6 +55,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/pan_mail_matcher.py` | Thread matching: which Odoo record does this mail belong to |
 | `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |
 | `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
+| `models/pan_mail_error.py` | Why it did not work: one row per failure the module caught, under a code from `CODES`. `record()` writes on its own cursor so a rolled-back transaction keeps its row; `codes_since()` is what the heartbeat carries. Adding a failure to catch is adding a code to the list and one `record()` call at the catch site |
 | `models/pan_mail_domain.py` | Internal domain list + the fail-closed gate on incoming sync |
 | `models/pan_mail_provider.py` | The application registration of the provider this database runs on. One row, no toggle |
 | `models/pan_mail_setup.py` | The three mandatory setup steps and the phase (`setup` / `syncing`) they add up to |
@@ -65,9 +66,10 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/res_config_settings.py` | The Settings page: the three checklist steps and the users block |
 | `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
 | `models/ir_http.py` | Four session flags: does this user still have to connect a mailbox, may they open the Inbox at all, is this Odoo connected to Pantalytics, and may the Inbox report how it is used |
-| `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
+| `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, the errors the Inbox meets as `$exception` with the message scrubbed (`scrubExceptionEvent`), a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
 | `static/lib/posthog/` | posthog-js, vendored (MIT), pinned so the masking check in `tools/ui_check.py` proves the version that ships |
 | `tests/test_improve.py` | What the session carries once the workspace said yes: a host, a token, a pseudonym, nothing that names anyone |
+| `tests/test_errors.py` | The error ledger: every code a call site uses is in the list, a row survives, the heartbeat carries codes and counts and no address, a new code is reported within the minute |
 | `controllers/main.py` | One OAuth callback implementation, two provider routes |
 | `models/pan_mail_coverage.py` | Link-coverage measurement: the screen, and `counts_since()`, whose last 24 hours ride the heartbeat |
 | `models/pan_mail_draft.py` | The one thing the Inbox stores: a saved composer, on the record its mail will be sent from, private to its author. Not the provider's draft -- see ARCHITECTURE.md §1 |
@@ -469,7 +471,9 @@ typo; `tools/ci.sh` gives the same verdict locally in the same container.
 4. Return the normalized shape from `mail_provider_client.py`, not Graph's
 
 ### Debugging email issues
-1. Check Odoo logs for `[Outgoing Mail]` and `[Incoming Mail]` tags
+1. Open Settings → Technical → Email → Mail Pro → Errors: every failure the
+   module caught, thirty days, grouped by code, traceback on the row. Then
+   the Odoo log for `[Outgoing Mail]` and `[Incoming Mail]` tags
 2. Verify credentials: `user.x_pan_mail_connected`, or ask the mailbox itself
    with `mailbox._has_working_credentials()`
 3. Check mailbox state: should be 'active'

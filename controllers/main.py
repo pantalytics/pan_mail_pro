@@ -137,6 +137,7 @@ class MailProOAuthController(http.Controller):
 
         except Exception as exception:
             _logger.exception('[OAuth] Failed to handle the %s callback', provider)
+            request.env['pan.mail.error'].record('oauth.callback_failed', exception)
             return _result_page(False, _('Connection Failed'), str(exception))
 
     def _retry_error_mailboxes(self, user, provider):
