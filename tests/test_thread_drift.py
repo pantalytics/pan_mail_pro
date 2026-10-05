@@ -211,6 +211,10 @@ class TestGraphThreadingHeaders(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.client = cls.env['microsoft.graph.client']
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'support@company.test',
+        })
 
     def test_headers_are_read_from_the_extended_properties_when_absent(self):
         normalized = self.client._normalize_message({
@@ -255,6 +259,9 @@ class TestGraphThreadingHeaders(TransactionCase):
         captured = {}
 
         class _Response:
+            status_code = 200
+            content = b'{"id": "GRAPH-1"}'
+
             @staticmethod
             def raise_for_status():
                 return None
@@ -272,7 +279,7 @@ class TestGraphThreadingHeaders(TransactionCase):
                           autospec=True, return_value='token'), \
              patch.object(type(self.client), '_request_with_retry',
                           autospec=True, side_effect=_fake_request):
-            self.client._graph_get_message(account, 'support@company.test', 'GRAPH-1')
+            self.client.get_message(account, self.mailbox, 'GRAPH-1')
 
         expand = captured['params']['$expand']
         self.assertIn('singleValueExtendedProperties', expand)

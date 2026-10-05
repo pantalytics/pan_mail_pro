@@ -264,8 +264,11 @@ class TestGmailActions(MailProTestCase):
         stack.enter_context(patch.object(type(self.client), 'get_valid_token',
                                          autospec=True, return_value='token'))
         stack.enter_context(patch(f'{GMAIL_MODULE}.requests.get', side_effect=fake_get))
-        stack.enter_context(patch(f'{GMAIL_MODULE}.requests.request',
-                                  side_effect=record('request')))
+        # The writes go through the retry helper, which looks the verb up on
+        # `requests` the way the reads do -- one patch per verb, as for Graph.
+        for verb in ('post', 'put', 'patch', 'delete'):
+            stack.enter_context(patch(f'{GMAIL_MODULE}.requests.{verb}',
+                                      side_effect=record(verb)))
         return stack
 
     def test_archiving_takes_the_message_out_of_the_inbox(self):

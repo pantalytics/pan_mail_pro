@@ -8,6 +8,8 @@ Graph payloads are translated into the normalized shapes every caller depends
 on. A second provider (Gmail) has to satisfy the same assertions.
 """
 import base64
+import contextlib
+import inspect
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -80,6 +82,40 @@ class TestProviderRegistry(TransactionCase):
                     getattr(type(contract), name),
                     f"'{code}' does not implement {name}()",
                 )
+
+    def test_every_client_takes_the_full_message_for_its_attachments(self):
+        """`get_message_attachments(full_message=...)` is how the fetcher hands
+        a provider the message it already fetched, so the files are read off
+        it rather than fetched again. A client whose signature lacks the
+        keyword would raise TypeError on the first message with a file --
+        in the cron, on a customer's mailbox."""
+        for code in PROVIDER_CLIENTS:
+            client = get_provider_client(self.env, code)
+            parameters = inspect.signature(
+                getattr(type(client), 'get_message_attachments')).parameters
+            self.assertIn(
+                'full_message', parameters,
+                f"'{code}'.get_message_attachments() does not take full_message",
+            )
+            self.assertIsNone(parameters['full_message'].default)
+
+    def test_every_client_offers_a_receiving_session(self):
+        """The fetcher wraps every mailbox run in one. A provider with
+        nothing to keep open inherits a no-op; the block has to open and
+        close on every client either way."""
+        for code in PROVIDER_CLIENTS:
+            client = get_provider_client(self.env, code)
+            account = self.env['pan.mail.account'].sudo().create({
+                'email': f'{code}@example.com', 'provider': code,
+            })
+            with self.subTest(provider=code):
+                with client.receiving_session(account) as handle:
+                    self.assertIsNone(handle)
+        contract = self.env['mail.provider.client']
+        self.assertIsInstance(
+            contract.receiving_session(self.env['pan.mail.account']),
+            contextlib.nullcontext,
+        )
 
     def test_a_declared_credential_test_is_an_implemented_one(self):
         """`supports_credential_test` is what the provider form reads to show
@@ -358,7 +394,9 @@ class TestGraphNormalization(TransactionCase):
         self.assertIsNone(msg['date'])
 
     def test_send_result_is_normalized(self):
-        """send_message translates Graph's key names to the contract's.
+        """send_message hands back the contract's keys, as the Graph flow
+        answers in them itself: there is no renaming layer in between to
+        drift.
 
         Also pins that `reply_context` reaches the implementation: it is an
         optional argument, so a client that silently dropped it would still
@@ -372,8 +410,11 @@ class TestGraphNormalization(TransactionCase):
             seen['reply_context'] = reply_context
             return {
                 'success': True,
-                'microsoft_message_id': '<sent@contoso.com>',
-                'microsoft_conversation_id': 'conv-999',
+                'error': None,
+                'error_code': None,
+                'message_id': '<sent@contoso.com>',
+                'thread_id': 'conv-999',
+                'draft_id': 'draft-1',
             }
 
         Client.send_email_via_graph = fake_send

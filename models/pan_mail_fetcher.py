@@ -10,7 +10,6 @@ in `mail_provider_client.py`. No Graph, Gmail or other wire-specific key should
 ever appear below this line.
 """
 from datetime import datetime
-import hashlib
 import logging
 from typing import NamedTuple
 from markupsafe import Markup
@@ -18,7 +17,9 @@ from markupsafe import Markup
 from odoo import models, api, fields, _
 from odoo.exceptions import UserError
 
-from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT, ThrottledError
+from .mail_provider_client import (
+    DB_MARKER_HEADER, FOLDER_INBOX, FOLDER_SENT, ThrottledError, odoo_db_marker,
+)
 from .mail_message import READ_MIRROR_CTX
 from .neutralization import database_is_neutralized
 
@@ -43,37 +44,11 @@ FETCH_BATCH_SIZE = 200
 # search. See `_internal_domains()`.
 INTERNAL_DOMAINS_CTX = 'pan_mail_internal_domains'
 
-# Which database stamped the X-Odoo-* headers on a mail. The four of them name
-# a model, a record and two row ids, and every Odoo numbers its rows from one,
-# so on their own they say "an Odoo sent this" and never "this Odoo did". A
-# mail from another Mail Pro customer carried the same headers, so the loop
-# guard refused it as our own sent copy and, before refusing, re-indexed its
-# ids onto whichever local message and record happened to carry the same
-# numbers -- after which replies in that conversation matched at 1.0 onto the
-# wrong record. The marker is a salted SHA-256 of `database.uuid`, hex, cut to
-# 32 characters: identity, not authentication. It is not secret and need not
-# be, because the question it answers is "did we send this" and a forged yes
-# buys nobody anything; the salt only keeps the uuid itself off the wire.
-# Written by both MIME senders (`providers/mime_utils.build_message`) and the
-# Graph sender, read by `_gate_odoo_originated` and matcher rule 1.
-DB_MARKER_HEADER = 'X-Odoo-Db'
-DB_MARKER_SALT = 'pan_mail_pro'
-DB_MARKER_LENGTH = 32
-
-
-def odoo_db_marker(env):
-    """This database's marker, as written on outgoing mail and read back.
-
-    Empty when `database.uuid` is unset, which no installed Odoo has. An empty
-    marker is written nowhere and matches nothing, so such a database treats
-    every X-Odoo-* mail as somebody else's and leaves the duplicate gate to
-    catch its own sent copies.
-    """
-    uuid = env['ir.config_parameter'].sudo().get_param('database.uuid', '')
-    if not uuid:
-        return ''
-    digest = hashlib.sha256(f'{DB_MARKER_SALT}:{uuid}'.encode()).hexdigest()
-    return digest[:DB_MARKER_LENGTH]
+# The database marker (`DB_MARKER_HEADER`, `odoo_db_marker`) is defined next
+# to the header allowlist in `mail_provider_client`, which is where the
+# header's name is spelled for writing and for reading alike. It is imported
+# above because `_gate_odoo_originated` reads it, and the tests import it
+# from here.
 
 # Every post the sync makes carries this context, and `pan_mail_imported` is
 # the whole of the boundary in ARCHITECTURE.md §9.10: it means "this post is an
@@ -274,7 +249,10 @@ class PanMailFetcher(models.AbstractModel):
         badge red.
         """
         _logger.info("[Incoming Mail] Mailbox %s throttled: %s", mailbox.id, error)
-        mailbox.write({'error_message': str(error)})
+        # `last_check_date` moves too: the mailbox was read, it was only asked
+        # to slow down, and a run that is throttled every minute must not
+        # show the "not being read" warning on top of the wait.
+        mailbox.write({'error_message': str(error), 'last_check_date': fields.Datetime.now()})
         self.env['pan.mail.error']._record(
             'incoming.throttled', error, level='warning', mailbox=mailbox)
 
@@ -344,20 +322,27 @@ class PanMailFetcher(models.AbstractModel):
         cursors = {}
         stalls = []
         throttles = []
-        for folder in self._folders_to_sync(mailbox):
-            count, cursor, stalled_on, throttled = self._fetch_folder(mailbox, folder)
-            processed_count += count
-            if stalled_on is not None:
-                stalls.append((folder, stalled_on))
-            if throttled is not None:
-                throttles.append(throttled)
-            # Each folder advances on its own progress only. An empty folder is
-            # caught up, so it jumps to now() -- but not when it stalled on its
-            # first message: that jump is exactly the skip the stall prevents,
-            # and `_fetch_folder` hands back the cursor it was holding instead.
-            cursors[folder] = cursor or (
-                None if stalled_on is not None else fields.Datetime.now()
-            )
+        # One session for the run: on IMAP that is one login and one SELECT
+        # per folder for the whole mailbox, where every read used to dial in
+        # on its own -- the listing, each body, each message's attachments.
+        # The REST providers keep nothing and the block is a no-op for them.
+        client = mailbox._get_client()
+        with client.receiving_session(client.resolve_receiving_account(mailbox)):
+            for folder in self._folders_to_sync(mailbox):
+                count, cursor, stalled_on, throttled = self._fetch_folder(mailbox, folder)
+                processed_count += count
+                if stalled_on is not None:
+                    stalls.append((folder, stalled_on))
+                if throttled is not None:
+                    throttles.append(throttled)
+                # Each folder advances on its own progress only. An empty
+                # folder is caught up, so it jumps to now() -- but not when it
+                # stalled on its first message: that jump is exactly the skip
+                # the stall prevents, and `_fetch_folder` hands back the cursor
+                # it was holding instead.
+                cursors[folder] = cursor or (
+                    None if stalled_on is not None else fields.Datetime.now()
+                )
 
         self._write_folder_cursors(mailbox, cursors)
 
@@ -701,10 +686,6 @@ class PanMailFetcher(models.AbstractModel):
         self._reindex_own_message(ctx, headers)
         return Skip('odoo_originated', _('Odoo sent this message itself.'))
 
-    def _odoo_db_marker(self):
-        """`odoo_db_marker()` for callers that hold a model and not the env."""
-        return odoo_db_marker(self.env)
-
     def _is_own_odoo_mail(self, ctx, headers):
         """Did *this* database stamp the X-Odoo-* headers on this mail?
 
@@ -718,9 +699,9 @@ class PanMailFetcher(models.AbstractModel):
         that came back by Cc; the first is the mail this check exists to let
         in, and the second is refused one gate later, by its Message-ID.
         """
-        marker = headers.get('x-odoo-db')
+        marker = headers.get(DB_MARKER_HEADER.lower())
         if marker:
-            own = self._odoo_db_marker()
+            own = odoo_db_marker(self.env)
             return bool(own) and marker == own
         return bool(ctx.get('is_outgoing'))
 
@@ -1024,22 +1005,33 @@ class PanMailFetcher(models.AbstractModel):
         attachments = []
         body_may_have_inline = 'cid:' in (full_message.get('body_html') or '')
         if full_message.get('has_attachments') or body_may_have_inline:
+            # The full message is handed back in: a provider whose full fetch
+            # already carried the files reads them off it instead of fetching
+            # the message a second time (see the contract).
             attachments = client.get_message_attachments(
                 account=account,
                 mailbox=mailbox,
                 provider_message_id=message['provider_message_id'],
+                full_message=full_message,
             )
             _logger.info(f"[Incoming Mail] Fetched {len(attachments)} attachment(s)")
+        # Whatever the provider kept for itself stops here: the matcher, the
+        # routing log and the index see the normalized message and nothing of
+        # the raw payload behind it.
+        full_message.pop('_source', None)
 
         # The partner (contact) for chatter posting. `_gate_blocked_contact`
         # already searched for it and left what it found on `ctx`, so the
-        # search is not repeated here; only a contact Odoo does not have yet
-        # costs a create. A ctx without the key (a ladder that did not run the
+        # search is not repeated here, and neither is it when the gate found
+        # nobody: a stranger costs the one create, not a second search in
+        # front of it. A ctx without the key (a ladder that did not run the
         # gate) still resolves the old way.
         partner = None
         if contact_email:
-            partner = ctx.get('partner') or self._find_or_create_partner(
-                contact_email, contact_name)
+            partner = (ctx['partner'] if 'partner' in ctx
+                       else self._find_partner(contact_email))
+            if not partner:
+                partner = self._create_partner(contact_email, contact_name)
             _logger.debug(f"[Incoming Mail] Partner resolved: {partner.name} (id={partner.id}, email={partner.email})")
 
         if not partner:
@@ -1366,7 +1358,10 @@ class PanMailFetcher(models.AbstractModel):
         if partner:
             _logger.debug(f"[Incoming Mail] Found existing partner: {partner.name} for {email}")
             return partner
+        return self._create_partner(email, name)
 
+    def _create_partner(self, email, name=None):
+        """Create the contact for an address `_find_partner` found nobody for."""
         # Create new partner with correct name and email
         partner_name = name if name else email.split('@')[0]  # Use local part as fallback
         partner = self.env['res.partner'].create({

@@ -14,7 +14,10 @@ the same seam the Graph client already gives us.
 import base64
 import collections
 import logging
-import time
+# `time` is not read here any more -- the retry loop lives in `http_utils`
+# -- but the tests patch `gmail_client.time.sleep`, which is the same `time`
+# module, so it stays importable from this one.
+import time  # noqa: F401
 
 import requests
 from datetime import datetime, timedelta, timezone
@@ -23,11 +26,13 @@ from email.utils import getaddresses, parseaddr
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from ... import encryption_utils
+from .. import http_utils
 from ...mail_provider_client import (
-    ERROR_NO_RECIPIENTS, FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
+    FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
     FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
     ERROR_THROTTLED,
     ThrottledError,
+    no_recipients_result,
 )
 from .. import mime_utils
 
@@ -53,11 +58,6 @@ GOOGLE_SCOPES = [
 # cron open; hitting it is logged, never swallowed. See `_gmail_list_ids`.
 GMAIL_LIST_PAGE_SIZE = 500
 GMAIL_LIST_MAX_PAGES = 100
-
-# Retry shape shared with the Graph client (see _request_with_retry).
-MAX_RETRIES = 3
-INITIAL_BACKOFF_SECONDS = 2
-MAX_RETRY_AFTER_SECONDS = 15
 
 
 class GoogleGmailClient(models.AbstractModel):
@@ -323,38 +323,19 @@ class GoogleGmailClient(models.AbstractModel):
         and the Graph one are interchangeable to the caller.
         """
         token = self.get_valid_token(account)
-        mailbox_email = mailbox.email
-        reply_context = reply_context or {}
 
-        to_addrs = mime_utils.collect_recipients(mail_record.email_to, mail_record.recipient_ids)
-        cc_addrs = mime_utils.collect_recipients(mail_record.email_cc)
-        if not to_addrs and not cc_addrs:
-            return {
-                'success': False,
-                'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
-                # Same distinguishable code Graph returns, so mail.mail.send()
-                # skips+cancels this one instead of aborting the batch.
-                'error_code': ERROR_NO_RECIPIENTS,
-            }
-
-        message_id = mime_utils.new_message_id(mailbox_email)
-        msg = mime_utils.build_message(
-            mail_record, mailbox_email, to_addrs, cc_addrs, message_id,
-            reply_context=reply_context)
-
-        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-        payload = {'raw': raw}
-        # Only claim the thread when the headers back it up — a threadId without
-        # a matching In-Reply-To is rejected by Gmail, not silently accepted.
-        if reply_context.get('thread_id') and reply_context.get('in_reply_to'):
-            payload['threadId'] = reply_context['thread_id']
+        # The same message a draft stores: the send endpoint takes the inner
+        # `message` of a draft write as its whole body.
+        payload, message_id, error = self._draft_payload(mail_record, mailbox, reply_context)
+        if error:
+            return error
 
         url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send'
         try:
             response = self._request_with_retry(
                 'post', url, idempotent=False,
                 headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
-                json=payload,
+                json=payload['message'],
                 timeout=30,
             )
             response.raise_for_status()
@@ -376,47 +357,15 @@ class GoogleGmailClient(models.AbstractModel):
         }
 
     def _request_with_retry(self, method, url, idempotent=True, **kwargs):
-        """One request, retried on 429 and 5xx with a capped backoff.
+        """`http_utils.request_with_retry` with this client's name on it.
 
-        Gmail answers `rateLimitExceeded` routinely under a burst, and a first
-        sync is a burst by construction (three GETs per message). Without this
-        the first 429 raised, the savepoint rolled the message back and the
-        mailbox stalled until the next minute. The same shape as the Graph
-        client's: Retry-After is honoured up to MAX_RETRY_AFTER_SECONDS and
-        refused beyond it, so the cron never sleeps through the other
-        mailboxes' turn. Returns the response; the caller judges its status.
+        Kept as a method because it is the seam the tests fake a Gmail
+        answer at; `headers` and `timeout` ride in `kwargs` as they always
+        did here.
         """
-        backoff = INITIAL_BACKOFF_SECONDS
-        timeout = kwargs.pop('timeout', 30)
-        for attempt in range(MAX_RETRIES + 1):
-            try:
-                response = getattr(requests, method)(url, timeout=timeout, **kwargs)
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
-                if attempt >= MAX_RETRIES or not idempotent:
-                    # A send whose answer was lost may have been carried out:
-                    # retrying it is a customer mailed twice.
-                    raise
-                time.sleep(backoff)
-                backoff *= 2
-                continue
-            if attempt < MAX_RETRIES and (response.status_code == 429 or (
-                    idempotent and response.status_code in (500, 502, 503, 504))):
-                retry_after = response.headers.get('Retry-After') if response.status_code == 429 else None
-                try:
-                    wait = int(retry_after) if retry_after else backoff
-                except ValueError:
-                    wait = backoff
-                if wait > MAX_RETRY_AFTER_SECONDS:
-                    raise ThrottledError(_(
-                        'Google asked to wait %s seconds before more requests for '
-                        'this mailbox. Try again in a minute.') % wait, wait)
-                _logger.warning('[Gmail API] %s from %s, retrying in %ss (%s/%s)',
-                                response.status_code, url, wait, attempt + 1, MAX_RETRIES)
-                time.sleep(wait)
-                backoff *= 2
-                continue
-            return response
-        return response  # pragma: no cover - the loop returns or raises
+        return http_utils.request_with_retry(
+            method, url, label='Google', log_tag='[Gmail API]',
+            idempotent=idempotent, **kwargs)
 
     # -------------------------------------------------------------------------
     # Receiving — contract implementation
@@ -555,16 +504,38 @@ class GoogleGmailClient(models.AbstractModel):
 
     @api.model
     def get_message(self, account, mailbox, provider_message_id):
-        """Fetch one message in full, including headers and body."""
+        """Fetch one message in full, including headers and body.
+
+        The `format=full` payload already carries every inline part and the
+        attachment ids, so it is kept under `_source` for
+        `get_message_attachments(full_message=...)`: the same GET used to be
+        made twice for every message with a file on it. Private to this
+        client; the fetcher drops the key as soon as the attachments are read.
+        """
         raw = self._gmail_get_message(account, provider_message_id, fmt='full')
-        return self._normalize_message(raw)
+        message = self._normalize_message(raw)
+        message['_source'] = raw
+        return message
 
     @api.model
-    def get_message_attachments(self, account, mailbox, provider_message_id):
+    def _kept_source(self, full_message, provider_message_id):
+        """The raw Gmail payload `get_message` kept, when it is this message's."""
+        if not full_message:
+            return None
+        raw = full_message.get('_source')
+        if isinstance(raw, dict) and raw.get('id') == provider_message_id:
+            return raw
+        return None
+
+    @api.model
+    def get_message_attachments(self, account, mailbox, provider_message_id,
+                                full_message=None):
         """Return normalized attachments; never raises (see contract)."""
         attachments = []
         try:
-            raw = self._gmail_get_message(account, provider_message_id, fmt='full')
+            raw = self._kept_source(full_message, provider_message_id)
+            if raw is None:
+                raw = self._gmail_get_message(account, provider_message_id, fmt='full')
             for part in self._walk(raw.get('payload') or {}):
                 filename = part.get('filename')
                 if not filename:
@@ -592,6 +563,12 @@ class GoogleGmailClient(models.AbstractModel):
                     'is_inline': is_inline,
                     'content_id': content_id or None,
                 })
+        except ThrottledError:
+            # Not an attachment failure: Google asked the whole mailbox to
+            # wait. Swallowed here, the message would land without its files
+            # and the duplicate gate would never let it back; raised, the
+            # fetcher keeps what landed, holds the cursor and tries again.
+            raise
         except Exception as e:
             # Contract: an attachment failure must not sink the message. It is
             # recorded, because the mail then reads as complete when it is not.
@@ -756,11 +733,17 @@ class GoogleGmailClient(models.AbstractModel):
     # -------------------------------------------------------------------------
 
     def _api_call(self, account, method, url, json=None, params=None):
-        """One authenticated Gmail call that writes. `_api_get` is the read half."""
+        """One authenticated Gmail call that writes. `_api_get` is the read half.
+
+        Through the same retry helper as the reads, so a 429 on a relabel or
+        a draft write is waited out rather than raised at the person -- but
+        `idempotent=False`, because a write whose answer was lost may have
+        been carried out, and a draft sent twice is a customer mailed twice.
+        """
         token = self.get_valid_token(account)
         try:
-            response = requests.request(
-                method, url,
+            response = self._request_with_retry(
+                method, url, idempotent=False,
                 headers={'Authorization': f'Bearer {token}',
                          'Content-Type': 'application/json'},
                 json=json, params=params or {}, timeout=30,
@@ -1065,7 +1048,7 @@ class GoogleGmailClient(models.AbstractModel):
         it is what `update_draft` and `send_draft` take, and it is opaque to
         the caller either way.
         """
-        payload, error = self._draft_payload(mail_record, mailbox, reply_context)
+        payload, _message_id, error = self._draft_payload(mail_record, mailbox, reply_context)
         if error:
             raise UserError(_('Could not save the draft: %s') % error.get('error'))
         created = self._api_call(
@@ -1087,7 +1070,7 @@ class GoogleGmailClient(models.AbstractModel):
         """
         if reply_context is None:
             reply_context = self._draft_reply_context(account, provider_message_id)
-        payload, error = self._draft_payload(mail_record, mailbox, reply_context)
+        payload, _message_id, error = self._draft_payload(mail_record, mailbox, reply_context)
         if error:
             raise UserError(_('Could not update the draft: %s') % error.get('error'))
         updated = self._api_call(
@@ -1127,28 +1110,30 @@ class GoogleGmailClient(models.AbstractModel):
     def _draft_payload(self, mail_record, mailbox, reply_context=None):
         """Build the `{'message': {...}}` body a draft write takes.
 
+        A send posts the inner `message` on its own; the MIME inside is the
+        same either way, so what is reviewed as a draft is what leaves.
+
         Returns:
-            tuple: (payload, error) — `error` is a failed send result, and is
-            None when there is nothing wrong.
+            tuple: (payload, message_id, error) — `message_id` is the RFC 5322
+            Message-ID minted for the MIME, and `error` is a failed send
+            result, None when there is nothing wrong.
         """
         reply_context = reply_context or {}
         to_addrs = mime_utils.collect_recipients(mail_record.email_to,
                                                  mail_record.recipient_ids)
         cc_addrs = mime_utils.collect_recipients(mail_record.email_cc)
         if not to_addrs and not cc_addrs:
-            return None, {
-                'success': False,
-                'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
-                'error_code': ERROR_NO_RECIPIENTS,
-            }
+            return None, None, no_recipients_result()
         message_id = mime_utils.new_message_id(mailbox.email)
         msg = mime_utils.build_message(
             mail_record, mailbox.email, to_addrs, cc_addrs, message_id,
             reply_context=reply_context)
         message = {'raw': base64.urlsafe_b64encode(msg.as_bytes()).decode()}
+        # Only claim the thread when the headers back it up — a threadId without
+        # a matching In-Reply-To is rejected by Gmail, not silently accepted.
         if reply_context.get('thread_id') and reply_context.get('in_reply_to'):
             message['threadId'] = reply_context['thread_id']
-        return {'message': message}, None
+        return {'message': message}, message_id, None
 
     @api.model
     def _draft_reply_context(self, account, draft_id):

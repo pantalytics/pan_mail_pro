@@ -21,12 +21,14 @@ from odoo.tests import TransactionCase, tagged
 from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     FOLDER_INBOX,
     FOLDER_SENT,
+    ThrottledError,
     get_provider_client,
 )
 
 from odoo.addons.pan_mail_pro.models.providers.imap_smtp.imap_client import (
     SMTP_TIMEOUT as IMAP_SMTP_TIMEOUT,
 )
+from .common import MailProTestCase
 
 IMAP_MODULE = 'odoo.addons.pan_mail_pro.models.providers.imap_smtp.imap_client'
 
@@ -504,7 +506,8 @@ class TestImapProvider(TransactionCase):
     # ------------------------------------------------------------------ #
     # Receiving
     # ------------------------------------------------------------------ #
-    def _raw_email(self, subject='Quote request', html='<p>Hello</p>',
+    @staticmethod
+    def _raw_email(subject='Quote request', html='<p>Hello</p>',
                    message_id='<abc@client.test>', extra_headers=None):
         headers = {
             'Message-ID': message_id,
@@ -757,8 +760,25 @@ class TestImapProvider(TransactionCase):
 
     def test_attachments_are_normalized_inline_and_regular(self):
         account, mailbox = self._imap_account(), self._mailbox()
-        raw = (
-            b'Message-ID: <att@client.test>\r\n'
+        raw = self._attachment_raw()
+        imap = FakeImap(uids=[b'7'], fetch=imap_fetch_item(raw))
+        with self._patch_imap(imap):
+            message = self.client.get_message(account, mailbox, 'inbox:42:7')
+            attachments = self.client.get_message_attachments(
+                account, mailbox, 'inbox:42:7')
+
+        self.assertTrue(message['has_attachments'])
+        by_name = {a['name']: a for a in attachments}
+        self.assertEqual(by_name['logo.png']['content'], b'hello')
+        self.assertTrue(by_name['logo.png']['is_inline'])
+        self.assertEqual(by_name['logo.png']['content_id'], 'logo123')
+        self.assertFalse(by_name['report.pdf']['is_inline'])
+
+    @staticmethod
+    def _attachment_raw(message_id=b'<att@client.test>'):
+        """A multipart mail with an inline image and a regular file."""
+        return (
+            b'Message-ID: ' + message_id + b'\r\n'
             b'From: ann@client.test\r\n'
             b'To: sales@company.test\r\n'
             b'Subject: With files\r\n'
@@ -781,18 +801,29 @@ class TestImapProvider(TransactionCase):
             b'JVBERi0=\r\n'
             b'--B--\r\n'
         )
-        imap = FakeImap(uids=[b'7'], fetch=imap_fetch_item(raw))
-        with self._patch_imap(imap):
-            message = self.client.get_message(account, mailbox, 'inbox:42:7')
-            attachments = self.client.get_message_attachments(
-                account, mailbox, 'inbox:42:7')
 
-        self.assertTrue(message['has_attachments'])
-        by_name = {a['name']: a for a in attachments}
-        self.assertEqual(by_name['logo.png']['content'], b'hello')
-        self.assertTrue(by_name['logo.png']['is_inline'])
-        self.assertEqual(by_name['logo.png']['content_id'], 'logo123')
-        self.assertFalse(by_name['report.pdf']['is_inline'])
+    def test_the_message_is_not_fetched_twice_for_its_files(self):
+        """`BODY[]` is the whole message, files included. Handed the message
+        it just fetched, the attachment read parses those bytes rather than
+        dialling in a second time: one connection, one FETCH."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        imap = FakeImap(uids=[b'7'], fetch=imap_fetch_item(self._attachment_raw()))
+        with self._patch_imap(imap) as imap_ssl:
+            message = self.client.get_message(account, mailbox, 'inbox:42:7')
+            self.assertEqual(imap_ssl.call_count, 1)
+            imap.fetched = None
+            attachments = self.client.get_message_attachments(
+                account, mailbox, 'inbox:42:7', full_message=message)
+            self.assertEqual(imap_ssl.call_count, 1, 'the files came off the kept bytes')
+            self.assertIsNone(imap.fetched, 'no second FETCH either')
+        self.assertEqual(sorted(a['name'] for a in attachments), ['logo.png', 'report.pdf'])
+        self.assertIsInstance(message['_source'], bytes)
+
+        # A message that is not the one asked about is not trusted for it.
+        with self._patch_imap(imap) as imap_ssl:
+            self.client.get_message_attachments(
+                account, mailbox, 'inbox:42:8', full_message=message)
+            self.assertEqual(imap_ssl.call_count, 1)
 
     def test_attachment_failure_returns_empty_rather_than_raising(self):
         """The contract says an attachment failure must not sink the message.
@@ -808,6 +839,51 @@ class TestImapProvider(TransactionCase):
         self.assertEqual(row.level, 'warning')
         self.assertEqual(row.account_id, account)
         self.assertEqual(row.provider, 'imap')
+
+    def test_a_throttle_during_the_attachment_fetch_is_not_an_attachment_failure(self):
+        """The same rule as the other clients: a server asking the mailbox to
+        wait is raised through, not recorded as a missing file, so the
+        fetcher's mid-batch throttle handling sees it from every provider."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        with patch.object(type(self.client), '_fetch_one',
+                          side_effect=ThrottledError('asked to wait', 90)):
+            with self.assertRaises(ThrottledError):
+                self.client.get_message_attachments(account, mailbox, 'inbox:42:7')
+        self.assertFalse(self.env['pan.mail.error'].search(
+            [('code', '=', 'incoming.attachments_failed')], limit=1))
+
+    def test_a_draft_with_two_recipients_is_sent_to_both(self):
+        """The envelope used to be read with `parseaddr`, which answers
+        ('', '') for a header holding two addresses -- so a draft addressed
+        to two people was refused as having no recipients at all."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        raw = (
+            b'Message-ID: <draft@company.test>\r\n'
+            b'From: info@company.test\r\n'
+            b'To: Ann <ann@client.test>, bob@client.test\r\n'
+            b'Cc: carl@client.test\r\n'
+            b'Subject: Two of you\r\n'
+            b'Date: Tue, 12 May 2026 12:00:00 +0200\r\n'
+            b'MIME-Version: 1.0\r\n'
+            b'Content-Type: text/plain; charset="utf-8"\r\n'
+            b'\r\n'
+            b'Hello both\r\n'
+        )
+
+        class DraftImap(FakeImap):
+            def uid(self, command, *args):
+                if command in ('STORE', 'EXPUNGE'):
+                    return ('OK', [b'Done'])
+                return super().uid(command, *args)
+
+        smtp, imap = FakeSmtp(), DraftImap(uids=[b'7'], fetch=imap_fetch_item(raw))
+        with self._patch_smtp(smtp), self._patch_imap(imap):
+            result = self.client.send_draft(account, mailbox, 'drafts:42:7')
+
+        self.assertTrue(result['success'], result['error'])
+        self.assertEqual(sorted(smtp.sent[0]['to']),
+                         ['ann@client.test', 'bob@client.test', 'carl@client.test'])
+        self.assertEqual(result['message_id'], '<draft@company.test>')
 
     def test_a_mail_without_a_message_id_gets_the_same_one_every_run(self):
         """Dedup is on Message-ID and the fetch is inclusive on the cursor
@@ -881,6 +957,134 @@ class TestImapProvider(TransactionCase):
             result = self.client.test_connection(account)
             imap_ssl.assert_not_called()
         self.assertFalse(result['success'])
+
+
+class SessionImap(FakeImap):
+    """FakeImap that counts what a sync run costs the server."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.selects = []
+
+    def select(self, name, readonly=False):
+        self.selects.append((name, readonly))
+        return super().select(name, readonly)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestImapReceivingSession(MailProTestCase):
+    """A mailbox run is one login, not one per read.
+
+    Every contract call used to dial in on its own, so a message the fetcher
+    kept cost a login for the listing, one for the body and one for its
+    files. `receiving_session` keeps one connection for the run, with the
+    folder it has open, and the run below -- two new messages, one with a
+    file -- is what that costs now.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = get_provider_client(self.env, 'imap')
+        self.env['pan.mail.account'].create({
+            'email': 'imap_sync@company.test', 'provider': 'imap', 'user_id': False,
+            'imap_host': 'imap.soverin.net', 'imap_port': 993, 'imap_security': 'ssl',
+            'smtp_host': 'smtp.soverin.net', 'smtp_port': 465, 'smtp_security': 'ssl',
+            'password': 'hunter2',
+        })
+        self.mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'imap_sync@company.test',
+            'provider': 'imap',
+            'sync_level': 'everyone',
+            'last_sync_date': '2026-01-01 00:00:00',
+        })
+
+    def _messages_from(self, email):
+        partner = self.env['res.partner'].search([('email', '=', email)])
+        return self.env['mail.message'].search([
+            ('model', '=', 'res.partner'), ('res_id', 'in', partner.ids),
+            ('message_type', '=', 'email'),
+        ])
+
+    def test_a_run_is_one_login_and_one_select_per_folder(self):
+        plain = TestImapProvider._raw_email(
+            message_id='<one@client.test>', subject='First')
+        with_file = TestImapProvider._attachment_raw(b'<two@client.test>')
+        imap = SessionImap(
+            uids=[b'7', b'8'],
+            fetch=imap_fetch_item(plain, uid=b'7',
+                                  internaldate='12-May-2026 10:00:00 +0200')
+            + imap_fetch_item(with_file, uid=b'8',
+                              internaldate='12-May-2026 11:00:00 +0200'),
+        )
+        with patch(f'{IMAP_MODULE}.imaplib.IMAP4_SSL', return_value=imap) as imap_ssl:
+            held = self.env['pan.mail.fetcher']._process_mailbox(self.mailbox)
+
+        self.assertIsNone(held)
+        self.assertEqual(imap_ssl.call_count, 1, 'one login for the whole run')
+        self.assertTrue(imap.logged_out, 'and logged out when the run ended')
+        # The listing, both bodies and the files were read off the inbox on
+        # that one connection: one SELECT for it, one for the Sent folder
+        # the sync level also reads, and nothing re-opened a folder it had.
+        self.assertEqual(
+            [name for name, _readonly in imap.selects],
+            ['"INBOX"', '"Sent Items"'],
+        )
+        self.assertTrue(all(readonly for _name, readonly in imap.selects),
+                        'a sync never opens a folder for writing')
+
+        messages = self._messages_from('ann@client.test')
+        self.assertEqual(sorted(messages.mapped('message_id')),
+                         ['<one@client.test>', '<two@client.test>'])
+        with_attachment = messages.filtered(lambda m: m.message_id == '<two@client.test>')
+        self.assertIn('report.pdf', with_attachment.attachment_ids.mapped('name'))
+
+    def test_outside_a_session_every_call_is_still_its_own_connection(self):
+        """The actions, a live read and the Sent copy of a send dial in on
+        their own and hang up, as they always did."""
+        account = self.client.resolve_receiving_account(self.mailbox)
+        imap = SessionImap(uids=[b'7'], fetch=imap_fetch_item(
+            TestImapProvider._raw_email(), uid=b'7'))
+        with patch(f'{IMAP_MODULE}.imaplib.IMAP4_SSL', return_value=imap) as imap_ssl:
+            self.client.fetch_messages(account, self.mailbox)
+            self.assertTrue(imap.logged_out)
+            imap.logged_out = False
+            self.client.get_message(account, self.mailbox, 'inbox:42:7')
+            self.assertTrue(imap.logged_out)
+        self.assertEqual(imap_ssl.call_count, 2)
+
+    def test_a_dropped_connection_is_dialled_again_once(self):
+        """A socket the server drops mid-run is let go, the call that lost
+        it fails as it would have, and the next read dials in again."""
+        account = self.client.resolve_receiving_account(self.mailbox)
+
+        class DroppingImap(SessionImap):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.drop_next = False
+
+            def uid(self, command, *args):
+                if self.drop_next:
+                    self.drop_next = False
+                    raise imaplib.IMAP4.abort('socket error: EOF')
+                return super().uid(command, *args)
+
+        imap = DroppingImap(uids=[b'7'], fetch=imap_fetch_item(
+            TestImapProvider._raw_email(), uid=b'7'))
+        with patch(f'{IMAP_MODULE}.imaplib.IMAP4_SSL', return_value=imap) as imap_ssl, \
+                self.client.receiving_session(account):
+            self.client.fetch_messages(account, self.mailbox)
+            imap.drop_next = True
+            with self.assertRaises(imaplib.IMAP4.abort):
+                self.client.get_message(account, self.mailbox, 'inbox:42:7')
+            self.assertTrue(imap.logged_out, 'the dead connection was let go')
+            imap.logged_out = False
+            message = self.client.get_message(account, self.mailbox, 'inbox:42:7')
+            self.assertEqual(message['message_id'], '<abc@client.test>')
+            self.assertEqual(imap_ssl.call_count, 2, 'dialled again, once')
+            self.assertFalse(imap.logged_out, 'and kept for the rest of the run')
+        self.assertTrue(imap.logged_out)
+        # The folder was re-opened on the new connection rather than assumed.
+        self.assertEqual([name for name, _ro in imap.selects], ['"INBOX"', '"INBOX"'])
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

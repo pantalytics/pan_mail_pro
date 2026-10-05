@@ -127,6 +127,17 @@ class TestConnectBannerSession(HttpCase):
     which is what this asks.
     """
 
+    def setUp(self):
+        super().setUp()
+        # A connected instance, as a row rather than as the suite's stub
+        # (tests/connected.py): `ir.http` reads the entitlement off the row
+        # it already holds, which is the one lookup a page load pays, and a
+        # stubbed `sync_allowed` is not on that path.
+        self.env['pan.mail.license'].sudo().create({
+            'status': 'active',
+            'valid_until': fields.Datetime.now() + timedelta(days=14),
+        })
+
     def test_the_session_carries_the_answer(self):
         self.env['pan.mail.domain'].set_domains(['company.test'])
         self.env['pan.mail.provider'].create({
@@ -167,9 +178,9 @@ class TestConnectBannerSession(HttpCase):
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
 
         self.assertTrue(info['pan_mail_inbox'])
-        # Whether the Inbox opens at all rides the same payload. The suite
-        # runs connected (tests/connected.py), so the answer here is yes;
-        # the no, and the screen it draws, is tools/ui_check.py's.
+        # Whether the Inbox opens at all rides the same payload. The row
+        # `setUp` made is a live entitlement, so the answer here is yes; the
+        # no, and the screen it draws, is tools/ui_check.py's.
         self.assertIn('pan_mail_connected', info)
         self.assertTrue(info['pan_mail_connected'])
 
@@ -235,8 +246,17 @@ class TestSessionFlagsCost(TransactionCase):
         self.assertEqual(flags, expected)
 
     def test_an_unconnected_instance_answers_no_the_same_way(self):
+        """And at the same price. An instance that has never connected has
+        no row, and `sync_allowed()` asked of an empty row looks it up again
+        -- so the page load that draws the gate used to pay three searches
+        where the connected one paid one."""
         self.env['pan.mail.license'].sudo().search([]).unlink()
-        flags = self.env['ir.http']._pan_mail_session_flags()
+        License = self.env['pan.mail.license']
+        current = type(License).current
+        with patch.object(type(License), 'current', autospec=True,
+                          side_effect=current) as lookups:
+            flags = self.env['ir.http']._pan_mail_session_flags()
+        self.assertEqual(lookups.call_count, 1)
         self.assertFalse(flags['pan_mail_connect_prompt'])
         self.assertFalse(flags['pan_mail_improve'])
         self.assertFalse(flags['pan_mail_connected'])

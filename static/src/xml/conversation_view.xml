@@ -16,7 +16,7 @@
         fold with Enter.
     -->
     <t t-name="pan_mail_pro.ConversationView">
-        <div class="o_content o_mailpro_inbox d-flex flex-column h-100"
+        <div class="o_content o_mailpro_inbox d-flex flex-column h-100" t-ref="root"
              t-att-class="{ 'o_mailpro_small': panes.state.small, 'o_mailpro_narrow': panes.state.narrow }">
 
             <!--
@@ -56,7 +56,8 @@
                 the composer opens in the conversation pane, the same one a
                 reply uses.
             -->
-            <div class="o_mailpro_topbar d-flex align-items-center gap-2">
+            <div class="o_mailpro_topbar d-flex align-items-center gap-2"
+                 t-att-inert="panes.drawerOpen()">
                 <div class="o_mailpro_topbar_start d-flex align-items-center gap-2">
                     <!--
                         The way back. This action is `fullscreen`, so the web
@@ -79,15 +80,21 @@
                         has no divider to carry a button. The other two panes
                         fold from their own divider, at the edge they went
                         behind.
+
+                        On a phone the same button opens a drawer, which is
+                        a disclosure rather than a pressed state: it says
+                        expanded or not and names the drawer it opens.
                     -->
                     <div class="o_mailpro_pane_toggles d-flex align-items-center flex-shrink-0">
                         <button t-foreach="panes.toggles()" t-as="pane" t-key="pane"
                                 type="button"
                                 t-attf-class="o_mailpro_pane_toggle o_mailpro_pane_toggle_{{pane}} {{ panes.folded(pane) ? '' : 'o_mailpro_pane_toggle_on' }}"
-                                t-att-aria-pressed="panes.folded(pane) ? 'false' : 'true'"
+                                t-att-aria-pressed="panes.state.small ? undefined : (panes.folded(pane) ? 'false' : 'true')"
+                                t-att-aria-expanded="panes.state.small and pane === 'mailbox_list' ? (panes.folded(pane) ? 'false' : 'true') : undefined"
+                                t-att-aria-controls="panes.state.small and pane === 'mailbox_list' ? 'o_mailpro_mailbox_list_drawer' : undefined"
                                 t-att-aria-label="panes.toggleLabel(pane)"
                                 t-att-title="panes.toggleLabel(pane)"
-                                t-on-click="() => panes.togglePane(pane)">
+                                t-on-click="() => this.togglePane(pane)">
                             <i class="fa" t-att-class="panes.paneIcon(pane)" aria-hidden="true"/>
                         </button>
                     </div>
@@ -167,7 +174,8 @@
                 remedy, and the last one is why the first two are not a
                 dead end.
             -->
-            <div t-if="state.error" class="o_mailpro_error" role="alert">
+            <div t-if="state.error" class="o_mailpro_error" role="alert"
+                 t-att-inert="panes.drawerOpen()">
                 <div class="d-flex align-items-center gap-2">
                     <span t-esc="state.error"/>
                     <span t-if="state.errorRemedy" class="o_mailpro_error_remedy"
@@ -217,15 +225,35 @@
                     A folded pane stays in the DOM at no width, inert, so the
                     fold is a transition rather than a pane that blinks out.
                     The backdrop is the drawer's, on a phone, and fades with it.
+
+                    On a monitor the mailbox list is navigation. On a phone,
+                    open, it is a dialog over the screen: modal, with the
+                    rest of the screen inert behind it, Escape and a close
+                    button as the ways out, and the keyboard put inside it on
+                    the way in and back on its button on the way out. The
+                    role follows the shape rather than the element, which is
+                    why this is a div and not a nav.
                 -->
                 <div t-if="panes.state.small" class="o_mailpro_mailbox_list_backdrop"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('mailbox_list') }"
-                     t-on-click="() => panes.closeMailboxList()"/>
-                <nav class="o_mailpro_mailbox_list"
+                     t-on-click="() => this.closeMailboxList({ to: 'toggle' })"/>
+                <div class="o_mailpro_mailbox_list" id="o_mailpro_mailbox_list_drawer"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('mailbox_list') }"
                      t-att-inert="panes.folded('mailbox_list') or panes.state.zoom"
+                     t-att-role="panes.drawerOpen() ? 'dialog' : 'navigation'"
+                     t-att-aria-modal="panes.drawerOpen() ? 'true' : undefined"
                      aria-label="Mailboxes and folders"
+                     t-on-keydown="(ev) => this.onMailboxListKey(ev)"
                      t-attf-style="flex-basis: {{panes.state.mailbox_list}}px">
+                    <!-- The drawer's own way out, for a thumb that cannot
+                         press Escape and a reader who cannot see the
+                         backdrop. -->
+                    <button t-if="panes.state.small" type="button"
+                            class="o_mailpro_mailbox_list_close"
+                            aria-label="Close mailboxes" title="Close mailboxes"
+                            t-on-click="() => this.closeMailboxList({ to: 'toggle' })">
+                        <i class="fa fa-times" aria-hidden="true"/>
+                    </button>
                     <!--
                         Every mailbox at once, as a row and not as a chevron
                         over a copy of the pane below it: Apple Mail folds its
@@ -293,7 +321,7 @@
                         <t t-set="folderMailbox" t-value="false"/>
                         <t t-call="pan_mail_pro.ConversationFolders"/>
                     </div>
-                </nav>
+                </div>
 
                 <t t-set="divider" t-value="'mailbox_list'"/>
                 <t t-call="pan_mail_pro.PaneSplitter"/>
@@ -301,7 +329,7 @@
                 <!-- 2. what is waiting -->
                 <div t-if="showConversationList" class="o_mailpro_conversation_list" role="region" aria-label="Conversations"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('conversation_list') }"
-                     t-att-inert="panes.folded('conversation_list') or panes.state.zoom"
+                     t-att-inert="panes.folded('conversation_list') or panes.state.zoom or panes.drawerOpen()"
                      t-attf-style="flex-basis: {{panes.state.conversation_list}}px">
 
                     <!--
@@ -540,7 +568,7 @@
                      t-att-class="{ 'o_mailpro_conversation_composing': composer.state.open,
                                     'o_mailpro_conversation_fills': panes.conversationFills(showOdooRecord and selectedRecord),
                                     'o_mailpro_folded': panes.folded('conversation') }"
-                     t-att-inert="panes.folded('conversation') or panes.state.zoom"
+                     t-att-inert="panes.folded('conversation') or panes.state.zoom or panes.drawerOpen()"
                      t-attf-style="flex-basis: {{panes.state.conversation}}px">
                     <!--
                         A new mail takes the pane the way a reply does. There
@@ -744,15 +772,23 @@
                                 carry: the notes, the record's own events, the
                                 files and the follow-ups. A count is drawn
                                 only when there is one.
+
+                                A group of pressed buttons, not a tablist. A
+                                tablist promises a screen reader that the
+                                arrow keys walk the tabs and Tab leaves the
+                                strip, and these buttons answer Tab one at a
+                                time like every other button on the screen.
+                                A promise the keyboard does not keep is worse
+                                than a plainer one it does.
                             -->
                             <div t-if="!composer.state.open"
-                                 class="o_mailpro_tabs d-flex align-items-center gap-1" role="tablist"
+                                 class="o_mailpro_tabs d-flex align-items-center gap-1" role="group"
                                  aria-label="What to read about this conversation">
                                 <button t-foreach="TABS" t-as="tab" t-key="tab.id"
-                                        type="button" role="tab"
+                                        type="button"
                                         class="o_mailpro_tab"
                                         t-att-class="{ 'o_mailpro_tab_active': state.tab === tab.id }"
-                                        t-att-aria-selected="state.tab === tab.id ? 'true' : 'false'"
+                                        t-att-aria-pressed="state.tab === tab.id ? 'true' : 'false'"
                                         t-on-click="() => this.setTab(tab.id)">
                                     <span t-esc="tab.label"/>
                                     <span t-if="tabCount(tab.id)" class="o_mailpro_tab_count"
@@ -880,7 +916,7 @@
                 <!-- 4. the record: the pane a mail client cannot have -->
                 <div t-if="showOdooRecord" class="o_mailpro_odoo_record"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('odoo_record') }"
-                     t-att-inert="panes.folded('odoo_record')"
+                     t-att-inert="panes.folded('odoo_record') or panes.drawerOpen()"
                      role="region" aria-label="Odoo record">
                     <OdooRecordPane t-if="selectedRecord" record="selectedRecord"
                                 zoomed="panes.state.zoom"
@@ -1156,16 +1192,29 @@
         share.
     -->
     <t t-name="pan_mail_pro.PaneSplitter">
+        <!--
+            The strip is the pointer's: it takes the drag and the double
+            click for the whole 5px. The separator inside it is the
+            keyboard's: it is the thing with the role, the value and the
+            tab stop, and it has them only while there is a width to set.
+            Beside a folded pane the strip is drawn for its button alone, so
+            the handle gives up its tab stop and its value rather than
+            announcing a width of nothing. The button is the handle's
+            sibling, not its child: a separator with a button inside it is a
+            control a screen reader reads as one thing with two names.
+        -->
         <div t-if="panes.splitterVisible(divider)"
              t-attf-class="o_mailpro_split o_mailpro_split_{{divider}} {{ panes.resizable(divider) ? '' : 'o_mailpro_split_folded' }}"
-             role="separator" aria-orientation="vertical" tabindex="0"
-             t-att-aria-label="panes.label(divider)"
-             t-att-aria-valuenow="panes.folded(divider) ? 0 : panes.width(divider)"
-             t-att-aria-valuemin="panes.bounds(divider).min"
-             t-att-aria-valuemax="panes.bounds(divider).max"
              t-on-pointerdown="(ev) => panes.startDrag(divider, ev)"
-             t-on-keydown="(ev) => panes.onKey(divider, ev)"
              t-on-dblclick="() => panes.reset(divider)">
+            <div class="o_mailpro_split_handle"
+                 role="separator" aria-orientation="vertical"
+                 t-att-tabindex="panes.resizable(divider) ? 0 : undefined"
+                 t-att-aria-label="panes.label(divider)"
+                 t-att-aria-valuenow="panes.resizable(divider) ? panes.width(divider) : undefined"
+                 t-att-aria-valuemin="panes.resizable(divider) ? panes.bounds(divider).min : undefined"
+                 t-att-aria-valuemax="panes.resizable(divider) ? panes.bounds(divider).max : undefined"
+                 t-on-keydown="(ev) => panes.onKey(divider, ev)"/>
             <button t-if="panes.collapsible(divider)" type="button"
                     t-attf-class="o_mailpro_split_toggle o_mailpro_split_toggle_{{panes.toggleSide(divider)}}"
                     t-att-aria-label="panes.toggleLabel(divider)"
@@ -1224,16 +1273,24 @@
                 inbox for something that was never mail.
             -->
             <button t-if="canSaveDraft" type="button" class="btn btn-secondary btn-sm"
-                    t-att-disabled="composer.state.saving or composer.state.sending"
+                    t-att-class="{ disabled: composer.state.saving or composer.state.sending }"
+                    t-att-aria-disabled="composer.state.saving or composer.state.sending ? 'true' : undefined"
                     t-on-click="() => composer.saveDraft()">Save draft</button>
             <!--
                 While it goes out the button says so. A disabled button
                 alone is a screen that went quiet for the length of a
                 send, and a screen reader hears nothing of a disabled
                 attribute changing.
+
+                Busy is `aria-disabled` and the look, never the `disabled`
+                attribute: a button that is disabled while it has the
+                keyboard drops the keyboard on the page, and the reader who
+                pressed Send is lost for the length of the send. The hook
+                itself refuses a second press while one is running.
             -->
             <button type="button" class="btn btn-primary btn-sm"
-                    t-att-disabled="composer.state.sending"
+                    t-att-class="{ disabled: composer.state.sending }"
+                    t-att-aria-disabled="composer.state.sending ? 'true' : undefined"
                     t-on-click="() => composer.send()">
                 <t t-if="composer.state.sending">
                     <t t-if="composer.state.mode === 'note'">Logging…</t>

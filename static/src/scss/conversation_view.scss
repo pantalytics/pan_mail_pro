@@ -210,12 +210,17 @@ $mailpro-band-gutter: 3.5rem;
     // The mailboxes button, and the step back from a conversation a phone
     // adds. Sized for a thumb, drawn quietly: they say which panes are
     // showing, they are not what the screen is for. The back arrow is the
-    // phone's alone and stays hidden until the panes start taking turns.
+    // phone's alone and stays hidden until the panes start taking turns;
+    // the drawer's close button is the phone's alone too, and the template
+    // draws it only there.
     .o_mailpro_pane_toggle,
     .o_mailpro_odoo_record_zoom,
-    .o_mailpro_back {
+    .o_mailpro_back,
+    .o_mailpro_mailbox_list_close {
         @include mailpro-control;
     }
+
+    .o_mailpro_mailbox_list_close { margin-bottom: 0.5rem; }
 
     .o_mailpro_back { display: none; }
 
@@ -294,6 +299,19 @@ $mailpro-band-gutter: 3.5rem;
 
             &:hover { background-color: $mailpro-line; }
         }
+    }
+
+    // The keyboard's half of the divider: the separator with the tab stop,
+    // laid over the whole strip so the focus ring is the strip's outline
+    // rather than the 1px line inside it. The two transparent borders are
+    // what the -2px reach back over; the fold button sits above it on its
+    // own z-index.
+    .o_mailpro_split_handle {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: -2px;
+        right: -2px;
 
         &:focus-visible {
             outline: 2px solid $mailpro-accent;

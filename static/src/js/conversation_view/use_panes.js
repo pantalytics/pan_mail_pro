@@ -347,8 +347,14 @@ export function usePanes() {
             return PANES[dragged(name)];
         },
 
+        /**
+         * What the separator is called: the pane whose width it sets,
+         * which for the record's divider is the conversation. A separator
+         * named after the pane on its other side reads out a width that
+         * belongs to somebody else.
+         */
         label(name) {
-            return paneLabel(name);
+            return paneLabel(dragged(name));
         },
 
         folded(name) {
@@ -436,6 +442,15 @@ export function usePanes() {
                 : _t("Hide %s", paneLabel(name));
         },
 
+        /**
+         * Whether the mailbox list is up as the phone's drawer right now: a
+         * dialog over the screen, which is when the rest of the screen is
+         * inert and the keyboard is kept inside it.
+         */
+        drawerOpen() {
+            return state.small && state.mailboxListOpen;
+        },
+
         /** The mailbox list is a drawer on a phone and a pane everywhere else. */
         togglePane(name) {
             if (name === "mailbox_list") {
@@ -477,18 +492,53 @@ export function usePanes() {
             handle.addEventListener("pointercancel", stop);
         },
 
-        /** A width is a control, and a control answers a keyboard. */
+        /**
+         * A width is a control, and a control answers a keyboard: the
+         * arrows step it, Home and End take it to its floor and its
+         * ceiling, and Enter folds the pane on the dividers that carry a
+         * button -- then puts the keyboard on that button, because the
+         * handle gives up its tab stop the moment there is no width left
+         * to set. Only keys sent to the handle itself count; the button
+         * beside it answers its own.
+         */
         onKey(name, ev) {
+            if (ev.target !== ev.currentTarget) {
+                return;
+            }
             if (foldedSide(name)) {
                 return; // No width beside a folded pane, so no step to take.
             }
-            if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") {
-                return;
+            const pane = dragged(name);
+            let width;
+            switch (ev.key) {
+                case "ArrowLeft":
+                    width = state[pane] - STEP;
+                    break;
+                case "ArrowRight":
+                    width = state[pane] + STEP;
+                    break;
+                case "Home":
+                    width = 0; // `resize` lifts it to the floor.
+                    break;
+                case "End":
+                    width = Infinity; // ...and lowers this to the ceiling.
+                    break;
+                case "Enter": {
+                    if (!DIVIDER_TOGGLES.includes(name)) {
+                        return;
+                    }
+                    ev.preventDefault();
+                    const button = ev.currentTarget.parentElement
+                        ?.querySelector(".o_mailpro_split_toggle");
+                    this.toggle(name);
+                    button?.focus();
+                    return;
+                }
+                default:
+                    return;
             }
             ev.preventDefault();
-            const pane = dragged(name);
-            const step = ev.key === "ArrowRight" ? STEP : -STEP;
-            resize(pane, state[pane] + step, containerWidth(ev.currentTarget));
+            resize(pane, width, containerWidth(ev.currentTarget));
             save();
         },
 

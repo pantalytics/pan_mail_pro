@@ -164,6 +164,8 @@ Two rules the actions inherit, and neither is negotiable in an implementation:
   rather than one with a marker argument because they are independent states,
   and a single call would have to be told which one it was *not* changing.
 """
+import contextlib
+import hashlib
 import logging
 import re
 import secrets
@@ -220,6 +222,21 @@ ERROR_NO_RECIPIENTS = 'no_recipients'
 ERROR_THROTTLED = 'throttled'
 
 
+def no_recipients_result():
+    """The send result for a mail with nobody to send it to.
+
+    One dict, built here, because every client refuses the same mail the same
+    way: typically an internal notification to a user or partner without an
+    email address. The distinguishable code is what lets `mail.mail.send()`
+    skip and cancel this one mail instead of aborting the whole batch.
+    """
+    return {
+        'success': False,
+        'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
+        'error_code': ERROR_NO_RECIPIENTS,
+    }
+
+
 class ThrottledError(UserError):
     """Raised by a client's retry helper when Retry-After is too long to sleep.
 
@@ -266,10 +283,45 @@ BODY_MARKUP = re.compile(r'<[a-zA-Z/!]')
 BODY_NEWLINE = re.compile(r'\r\n|\r|\n')
 
 
+# Which database stamped the X-Odoo-* headers on a mail. The four of them name
+# a model, a record and two row ids, and every Odoo numbers its rows from one,
+# so on their own they say "an Odoo sent this" and never "this Odoo did". A
+# mail from another Mail Pro customer carried the same headers, so the loop
+# guard refused it as our own sent copy and, before refusing, re-indexed its
+# ids onto whichever local message and record happened to carry the same
+# numbers -- after which replies in that conversation matched at 1.0 onto the
+# wrong record. The marker is a salted SHA-256 of `database.uuid`, hex, cut to
+# 32 characters: identity, not authentication. It is not secret and need not
+# be, because the question it answers is "did we send this" and a forged yes
+# buys nobody anything; the salt only keeps the uuid itself off the wire.
+# Written by both MIME senders and the Graph sender through
+# `providers/mime_utils.odoo_headers`, read by the fetcher's
+# `_gate_odoo_originated` and matcher rule 1. It lives next to the allowlist
+# because the allowlist is where the header's name is spelled for reading.
+DB_MARKER_HEADER = 'X-Odoo-Db'
+DB_MARKER_SALT = 'pan_mail_pro'
+DB_MARKER_LENGTH = 32
+
+
+def odoo_db_marker(env):
+    """This database's marker, as written on outgoing mail and read back.
+
+    Empty when `database.uuid` is unset, which no installed Odoo has. An empty
+    marker is written nowhere and matches nothing, so such a database treats
+    every X-Odoo-* mail as somebody else's and leaves the duplicate gate to
+    catch its own sent copies.
+    """
+    uuid = env['ir.config_parameter'].sudo().get_param('database.uuid', '')
+    if not uuid:
+        return ''
+    digest = hashlib.sha256(f'{DB_MARKER_SALT}:{uuid}'.encode()).hexdigest()
+    return digest[:DB_MARKER_LENGTH]
+
+
 HEADER_ALLOWLIST = frozenset({
     'in-reply-to',
     'references',
-    'x-odoo-db',
+    DB_MARKER_HEADER.lower(),
     'x-odoo-mail-id',
     'x-odoo-message-id',
     'x-odoo-model',
@@ -702,6 +754,22 @@ class MailProviderClient(models.AbstractModel):
     # Receiving
     # -------------------------------------------------------------------------
 
+    def receiving_session(self, account):
+        """One connection for a run of reads on `account`, as a context manager.
+
+        The fetcher wraps a mailbox's whole run in it (`_process_mailbox`), and
+        so does a forced import from the live mailbox. What it means is the
+        provider's business: for the two REST providers a call is a request
+        and there is nothing to keep, so the default is a `nullcontext` and
+        the calls inside behave exactly as the calls outside. IMAP keeps one
+        logged-in connection, with the folder it has selected, for the span
+        of the block, so a run costs one login rather than one per message.
+
+        Not on the required-override list on purpose: a provider with nothing
+        to keep open has nothing to implement.
+        """
+        return contextlib.nullcontext()
+
     @api.model
     def fetch_messages(self, account, mailbox, folder=FOLDER_INBOX,
                        since_datetime=None, limit=50):
@@ -727,11 +795,23 @@ class MailProviderClient(models.AbstractModel):
         raise NotImplementedError
 
     @api.model
-    def get_message_attachments(self, account, mailbox, provider_message_id):
+    def get_message_attachments(self, account, mailbox, provider_message_id,
+                                full_message=None):
         """Return normalized attachments for a message.
 
         Attachment failures must not sink the message: implementations log and
         return an empty list rather than raising.
+
+        `full_message` is the dict `get_message()` returned for this same
+        message, when the caller still has it. A provider whose full fetch
+        already carries the attachment bodies (Gmail's `format=full`, an IMAP
+        `BODY[]`) keeps what it needs under the private key `_source` and
+        reads it back here, so the message is not fetched a second time for
+        its files. The key is the provider's own and nobody else reads it:
+        the fetcher pops it the moment the attachments are in hand, before
+        the message reaches the matcher, the routing log or the index. A
+        provider whose attachments are a call of their own (Graph) ignores
+        the argument.
         """
         raise NotImplementedError
 

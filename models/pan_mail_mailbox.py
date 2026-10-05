@@ -8,6 +8,7 @@ from .mail_provider_client import (
     PROVIDER_SELECTION,
     UNREAD_CAP,
     get_provider_client,
+    ThrottledError,
 )
 from .mail_message import READ_MIRROR_CTX
 from .neutralization import database_is_neutralized
@@ -952,7 +953,12 @@ class PanMailMailbox(models.Model):
         processor = self.env['pan.mail.fetcher']
         stall = processor._process_mailbox(self)
 
-        if stall:
+        if isinstance(stall, ThrottledError):
+            # The provider asked for a pause mid-batch. What landed is kept,
+            # and the wait is written on the mailbox the way the cron does
+            # it: a throttle is a healthy mailbox being polite, not an error.
+            processor._note_throttle(self, stall)
+        elif stall:
             # Not raised: a UserError rolls the whole click back, including the
             # mail that did land before the failure. The form reloads onto the
             # mailbox, which is where the reason now is.

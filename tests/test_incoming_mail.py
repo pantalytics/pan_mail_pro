@@ -671,6 +671,26 @@ class TestThrottleInsideABatch(TransactionCase):
         self.assertEqual(rows.mapped('code'), ['incoming.throttled'])
         self.assertEqual(rows.level, 'warning')
 
+    def test_sync_now_takes_a_throttle_the_way_the_cron_does(self):
+        """The button used to read the returned throttle as a stall and put
+        the mailbox in error, the one badge the cron path was written not to
+        show for a provider asking to wait."""
+        GraphClient = type(self.env['microsoft.graph.client'])
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=self._messages(), autospec=True), \
+             self._throttled_get_message(), \
+             patch.object(type(self.mailbox), '_has_working_credentials',
+                          return_value=True, autospec=True), \
+             patch.object(type(self.env['pan.mail.setup']), 'is_ready',
+                          return_value=True, autospec=True):
+            self.mailbox.action_sync_now()
+
+        self.assertEqual(self.mailbox.state, 'active')
+        self.assertFalse(self.mailbox.sync_failure_count)
+        self.assertIn('Retry after 120s', self.mailbox.error_message)
+        self.assertTrue(self.mailbox.last_check_date, 'a throttled read is still a read')
+        self.assertEqual(self.mailbox.last_sync_date, datetime(2026, 5, 12, 10, 1, 0))
+
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestTransientSyncFailures(TransactionCase):

@@ -30,11 +30,15 @@ the Sent folder. We APPEND it ourselves, best-effort, so a user's own mail
 client shows the mail Odoo sent. The X-Odoo-* loop guard on it keeps the
 incoming sync from importing it straight back.
 
-Known cost: each contract call opens its own connection, so a message the
-processor decides to keep costs a login for the body and another for its
-attachments. Steady state is a handful of connections per cron run, which is
-why no pool is kept here; a large first sync is slow rather than broken,
-because ir.cron will not run the job concurrently with itself.
+Connections: a contract call opens its own and closes it, which is right for
+a mailbox action or a single live read and wrong for a sync, where it made a
+message cost a login for the listing, one for the body and one for the files.
+`receiving_session` is the sync's answer: one logged-in connection, kept on
+the cursor for the span of the block together with the folder it has selected
+and the names this server gave the contract's folders, so a run is one login
+and one SELECT per folder. Every call outside such a block still dials in on
+its own. No pool beyond that: ir.cron will not run the job concurrently with
+itself, so one connection per mailbox run is the whole steady state.
 """
 import imaplib
 import logging
@@ -52,7 +56,7 @@ from odoo import models, api, _
 from odoo.exceptions import UserError
 from ...mail_provider_client import (
     ERROR_NO_RECIPIENTS, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_ROLES, FOLDER_SENT,
-    FOLDER_TRASH, UNREAD_CAP,
+    FOLDER_TRASH, UNREAD_CAP, ThrottledError, no_recipients_result,
 )
 from .. import mime_utils
 
@@ -100,6 +104,39 @@ _SENT_FLAG_RE = re.compile(r'\\Sent', re.IGNORECASE)
 # ... and the ones that do not still tend to name it Sent, under whatever
 # hierarchy delimiter they use: `INBOX.Sent`, `INBOX/Sent`.
 _SENT_LEAF_RE = re.compile(r'(?:^|[./])sent$', re.IGNORECASE)
+
+
+# Where a `receiving_session` keeps its connection: on the cursor, keyed by
+# account id, so every client recordset of the same transaction finds it
+# whatever context it carries. Gone with the cursor at the latest.
+SESSION_CACHE_KEY = 'pan_mail_imap_sessions'
+
+
+class _ImapSession:
+    """What `receiving_session` holds open for one account.
+
+    `conn` is dialled on the first call that needs it and logged out when the
+    block ends. `selected` is the folder the connection has open read-only,
+    as (name, uidvalidity), so a second read of the same folder skips the
+    SELECT and still knows its UIDVALIDITY (imaplib pops an untagged response
+    the first time it is read). `folders` maps the contract's folder ids to
+    this server's names, which cost a LIST each to find and do not change
+    inside a run. `drops` counts connections the server dropped under us: the
+    first is dialled again inside the session, after that every call is on
+    its own, the way it is outside a session.
+    """
+    __slots__ = ('conn', 'selected', 'folders', 'drops')
+
+    def __init__(self):
+        self.conn = None
+        self.selected = None
+        self.folders = {}
+        self.drops = 0
+
+    def drop(self):
+        self.conn = None
+        self.selected = None
+        self.drops += 1
 
 
 class ImapSmtpClient(models.AbstractModel):
@@ -239,8 +276,74 @@ class ImapSmtpClient(models.AbstractModel):
     # Connections
     # -------------------------------------------------------------------------
     @contextmanager
+    def receiving_session(self, account):
+        """One logged-in connection for every read inside the block.
+
+        The connection is dialled by the first `_imap` call that needs it and
+        logged out here, whatever happened in between. Nested on the same
+        account, the inner block is a no-op: the outer one owns the
+        connection. The session lives on the cursor, in `precommit.data`
+        under `SESSION_CACHE_KEY`: the seam Odoo's own `mail` module keeps
+        per-transaction state on, cleared on commit, which the cron only does
+        between mailboxes and so outside this block. The fetcher's
+        `_fetch_folder` and `_full_message`, which each look the client and
+        the account up afresh, find the same connection there; and if a
+        commit ever did clear it mid-block, `_imap` falls back to a
+        connection per call, which is what it always did.
+        """
+        if not account:
+            yield
+            return
+        sessions = self.env.cr.precommit.data.setdefault(SESSION_CACHE_KEY, {})
+        if account.id in sessions:
+            yield
+            return
+        session = sessions[account.id] = _ImapSession()
+        try:
+            yield
+        finally:
+            # Popped from the data as it is now, not the dict captured above:
+            # if a commit cleared it in between, the kept entry is already
+            # gone and the connection is still ours to close.
+            self.env.cr.precommit.data.get(SESSION_CACHE_KEY, {}).pop(account.id, None)
+            if session.conn is not None:
+                self._logout(session.conn, account.imap_host)
+
+    def _session_for(self, account):
+        """The open receiving session for `account`, or None outside one."""
+        return self.env.cr.precommit.data.get(SESSION_CACHE_KEY, {}).get(account.id)
+
+    @contextmanager
     def _imap(self, account):
-        """An authenticated IMAP connection, closed whatever happens."""
+        """An authenticated IMAP connection.
+
+        Inside a `receiving_session` it is the session's connection, dialled
+        on first use and kept; a socket the server drops mid-call (`abort`,
+        or any OSError) is let go so the next call dials again, once. Outside
+        a session -- a mailbox action, a live read, the Sent copy of a send --
+        it is a connection of its own, closed whatever happens.
+        """
+        session = self._session_for(account)
+        if session is None or (session.conn is None and session.drops > 1):
+            conn = self._connect(account)
+            try:
+                yield conn
+            finally:
+                self._logout(conn, account.imap_host)
+            return
+        if session.conn is None:
+            session.conn = self._connect(account)
+        try:
+            yield session.conn
+        except (imaplib.IMAP4.abort, OSError):
+            _logger.info('[IMAP] Connection to %s dropped; the next read dials again',
+                         account.imap_host)
+            self._logout(session.conn, account.imap_host)
+            session.drop()
+            raise
+
+    def _connect(self, account):
+        """Dial and log in, or say why not in the contract's terms."""
         self._require_credentials(account)
         host, port = account.imap_host, account.imap_port or 993
         try:
@@ -257,15 +360,16 @@ class ImapSmtpClient(models.AbstractModel):
                 'Could not connect to IMAP server %(host)s: %(error)s',
                 host=host, error=self._error_text(e),
             ))
+        return conn
+
+    @staticmethod
+    def _logout(conn, host):
         try:
-            yield conn
-        finally:
-            try:
-                conn.logout()
-            except Exception:
-                # A dropped socket on the way out is not a failure of the work
-                # that already succeeded.
-                _logger.debug('[IMAP] Ignoring error while closing connection to %s', host)
+            conn.logout()
+        except Exception:
+            # A dropped socket on the way out is not a failure of the work
+            # that already succeeded.
+            _logger.debug('[IMAP] Ignoring error while closing connection to %s', host)
 
     @contextmanager
     def _smtp(self, account, payload_size=0):
@@ -340,7 +444,21 @@ class ImapSmtpClient(models.AbstractModel):
         choice — 'Sent', 'Sent Items', 'INBOX.Sent', a localized name — so the
         \\Sent special-use flag is asked for first, an admin override beats it,
         and 'Sent' is the last resort.
+
+        Inside a `receiving_session` the answer is kept: finding it is a LIST
+        of the whole mailbox, and a run asks for the same two folders once
+        per message.
         """
+        session = self._session_for(account)
+        if session is not None and folder in session.folders:
+            return session.folders[folder]
+        name = self._resolve_folder_name(conn, account, folder)
+        if session is not None:
+            session.folders[folder] = name
+        return name
+
+    @api.model
+    def _resolve_folder_name(self, conn, account, folder):
         if not folder:
             raise UserError(_('No mail folder given.'))
         if folder == FOLDER_INBOX:
@@ -400,13 +518,25 @@ class ImapSmtpClient(models.AbstractModel):
 
         Read-only by default, on purpose: syncing must never mark someone's
         mail as read. The actions that write say so.
+
+        Inside a `receiving_session`, a read-only SELECT of the folder the
+        session's connection already has open read-only is not repeated: the
+        name and the UIDVALIDITY it answered are kept on the session. A
+        SELECT for writing is always made, and forgets the kept one.
         """
         name = self._folder_name(conn, account, folder)
+        session = self._session_for(account)
+        kept = session is not None and session.conn is conn
+        if kept and readonly and session.selected and session.selected[0] == name:
+            return session.selected
         typ, _data = conn.select(self._quote(name), readonly=readonly)
         if typ != 'OK':
             raise UserError(_('Could not open IMAP folder "%s".') % name)
         uidvalidity = (conn.response('UIDVALIDITY')[1] or [b''])[0]
-        return name, (uidvalidity or b'').decode() or '0'
+        selected = (name, (uidvalidity or b'').decode() or '0')
+        if kept:
+            session.selected = selected if readonly else None
+        return selected
 
     @api.model
     def _quote(self, name):
@@ -458,22 +588,12 @@ class ImapSmtpClient(models.AbstractModel):
         to fall back on, so the thread key returned below is derived from the
         chain these headers establish.
         """
-        to_addrs = mime_utils.collect_recipients(mail_record.email_to, mail_record.recipient_ids)
-        cc_addrs = mime_utils.collect_recipients(mail_record.email_cc)
-        if not to_addrs and not cc_addrs:
-            return {
-                'success': False,
-                'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
-                # Same code the other clients return, so mail.mail.send() cancels
-                # this one instead of aborting the batch.
-                'error_code': ERROR_NO_RECIPIENTS,
-            }
-
-        message_id = mime_utils.new_message_id(mailbox.email)
-        msg = mime_utils.build_message(
-            mail_record, mailbox.email, to_addrs, cc_addrs, message_id,
-            reply_context=reply_context)
-        envelope = mime_utils.bare_addresses(to_addrs + cc_addrs)
+        # The same MIME a draft stores, so what is reviewed is what leaves.
+        msg, error = self._draft_message(mail_record, mailbox, reply_context)
+        if error:
+            return error
+        message_id = msg['Message-ID']
+        envelope = mime_utils.envelope(msg)
         payload_size = len(msg.as_bytes())
 
         try:
@@ -659,18 +779,39 @@ class ImapSmtpClient(models.AbstractModel):
 
     @api.model
     def get_message(self, account, mailbox, provider_message_id):
-        """Fetch one message in full, including headers and body."""
+        """Fetch one message in full, including headers and body.
+
+        `BODY[]` is the whole message, files included, so the bytes are kept
+        under `_source` for `get_message_attachments(full_message=...)`
+        rather than fetched a second time for the files. Private to this
+        client; the fetcher drops the key as soon as the attachments are read.
+        """
         raw = self._fetch_one(account, provider_message_id)
         folder, uidvalidity, _uid = self._parse_message_ref(provider_message_id)
-        return self._normalize_message(raw, folder, uidvalidity)
+        message = self._normalize_message(raw, folder, uidvalidity)
+        message['_source'] = raw['raw']
+        return message
 
     @api.model
-    def get_message_attachments(self, account, mailbox, provider_message_id):
+    def _kept_source(self, full_message, provider_message_id):
+        """The raw bytes `get_message` kept, when they are this message's."""
+        if not full_message:
+            return None
+        if full_message.get('provider_message_id') != provider_message_id:
+            return None
+        raw = full_message.get('_source')
+        return raw if isinstance(raw, (bytes, bytearray)) else None
+
+    @api.model
+    def get_message_attachments(self, account, mailbox, provider_message_id,
+                                full_message=None):
         """Return normalized attachments; never raises (see contract)."""
         attachments = []
         try:
-            item = self._fetch_one(account, provider_message_id)
-            msg = message_from_bytes(item['raw'], policy=policy.default)
+            raw = self._kept_source(full_message, provider_message_id)
+            if raw is None:
+                raw = self._fetch_one(account, provider_message_id)['raw']
+            msg = message_from_bytes(raw, policy=policy.default)
             for part in msg.walk():
                 filename = part.get_filename()
                 if not filename and not part.get('content-id'):
@@ -692,6 +833,12 @@ class ImapSmtpClient(models.AbstractModel):
                     'is_inline': is_inline,
                     'content_id': content_id or None,
                 })
+        except ThrottledError:
+            # Not an attachment failure: the mailbox was asked to wait. The
+            # same rule as the other clients, so the fetcher's mid-batch
+            # throttle handling sees it from every provider alike -- swallowed
+            # here, the message would land without its files for good.
+            raise
         except Exception as e:
             # Contract: an attachment failure must not sink the message. It is
             # recorded, because the mail then reads as complete when it is not.
@@ -1489,10 +1636,15 @@ class ImapSmtpClient(models.AbstractModel):
         item = self._fetch_one(account, provider_message_id)
         msg = message_from_bytes(item['raw'], policy=policy.default)
 
-        recipients = mime_utils.bare_addresses([
-            address for header in ('To', 'Cc', 'Bcc')
-            for address in (msg.get_all(header) or [])
-        ])
+        # Read with `getaddresses`, which splits a header holding several
+        # addresses; `parseaddr` on one answers ('', '') and a draft with two
+        # To addresses was refused as having none. Bcc is on the envelope
+        # too, because here it is a header the writer put on the draft, not
+        # a field this module invents -- and it comes off the message below.
+        recipients = list(dict.fromkeys(mime_utils.envelope(msg) + [
+            address for _name, address in getaddresses(msg.get_all('Bcc') or [])
+            if address
+        ]))
         if not recipients:
             return {'success': False, 'error': 'This draft has no recipients.',
                     'error_code': ERROR_NO_RECIPIENTS, 'message_id': None,
@@ -1553,16 +1705,16 @@ class ImapSmtpClient(models.AbstractModel):
 
     @api.model
     def _draft_message(self, mail_record, mailbox, reply_context=None):
-        """Build the draft's MIME. Returns (message, error)."""
+        """Build the MIME a send and a draft share. Returns (message, error).
+
+        The Message-ID is minted here and is on the message; a send reads it
+        back off `msg['Message-ID']` rather than being handed a second copy.
+        """
         to_addrs = mime_utils.collect_recipients(mail_record.email_to,
                                                  mail_record.recipient_ids)
         cc_addrs = mime_utils.collect_recipients(mail_record.email_cc)
         if not to_addrs and not cc_addrs:
-            return None, {
-                'success': False,
-                'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
-                'error_code': ERROR_NO_RECIPIENTS,
-            }
+            return None, no_recipients_result()
         message_id = mime_utils.new_message_id(mailbox.email)
         return mime_utils.build_message(
             mail_record, mailbox.email, to_addrs, cc_addrs, message_id,

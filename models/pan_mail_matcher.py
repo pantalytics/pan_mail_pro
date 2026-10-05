@@ -72,6 +72,8 @@ from datetime import timedelta
 
 from odoo import models, api, fields
 
+from .mail_provider_client import DB_MARKER_HEADER, odoo_db_marker
+
 _logger = logging.getLogger(__name__)
 
 # Rule identifiers. Stored in the decision so a log line, and later a UI, can
@@ -315,8 +317,8 @@ class PanMailMatcher(models.AbstractModel):
         res_id = headers.get('x-odoo-record-id')
         if not model or not res_id:
             return []
-        marker = headers.get('x-odoo-db')
-        own = self.env['pan.mail.fetcher']._odoo_db_marker()
+        marker = headers.get(DB_MARKER_HEADER.lower())
+        own = odoo_db_marker(self.env)
         if not marker or not own or marker != own:
             return []
         try:
