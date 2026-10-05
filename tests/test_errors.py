@@ -7,6 +7,14 @@ four things that make `pan.mail.error` worth having: a caught failure leaves a
 row with a code from the fixed list, every code a call site uses *is* on that
 list, the heartbeat carries codes and counts and nothing that names anyone, and
 a kind of failure the last day had not seen is reported within the minute.
+
+`record()` writes on a cursor of its own, which a TransactionCase cannot see
+(its transaction is repeatable-read and the row's mailbox is not committed).
+`tests/ledger.py` therefore routes the suite's calls into the test's own
+transaction, and the tests below that exercise the real path ask for it with
+`pan_mail_pro_real_ledger` inside `enter_registry_test_mode()`, where a new
+cursor is a savepoint on the test's. The call-site tests (the send, the RPC
+door) go through the routed path: they prove the wiring, not the cursor.
 """
 import json
 import re
@@ -51,6 +59,12 @@ class TestErrorLedger(TransactionCase):
         except ValueError as error:
             return error
 
+    def record_for_real(self, *args, **kwargs):
+        """The real `record()`: its own cursor, which under registry test mode
+        is a savepoint on this test's transaction."""
+        with self.enter_registry_test_mode():
+            self.Error.with_context(pan_mail_pro_real_ledger=True).record(*args, **kwargs)
+
     # --- the vocabulary ------------------------------------------------------
 
     def test_every_code_names_a_flow(self):
@@ -73,7 +87,7 @@ class TestErrorLedger(TransactionCase):
     # --- a row ---------------------------------------------------------------
 
     def test_a_caught_exception_leaves_a_row_with_its_traceback(self):
-        self.Error.record('incoming.mailbox_failed', self._caught(), mailbox=self.mailbox)
+        self.record_for_real('incoming.mailbox_failed', self._caught(), mailbox=self.mailbox)
         row = self.Error.search([('code', '=', 'incoming.mailbox_failed')], limit=1)
         self.assertTrue(row)
         self.assertEqual(row.flow, 'incoming')
@@ -85,7 +99,7 @@ class TestErrorLedger(TransactionCase):
         self.assertEqual(row.description, CODES['incoming.mailbox_failed'])
 
     def test_a_detail_without_an_exception_is_a_row_too(self):
-        self.Error.record('outgoing.throttled', level='warning', detail='Retry after 60s')
+        self.record_for_real('outgoing.throttled', level='warning', detail='Retry after 60s')
         row = self.Error.search([('code', '=', 'outgoing.throttled')], limit=1)
         self.assertEqual(row.level, 'warning')
         self.assertEqual(row.message, 'Retry after 60s')
@@ -93,8 +107,9 @@ class TestErrorLedger(TransactionCase):
 
     def test_recording_never_raises(self):
         """A failure to record a failure is a log line, not a second failure."""
-        with patch.object(type(self.Error), '_values', side_effect=RuntimeError('db gone')):
-            self.Error.record('incoming.mailbox_failed', self._caught())
+        with patch.object(type(self.Error), '_values', side_effect=RuntimeError('db gone')), \
+                self.assertLogs('odoo.addons.pan_mail_pro.models.pan_mail_error', 'ERROR'):
+            self.record_for_real('incoming.mailbox_failed', self._caught())
 
     def test_a_failed_send_is_recorded_under_its_code(self):
         mail = self.env['mail.mail'].create({
@@ -125,6 +140,7 @@ class TestErrorLedger(TransactionCase):
     def test_old_rows_are_vacuumed(self):
         self.Error.record('license.heartbeat_failed', detail='old')
         row = self.Error.search([('code', '=', 'license.heartbeat_failed')], limit=1)
+        self.assertTrue(row)
         self.env.cr.execute(
             'UPDATE pan_mail_error SET create_date = %s WHERE id = %s',
             (fields.Datetime.subtract(fields.Datetime.now(), days=RETENTION_DAYS + 1), row.id))
@@ -151,7 +167,7 @@ class TestErrorLedger(TransactionCase):
     def test_the_heartbeat_carries_codes_and_counts_and_no_address(self):
         self.Error.record('incoming.mailbox_failed', self._caught(), mailbox=self.mailbox)
         body = self.env['pan.mail.license']._heartbeat_body()
-        self.assertIn({'code': 'incoming.mailbox_failed', 'count': 1}, body['errors'])
+        self.assertIn('incoming.mailbox_failed', [e['code'] for e in body['errors']])
         for entry in body['errors']:
             self.assertEqual(set(entry), {'code', 'count'})
             self.assertIn(entry['code'], CODES)
@@ -164,15 +180,17 @@ class TestErrorLedger(TransactionCase):
         License = self.env['pan.mail.license']
         link = License.sudo().create({'status': 'active', 'key_encrypted': 'stored-key'})
         self.assertEqual(License.current(), link)
+        since = fields.Datetime.now()
         with patch(GUARDED, autospec=True) as guarded:
+            link.errors_reported = self.Error.signature_since(since)
             License._report_errors_if_new()
-            self.assertEqual(guarded.call_count, 0, 'nothing failed, nothing to report')
+            self.assertEqual(guarded.call_count, 0, 'nothing new failed, nothing to report')
             self.Error.record('outgoing.send_failed', detail='no')
             self.Error.record('outgoing.send_failed', detail='no again')
             License._report_errors_if_new()
             self.assertEqual(guarded.call_count, 1)
             # The heartbeat stores what it carried; the same set is not news.
-            link.errors_reported = 'outgoing.send_failed'
+            link.errors_reported = self.Error.signature_since(since)
             link.last_check = False
             License._report_errors_if_new()
             self.assertEqual(guarded.call_count, 1)

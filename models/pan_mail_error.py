@@ -34,6 +34,10 @@ deleting or re-keying, and nothing records an error about a row it is deleting.
 **Thirty days, then gone.** Odoo's autovacuum deletes older rows; the value of
 a failure row is in the days after it is written, and the heartbeat has long
 since carried its code.
+
+In the test suite `tests/ledger.py` routes `record()` into the test's own
+transaction (a repeatable-read transaction cannot see a row committed beside
+it); `tests/test_errors.py` exercises the real cursor under registry test mode.
 """
 import logging
 import traceback as traceback_module
@@ -117,8 +121,8 @@ class PanMailError(models.Model):
         """
         if code not in CODES:
             _logger.error('[Mail Pro] Unknown error code %r; recorded as is', code)
-        vals = self._values(code, error, level, mailbox, account, detail)
         try:
+            vals = self._values(code, error, level, mailbox, account, detail)
             with self.pool.cursor() as cr:
                 env = api.Environment(cr, SUPERUSER_ID, {})
                 env['pan.mail.error'].create(vals)

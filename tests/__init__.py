@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from . import connected  # first: see its docstring
+from . import ledger  # second: the error ledger in the test's transaction
 from . import test_mail_account
 from . import test_account_migration
 from . import test_google_provider
