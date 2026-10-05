@@ -37,9 +37,6 @@
                     <div class="row mt-3 o_settings_container">
                         <div class="col-12 o_setting_box o_mailpro_about">
                             <div invisible="x_license_state != 'not_connected'">
-                                <div class="text-muted mb-2">
-                                    Setup starts once this Odoo is connected. Free up to 100 mails a day.
-                                </div>
                                 <button name="action_license_connect" type="object"
                                         string="Connect to Pantalytics" class="btn-primary"/>
                             </div>
