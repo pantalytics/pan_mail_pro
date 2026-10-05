@@ -38,9 +38,7 @@
                         <div class="col-12 o_setting_box o_mailpro_about">
                             <div invisible="x_license_state != 'not_connected'">
                                 <div class="text-muted mb-2">
-                                    Mail Pro works on an Odoo instance that is connected to a Pantalytics account.
-                                    Setup starts once this one is. The button opens a Pantalytics tab where you
-                                    sign in, or create an account, and approve a code. Free up to 100 mails a day.
+                                    Setup starts once this Odoo is connected. Free up to 100 mails a day.
                                 </div>
                                 <button name="action_license_connect" type="object"
                                         string="Connect to Pantalytics" class="btn-primary"/>
