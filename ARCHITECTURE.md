@@ -1721,7 +1721,7 @@ vocabulary drifted.
 
 The surface is the inbox, not this log. Settings → Technical is where you go
 to ask why; the screen where mail is read is where it gets fixed. A thread
-that is linked carries a quiet `Change` next to its chips; one that is not
+that is linked carries a quiet `Change link` next to its chips; one that is not
 carries the suggestion (rule 5, or the best proposal any rule made) with a
 `Link it here`, and a `Link to a record`. Both open the same picker, in two
 steps: a short list of the kinds of record, then Odoo's own record picker.
