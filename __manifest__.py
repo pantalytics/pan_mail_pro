@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': "Mail Pro - Email Integration",
-    'summary': "Microsoft 365, Gmail or IMAP/SMTP: send from any mailbox, sync incoming mail into the chatter, thread replies properly",
+    'summary': "Your own mailbox in Odoo: Microsoft 365, Gmail or IMAP/SMTP",
     'description': """
         Mail Pro - Secure Professional Email Integration
         ====================================================
@@ -112,7 +112,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.22.1.0',
+    'version': '19.0.22.1.1',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
