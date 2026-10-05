@@ -181,7 +181,6 @@ class TestImapProvider(TransactionCase):
         self.assertEqual(set(self.client.supported_mailbox_types),
                          {'personal', 'shared'})
         self.assertFalse(self.client.supports_shared_mailbox)
-        self.assertFalse(self.client.supports_delegation)
 
     def test_shared_imap_mailbox_needs_no_owner(self):
         """The constraint that demands an owner is Microsoft's SendAs model.
@@ -434,7 +433,9 @@ class TestImapProvider(TransactionCase):
 
     def test_a_failing_sent_copy_does_not_fail_the_send(self):
         """The mail is already delivered; failing to file a copy is not a send
-        failure and must not be reported as one."""
+        failure and must not be reported as one. It is recorded, though: a
+        Sent folder with holes is the admin's to hear about, not a user's to
+        notice."""
         account, mailbox = self._imap_account(), self._mailbox()
         mail = self.env['mail.mail'].create({
             'subject': 'x', 'body_html': '<p>x</p>', 'email_to': 'c@example.com'})
@@ -442,6 +443,37 @@ class TestImapProvider(TransactionCase):
                 patch(f'{IMAP_MODULE}.imaplib.IMAP4_SSL', side_effect=OSError('imap down')):
             result = self.client.send_message(mail, mailbox, account)
         self.assertTrue(result['success'])
+        row = self.env['pan.mail.error'].search(
+            [('code', '=', 'outgoing.sent_copy_failed')], limit=1)
+        self.assertTrue(row)
+        self.assertEqual(row.level, 'warning')
+        self.assertEqual(row.account_id, account)
+        self.assertIn('imap down', row.message)
+
+    def test_a_refused_append_names_the_folder_it_tried(self):
+        """'Sent' is the last-resort name and the server may not have it
+        (GreenMail has no \\Sent flag and no Sent folder until something
+        creates one). When the APPEND is refused the warning says which
+        folder was tried, which is the one thing the admin needs to fix it."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        mail = self.env['mail.mail'].create({
+            'subject': 'x', 'body_html': '<p>x</p>', 'email_to': 'c@example.com'})
+
+        class RefusingImap(FakeImap):
+            def append(self, folder, flags, date_time, message):
+                raise imaplib.IMAP4.error('APPEND command error: BAD [TRYCREATE]')
+
+        imap = RefusingImap(folders=[b'(\\HasNoChildren) "." "INBOX"'])
+        with self._patch_smtp(FakeSmtp()), self._patch_imap(imap), \
+                self.assertLogs(IMAP_MODULE, 'WARNING') as logs:
+            result = self.client.send_message(mail, mailbox, account)
+
+        self.assertTrue(result['success'])
+        self.assertTrue(any("folder 'Sent'" in line for line in logs.output), logs.output)
+        row = self.env['pan.mail.error'].search(
+            [('code', '=', 'outgoing.sent_copy_failed')], limit=1)
+        self.assertEqual(row.account_id, account)
+        self.assertIn('TRYCREATE', row.message)
 
     def test_smtp_failure_is_reported_not_raised(self):
         import smtplib
@@ -763,10 +795,47 @@ class TestImapProvider(TransactionCase):
         self.assertFalse(by_name['report.pdf']['is_inline'])
 
     def test_attachment_failure_returns_empty_rather_than_raising(self):
+        """The contract says an attachment failure must not sink the message.
+        It also must not be silent: the mail is then in Odoo looking complete
+        when it is not."""
         account, mailbox = self._imap_account(), self._mailbox()
         with patch(f'{IMAP_MODULE}.imaplib.IMAP4_SSL', side_effect=OSError('imap down')):
             self.assertEqual(
                 self.client.get_message_attachments(account, mailbox, 'inbox:42:7'), [])
+        row = self.env['pan.mail.error'].search(
+            [('code', '=', 'incoming.attachments_failed')], limit=1)
+        self.assertTrue(row)
+        self.assertEqual(row.level, 'warning')
+        self.assertEqual(row.account_id, account)
+        self.assertEqual(row.provider, 'imap')
+
+    def test_a_mail_without_a_message_id_gets_the_same_one_every_run(self):
+        """Dedup is on Message-ID and the fetch is inclusive on the cursor
+        date, so a mail with no header was imported again on every run. The
+        id minted for it is the folder, UIDVALIDITY and UID -- the triple the
+        provider id already carries -- so the duplicate gate sees one id for
+        one mail, run after run, and a real header is never second-guessed."""
+        account, mailbox = self._imap_account(), self._mailbox()
+        raw = (b'From: ann@client.test\r\nTo: sales@company.test\r\n'
+               b'Subject: No id\r\nDate: Tue, 12 May 2026 12:00:00 +0200\r\n'
+               b'Content-Type: text/plain\r\n\r\nHello\r\n')
+        imap = FakeImap(uids=[b'7'], fetch=imap_fetch_item(raw, uid=b'7'))
+        with self._patch_imap(imap):
+            first = self.client.fetch_messages(account, mailbox, folder=FOLDER_INBOX)
+            again = self.client.fetch_messages(account, mailbox, folder=FOLDER_INBOX)
+            full = self.client.get_message(account, mailbox, 'inbox:42:7')
+
+        self.assertEqual(first[0]['message_id'], '<inbox.42.7@pan-mail-pro.imap>')
+        self.assertEqual(again[0]['message_id'], first[0]['message_id'])
+        self.assertEqual(full['message_id'], first[0]['message_id'])
+        # No References either, so the thread key is the minted id too.
+        self.assertEqual(full['thread_id'], first[0]['message_id'])
+
+        # A real header wins: the synthetic id is for the mail that has none.
+        imap = FakeImap(uids=[b'7'], fetch=imap_fetch_item(self._raw_email(), uid=b'7'))
+        with self._patch_imap(imap):
+            real = self.client.fetch_messages(account, mailbox, folder=FOLDER_INBOX)
+        self.assertEqual(real[0]['message_id'], '<abc@client.test>')
 
     def test_plain_text_mail_is_not_marked_html(self):
         account, mailbox = self._imap_account(), self._mailbox()

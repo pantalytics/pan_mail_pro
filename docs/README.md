@@ -28,7 +28,7 @@ A database runs on one provider.
 |---------|-------------|
 | Send From dropdown | Choose which mailbox to send from in the composer |
 | Test send | One button on every mailbox and on My Preferences, so a broken address is found before a customer finds it |
-| 2-way sync | Inbox and Sent Items sync automatically, every minute |
+| Sync level | One ladder per mailbox: replies only, also your own replies from Sent, also new email from contacts, also new email from everyone. Every minute |
 | Reply threading | Replies attach to the correct record |
 | Personal mailboxes | Auto-created when users connect |
 | Shared mailboxes | Team addresses visible to all users |

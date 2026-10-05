@@ -256,3 +256,80 @@ class TestMailboxPermission(MailProTestCase):
     def test_only_a_mailbox_manager_may_send_connect_invites(self):
         with self.assertRaises(AccessError):
             self.other_user.with_user(self.other_user).action_send_connect_invite()
+
+    # -- the credentials themselves ---------------------------------------- #
+
+    def _mailbox_manager(self, login):
+        """A mailbox manager who is not an administrator: the actor the
+        `base.group_system` on the credential fields exists for."""
+        return self.env['res.users'].with_context(no_reset_password=True).create({
+            'name': login, 'login': login, 'email': login,
+            'group_ids': [(6, 0, [
+                self.env.ref('base.group_user').id,
+                self.env.ref('pan_mail_pro.group_mail_mailbox_manager').id])],
+        })
+
+    def test_a_user_sees_their_own_account_and_the_service_accounts(self):
+        """`rule_mail_account_own`: an account says who authorized what and
+        when, so a colleague's row is not yours to list. A service account
+        has no user and belongs to the company, so it stays readable: it is
+        what makes a shared mailbox work, and the composer has to see it."""
+        service = self.env['pan.mail.account'].sudo().create({
+            'email': 'service@company.test',
+            'provider': 'gmail',
+            'refresh_token': 'fake-refresh',
+        })
+        own = self.env['pan.mail.account'].sudo().search(
+            [('user_id', '=', self.other_user.id)])
+        self.assertTrue(own, 'the fixture connected this user')
+
+        visible = self.env['pan.mail.account'].with_user(self.other_user).search([])
+        self.assertEqual(set(visible.ids), set((own | service).ids))
+        self.assertNotIn(
+            self.env['pan.mail.account'].sudo().search(
+                [('user_id', '=', self.salesperson.id)]).id,
+            visible.ids, "a colleague's account is not listed")
+
+    def test_a_mailbox_manager_reads_accounts_but_never_the_credentials(self):
+        """`rule_mail_account_manager_all` lists every account to a manager;
+        the token and password columns carry `groups='base.group_system'`,
+        so the same manager, who is not an administrator, is refused the
+        secret and not the row."""
+        manager = self._mailbox_manager('manager@company.test')
+        account = self.env['pan.mail.account'].sudo().search(
+            [('user_id', '=', self.salesperson.id)])
+        self.assertEqual(
+            account.with_user(manager).read(['email'])[0]['email'], account.email,
+            'the positive control: the row itself is theirs to read')
+        for field in ('access_token_encrypted', 'refresh_token_encrypted',
+                      'password_encrypted', 'access_token', 'refresh_token',
+                      'password'):
+            with self.subTest(field=field):
+                with self.assertRaises(AccessError):
+                    account.with_user(manager).read([field])
+
+    def test_the_error_ledger_is_read_by_managers_and_written_by_nobody(self):
+        """`access_pan_mail_error_manager`: read and unlink, no write, no
+        create, and no row at all for `base.group_user`. The ledger names a
+        mailbox, an account and a user per failure, which is not a plain
+        user's to list; and a row is evidence, so even a manager may delete
+        one and never edit it. `_record()` writes as the superuser on its
+        own cursor, which is why nothing here needs create."""
+        row = self.env['pan.mail.error'].sudo().create({
+            'code': 'inbox.rpc_failed', 'flow': 'inbox',
+            'message': 'RuntimeError: boom',
+        })
+        with self.assertRaises(AccessError):
+            self.env['pan.mail.error'].with_user(self.other_user).search_read(
+                [], ['code'])
+
+        manager = self._mailbox_manager('ledger@company.test')
+        read = self.env['pan.mail.error'].with_user(manager).search_read(
+            [('id', '=', row.id)], ['code', 'message'])
+        self.assertEqual(read[0]['code'], 'inbox.rpc_failed')
+        with self.assertRaises(AccessError):
+            row.with_user(manager).write({'message': 'edited'})
+        self.assertEqual(row.message, 'RuntimeError: boom')
+        with self.assertRaises(AccessError):
+            self.env['pan.mail.error'].with_user(manager).create({
+                'code': 'inbox.rpc_failed', 'flow': 'inbox'})

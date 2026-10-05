@@ -267,6 +267,24 @@ A list of steps, each showing a check and its answer, says it in one look.
 - **Never a colour that means nothing.** Green for done, red for broken. There
   is no third.
 
+### The checklist is one column, and so is everything under it
+
+Each step is one `o_mailpro_step` block inside a single `col-12 o_setting_box`
+(`views/res_config_settings_views.xml`), not Odoo's two-column `<setting>`
+grid. Deliberately: the checklist is one column of dots and names that the
+eye scans top to bottom, and nothing on the page pairs with it. One column is
+not full width, though: `o_mailpro_steps` is capped at 46rem
+(`static/src/scss/setup_status.scss`), because a name on the left and an
+arrow on the far right of a 2000px window is two things, not one line. That
+was a shipped bug, and `tools/ui_check.py` asserts the cap at 2000px. The
+About and Help improve Mail Pro lines below it are `col-12` for the same
+reason: one line each, nothing to pair them with.
+
+The two-column pattern in CLAUDE.md (*Odoo Settings Page Layout*) is for
+settings that are a pair of equal forms side by side. Nothing on this page is
+that today; reach for it only when two blocks of fields are genuinely
+alternatives to each other, and never for a step of the checklist.
+
 ### Every step is the same line
 
 A setup step is one line, and all of them are the same line: a coloured dot, its

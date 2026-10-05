@@ -505,7 +505,7 @@ class MailMail(models.Model):
                 'scheduled_date': fields.Datetime.now() + timedelta(seconds=wait),
             })
             _logger.warning("[Outgoing Mail] Mail %s waits %ss: provider throttled", self.id, wait)
-            self.env['pan.mail.error'].record(
+            self.env['pan.mail.error']._record(
                 'outgoing.throttled', level='warning', mailbox=mailbox, account=account,
                 detail=result.get('error'))
             return None
@@ -572,7 +572,7 @@ class MailMail(models.Model):
             failure_type='unknown',
         )
         _logger.error(f"[Outgoing Mail] Mail {self.id} not sent: {reason}")
-        self.env['pan.mail.error'].record(code, error, mailbox=mailbox, detail=reason)
+        self.env['pan.mail.error']._record(code, error, mailbox=mailbox, detail=reason)
         return reason
 
     def _record_sent(self, result, mailbox, account, reply_context=None):
@@ -973,6 +973,13 @@ class MailMail(models.Model):
         ], limit=1)
 
     def _author_user(self):
-        """The Odoo user who wrote this mail, if there is one."""
+        """The Odoo user who wrote this mail, if there is one.
+
+        Internal users only. A portal customer has a res.users row too, and
+        counting it here sent their mail down the "has not connected an email
+        account" refusal, naming a customer as the user who should open My
+        Preferences. Mail a customer writes has nobody to send as, which is
+        the notification route by definition -- the same answer as row 4.
+        """
         self.ensure_one()
-        return self.author_id.user_ids[:1]
+        return self.author_id.user_ids.filtered(lambda user: not user.share)[:1]

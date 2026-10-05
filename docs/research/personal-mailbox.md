@@ -1,8 +1,8 @@
 # Your own mailbox, in the Inbox
 
-Status: **ships in 19.0.16.0.0**, read side and screen. What is deliberately
-not in it is under "What this is not"; nothing else of this file is
-outstanding.
+Status: **shipped**, 19.0.16.0.0, read side and screen. The design lives in
+ARCHITECTURE.md §1 now; this file is the reasoning behind it, kept for the
+record. What is deliberately not in it is under "What this is not".
 
 ## The problem
 

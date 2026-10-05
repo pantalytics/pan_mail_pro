@@ -36,7 +36,7 @@ that is the identity your mail provider knows, which is not always the one on
 your Odoo user.
 
 An administrator can invite everybody at once with **Send Mail Pro Invite** on
-the Users list (Settings → Mail Pro → Users).
+the Users list (Settings → Users & Companies → Users).
 
 ## Check it works
 

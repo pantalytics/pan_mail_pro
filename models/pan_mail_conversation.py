@@ -39,16 +39,21 @@ import logging
 import re
 from datetime import datetime
 
-from odoo import models, api, _
+from odoo import models, api, tools, _
 from odoo.exceptions import AccessError
 from odoo.fields import Domain
 from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import email_split, html2plaintext
 from odoo.tools.mail import html_sanitize, plaintext2html
+from odoo.tools.translate import LazyTranslate
 
 from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 
 _logger = logging.getLogger(__name__)
+# Module-level strings that reach the screen are translated when they are
+# read, not when the module is imported: the reader's language is only
+# known inside a request.
+_lt = LazyTranslate(__name__)
 
 # What the Files tab draws at most. A tab, not a document archive: past this
 # many, the record's own Files box is the screen for it.
@@ -129,14 +134,19 @@ UNGROUPED_KEY = 'pan_mail_ungrouped'
 
 KINDS = {value: 'folder' for value, _label in MAILBOX_FOLDERS}
 
-# The matcher's rule names, in words. The screen shows why a mail was not
-# filed, and `subject_participants` is not why anything happened.
+# The matcher's rule names, in words: one label per rule `_match_rules()`
+# can return, in the vocabulary of the screen that shows it (a conversation is
+# *linked*, never filed). The "Why?" line under an unlinked conversation reads
+# these, and a rule without a label would show its code there instead.
+# `tests/test_linking.py` keeps the two lists the same length.
 ROUTING_RULES = {
-    'odoo_headers': 'Our own headers on a reply',
-    'references': 'The reply headers of the thread',
-    'thread_link': 'A thread already filed on this record',
-    'thread_link_legacy': 'An older thread id for this record',
-    'subject_participants': 'The same subject and the same people',
+    'odoo_headers': _lt('Our own headers on a reply'),
+    'references': _lt('The reply headers of this conversation'),
+    'thread_link': _lt('A conversation already linked to this record'),
+    'thread_link_legacy': _lt('An older conversation id for this record'),
+    'record_reference': _lt('A document number in the subject'),
+    'only_open_record': _lt("The one open record of this contact"),
+    'subject_participants': _lt('The same subject and the same people'),
 }
 
 # The chatter posts that are correspondence once they have gone out. A reply
@@ -770,7 +780,7 @@ class PanMailConversation(models.AbstractModel):
     # ------------------------------------------------------------------
     # Your own mailbox, read from the provider
     #
-    # The design is in `docs/plans/personal-mailbox.md`. Two rules, and they
+    # The design is in `docs/research/personal-mailbox.md`. Two rules, and they
     # are the whole of why this is allowed to exist:
     #
     # **Nothing is stored.** These methods read the mailbox through the client
@@ -1418,16 +1428,24 @@ class PanMailConversation(models.AbstractModel):
             return False
         return '/%s/static/description/icon.png' % module
 
-    def _app_icon_by_menu(self, model):
-        """The `web_icon` of the first app whose menu opens `model`, or False.
+    @tools.ormcache('model_name')
+    def _app_icon_by_menu(self, model_name):
+        """The `web_icon` of the first app whose menu opens `model_name`, or False.
 
         `sudo` because the question is which tile, not whether the reader
         may open it: the chip carries the name of a record they can already
         read. An archived root (Sales without sale_management) is skipped,
         which is what the search does on its own.
+
+        Cached per registry: the answer is three searches over actions and
+        menus, asked once per model on every read of a conversation, and it
+        only changes when an app is installed or a menu moves -- both of
+        which signal the registry, which clears the cache. The value is a
+        plain string or False, never a recordset, because a cached recordset
+        would carry the environment of whoever asked first.
         """
         actions = self.env['ir.actions.act_window'].sudo().search(
-            [('res_model', '=', model)])
+            [('res_model', '=', model_name)])
         if not actions:
             return False
         Menu = self.env['ir.ui.menu'].sudo()
@@ -1503,7 +1521,9 @@ class PanMailConversation(models.AbstractModel):
             'id': log.id,
             'outcome': log.outcome,
             'rule': log.rule or '',
-            'rule_label': ROUTING_RULES.get(log.rule, log.rule or _('No rule')),
+            # `str()` because the label is a lazy translation and the row
+            # goes over the wire: JSON knows strings, not translations.
+            'rule_label': str(ROUTING_RULES.get(log.rule) or log.rule or _('No rule')),
             'reason': log.reason or '',
             'candidates': log.candidate_count,
         } for log in logs]

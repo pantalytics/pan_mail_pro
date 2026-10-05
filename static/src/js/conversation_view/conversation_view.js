@@ -800,7 +800,7 @@ export class ConversationView extends Component {
             });
         } catch (error) {
             this.improve.failed("live_import", error);
-            this.state.error = _t("Could not file that email.");
+            this.state.error = _t("Could not add that email to Odoo.");
             console.warn("[Mail Pro] live import failed", error);
         } finally {
             this.state.liveBusy = false;
@@ -874,7 +874,7 @@ export class ConversationView extends Component {
      */
     rowMenuItems(conversation) {
         return [
-            { id: "open", label: _t("Open"), onSelected: () => this.pick(conversation) },
+            { id: "open", label: _t("Open conversation"), onSelected: () => this.pick(conversation) },
             {
                 id: "read",
                 label: conversation.unread ? _t("Mark read") : _t("Mark unread"),
@@ -2310,9 +2310,7 @@ export class ConversationView extends Component {
             return;
         }
         this.notification.add(
-            via === "unlink"
-                ? _t("Linked to %s only. The next mail in this thread lands there too.", linked.name)
-                : _t("Linked to %s. The next mail in this thread lands here too.", linked.name),
+            _t("Linked to %s. The next mail in this conversation lands there too.", linked.name),
             { type: "success" }
         );
         // Which way the correction came: the one-click suggestion, the

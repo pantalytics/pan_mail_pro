@@ -37,6 +37,11 @@ FOLDER_CURSOR_FIELDS = {
 # first over several runs; the cursor is what makes that terminate.
 FETCH_BATCH_SIZE = 200
 
+# The context key `_process_mailbox` carries the internal domain list under,
+# read once per run, so the gate does set membership per party instead of a
+# search. See `_internal_domains()`.
+INTERNAL_DOMAINS_CTX = 'pan_mail_internal_domains'
+
 # Every post the sync makes carries this context, and `pan_mail_imported` is
 # the whole of the boundary in ARCHITECTURE.md §9.10: it means "this post is an
 # import", which no field on the message does. `x_mailbox_id` was the obvious
@@ -198,7 +203,12 @@ class PanMailFetcher(models.AbstractModel):
             try:
                 with self.env.cr.savepoint():
                     stall = self._process_mailbox(mailbox)
-                if stall:
+                if isinstance(stall, ThrottledError):
+                    # Mid-batch: what landed is kept, the cursor sits on the
+                    # last message that did, and the mailbox says why it
+                    # stopped there this run.
+                    self._note_throttle(mailbox, stall)
+                elif stall:
                     # Written outside the savepoint's success path but with no
                     # exception, so the mail that did land this run is kept and
                     # the reason it stopped there is on the mailbox. A stall is
@@ -208,26 +218,32 @@ class PanMailFetcher(models.AbstractModel):
                 else:
                     mailbox._record_sync_success()
             except ThrottledError as e:
-                # The provider asked for a pause longer than a run may sleep.
-                # Said on the mailbox, not counted as a failure: a throttled
-                # mailbox is a healthy one being polite, and five polite
-                # minutes must not turn its badge red.
-                _logger.info("[Incoming Mail] Mailbox %s throttled: %s", mailbox.id, e)
-                mailbox.write({'error_message': str(e)})
-                self.env['pan.mail.error'].record(
-                    'incoming.throttled', e, level='warning', mailbox=mailbox)
+                # The listing itself was refused, before anything landed.
+                self._note_throttle(mailbox, e)
             except Exception as e:
                 # Savepoint rolled back: the cursor is usable again, so the
                 # error write below won't hit "current transaction is aborted".
                 _logger.exception(f"[Incoming Mail] Error processing mailbox {mailbox.email}")
                 mailbox._record_sync_failure(str(e))
-                self.env['pan.mail.error'].record(
+                self.env['pan.mail.error']._record(
                     'incoming.mailbox_failed', e, mailbox=mailbox)
 
             if in_cron:
                 cron._commit_progress(processed=1, remaining=len(mailboxes) - index - 1)
 
         _logger.info("[Incoming Mail] Sync completed")
+
+    def _note_throttle(self, mailbox, error):
+        """The provider asked for a pause longer than a run may sleep.
+
+        Said on the mailbox, not counted as a failure: a throttled mailbox is
+        a healthy one being polite, and five polite minutes must not turn its
+        badge red.
+        """
+        _logger.info("[Incoming Mail] Mailbox %s throttled: %s", mailbox.id, error)
+        mailbox.write({'error_message': str(error)})
+        self.env['pan.mail.error']._record(
+            'incoming.throttled', error, level='warning', mailbox=mailbox)
 
     def _process_mailbox(self, mailbox):
         """
@@ -237,10 +253,12 @@ class PanMailFetcher(models.AbstractModel):
             mailbox: pan.mail.mailbox record
 
         Returns:
-            str: why the cursor is held, when a message failed to process, so
-                the caller can put the mailbox in `error`. Returned rather than
-                raised: the raise would roll back the mail that *did* land in
-                this run along with it.
+            str | ThrottledError | None: why the cursor is held, when a message
+                failed to process, so the caller can put the mailbox in
+                `error`; or the throttle the provider answered mid-batch, so
+                the caller can write the wait without counting a failure.
+                Returned rather than raised: the raise would roll back the
+                mail that *did* land in this run along with it.
 
         Raises:
             UserError: when internal domains are not configured. Deliberately
@@ -251,9 +269,18 @@ class PanMailFetcher(models.AbstractModel):
         """
         _logger.info(f"[Incoming Mail] Processing mailbox: {mailbox.email}")
 
-        gate = self.env['pan.mail.domain'].configuration_error()
+        Domain = self.env['pan.mail.domain']
+        gate = Domain.configuration_error()
         if gate:
             raise UserError(gate)
+        # The list, read once for the run and carried on the context so the
+        # internal-domain gate answers every party of every message from a
+        # set rather than with a search of its own. The context rather than an
+        # argument because `_fetch_folder` and `_process_message` keep their
+        # signatures; `_internal_domains()` reads it back, and falls back to a
+        # fresh read for a caller that did not come through here (a forced
+        # import from the live mailbox calls `_process_message` directly).
+        self = self.with_context(**{INTERNAL_DOMAINS_CTX: tuple(Domain.get_domains())})
 
         # First sync: if sync_start_date is set, use it for historical sync
         # Otherwise just test connection and start from now
@@ -283,11 +310,14 @@ class PanMailFetcher(models.AbstractModel):
         processed_count = 0
         cursors = {}
         stalls = []
+        throttles = []
         for folder in self._folders_to_sync(mailbox):
-            count, cursor, stalled_on = self._fetch_folder(mailbox, folder)
+            count, cursor, stalled_on, throttled = self._fetch_folder(mailbox, folder)
             processed_count += count
             if stalled_on is not None:
                 stalls.append((folder, stalled_on))
+            if throttled is not None:
+                throttles.append(throttled)
             # Each folder advances on its own progress only. An empty folder is
             # caught up, so it jumps to now() -- but not when it stalled on its
             # first message: that jump is exactly the skip the stall prevents,
@@ -300,7 +330,13 @@ class PanMailFetcher(models.AbstractModel):
 
         _logger.info(f"[Incoming Mail] Processed {processed_count} message(s) from {mailbox.email}")
 
-        return self._stall_error(stalls) if stalls else None
+        # A stall outranks a throttle: the stall names a message this mailbox
+        # cannot process, the throttle only a wait. Both come back as a value
+        # rather than a raise, for the same reason: the raise would take the
+        # mail that landed this run, and the cursors just written, with it.
+        if stalls:
+            return self._stall_error(stalls)
+        return throttles[0] if throttles else None
 
     @staticmethod
     def _folder_cursor(mailbox, folder):
@@ -387,10 +423,12 @@ class PanMailFetcher(models.AbstractModel):
 
         Returns:
             tuple: (processed_count, cursor_datetime or None, stalled_message
-                or None). The cursor is None only when the folder held nothing
-                to read; a batch whose very first message failed returns the
-                mailbox's current cursor, so the caller holds instead of
-                jumping to now().
+                or None, throttled_error or None). The cursor is None only when
+                the folder held nothing to read; a batch whose very first
+                message failed, or was throttled, returns the mailbox's current
+                cursor, so the caller holds instead of jumping to now(). The
+                throttle is handed back rather than raised so that what landed
+                before it is kept: see the loop.
         """
         # Fetch messages since last sync (sorted ascending for incremental cursor)
         client = mailbox._get_client()
@@ -421,12 +459,26 @@ class PanMailFetcher(models.AbstractModel):
         # whole batch.
         cursor = None
         stalled_on = None
+        throttled = None
 
         for message in messages:
             try:
                 with self.env.cr.savepoint():
                     if self._process_message(mailbox, message, folder):
                         processed += 1
+            except ThrottledError as error:
+                # The provider asked for a pause while this message's body or
+                # attachments were being fetched. That is a bad minute at the
+                # provider, not a message this mailbox cannot process, so it
+                # must not stall the cursor on it and put the mailbox in
+                # `error`. Not raised either: a raise rolls back the mail that
+                # landed earlier in this batch along with the cursor, and a
+                # mailbox whose backlog meets the same wait at the same point
+                # every run would never get past it. The batch stops here, the
+                # cursor stays on the last message that landed, and the caller
+                # writes the wait on the mailbox without counting a failure.
+                throttled = error
+                break
             except Exception as error:
                 # Without the savepoint, one DB error would leave the whole
                 # transaction in `aborted` state and every later message in
@@ -438,7 +490,7 @@ class PanMailFetcher(models.AbstractModel):
                 )
                 if stalled_on is None:
                     stalled_on = message
-                self.env['pan.mail.error'].record(
+                self.env['pan.mail.error']._record(
                     'incoming.message_failed', error, mailbox=mailbox)
                 continue
 
@@ -448,12 +500,13 @@ class PanMailFetcher(models.AbstractModel):
             if stalled_on is None and message.get('date'):
                 cursor = message['date']
 
-        if stalled_on is not None and cursor is None:
-            # The first message of the batch failed: hold the cursor exactly
-            # where it was rather than reporting "nothing found".
+        if (stalled_on is not None or throttled is not None) and cursor is None:
+            # The first message of the batch failed, or the provider asked for
+            # a pause before any landed: hold the cursor exactly where it was
+            # rather than reporting "nothing found".
             cursor = self._folder_cursor(mailbox, folder)
 
-        return processed, cursor, stalled_on
+        return processed, cursor, stalled_on, throttled
 
     # ------------------------------------------------------------------ #
     # Gates — may this message enter Odoo at all?
@@ -724,18 +777,35 @@ class PanMailFetcher(models.AbstractModel):
         mail is logged on it. Only when every recipient is ours is it internal
         traffic, and then nothing enters.
 
-        No trace beyond the log line, on purpose. Internal mail is the one
-        refusal that must never be reversible — an Import button here would be
-        a button for leaking. The refusal `_refuse()` logs carries the mailbox,
-        the Message-ID, the reason and the time, which is what answering "why is
-        this mail not in Odoo" needs and is as much as may be kept about a mail
-        we declined to read.
+        No trace beyond the log line, on purpose. Internal mail is a refusal
+        the sync must never offer to reverse: there is no queue it is held in
+        and no button that re-imports it in bulk. The refusal `_refuse()` logs
+        carries the mailbox, the Message-ID, the reason and the time, which is
+        what answering "why is this mail not in Odoo" needs and is as much as
+        may be kept about a mail we declined to read.
+
+        One exception, and it is the only one: `force_import`. That is the
+        owner of a personal mailbox pressing Add to Odoo on one mail they are
+        reading in their own mailbox, live (`import_live_message`,
+        ARCHITECTURE.md §1, "Reading is private, filing is public"). The sync refuses
+        internal mail because nobody chose it; here somebody did, for this one
+        mail, with the record it lands on in front of them, and the filing then
+        runs under ordinary Odoo rules. The choice lifts this filter and the
+        sync-level one, and lifts neither the duplicate guard nor the contact
+        block list.
+
+        The domain set is read once per run (`_internal_domains`) and carried
+        on `ctx`, so a message with several recipients costs no search per
+        party.
         """
         if ctx['force_import']:
             return None
         mailbox = ctx['mailbox']
+        domains = ctx.get('internal_domains')
+        if domains is None:
+            domains = self._internal_domains()
         for party in ctx['counterparts']:
-            if not self._is_internal_domain(party.get('email', ''), mailbox):
+            if not self._is_internal_domain(party.get('email', ''), mailbox, domains):
                 self._choose_counterpart(ctx, party)
                 return None
         return Skip('internal_domain', _('Every party to this mail is one of ours.'))
@@ -860,6 +930,9 @@ class PanMailFetcher(models.AbstractModel):
             # list: the block list is in practice an objection to processing,
             # and no button in this module should be able to override it.
             'force_import': bool(self.env.context.get('pan_mail_force_import')),
+            # The company's own domains, as a set: read once per run by
+            # `_process_mailbox`, or here when the call did not come through it.
+            'internal_domains': self._internal_domains(),
         }
 
         if self._refuse(ctx):
@@ -894,10 +967,15 @@ class PanMailFetcher(models.AbstractModel):
             )
             _logger.info(f"[Incoming Mail] Fetched {len(attachments)} attachment(s)")
 
-        # Find or create the partner (contact) for chatter posting
+        # The partner (contact) for chatter posting. `_gate_blocked_contact`
+        # already searched for it and left what it found on `ctx`, so the
+        # search is not repeated here; only a contact Odoo does not have yet
+        # costs a create. A ctx without the key (a ladder that did not run the
+        # gate) still resolves the old way.
         partner = None
         if contact_email:
-            partner = self._find_or_create_partner(contact_email, contact_name)
+            partner = ctx.get('partner') or self._find_or_create_partner(
+                contact_email, contact_name)
             _logger.debug(f"[Incoming Mail] Partner resolved: {partner.name} (id={partner.id}, email={partner.email})")
 
         if not partner:
@@ -1135,22 +1213,23 @@ class PanMailFetcher(models.AbstractModel):
                 provider_message_id=provider_message_id,
             )
 
-    def _is_duplicate(self, internet_message_id):
-        """Is this Message-ID already in Odoo, imported or sent from here?
+    def _internal_domains(self):
+        """The company's own domains, as a set, for one run.
 
-        The ladder uses `_duplicate_of`, which caches the same lookup on `ctx`
-        because two gates need the message itself and not only the boolean.
-
-        The same lookup the matcher uses to resolve a `References` chain: the
-        ref index (every id a message was ever seen under, including the one
-        the provider minted on send) and Odoo's own `message_id`. That is what
-        keeps a Sent Items sync from re-importing mail that left from Odoo.
+        `_process_mailbox` reads the list once and carries it on the context;
+        this hands it back as a set. A caller that did not come through there
+        (`import_live_message` calls `_process_message` directly) gets a fresh
+        read, which is what every caller got before the cache. Never an
+        ormcache: a list that changes on a settings page and has to be
+        invalidated by hand is a list that is eventually stale, and stale here
+        means internal mail entering.
         """
-        if not internet_message_id:
-            return False
-        return bool(self.env['pan.mail.matcher']._resolve_message_id(internet_message_id))
+        cached = self.env.context.get(INTERNAL_DOMAINS_CTX)
+        if cached is None:
+            return frozenset(self.env['pan.mail.domain'].get_domains())
+        return frozenset(cached)
 
-    def _is_internal_domain(self, email, mailbox=None):
+    def _is_internal_domain(self, email, mailbox=None, domains=None):
         """
         Check if email is from an internal company domain.
 
@@ -1161,11 +1240,13 @@ class PanMailFetcher(models.AbstractModel):
         Args:
             email: Email address to check
             mailbox: pan.mail.mailbox record, passed through unchanged
+            domains: the configured set, when the caller already read it;
+                None reads the list
 
         Returns:
             bool: True if email should be skipped as internal
         """
-        return self.env['pan.mail.domain'].should_skip(email, mailbox)
+        return self.env['pan.mail.domain'].should_skip(email, mailbox, domains=domains)
 
     def _find_partner(self, email):
         """

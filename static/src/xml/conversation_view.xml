@@ -99,10 +99,10 @@
                         client on a phone draws compose as an icon.
                     -->
                     <button type="button" class="btn btn-primary btn-sm o_mailpro_new"
-                            aria-label="New Email" title="New Email"
+                            aria-label="New email" title="New email"
                             t-on-click="() => this.newEmail()">
                         <i class="fa fa-pencil-square-o" aria-hidden="true"/>
-                        <span class="o_mailpro_new_label ms-1">New Email</span>
+                        <span class="o_mailpro_new_label ms-1">New email</span>
                     </button>
                 </div>
                 <div class="o_mailpro_search_zone flex-grow-1 d-flex justify-content-center">
@@ -611,7 +611,6 @@
                                             class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
                                             t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
                                             t-att-title="readToggleLabel"
-                                            t-att-aria-pressed="selectedUnread ? 'true' : 'false'"
                                             t-on-click="() => this.toggleRead()">
                                         <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
                                            aria-hidden="true"/>
@@ -1085,8 +1084,8 @@
             <FileUploader t-if="selectedRecord" multiUpload="true"
                           onUploaded.bind="onFileUploaded">
                 <t t-set-slot="toggler">
-                    <button class="btn btn-link" type="button">
-                        <i class="fa fa-plus-square"/>
+                    <button class="btn btn-secondary btn-sm" type="button">
+                        <i class="fa fa-paperclip me-1" aria-hidden="true"/>
                         Attach files
                     </button>
                 </t>
@@ -1109,7 +1108,10 @@
         <div class="o_mailpro_activities">
             <div t-if="selectedRecord" class="o_mailpro_activities_head">
                 <button type="button" class="btn btn-secondary btn-sm"
-                        t-on-click="() => this.scheduleActivity()">Schedule</button>
+                        t-on-click="() => this.scheduleActivity()">
+                    <i class="fa fa-clock-o me-1" aria-hidden="true"/>
+                    Schedule activity
+                </button>
             </div>
             <t t-if="state.conversation.activities.length">
                 <t t-foreach="activities" t-as="activity" t-key="activity.id">
@@ -1286,7 +1288,7 @@
                 <h3 class="o_mailpro_empty_title" t-esc="props.record.name"/>
                 <p class="o_mailpro_empty_text">This record could not be shown here.</p>
                 <button type="button" class="btn btn-secondary btn-sm"
-                        t-on-click="() => this.openRecord()">Open</button>
+                        t-on-click="() => this.openRecord()">Open record</button>
             </div>
         </div>
     </t>

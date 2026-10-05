@@ -14,6 +14,8 @@ So what is under test here is mostly the absence of configuration:
 - the block must be reachable from both directions (saving a mailbox, and a
   list emptied after the fact)
 """
+from unittest.mock import patch
+
 from psycopg2 import IntegrityError
 
 from odoo.exceptions import UserError, ValidationError
@@ -187,6 +189,31 @@ class TestInternalDomainFiltering(TransactionCase):
         self.Domains.set_domains([])
         self.assertFalse(self.Domains.is_internal('colleague@company.com'))
         self.assertTrue(self.Domains.configuration_error())
+
+    def test_a_set_the_caller_already_read_is_not_read_again(self):
+        """The fetcher reads the list once per run and asks per party.
+
+        What is passed decides, and the list is not consulted: a set naming a
+        domain that is not configured says internal, and a set missing the
+        configured one says external.
+        """
+        Domain = type(self.Domains)
+        with patch.object(Domain, 'get_domains', autospec=True,
+                          side_effect=AssertionError('read the list')):
+            self.assertTrue(self.Domains.is_internal(
+                'x@other.example', domains=frozenset({'other.example'})))
+            self.assertFalse(self.Domains.is_internal(
+                'colleague@company.com', domains=frozenset({'other.example'})))
+            self.assertTrue(self.Domains.should_skip(
+                'x@other.example', self.mailbox, domains=frozenset({'other.example'})))
+
+    def test_an_empty_set_passed_in_answers_like_an_empty_list(self):
+        """Fail-closed stays where it is: the run refuses to start on an empty
+        list (`configuration_error`), and an empty set is not a wildcard."""
+        self.assertFalse(self.Domains.is_internal(
+            'colleague@company.com', domains=frozenset()))
+        self.assertTrue(self.Domains.is_internal('colleague@company.com'),
+                        'None still reads the list')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

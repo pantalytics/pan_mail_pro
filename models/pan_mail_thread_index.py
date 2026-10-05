@@ -111,11 +111,19 @@ class PanMailMessageRef(models.Model):
             # the same cron batch.
             with self.env.cr.savepoint():
                 return self.sudo().create(to_create)
-        except Exception:
+        except Exception as error:
+            # Swallowed, by design: the mail is delivered and bookkeeping must
+            # not undo that. But a row the matcher will later miss is a reply
+            # that lands lower than it should, so the failure goes in the
+            # ledger too. The mailbox is the one stamped on the message, which
+            # on an import is not written yet; the row then carries none.
             _logger.exception(
                 "[Mail Matcher] Could not index Message-IDs %s for mail.message %s",
                 sorted(wanted), mail_message.id,
             )
+            self.env['pan.mail.error']._record(
+                'incoming.index_failed', error, level='warning',
+                mailbox=mail_message.x_mailbox_id or None)
             return self.browse()
 
     @api.model
@@ -296,11 +304,16 @@ class PanMailThreadLink(models.Model):
             # write here aborts the transaction the caller is still using.
             with self.env.cr.savepoint():
                 return self._record(mailbox, thread_id, model, res_id, vals, key_type)
-        except Exception:
+        except Exception as error:
+            # Same shape as the ref index above: the mail stays delivered,
+            # the missing link is a weaker match on the next reply, and that
+            # is worth a ledger row rather than a log line only.
             _logger.exception(
                 "[Mail Matcher] Could not link thread %s on mailbox %s to %s/%s",
                 thread_id, mailbox.email, model, res_id,
             )
+            self.env['pan.mail.error']._record(
+                'incoming.index_failed', error, level='warning', mailbox=mailbox)
             return self.browse()
 
     def _record(self, mailbox, thread_id, model, res_id, vals, key_type='provider'):

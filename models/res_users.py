@@ -6,7 +6,6 @@ from odoo.exceptions import AccessError, UserError
 from .neutralization import database_is_neutralized
 from .mail_provider_client import (
     get_provider_client,
-    get_setup_provider,
     oauth_redirect_uri,
 )
 
@@ -212,7 +211,7 @@ class ResUsers(models.Model):
             # asks who consented, so this is where a customer's Gmail is kept
             # from becoming a company mailbox the cron syncs.
             raise AccessError(_('Only internal users connect a mailbox.'))
-        provider = provider or get_setup_provider(self.env)
+        provider = provider or self.env['pan.mail.provider'].current().provider
         if not provider:
             raise UserError(_(
                 'No email provider is set up yet. An administrator picks one '
@@ -272,7 +271,7 @@ class ResUsers(models.Model):
             # A new account is refused on an unconnected instance, so the
             # button would end in a refusal after the consent screen.
             return False
-        provider = get_setup_provider(self.env)
+        provider = self.env['pan.mail.provider'].current().provider
         if not provider:
             return False
         if not get_provider_client(self.env, provider).uses_oauth:

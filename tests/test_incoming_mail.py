@@ -10,7 +10,12 @@ from odoo.tests import TransactionCase, tagged
 from odoo.tools import mute_logger
 import unittest
 
-from odoo.addons.pan_mail_pro.models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from odoo.addons.pan_mail_pro.models.mail_provider_client import (
+    FOLDER_INBOX,
+    FOLDER_SENT,
+    ThrottledError,
+)
+from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import INTERNAL_DOMAINS_CTX
 from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import SYNC_FAILURE_LIMIT
 from odoo.addons.pan_mail_pro.tests.common import MailProTestCase
 
@@ -58,10 +63,85 @@ class TestInternalDomain(TransactionCase):
         })
         self.assertTrue(self.processor._is_internal_domain('user@company.com', mailbox))
 
+    def test_a_set_the_caller_read_is_what_decides(self):
+        """The fetcher reads the list once per run and hands the set down."""
+        self.assertTrue(self.processor._is_internal_domain(
+            'user@other.example', None, frozenset({'other.example'})))
+        self.assertFalse(self.processor._is_internal_domain(
+            'user@company.com', None, frozenset({'other.example'})))
+
+    def test_the_run_reads_the_list_once_and_the_gate_searches_nothing(self):
+        """`_process_mailbox` puts the set on the context; the gate answers
+        every party from `ctx` without a search of its own."""
+        Domain = type(self.env['pan.mail.domain'])
+        GraphClient = type(self.env['microsoft.graph.client'])
+        mailbox = self.env['pan.mail.mailbox'].create({'email': 'team@company.com'})
+        mailbox.last_sync_date = datetime(2026, 5, 12, 9, 0, 0)
+        seen = []
+
+        def fake_process_message(self_, mailbox_, message, folder):
+            seen.append(self_.env.context.get(INTERNAL_DOMAINS_CTX))
+            return True
+
+        messages = [
+            {'provider_message_id': f'g{n}', 'message_id': f'<msg-{n}@test>',
+             'date': datetime(2026, 5, 12, 10, n, 0)}
+            for n in (1, 2, 3)
+        ]
+        real_get_domains = Domain.get_domains
+        reads = []
+
+        def counting_get_domains(domain_self):
+            reads.append(1)
+            return real_get_domains(domain_self)
+
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=messages, autospec=True), \
+             patch.object(type(self.processor), '_process_message',
+                          fake_process_message), \
+             patch.object(Domain, 'get_domains', counting_get_domains):
+            self.processor._process_mailbox(mailbox)
+
+        self.assertEqual(len(seen), 3)
+        self.assertEqual(
+            [set(s) for s in seen], [{'company.com', 'internal.org'}] * 3,
+            'every message of the run sees the same set')
+        # One for the fail-closed gate, one for the set. Not one per message,
+        # and not one per party.
+        self.assertEqual(len(reads), 2)
+
+        # The gate itself, with the set on ctx: no search at all.
+        ctx = {
+            'force_import': False,
+            'mailbox': mailbox,
+            'internal_domains': frozenset({'company.com'}),
+            'counterparts': [{'email': 'a@company.com'}, {'email': 'b@company.com'},
+                             {'email': 'customer@example.com'}],
+        }
+        with patch.object(Domain, 'get_domains', autospec=True,
+                          side_effect=AssertionError('searched')):
+            self.assertIsNone(self.processor._gate_internal_domain(ctx))
+        self.assertEqual(ctx['contact_email'], 'customer@example.com')
+
+    def test_a_hand_built_ctx_without_the_set_still_reads_the_list(self):
+        """A forced import calls `_process_message` outside a run."""
+        ctx = {
+            'force_import': False,
+            'mailbox': None,
+            'counterparts': [{'email': 'colleague@company.com'}],
+        }
+        skip = self.processor._gate_internal_domain(ctx)
+        self.assertEqual(skip.reason, 'internal_domain')
+
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestDuplicateDetection(TransactionCase):
-    """Test duplicate message detection."""
+    """The duplicate gate, and the lookup it is built on.
+
+    `_duplicate_of(ctx)` is the one lookup, cached on `ctx`; `_gate_duplicate`
+    is the refusal. Both are driven here with the smallest `ctx` the ladder
+    hands them, so a change to either reads as one in the diff.
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -72,20 +152,30 @@ class TestDuplicateDetection(TransactionCase):
             'email': 'test@example.com',
         })
 
+    @staticmethod
+    def _ctx(internet_message_id):
+        return {'internet_message_id': internet_message_id}
+
     def test_no_duplicate_for_new_message(self):
-        """New message IDs should not be detected as duplicates."""
-        self.assertFalse(self.processor._is_duplicate('<new-message-id@example.com>'))
+        """A Message-ID Odoo has never seen resolves to nothing and passes."""
+        ctx = self._ctx('<new-message-id@example.com>')
+        self.assertFalse(self.processor._duplicate_of(ctx))
+        self.assertIsNone(self.processor._gate_duplicate(ctx))
 
     def test_duplicate_in_mail_message(self):
-        """Messages already in mail.message should be detected."""
-        # Create a mail.message with this message_id
-        self.env['mail.message'].create({
+        """A Message-ID already on a mail.message is that message, and refused."""
+        message = self.env['mail.message'].create({
             'message_id': '<existing-message@example.com>',
             'model': 'res.partner',
             'res_id': self.partner.id,
             'body': 'Test',
         })
-        self.assertTrue(self.processor._is_duplicate('<existing-message@example.com>'))
+        ctx = self._ctx('<existing-message@example.com>')
+        self.assertEqual(self.processor._duplicate_of(ctx), message)
+        skip = self.processor._gate_duplicate(ctx)
+        self.assertEqual(skip.reason, 'duplicate')
+        # An overlapping fetch window is the system working, not news.
+        self.assertTrue(skip.quiet)
 
     def test_duplicate_sent_from_odoo(self):
         """Mail sent from Odoo is known under the Message-ID the provider minted.
@@ -102,12 +192,26 @@ class TestDuplicateDetection(TransactionCase):
         })
         self.env['pan.mail.message.ref'].record(
             message, '<sent-via-graph@outlook.com>', source='provider')
-        self.assertTrue(self.processor._is_duplicate('<sent-via-graph@outlook.com>'))
+        ctx = self._ctx('<sent-via-graph@outlook.com>')
+        self.assertEqual(self.processor._duplicate_of(ctx), message)
+        self.assertEqual(self.processor._gate_duplicate(ctx).reason, 'duplicate')
 
     def test_empty_message_id(self):
-        """Empty message IDs should not be duplicates."""
-        self.assertFalse(self.processor._is_duplicate(''))
-        self.assertFalse(self.processor._is_duplicate(None))
+        """A message with no Message-ID is nobody's duplicate."""
+        for empty in ('', None):
+            ctx = self._ctx(empty)
+            self.assertFalse(self.processor._duplicate_of(ctx))
+            self.assertIsNone(self.processor._gate_duplicate(ctx))
+
+    def test_the_lookup_is_resolved_once_per_message(self):
+        """Two gates ask; the index is read once and the answer kept on ctx."""
+        ctx = self._ctx('<asked-twice@example.com>')
+        Matcher = type(self.env['pan.mail.matcher'])
+        with patch.object(Matcher, '_resolve_message_id', autospec=True,
+                          return_value=self.env['mail.message'].browse()) as resolve:
+            self.processor._duplicate_of(ctx)
+            self.processor._gate_duplicate(ctx)
+        self.assertEqual(resolve.call_count, 1)
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -327,7 +431,7 @@ class TestSavepointIsolation(TransactionCase):
                           return_value=fake_messages, autospec=True), \
              patch.object(IncomingProcessor, '_process_message',
                           fake_process_message):
-            processed, _, stalled_on = self.processor._fetch_folder(
+            processed, _, stalled_on, _ = self.processor._fetch_folder(
                 self.mailbox, FOLDER_INBOX)
 
         # All three messages were attempted in order — the failure didn't
@@ -396,7 +500,7 @@ class TestCursorHoldsOnFailure(TransactionCase):
     def test_cursor_stops_before_the_failed_message(self):
         messages = [self._msg(1, 0), self._msg(2, 1), self._msg(3, 2)]
 
-        processed, cursor, stalled_on = self._fetch(messages, {'<msg-2@test>'})
+        processed, cursor, stalled_on, _ = self._fetch(messages, {'<msg-2@test>'})
 
         self.assertEqual(processed, 2)
         # Not 10:02: that would put msg-2 behind the cursor forever.
@@ -406,7 +510,7 @@ class TestCursorHoldsOnFailure(TransactionCase):
     def test_first_message_failing_holds_the_cursor_where_it_was(self):
         messages = [self._msg(1, 0), self._msg(2, 1)]
 
-        processed, cursor, stalled_on = self._fetch(messages, {'<msg-1@test>'})
+        processed, cursor, stalled_on, _ = self._fetch(messages, {'<msg-1@test>'})
 
         self.assertEqual(processed, 1)
         # No progress to report, but reporting None would let the caller
@@ -417,7 +521,7 @@ class TestCursorHoldsOnFailure(TransactionCase):
     def test_clean_batch_still_advances_to_the_last_message(self):
         messages = [self._msg(1, 0), self._msg(2, 1), self._msg(3, 2)]
 
-        processed, cursor, stalled_on = self._fetch(messages, set())
+        processed, cursor, stalled_on, _ = self._fetch(messages, set())
 
         self.assertEqual(processed, 3)
         self.assertEqual(cursor, datetime(2026, 5, 12, 10, 2, 0))
@@ -464,6 +568,108 @@ class TestCursorHoldsOnFailure(TransactionCase):
 
         self.assertEqual(self.mailbox.state, 'error')
         self.assertIn('Message 1', self.mailbox.error_message)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestThrottleInsideABatch(TransactionCase):
+    """A provider asking for a pause mid-batch is not a poison message.
+
+    `_fetch_folder` catches everything a message raises and stalls the cursor
+    on it, which is right for a message this mailbox cannot process. A
+    `ThrottledError` raised while fetching one message's body is not that: it
+    is the provider's bad minute, and treating it as a stall put the mailbox
+    straight in `error` -- past the polite throttle branch and past the
+    SYNC_FAILURE_LIMIT escalation that every other transient failure gets.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.processor = cls.env['pan.mail.fetcher']
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'inbox@company.test',
+            'state': 'active',
+        })
+        cls.mailbox.last_sync_date = datetime(2026, 5, 12, 9, 0, 0)
+
+    def _messages(self):
+        return [{
+            'provider_message_id': f'g{n}',
+            'message_id': f'<msg-{n}@test>',
+            'subject': f'Message {n}',
+            'date': datetime(2026, 5, 12, 10, n, 0),
+        } for n in (1, 2)]
+
+    def _throttled_get_message(self, on='g2'):
+        """The provider answers the list, hands over the first body and
+        refuses the next with a long wait."""
+        GraphClient = type(self.env['microsoft.graph.client'])
+
+        def get_message(client_self, account, mailbox, provider_message_id):
+            if provider_message_id == on:
+                raise ThrottledError('Retry after 120s', 120)
+            return {'provider_message_id': provider_message_id,
+                    'message_id': f'<msg-{provider_message_id[1:]}@test>',
+                    'subject': 'Message', 'body_html': '<p>hi</p>',
+                    'from_email': 'someone@elsewhere.test', 'to': [],
+                    'date': datetime(2026, 5, 12, 10, int(provider_message_id[1:]), 0)}
+
+        return patch.object(GraphClient, 'get_message', get_message)
+
+    def test_a_throttle_stops_the_batch_and_keeps_what_landed(self):
+        """Not into `stalled_on`, and not raised either: the cursor sits on
+        the last message that landed, and the throttle comes back as a
+        value so the caller keeps that mail."""
+        GraphClient = type(self.env['microsoft.graph.client'])
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=self._messages(), autospec=True), \
+             self._throttled_get_message(on='g2'):
+            _processed, cursor, stalled_on, throttled = self.processor._fetch_folder(
+                self.mailbox, FOLDER_INBOX)
+        self.assertIsNone(stalled_on)
+        self.assertIsInstance(throttled, ThrottledError)
+        self.assertEqual(cursor, datetime(2026, 5, 12, 10, 1, 0),
+                         'the cursor advanced over the message that landed, not over the throttled one')
+
+    def test_a_throttle_before_anything_landed_holds_the_cursor(self):
+        GraphClient = type(self.env['microsoft.graph.client'])
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=self._messages(), autospec=True), \
+             self._throttled_get_message(on='g1'):
+            _processed, cursor, stalled_on, throttled = self.processor._fetch_folder(
+                self.mailbox, FOLDER_INBOX)
+        self.assertIsNone(stalled_on)
+        self.assertIsInstance(throttled, ThrottledError)
+        self.assertEqual(cursor, self.mailbox.last_sync_date)
+
+    def test_a_throttle_during_get_message_is_a_pause_not_a_failure(self):
+        """Mirrors the mailbox-level handler: the wait on the mailbox, the
+        state untouched, no failure counted, one warning in the ledger."""
+        before = self.mailbox.last_sync_date
+        GraphClient = type(self.env['microsoft.graph.client'])
+        with patch.object(GraphClient, 'fetch_messages',
+                          return_value=self._messages(), autospec=True), \
+             self._throttled_get_message(), \
+             patch.object(type(self.mailbox), '_has_working_credentials',
+                          return_value=True, autospec=True), \
+             patch.object(type(self.env['pan.mail.setup']), 'is_ready',
+                          return_value=True, autospec=True):
+            self.processor._cron_fetch_incoming_mail()
+
+        self.assertEqual(self.mailbox.state, 'active')
+        self.assertFalse(self.mailbox.sync_failure_count)
+        self.assertIn('Retry after 120s', self.mailbox.error_message)
+        self.assertNotIn('Sync stopped', self.mailbox.error_message,
+                         'a throttle is not a stall')
+        self.assertEqual(self.mailbox.last_sync_date, datetime(2026, 5, 12, 10, 1, 0),
+                         'what landed before the throttle is kept and the cursor sits on it')
+        self.assertGreater(self.mailbox.last_sync_date, before)
+
+        rows = self.env['pan.mail.error'].search([
+            ('mailbox_id', '=', self.mailbox.id)])
+        self.assertEqual(rows.mapped('code'), ['incoming.throttled'])
+        self.assertEqual(rows.level, 'warning')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

@@ -19,6 +19,7 @@ from unittest.mock import patch
 from odoo.tests import HttpCase, TransactionCase, tagged
 
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.MicrosoftGraphClient'
+CONTROLLER = 'odoo.addons.pan_mail_pro.controllers.main.MailProOAuthController'
 
 CONTROLLERS = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'controllers')
 
@@ -123,6 +124,21 @@ class TestOAuthCallback(HttpCase):
         return self.env['pan.mail.account'].sudo().search(
             [('user_id', '=', self.user.id)])
 
+    def _ledger(self):
+        """What the callback wrote to the error ledger (tests/ledger.py keeps
+        the rows in this transaction)."""
+        return self.env['pan.mail.error'].sudo().search(
+            [('code', '=', 'oauth.callback_failed')])
+
+    def _grant(self, email, tokens=None):
+        """The provider's side of a consent: a code that exchanges, and a /me
+        that names `email` -- or, when it is None, a /me that failed, which
+        every client reports as no address rather than by raising."""
+        tokens = tokens or {'access_token': 'at', 'refresh_token': 'rt',
+                            'token_expiry': '2030-01-01 00:00:00'}
+        return (patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens),
+                patch(f'{GRAPH}.read_user_info', return_value={'email': email, 'name': None}))
+
     # ------------------------------------------------------------------ happy
 
     def test_a_grant_becomes_an_account_and_a_mailbox(self):
@@ -220,6 +236,71 @@ class TestOAuthCallback(HttpCase):
 
         self.assertIn('Connection Failed', response.text)
         self.assertFalse(self._accounts())
+
+    def test_a_grant_that_names_no_address_stores_nothing(self):
+        """The guard that keeps B's tokens off A's row compares addresses,
+        so a consent with no address is no consent: nothing stored, a page
+        that says so, and a row in the ledger."""
+        self._arm_state()
+        exchange, me = self._grant(None)
+        with exchange, me:
+            response = self._callback(code='authcode', state='nonce-123')
+
+        self.assertIn('Connection Failed', response.text)
+        self.assertIn('did not say which address', response.text)
+        self.assertFalse(self._accounts())
+        row = self._ledger()
+        self.assertEqual(len(row), 1)
+        self.assertEqual(row.level, 'error')
+        self.assertIn('did not say which address', row.message)
+
+    def test_a_blank_address_never_lands_on_another_identity_s_tokens(self):
+        """Connected as A, then a second consent whose /me fails. The tokens
+        in hand may be B's, and with no address to compare, A's row used to
+        take them unchallenged. A keeps what A had."""
+        self._arm_state()
+        exchange, me = self._grant('nora@company.test', tokens={
+            'access_token': 'at-a', 'refresh_token': 'rt-a',
+            'token_expiry': '2030-01-01 00:00:00'})
+        with exchange, me:
+            self._callback(code='authcode', state='nonce-123')
+
+        self._arm_state('nonce-456')
+        exchange, me = self._grant(None, tokens={
+            'access_token': 'at-b', 'refresh_token': 'rt-b',
+            'token_expiry': '2030-01-01 00:00:00'})
+        with exchange, me:
+            response = self._callback(code='authcode', state='nonce-456')
+
+        self.assertIn('Connection Failed', response.text)
+        account = self._accounts()
+        account.invalidate_recordset()
+        self.assertEqual(len(account), 1)
+        self.assertEqual(account.email, 'nora@company.test')
+        self.assertEqual(account.access_token, 'at-a')
+        self.assertEqual(account.refresh_token, 'rt-a')
+
+    def test_a_mailbox_that_cannot_be_claimed_is_said_and_in_the_ledger(self):
+        """The credentials are the point and the mailbox the convenience: a
+        claim the mailbox constraint refuses keeps the account, tells the
+        person a mailbox is missing rather than claiming one, and leaves the
+        reason in the ledger as a warning, where an administrator finds it."""
+        self._arm_state()
+        exchange, me = self._grant('nora@company.test')
+        with exchange, me, patch(f'{CONTROLLER}._claim_personal_mailbox',
+                                 side_effect=ValueError('the constraint said no')):
+            response = self._callback(code='authcode', state='nonce-123')
+
+        self.assertIn('Account Connected', response.text)
+        self.assertIn('could not be set up yet', response.text)
+        self.assertNotIn('Mailbox Connected', response.text)
+        self.assertEqual(len(self._accounts()), 1)
+        self.assertFalse(self.env['pan.mail.mailbox'].sudo().with_context(
+            active_test=False).search([('owner_user_id', '=', self.user.id)]))
+        row = self._ledger()
+        self.assertEqual(len(row), 1)
+        self.assertEqual(row.level, 'warning')
+        self.assertIn('the constraint said no', row.message)
 
     def test_a_grant_before_the_domains_are_set_connects_the_account_and_no_mailbox(self):
         """Users are invited before setup is done, on purpose. The consent

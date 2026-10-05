@@ -8,7 +8,7 @@ row with a code from the fixed list, every code a call site uses *is* on that
 list, the heartbeat carries codes and counts and nothing that names anyone, and
 a kind of failure the last day had not seen is reported within the minute.
 
-`record()` writes on a cursor of its own, which a TransactionCase cannot see
+`_record()` writes on a cursor of its own, which a TransactionCase cannot see
 (its transaction is repeatable-read and the row's mailbox is not committed).
 `tests/ledger.py` therefore routes the suite's calls into the test's own
 transaction, and the tests below that exercise the real path ask for it with
@@ -61,10 +61,10 @@ class TestErrorLedger(TransactionCase):
             return error
 
     def record_for_real(self, *args, **kwargs):
-        """The real `record()`: its own cursor, which under registry test mode
+        """The real `_record()`: its own cursor, which under registry test mode
         is a savepoint on this test's transaction."""
         with self.enter_registry_test_mode():
-            self.Error.with_context(pan_mail_pro_real_ledger=True).record(*args, **kwargs)
+            self.Error.with_context(pan_mail_pro_real_ledger=True)._record(*args, **kwargs)
 
     # --- the vocabulary ------------------------------------------------------
 
@@ -78,7 +78,7 @@ class TestErrorLedger(TransactionCase):
         """A code is a fixed string the server and PostHog group on. One typed
         at a call site and nowhere else is a chart with one row nobody
         recognises."""
-        pattern = re.compile(r"""\.record\(\s*['"]([a-z_]+\.[a-z_]+)['"]""")
+        pattern = re.compile(r"""\._record\(\s*['"]([a-z_]+\.[a-z_]+)['"]""")
         used = set()
         for source in _module_sources():
             used.update(pattern.findall(source.read_text()))
@@ -139,7 +139,7 @@ class TestErrorLedger(TransactionCase):
         self.assertFalse(self.Error.search([('code', '=', 'inbox.rpc_failed')]))
 
     def test_old_rows_are_vacuumed(self):
-        self.Error.record('license.heartbeat_failed', detail='old')
+        self.Error._record('license.heartbeat_failed', detail='old')
         row = self.Error.search([('code', '=', 'license.heartbeat_failed')], limit=1)
         self.assertTrue(row)
         self.env.cr.execute(
@@ -157,8 +157,8 @@ class TestErrorLedger(TransactionCase):
         # 24 hours, never "now".
         since = fields.Datetime.now() - timedelta(hours=24)
         for _ in range(3):
-            self.Error.record('incoming.message_failed', detail='x', mailbox=self.mailbox)
-        self.Error.record('outgoing.no_route', detail='y')
+            self.Error._record('incoming.message_failed', detail='x', mailbox=self.mailbox)
+        self.Error._record('outgoing.no_route', detail='y')
         codes = self.Error.codes_since(since)
         ours = [c for c in codes if c['code'] in ('incoming.message_failed', 'outgoing.no_route')]
         self.assertEqual(ours, [
@@ -172,7 +172,7 @@ class TestErrorLedger(TransactionCase):
         self.assertEqual(signature, sorted(signature))
 
     def test_the_heartbeat_carries_codes_and_counts_and_no_address(self):
-        self.Error.record('incoming.mailbox_failed', self._caught(), mailbox=self.mailbox)
+        self.Error._record('incoming.mailbox_failed', self._caught(), mailbox=self.mailbox)
         body = self.env['pan.mail.license']._heartbeat_body()
         self.assertIn('incoming.mailbox_failed', [e['code'] for e in body['errors']])
         for entry in body['errors']:
@@ -193,8 +193,8 @@ class TestErrorLedger(TransactionCase):
             link.errors_reported = self.Error.signature_since(since)
             License._report_errors_if_new()
             self.assertEqual(guarded.call_count, 0, 'nothing new failed, nothing to report')
-            self.Error.record('outgoing.send_failed', detail='no')
-            self.Error.record('outgoing.send_failed', detail='no again')
+            self.Error._record('outgoing.send_failed', detail='no')
+            self.Error._record('outgoing.send_failed', detail='no again')
             License._report_errors_if_new()
             self.assertEqual(guarded.call_count, 1)
             # The heartbeat stores what it carried; the same set is not news.
@@ -202,7 +202,7 @@ class TestErrorLedger(TransactionCase):
             link.last_check = False
             License._report_errors_if_new()
             self.assertEqual(guarded.call_count, 1)
-            self.Error.record('oauth.token_revoked', detail='invalid_grant')
+            self.Error._record('oauth.token_revoked', detail='invalid_grant')
             License._report_errors_if_new()
             self.assertEqual(guarded.call_count, 2)
 

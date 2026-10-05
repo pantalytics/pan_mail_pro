@@ -2,12 +2,12 @@
 import logging
 
 from odoo import http, _
+from odoo.exceptions import UserError
 from odoo.http import request
 
 from ..models.mail_provider_client import (
     PROVIDER_CLIENTS,
     get_provider_client,
-    get_setup_provider,
     oauth_redirect_uri,
 )
 
@@ -42,7 +42,7 @@ class MailProConnectController(http.Controller):
         # this route redirected everybody to the settings page instead of to the
         # consent screen. Ask the registry whether the code is known, and the
         # client only what it knows: does it have a sign-in screen.
-        provider = provider or get_setup_provider(request.env)
+        provider = provider or request.env['pan.mail.provider'].current().provider
         if provider not in PROVIDER_CLIENTS:
             return request.redirect(SETTINGS_URL)
         if not get_provider_client(request.env, provider).uses_oauth:
@@ -109,6 +109,17 @@ class MailProOAuthController(http.Controller):
             tokens = client._exchange_code_for_tokens(
                 code, oauth_redirect_uri(request.env, provider))
             email = client.read_user_info(tokens['access_token']).get('email')
+            if not email:
+                # Every client answers a failed /me with no address rather
+                # than raising, and the account's "connected as A, consented
+                # as B" guard compares addresses: with none to compare, B's
+                # tokens would land on A's row unchallenged. No address, no
+                # connection -- refused here, before anything is stored, and
+                # the outer except turns it into a ledger row like any other
+                # failed callback.
+                raise UserError(_(
+                    'The provider did not say which address was authorized, '
+                    'so nothing was stored. Try connecting again.'))
 
             request.env['pan.mail.account'].sudo()._store_tokens(
                 provider, user, email,
@@ -128,16 +139,26 @@ class MailProOAuthController(http.Controller):
                     self._retry_error_mailboxes(user, provider)
                     if not request.env['pan.mail.domain'].configuration_error():
                         self._claim_personal_mailbox(user, provider, email)
-            except Exception:
+            except Exception as exception:  # noqa: BLE001 - recorded, the account stays
                 _logger.exception('[OAuth] Connected %s, but its mailbox could not be '
                                   'claimed yet', email)
+                # A warning: the credentials are in, the mailbox is not, and
+                # a person who reads "connected" on the result page and then
+                # finds no mailbox needs the reason somewhere. The ledger is
+                # that somewhere; the page says only that there is one.
+                request.env['pan.mail.error']._record(
+                    'oauth.callback_failed', exception, level='warning')
+                return _result_page(True, _('Account Connected'), _(
+                    'Your email account has been connected, but its mailbox could '
+                    'not be set up yet; an administrator can add one under '
+                    'Settings, Mail Pro.'))
 
             return _result_page(True, _('Mailbox Connected'),
                                 _('Your email account has been connected successfully.'))
 
         except Exception as exception:
             _logger.exception('[OAuth] Failed to handle the %s callback', provider)
-            request.env['pan.mail.error'].record('oauth.callback_failed', exception)
+            request.env['pan.mail.error']._record('oauth.callback_failed', exception)
             return _result_page(False, _('Connection Failed'), str(exception))
 
     def _retry_error_mailboxes(self, user, provider):

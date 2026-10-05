@@ -9,6 +9,7 @@ on. A second provider (Gmail) has to satisfy the same assertions.
 """
 import base64
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -24,7 +25,10 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     PROVIDER_CLIENTS,
     get_provider_client,
 )
+from odoo.addons.pan_mail_pro.models import mail_provider_client
 from odoo.addons.pan_mail_pro.models.providers import mime_utils
+from odoo.addons.pan_mail_pro.models.providers.google import gmail_client
+from odoo.addons.pan_mail_pro.models.providers.microsoft import graph_client
 
 # Patched at the module, so the clients' own `requests.exceptions` stay real.
 GRAPH_MODULE = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client'
@@ -580,6 +584,40 @@ class TestBodyNormalization(TransactionCase):
                 msg = build(get_provider_client(self.env, code))
                 self.assertIn('<br>', msg['body_html'])
                 self.assertTrue(msg['body_is_html'])
+
+
+@tagged('post_install', '-at_install', 'pan_mail_pro')
+class TestRevocationIsOnTheSeam(TransactionCase):
+    """A refresh token the provider refused for good is cleared on the
+    contract, on a cursor of its own, and nowhere else.
+
+    The clear used to be a write in each client, in the caller's transaction,
+    and the raise that followed rolled it back: the account stayed connected
+    and was retried every minute. Fixing it in one client and not the other
+    is the drift this test exists to refuse."""
+
+    def test_every_oauth_client_revokes_through_the_contract(self):
+        sources = {
+            'outlook': Path(graph_client.__file__).read_text(),
+            'gmail': Path(gmail_client.__file__).read_text(),
+        }
+        for code in PROVIDER_CLIENTS:
+            client = get_provider_client(self.env, code)
+            if not client.uses_oauth:
+                continue
+            with self.subTest(provider=code):
+                self.assertIn(code, sources, 'an OAuth provider was registered without a case here')
+                self.assertIn('self._revoke_refresh_token(account)', sources[code])
+                self.assertNotIn("'refresh_token_encrypted': False", sources[code],
+                                 'a client clears tokens on its own, in the transaction '
+                                 'the raise rolls back')
+
+    def test_the_clear_is_committed_on_its_own_cursor(self):
+        contract = Path(mail_provider_client.__file__).read_text()
+        start = contract.index('def _revoke_refresh_token(')
+        body = contract[start:contract.index('\n    @api.model', start)]
+        self.assertIn('with self.pool.cursor() as cr:', body)
+        self.assertIn('account.invalidate_recordset()', body)
 
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')

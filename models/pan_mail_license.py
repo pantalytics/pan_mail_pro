@@ -8,7 +8,7 @@ page names this Odoo, and approves; the button back to their Odoo lands on
 `/mail_pro/pantalytics/return`, which collects the key. Nobody types a code or
 copies a key, and there is still no redirect URI to register per customer:
 the way back is an ordinary link to this Odoo, not an OAuth redirect.
-**Check Approval** on the settings page does the same collection by hand.
+**Check approval** on the settings page does the same collection by hand.
 Collecting the key also records who did it: the Pantalytics account that
 approved, when the poll answer names it (`account_email`), the Odoo user who
 pressed the button, and the time. The settings page shows it on the account
@@ -359,7 +359,7 @@ class PanMailLicense(models.Model):
                      'Settings, Mail Pro, Connect to Pantalytics.')
         elif status == 'pending':
             head = _('The connection to Pantalytics is waiting for approval: '
-                     'Settings, Mail Pro, Check Approval.')
+                     'Settings, Mail Pro, Check approval.')
         elif status == 'invalid':
             head = _('Pantalytics no longer recognises the key of this Odoo '
                      'instance: Settings, Mail Pro, Disconnect, then Connect to '
@@ -534,9 +534,13 @@ class PanMailLicense(models.Model):
 
     @api.model
     def _cron_heartbeat(self):
+        # Guarded, like every other caller: a heartbeat that raises would
+        # otherwise take the cron's transaction with it, and with it the
+        # `setup_reported` / `errors_reported` it had just written, so the
+        # fetch cron would push the same report again a minute later.
         link = self.current()
         if link:
-            link._heartbeat()
+            link._heartbeat_guarded()
 
     @api.model
     def _retry_if_stuck(self):
@@ -610,7 +614,7 @@ class PanMailLicense(models.Model):
         except Exception as error:  # noqa: BLE001 - recorded, never raised
             _logger.exception('[License] Heartbeat failed')
             self.write({'last_check': fields.Datetime.now(), 'last_error': str(error)})
-            self.env['pan.mail.error'].record('license.heartbeat_failed', error)
+            self.env['pan.mail.error']._record('license.heartbeat_failed', error)
 
     def _heartbeat(self):
         """Report in, and store the answer if, and only if, it is ours."""
@@ -637,34 +641,46 @@ class PanMailLicense(models.Model):
             self.write({'last_check': now, 'last_error': str(error)})
             # A warning, not an error: nothing is lost yet. It cannot reach us
             # today by definition; the next heartbeat that does carries it.
-            self.env['pan.mail.error'].record(
+            self.env['pan.mail.error']._record(
                 'license.heartbeat_failed', error, level='warning')
             return
 
+        # Every refusal from here on is a row in the error ledger as well as
+        # `last_error`: the settings page shows the sentence to whoever opens
+        # it, the ledger is what the next heartbeat carries and what the
+        # Errors screen groups, so a key refused at a hundred customers on the
+        # morning of a release shows up as one code, that morning.
+        Error = self.env['pan.mail.error']
         if code == 403 and body.get('status') == 'wrong_database':
             # The key was paired for another database uuid: this is a copy
             # (a restore under another name, a staging clone). It gets no
             # entitlement, and it says so instead of looking connected.
             _logger.warning('[License] The key belongs to another Odoo database')
+            reason = _('This key was issued to another Odoo database. A copy '
+                       'needs its own connection: Settings, Mail Pro, '
+                       'Disconnect, then Connect to Pantalytics.')
             self.write({
-                'status': 'invalid', 'last_check': now,
-                'last_error': _('This key was issued to another Odoo database. A copy '
-                                'needs its own connection: Settings, Mail Pro, '
-                                'Disconnect, then Connect to Pantalytics.'),
+                'status': 'invalid', 'last_check': now, 'last_error': reason,
                 'entitlement_json': False, 'signature': False, 'valid_until': False,
             })
+            Error._record('license.heartbeat_failed', detail=reason)
             return
         if code == 401:
             _logger.warning('[License] Pantalytics refused the key for this database')
+            reason = _('Pantalytics no longer recognises this key.')
             self.write({
-                'status': 'invalid', 'last_check': now,
-                'last_error': _('Pantalytics no longer recognises this key.'),
+                'status': 'invalid', 'last_check': now, 'last_error': reason,
                 'entitlement_json': False, 'signature': False, 'valid_until': False,
             })
+            Error._record('license.heartbeat_failed', detail=reason)
             return
         if code != 200:
-            self.write({'last_check': now,
-                        'last_error': _('Heartbeat failed (HTTP %s).') % code})
+            reason = _('Heartbeat failed (HTTP %s).') % code
+            self.write({'last_check': now, 'last_error': reason})
+            # A 5xx is a bad minute on our side, retried in ten; anything
+            # else is an answer this module did not expect and should hear of.
+            Error._record('license.heartbeat_failed', detail=reason,
+                          level='warning' if code >= 500 else 'error')
             return
 
         payload = body.get('entitlement') or {}
@@ -673,6 +689,7 @@ class PanMailLicense(models.Model):
         if problem:
             _logger.warning('[License] Ignored an entitlement: %s', problem)
             self.write({'last_check': now, 'last_error': problem})
+            Error._record('license.heartbeat_failed', detail=problem)
             return
 
         status = payload.get('status')

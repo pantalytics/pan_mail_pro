@@ -54,7 +54,7 @@ class PanMailCoverage(models.TransientModel):
         return [('x_direction', '!=', False), ('date', '>=', since)]
 
     @api.model
-    def counts(self, domain):
+    def _counts(self, domain):
         """The four counts for the mail `domain` selects: total, linked,
         contact_only, unlinked. The screen and the heartbeat both read this,
         so they cannot disagree about what "linked" means.
@@ -87,12 +87,12 @@ class PanMailCoverage(models.TransientModel):
     @api.model
     def counts_since(self, since):
         """The heartbeat's slice: every synced mail dated after `since`."""
-        return self.counts([('x_direction', '!=', False), ('date', '>=', since)])
+        return self._counts([('x_direction', '!=', False), ('date', '>=', since)])
 
     @api.depends('period_days')
     def _compute_coverage(self):
         for record in self:
-            counts = record.counts(record._period_domain())
+            counts = record._counts(record._period_domain())
             record.total_count = counts['total']
             record.unlinked_count = counts['unlinked']
             record.contact_only_count = counts['contact_only']

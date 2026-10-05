@@ -20,6 +20,8 @@ from odoo import fields
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import TransactionCase, tagged
 
+from odoo.addons.pan_mail_pro.models.pan_mail_matcher import RULE_THREAD_LINK_LEGACY
+
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestLinkTo(TransactionCase):
@@ -256,6 +258,59 @@ class TestLinkTo(TransactionCase):
         link = self.env['pan.mail.thread.link'].sudo().search([
             ('mailbox_id', '=', self.mailbox.id), ('thread_id', '=', self.THREAD)])
         self.assertEqual((link.model, link.res_id), ('res.partner', self.customer.id))
+
+    # ------------------------------------------------------------------ #
+    # Why: the rule names, in words
+    # ------------------------------------------------------------------ #
+
+    def test_every_rule_the_matcher_can_return_has_a_label(self):
+        """The "Why?" line under an unlinked conversation reads `ROUTING_RULES`.
+
+        A rule without a label shows its code there instead, which is what
+        `record_reference` and `only_open_record` did for a release. The
+        list of rules is the matcher's own `_match_rules()`, so a rule added
+        there without a label here fails this test rather than the screen.
+        The words are the screen's: a conversation is *linked*, never
+        filed, and the pane is the conversation, not the thread.
+        """
+        from odoo.addons.pan_mail_pro.models.pan_mail_conversation import ROUTING_RULES
+
+        rules = [name[len('_rule_'):]
+                 for name in self.env['pan.mail.matcher']._match_rules()]
+        self.assertTrue(rules, 'the matcher has rules')
+        for rule in rules:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, ROUTING_RULES, f'{rule} has no label')
+                label = str(ROUTING_RULES[rule])
+                self.assertTrue(label.strip(), f'{rule} has an empty label')
+                self.assertNotIn('filed', label.lower(), 'the word is linked')
+                self.assertNotIn('thread', label.lower(), 'the pane is the conversation')
+        # `thread_link_legacy` is not a `_rule_*` method: `_rule_thread_link`
+        # emits it as a candidate of its own when the hit came from the
+        # provider's handle rather than the References root, so it reaches
+        # the routing log and needs its label like the others.
+        self.assertEqual(set(ROUTING_RULES), set(rules) | {RULE_THREAD_LINK_LEGACY},
+                         'a label for a rule the matcher no longer has is dead text')
+
+    def test_the_why_line_carries_the_label_as_a_plain_string(self):
+        """The row goes over the wire, so a lazy translation has to have
+        become a string by then. Every rule, so a code never reaches the
+        screen in place of its words."""
+        from odoo.addons.pan_mail_pro.models.pan_mail_conversation import ROUTING_RULES
+
+        message, log = self._fallback_mail()
+        for rule in ROUTING_RULES:
+            with self.subTest(rule=rule):
+                log.write({'rule': rule})
+                rows = self.env['pan.mail.conversation']._rejected_for(message)
+                self.assertEqual(len(rows), 1)
+                self.assertIsInstance(rows[0]['rule_label'], str)
+                self.assertEqual(rows[0]['rule_label'], str(ROUTING_RULES[rule]))
+                self.assertNotEqual(rows[0]['rule_label'], rule,
+                                    'the screen shows words, not the rule code')
+        log.write({'rule': False})
+        rows = self.env['pan.mail.conversation']._rejected_for(message)
+        self.assertEqual(rows[0]['rule_label'], 'No rule')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

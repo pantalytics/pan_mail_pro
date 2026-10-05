@@ -168,7 +168,7 @@ import logging
 import re
 import secrets
 
-from odoo import models, api, _
+from odoo import SUPERUSER_ID, api, models, _
 from odoo.exceptions import UserError
 
 from .neutralization import database_is_neutralized
@@ -214,7 +214,6 @@ FOLDER_ROLES = {
 # Error codes callers may branch on. Anything else is treated as an opaque
 # failure and surfaced to the user verbatim.
 ERROR_NO_RECIPIENTS = 'no_recipients'
-ERROR_UNSUPPORTED = 'unsupported'
 # The provider asked for a pause longer than a cron run may sleep. A send
 # result with this code carries `retry_after` (seconds); `mail.mail` keeps the
 # mail outgoing until then instead of failing it.
@@ -304,14 +303,6 @@ OAUTH_CALLBACK_PATHS = {
     'gmail': '/google_oauth/callback',
 }
 
-# Legacy: which provider was being set up used to live in this one config
-# parameter, read by the settings page, the connect link in the invitation
-# email, and the mailboxes created during setup. The `pan.mail.provider` row
-# (19.0.6.5.0) replaced it — a row is a better home for "which provider" once
-# there are per-provider credentials to hang off it. Kept only so the
-# migration that moved the parameter into that model has something to read.
-PARAM_SETUP_PROVIDER = 'pan_mail_pro.setup_provider'
-
 # Provider assumed by flows that are not yet mailbox-scoped (the OAuth connect
 # flow on res.users, the settings page). When a second provider lands these
 # take an explicit provider argument instead.
@@ -336,15 +327,6 @@ def get_provider_client(env, provider_code=DEFAULT_PROVIDER):
     return env[model_name]
 
 
-def get_setup_provider(env):
-    """The provider this database is being set up for, if one was chosen.
-
-    Reads the `pan.mail.provider` row rather than a config parameter — see the
-    comment on `PARAM_SETUP_PROVIDER` above.
-    """
-    return env['pan.mail.provider'].current().provider or False
-
-
 def oauth_redirect_uri(env, provider_code):
     """The absolute callback URL for `provider_code` on this database."""
     path = OAUTH_CALLBACK_PATHS.get(provider_code)
@@ -366,14 +348,12 @@ class MailProviderClient(models.AbstractModel):
     # Providers differ in how "send as somebody else" works, and the mailbox
     # model needs to know before it lets an admin configure something that
     # cannot work. Microsoft 365 has shared mailboxes (send-as with your own
-    # token, given SendAs rights); Gmail has no equivalent — there you delegate
-    # an account or use a Google Group, which resolves to a different token.
+    # token, given SendAs rights); Gmail has no equivalent — there a shared
+    # address is its own account with its own token.
     # -------------------------------------------------------------------------
 
     # Can a user send from another mailbox using their *own* token?
     supports_shared_mailbox = False
-    # Can a user send through an account explicitly delegated to them?
-    supports_delegation = False
     # Which mailbox_type values this provider can actually service.
     supported_mailbox_types = ('personal',)
     # Is there a consent screen to send somebody to? False means the credentials
@@ -535,6 +515,59 @@ class MailProviderClient(models.AbstractModel):
         answer without knowing which provider it is talking to.
         """
         return bool(account.refresh_token_encrypted)
+
+    @api.model
+    def _revoke_refresh_token(self, account):
+        """Clear credentials the provider refused for good, and make it stick.
+
+        An `invalid_grant` is the user's: consent withdrawn, password changed,
+        refresh token expired. Only a new sign-in fixes it, and the way the
+        user learns that is `connected` dropping to False -- the banner, the
+        mailbox badge and the reconnect prompt all read it.
+
+        The clear cannot ride in the caller's transaction. The caller raises
+        right after, and the raise rolls that transaction back: the sync cron
+        wraps every mailbox in a savepoint and a request rolls back on a
+        UserError. An in-transaction write therefore never landed, so the
+        account stayed "connected", was retried every minute and recorded
+        `oauth.token_revoked` every minute, and nobody was ever asked to
+        reconnect. So the write goes on a cursor of its own and commits, the
+        way `pan.mail.error._record()` does, and the record in hand is
+        invalidated so the current transaction reads the result.
+
+        The row is locked NOWAIT first. If this transaction already holds it
+        (an earlier write on the account), the other cursor would wait on us
+        while we wait on it; and a row this transaction created is not
+        visible from another cursor at all. In both cases the clear lands
+        in-transaction instead, which is what the caller used to get.
+        """
+        vals = {
+            'access_token_encrypted': False,
+            'refresh_token_encrypted': False,
+            'token_expiry': False,
+        }
+        _logger.warning('[OAuth] Refresh token for %s was refused for good; clearing it',
+                        account.email)
+        # Pending writes on the row go to the database first: a write still in
+        # the cache would be flushed *after* the clear and put the tokens back,
+        # and one already flushed is the lock the NOWAIT below is asking about.
+        account.flush_recordset()
+        try:
+            with self.pool.cursor() as cr:
+                cr.execute(
+                    'SELECT id FROM pan_mail_account WHERE id = %s FOR UPDATE NOWAIT',
+                    (account.id,))
+                if not cr.fetchone():
+                    raise LookupError('account row not visible from a new cursor')
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                env['pan.mail.account'].browse(account.id).write(vals)
+        except Exception as e:  # noqa: BLE001 - the fallback is the old behaviour
+            _logger.warning('[OAuth] Could not clear the tokens of %s on their own '
+                            'cursor (%s); clearing them in this transaction',
+                            account.email, e)
+            account.sudo().write(vals)
+            return
+        account.invalidate_recordset()
 
     # -------------------------------------------------------------------------
     # Authentication

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """End-to-end cover for the incoming sync pipeline.
 
-test_incoming_mail.py covers the helpers (_is_duplicate, _find_partner,
+test_incoming_mail.py covers the helpers (_duplicate_of, _find_partner,
 _is_internal_domain, _route_email_via_alias) but never drives _process_mailbox,
 so the orchestration itself - fetch, normalize, route, post - had no coverage at
 all. This file fills that gap.

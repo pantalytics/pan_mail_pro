@@ -190,6 +190,15 @@ class TestMailboxRouting(MailProTestCase):
         mailbox, _account = mail._resolve_route()
         self.assertEqual(mailbox, self.notification_mailbox)
 
+    def test_portal_author_uses_notification_mailbox(self):
+        """A customer with a portal login has a res.users row, and used to be
+        taken for the author user: their mail then raised "has not connected
+        an email account yet" naming the customer. Nobody can send as a
+        customer, so it is row 4."""
+        mail = self._make_mail(author_id=self.portal_partner.id)
+        mailbox, _account = mail._resolve_route()
+        self.assertEqual(mailbox, self.notification_mailbox)
+
     def test_no_notification_mailbox_refuses(self):
         self.notification_mailbox.active = False
         mail = self._make_mail(author_id=self.company_partner.id)

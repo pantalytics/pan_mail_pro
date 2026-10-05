@@ -82,7 +82,7 @@ class IrHttp(models.AbstractModel):
             frames = traceback.extract_tb(exception.__traceback__)
             if not any('pan_mail_pro' in frame.filename for frame in frames):
                 return
-            request.env['pan.mail.error'].record('inbox.rpc_failed', exception)
+            request.env['pan.mail.error']._record('inbox.rpc_failed', exception)
         except Exception:  # noqa: BLE001 - never a second failure on top of the first
             _logger.exception('[Mail Pro] Could not record the failed request')
 

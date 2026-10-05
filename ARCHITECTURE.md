@@ -512,9 +512,9 @@ other, with a filter menu that asks the one question it exists for: in Odoo,
 or not. A row that is in Odoo opens the conversation that exists; one that is
 not opens read-only with **Add to Odoo** under it.
 
-The design, including what it deliberately does not do (no reply to a mail
+The reasoning, including what it deliberately does not do (no reply to a mail
 Odoo does not have, no paging past the first page, no shared mailboxes), is in
-`docs/plans/personal-mailbox.md`.
+`docs/research/personal-mailbox.md`.
 
 Replying happens in the conversation pane, not in a dialog over the screen: a
 dialog hides the list, the record and the mail being answered, which are the
@@ -842,7 +842,7 @@ Workspace account with no Odoo user behind it.
 ```
 pan_mail_pro/
 ├── models/
-│   ├── mail_provider_client.py    # mail.provider.client — the contract + registry
+│   ├── mail_provider_client.py    # mail.provider.client -- the contract + registry
 │   ├── providers/                 # The only place provider payloads are understood
 │   │   ├── microsoft/graph_client.py
 │   │   ├── google/gmail_client.py
@@ -850,24 +850,32 @@ pan_mail_pro/
 │   │   └── mime_utils.py          # Outgoing MIME, shared by the two MIME senders
 │   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
 │   ├── pan_mail_account.py        # Per-address credentials
-│   ├── pan_mail_provider.py       # Per-provider application registration + in-use flag
+│   ├── pan_mail_provider.py       # The application registration: one row, no toggle (§9.13)
+│   ├── pan_mail_license.py        # The link to a Pantalytics account, the heartbeat, sync_allowed()
 │   ├── pan_mail_domain.py         # Internal domains + the fail-closed gate
 │   ├── pan_mail_setup.py          # Setup vs syncing: steps 2 to 4 of the checklist
-│   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral)
+│   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral) + the gate ladder
 │   ├── pan_mail_matcher.py        # Thread matching rule ladder
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
-│   ├── pan_mail_routing_log.py
+│   ├── pan_mail_routing_log.py    # Where each incoming mail landed and why
 │   ├── pan_mail_coverage.py       # Coverage report (TransientModel)
 │   ├── pan_mail_conversation.py   # Read side of the Inbox screen (AbstractModel)
+│   ├── pan_mail_draft.py          # The saved composer, private to its author
+│   ├── pan_mail_error.py          # One row per failure the module caught (§7)
+│   ├── neutralization.py          # Is this database a copy?
 │   ├── mail_mail.py               # Outgoing override + route resolution
 │   ├── mail_message.py            # Threading keys + communication lens
-│   ├── mail_compose_message.py
+│   ├── mail_thread.py             # A message the sync imported notifies nobody
+│   ├── mail_compose_message.py    # Send From dropdown + setup warning
+│   ├── mail_alias.py              # Alias display: name only
+│   ├── ir_http.py                 # The session flags the browser reads
 │   ├── res_users.py / res_partner.py / res_config_settings.py
 │   └── encryption_utils.py        # Fernet encryption
-├── controllers/main.py            # OAuth callbacks (Microsoft + Google, one handler)
-├── migrations/                    # One folder per schema-changing release — see migrations/
+├── controllers/main.py            # /mail_pro/connect, the two OAuth callbacks (one handler),
+│                                  # /mail_pro/pantalytics/return -- see §12, The routes
+├── migrations/                    # One folder per schema-changing release -- see migrations/
 ├── views/  data/  security/  static/
-├── tests/                         # 41 files; see §12
+├── tests/                         # see §12
 └── tools/                         # CI helpers
 ```
 
@@ -1114,8 +1122,10 @@ This used to read `mail.alias.domain`, where "no domains configured" meant
 internal email into Odoo. Fail-closed, because the failure mode is a data leak.
 Alias domains still feed `suggest_domains()`; they no longer decide anything.
 
-**The filter has no off switch.** Not globally and not per mailbox — see
-§9.12.
+**The filter has no off switch.** Not globally and not per mailbox -- see
+§9.12. The one exception is not a switch: the mailbox owner may add a single
+internal mail by hand, from the live read of their own mailbox (§1,
+`import_live_message`). The sync itself never imports internal mail.
 
 ### The gate ladder
 
@@ -1124,23 +1134,29 @@ the same shape the matcher uses to decide where it goes (§4). Order is the
 contract: a gate may assume every gate before it passed, and may leave what it
 resolved in the context for the ones after it.
 
-| # | Gate | Refuses | Leaves a trace |
-|---|------|---------|----------------|
-| 1 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back | no |
-| 2 | `_gate_duplicate` | Message-ID already in `mail.message` | no |
-| 3 | `_gate_counterpart` | a sent item with no recipient | no |
-| 4 | `_gate_internal_domain` | every party to the mail is ours | no |
-| 5 | `_gate_blocked_contact` | `x_email_sync_blocked` | no, deliberately |
-| 6 | `_gate_wanted` | not a reply, and not what the mailbox asked for | **yes** |
+| # | Gate | Refuses | Leaves a trace | Quiet |
+|---|------|---------|----------------|-------|
+| 1 | `_gate_odoo_originated` | our own `X-Odoo-*` headers came back | no | no |
+| 2 | `_gate_duplicate` | Message-ID already in `mail.message` | no | **yes** |
+| 3 | `_gate_counterpart` | a sent item with no recipient | no | no |
+| 4 | `_gate_internal_domain` | every party to the mail is ours | no | no |
+| 5 | `_gate_blocked_contact` | `x_email_sync_blocked` | no, deliberately | no |
+| 6 | `_gate_wanted` | not a reply, and not what the mailbox asked for | no | no |
+
+A `Skip` carries a reason, a detail and `quiet`. Every refusal is one log line
+naming the mailbox, the Message-ID, the gate and the reason, and nothing else.
+`quiet` drops that line to DEBUG: only the duplicate gate sets it, because an
+overlapping fetch window is normal on IMAP and a refusal there is the system
+working. At INFO it would drown the log.
 
 Gate 3 is where direction lives: the inbox reads the `From`, Sent Items reads
 the `To`. It collects the candidates and gate 4 chooses among them, so the whole
 internal decision sits in one place rather than being split by direction — which
 is how gate 4 came to guard one folder and not the other.
 
-A refusal leaves a log line and nothing else. 19.0.7.0.0 removed the queue a
-gate could file into, which had made "does this refusal leave a trace?" a
-per-gate choice; the property that choice protected is unconditional now.
+19.0.7.0.0 removed the queue a gate could file into, which had made "does this
+refusal leave a trace?" a per-gate choice; the property that choice protected
+is unconditional now, and `Skip` has no `record` field any more.
 Gate 5 in particular must leave no trace at all, since a block list is an
 objection to processing and any row naming the person would be processing.
 A mail refused for its sender comes in later by widening the mailbox's sync
@@ -1151,7 +1167,7 @@ existed the decisions were bare `return False` statements strewn through a
 two-hundred-line method, which is how gate 4 came to guard one folder and not
 the other.
 
-Gate 1 is broader than its name: "already in Odoo" is answered by
+Gate 2 is broader than its name: "already in Odoo" is answered by
 `pan.mail.matcher._resolve_message_id()`, which reads the ref index — including
 the id the provider minted when *we* sent the mail — as well as
 `mail.message.message_id`. So a mail Odoo sent, filed in Sent by the provider
@@ -1554,6 +1570,15 @@ broken mailbox out of the loop: revoked consent and a deleted account fail
 message this mailbox cannot process -- still goes straight to `error`, because
 retrying it is retrying the same message, not calling a provider back later.
 
+**A throttle is neither.** When the provider asks for a wait longer than a run
+may sleep (`ThrottledError`), the wait is written on the mailbox, a warning
+lands in the ledger and no failure is counted. Refused on the listing, nothing
+had landed yet. Refused mid-batch, on one message's body or attachments, the
+batch stops there: what landed before it is kept, the cursor sits on the last
+message that did, and the next run continues from there. Rolling the batch
+back instead was simpler and wrong -- a backlog that meets the same wait at
+the same point every run would never get past it.
+
 ### Cursor
 
 Ascending sort plus an incremental cursor, the pattern Odoo fetchmail and
@@ -1846,7 +1871,22 @@ So every failure the module catches is also **recorded**, as one row with a
 **code** from a fixed list (`pan_mail_error.CODES`: `incoming.mailbox_failed`,
 `outgoing.send_failed`, `oauth.token_revoked`, `inbox.rpc_failed`, ...), the
 flow, the mailbox or account it concerned, the exception's first line and its
-traceback. The list is under Settings → Technical → Email → Mail Pro →
+traceback. Four codes name a failure the sync or the send survived, so the
+mail is in Odoo or on the wire and the row is the only sign something was
+lost:
+
+- `incoming.rule_failed`: a matching rule raised and was skipped; the mail may
+  have landed lower on the ladder than it should
+- `incoming.index_failed`: the Message-ID or thread index could not be
+  written; later replies may not thread
+- `incoming.attachments_failed`: the attachments could not be fetched; the
+  mail was imported without them
+- `outgoing.sent_copy_failed`: the mail went out but its copy could not be
+  filed in the Sent folder
+
+`_record()` is private: a Python call site inside the module, never RPC.
+Adding a failure to catch is adding a code to `CODES` and one `_record()` call
+at the catch site. The list is under Settings → Technical → Email → Mail Pro →
 **Errors**, grouped by code, and a row opens on the traceback. The server log
 line stays; this is the copy that survives the week and can be read from a
 screen by the person who runs the database.
@@ -1856,7 +1896,7 @@ Three decisions:
 - **Written on a cursor of its own.** The failures worth recording are the
   ones whose transaction is about to roll back: the cron that raised, the
   request that answered 500. A row written inside that transaction dies with
-  it. `record()` opens its own cursor and commits, the way Odoo's `ir.logging`
+  it. `_record()` opens its own cursor and commits, the way Odoo's `ir.logging`
   handler does, and never raises: a failure to record a failure is a log
   line, not a second failure.
 - **The code is the only part that leaves the database.** `codes_since()`
@@ -2179,12 +2219,21 @@ value from Odoo's own `_get_notification_status()` so the two cannot drift.
 Failures already worked this way, through `_postprocess_sent_message`. Cancels
 were the one terminal outcome that did not.
 
-### 9.12 Internal mail is always filtered
+### 9.12 The sync never imports internal mail
 
 Mail between the company's own domains is never synced into Odoo. There is no
-global setting and no per-mailbox toggle, and the two that existed —
-`sync_internal_email` and `exclude_internal` — were removed in 19.0.6.4.0
+global setting and no per-mailbox toggle, and the two that existed --
+`sync_internal_email` and `exclude_internal` -- were removed in 19.0.6.4.0
 rather than defaulted off.
+
+There is one exception, and it is a person, not a setting. The owner of a
+personal mailbox reads it live in the Inbox (§1) and may press **Add to
+Odoo** on one mail. That runs the fetcher with `pan_mail_force_import`, and
+`_gate_internal_domain` passes the mail through; the duplicate guard and the
+contact block list still hold. The mail then lands where any mail lands --
+on the record the matcher finds, or on the sender's contact -- and is
+readable by whoever may read that record. The screen says so at the moment
+of the click. The cron never sets the flag, so nothing enters on its own.
 
 A safety control with a switch is a safety control someone will flip. Both
 switches were reachable from a settings page, neither was reversible in effect
@@ -2689,6 +2738,42 @@ For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 | Token refresh | Automatic |
 | Data egress | Provider APIs, plus one daily heartbeat to Pantalytics: counts, versions and error codes from a fixed list (§9.17); the Inbox's events and errors to Pantalytics only on an opted-in workspace, messages scrubbed |
 
+### Groups and rules
+
+One group of our own, `pan_mail_pro.group_mail_mailbox_manager` (**Mailbox
+Manager**), implied by `base.group_system`, so an administrator keeps every
+right. It splits "may configure mailboxes, accounts and the domain list" off
+from full system administration. Everything else is Odoo's own `base.group_user`
+and `base.group_system`. `security/ir.model.access.csv` and
+`security/pan_mail_pro_security.xml` are the source; this is the map.
+
+| Group | Read | Read and write |
+|-------|------|----------------|
+| Internal user (`base.group_user`) | `pan.mail.mailbox`, `pan.mail.account`, `pan.mail.domain` | `pan.mail.draft` (create, write, delete), `pan.mail.coverage` (transient; no delete) |
+| Mailbox Manager | everything above, plus `pan.mail.error` (read and delete) | `pan.mail.mailbox`, `pan.mail.account`, `pan.mail.domain`, `pan.mail.routing.log`, `pan.mail.thread.link`, `pan.mail.message.ref` |
+| Administrator (`base.group_system`) | everything above | `pan.mail.provider`, `pan.mail.license` |
+
+The routing log and the two indexes have no internal-user row at all: they
+carry the subject lines and correspondents of records the reader may not open,
+and every caller inside the module goes through `sudo()`. `pan.mail.setup`,
+`pan.mail.conversation`, `pan.mail.fetcher` and `pan.mail.matcher` have no
+table, so no ACL; the conversation methods check what they return (§1).
+
+Record rules narrow the rows a group may see:
+
+| Rule | Model | Who | Rows |
+|------|-------|-----|------|
+| `rule_mailbox_personal_own` | `pan.mail.mailbox` | internal user | shared and notification mailboxes, plus personal mailboxes the user owns |
+| `rule_mailbox_manager_all` | `pan.mail.mailbox` | Mailbox Manager | all |
+| `rule_mail_account_own` | `pan.mail.account` | internal user | the user's own accounts, and service accounts with no user (a Gmail or IMAP shared mailbox) |
+| `rule_mail_account_manager_all` | `pan.mail.account` | Mailbox Manager | all |
+| `rule_mail_draft_own` | `pan.mail.draft` | internal user | the user's own, and nobody else's; no manager exception |
+
+A rule is not an ACL and a group on a menu is neither: a client action opens
+by URL and every public model method answers `call_kw`, so the Inbox's read
+methods and the live mailbox check ownership themselves (§1,
+`tests/test_rpc_surface.py`).
+
 ---
 
 ### The takeover is one-sided
@@ -2753,21 +2838,27 @@ Added to outgoing mail, and read back by the loop guard and matcher rule 1:
 
 ## 12. Tests
 
-45 files under `tests/`. They fall into seven groups:
+Every `tests/test_*.py` is listed here, and `tools/ci_lint.sh` checks that
+every one of them is imported by `tests/__init__.py`, because a file not on
+that list never runs. The count is `ls tests/test_*.py | wc -l`; it is not
+repeated here, where it would be wrong within a release. The files fall into
+eight groups:
 
 | Group | Files | What they hold |
 |-------|-------|----------------|
 | Contracts | `test_provider_contract.py` | Every provider answers the contract identically |
-| Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_imap_live.py`, `test_pan_mail_provider.py` | Wire-level behaviour per vendor, and the credential rows behind them |
-| Pipeline | `test_incoming_sync*.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_mail_matcher.py`, `test_routing_log.py` | Fetch → filter → match → post |
-| Sending & UI | `test_outgoing_*.py`, `test_compose_*.py`, `test_mailbox_*.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py` | Routing, threading, composer, permissions, onboarding, and where the screens live |
-| Reading | `test_conversation_api.py` | What the Inbox may show, and to whom |
-| The outside | `test_oauth_routes.py`, `test_connect_banner.py`, `test_license.py` | Every route this module opens, who may call it, and what the OAuth callback stores |
-| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py` | The scripts in `migrations/`, run against real rows |
+| Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_imap_live.py`, `test_pan_mail_provider.py`, `test_mail_account.py` | Wire-level behaviour per vendor, the application registration, and the credential rows behind them |
+| Pipeline | `test_incoming_sync.py`, `test_incoming_sync_gmail.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_internal_domains.py`, `test_mail_matcher.py`, `test_thread_drift.py`, `test_reply_sync.py`, `test_attachments.py`, `test_routing_log.py`, `test_mail_coverage.py`, `test_sync_sends_nothing.py` | Fetch → filter → match → post, the reply that comes back to its record, and the one invariant of the sync's outbound side |
+| Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one send per recipient, what leaves when nothing is configured, and what a note never does |
+| Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, and the one mailbox setting a user owns |
+| The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, and the four pane names |
+| The outside | `test_oauth_routes.py`, `test_connect_banner.py`, `test_license.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, the Pantalytics link, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
+| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 
-`tests/common.py` provides the shared fixture — a notification mailbox, a shared
-mailbox, a personal mailbox, connected users, an external partner, and a
+`tests/common.py` provides the shared fixture -- a notification mailbox, a
+shared mailbox, a personal mailbox, connected users, an external partner, and a
 `mock_graph` context manager that patches every outbound HTTP call.
+`tests/connected.py` and `tests/ledger.py` are helpers, not test files.
 
 The widest useful seam for pipeline tests is `_process_mailbox(mailbox)` with
 only HTTP mocked: its signature survived the provider refactor, so the same

@@ -170,7 +170,7 @@ class PanMailDomain(models.Model):
             'yet, because without them it cannot tell your colleagues from your '
             'customers — and every internal email, confidential ones included, '
             'would be copied into Odoo.\n\n'
-            'Go to Settings → Mail Pro → Internal Domains and enter your company '
+            'Go to Settings → Mail Pro → Internal domains and enter your company '
             'domains.'
         )
 
@@ -178,27 +178,37 @@ class PanMailDomain(models.Model):
     # The question everything else asks
     # -------------------------------------------------------------------------
     @api.model
-    def is_internal(self, email):
+    def is_internal(self, email, domains=None):
         """Is this address one of our own domains?
 
         Purely about the domain list. Whether the caller should *act* on that is
         a separate question — see `should_skip()`.
+
+        `domains` is the list as the caller already read it, for a caller that
+        asks many times in one run: the fetcher reads it once per sync and
+        asks once per party of every message. None reads the list. An empty
+        set passed in answers the way an empty list does: nothing is internal,
+        which is why the sync refuses to run at all on an empty list rather
+        than relying on this answer (`configuration_error`).
         """
         if not email or '@' not in email:
             return False
         domain = email.rsplit('@', 1)[1].strip().lower().strip('.')
-        return bool(domain) and domain in self.get_domains()
+        if domains is None:
+            domains = self.get_domains()
+        return bool(domain) and domain in domains
 
     @api.model
-    def should_skip(self, email, mailbox=None):
+    def should_skip(self, email, mailbox=None, domains=None):
         """Should this incoming message be skipped as internal?
 
         One answer, for every mailbox: our own domains are never synced. The
         `mailbox` argument is kept because every caller has one and a future
         rule may need it, but nothing about a mailbox can turn the filter off
-        any more — see ARCHITECTURE.md §9.12.
+        any more — see ARCHITECTURE.md §9.12. `domains` is passed through to
+        `is_internal`.
         """
-        return self.is_internal(email)
+        return self.is_internal(email, domains=domains)
 
     # -------------------------------------------------------------------------
     # Helping the admin fill it in

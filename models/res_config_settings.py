@@ -38,7 +38,7 @@ class ResConfigSettings(models.TransientModel):
     # its own table; this is a read-only pointer to the in-use row.
     # -------------------------------------------------------------------------
     x_active_provider_id = fields.Many2one(
-        'pan.mail.provider', string='Email Provider',
+        'pan.mail.provider', string='Email provider',
         compute='_compute_setup_status', readonly=True,
     )
     x_setup_provider_done = fields.Boolean(compute='_compute_setup_status')
@@ -57,7 +57,7 @@ class ResConfigSettings(models.TransientModel):
     # -------------------------------------------------------------------------
     x_internal_domain_ids = fields.Many2many(
         'pan.mail.domain',
-        string='Internal Domains',
+        string='Internal domains',
         help='Your own email domains. Mail between them is never synced into Odoo.',
     )
     x_internal_domains_summary = fields.Char(compute='_compute_internal_domains_status')

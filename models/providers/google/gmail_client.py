@@ -75,7 +75,6 @@ class GoogleGmailClient(models.AbstractModel):
     # Gmail has no SendAs-with-your-own-token equivalent: a shared address is a
     # real Workspace account, authorized once, with its own credentials.
     supports_shared_mailbox = False
-    supports_delegation = True
     supported_mailbox_types = ('personal', 'shared')
 
     # Odoo's folder roles -> Gmail's system labels.
@@ -282,15 +281,12 @@ class GoogleGmailClient(models.AbstractModel):
         except requests.exceptions.RequestException as e:
             error_code = self._error_code(e)
             # invalid_grant: refresh token revoked, expired, or consent withdrawn.
+            # The clear is committed on its own cursor (see the contract): the
+            # raise below rolls this transaction back.
             if error_code == 'invalid_grant':
-                _logger.warning('[Gmail API] Permanent token failure for %s, clearing tokens', account.email)
-                self.env['pan.mail.error'].record(
+                self.env['pan.mail.error']._record(
                     'oauth.token_revoked', e, account=account)
-                account.sudo().write({
-                    'access_token_encrypted': False,
-                    'refresh_token_encrypted': False,
-                    'token_expiry': False,
-                })
+                self._revoke_refresh_token(account)
                 raise UserError(_(
                     'Your Google connection has expired or been revoked. '
                     'Please reconnect your Google account.'
@@ -597,9 +593,12 @@ class GoogleGmailClient(models.AbstractModel):
                     'content_id': content_id or None,
                 })
         except Exception as e:
-            # Contract: an attachment failure must not sink the message.
+            # Contract: an attachment failure must not sink the message. It is
+            # recorded, because the mail then reads as complete when it is not.
             _logger.warning('[Gmail API] Could not fetch attachments for %s: %s',
                             provider_message_id, e)
+            self.env['pan.mail.error']._record(
+                'incoming.attachments_failed', e, level='warning', account=account)
             return []
         return attachments
 

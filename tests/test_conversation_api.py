@@ -702,6 +702,52 @@ class TestConversationApi(TransactionCase):
         self.assertNotIn(self.lead.message_ids[:1].id, ids,
                          'the lead is not theirs, on the timeline either')
 
+    def test_a_record_the_reader_may_not_open_is_closed_on_every_door(self):
+        """The four reads that go further than `read_conversation` and could
+        each leak on their own: marking read writes, unfolding lists, door 1
+        counts through a `sudo()` index, and the Files tab reads attachments
+        through a `sudo()`. Each one starts from a search as the reader, so a
+        lead they may not open gives every one of them nothing -- and the
+        unread mail on it stays unread, because a conversation you cannot
+        read is a conversation you cannot mark.
+        """
+        attachment = self.env['ir.attachment'].create({
+            'name': 'vertrouwelijk.pdf', 'datas': b'JVBERi0=',
+        })
+        message = self._mail(subject='Not for Sam')
+        message.write({'attachment_ids': [(6, 0, attachment.ids)],
+                       'x_is_read': False})
+        self.env['ir.attachment'].create({
+            'name': 'tekening.pdf', 'datas': b'JVBERi0=',
+            'res_model': 'crm.lead', 'res_id': self.lead.id,
+        })
+        reader = self._mailbox_manager('sam.doors@company.test')
+        as_reader = self.Conversation.with_user(reader)
+
+        marked = as_reader.set_read('crm.lead', self.lead.id)
+        self.assertEqual(marked['count'], 0)
+        self.assertEqual(marked['message_ids'], [])
+        self.assertFalse(message.x_is_read, 'nothing was marked read')
+        marked = as_reader.set_read('crm.lead', self.lead.id, read=False)
+        self.assertEqual(marked['count'], 0)
+
+        self.assertEqual(as_reader.conversation_messages('crm.lead', self.lead.id), [])
+
+        door = as_reader.record_conversations('crm.lead', self.lead.id)
+        self.assertEqual(door['here'], 0)
+        self.assertEqual(door['threads'], 0, 'the index is not asked for a record they cannot read')
+        self.assertEqual(door['conversations'], 0)
+
+        thread = as_reader.read_conversation('crm.lead', self.lead.id)
+        self.assertEqual(thread['files'], {'ids': [], 'store': {}},
+                         'neither the file on the mail nor the one on the record')
+
+        # The positive control: the same calls by someone who may open it.
+        self.assertEqual(self.Conversation.record_conversations(
+            'crm.lead', self.lead.id)['here'], 1)
+        self.assertEqual(len(self.Conversation.read_conversation(
+            'crm.lead', self.lead.id)['files']['ids']), 2)
+
     def test_the_inbox_is_for_people_who_read_a_mailbox(self):
         """A group on a menu is not an access rule, so the methods check too."""
         stranger = self.env['res.users'].create({
@@ -983,6 +1029,45 @@ class TestConversationApi(TransactionCase):
         with self.assertRaises(AccessError):
             # No chatter, so no place for a mail: the model step refuses it.
             self.Conversation.new_mail_recipients('ir.config_parameter', 1)
+
+    def test_a_new_mail_s_to_on_a_colleague_s_lead_makes_no_contact(self):
+        """The record-level half of the check above.
+
+        A salesperson sees their own leads and nobody else's (crm's own rule
+        on "own documents only"), and may write on the model, so the model
+        step lets them through. The record step must not: asking "who does
+        a new mail on this lead go to" on a colleague's lead would answer
+        with a colleague's prospect -- and, on a lead with only an address,
+        would create the contact for it on the way.
+        """
+        reader = self._mailbox_manager('sam.sales@company.test')
+        reader.write({'group_ids': [(4, self.env.ref('sales_team.group_sale_salesman').id)]})
+        theirs = self.env['crm.lead'].create({
+            'name': 'Koelinstallatie',
+            'email_from': 'Piet de Vries <piet@devries.test>',
+            'user_id': self.env.user.id,
+        })
+        self.assertFalse(theirs.with_user(reader).has_access('read'),
+                         'the fixture: a lead the reader may not open')
+        as_reader = self.Conversation.with_user(reader)
+
+        with self.assertRaises(AccessError):
+            as_reader.new_mail_recipients('crm.lead', theirs.id)
+        self.assertFalse(self.env['res.partner'].search(
+            [('email_normalized', '=', 'piet@devries.test')]),
+            'no contact was made for an address they may not see')
+
+        # The positive control: on their own lead the same call answers,
+        # so it is the record check that refused and not the model step.
+        mine = self.env['crm.lead'].create({
+            'name': 'Eigen lead',
+            'email_from': 'Anna Jansen <anna@jansen.test>',
+            'user_id': reader.id,
+        })
+        ids = as_reader.new_mail_recipients('crm.lead', mine.id)
+        self.assertEqual(len(ids), 1)
+        self.assertEqual(self.env['res.partner'].browse(ids).email_normalized,
+                         'anna@jansen.test')
 
     def test_customer_timeline_merges_and_orders(self):
         self._mail(subject='Oldest')

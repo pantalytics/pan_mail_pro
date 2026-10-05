@@ -128,8 +128,8 @@ class Checks:
         if len(steps) != 4:
             self.fail(f'the checklist has {len(steps)} steps, expected 4')
         names = [s.query_selector('.o_mailpro_step_name').inner_text().strip() for s in steps]
-        if names != ['1. Pantalytics Account', '2. Email Provider',
-                     '3. Internal Domains', '4. Mailboxes']:
+        if names != ['1. Pantalytics account', '2. Email provider',
+                     '3. Internal domains', '4. Mailboxes']:
             self.fail(f'the steps read {names}')
 
         for index, step in enumerate(steps, start=1):
@@ -162,7 +162,7 @@ class Checks:
         # line, because the seed says so.
         if 'Connected by' not in steps[0].inner_text():
             self.fail('step 1 does not say who connected')
-        for leaked in ('Connect to Pantalytics', 'Check Approval'):
+        for leaked in ('Connect to Pantalytics', 'Check approval'):
             if any(b.is_visible() and b.inner_text().strip() == leaked
                    for b in block.query_selector_all('button')):
                 self.fail(f'a connected database shows "{leaked}"')
@@ -250,7 +250,7 @@ class Checks:
             text = block.inner_text()
             # About (the version and the licence line) stays: a support mail
             # and the documentation link are wanted before connecting too.
-            for leaked in ('2. Email Provider', '3. Internal Domains', 'Connect Mailbox',
+            for leaked in ('2. Email provider', '3. Internal domains', 'Connect Mailbox',
                            'Connected mailboxes'):
                 if leaked in text:
                     self.fail(f'an unlinked database still shows "{leaked}"')

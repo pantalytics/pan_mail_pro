@@ -211,11 +211,17 @@ class PanMailMatcher(models.AbstractModel):
         for rule_method in self._match_rules():
             try:
                 found = getattr(self, rule_method)(ctx) or []
-            except Exception:
+            except Exception as error:
                 # A broken rule must not stop the mail. Drop it and continue
                 # down the ladder — a weaker match beats an unhandled traceback
-                # in the middle of a cron batch.
+                # in the middle of a cron batch. Recorded as well as logged: a
+                # mail that lands lower than it should is otherwise invisible
+                # from everywhere but the server log, and the ledger is what
+                # the heartbeat carries.
                 _logger.exception("[Mail Matcher] Rule %s raised, skipping it", rule_method)
+                self.env['pan.mail.error']._record(
+                    'incoming.rule_failed', error, level='warning',
+                    mailbox=mailbox or None)
                 continue
             ctx['candidates'].extend(found)
             if found and found[0]['confidence'] >= AUTO_ROUTE_CONFIDENCE:
@@ -615,12 +621,6 @@ class PanMailMatcher(models.AbstractModel):
         if rfc_key and rfc_key not in keys:
             keys.append(rfc_key)
         return keys
-
-    @api.model
-    def _effective_thread_id(self, message, reference_ids=None):
-        """The single handle to report as *the* thread id. See `thread_keys`."""
-        keys = self.thread_keys(message, reference_ids)
-        return keys[0] if keys else False
 
     @api.model
     def _reference_ids(self, headers):

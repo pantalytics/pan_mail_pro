@@ -25,12 +25,16 @@ import requests
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
-from odoo.addons.pan_mail_pro.models.mail_provider_client import get_provider_client
+from odoo.addons.pan_mail_pro.models.mail_provider_client import (
+    ERROR_THROTTLED,
+    get_provider_client,
+)
 
 # Patch requests.post specifically, not the whole module — the client catches
 # requests.exceptions.RequestException, which must stay a real class.
 GRAPH_POST = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.post'
 GRAPH_GET = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.get'
+GRAPH_DELETE = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.delete'
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -197,6 +201,67 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
                 self.client.get_valid_token(account)
 
         self.assertIn('reconnect', str(ctx.exception).lower())
+
+    def test_a_revoked_token_is_cleared_even_though_the_refresh_raised(self):
+        """The clear outlives the raise. The sync cron runs each mailbox in a
+        savepoint and a request rolls back on a UserError, so a clear written
+        in the same transaction never landed: the account stayed connected,
+        was retried every minute and recorded `oauth.token_revoked` every
+        minute, and nobody was asked to reconnect.
+
+        `_revoke_refresh_token` writes on a cursor of its own; under registry
+        test mode that cursor is a savepoint on this test's, so the write is
+        visible here and rolls back with the test. Not `assertRaises`: Odoo's
+        wraps the call in a savepoint it rolls back, which is the very thing
+        the clear has to survive.
+        """
+        account = self._account(
+            access_token='stale', refresh_token='revoked',
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
+        self.assertTrue(account.connected)
+        with self.enter_registry_test_mode(), \
+                patch(GRAPH_POST, side_effect=self._http_error({'error': 'invalid_grant'})):
+            try:
+                self.client.get_valid_token(account)
+            except UserError as e:
+                self.assertIn('reconnect', str(e).lower())
+            else:
+                self.fail('invalid_grant did not raise')
+
+        self.assertFalse(account.refresh_token_encrypted)
+        self.assertFalse(account.access_token_encrypted)
+        self.assertFalse(account.token_expiry)
+        self.assertFalse(account.connected)
+        row = self.env['pan.mail.error'].search([('code', '=', 'oauth.token_revoked')], limit=1)
+        self.assertEqual(row.account_id, account)
+
+    def test_a_locked_row_is_cleared_in_this_transaction_instead(self):
+        """The own cursor locks the row NOWAIT. When this transaction already
+        holds it, or created it, the other cursor cannot have it: the helper
+        says so and clears the tokens in-transaction, which is what the
+        caller used to get. Here the cursor itself is made to fail, which is
+        the branch a test cursor on the same connection never takes."""
+        account = self._account(
+            access_token='stale', refresh_token='revoked',
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
+        with patch.object(self.env.registry, 'cursor',
+                          side_effect=LookupError('row locked by this transaction')), \
+                patch(GRAPH_POST, side_effect=self._http_error({'error': 'invalid_grant'})), \
+                self.assertLogs('odoo.addons.pan_mail_pro.models.mail_provider_client',
+                                level='WARNING') as logs:
+            # Not `assertRaises`: its savepoint would roll the in-transaction
+            # clear back, which is the thing this test reads afterwards.
+            try:
+                self.client.get_valid_token(account)
+            except UserError:
+                pass
+            else:
+                self.fail('invalid_grant did not raise')
+
+        self.assertFalse(account.refresh_token_encrypted)
+        self.assertFalse(account.access_token_encrypted)
+        self.assertFalse(account.connected)
+        self.assertTrue(any('in this transaction' in line for line in logs.output))
 
     def test_invalid_client_blames_the_secret_and_keeps_the_tokens(self):
         """An expired or mistyped app secret in Azure is the administrator's
@@ -409,6 +474,137 @@ class TestGraphDelegationRefused(TransactionCase):
         self.assertFalse(result['success'])
         self.assertNotIn('Full Access', result['error'])
         self.assertIn('Graph API error', result['error'])
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestGraphFailedSendLeavesNoDraft(TransactionCase):
+    """Graph sends draft-then-send, so a send that fails after the first POST
+    leaves a finished draft in the user's Outlook Drafts. `mail.mail` retries
+    a throttled mail, so one stuck send used to grow a draft per minute."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.client = get_provider_client(cls.env, 'outlook')
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.user = cls.env['res.users'].create({
+            'name': 'Bram', 'login': 'bram@test.local', 'email': 'bram@test.local',
+        })
+        cls.account = cls.env['pan.mail.account'].create({
+            'email': 'bram@test.local', 'provider': 'outlook',
+            'user_id': cls.user.id, 'refresh_token': 'r', 'access_token': 'a',
+        })
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({'email': 'orders@test.local'})
+
+    def _response(self, status_code, payload=None, headers=None):
+        resp = MagicMock()
+        resp.status_code = status_code
+        resp.headers = headers or {}
+        resp.json.return_value = payload or {}
+        resp.raise_for_status.return_value = None
+        return resp
+
+    def _draft(self):
+        return self._response(201, {
+            'id': 'draft-1', 'internetMessageId': '<d@test.local>', 'conversationId': 'conv',
+        })
+
+    def _send(self, on_send, on_delete=None):
+        """A send whose draft POST succeeds and whose `/send` answers `on_send`."""
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>Hi</p>', 'email_to': 'to@example.com',
+            'author_id': self.user.partner_id.id,
+        })
+
+        def post(url, headers=None, json=None, timeout=None, **kwargs):
+            return on_send if url.endswith('/send') else self._draft()
+
+        with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
+                patch(GRAPH_POST, side_effect=post), \
+                patch(GRAPH_DELETE, **(on_delete or {'return_value': self._response(204)})) as delete:
+            result = self.client.send_email_via_graph(mail, self.mailbox, self.account)
+        return result, delete
+
+    def test_a_throttled_send_discards_its_draft(self):
+        throttled = self._response(429, headers={'Retry-After': '90'})
+        result, delete = self._send(throttled)
+
+        self.assertFalse(result['success'])
+        self.assertEqual(result['error_code'], ERROR_THROTTLED)
+        delete.assert_called_once()
+        url = delete.call_args.args[0]
+        self.assertTrue(url.endswith('/users/orders@test.local/messages/draft-1'), url)
+
+    def test_a_refused_send_discards_its_draft(self):
+        refused = self._response(403, {'error': {'code': 'ErrorMessageSizeExceeded',
+                                               'message': 'too big'}})
+        refused.raise_for_status.side_effect = requests.exceptions.HTTPError('403', response=refused)
+        result, delete = self._send(refused)
+
+        self.assertFalse(result['success'])
+        self.assertIn('Graph API error', result['error'])
+        delete.assert_called_once()
+
+    def test_a_failed_discard_does_not_change_the_result(self):
+        """The user needs the send's own verdict; the cleanup is a footnote."""
+        throttled = self._response(429, headers={'Retry-After': '90'})
+        with self.assertLogs('odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client',
+                             'WARNING') as logs:
+            result, delete = self._send(
+                throttled, on_delete={'side_effect': requests.exceptions.ConnectionError('gone')})
+
+        self.assertFalse(result['success'])
+        self.assertEqual(result['error_code'], ERROR_THROTTLED)
+        self.assertEqual(result['retry_after'], 90)
+        delete.assert_called_once()
+        self.assertTrue(any('discard draft draft-1' in line for line in logs.output), logs.output)
+
+    def test_a_sent_mail_is_not_deleted(self):
+        """Graph moves the draft to Sent Items on send; a DELETE after a
+        success would remove the sent copy, which is worse than a stray draft."""
+        result, delete = self._send(self._response(202))
+
+        self.assertTrue(result['success'])
+        delete.assert_not_called()
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestGraphAttachmentFailureIsRecorded(TransactionCase):
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.client = get_provider_client(cls.env, 'outlook')
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.user = cls.env['res.users'].create({
+            'name': 'Cas', 'login': 'cas@test.local', 'email': 'cas@test.local',
+        })
+        cls.account = cls.env['pan.mail.account'].create({
+            'email': 'cas@test.local', 'provider': 'outlook',
+            'user_id': cls.user.id, 'refresh_token': 'r', 'access_token': 'a',
+        })
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({'email': 'support@test.local'})
+
+    def test_an_attachment_failure_keeps_the_message_and_leaves_a_row(self):
+        """The contract says an attachment failure must not sink the message.
+        It also must not be silent: the mail is then in Odoo looking complete
+        when it is not, and the only trace was a log line."""
+        refused = MagicMock()
+        refused.status_code = 404
+        refused.headers = {}
+        refused.json.return_value = {'error': {'code': 'ErrorItemNotFound', 'message': 'gone'}}
+        refused.raise_for_status.side_effect = requests.exceptions.HTTPError('404', response=refused)
+        with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
+                patch(GRAPH_GET, return_value=refused):
+            attachments = self.client.get_message_attachments(self.account, self.mailbox, 'MSG-1')
+
+        self.assertEqual(attachments, [])
+        row = self.env['pan.mail.error'].search(
+            [('code', '=', 'incoming.attachments_failed')], limit=1)
+        self.assertTrue(row)
+        self.assertEqual(row.level, 'warning')
+        self.assertEqual(row.account_id, self.account)
+        self.assertEqual(row.provider, 'outlook')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

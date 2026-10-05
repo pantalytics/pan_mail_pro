@@ -534,3 +534,105 @@ class TestMailMatcher(TransactionCase):
             }), mailbox=self.mailbox)
 
         self.assertEqual(decision['model'], 'crm.lead')
+
+    def test_a_broken_rule_leaves_a_row_in_the_ledger(self):
+        """Skipped, but not silently: a mail that lands lower than it should
+        is invisible from everywhere but the server log, and the ledger is
+        what the heartbeat carries. `tests/ledger.py` keeps the row in this
+        transaction so it can be read back."""
+        self._post_on(self.lead, '<parent@example.com>')
+
+        with patch.object(
+            type(self.matcher), '_rule_odoo_headers',
+            autospec=True, side_effect=ValueError('boom'),
+        ):
+            decision = self.matcher._match(self._message(headers={
+                'In-Reply-To': '<parent@example.com>',
+            }), mailbox=self.mailbox)
+
+        self.assertEqual(decision['model'], 'crm.lead', 'the match still completes')
+        row = self.env['pan.mail.error'].search([('code', '=', 'incoming.rule_failed')])
+        self.assertEqual(len(row), 1)
+        self.assertEqual(row.level, 'warning')
+        self.assertEqual(row.mailbox_id, self.mailbox)
+        self.assertIn('boom', row.message)
+
+    def test_a_broken_rule_without_a_mailbox_still_leaves_a_row(self):
+        """The matcher is also asked by the send path, with no mailbox."""
+        with patch.object(
+            type(self.matcher), '_rule_odoo_headers',
+            autospec=True, side_effect=ValueError('boom'),
+        ):
+            self.matcher._match(self._message())
+
+        row = self.env['pan.mail.error'].search([('code', '=', 'incoming.rule_failed')])
+        self.assertEqual(len(row), 1)
+        self.assertFalse(row.mailbox_id)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestIndexFailuresAreRecorded(TransactionCase):
+    """The two indexes never raise -- a delivered mail must not roll back
+    because bookkeeping failed -- but a row they failed to write is a reply
+    that later threads lower than it should. So the swallow is kept and the
+    failure goes in the ledger (`incoming.index_failed`, a warning)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['pan.mail.domain'].set_domains(['gate-fixture.test'])
+        cls.mailbox = cls.env['pan.mail.mailbox'].create({
+            'email': 'support@company.test',
+        })
+        cls.lead = cls.env['crm.lead'].create({'name': 'Existing opportunity'})
+        cls.message = cls.lead.with_context(
+            mail_create_nosubscribe=True, mail_notrack=True,
+        ).message_post(body='<p>hello</p>', message_type='email',
+                       subtype_xmlid='mail.mt_comment',
+                       message_id='<indexed@example.com>')
+
+    def _rows(self):
+        return self.env['pan.mail.error'].search([('code', '=', 'incoming.index_failed')])
+
+    def test_a_thread_link_that_cannot_be_written_is_recorded(self):
+        Link = type(self.env['pan.mail.thread.link'])
+        with patch.object(Link, '_record', autospec=True,
+                          side_effect=ValueError('no room')):
+            link = self.env['pan.mail.thread.link'].record(
+                mailbox=self.mailbox, thread_id='CONV-1',
+                model='crm.lead', res_id=self.lead.id, message=self.message)
+
+        self.assertFalse(link, 'the empty return is kept')
+        row = self._rows()
+        self.assertEqual(len(row), 1)
+        self.assertEqual(row.level, 'warning')
+        self.assertEqual(row.mailbox_id, self.mailbox)
+        self.assertIn('no room', row.message)
+        # And the transaction is still usable, which is what the savepoint
+        # inside `record()` is for.
+        self.assertTrue(self.env['crm.lead'].search_count([('id', '=', self.lead.id)]))
+
+    def test_a_message_ref_that_cannot_be_written_is_recorded(self):
+        Ref = type(self.env['pan.mail.message.ref'])
+        with patch.object(Ref, 'create', autospec=True,
+                          side_effect=ValueError('no room')):
+            refs = self.env['pan.mail.message.ref'].record(
+                self.message, '<minted-by-provider@example.com>', source='provider')
+
+        self.assertFalse(refs, 'the empty return is kept')
+        row = self._rows()
+        self.assertEqual(len(row), 1)
+        self.assertEqual(row.level, 'warning')
+        self.assertIn('no room', row.message)
+        self.assertTrue(self.env['crm.lead'].search_count([('id', '=', self.lead.id)]))
+
+    def test_a_write_that_works_leaves_no_row(self):
+        link = self.env['pan.mail.thread.link'].record(
+            mailbox=self.mailbox, thread_id='CONV-1',
+            model='crm.lead', res_id=self.lead.id, message=self.message)
+        refs = self.env['pan.mail.message.ref'].record(
+            self.message, '<minted-by-provider@example.com>', source='provider')
+
+        self.assertTrue(link)
+        self.assertTrue(refs)
+        self.assertFalse(self._rows())

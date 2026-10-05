@@ -122,7 +122,6 @@ class TestGoogleProvider(TransactionCase):
         self.assertEqual(set(self.client.supported_mailbox_types),
                          {'personal', 'shared'})
         self.assertFalse(self.client.supports_shared_mailbox)
-        self.assertTrue(self.client.supports_delegation)
 
     # ------------------------------------------------------------------ #
     # Credentials
@@ -537,6 +536,29 @@ class TestGoogleProvider(TransactionCase):
         self.assertIsNone(by_name['doc.pdf']['content_id'])
         self.assertEqual(by_name['doc.pdf']['content'], b'PDFBYTES')  # fetched via attachmentId
 
+    def test_an_attachment_failure_keeps_the_message_and_leaves_a_row(self):
+        """The contract says an attachment failure must not sink the message.
+        It also must not be silent: the mail is then in Odoo looking complete
+        when it is not, and the only trace was a log line."""
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'gmail_user@test.local', 'provider': 'gmail',
+            'owner_user_id': self.user.id,
+        })
+        account = self._google_account(refresh_token='r', access_token='a',
+                                       token_expiry=fields.Datetime.now() + timedelta(hours=1))
+        Client = type(self.env['google.gmail.client'])
+        with patch.object(Client, '_gmail_get_message',
+                          side_effect=requests.exceptions.ConnectionError('gone')):
+            attachments = self.client.get_message_attachments(account, mailbox, 'g1')
+
+        self.assertEqual(attachments, [])
+        row = self.env['pan.mail.error'].search(
+            [('code', '=', 'incoming.attachments_failed')], limit=1)
+        self.assertTrue(row)
+        self.assertEqual(row.level, 'warning')
+        self.assertEqual(row.account_id, account)
+        self.assertEqual(row.provider, 'gmail')
+
     # ------------------------------------------------------------------ #
     # Token lifecycle
     # ------------------------------------------------------------------ #
@@ -604,6 +626,31 @@ class TestGoogleProvider(TransactionCase):
                 self.client.get_valid_token(account)
 
         self.assertIn('reconnect', str(ctx.exception).lower())
+
+    def test_a_revoked_token_is_cleared_even_though_the_refresh_raised(self):
+        """Same contract as the Microsoft test of the same name: the clear is
+        committed on a cursor of its own (`_revoke_refresh_token`), so the
+        raise that follows cannot roll it back. Under registry test mode that
+        cursor is a savepoint on this test's, and a plain try/except rather
+        than `assertRaises` keeps Odoo's own savepoint out of the way."""
+        account = self._google_account(
+            access_token='stale', refresh_token='revoked',
+            token_expiry=fields.Datetime.now() - timedelta(minutes=1))
+        self.assertTrue(account.connected)
+        with self.enter_registry_test_mode(), \
+                patch(GMAIL_POST, side_effect=self._http_error({'error': 'invalid_grant'})):
+            try:
+                self.client.get_valid_token(account)
+            except UserError as e:
+                self.assertIn('reconnect', str(e).lower())
+            else:
+                self.fail('invalid_grant did not raise')
+
+        self.assertFalse(account.refresh_token_encrypted)
+        self.assertFalse(account.access_token_encrypted)
+        self.assertFalse(account.connected)
+        row = self.env['pan.mail.error'].search([('code', '=', 'oauth.token_revoked')], limit=1)
+        self.assertEqual(row.account_id, account)
 
     def test_transient_refresh_error_is_not_a_reconnect_prompt(self):
         """A network blip must NOT tell the user their connection is revoked."""
