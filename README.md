@@ -48,7 +48,7 @@ https://github.com/user-attachments/assets/91bb494e-696d-4ede-85b5-4ac5cc826e5c
 ## Installation
 
 Create a Pantalytics account at
-[app.mailpro.pantalytics.com/start](https://app.mailpro.pantalytics.com/start)
+[mcp.pantalytics.com/admin/mail-pro](https://mcp.pantalytics.com/admin/mail-pro)
 (free up to 100 mails a day per Odoo instance), then add the module, branch
 `19.0`, to your Odoo. The full guide per host is
 [docs/getting-started/installation.md](docs/getting-started/installation.md).

@@ -7,7 +7,7 @@ not synced and no mailbox can be connected.
 
 You need a Pantalytics account. If you do not have one yet, you create it on
 the page the button opens, or beforehand at
-<a href="https://app.mailpro.pantalytics.com/start" target="_blank">app.mailpro.pantalytics.com/start</a>,
+<a href="https://mcp.pantalytics.com/admin/mail-pro" target="_blank">mcp.pantalytics.com/admin/mail-pro</a>,
 with your work email address. Forgotten password and the verification mail
 are handled on that sign-in page. Colleagues can be added to the same
 workspace afterwards, under **Members**.
@@ -15,7 +15,7 @@ workspace afterwards, under **Members**.
 ## Connect
 
 1. Go to **Settings** and scroll to **Mail Pro**
-2. Press **Connect to Pantalytics**. A new tab opens on `app.mailpro.pantalytics.com`
+2. Press **Connect to Pantalytics**. A new tab opens on `mcp.pantalytics.com`
    with a short code already filled in; the same code is shown in Odoo
 3. Sign in with your Pantalytics account, or create one
 4. Check that the page names this Odoo instance, and press **Approve**
@@ -36,7 +36,7 @@ administer, ask an administrator of that workspace to approve instead.
 
 - **Status: Active, plan free.** A connected instance starts on Free: 100
   mails a day. Pro is 1,000 a day and Max 5,000, one button on the
-  **Billing** page of your workspace at `app.mailpro.pantalytics.com`; every
+  **Billing** page of your workspace at `mcp.pantalytics.com/admin/billing`; every
   Odoo instance in the workspace gets the plan's limit within a day. Over the
   limit, mail waits until the next day, it is never refused. The limit is not
   enforced by this version of the module yet; you will hear before it is.
@@ -49,7 +49,7 @@ administer, ask an administrator of that workspace to approve instead.
 
 ## What leaves your server
 
-One request a day to `app.mailpro.pantalytics.com`, carrying: the database
+One request a day to `mcp.pantalytics.com`, carrying: the database
 id, the Mail Pro and Odoo version, how many accounts are connected, whether
 sync is healthy, and for the last 24 hours how many mails were linked to a
 document, to a contact only, or to nothing, per matching rule how often it
@@ -61,7 +61,7 @@ a body or a name. See [Security](../security.md).
 ## Help improve Mail Pro
 
 Off unless an administrator of your Pantalytics workspace turns it on, under
-**Settings** at `app.mailpro.pantalytics.com`. When it is on, the Mail Pro
+**Workspace settings** at `mcp.pantalytics.com/admin/workspace/settings`. When it is on, the Mail Pro
 inbox in the browser reports which screens, tabs and buttons are used and
 records the session with every word, every field and every attribute masked:
 a wireframe, never a mail, an address, a name or a subject. It covers Mail
@@ -75,7 +75,7 @@ people who use your Odoo is your part.
 ## Problems
 
 - **"Could not reach Pantalytics."** This server cannot make outgoing HTTPS
-  requests to `app.mailpro.pantalytics.com`. Ask whoever runs the server.
+  requests to `mcp.pantalytics.com`. Ask whoever runs the server.
 - **"Pantalytics did not answer (HTTP 502)."** A bad minute on our side. Try
   again; the code stays valid for 15 minutes.
 - **"This code is no longer valid."** The code expired or was used. Press
