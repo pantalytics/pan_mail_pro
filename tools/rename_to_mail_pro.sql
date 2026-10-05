@@ -66,7 +66,7 @@ UPDATE ir_module_module
 -- installed module is step 6 of the runbook.
 UPDATE ir_module_module
    SET shortdesc   = jsonb_build_object('en_US', 'Mail Pro - Email Integration'),
-       summary     = jsonb_build_object('en_US', 'Microsoft 365, Gmail or IMAP/SMTP: send from any mailbox, sync incoming mail into the chatter, thread replies properly'),
+       summary     = jsonb_build_object('en_US', 'Your own mailbox in Odoo: Microsoft 365, Gmail or IMAP/SMTP'),
        description = NULL
  WHERE name = 'pan_mail_pro'
    AND (shortdesc::text   LIKE '%Outlook Pro%'
