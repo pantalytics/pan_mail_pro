@@ -18,6 +18,7 @@ door) go through the routed path: they prove the wiring, not the cursor.
 """
 import json
 import re
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -151,18 +152,24 @@ class TestErrorLedger(TransactionCase):
     # --- what the heartbeat carries ------------------------------------------
 
     def test_codes_since_counts_per_code_most_frequent_first(self):
-        since = fields.Datetime.now()
+        # `create_date` is the transaction's start in PostgreSQL, which is
+        # before anything this test does: the window is the heartbeat's own
+        # 24 hours, never "now".
+        since = fields.Datetime.now() - timedelta(hours=24)
         for _ in range(3):
             self.Error.record('incoming.message_failed', detail='x', mailbox=self.mailbox)
         self.Error.record('outgoing.no_route', detail='y')
         codes = self.Error.codes_since(since)
-        self.assertEqual(codes[:2], [
+        ours = [c for c in codes if c['code'] in ('incoming.message_failed', 'outgoing.no_route')]
+        self.assertEqual(ours, [
             {'code': 'incoming.message_failed', 'count': 3},
             {'code': 'outgoing.no_route', 'count': 1},
         ])
         self.assertLessEqual(len(codes), MAX_CODES_REPORTED)
-        self.assertEqual(
-            self.Error.signature_since(since), 'incoming.message_failed,outgoing.no_route')
+        signature = self.Error.signature_since(since).split(',')
+        self.assertIn('incoming.message_failed', signature)
+        self.assertIn('outgoing.no_route', signature)
+        self.assertEqual(signature, sorted(signature))
 
     def test_the_heartbeat_carries_codes_and_counts_and_no_address(self):
         self.Error.record('incoming.mailbox_failed', self._caught(), mailbox=self.mailbox)
@@ -180,7 +187,8 @@ class TestErrorLedger(TransactionCase):
         License = self.env['pan.mail.license']
         link = License.sudo().create({'status': 'active', 'key_encrypted': 'stored-key'})
         self.assertEqual(License.current(), link)
-        since = fields.Datetime.now()
+        # The same window the method reads (see the test above for why).
+        since = fields.Datetime.now() - timedelta(hours=24)
         with patch(GUARDED, autospec=True) as guarded:
             link.errors_reported = self.Error.signature_since(since)
             License._report_errors_if_new()
