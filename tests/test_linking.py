@@ -398,7 +398,7 @@ class TestLinkPicker(TransactionCase):
         self.assertIn(self.customer.display_name, unlink[0]['label'])
 
     def test_the_unlink_row_is_absent_on_a_contact(self):
-        """On a contact there is nothing to unlink; Change is the only action."""
+        """On a contact there is nothing to unlink; Change link is the only action."""
         rows = self.Conversation.link_targets(
             current_model='res.partner', partner_id=self.customer.id)
         self.assertFalse(any(row.get('unlink') for row in rows))
