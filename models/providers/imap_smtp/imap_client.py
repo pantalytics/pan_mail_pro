@@ -45,6 +45,7 @@ import logging
 import re
 import smtplib
 import ssl
+import weakref
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy
@@ -106,10 +107,19 @@ _SENT_FLAG_RE = re.compile(r'\\Sent', re.IGNORECASE)
 _SENT_LEAF_RE = re.compile(r'(?:^|[./])sent$', re.IGNORECASE)
 
 
-# Where a `receiving_session` keeps its connection: on the cursor, keyed by
-# account id, so every client recordset of the same transaction finds it
-# whatever context it carries. Gone with the cursor at the latest.
-SESSION_CACHE_KEY = 'pan_mail_imap_sessions'
+# Where a `receiving_session` keeps its connection: keyed by the cursor
+# object, then by account id, so every client recordset of the same
+# transaction finds it whatever context it carries, and gone with the cursor
+# at the latest (the map holds the cursor weakly). Not on the cursor's own
+# per-transaction stores: `precommit.data` is cleared by every `flush()`,
+# which the per-message savepoint in the fetcher does, and the first run
+# with that seam dialled four times where it should have dialled once.
+_SESSIONS = weakref.WeakKeyDictionary()
+
+
+def _sessions_of(cr):
+    """The account-id -> `_ImapSession` map of this cursor."""
+    return _SESSIONS.setdefault(cr, {})
 
 
 class _ImapSession:
@@ -282,19 +292,16 @@ class ImapSmtpClient(models.AbstractModel):
         The connection is dialled by the first `_imap` call that needs it and
         logged out here, whatever happened in between. Nested on the same
         account, the inner block is a no-op: the outer one owns the
-        connection. The session lives on the cursor, in `precommit.data`
-        under `SESSION_CACHE_KEY`: the seam Odoo's own `mail` module keeps
-        per-transaction state on, cleared on commit, which the cron only does
-        between mailboxes and so outside this block. The fetcher's
-        `_fetch_folder` and `_full_message`, which each look the client and
-        the account up afresh, find the same connection there; and if a
-        commit ever did clear it mid-block, `_imap` falls back to a
-        connection per call, which is what it always did.
+        connection. The session is kept per cursor (`_sessions_of`), so the
+        fetcher's `_fetch_folder` and `_full_message`, which each look the
+        client and the account up afresh, find the same connection; and if
+        it is ever missing mid-block, `_imap` falls back to a connection per
+        call, which is what it always did.
         """
         if not account:
             yield
             return
-        sessions = self.env.cr.precommit.data.setdefault(SESSION_CACHE_KEY, {})
+        sessions = _sessions_of(self.env.cr)
         if account.id in sessions:
             yield
             return
@@ -302,16 +309,16 @@ class ImapSmtpClient(models.AbstractModel):
         try:
             yield
         finally:
-            # Popped from the data as it is now, not the dict captured above:
-            # if a commit cleared it in between, the kept entry is already
+            # Popped from the map as it is now, not the dict captured above:
+            # if anything dropped it in between, the kept entry is already
             # gone and the connection is still ours to close.
-            self.env.cr.precommit.data.get(SESSION_CACHE_KEY, {}).pop(account.id, None)
+            _sessions_of(self.env.cr).pop(account.id, None)
             if session.conn is not None:
                 self._logout(session.conn, account.imap_host)
 
     def _session_for(self, account):
         """The open receiving session for `account`, or None outside one."""
-        return self.env.cr.precommit.data.get(SESSION_CACHE_KEY, {}).get(account.id)
+        return _sessions_of(self.env.cr).get(account.id)
 
     @contextmanager
     def _imap(self, account):
