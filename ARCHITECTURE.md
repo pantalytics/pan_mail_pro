@@ -2817,6 +2817,24 @@ by URL and every public model method answers `call_kw`, so the Inbox's read
 methods and the live mailbox check ownership themselves (§1,
 `tests/test_rpc_surface.py`).
 
+**Whose mailbox.** Odoo's own rule on `mail.message` decides whether a
+reader may open the document a mail is on, and the Inbox adds one clause in
+front of it (`pan.mail.conversation._whose_domain`, on every query the
+screen makes): a colleague's **personal** mailbox shows only its *linked*
+mail. The owner sees the whole of what the sync imported from their own
+mailbox, the mail on a contact only included; everyone else sees the mail
+of it that is linked to a record, and then only on the records they may
+open. Without that clause the fallback home of an unplaced mail, the
+sender's contact, put every unlinked mail of every personal mailbox on
+screen for every mailbox manager, because a contact is readable by every
+internal user. A **shared** mailbox has no owner and is the team's: its
+contact-only mail stays on screen for every manager, because that is the
+pile somebody has to work through. Mail in no mailbox at all passes, for
+door 1. One case is left as Odoo has it: a mail in your own mailbox on a
+record you may not open stays hidden here as it is in the chatter. Nothing
+in the Inbox takes `sudo()` for an answer, and that case is not worth the
+first one. `tests/test_conversation_api.py` pins all four sides.
+
 One write is narrower than its ACL on purpose. A Mailbox Manager may write
 every account, but not *whose* it is: `user_id` and `email` on
 `pan.mail.account` change only as an administrator once they are set

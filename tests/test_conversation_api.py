@@ -44,7 +44,7 @@ class TestConversationApi(TransactionCase):
         cls.manager_group = cls.env.ref('pan_mail_pro.group_mail_mailbox_manager')
 
     def _mail(self, direction='incoming', subject='Offerte', record=None,
-              body='<p>Kunnen jullie de levertijd bevestigen?</p>'):
+              body='<p>Kunnen jullie de levertijd bevestigen?</p>', mailbox=None):
         record = record if record is not None else self.lead
         return self.env['mail.message'].create({
             'model': record._name,
@@ -55,7 +55,7 @@ class TestConversationApi(TransactionCase):
             'author_id': self.customer.id,
             'email_from': self.customer.email,
             'x_direction': direction,
-            'x_mailbox_id': self.mailbox.id,
+            'x_mailbox_id': (mailbox or self.mailbox).id,
         })
 
     def test_an_unconnected_instance_refuses_every_read(self):
@@ -856,6 +856,118 @@ class TestConversationApi(TransactionCase):
             'crm.lead', self.lead.id)['here'], 1)
         self.assertEqual(len(self.Conversation.read_conversation(
             'crm.lead', self.lead.id)['files']['ids']), 2)
+
+    # ---------------------------------------------------------- whose mailbox
+
+    def _personal_mailbox(self, login):
+        """A mailbox manager and the personal mailbox on their own address."""
+        owner = self._mailbox_manager(login)
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': login, 'provider': 'imap', 'owner_user_id': owner.id})
+        self.assertEqual(mailbox.mailbox_type, 'personal')
+        return owner, mailbox
+
+    def _may_read_every_lead(self, user):
+        user.write({'group_ids': [
+            (4, self.env.ref('sales_team.group_sale_salesman_all_leads').id)]})
+
+    def test_a_colleague_s_mailbox_shows_its_linked_mail_and_nothing_else(self):
+        """The rule, from the side of the person it keeps out.
+
+        A mail on a contact only is the unlinked state, and a contact is
+        readable by everyone, so Odoo's own rule showed every unplaced mail
+        of a colleague's mailbox to every manager. In somebody else's
+        mailbox only the linked mail is on screen, on every door the Inbox
+        has, and the counts beside the folders agree with the list.
+        """
+        owner, theirs = self._personal_mailbox('anna@company.test')
+        unlinked = self._mail(record=self.customer, subject='Only on the contact',
+                              mailbox=theirs)
+        linked = self._mail(subject='On the lead', mailbox=theirs)
+        reader = self._mailbox_manager('sam.whose@company.test')
+        self._may_read_every_lead(reader)
+        as_reader = self.Conversation.with_user(reader)
+
+        rows = as_reader.search_conversations(mailbox_id=theirs.id)
+        self.assertEqual([row['subject'] for row in rows], ['On the lead'],
+                         'the positive control: linked mail on a readable record')
+        rows = as_reader.search_conversations(in_a_mailbox=True)
+        self.assertEqual([row['subject'] for row in rows], ['On the lead'],
+                         'All mailboxes is no way around it')
+        counts = {entry['id']: entry['count']
+                  for entry in as_reader.folder_counts(mailbox_id=theirs.id)}
+        self.assertEqual(counts['inbox'], 1)
+        on_contact = self._search_filter('on_contact')
+        self.assertEqual(as_reader.search_conversations(
+            mailbox_id=theirs.id, domain=on_contact['domain'],
+            ungrouped=on_contact['ungrouped']), [])
+
+        # Every other door: reading, unfolding, marking, door 1, the timeline.
+        self.assertEqual(as_reader.read_conversation(
+            'res.partner', self.customer.id, mailbox_id=theirs.id)['messages'], [])
+        self.assertEqual(as_reader.conversation_messages(
+            'res.partner', self.customer.id, mailbox_id=theirs.id), [])
+        self.assertEqual(as_reader.set_read(
+            'res.partner', self.customer.id, mailbox_id=theirs.id)['count'], 0)
+        self.assertEqual(as_reader.record_conversations(
+            'res.partner', self.customer.id)['here'], 0)
+        ids = [item['id'] for item in as_reader.customer_timeline(self.customer.id)['items']]
+        self.assertNotIn(unlinked.id, ids)
+        self.assertIn(linked.id, ids)
+
+    def test_linked_is_not_enough_the_record_has_to_be_theirs_to_read(self):
+        """The second clause of the rule stays Odoo's: linked to a lead the
+        reader may not open is as closed as unlinked."""
+        owner, theirs = self._personal_mailbox('anna.crm@company.test')
+        self._mail(subject='On a lead they may not open', mailbox=theirs)
+        reader = self._mailbox_manager('sam.nocrm@company.test')
+        rows = self.Conversation.with_user(reader).search_conversations(
+            mailbox_id=theirs.id)
+        self.assertEqual(rows, [])
+
+    def test_the_owner_reads_the_whole_of_their_own_mailbox(self):
+        """The rule, from the side of the person it is for: the unlinked
+        mail is on screen for the one person whose mailbox it came from."""
+        owner, mine = self._personal_mailbox('anna.own@company.test')
+        self._may_read_every_lead(owner)
+        self._mail(record=self.customer, subject='Only on the contact', mailbox=mine)
+        self._mail(subject='On the lead', mailbox=mine)
+        as_owner = self.Conversation.with_user(owner)
+
+        rows = as_owner.search_conversations(mailbox_id=mine.id)
+        self.assertEqual(sorted(row['subject'] for row in rows),
+                         ['On the lead', 'Only on the contact'])
+        counts = {entry['id']: entry['count']
+                  for entry in as_owner.folder_counts(mailbox_id=mine.id)}
+        self.assertEqual(counts['inbox'], 2)
+        on_contact = self._search_filter('on_contact')
+        rows = as_owner.search_conversations(
+            mailbox_id=mine.id, domain=on_contact['domain'],
+            ungrouped=on_contact['ungrouped'])
+        self.assertEqual([row['subject'] for row in rows], ['Only on the contact'])
+
+    def test_a_shared_mailbox_s_unlinked_mail_is_the_team_s(self):
+        """The hard call, pinned: a shared mailbox has no owner, so its
+        contact-only mail is the pile every manager may work through."""
+        self._mail(record=self.customer, subject='Only on the contact')
+        reader = self._mailbox_manager('sam.shared@company.test')
+        rows = self.Conversation.with_user(reader).search_conversations(
+            mailbox_id=self.mailbox.id)
+        self.assertEqual([row['subject'] for row in rows], ['Only on the contact'])
+
+    def test_mail_in_no_mailbox_is_still_on_the_record_s_door(self):
+        """The one row the clause must never drop: what the chatter sent
+        before this module was installed is in no mailbox, and door 1 opens
+        on it."""
+        message = self._mail(record=self.customer, subject='Before Mail Pro')
+        message.x_mailbox_id = False
+        reader = self._mailbox_manager('sam.before@company.test')
+        as_reader = self.Conversation.with_user(reader)
+        self.assertEqual(as_reader.record_conversations(
+            'res.partner', self.customer.id)['here'], 1)
+        rows = as_reader.search_conversations(
+            record_model='res.partner', record_id=self.customer.id)
+        self.assertEqual([row['subject'] for row in rows], ['Before Mail Pro'])
 
     def test_the_inbox_is_for_people_who_read_a_mailbox(self):
         """A group on a menu is not an access rule, so the methods check too."""

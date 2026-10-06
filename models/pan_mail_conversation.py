@@ -185,11 +185,50 @@ class PanMailConversation(models.AbstractModel):
         `is_internal` is what keeps the notes out of the second branch: a note
         posted to followers is mailed to them, so it is outgoing too, and it
         is not correspondence.
+
+        The second half is whose: `_whose_domain` says what a colleague's
+        personal mailbox shows, and it rides on every query this file makes
+        because this is the one domain they all start from.
         """
         return ['|', ('message_type', '=', 'email'),
                 '&', '&', ('x_direction', '=', 'outgoing'),
                 ('message_type', 'in', SENT_TYPES),
-                ('is_internal', '=', False)]
+                ('is_internal', '=', False)] + self._whose_domain()
+
+    def _whose_domain(self):
+        """A colleague's personal mailbox shows its linked mail, nothing else.
+
+        Odoo's own rule on `mail.message` answers "may this person read the
+        document this mail is on", and the Inbox leans on it for every record
+        but one. The fallback home of a mail the matcher could not place is
+        the sender's contact, and a contact is readable by every internal
+        user -- so under that rule alone, every unplaced mail in a personal
+        mailbox was on screen for every mailbox manager in the company. That
+        is the opposite of what the screen promises: a mail on a contact only
+        is the unlinked state everywhere else in this module (the folder, the
+        coverage report, the suggestion), and an unlinked mail in somebody
+        else's mailbox is theirs to read, not yours.
+
+        So the owner of a personal mailbox sees the whole of what the sync
+        imported from it, the unlinked mail included. Everyone else sees the
+        mail of it that is linked to a record, and then only on the records
+        Odoo lets them open. A shared mailbox has no owner and is the team's:
+        its contact-only mail stays on screen for every manager, because that
+        is the pile somebody has to work through. Mail in no mailbox at all --
+        what the chatter sent before this module was installed -- is door 1's
+        and passes.
+
+        The positive form on purpose. `not any` and a dotted `!=` leave the
+        row with no mailbox to the ORM's reading of a negative operator, and
+        that is the one row this clause must never drop. The `any` subquery
+        runs as the reader, which is right: `_check_caller` already made them
+        a mailbox manager, and a manager sees every mailbox.
+        """
+        return ['|', '|',
+                ('x_mailbox_id', '=', False),
+                ('x_mailbox_id', 'any', ['|', ('mailbox_type', '!=', 'personal'),
+                                         ('owner_user_id', '=', self.env.user.id)]),
+                ('model', '!=', 'res.partner')]
 
     def _base_domain(self, mailbox_id=None, partner_id=None, domain=None,
                      in_a_mailbox=False):
