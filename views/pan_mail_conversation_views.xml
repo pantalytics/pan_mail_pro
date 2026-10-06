@@ -105,13 +105,13 @@
               name="Mail Pro"
               web_icon="pan_mail_pro,static/description/icon.png"
               sequence="30"
-              groups="base.group_user"/>
+              groups="base.group_user,-pan_mail_pro.group_mail_mailbox_manager"/>
 
     <menuitem id="menu_pan_mail_conversation"
               name="Inbox"
               parent="menu_pan_mail_app"
               action="action_pan_mail_conversation"
               sequence="1"
-              groups="base.group_user"/>
+              groups="base.group_user,-pan_mail_pro.group_mail_mailbox_manager"/>
 
 </odoo>
