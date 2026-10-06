@@ -90,10 +90,19 @@ class ResUsers(models.Model):
              'of mail on top of that.',
     )
 
+    # Why Connect mailbox is not offered right now, in the reader's words,
+    # or empty when it is. A plain user is sent to their administrator and
+    # nowhere else: Settings > Mail Pro is a page they cannot open.
+    x_pan_mail_connect_blocker = fields.Char(
+        compute='_compute_pan_mail_connect_blocker',
+        help='What has to happen before this user can connect a mailbox.',
+    )
+
     @property
     def SELF_READABLE_FIELDS(self):
         return super().SELF_READABLE_FIELDS + [
             'x_default_mailbox_id',
+            'x_pan_mail_connect_blocker',
             'x_pan_mail_connected',
             'x_pan_mail_connected_as',
             'x_pan_mail_personal_mailbox_id',
@@ -242,25 +251,34 @@ class ResUsers(models.Model):
             'target': 'new',
         }
 
-    def _pan_mail_should_prompt_connect(self, link=None, sync_allowed=None):
-        """Should this user be shown the "connect your mailbox" banner?
+    @api.depends_context('uid')
+    def _compute_pan_mail_connect_blocker(self):
+        blocker = self._pan_mail_connect_blocker()
+        for user in self:
+            user.x_pan_mail_connect_blocker = blocker
 
-        Only where the button behind it would work. Four things have to be
-        true, and each one is a way the nudge would otherwise be a lie:
+    @api.model
+    def _pan_mail_connect_blocker(self, link=None, sync_allowed=None):
+        """What stops `action_connect_mailbox` from reaching a consent screen.
 
-        - the user is internal and not connected yet -- the question itself
+        One sentence addressed to whoever is reading, or False when the button
+        works. Four things have to be true, and each one is a way the button
+        would otherwise end in an error dialog:
+
         - a provider is chosen *and* its application registration is complete,
-          because `action_connect_mailbox` refuses without one and the consent
-          screen cannot be built
+          because the consent screen cannot be built without one
         - that provider has a consent screen at all: an IMAP/SMTP password is
           typed in by an administrator, so there is nothing for the user to click
-        - the database is not a neutralized copy, where connecting would hand a
-          staging database real credentials
+        - the instance is connected to Pantalytics, because a new account is
+          refused on one that is not
+        - the internal domains are set, because the callback cannot claim the
+          personal mailbox without them and the user would end up connected
+          with no mailbox
 
-        Deliberately not asked: whether setup is finished. The first person to
-        connect is usually the administrator who is on step 3 and needs an
-        owner for the notification mailbox, so a banner that waits for setup to
-        be done waits for the thing it is meant to unblock.
+        Deliberately not asked: whether the notification mailbox exists. The
+        first person to connect is usually the administrator who is on that
+        step and needs an owner for it, so a rule that waits for setup to be
+        done waits for the thing it is meant to unblock.
 
         `link` is the Pantalytics link when the caller has it (`ir.http`
         resolves it once per page load and asks every question of that row);
@@ -268,24 +286,41 @@ class ResUsers(models.Model):
         answer when the caller has already asked it -- `ir.http` again, which
         needs the same answer for a flag of its own -- and `None` means ask.
         """
+        if self.env.user.has_group('base.group_system'):
+            setup = _('Finish the setup under Settings > Mail Pro, then connect here.')
+        else:
+            setup = _('Ask your administrator to finish setting up Mail Pro.')
+        provider = self.env['pan.mail.provider'].current().provider
+        if not provider:
+            return setup
+        if not get_provider_client(self.env, provider).uses_oauth:
+            return _('An IMAP/SMTP mailbox is connected by an administrator, '
+                     'on the account.')
+        if not self.env['pan.mail.setup'].credentials_set(provider):
+            return setup
+        if sync_allowed is None:
+            License = self.env['pan.mail.license'] if link is None else link
+            sync_allowed = License.sync_allowed()
+        if not sync_allowed:
+            return setup
+        if not self.env['pan.mail.domain'].is_configured():
+            return setup
+        return False
+
+    def _pan_mail_should_prompt_connect(self, link=None, sync_allowed=None):
+        """Should this user be shown the "connect your mailbox" banner?
+
+        Only where the button behind it would work: the user is internal and
+        not connected yet, the database is not a neutralized copy (where
+        connecting would hand a staging database real credentials), and
+        `_pan_mail_connect_blocker` has nothing to say.
+        """
         self.ensure_one()
         if not self._is_internal() or self.x_pan_mail_connected:
             return False
         if database_is_neutralized(self.env):
             return False
-        if sync_allowed is None:
-            License = self.env['pan.mail.license'] if link is None else link
-            sync_allowed = License.sync_allowed()
-        if not sync_allowed:
-            # A new account is refused on an unconnected instance, so the
-            # button would end in a refusal after the consent screen.
-            return False
-        provider = self.env['pan.mail.provider'].current().provider
-        if not provider:
-            return False
-        if not get_provider_client(self.env, provider).uses_oauth:
-            return False
-        return self.env['pan.mail.setup'].credentials_set(provider)
+        return not self._pan_mail_connect_blocker(link=link, sync_allowed=sync_allowed)
 
     def action_disconnect_mailbox(self, provider=None):
         """Forget this user's stored credentials.
