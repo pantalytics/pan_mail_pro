@@ -180,12 +180,11 @@ class TestConnectBannerSession(HttpCase):
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
 
         self.assertTrue(info['pan_mail_connect_prompt'])
-        # Door 1's button rides the same payload. An employee who may not
-        # open the Inbox never gets one, so the chatter never calls the read
-        # layer to be refused by it.
-        self.assertFalse(info['pan_mail_inbox'])
+        # The Inbox is every internal user's; the one gate the session
+        # carries is whether this Odoo is connected, below.
+        self.assertNotIn('pan_mail_inbox', info)
 
-    def test_the_session_says_who_may_open_the_inbox(self):
+    def test_the_session_says_whether_the_inbox_opens(self):
         self.env['pan.mail.domain'].set_domains(['company.test'])
         self.env['res.users'].create({
             'name': 'Mira Manager',
@@ -201,8 +200,7 @@ class TestConnectBannerSession(HttpCase):
 
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
 
-        self.assertTrue(info['pan_mail_inbox'])
-        # Whether the Inbox opens at all rides the same payload. The row
+        # Whether the Inbox opens at all rides the session payload. The row
         # `setUp` made is a live entitlement, so the answer here is yes; the
         # no, and the screen it draws, is tools/ui_check.py's.
         self.assertIn('pan_mail_connected', info)
@@ -252,8 +250,6 @@ class TestSessionFlagsCost(TransactionCase):
         expected = {
             'pan_mail_connect_prompt': self.env.user._pan_mail_should_prompt_connect(),
             'pan_mail_improve': License.improve_config(),
-            'pan_mail_inbox': self.env.user.has_group(
-                'pan_mail_pro.group_mail_mailbox_manager'),
             'pan_mail_connected': License.sync_allowed(),
         }
         # The state the test is about: every question has a yes to find.

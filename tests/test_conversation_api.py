@@ -783,6 +783,29 @@ class TestConversationApi(TransactionCase):
                                   self.manager_group.id])],
         })
 
+    def test_a_plain_user_reads_what_odoo_lets_them_read(self):
+        """The Inbox is every internal user's since 19.0.27.0.0, and no
+        group of this module decides what they see: a user with no Mail Pro
+        right at all reads the mail on a contact, which Odoo lets them open,
+        and nothing of the lead, which it does not.
+        """
+        self._mail()
+        on_contact = self._mail(record=self.customer, subject='For everyone')
+        reader = self.env['res.users'].create({
+            'name': 'plain@company.test',
+            'login': 'plain@company.test',
+            'email': 'plain@company.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+
+        as_reader = self.Conversation.with_user(reader)
+        rows = as_reader.search_conversations(mailbox_id=self.mailbox.id)
+        self.assertEqual([row['subject'] for row in rows], ['For everyone'])
+        thread = as_reader.read_conversation('res.partner', self.customer.id)
+        self.assertEqual([m['id'] for m in thread['messages']], [on_contact.id])
+        self.assertEqual(
+            as_reader.read_conversation('crm.lead', self.lead.id)['messages'], [])
+
     def test_access_is_the_orm_s(self):
         """The test this layer exists to pass.
 

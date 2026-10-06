@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Four things in the session: does this user still have to connect a
-mailbox, may they open the Inbox at all, is this Odoo connected to a
-Pantalytics account, and may the Inbox report how it is used.
+"""Three things in the session: does this user still have to connect a
+mailbox, is this Odoo connected to a Pantalytics account, and may the Inbox
+report how it is used.
 
 The webclient asks nothing extra for it. `session_info` is already fetched once
 per page load, so the banner knows whether to draw itself before the first
@@ -46,7 +46,7 @@ class IrHttp(models.AbstractModel):
         if self.env.user._is_internal():
             flags = dict.fromkeys((
                 'pan_mail_connect_prompt', 'pan_mail_improve',
-                'pan_mail_inbox', 'pan_mail_connected'), False)
+                'pan_mail_connected'), False)
             try:
                 with self.env.cr.savepoint():
                     flags.update(self._pan_mail_session_flags())
@@ -88,7 +88,7 @@ class IrHttp(models.AbstractModel):
 
     def _pan_mail_session_flags(self):
         result = {}
-        # Three of the four flags are questions about the Pantalytics link,
+        # Two of the three flags are questions about the Pantalytics link,
         # and this runs for every internal user on every page load: the row
         # is looked up once here and handed to each question, rather than
         # searched for once per question. Not cached across requests -- the
@@ -111,12 +111,6 @@ class IrHttp(models.AbstractModel):
         # staleness: the answer changes once a day at most, and the Inbox
         # reads it before its first paint (pan_mail_license.improve_config).
         result['pan_mail_improve'] = License.improve_config(link=link)
-        # Door 1's button, in every chatter. Asked here rather than over
-        # RPC per record: without it the chatter would call the read
-        # layer on every form a plain user opens, and be refused every
-        # time -- an AccessError per record open, in everybody's log.
-        result['pan_mail_inbox'] = self.env.user.has_group(
-            'pan_mail_pro.group_mail_mailbox_manager')
         # Whether the Inbox opens at all: Mail Pro works on a connected
         # Odoo, and a screen full of panes on an instance that is not is
         # a product that looks finished and is not. Stale by a page load

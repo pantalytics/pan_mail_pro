@@ -68,6 +68,16 @@ class TestMenus(MailProTestCase):
             "a second screen under the app tile needs its own argument",
         )
 
+    def test_the_app_is_every_internal_users(self):
+        """The people who answer mail are not the people who configure it.
+        The tile and the Inbox under it ask for `base.group_user`; what a
+        reader then sees is the ORM's, and the configuration screens keep
+        their own groups under Settings."""
+        user = self.env.ref('base.group_user')
+        for xmlid in ('menu_pan_mail_app', 'menu_pan_mail_conversation'):
+            menu = self.env.ref('pan_mail_pro.%s' % xmlid)
+            self.assertEqual(menu.group_ids, user, xmlid)
+
     def test_the_inbox_is_fullscreen_and_keeps_its_way_back(self):
         """Fullscreen takes Odoo's navbar off the screen. Both halves, or none.
 

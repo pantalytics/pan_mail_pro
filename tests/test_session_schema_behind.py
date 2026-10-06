@@ -10,8 +10,7 @@ from unittest.mock import patch
 
 from odoo.tests import HttpCase, tagged
 
-FLAGS = ('pan_mail_connect_prompt', 'pan_mail_improve',
-         'pan_mail_inbox', 'pan_mail_connected')
+FLAGS = ('pan_mail_connect_prompt', 'pan_mail_improve', 'pan_mail_connected')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
