@@ -2837,7 +2837,7 @@ open. Without that clause the fallback home of an unplaced mail, the
 sender's contact, put every unlinked mail of every personal mailbox on
 screen for every mailbox manager, because a contact is readable by every
 internal user. A **shared** mailbox has no owner and is the team's: its
-contact-only mail stays on screen for every manager, because that is the
+contact-only mail stays on screen for every reader, because that is the
 pile somebody has to work through. Mail in no mailbox at all passes, for
 door 1. One case is left as Odoo has it: a mail in your own mailbox on a
 record you may not open stays hidden here as it is in the chatter. Nothing
