@@ -42,11 +42,20 @@
 
                     <group invisible="x_pan_mail_connected">
                         <div colspan="2">
-                            <div class="text-muted mb-3">Sign in so Odoo can send and read mail on your behalf</div>
-                            <button type="object"
-                                    name="action_connect_mailbox"
-                                    string="Connect mailbox"
-                                    class="btn-primary" icon="fa-sign-in"/>
+                            <!-- The button only where it works. Until then one
+                                 muted line says what has to happen first, and
+                                 to whom: a plain user is sent to their
+                                 administrator, never to a settings page they
+                                 cannot open. -->
+                            <field name="x_pan_mail_connect_blocker" nolabel="1" readonly="1"
+                                   class="text-muted" invisible="not x_pan_mail_connect_blocker"/>
+                            <div invisible="x_pan_mail_connect_blocker">
+                                <div class="text-muted mb-3">Sign in so Odoo can send and read mail on your behalf</div>
+                                <button type="object"
+                                        name="action_connect_mailbox"
+                                        string="Connect mailbox"
+                                        class="btn-primary" icon="fa-sign-in"/>
+                            </div>
                         </div>
                     </group>
 
@@ -114,11 +123,20 @@
 
                     <group invisible="x_pan_mail_connected">
                         <div colspan="2">
-                            <div class="text-muted mb-3">Sign in so Odoo can send and read mail on your behalf</div>
-                            <button type="object"
-                                    name="action_connect_mailbox"
-                                    string="Connect mailbox"
-                                    class="btn-primary" icon="fa-sign-in"/>
+                            <!-- The button only where it works. Until then one
+                                 muted line says what has to happen first, and
+                                 to whom: a plain user is sent to their
+                                 administrator, never to a settings page they
+                                 cannot open. -->
+                            <field name="x_pan_mail_connect_blocker" nolabel="1" readonly="1"
+                                   class="text-muted" invisible="not x_pan_mail_connect_blocker"/>
+                            <div invisible="x_pan_mail_connect_blocker">
+                                <div class="text-muted mb-3">Sign in so Odoo can send and read mail on your behalf</div>
+                                <button type="object"
+                                        name="action_connect_mailbox"
+                                        string="Connect mailbox"
+                                        class="btn-primary" icon="fa-sign-in"/>
+                            </div>
                         </div>
                     </group>
 

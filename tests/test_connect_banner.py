@@ -97,6 +97,30 @@ class TestConnectBanner(TransactionCase):
         self.assertTrue(real_gate._pan_mail_should_prompt_connect())
         self.assertEqual(real_gate.action_connect_mailbox('gmail')['type'], 'ir.actions.act_url')
 
+    def test_no_internal_domains_no_banner(self):
+        """The callback cannot claim the personal mailbox without them, so
+        the user would end up connected with no mailbox and no way to see why."""
+        self._set_up_provider()
+        self.env['pan.mail.domain'].set_domains([])
+        self.assertFalse(self.user._pan_mail_should_prompt_connect())
+
+    def test_a_plain_user_is_sent_to_their_administrator(self):
+        """Not to Settings > Mail Pro, which they cannot open."""
+        blocker = self.user.with_user(self.user).x_pan_mail_connect_blocker
+        self.assertIn('administrator', blocker)
+        self.assertNotIn('Settings', blocker)
+
+    def test_an_administrator_is_sent_to_the_setup(self):
+        self.assertIn('Settings > Mail Pro', self.user.x_pan_mail_connect_blocker)
+
+    def test_a_password_provider_names_the_account(self):
+        self._set_up_provider(provider='imap', client_id=False, client_secret=False)
+        self.assertIn('IMAP/SMTP', self.user.x_pan_mail_connect_blocker)
+
+    def test_nothing_blocks_a_ready_instance(self):
+        self._set_up_provider()
+        self.assertFalse(self.user.x_pan_mail_connect_blocker)
+
     def test_a_portal_user_may_not_connect_a_mailbox(self):
         portal = self.env['res.users'].create({
             'name': 'Customer',
