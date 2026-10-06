@@ -168,9 +168,9 @@ class TestReadState(TransactionCase):
         self.assertTrue(older.x_is_read, 'the older mail is left alone')
         push.assert_not_called()
 
-    def test_reading_a_mailbox_is_a_managers_act(self):
+    def test_reading_a_mailbox_is_an_internal_users_act(self):
         self._mail(read=False)
-        plain = new_test_user(self.env, login='read_plain', groups='base.group_user')
+        plain = new_test_user(self.env, login='read_portal', groups='base.group_portal')
         with self.assertRaises(AccessError):
             self.Conversation.with_user(plain).set_read('crm.lead', self.lead.id)
         with self.assertRaises(AccessError):

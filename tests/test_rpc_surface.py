@@ -5,9 +5,10 @@ A group on a menu is not an access rule, and a `sudo()` inside a public
 `@api.model` method is a way for anybody to do what that method does. The
 Inbox learnt this in 19.0.10.0.0 (`pan.mail.conversation._check_caller`); the
 domain list, the Pantalytics connection and the two indexes had not. So this
-file walks them as a plain user and expects a refusal, and it pins the public
-surface of the models that search as sudo, so a new public method there is a
-decision somebody made rather than a door somebody left open.
+file walks them as a plain user and expects a refusal, walks the Inbox as a
+portal user and on an unconnected instance and expects the same, and it pins
+the public surface of the models that search as sudo, so a new public method
+there is a decision somebody made rather than a door somebody left open.
 """
 from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, new_test_user, tagged
@@ -65,6 +66,7 @@ class TestRpcSurface(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.plain = new_test_user(cls.env, login='rpc_plain', groups='base.group_user')
+        cls.portal = new_test_user(cls.env, login='rpc_portal', groups='base.group_portal')
         cls.manager = new_test_user(
             cls.env, login='rpc_manager',
             groups='base.group_user,pan_mail_pro.group_mail_mailbox_manager')
@@ -159,15 +161,22 @@ class TestRpcSurface(TransactionCase):
                 f'{model_name} grew a public method; decide whether RPC may call it '
                 f'and add it to ALLOWED_PUBLIC, or make it private')
 
-    def test_the_inbox_is_for_mailbox_managers_on_every_method(self):
+    def test_the_inbox_is_for_internal_users_on_every_method(self):
         """`pan.mail.conversation` answers `call_kw` from any session, and
         the group on its menu protects nothing on its own. Every public
-        method is walked as a plain internal user, `inbox_search_view_id`
-        included: a view id is harmless, but the method still asks
-        `_check_caller`, so it is not deliberately open and the loop treats
-        it like the rest."""
+        method is walked as a portal user, `inbox_search_view_id` included:
+        a view id is harmless, but the method still asks `_check_caller`, so
+        it is not deliberately open and the loop treats it like the rest.
+
+        A plain internal user is the other half: the Inbox is theirs since
+        19.0.27.0.0, so the caller check lets them through and what they
+        then see is the ORM's business (`tests/test_conversation_api.py`).
+        """
         self._every_inbox_method_refuses(
-            self.env['pan.mail.conversation'].with_user(self.plain), 'plain user')
+            self.env['pan.mail.conversation'].with_user(self.portal), 'portal user')
+        as_plain = self.env['pan.mail.conversation'].with_user(self.plain)
+        self.assertEqual(as_plain.search_conversations(in_a_mailbox=True), [])
+        self.assertTrue(as_plain.inbox_search_view_id())
 
     def test_the_inbox_is_closed_on_an_unconnected_instance_on_every_method(self):
         """The second half of `_check_caller`: a mailbox manager on an Odoo

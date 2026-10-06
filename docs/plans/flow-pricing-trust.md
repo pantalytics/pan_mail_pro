@@ -39,7 +39,7 @@ app.mailpro.pantalytics.com/start
   └ Settings: licence line, Usage and billing        My Preferences → Mail Pro
                                                        Connect Mailbox → provider consent screen
                                                        Send from, Sync level, Send Test Email
-Mailbox form (Sync Settings tab, all mailboxes)      Inbox (mailbox managers only)
+Mailbox form (Sync Settings tab, all mailboxes)      Inbox (every internal user)
 ```
 
 Today the price is visible in two places: the licence line under Settings, and

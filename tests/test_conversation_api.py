@@ -516,12 +516,13 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(len(rows), row['count'])
 
     def test_unfolding_is_for_people_who_read_a_mailbox(self):
-        """Every method on this layer is reachable over `call_kw`."""
+        """Every method on this layer is reachable over `call_kw`, by a
+        portal user too; an internal user is the one it is for."""
         outsider = self.env['res.users'].create({
             'name': 'Buitenstaander',
             'login': 'outsider@company.test',
             'email': 'outsider@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         self._mail()
         with self.assertRaises(AccessError):
@@ -783,6 +784,29 @@ class TestConversationApi(TransactionCase):
                                   self.manager_group.id])],
         })
 
+    def test_a_plain_user_reads_what_odoo_lets_them_read(self):
+        """The Inbox is every internal user's since 19.0.27.0.0, and no
+        group of this module decides what they see: a user with no Mail Pro
+        right at all reads the mail on a contact, which Odoo lets them open,
+        and nothing of the lead, which it does not.
+        """
+        self._mail()
+        on_contact = self._mail(record=self.customer, subject='For everyone')
+        reader = self.env['res.users'].create({
+            'name': 'plain@company.test',
+            'login': 'plain@company.test',
+            'email': 'plain@company.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+
+        as_reader = self.Conversation.with_user(reader)
+        rows = as_reader.search_conversations(mailbox_id=self.mailbox.id)
+        self.assertEqual([row['subject'] for row in rows], ['For everyone'])
+        thread = as_reader.read_conversation('res.partner', self.customer.id)
+        self.assertEqual([m['id'] for m in thread['messages']], [on_contact.id])
+        self.assertEqual(
+            as_reader.read_conversation('crm.lead', self.lead.id)['messages'], [])
+
     def test_access_is_the_orm_s(self):
         """The test this layer exists to pass.
 
@@ -970,12 +994,13 @@ class TestConversationApi(TransactionCase):
         self.assertEqual([row['subject'] for row in rows], ['Before Mail Pro'])
 
     def test_the_inbox_is_for_people_who_read_a_mailbox(self):
-        """A group on a menu is not an access rule, so the methods check too."""
+        """A group on a menu is not an access rule, so the methods check too:
+        a portal user is refused, whatever the menu says."""
         stranger = self.env['res.users'].create({
             'name': 'Nina Nobody',
             'login': 'nina@company.test',
             'email': 'nina@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).search_conversations()
@@ -1010,7 +1035,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Nils Nobody',
             'login': 'nils@company.test',
             'email': 'nils@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).failure_remedy()

@@ -427,12 +427,19 @@ diagnostic view. 19.0.10.0.0 gives the tile back to the Inbox, by that same
 test: a tile is a promise about how often a screen is opened, and this is where
 somebody answers customer mail all day. The diagnostics stayed where they were.
 
-`pan.mail.conversation` is for mailbox managers, and says so itself: the menu
-carries the group, Odoo 19's `ir.actions.actions` cannot, and every method
-checks before it answers. It also reaches two tables whose ACL is
-manager-only (`pan.mail.thread.link`, `pan.mail.routing.log`) with `sudo()`,
-after the message search that fences the result -- the sudo buys the lookup,
-never the answer.
+`pan.mail.conversation` is every internal user's, since 19.0.27.0.0. Until
+then it was the Mailbox Manager group's, which made the Inbox a screen for the
+people who configure mail rather than the people who answer it. Opening it
+cost no new rule, because the screen never had a rule of its own to begin
+with: every read searches `mail.message` as the caller, the mailbox list is
+the mailbox rule's (shared ones, and the personal one you own), a reply
+offers what `_is_sendable_by` allows and a link goes only to a record the
+reader may write. The menu carries `base.group_user`, Odoo 19's
+`ir.actions.actions` cannot, and every method refuses a portal user before it
+answers. It also reaches two tables whose ACL is manager-only
+(`pan.mail.thread.link`, `pan.mail.routing.log`) with `sudo()`, after the
+message search that fences the result -- the sudo buys the lookup, never the
+answer.
 
 **The one exception is a draft.** `pan.mail.draft` is a table, because an
 unsent mail is the only thing on that screen that exists nowhere else: the
@@ -553,10 +560,11 @@ thread and that conversation opens; more than one and the Inbox lists the
 record's mail with nothing selected, because newest is a guess. The list
 narrowed that way spans every mailbox the reader may see -- they arrived from a
 record, not from a mailbox -- and the × next to the record's name gives the
-mailbox back. Who may see the button is `session_info`'s `pan_mail_inbox`, not
-an RPC per record: the Inbox is for mailbox managers, and an AccessError per
-form open is not a way to find that out. The per-message "messages elsewhere"
-line of the same door is not built.
+mailbox back. Whether the button asks at all is `session_info`'s
+`pan_mail_connected`, not an RPC per record: on an Odoo that is not linked to
+Pantalytics every read is refused, and an AccessError per form open is not a
+way to find that out. The per-message "messages elsewhere" line of the same
+door is not built.
 
 19.0.11.0.0 took the chatter out of the Inbox's fourth pane and put what it
 carried into a four-position strip over the third: Mail, Mail + notes (the notes
@@ -2814,8 +2822,9 @@ Record rules narrow the rows a group may see:
 
 A rule is not an ACL and a group on a menu is neither: a client action opens
 by URL and every public model method answers `call_kw`, so the Inbox's read
-methods and the live mailbox check ownership themselves (§1,
-`tests/test_rpc_surface.py`).
+methods refuse a portal user and the live mailbox checks ownership itself (§1,
+`tests/test_rpc_surface.py`). The Inbox itself is no group's: it is the
+`mail.message` rule, applied to whoever is reading.
 
 **Whose mailbox.** Odoo's own rule on `mail.message` decides whether a
 reader may open the document a mail is on, and the Inbox adds one clause in
@@ -2828,7 +2837,7 @@ open. Without that clause the fallback home of an unplaced mail, the
 sender's contact, put every unlinked mail of every personal mailbox on
 screen for every mailbox manager, because a contact is readable by every
 internal user. A **shared** mailbox has no owner and is the team's: its
-contact-only mail stays on screen for every manager, because that is the
+contact-only mail stays on screen for every reader, because that is the
 pile somebody has to work through. Mail in no mailbox at all passes, for
 door 1. One case is left as Odoo has it: a mail in your own mailbox on a
 record you may not open stays hidden here as it is in the chatter. Nothing

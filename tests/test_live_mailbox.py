@@ -110,8 +110,9 @@ class TestLiveMailbox(TransactionCase):
     # ------------------------------------------------------------------ access
 
     def test_a_plain_user_gets_nothing(self):
-        """The inbox is for mailbox managers, and this method is reachable over
-        `call_kw` by anybody who is logged in."""
+        """Not their mailbox. The Inbox is every internal user's, and this
+        method is reachable over `call_kw` by anybody who is logged in, so
+        ownership is what refuses, not a group."""
         with self.assertRaises(AccessError):
             self.Conversation.with_user(self.plain).live_messages(self.mailbox.id)
 

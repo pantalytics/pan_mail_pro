@@ -221,8 +221,11 @@ class PanMailConversation(models.AbstractModel):
         The positive form on purpose. `not any` and a dotted `!=` leave the
         row with no mailbox to the ORM's reading of a negative operator, and
         that is the one row this clause must never drop. The `any` subquery
-        runs as the reader, which is right: `_check_caller` already made them
-        a mailbox manager, and a manager sees every mailbox.
+        runs as the reader, which is right: the mailbox rule hides a
+        colleague's personal mailbox from a plain user, and a mailbox this
+        branch cannot see is one whose contact-only mail they may not read
+        anyway; its linked mail still passes on the third branch, under
+        Odoo's own rule on the record.
         """
         return ['|', '|',
                 ('x_mailbox_id', '=', False),
@@ -310,15 +313,23 @@ class PanMailConversation(models.AbstractModel):
     # ------------------------------------------------------------------
 
     def _check_caller(self):
-        """This layer is for people who read a mailbox.
+        """This layer is for people who read a mailbox: every internal user.
+
+        What each of them sees is the ORM's answer, not this method's. Every
+        read here searches `mail.message` as the caller, the mailbox list is
+        the mailbox rule's (shared ones, and the personal one you own), and
+        a reply offers the mailboxes `_is_sendable_by` allows. Until
+        19.0.27.0.0 the whole screen was the Mailbox Manager group's, which
+        made the Inbox a screen for the people who configure mail rather than
+        the people who answer it.
 
         The menu carries the group, but a menu is not an ACL: the action is
         reachable by URL and every method here is reachable over `call_kw`.
-        `security/pan_mail_pro_security.xml` already records what that costs,
-        in the release where a group on a menu was mistaken for a rule.
+        A portal user is refused here; a rule on `mail.message` is what keeps
+        the rest honest.
         """
-        if not self.env.user.has_group('pan_mail_pro.group_mail_mailbox_manager'):
-            raise AccessError(_("Mail Pro's inbox is for mailbox managers."))
+        if not self.env.user._is_internal():
+            raise AccessError(_("Mail Pro's inbox is for internal users."))
         # The screen refuses too, before it draws (`session.pan_mail_connected`),
         # and this is what makes that refusal a rule rather than a courtesy:
         # every read the Inbox makes comes through here.
@@ -745,10 +756,11 @@ class PanMailConversation(models.AbstractModel):
                 list it already drew is now wrong.
         """
         self._check_caller()
+        # Searched, not browsed: the mailbox rule decides which mailboxes
+        # this reader may ask about, and a `browse()` would step around it.
         Mailbox = self.env['pan.mail.mailbox']
-        mailboxes = (Mailbox.browse(int(mailbox_id)).exists() if mailbox_id
-                     else Mailbox.search([]))
-        return sum(mailbox.refresh_read_state() for mailbox in mailboxes)
+        domain = [('id', '=', int(mailbox_id))] if mailbox_id else []
+        return sum(mailbox.refresh_read_state() for mailbox in Mailbox.search(domain))
 
     @api.model
     def record_conversations(self, model, res_id):

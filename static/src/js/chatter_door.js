@@ -12,10 +12,10 @@
  * one they were just reading. `pan.mail.conversation.record_conversations()`
  * is what says which of the two this is.
  *
- * `session.pan_mail_inbox` is the gate. Without it this would call the read
- * layer on every form anybody opens and be refused on most of them: the Inbox
- * is for mailbox managers, and an AccessError per record open is not a way to
- * find that out.
+ * `session.pan_mail_connected` is the gate. Without it this would call the
+ * read layer on every form anybody opens and be refused on all of them until
+ * the Odoo is linked to Pantalytics: an AccessError per record open is not a
+ * way to find that out. Absent for a portal user, so they never ask.
  *
  * The button is added by inheriting `mail.Chatter` and it is a plain
  * `<button>` on purpose -- a component tag in a borrowed template resolves
@@ -49,7 +49,7 @@ patch(Chatter.prototype, {
     /** Is there mail on this record, and how many threads of it. */
     async loadMailProDoor(model, threadId) {
         this.mailPro.threads = 0;
-        if (!session.pan_mail_inbox || !session.pan_mail_connected || !model || !threadId) {
+        if (!session.pan_mail_connected || !model || !threadId) {
             return;
         }
         try {
