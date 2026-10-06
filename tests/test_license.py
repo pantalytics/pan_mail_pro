@@ -170,7 +170,7 @@ class TestLicense(TransactionCase):
     def test_approval_records_who_connected_and_when(self):
         """The Pantalytics account that approved, as the poll answer names it,
         the Odoo user who collected the key, and the time: a second
-        administrator reads whose workspace this Odoo is in off the settings
+        administrator reads whose workspace this Odoo is in off the account
         page a year later."""
         link = self.connected(poll=_response(200, {
             'status': 'linked', 'key': 'mpk_live_key',
@@ -179,10 +179,28 @@ class TestLicense(TransactionCase):
         self.assertEqual(link.connected_user_id, self.env.user)
         self.assertTrue(link.connected_on)
         self.assertEqual(link.connected_by(), 'rutger@pantalytics.com')
+        self.assertEqual(link.connected_by_name, 'rutger@pantalytics.com')
         settings = self.env['res.config.settings'].create({})
-        self.assertEqual(settings.x_license_connected_by, 'rutger@pantalytics.com')
-        self.assertEqual(settings.x_license_connected_on, link.connected_on)
         self.assertTrue(settings.x_setup_account_done)
+
+    def test_the_settings_line_opens_the_account_page(self):
+        """Step 1 reads "Connected" and its arrow lands on the row, the way
+        the other three steps land on their tables. Who connected it, when,
+        the plan and the way out are there, not on the line."""
+        link = self.connected()
+        settings = self.env['res.config.settings'].create({})
+        action = settings.action_license_open()
+        self.assertEqual(action['type'], 'ir.actions.act_window')
+        self.assertEqual(action['res_model'], 'pan.mail.license')
+        self.assertEqual(action['res_id'], link.id)
+        self.assertEqual(action['view_mode'], 'form')
+
+    def test_disconnecting_from_the_account_page_returns_to_settings(self):
+        """The row left behind has nothing on it; the Connect button is on
+        the settings page, so that is where Disconnect lands."""
+        action = self.connected().action_disconnect()
+        self.assertEqual(action['res_model'], 'res.config.settings')
+        self.assertEqual(action['context']['module'], 'pan_mail_pro')
 
     def test_an_older_server_that_names_no_account_leaves_the_odoo_user(self):
         link = self.connected()
@@ -484,14 +502,15 @@ class TestLicense(TransactionCase):
 
     # --- usage and billing are read at Pantalytics -----------------------------
 
-    def test_the_settings_page_links_to_the_dashboard(self):
-        """One link out, and no usage screen here: the number that decides the
-        invoice is the one the server counted."""
+    def test_the_account_page_links_to_the_dashboard(self):
+        """One button out, and no usage screen here: the number that decides
+        the invoice is the one the server counted."""
         url = self.env['pan.mail.license'].dashboard_url()
         self.assertTrue(url.startswith('http'))
         self.assertTrue(url.endswith('/admin/mail-pro'))
-        settings = self.env['res.config.settings'].create({})
-        self.assertEqual(settings.x_license_dashboard_url, url)
+        action = self.connected().action_open_dashboard()
+        self.assertEqual(action['type'], 'ir.actions.act_url')
+        self.assertEqual(action['url'], url)
 
     # --- help improve Mail Pro -------------------------------------------------
 

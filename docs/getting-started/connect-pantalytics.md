@@ -19,8 +19,10 @@ workspace afterwards, under **Members**.
    with a short code already filled in; the same code is shown in Odoo
 3. Sign in with your Pantalytics account, or create one
 4. Check that the page names this Odoo instance, and press **Approve**
-5. Press the button back to your Odoo. Step 1 now reads **Active**, with
-   who connected it and when, and steps 2 to 4 appear below it
+5. Press the button back to your Odoo. Step 1 now reads **Connected** and
+   steps 2 to 4 appear below it. The arrow on step 1 opens the account page:
+   who connected it and when, the plan and its valid-until date, **Usage and
+   billing**, and **Disconnect**
 
 No tab opened? The Settings page shows the link under the code. Approved but
 Odoo still says it is waiting? Press **Check Approval**. Connected, but the
@@ -44,8 +46,9 @@ administer, ask an administrator of that workspace to approve instead.
   Pantalytics cannot be reached, the last answer stays valid for 14 days;
   after that, incoming sync pauses until the next successful check. Sending
   never stops for a licence reason.
-- **Disconnect** forgets the key. You can connect again at any time; the
-  instance keeps its place in the workspace.
+- **Disconnect**, on the account page behind the arrow on step 1, forgets
+  the key. You can connect again at any time; the instance keeps its place in
+  the workspace.
 
 ## What leaves your server
 
@@ -56,7 +59,8 @@ document, to a contact only, or to nothing, per matching rule how often it
 decided and how often somebody overruled it, and how many conversations were
 linked by hand. Counts and rule names. When you connect, the Odoo URL is sent
 too so the approval page can name this instance, and the email address of the
-Pantalytics account that approved is stored in Odoo, on the Settings page.
+Pantalytics account that approved is stored in Odoo, on the account page
+behind step 1 of the Settings checklist.
 Never an address from your mail, a subject, a body or a name. See
 [Security](../security.md).
 

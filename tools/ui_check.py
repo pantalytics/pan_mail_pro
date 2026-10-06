@@ -30,6 +30,7 @@ import gzip
 import http.server
 import json
 import os
+import re
 import sys
 import threading
 import urllib.parse
@@ -157,23 +158,63 @@ class Checks:
         if 'Pantalytics B.V.' not in text:
             self.fail('About does not carry the copyright line')
 
-        # Step 1, connected: one way out and nothing of the not-connected or
-        # pending states leaking onto the screen. Who connected is on the
-        # line, because the seed says so.
-        if 'Connected by' not in steps[0].inner_text():
-            self.fail('step 1 does not say who connected')
-        for leaked in ('Connect to Pantalytics', 'Check approval'):
+        # Step 1, connected: one word, and nothing of the not-connected or
+        # pending states leaking onto the screen. Who connected, usage and
+        # billing and the way out moved to the account page behind the arrow.
+        head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
+        if head != '1. Pantalytics account Connected':
+            self.fail(f'step 1 reads "{head}", not "Connected"')
+        if 'Connected by' in steps[0].inner_text():
+            self.fail('step 1 still says who connected; that is the account page')
+        for leaked in ('Connect to Pantalytics', 'Check approval', 'Disconnect'):
             if any(b.is_visible() and b.inner_text().strip() == leaked
                    for b in block.query_selector_all('button')):
-                self.fail(f'a connected database shows "{leaked}"')
-        if not any(b.is_visible() and b.inner_text().strip() == 'Disconnect'
-                   for b in block.query_selector_all('button')):
-            self.fail('a connected database offers no way to disconnect')
+                self.fail(f'a connected database shows "{leaked}" on the checklist')
+
+        # Steps 3 and 4 answer with a count. A list of domains or addresses
+        # does not fit on the line; a count always does.
+        for step, noun in ((steps[2], 'domain'), (steps[3], 'mailbox')):
+            values = [' '.join(v.inner_text().split())
+                      for v in step.query_selector_all('.o_mailpro_step_value')
+                      if v.is_visible()]
+            if not any(re.fullmatch(rf'\d+ {noun}(s|es)?', v) for v in values):
+                self.fail(f'the {noun}s line reads {values}, not a count')
 
         # Help improve Mail Pro is the workspace's yes; the seed says no, so
         # the switch that could only refuse it is not on the page at all.
         if self.improve_toggle(block):
             self.fail('Help improve Mail Pro is off for the workspace, yet the page shows its switch')
+
+        # Last, because it leaves the settings page.
+        self.settings_account(steps[0])
+
+    def settings_account(self, step):
+        """The arrow on step 1: the account page, where the line's detail
+        went. Who connected it, when it runs out, the way to usage and billing
+        and the way out -- the same shape as the tables behind the other three
+        arrows, so the checklist is four lines with four arrows."""
+        page = self.page
+        arrow = step.query_selector('button.o_mailpro_step_edit')
+        if not arrow or not arrow.is_visible():
+            self.fail('step 1 has no arrow to the account page')
+            return
+        arrow.click()
+        page.wait_for_selector('.o_field_widget[name=connected_by_name]', timeout=30000)
+        page.wait_for_timeout(800)
+        self.shot('settings-account.png')
+        form = page.query_selector('.o_form_view')
+        text = form.inner_text()
+        for wanted in ('Connected by', 'seed@pantalytics.test', 'Valid Until'):
+            if wanted not in text:
+                self.fail(f'the account page does not show "{wanted}"')
+        for wanted in ('Usage and billing', 'Disconnect'):
+            if not any(b.is_visible() and b.inner_text().strip() == wanted
+                       for b in form.query_selector_all('button')):
+                self.fail(f'the account page offers no "{wanted}"')
+        # Read-only: the row is written by the pairing and the heartbeat.
+        if form.query_selector('.o_form_editable'):
+            self.fail('the account page opened editable')
+        self.error_free('the Pantalytics account page')
 
     def improve_toggle(self, block):
         """The Help improve Mail Pro switch, or None while it is not on the page."""

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- One row: this Odoo's link to a Pantalytics account. The settings
+         checklist says "Connected" and its arrow lands here, the same way the
+         other three steps land on their tables: who connected it and when,
+         what the last signed answer said, the way to usage and billing, and
+         the way out. Nothing is typed on this page. The row is written by the
+         pairing and the heartbeat, so the form is read-only and its two
+         buttons are the only controls. No menu: the arrow is the way in. -->
+    <record id="view_pan_mail_license_form" model="ir.ui.view">
+        <field name="name">pan.mail.license.form</field>
+        <field name="model">pan.mail.license</field>
+        <field name="arch" type="xml">
+            <form string="Pantalytics account" create="false" edit="false" delete="false" duplicate="false">
+                <header>
+                    <!-- Usage and the invoice live at Pantalytics. A button
+                         out, not a copy of the numbers: the count that decides
+                         the invoice is the one that server kept. -->
+                    <button name="action_open_dashboard" type="object"
+                            string="Usage and billing" class="btn-primary"/>
+                    <button name="action_disconnect" type="object"
+                            string="Disconnect" class="btn-secondary"
+                            confirm="This Odoo instance forgets its Pantalytics key. You can connect again at any time."/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="status" widget="badge"
+                                   decoration-success="status in ('active', 'trialing')"
+                                   decoration-warning="status == 'past_due'"
+                                   decoration-danger="status in ('canceled', 'revoked', 'invalid')"/>
+                            <field name="plan"/>
+                            <field name="valid_until"/>
+                        </group>
+                        <group>
+                            <field name="connected_by_name"/>
+                            <field name="connected_on"/>
+                            <field name="last_check"/>
+                        </group>
+                    </group>
+                    <!-- Only while there is something to say: an empty
+                         "Message" row reads as a field somebody forgot. -->
+                    <group>
+                        <field name="message" string="From Pantalytics" invisible="not message"/>
+                        <field name="last_error" class="text-danger" invisible="not last_error"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>

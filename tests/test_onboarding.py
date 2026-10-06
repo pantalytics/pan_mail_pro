@@ -263,7 +263,9 @@ class TestSetupChecklist(TransactionCase):
 
         settings = self._settings()
         self.assertTrue(settings.x_setup_notification_done)
-        self.assertEqual(settings.x_notification_mailbox_id, mailbox)
+        self.assertEqual(self.env['mail.mail']._notification_mailbox(), mailbox)
+        # The line answers with a count; which one sends is on the list.
+        self.assertEqual(settings.x_mailboxes_summary, '1 mailbox')
 
     def test_an_oauth_notification_mailbox_needs_a_connected_owner(self):
         """The step that asked "has anybody signed in" is now this constraint."""
@@ -296,7 +298,8 @@ class TestSetupChecklist(TransactionCase):
 
         first.is_notification_mailbox = False
         second.is_notification_mailbox = True
-        self.assertEqual(self._settings().x_notification_mailbox_id, second)
+        self.assertEqual(self.env['mail.mail']._notification_mailbox(), second)
+        self.assertEqual(self._settings().x_mailboxes_summary, '2 mailboxes')
 
     def test_domains_step_needs_a_domain(self):
         """The only way to finish step 4 is to name your domains."""
@@ -315,10 +318,12 @@ class TestSetupChecklist(TransactionCase):
 
         self.assertIn('suggestme.test', settings.x_internal_domain_ids.mapped('name'))
 
-    def test_the_domains_line_shows_the_list(self):
-        """The step shows its answer, not just its heading."""
+    def test_the_domains_line_counts_the_list(self):
+        """The step shows its answer, not just its heading -- and the answer
+        is a count, because a list does not fit on a line and a count always
+        does. The list is one arrow away."""
         self.env['pan.mail.domain'].set_domains(['one.test', 'two.test'])
 
         settings = self._settings()
 
-        self.assertEqual(settings.x_internal_domains_summary, 'one.test, two.test')
+        self.assertEqual(settings.x_internal_domains_summary, '2 domains')
