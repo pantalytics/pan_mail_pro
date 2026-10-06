@@ -80,8 +80,10 @@ After installing the module, go to **Settings** → scroll to **Mail Pro** and
 press **Connect to Pantalytics** (see
 [docs/getting-started/connect-pantalytics.md](docs/getting-started/connect-pantalytics.md)).
 
-The page is a checklist of four steps. Step 1 is that connection; the arrow
-on each of the other lines opens the table where it is answered:
+The page is a checklist of four steps. Step 1 is that connection, and its
+arrow opens the account page (who connected, plan, usage and billing,
+disconnect); the arrow on each of the other lines opens the table where it
+is answered:
 
 2. **Email provider** - where your mail is hosted (Microsoft 365, Google
    Workspace or IMAP/SMTP), with the app registration or OAuth client that

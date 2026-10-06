@@ -27,11 +27,14 @@
                          the name, the answer, and the way to the place you
                          change it. Steps 2 to 4 are tables, so that way is a
                          link to the table — nothing is typed on this page.
-                         Step 1 is a pairing with our server, so its way is a
-                         button on the line itself. Anything longer than an
-                         answer — a warning, a fix — goes on its own line under
-                         the name, never beside it, so the column of dots and
-                         names stays a column. -->
+                         Step 1 is a pairing with our server, so while it is
+                         open its way is a button on the line itself; once it
+                         is connected the line reads "Connected" and its arrow
+                         opens the account page like the other three. An
+                         answer is one word or one number, never a list.
+                         Anything longer than an answer — a warning, a fix —
+                         goes on its own line under the name, never beside it,
+                         so the column of dots and names stays a column. -->
                     <h2>Setup</h2>
                     <div class="row mt-3 o_settings_container">
                     <div class="col-12 o_setting_box o_mailpro_steps">
@@ -53,7 +56,11 @@
                                 <span class="o_mailpro_step_name">1. Pantalytics account</span>
                                 <span class="o_mailpro_step_value" invisible="x_license_state != 'not_connected'">Not connected</span>
                                 <span class="o_mailpro_step_value" invisible="x_license_state != 'pending'">Waiting for approval</span>
-                                <span class="o_mailpro_step_value" invisible="x_license_state != 'connected'">
+                                <!-- One word while the link holds. When it
+                                     broke, the dot is red and the word is what
+                                     broke: Payment failed, Revoked. -->
+                                <span class="o_mailpro_step_value" invisible="not x_setup_account_done">Connected</span>
+                                <span class="o_mailpro_step_value" invisible="x_license_state != 'connected' or x_setup_account_done">
                                     <field name="x_license_status" nolabel="1" readonly="1" class="d-inline"/>
                                 </span>
                             </div>
@@ -79,23 +86,11 @@
                                 <button name="action_license_disconnect" type="object"
                                         string="Cancel" class="btn-link"/>
                             </div>
-                            <!-- Who connected, and when: the Pantalytics
-                                 account that approved, so a second
-                                 administrator knows whose workspace this Odoo
-                                 is in. -->
-                            <div class="o_mailpro_step_msg"
-                                 invisible="x_license_state != 'connected' or not x_license_connected_by">
-                                Connected by <field name="x_license_connected_by" nolabel="1" readonly="1" class="d-inline"/>
-                                on <field name="x_license_connected_on" nolabel="1" readonly="1" class="d-inline"/>
-                            </div>
-                            <div class="o_mailpro_step_msg"
-                                 invisible="x_license_state != 'connected' or not x_license_message">
-                                <field name="x_license_message" nolabel="1" readonly="1"/>
-                            </div>
-                            <div class="o_mailpro_step_msg"
-                                 invisible="x_license_state != 'connected' or not x_license_valid_until">
-                                Valid until <field name="x_license_valid_until" nolabel="1" readonly="1" class="d-inline"/>
-                            </div>
+                            <!-- A failure stays on the line it happened to,
+                                 with its fix under it. Everything else about a
+                                 connected account — who, when, the plan, usage
+                                 and billing, Disconnect — is on the account
+                                 page the arrow opens. -->
                             <div class="o_mailpro_step_msg o_mailpro_msg_warn"
                                  invisible="not x_license_sync_blocked or x_license_state != 'connected'">
                                 Incoming mail is not synced and no new mailbox can be connected until this
@@ -104,21 +99,16 @@
                             <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_license_last_error">
                                 <field name="x_license_last_error" nolabel="1" readonly="1"/>
                             </div>
-                            <!-- Usage and the invoice live at Pantalytics. A link, not a
-                                 copy of the numbers: the count that decides the invoice is
-                                 the one that server kept. -->
-                            <div class="o_mailpro_step_msg" invisible="x_license_state != 'connected'">
-                                <field name="x_license_dashboard_url" widget="url" nolabel="1"
-                                       readonly="1" options="{'website_path': False}"
-                                       text="Usage and billing" class="me-3"/>
+                            <div class="o_mailpro_step_msg"
+                                 invisible="not x_license_sync_blocked or x_license_state != 'connected'">
                                 <button name="action_license_check" type="object"
-                                        string="Check again" class="btn-link p-0 me-3"
-                                        invisible="not x_license_sync_blocked"/>
-                                <button name="action_license_disconnect" type="object"
-                                        string="Disconnect" class="btn-link text-danger p-0"
-                                        confirm="This Odoo instance forgets its Pantalytics key. You can connect again at any time."/>
+                                        string="Check again" class="btn-link p-0"/>
                             </div>
                         </div>
+                        <button name="action_license_open" type="object"
+                                icon="oi-arrow-right" title="Pantalytics account"
+                                class="oe_link o_mailpro_step_edit"
+                                invisible="x_license_state != 'connected'"/>
                     </div>
 
                     <!-- Nothing below this line exists on an instance that is
@@ -211,14 +201,11 @@
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">4. Mailboxes</span>
-                                <!-- The address alone does not say why one of
-                                     several is the one on this line. The value
-                                     answers the step, so it has to say which
-                                     question it answered. -->
+                                <!-- A count, like the domains line. Which of
+                                     them sends Odoo's own mail is a column of
+                                     the list the arrow opens. -->
                                 <span class="o_mailpro_step_value" invisible="not x_setup_notification_done">
-                                    Notifications from
-                                    <field name="x_notification_mailbox_id" class="d-inline"
-                                           nolabel="1" readonly="1" options="{'no_open': True}"/>
+                                    <field name="x_mailboxes_summary" nolabel="1" readonly="1"/>
                                 </span>
                                 <span class="o_mailpro_step_value" invisible="x_setup_notification_done">No notification mailbox</span>
                             </div>

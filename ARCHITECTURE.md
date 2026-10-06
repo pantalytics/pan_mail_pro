@@ -2506,9 +2506,10 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   (`pan_mail_connected`) and asks once more when that says no, because the
   session is a page load old and an admin who has just connected has not
   reloaded anything.
-- **Usage and billing are read there, not here.** The settings page carries
-  one link (`dashboard_url()`, the workspace's Mail Pro page at
-  mcp.pantalytics.com), and this module has no usage screen of its own: the
+- **Usage and billing are read there, not here.** The account page behind
+  step 1 of the settings checklist carries one button (`dashboard_url()`, the
+  workspace's Mail Pro page at mcp.pantalytics.com), and this module has no
+  usage screen of its own: the
   number that decides an invoice is the one our server counted from the
   heartbeats, and a second copy in Odoo is a second number to keep true.
 

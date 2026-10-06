@@ -13,9 +13,16 @@ is broken. Steps 2 to 4, and the rule that turns them into a phase, live in
 
 Steps 2 to 4 are tables — providers, internal domains, mailboxes — so this
 page only shows the answer and a way to reach the table where it is actually
-edited. Nothing is typed here any more. Step 1 is the exception: its answer
-is a button, because the thing it edits is a pairing with our server, not a
-row.
+edited. Nothing is typed here any more. Step 1 is the exception only while it
+is open: its answer is then a button, because the thing it edits is a pairing
+with our server, not a row. Once it is connected it is a line like the other
+three — "Connected" and an arrow — and who connected it, the plan, usage and
+billing and Disconnect are on the account page the arrow opens
+(`pan.mail.license.action_open`).
+
+An answer is one word or one number, never a list: the domains line counts
+its domains and the mailboxes line counts its mailboxes, because a list does
+not fit on a line and a count always does. The list is one arrow away.
 
 Who has connected is not on this page: the invite button and the column that
 says who is still missing are on the user list, and a count here repeated it.
@@ -28,6 +35,11 @@ from .mail_provider_client import get_provider_client
 from .pan_mail_license import IMPROVE_REFUSED_PARAM, STATUS_SELECTION
 
 _logger = logging.getLogger(__name__)
+
+
+def _counted(count, one, many):
+    """A count as the answer on a checklist line: "1 domain", "3 domains"."""
+    return one if count == 1 else many % count
 
 
 class ResConfigSettings(models.TransientModel):
@@ -60,18 +72,16 @@ class ResConfigSettings(models.TransientModel):
         string='Internal domains',
         help='Your own email domains. Mail between them is never synced into Odoo.',
     )
+    # The count, not the list: "3 domains".
     x_internal_domains_summary = fields.Char(compute='_compute_internal_domains_status')
     x_internal_domains_suggested = fields.Char(compute='_compute_internal_domains_status')
 
     # -------------------------------------------------------------------------
-    # Step 4 — the notification mailbox
+    # Step 4 — the mailboxes. Done when one of them is ticked as the
+    # notification mailbox and can send; the answer is how many there are,
+    # and which one sends Odoo's own mail is a column of the list.
     # -------------------------------------------------------------------------
-    x_notification_mailbox_id = fields.Many2one(
-        'pan.mail.mailbox',
-        string='Notification Mailbox',
-        compute='_compute_setup_status',
-        help='The mailbox with "Notification Mailbox" ticked, if there is one.',
-    )
+    x_mailboxes_summary = fields.Char(compute='_compute_setup_status')
 
     # -------------------------------------------------------------------------
     # Checklist state
@@ -88,8 +98,6 @@ class ResConfigSettings(models.TransientModel):
     # the open one: it was answered and then broke, like a stopped mailbox.
     # -------------------------------------------------------------------------
     x_setup_account_done = fields.Boolean(compute='_compute_license')
-    x_license_connected_by = fields.Char(string='Connected by', compute='_compute_license')
-    x_license_connected_on = fields.Datetime(string='Connected on', compute='_compute_license')
     x_license_state = fields.Selection([
         ('not_connected', 'Not Connected'),
         ('pending', 'Pending'),
@@ -99,14 +107,8 @@ class ResConfigSettings(models.TransientModel):
         STATUS_SELECTION, string='Status', compute='_compute_license')
     x_license_user_code = fields.Char(string='Code', compute='_compute_license')
     x_license_verify_url = fields.Char(string='Approve at', compute='_compute_license')
-    x_license_message = fields.Char(compute='_compute_license')
-    x_license_valid_until = fields.Datetime(string='Valid Until', compute='_compute_license')
     x_license_last_error = fields.Char(compute='_compute_license')
     x_license_sync_blocked = fields.Boolean(compute='_compute_license')
-    # Usage and the invoice are read at Pantalytics. This page carries the
-    # way there and no copy of the numbers.
-    x_license_dashboard_url = fields.Char(
-        string='Usage and billing', compute='_compute_license')
 
     # Help improve Mail Pro, as the Pantalytics workspace decided it. This
     # page can only say no: the yes lives where the contract was signed.
@@ -173,20 +175,14 @@ class ResConfigSettings(models.TransientModel):
         else:
             state = 'connected'
         blocked = not self.env['pan.mail.license'].sync_allowed()
-        dashboard = self.env['pan.mail.license'].dashboard_url()
         for record in self:
             record.x_license_sync_blocked = blocked
             record.x_license_state = state
             record.x_setup_account_done = state == 'connected' and not blocked
-            record.x_license_connected_by = link.connected_by() if link else ''
-            record.x_license_connected_on = link.connected_on
             record.x_license_status = link.status or 'not_connected'
             record.x_license_user_code = link.user_code
             record.x_license_verify_url = link.verify_url
-            record.x_license_message = link.message
-            record.x_license_valid_until = link.valid_until
             record.x_license_last_error = link.last_error
-            record.x_license_dashboard_url = dashboard
             record.x_improve_on = bool(
                 link.improve and link.improve_host and link.improve_token)
 
@@ -211,13 +207,17 @@ class ResConfigSettings(models.TransientModel):
         if link:
             link.action_disconnect()
 
+    def action_license_open(self):
+        """The arrow on step 1: the account page."""
+        return self.env['pan.mail.license'].current().action_open()
+
     # -------------------------------------------------------------------------
     # Internal domains
     # -------------------------------------------------------------------------
 
     @api.depends('x_internal_domain_ids')
     def _compute_internal_domains_status(self):
-        """The list as one line, and what is left to suggest.
+        """The list as a count, and what is left to suggest.
 
         Both read the record's own selection rather than the stored rows: the
         admin may have just clicked "Add" and the line has to follow along
@@ -226,7 +226,8 @@ class ResConfigSettings(models.TransientModel):
         suggested = self.env['pan.mail.domain'].suggest_domains()
         for record in self:
             selected = record.x_internal_domain_ids.mapped('name')
-            record.x_internal_domains_summary = ', '.join(sorted(selected))
+            record.x_internal_domains_summary = _counted(
+                len(selected), _('1 domain'), _('%s domains'))
             record.x_internal_domains_suggested = ', '.join(
                 d for d in suggested if d not in selected)
 
@@ -264,6 +265,8 @@ class ResConfigSettings(models.TransientModel):
         alert = Setup.mailbox_alert()
         answers = Setup.answers()
         active_provider = self.env['pan.mail.provider'].current()
+        mailboxes = _counted(self.env['pan.mail.mailbox'].sudo().search_count([]),
+                             _('1 mailbox'), _('%s mailboxes'))
 
         for record in self:
             record.x_active_provider_id = active_provider
@@ -276,5 +279,5 @@ class ResConfigSettings(models.TransientModel):
                 else _('Not set up yet'))
             record.x_setup_domains_done = bool(record.x_internal_domain_ids)
             record.x_setup_notification_done = answers['mailboxes']
-            record.x_notification_mailbox_id = self.env['mail.mail']._notification_mailbox()
+            record.x_mailboxes_summary = mailboxes
             record.x_mailboxes_alert = alert

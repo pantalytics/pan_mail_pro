@@ -11,8 +11,9 @@ the way back is an ordinary link to this Odoo, not an OAuth redirect.
 **Check approval** on the settings page does the same collection by hand.
 Collecting the key also records who did it: the Pantalytics account that
 approved, when the poll answer names it (`account_email`), the Odoo user who
-pressed the button, and the time. The settings page shows it on the account
-line, so a second administrator can see whose workspace this Odoo is in.
+pressed the button, and the time. The account page behind step 1 of the
+settings checklist (`action_open`) shows it, so a second administrator can
+see whose workspace this Odoo is in.
 
 After that, one heartbeat a day: counts out, a signed entitlement back. The
 server side runs on the Pantalytics platform (`pantalytics/odoo-mcp-pro-admin`,
@@ -48,7 +49,7 @@ pushes a heartbeat within the minute (`_report_setup_if_changed`, from the
 fetch cron). Daily is right for counts and wrong for a checklist.
 
 **Usage and billing are read at Pantalytics, not here.** `dashboard_url()` is
-the link the settings page offers, and there is no usage screen in Odoo: a
+the button the account page offers, and there is no usage screen in Odoo: a
 second place to read the number is a second number to keep true, and the one
 that decides the invoice is the one our own server counted.
 
@@ -226,7 +227,7 @@ class PanMailLicense(models.Model):
     last_error = fields.Char(readonly=True, copy=False)
 
     # Who connected, and when: written the moment the key is collected, so
-    # the settings page can say "connected by rutger@pantalytics.com on ..."
+    # the account page can say "connected by rutger@pantalytics.com on ..."
     # a year later. `connected_account` is the Pantalytics login that pressed
     # Approve, as the poll answer names it (`account_email`); it is the person
     # Pantalytics knows, which the Odoo user who pressed Connect need not be
@@ -237,6 +238,10 @@ class PanMailLicense(models.Model):
     connected_user_id = fields.Many2one('res.users', readonly=True, copy=False,
                                         ondelete='set null')
     connected_on = fields.Datetime(readonly=True, copy=False)
+    # `connected_by()` as a field, for the account page (`views/
+    # pan_mail_license_views.xml`): one label, whichever of the two the
+    # server named.
+    connected_by_name = fields.Char(string='Connected by', compute='_compute_connected_by_name')
 
     # Which setup steps the last heartbeat carried, as `setup_signature()`
     # writes them. Compared, never read for its own sake: it is how the module
@@ -284,10 +289,58 @@ class PanMailLicense(models.Model):
         )
 
     def connected_by(self):
-        """Who connected this Odoo, as one string for the settings page: the
+        """Who connected this Odoo, as one string for the account page: the
         Pantalytics account when the server named it, else the Odoo user."""
         self.ensure_one()
         return self.connected_account or self.connected_user_id.name or ''
+
+    @api.depends('connected_account', 'connected_user_id')
+    def _compute_connected_by_name(self):
+        for link in self:
+            link.connected_by_name = link.connected_by()
+
+    @api.depends('status')
+    def _compute_display_name(self):
+        # The breadcrumb above the account page; the row has no name of its
+        # own and "pan.mail.license,1" is not one.
+        for link in self:
+            link.display_name = _('Pantalytics account')
+
+    # -------------------------------------------------------------------------
+    # The account page
+    # -------------------------------------------------------------------------
+
+    def action_open(self):
+        """The row as a page: where the arrow on step 1 of the settings
+        checklist lands. The line says "Connected"; who connected it, when,
+        what the last answer said, usage and billing and the way out are
+        here, the same way the other three steps keep their detail on the
+        table the arrow opens."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Pantalytics account'),
+            'res_model': self._name,
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    def action_open_dashboard(self):
+        return {'type': 'ir.actions.act_url', 'url': self.dashboard_url(), 'target': 'new'}
+
+    @api.model
+    def settings_action(self):
+        """Settings, Mail Pro: where Disconnect sends you back to, since the
+        row it leaves behind has nothing on it but the Connect button there."""
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Settings'),
+            'res_model': 'res.config.settings',
+            'view_mode': 'form',
+            'target': 'inline',
+            'context': {'module': 'pan_mail_pro', 'bin_size': False},
+        }
 
     @api.model
     def sync_allowed(self):
@@ -510,7 +563,13 @@ class PanMailLicense(models.Model):
                 self.last_error = str(error)
 
     def action_disconnect(self):
-        """Forget the key and the last answer on this database."""
+        """Forget the key and the last answer on this database.
+
+        Returns the settings page: pressed on the account page, the row left
+        behind is a page with nothing on it, and the Connect button is there.
+        The settings page's own Disconnect ignores the return value, so it
+        redraws in place as before.
+        """
         self.ensure_one()
         self._check_admin()
         self._clear_pairing()
@@ -534,6 +593,7 @@ class PanMailLicense(models.Model):
             'improve_token': False,
             'replay_sample': 0.0,
         })
+        return self.settings_action()
 
     def _clear_pairing(self):
         self.write({

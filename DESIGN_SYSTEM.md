@@ -325,9 +325,12 @@ name, the answer itself, and the way to the place it is changed.
   dots reads as one status you can scan in a second. Not-done is an outline
   rather than a fill, because a setup page that opens in red reads as a product
   that is already failing.
-- **The answer is text, not a widget.** The domains line reads
-  `company.com, company.nl`, not a row of tag chips: chips beside a bold
-  heading look like part of it, and the three lines stop matching.
+- **The answer is one word or one number, never a list.** The account line
+  reads `Connected`, the domains line `3 domains`, the mailboxes line
+  `4 mailboxes` -- not the plan and its dates, not `company.com, company.nl`,
+  not a row of tag chips. A list does not fit on a line and a count always
+  does; the list is one arrow away. Chips beside a bold heading look like
+  part of it, and the four lines stop matching.
 - **Red is for broken, never for a choice.** A mailbox on a domain the admin
   left off the internal list is treated as external, which is the setting
   working. It got a red warning line for one commit, and a warning about
@@ -335,12 +338,18 @@ name, the answer itself, and the way to the place it is changed.
 - **A sentence goes under the name, never beside it.** The answer is short
   enough to sit on the first line; a fix or an alert is not. Beside the name a
   long one pushes the arrow off the line and turns the column of names ragged.
-- **The arrow goes to the data.** All three steps are tables — providers,
+- **The arrow goes to the data.** Steps 2 to 4 are tables — providers,
   domains, mailboxes — so every line links to the table rather than growing an
   editor of its own on this page. The settings page shows the answer; the
   table owns it. The provider used to be the one exception, opening its
   credentials in place; once the credentials became a `pan.mail.provider`
   row like the other two answers, the exception had no reason left to exist.
+  The account was the next one: a connected step 1 carried who connected it,
+  the valid-until date, Usage and billing and Disconnect on the line, four
+  rows tall beside three lines of one. Those went to the account page
+  (`pan.mail.license`'s form) behind an arrow of its own. Only an open step
+  1 keeps its button on the line, because a pairing in progress has no row
+  worth opening yet.
 - **A fix line lives only while it is a fix.** The domains line offers the
   domains it can read off the database, and only while the list is empty. A
   list with something in it is the admin's, and offering additions to it
