@@ -7,20 +7,29 @@ message built from the same Odoo record, so it is built once here.
 
 This is not a third abstraction layer. It is a function that turns Odoo fields
 into an `EmailMessage`, used *by* provider implementations; it decides nothing
-about credentials, routing or folders. Microsoft does not use it at all - Graph
-takes a JSON body, and pretending otherwise would mean building MIME only to
-take it apart again.
+about credentials, routing or folders. Microsoft does not build MIME here --
+Graph takes a JSON body, and pretending otherwise would mean building MIME
+only to take it apart again -- but it does share the two halves that are
+Odoo's rather than the wire's: who the recipients are
+(`collect_recipient_pairs`) and which X-Odoo-* headers go on
+(`odoo_headers`), so the three senders cannot disagree about either.
 """
 import mimetypes
 from email.message import EmailMessage
-from email.utils import formataddr, make_msgid, parseaddr
+from email.utils import formataddr, getaddresses, make_msgid, parseaddr
 
-from ..mail_provider_client import tidy_address
+from ..mail_provider_client import DB_MARKER_HEADER, odoo_db_marker, tidy_address
 
 
-def collect_recipients(raw_list, partners=None):
+def collect_recipient_pairs(raw_list, partners=None):
     """Merge a comma-separated address string and Odoo partners into a
-    de-duplicated list of formatted RFC 5322 addresses."""
+    de-duplicated list of `(name, address)` pairs, in the order first seen.
+
+    The address decides what is a duplicate, tidied (see `tidy_address`); the
+    name is the first one seen for it. Pairs rather than formatted strings
+    because Graph wants the two apart as JSON, and a display name that went
+    through `formataddr` comes back out of `parseaddr` as an encoded word.
+    """
     seen = set()
     result = []
 
@@ -28,7 +37,7 @@ def collect_recipients(raw_list, partners=None):
         address = tidy_address(address)
         if address and address not in seen:
             seen.add(address)
-            result.append(formataddr((name, address)) if name else address)
+            result.append((name or '', address))
 
     for raw in (raw_list or '').split(','):
         raw = raw.strip()
@@ -41,9 +50,26 @@ def collect_recipients(raw_list, partners=None):
     return result
 
 
+def collect_recipients(raw_list, partners=None):
+    """`collect_recipient_pairs`, formatted as RFC 5322 addresses for a header."""
+    return [formataddr((name, address)) if name else address
+            for name, address in collect_recipient_pairs(raw_list, partners)]
+
+
 def bare_addresses(formatted):
     """Strip display names — what an SMTP envelope wants."""
     return [parseaddr(address)[1] for address in formatted if parseaddr(address)[1]]
+
+
+def envelope(msg):
+    """The SMTP envelope of a message built here: exactly To plus Cc.
+
+    Read off the headers rather than carried beside the message, so the
+    envelope cannot name anybody the headers do not -- an address in the
+    envelope and in no header is a blind copy by another name.
+    """
+    return [address for _name, address in getaddresses(
+        (msg.get_all('To') or []) + (msg.get_all('Cc') or [])) if address]
 
 
 def new_message_id(from_email):
@@ -89,20 +115,8 @@ def build_message(mail_record, from_email, to_addrs, cc_addrs, message_id,
     if in_reply_to:
         msg['In-Reply-To'] = in_reply_to
 
-    # The X-Odoo-* loop guard: the incoming sync skips anything carrying these,
-    # so our own sent mail is never re-imported from the mailbox.
-    if mail_record.model and mail_record.res_id:
-        msg['X-Odoo-Model'] = mail_record.model
-        msg['X-Odoo-Record-Id'] = str(mail_record.res_id)
-    msg['X-Odoo-Mail-Id'] = str(mail_record.id)
-    if mail_record.mail_message_id:
-        msg['X-Odoo-Message-Id'] = str(mail_record.mail_message_id.id)
-    # Which database stamped the four above. Without it the loop guard would
-    # take another Mail Pro customer's mail for our own sent copy; see
-    # `pan_mail_fetcher.odoo_db_marker`.
-    db_marker = mail_record.env['pan.mail.fetcher']._odoo_db_marker()
-    if db_marker:
-        msg['X-Odoo-Db'] = db_marker
+    for name, value in odoo_headers(mail_record, mail_record.env):
+        msg[name] = value
 
     body_html = mail_record.body_html or mail_record.body or ''
     # What Odoo's own SMTP path does before sending: a pasted image is
@@ -117,6 +131,37 @@ def build_message(mail_record, from_email, to_addrs, cc_addrs, message_id,
 
     attach_files(msg, mail_record.attachment_ids)
     return msg
+
+
+def odoo_headers(mail_record, env):
+    """The X-Odoo-* headers one outgoing mail carries, as `(name, value)` pairs.
+
+    The loop guard the incoming sync reads: a mail carrying these under our
+    own `X-Odoo-Db` marker is our sent copy coming back and is refused, and so
+    is one in Sent with the headers and no marker, which is the pre-marker
+    copy of a mail this database sent. The same four headers under another
+    marker are another Mail Pro writing to us, and go in as ordinary mail.
+
+    One list for all three senders: the two MIME senders write it onto the
+    message in `build_message`, Graph hands it over as
+    `internetMessageHeaders`. Graph also caps that list at five, which is
+    exactly a record-bound reply's full house, so a new header here has to
+    replace one of these rather than join them.
+    """
+    headers = []
+    if mail_record.model and mail_record.res_id:
+        headers.append(('X-Odoo-Model', mail_record.model))
+        headers.append(('X-Odoo-Record-Id', str(mail_record.res_id)))
+    headers.append(('X-Odoo-Mail-Id', str(mail_record.id)))
+    if mail_record.mail_message_id:
+        headers.append(('X-Odoo-Message-Id', str(mail_record.mail_message_id.id)))
+    # Which database stamped the ones above. Without it the loop guard would
+    # take another Mail Pro customer's mail for our own sent copy; see
+    # `mail_provider_client.odoo_db_marker`.
+    db_marker = odoo_db_marker(env)
+    if db_marker:
+        headers.append((DB_MARKER_HEADER, db_marker))
+    return headers
 
 
 def attach_files(msg, attachments):

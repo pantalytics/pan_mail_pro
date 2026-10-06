@@ -96,8 +96,17 @@ class IrHttp(models.AbstractModel):
         # staleness this whole method already accepts.
         License = self.env['pan.mail.license']
         link = License.current()
+        # Whether the instance may sync and connect accounts, answered once
+        # from the row in hand. On an instance that has never connected the
+        # row is empty, and an empty row would look itself up again inside
+        # `sync_allowed()` -- so the page load that most wants to be cheap
+        # (the one that draws the gate) paid two more searches. `bool(link)`
+        # answers that case here; a row that exists is asked the one rule,
+        # on itself, so the rule stays in one place.
+        allowed = bool(link) and link.sync_allowed()
         result['pan_mail_connect_prompt'] = \
-            self.env.user._pan_mail_should_prompt_connect(link=link)
+            self.env.user._pan_mail_should_prompt_connect(
+                link=link, sync_allowed=allowed)
         # Help improve Mail Pro, for the same reason and with the same
         # staleness: the answer changes once a day at most, and the Inbox
         # reads it before its first paint (pan_mail_license.improve_config).
@@ -113,5 +122,5 @@ class IrHttp(models.AbstractModel):
         # a product that looks finished and is not. Stale by a page load
         # like the rest; the Inbox asks once more when this says no, so
         # an admin who has just connected is not shown the gate again.
-        result['pan_mail_connected'] = link.sync_allowed()
+        result['pan_mail_connected'] = allowed
         return result

@@ -245,6 +245,20 @@ the client is what decides which account applies — `resolve_sending_account()`
 and `resolve_receiving_account()` — because that is where providers genuinely
 diverge.
 
+What the clients share, they share through two helper modules beside them
+rather than through copies: `providers/mime_utils.py` builds the outgoing
+message (recipients, the X-Odoo-* headers and the database marker, the MIME
+itself) for every sender, Graph included, which maps the same pairs onto its
+JSON; `providers/http_utils.py` is the one retry-and-throttle loop both HTTP
+clients call, so a `Retry-After` is read the same way whichever provider sent
+it. Two optional seams on the contract keep a sync run cheap without changing
+a caller: `receiving_session(account)` is a context the fetcher enters once
+per mailbox run (a no-op for Graph and Gmail; one IMAP login and one SELECT
+per folder instead of one per message), and `get_message_attachments(...,
+full_message=...)` lets a client read the attachments off the payload
+`get_message` already fetched, kept under a private `_source` key the
+fetcher drops before anything is stored.
+
 ### Capability differences
 
 Providers disagree about sending as somebody else, which is why
@@ -847,7 +861,8 @@ pan_mail_pro/
 │   │   ├── microsoft/graph_client.py
 │   │   ├── google/gmail_client.py
 │   │   ├── imap_smtp/imap_client.py
-│   │   └── mime_utils.py          # Outgoing MIME, shared by the two MIME senders
+│   │   ├── mime_utils.py          # Outgoing message build, shared by every sender
+│   │   └── http_utils.py          # One retry-and-throttle loop for the two HTTP clients
 │   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
 │   ├── pan_mail_account.py        # Per-address credentials
 │   ├── pan_mail_provider.py       # The application registration: one row, no toggle (§9.13)

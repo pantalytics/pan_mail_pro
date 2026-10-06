@@ -4,18 +4,23 @@ import logging
 import mimetypes
 import re
 import requests
-import time
+# `time` is not read here any more -- the retry loop lives in `http_utils`
+# -- but the tests patch `graph_client.time.sleep`, which is the same
+# `time` module, so it stays importable from this one.
+import time  # noqa: F401
 from datetime import datetime, timedelta
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from ... import encryption_utils
+from .. import http_utils
 from ...mail_provider_client import (
-    ERROR_NO_RECIPIENTS, FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
+    FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
     FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
     ERROR_THROTTLED,
     ThrottledError,
-    tidy_address,
+    no_recipients_result,
 )
+from .. import mime_utils
 
 _logger = logging.getLogger(__name__)
 
@@ -54,14 +59,9 @@ AADSTS_HINTS = {
                    'as it is shown here.',
 }
 
-# Rate limiting configuration
-MAX_RETRIES = 3
-# Longer than this, the cron does not wait: see _request_with_retry.
-MAX_RETRY_AFTER_SECONDS = 15
 # Microsoft's own ceiling on `internetMessageHeaders`: a sixth custom header
 # is refused with InvalidInternetMessageHeaderCollection on the draft.
 GRAPH_MAX_CUSTOM_HEADERS = 5
-INITIAL_BACKOFF_SECONDS = 2
 
 # Attachment size threshold: Graph API allows max 3MB per direct attachment upload.
 # Larger files must use the upload session API (supports up to 150MB).
@@ -82,6 +82,24 @@ HEADER_EXTENDED_PROPERTIES = {
 HEADER_EXTENDED_PROPERTIES_FILTER = ' or '.join(
     "id eq '%s'" % prop_id for prop_id in HEADER_EXTENDED_PROPERTIES
 )
+
+
+def _send_result(success, error=None, error_code=None, message_id=None,
+                 thread_id=None, draft_id=None, **extra):
+    """A normalized send result (see the contract), every key present.
+
+    `draft_id` is Graph's own addition: the draft a send went out as, or the
+    draft `save_draft` asked for. `extra` carries `retry_after` on a throttle.
+    """
+    return {
+        'success': success,
+        'error': error,
+        'error_code': error_code,
+        'message_id': message_id,
+        'thread_id': thread_id,
+        'draft_id': draft_id,
+        **extra,
+    }
 
 
 class MicrosoftGraphClient(models.AbstractModel):
@@ -674,6 +692,27 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         _logger.info(f"[Graph API] Upload complete for '{name}'")
 
+    @api.model
+    def _upload_attachments(self, headers, graph_user_id, draft_id, attachments):
+        """Put `attachments` (the list `_draft_content` built) on a draft.
+
+        Small ones go in one POST each, large ones through an upload
+        session; the threshold is Graph's. Shared by the send path and
+        `update_draft`, which is the one other place a draft gets its files.
+        """
+        for att in attachments:
+            raw_bytes = base64.b64decode(att['contentBytes'])
+            if len(raw_bytes) < DIRECT_ATTACHMENT_LIMIT:
+                self._add_attachment_to_draft(headers, graph_user_id, draft_id, att)
+            else:
+                self._upload_large_attachment(
+                    headers, graph_user_id, draft_id,
+                    name=att['name'],
+                    content_type=att['contentType'],
+                    raw_bytes=raw_bytes,
+                    is_inline=att.get('isInline', False),
+                )
+
     def _create_draft(self, headers, graph_user_id, message, reply_to_provider_id=None):
         """Create the draft to send, threaded onto a parent message if we can.
 
@@ -731,6 +770,21 @@ class MicrosoftGraphClient(models.AbstractModel):
         return response.json()
 
     @api.model
+    def _graph_recipients(self, pairs):
+        """`(name, address)` pairs as Graph's `{'emailAddress': {...}}` list.
+
+        The name key is only there when there is a name: Graph shows an empty
+        one as an empty display name rather than falling back to the address.
+        """
+        recipients = []
+        for name, address in pairs:
+            recipient = {'emailAddress': {'address': address}}
+            if name:
+                recipient['emailAddress']['name'] = name
+            recipients.append(recipient)
+        return recipients
+
+    @api.model
     def _draft_content(self, mail_record, mailbox):
         """Turn one `mail.mail` into the Graph message body and its attachments.
 
@@ -744,93 +798,38 @@ class MicrosoftGraphClient(models.AbstractModel):
             send result and is None when there is nothing wrong.
         """
         mailbox_email = mailbox.email
-        # Parse To recipients from both email_to and recipient_ids (partners)
-        from email.utils import parseaddr
+        # The same recipient list the MIME senders build, so the three
+        # senders cannot disagree about who a mail goes to. It de-duplicates
+        # on the address, which the Graph sender did not do before: a partner
+        # who was also typed into `email_to` used to be sent the mail twice.
+        to_recipients = self._graph_recipients(mime_utils.collect_recipient_pairs(
+            mail_record.email_to, mail_record.recipient_ids))
+        # Cc is `email_cc`, which Odoo core fills when Sign or the composer
+        # adds one.
+        cc_recipients = self._graph_recipients(mime_utils.collect_recipient_pairs(
+            mail_record.email_cc))
 
-        def _parse_address_list(raw_value):
-            """Parse a comma-separated RFC 5322 address list into Graph recipient dicts."""
-            result = []
-            if not raw_value:
-                return result
-            for raw in raw_value.split(','):
-                raw = raw.strip()
-                if not raw:
-                    continue
-                name, address = parseaddr(raw)
-                if address:
-                    recipient = {'emailAddress': {'address': tidy_address(address)}}
-                    if name:
-                        recipient['emailAddress']['name'] = name
-                    result.append(recipient)
-            return result
-
-        to_recipients = _parse_address_list(mail_record.email_to)
-
-        # Add recipients from recipient_ids (Odoo partners)
-        if mail_record.recipient_ids:
-            for partner in mail_record.recipient_ids:
-                if partner.email:
-                    to_recipients.append({
-                        'emailAddress': {
-                            'address': tidy_address(partner.email),
-                            'name': partner.name
-                        }
-                    })
-
-        # Parse CC recipients from email_cc (set by Odoo core when Sign/composer adds CC)
-        cc_recipients = _parse_address_list(mail_record.email_cc)
-
-        # Check if we have any recipients at all
         if not to_recipients and not cc_recipients:
-            # Distinguishable code so mail.mail.send() can skip+cancel this mail
-            # (typically an internal notification to a user/partner without an
-            # email address) instead of aborting the whole batch.
-            return None, [], {
-                'success': False,
-                'error': 'No recipients specified (no email_to, recipient_ids, or email_cc with emails)',
-                'error_code': ERROR_NO_RECIPIENTS,
-            }
+            return None, [], no_recipients_result()
 
-        # Build custom headers for tracking
-        internet_message_headers = []
-
-        # Add model and record ID if available
-        if mail_record.model and mail_record.res_id:
-            internet_message_headers.extend([
-                {'name': 'X-Odoo-Model', 'value': mail_record.model},
-                {'name': 'X-Odoo-Record-Id', 'value': str(mail_record.res_id)},
-            ])
-
-        # Add mail.mail ID
-        internet_message_headers.append({
-            'name': 'X-Odoo-Mail-Id',
-            'value': str(mail_record.id)
-        })
-
-        # Add mail.message ID if available (for replies)
-        if mail_record.mail_message_id:
-            internet_message_headers.append({
-                'name': 'X-Odoo-Message-Id',
-                'value': str(mail_record.mail_message_id.id)
-            })
-
-        # Which database stamped the headers above. Without it the loop guard
-        # would take another Mail Pro customer's mail for our own sent copy;
-        # see `pan_mail_fetcher.odoo_db_marker`.
-        db_marker = self.env['pan.mail.fetcher']._odoo_db_marker()
-        if db_marker:
-            internet_message_headers.append({
-                'name': 'X-Odoo-Db',
-                'value': db_marker,
-            })
-        # Graph refuses a message carrying more than five custom headers
-        # (InvalidInternetMessageHeaderCollection). A record-bound reply
-        # carries exactly five now, so the next header has to replace one of
-        # these rather than join them; this is where that would surface, as a
-        # failed send in every test above rather than in production.
-        assert len(internet_message_headers) <= GRAPH_MAX_CUSTOM_HEADERS, (
-            'Graph accepts at most %s custom headers; %s were built'
-            % (GRAPH_MAX_CUSTOM_HEADERS, len(internet_message_headers)))
+        # The X-Odoo-* loop guard, in Graph's shape. Graph refuses a message
+        # carrying more than five custom headers
+        # (InvalidInternetMessageHeaderCollection), and a record-bound reply
+        # carries exactly five, so the next header has to replace one of
+        # these rather than join them. Checked here, where it reads as a
+        # refused send in the outgoing tests, rather than discovered as one
+        # in production. A plain `if`, not an `assert`: `python -O` strips
+        # asserts, and this is a check on code, not on data.
+        internet_message_headers = [
+            {'name': name, 'value': value}
+            for name, value in mime_utils.odoo_headers(mail_record, self.env)
+        ]
+        if len(internet_message_headers) > GRAPH_MAX_CUSTOM_HEADERS:
+            raise UserError(_(
+                'Microsoft 365 accepts at most %(limit)s custom headers on a '
+                'message; %(count)s were built.',
+                limit=GRAPH_MAX_CUSTOM_HEADERS, count=len(internet_message_headers),
+            ))
 
         # Process body: convert /web/image/ URLs to cid: inline attachments
         # This embeds images directly in the email so they work regardless
@@ -844,7 +843,9 @@ class MicrosoftGraphClient(models.AbstractModel):
             for attachment in mail_record.attachment_ids:
                 if attachment.id in inline_att_ids:
                     continue
-                content_type = attachment.mimetype or mimetypes.guess_type(attachment.name)[0] or 'application/octet-stream'
+                content_type = (attachment.mimetype
+                                or mimetypes.guess_type(attachment.name or '')[0]
+                                or 'application/octet-stream')
                 attachment_data = attachment.datas
                 if attachment_data:
                     regular_attachments.append({
@@ -900,18 +901,20 @@ class MicrosoftGraphClient(models.AbstractModel):
                 POST is the only difference.
 
         Returns:
-            dict: {
-                'success': bool,
-                'error': str (if failed),
-                'microsoft_message_id': str (internetMessageId from Microsoft),
-                'microsoft_conversation_id': str (conversationId from Microsoft)
-            }
+            dict: the normalized send result from the contract, with every
+            key present (`message_id` is Graph's internetMessageId,
+            `thread_id` its conversationId), plus `draft_id`: the draft the
+            mail went out as, or the one `save_draft` asked for. A throttled
+            result also carries `retry_after`.
         """
-        # Set before the try so the except branches can tell whether a draft
+        # Set before the try so the cleanup below can tell whether a draft
         # exists to discard: a failed send leaves one in the user's Drafts
         # otherwise, and a throttled mail that is retried leaves one per try.
+        # `sent` flips once `/send` was accepted; from then on the draft is
+        # the sent copy in Sent Items and must stay.
         draft_id = None
         headers = None
+        sent = False
         graph_user_id = mailbox.email
         try:
             # Use the account's delegated token (principle of least privilege)
@@ -952,56 +955,36 @@ class MicrosoftGraphClient(models.AbstractModel):
             _logger.info(f"[Graph API] Created draft - Message-ID: {microsoft_message_id}, Conversation-ID: {microsoft_conversation_id}")
 
             # Step 2: Add attachments to draft
-            for att in all_attachments:
-                raw_bytes = base64.b64decode(att['contentBytes'])
-                if len(raw_bytes) < DIRECT_ATTACHMENT_LIMIT:
-                    self._add_attachment_to_draft(headers, graph_user_id, draft_id, att)
-                else:
-                    self._upload_large_attachment(
-                        headers, graph_user_id, draft_id,
-                        name=att['name'],
-                        content_type=att['contentType'],
-                        raw_bytes=raw_bytes,
-                        is_inline=att.get('isInline', False),
-                    )
+            self._upload_attachments(headers, graph_user_id, draft_id, all_attachments)
 
             if not send:
                 _logger.info("[Graph API] Stored draft %s", draft_id)
-                return {
-                    'success': True,
-                    'microsoft_draft_id': draft_id,
-                    'microsoft_message_id': microsoft_message_id,
-                    'microsoft_conversation_id': microsoft_conversation_id,
-                }
+                return _send_result(
+                    True, message_id=microsoft_message_id,
+                    thread_id=microsoft_conversation_id, draft_id=draft_id)
 
             # Step 3: Send the draft
             send_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/send'
             send_response = self._request_with_retry(
                 'post', send_url, headers, timeout=30, idempotent=False)
             send_response.raise_for_status()
+            sent = True
 
             _logger.info("[Graph API] Successfully sent email %s", microsoft_message_id)
 
-            return {
-                'success': True,
-                'microsoft_draft_id': draft_id,
-                'microsoft_message_id': microsoft_message_id,
-                'microsoft_conversation_id': microsoft_conversation_id,
-            }
+            return _send_result(
+                True, message_id=microsoft_message_id,
+                thread_id=microsoft_conversation_id, draft_id=draft_id)
 
         except ThrottledError as e:
             # Not a failure: the mail waits for the pause Microsoft asked for.
-            if send and draft_id:
-                self._discard_draft(headers, graph_user_id, draft_id)
-            return {'success': False, 'error': str(e), 'error_code': ERROR_THROTTLED,
-                    'retry_after': e.wait}
+            return _send_result(False, error=str(e), error_code=ERROR_THROTTLED,
+                                retry_after=e.wait)
         except requests.exceptions.RequestException as e:
-            if send and draft_id:
-                self._discard_draft(headers, graph_user_id, draft_id)
             denied = self._delegation_denied_reason(e, account, mailbox)
             if denied:
                 _logger.warning('[Graph API] %s', denied)
-                return {'success': False, 'error': denied}
+                return _send_result(False, error=denied)
             error_detail = str(e)
             if hasattr(e, 'response') and e.response is not None:
                 try:
@@ -1012,18 +995,16 @@ class MicrosoftGraphClient(models.AbstractModel):
                     pass
 
             _logger.error(f"Failed to send email via Graph API: {error_detail}")
-            return {
-                'success': False,
-                'error': error_detail
-            }
+            return _send_result(False, error=error_detail)
         except Exception as e:
             _logger.exception("Unexpected error sending email via Graph API")
-            if send and draft_id:
+            return _send_result(False, error=str(e))
+        finally:
+            # One cleanup for every way a send can stop short of `/send`
+            # accepting it. A draft that was asked for (`send=False`) is the
+            # result, not litter.
+            if send and draft_id and not sent:
                 self._discard_draft(headers, graph_user_id, draft_id)
-            return {
-                'success': False,
-                'error': str(e)
-            }
 
     @api.model
     def _discard_draft(self, headers, graph_user_id, draft_id):
@@ -1054,21 +1035,15 @@ class MicrosoftGraphClient(models.AbstractModel):
         """Send one mail.mail and return a normalized send result.
 
         Thin adapter over `send_email_via_graph`, which owns the Graph-specific
-        draft-then-send flow, inline-image handling and attachment upload.
+        draft-then-send flow, inline-image handling and attachment upload, and
+        already answers in the contract's keys.
         """
-        result = self.send_email_via_graph(
+        return self.send_email_via_graph(
             mail_record=mail_record,
             mailbox=mailbox,
             account=account,
             reply_context=reply_context,
         )
-        return {
-            'success': result.get('success', False),
-            'error': result.get('error'),
-            'error_code': result.get('error_code'),
-            'message_id': result.get('microsoft_message_id'),
-            'thread_id': result.get('microsoft_conversation_id'),
-        }
 
     # -------------------------------------------------------------------------
     # Incoming Mail — contract implementation
@@ -1082,33 +1057,67 @@ class MicrosoftGraphClient(models.AbstractModel):
     def fetch_messages(self, account, mailbox, folder=FOLDER_INBOX,
                        since_datetime=None, limit=50):
         """List messages in a folder, oldest first (see contract)."""
-        raw_messages = self._graph_fetch_messages(
-            account=account,
-            mailbox_email=mailbox.email,
-            folder=self._graph_folder(folder),
-            since_datetime=since_datetime,
-            top=limit,
-        )
+        params = {
+            '$top': limit,
+            '$orderby': 'receivedDateTime asc',
+            '$select': 'id,internetMessageId,subject,from,toRecipients,ccRecipients,'
+                       'receivedDateTime,bodyPreview,hasAttachments,isRead',
+        }
+        if since_datetime:
+            filter_time = since_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+            params['$filter'] = f"receivedDateTime gt {filter_time}"
+        data = self._graph_call(
+            account, 'get',
+            f'/users/{mailbox.email}/mailFolders/{self._graph_folder(folder)}/messages',
+            params=params)
+        raw_messages = data.get('value', [])
+        _logger.info(f"[Graph API] Fetched {len(raw_messages)} messages from "
+                     f"{mailbox.email}/{self._graph_folder(folder)}")
         return [self._normalize_message(msg) for msg in raw_messages]
 
     @api.model
     def get_message(self, account, mailbox, provider_message_id):
         """Fetch one message in full, including headers and body."""
-        raw = self._graph_get_message(
-            account=account,
-            mailbox_email=mailbox.email,
-            message_id=provider_message_id,
-        )
+        raw = self._graph_call(
+            account, 'get', f'/users/{mailbox.email}/messages/{provider_message_id}',
+            params={
+                '$select': 'id,internetMessageId,internetMessageHeaders,conversationId,subject,from,'
+                           'toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,isRead',
+                # Belt and braces on the threading headers; see
+                # HEADER_EXTENDED_PROPERTIES.
+                '$expand': 'singleValueExtendedProperties($filter=%s)'
+                           % HEADER_EXTENDED_PROPERTIES_FILTER,
+            })
         return self._normalize_message(raw)
 
     @api.model
-    def get_message_attachments(self, account, mailbox, provider_message_id):
-        """Return normalized attachments; never raises (see contract)."""
-        raw_attachments = self._graph_get_attachments(
-            account=account,
-            mailbox_email=mailbox.email,
-            message_id=provider_message_id,
-        )
+    def get_message_attachments(self, account, mailbox, provider_message_id,
+                                full_message=None):
+        """Return normalized attachments; never raises (see contract).
+
+        `full_message` is accepted and ignored: Graph's message resource
+        carries no attachment bodies, they are a call of their own.
+        """
+        # A token the provider refuses is the message's problem, not the
+        # attachment's: asked for first, outside the catch below, so it
+        # propagates the way it always did. `_graph_call` asks again and
+        # finds the token this just stored.
+        self.get_valid_token(account)
+        try:
+            data = self._graph_call(
+                account, 'get',
+                f'/users/{mailbox.email}/messages/{provider_message_id}/attachments')
+        except ThrottledError:
+            # Not an attachment failure: Microsoft asked the whole mailbox to
+            # wait, and the fetcher keeps what landed and holds the cursor.
+            raise
+        except UserError as e:
+            # Contract: an attachment failure must not sink the message. It is
+            # recorded, because the mail then reads as complete when it is not.
+            self.env['pan.mail.error']._record(
+                'incoming.attachments_failed', e, level='warning', account=account)
+            return []
+        raw_attachments = data.get('value', [])
 
         attachments = []
         for raw in raw_attachments:
@@ -1206,141 +1215,8 @@ class MicrosoftGraphClient(models.AbstractModel):
         }
 
     # -------------------------------------------------------------------------
-    # Raw Graph calls
+    # Graph errors and transport
     # -------------------------------------------------------------------------
-
-    @api.model
-    def _graph_fetch_messages(self, account, mailbox_email, folder='Inbox', since_datetime=None, top=50):
-        """
-        Fetch messages from a Microsoft mailbox folder via Graph API.
-
-        Args:
-            account: pan.mail.account holding OAuth tokens
-            mailbox_email: Email address of the mailbox to fetch from
-            folder: Graph folder name ('Inbox', 'SentItems', etc.)
-            since_datetime: Only fetch messages received after this datetime
-            top: Maximum number of messages to fetch
-
-        Returns:
-            list[dict]: List of raw message objects from Graph API
-        """
-        token = self.get_valid_token(account)
-
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/json',
-        }
-
-        # Build URL - use /users/{email} for shared mailboxes
-        url = f'https://graph.microsoft.com/v1.0/users/{mailbox_email}/mailFolders/{folder}/messages'
-
-        # Build query parameters
-        params = {
-            '$top': top,
-            '$orderby': 'receivedDateTime asc',
-            '$select': 'id,internetMessageId,subject,from,toRecipients,ccRecipients,'
-                       'receivedDateTime,bodyPreview,hasAttachments,isRead',
-        }
-
-        # Add filter for messages after since_datetime
-        if since_datetime:
-            # Format datetime for OData filter
-            filter_time = since_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
-            params['$filter'] = f"receivedDateTime gt {filter_time}"
-
-        try:
-            response = self._request_with_retry('get', url, headers=headers, params=params, timeout=30)
-            response.raise_for_status()
-
-            data = response.json()
-            messages = data.get('value', [])
-            _logger.info(f"[Graph API] Fetched {len(messages)} messages from {mailbox_email}/{folder}")
-
-            return messages
-
-        except requests.exceptions.RequestException as e:
-            error_detail = self._extract_graph_error(e)
-            _logger.error(f"[Graph API] Failed to fetch messages: {error_detail}")
-            raise UserError(_('Failed to fetch messages from Microsoft: %s') % error_detail)
-
-    @api.model
-    def _graph_get_message(self, account, mailbox_email, message_id):
-        """
-        Get full message details including internet headers for threading.
-
-        Args:
-            account: pan.mail.account holding OAuth tokens
-            mailbox_email: Email address of the mailbox
-            message_id: Graph API message ID
-
-        Returns:
-            dict: Full message object with headers
-        """
-        token = self.get_valid_token(account)
-
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/json',
-        }
-
-        url = f'https://graph.microsoft.com/v1.0/users/{mailbox_email}/messages/{message_id}'
-
-        params = {
-            '$select': 'id,internetMessageId,internetMessageHeaders,conversationId,subject,from,'
-                       'toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,isRead',
-            # Belt and braces on the threading headers; see
-            # HEADER_EXTENDED_PROPERTIES.
-            '$expand': 'singleValueExtendedProperties($filter=%s)'
-                       % HEADER_EXTENDED_PROPERTIES_FILTER,
-        }
-
-        try:
-            response = self._request_with_retry('get', url, headers=headers, params=params, timeout=30)
-            response.raise_for_status()
-            return response.json()
-
-        except requests.exceptions.RequestException as e:
-            error_detail = self._extract_graph_error(e)
-            _logger.error(f"[Graph API] Failed to get message details: {error_detail}")
-            raise UserError(_('Failed to get message details: %s') % error_detail)
-
-    @api.model
-    def _graph_get_attachments(self, account, mailbox_email, message_id):
-        """
-        Get attachments for a message.
-
-        Args:
-            account: pan.mail.account holding OAuth tokens
-            mailbox_email: Email address of the mailbox
-            message_id: Graph API message ID
-
-        Returns:
-            list[dict]: List of raw attachment objects
-        """
-        token = self.get_valid_token(account)
-
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/json',
-        }
-
-        url = f'https://graph.microsoft.com/v1.0/users/{mailbox_email}/messages/{message_id}/attachments'
-
-        try:
-            response = self._request_with_retry('get', url, headers=headers, timeout=30)
-            response.raise_for_status()
-
-            data = response.json()
-            return data.get('value', [])
-
-        except requests.exceptions.RequestException as e:
-            error_detail = self._extract_graph_error(e)
-            _logger.error(f"[Graph API] Failed to get attachments: {error_detail}")
-            # Contract: an attachment failure must not sink the message. It is
-            # recorded, because the mail then reads as complete when it is not.
-            self.env['pan.mail.error']._record(
-                'incoming.attachments_failed', e, level='warning', account=account)
-            return []
 
     @api.model
     def _extract_graph_error(self, exception):
@@ -1364,97 +1240,14 @@ class MicrosoftGraphClient(models.AbstractModel):
         return error_detail
 
     def _request_with_retry(self, method, url, headers, timeout=30, idempotent=True, **kwargs):
+        """`http_utils.request_with_retry` with this client's name on it.
+
+        Kept as a method, with `headers` positional, because it is the seam
+        the tests fake a Graph answer at.
         """
-        Execute HTTP request with rate limiting and exponential backoff.
-
-        `idempotent=False` is for a request the server may have carried out
-        before the answer was lost (sending a message, creating a draft or
-        an attachment): it is retried on a 429 only, because a 429 means
-        the request was refused. A timeout on `/send` retried three times
-        is a customer mailed four times.
-
-        Handles Microsoft Graph API rate limiting (HTTP 429) by:
-        - Reading Retry-After header when present
-        - Using exponential backoff for transient errors
-        - Retrying up to MAX_RETRIES times
-
-        Args:
-            method: HTTP method ('get', 'post', etc.)
-            url: Request URL
-            headers: Request headers
-            timeout: Request timeout in seconds
-            **kwargs: Additional arguments for requests (json, data, params, etc.)
-
-        Returns:
-            requests.Response: The successful response
-
-        Raises:
-            requests.exceptions.RequestException: If all retries fail
-        """
-        last_exception = None
-        backoff = INITIAL_BACKOFF_SECONDS
-
-        for attempt in range(MAX_RETRIES + 1):
-            try:
-                response = getattr(requests, method)(url, headers=headers, timeout=timeout, **kwargs)
-
-                # Check for rate limiting
-                if response.status_code == 429:
-                    retry_after = response.headers.get('Retry-After')
-                    try:
-                        wait_time = int(retry_after) if retry_after else backoff
-                    except ValueError:
-                        # An HTTP-date rather than seconds: back off, do not crash.
-                        wait_time = backoff
-                    if wait_time > MAX_RETRY_AFTER_SECONDS:
-                        # Sleeping this long inside the one-minute cron holds
-                        # every other mailbox's turn hostage and, past the
-                        # worker's time limit, rolls the whole run back. The
-                        # mailbox records the throttle instead and the next
-                        # run tries again.
-                        raise ThrottledError(_(
-                            'Microsoft asked to wait %s seconds before more requests '
-                            'for this mailbox. Try again in a minute.') % wait_time, wait_time)
-
-                    if attempt < MAX_RETRIES:
-                        _logger.warning(f"[Graph API] Rate limited (429), waiting {wait_time}s before retry {attempt + 1}/{MAX_RETRIES}")
-                        time.sleep(wait_time)
-                        backoff *= 2  # Exponential backoff
-                        continue
-                    else:
-                        response.raise_for_status()  # Raise on final attempt
-
-                # Check for other server errors that might be transient
-                if response.status_code in (500, 502, 503, 504) and attempt < MAX_RETRIES and idempotent:
-                    _logger.warning(f"[Graph API] Server error ({response.status_code}), retrying in {backoff}s ({attempt + 1}/{MAX_RETRIES})")
-                    time.sleep(backoff)
-                    backoff *= 2
-                    continue
-
-                return response
-
-            except requests.exceptions.Timeout as e:
-                last_exception = e
-                if attempt < MAX_RETRIES and idempotent:
-                    _logger.warning(f"[Graph API] Request timeout, retrying in {backoff}s ({attempt + 1}/{MAX_RETRIES})")
-                    time.sleep(backoff)
-                    backoff *= 2
-                    continue
-                raise
-
-            except requests.exceptions.ConnectionError as e:
-                last_exception = e
-                if attempt < MAX_RETRIES and idempotent:
-                    _logger.warning(f"[Graph API] Connection error, retrying in {backoff}s ({attempt + 1}/{MAX_RETRIES})")
-                    time.sleep(backoff)
-                    backoff *= 2
-                    continue
-                raise
-
-        # Should not reach here, but just in case
-        if last_exception:
-            raise last_exception
-        raise requests.exceptions.RequestException("Max retries exceeded")
+        return http_utils.request_with_retry(
+            method, url, label='Microsoft', log_tag='[Graph API]',
+            headers=headers, timeout=timeout, idempotent=idempotent, **kwargs)
 
     @api.model
     def read_user_info(self, token):
@@ -1837,7 +1630,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         )
         if not result.get('success'):
             raise UserError(_('Could not save the draft: %s') % (result.get('error') or ''))
-        return result.get('microsoft_draft_id')
+        return result.get('draft_id')
 
     @api.model
     def update_draft(self, mail_record, mailbox, account, provider_message_id,
@@ -1853,7 +1646,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         """
         payload, attachments, error = self._draft_content(mail_record, mailbox)
         if error:
-            raise UserError(_('Could not update the draft: %s') % error)
+            raise UserError(_('Could not update the draft: %s') % error.get('error'))
         base = f'/users/{mailbox.email}/messages/{provider_message_id}'
         self._graph_call(account, 'patch', base, json=payload)
 
@@ -1865,17 +1658,7 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         token = self.get_valid_token(account)
         headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-        for att in attachments:
-            raw_bytes = base64.b64decode(att['contentBytes'])
-            if len(raw_bytes) < DIRECT_ATTACHMENT_LIMIT:
-                self._add_attachment_to_draft(headers, mailbox.email,
-                                              provider_message_id, att)
-            else:
-                self._upload_large_attachment(
-                    headers, mailbox.email, provider_message_id,
-                    name=att['name'], content_type=att['contentType'],
-                    raw_bytes=raw_bytes, is_inline=att.get('isInline', False),
-                )
+        self._upload_attachments(headers, mailbox.email, provider_message_id, attachments)
         return provider_message_id
 
     @api.model

@@ -50,7 +50,8 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/providers/microsoft/graph_client.py` | Microsoft 365 implementation of the contract |
 | `models/providers/google/gmail_client.py` | Gmail implementation of the contract |
 | `models/providers/imap_smtp/imap_client.py` | IMAP/SMTP implementation of the contract |
-| `models/providers/mime_utils.py` | Outgoing MIME, shared by the two MIME senders |
+| `models/providers/mime_utils.py` | The outgoing message build, shared by every sender: recipients, the X-Odoo-* headers and the database marker, the MIME itself |
+| `models/providers/http_utils.py` | One retry-and-throttle loop for the two HTTP clients; the three retry constants live here only |
 | `models/pan_mail_fetcher.py` | Incoming email sync (uses `message_new()`) |
 | `models/pan_mail_matcher.py` | Thread matching: which Odoo record does this mail belong to |
 | `models/pan_mail_thread_index.py` | The two indexes the matcher reads (Message-IDs, thread→record) |

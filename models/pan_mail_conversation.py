@@ -992,15 +992,19 @@ class PanMailConversation(models.AbstractModel):
         mailbox = self._own_mailbox(mailbox_id)
         client = mailbox._get_client()
         account = client.resolve_receiving_account(mailbox)
-        message = client.get_message(
-            account=account, mailbox=mailbox,
-            provider_message_id=provider_message_id,
-        )
-        if not message:
-            raise AccessError(_('That message is no longer in this mailbox.'))
-        folder = FOLDER_SENT if self._is_own_address(mailbox, message) else FOLDER_INBOX
-        imported = self.env['pan.mail.fetcher'].sudo().with_context(
-            pan_mail_force_import=True)._process_message(mailbox, message, folder)
+        # One session for the read and the import behind it: on IMAP the
+        # fetcher reads the body and the attachments over the connection this
+        # opened, rather than dialling in once per read.
+        with client.receiving_session(account):
+            message = client.get_message(
+                account=account, mailbox=mailbox,
+                provider_message_id=provider_message_id,
+            )
+            if not message:
+                raise AccessError(_('That message is no longer in this mailbox.'))
+            folder = FOLDER_SENT if self._is_own_address(mailbox, message) else FOLDER_INBOX
+            imported = self.env['pan.mail.fetcher'].sudo().with_context(
+                pan_mail_force_import=True)._process_message(mailbox, message, folder)
         link = self._links_for_live([message]).get(message.get('message_id') or '')
         return {'imported': bool(imported), 'linked': link or False}
 

@@ -1638,6 +1638,32 @@ class Checks:
         if not self.visible('.o_mailpro_mailbox_list'):
             self.fail('the mailbox list button opened nothing on a phone')
         else:
+            # Open, the drawer is a dialog: the keyboard went in with it,
+            # the list behind it is inert, and it says so.
+            if not page.evaluate(
+                    "() => !!document.activeElement"
+                    " && !!document.activeElement.closest('.o_mailpro_mailbox_list')"):
+                self.fail('opening the mailbox list drawer did not put the keyboard in it')
+            if not page.query_selector('.o_mailpro_conversation_list[inert]'):
+                self.fail('the list behind the open drawer is still reachable')
+            if not page.query_selector(
+                    '.o_mailpro_mailbox_list[role="dialog"][aria-modal="true"]'):
+                self.fail('the open drawer is not a modal dialog')
+            # Escape is the way out from the keyboard, and it lands back on
+            # the button that opened the drawer.
+            page.keyboard.press('Escape')
+            page.wait_for_timeout(400)
+            if self.visible('.o_mailpro_mailbox_list'):
+                self.fail('Escape did not close the mailbox list drawer')
+            if not page.evaluate(
+                    "() => !!document.activeElement && document.activeElement"
+                    ".classList.contains('o_mailpro_pane_toggle_mailbox_list')"):
+                self.fail('closing the drawer with Escape did not put the keyboard '
+                          'back on its button')
+            page.query_selector('.o_mailpro_pane_toggle_mailbox_list').click()
+            page.wait_for_timeout(400)
+            if not self.visible('.o_mailpro_mailbox_list'):
+                self.fail('the mailbox list button did not open the drawer a second time')
             drawer = page.query_selector('.o_mailpro_mailbox_list').bounding_box()
             if drawer['width'] > 340:
                 self.fail('the mailbox list drawer covers the whole phone')
@@ -2092,6 +2118,25 @@ class Checks:
             self.fail('the conversation list has no divider to drag')
             return
 
+        # The keyboard's half of the divider: a separator with a value, and
+        # the value inside the range it announces. A separator that reads a
+        # width its own min and max do not allow is a control a screen
+        # reader cannot describe.
+        handle = divider.query_selector('[role="separator"]')
+        if not handle:
+            self.fail('the conversation list divider carries no separator')
+        else:
+            try:
+                now = float(handle.get_attribute('aria-valuenow'))
+                low = float(handle.get_attribute('aria-valuemin'))
+                high = float(handle.get_attribute('aria-valuemax'))
+            except (TypeError, ValueError):
+                self.fail('the separator does not report a width and its range')
+            else:
+                if not low <= now <= high:
+                    self.fail('the separator reports %s, outside its %s to %s'
+                              % (now, low, high))
+
         before = pane.bounding_box()['width']
         box = divider.bounding_box()
         # 200px down the strip, well clear of anything sticky at the top of
@@ -2153,6 +2198,13 @@ class Checks:
         record = page.query_selector('.o_mailpro_odoo_record')
         if record and record.is_visible():
             self.fail('the record pane did not fold away')
+        # No width to set beside a folded pane, so the separator is no
+        # longer a tab stop: the button is the control there.
+        handle = page.query_selector('.o_mailpro_split_odoo_record [role="separator"]')
+        if not handle:
+            self.fail('the folded record divider lost its separator')
+        elif handle.get_attribute('tabindex') is not None:
+            self.fail('the folded record divider still takes the keyboard')
         self.shot('inbox-folded.png')
 
         # Both of those are a preference, not a gesture: they survive the

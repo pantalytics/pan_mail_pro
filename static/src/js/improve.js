@@ -175,9 +175,15 @@ export function useImprove() {
     const onWindowError = (event) => report(event.error || event.message, "window");
     const onUnhandledRejection = (event) => report(event.reason, "promise");
 
+    let unmounted = false;
     onMounted(async () => {
         posthog = await init(config);
-        if (!posthog) {
+        // The bundle loads lazily. If the Inbox closed while it did, the
+        // listeners and the recording below would outlive the screen and
+        // nothing would ever remove them: the rest of Odoo would be recorded
+        // until the next reload, which is exactly what this file promises not
+        // to do.
+        if (!posthog || unmounted) {
             return;
         }
         window.addEventListener("error", onWindowError);
@@ -190,6 +196,7 @@ export function useImprove() {
     });
 
     onWillUnmount(() => {
+        unmounted = true;
         window.removeEventListener("error", onWindowError);
         window.removeEventListener("unhandledrejection", onUnhandledRejection);
         if (posthog && recording) {

@@ -242,7 +242,7 @@ class ResUsers(models.Model):
             'target': 'new',
         }
 
-    def _pan_mail_should_prompt_connect(self, link=None):
+    def _pan_mail_should_prompt_connect(self, link=None, sync_allowed=None):
         """Should this user be shown the "connect your mailbox" banner?
 
         Only where the button behind it would work. Four things have to be
@@ -264,15 +264,19 @@ class ResUsers(models.Model):
 
         `link` is the Pantalytics link when the caller has it (`ir.http`
         resolves it once per page load and asks every question of that row);
-        left out, `sync_allowed` looks it up.
+        left out, `sync_allowed` looks it up. `sync_allowed` is that row's
+        answer when the caller has already asked it -- `ir.http` again, which
+        needs the same answer for a flag of its own -- and `None` means ask.
         """
         self.ensure_one()
         if not self._is_internal() or self.x_pan_mail_connected:
             return False
         if database_is_neutralized(self.env):
             return False
-        License = self.env['pan.mail.license'] if link is None else link
-        if not License.sync_allowed():
+        if sync_allowed is None:
+            License = self.env['pan.mail.license'] if link is None else link
+            sync_allowed = License.sync_allowed()
+        if not sync_allowed:
             # A new account is refused on an unconnected instance, so the
             # button would end in a refusal after the consent screen.
             return False

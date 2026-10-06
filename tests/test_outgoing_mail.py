@@ -120,3 +120,24 @@ class TestGraphSendPayload(TransactionCase):
             [r['emailAddress']['address'] for r in payload['ccRecipients']],
             ['cc@example.com'],
         )
+
+    def test_a_partner_also_typed_into_email_to_is_sent_once(self):
+        """The recipient list is the one the MIME senders build, so Graph
+        de-duplicates on the address like they do: a partner who is also
+        typed into `email_to` used to get the mail twice, and the display
+        name is the first one seen for the address."""
+        partner = self.env['res.partner'].create({
+            'name': 'Jan', 'email': 'jan@client.nl',
+        })
+        mail = self._make_mail(
+            email_to='"Jan de Vries" <Jan@Client.NL>, other@example.com',
+            recipient_ids=[(6, 0, partner.ids)],
+        )
+        result, payload = self._patched_send(mail)
+
+        self.assertTrue(result['success'])
+        self.assertEqual(
+            [r['emailAddress']['address'] for r in payload['toRecipients']],
+            ['jan@client.nl', 'other@example.com'],
+        )
+        self.assertEqual(payload['toRecipients'][0]['emailAddress']['name'], 'Jan de Vries')

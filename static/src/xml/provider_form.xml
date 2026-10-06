@@ -26,11 +26,17 @@
                         <span t-elif="state.phase === 'verified'" class="visually-hidden">done</span>
                         <span t-else="" class="visually-hidden">failed</span>
                     </div>
+                    <!-- The reason, inside the live region and always
+                         there: a live region announces what changes in
+                         it, and an element that arrives whole is not a
+                         change it is sure to read out. The text comes and
+                         goes; the element stays. -->
+                    <div style="white-space: pre-line" t-att-class="{
+                            'mt-3': !busy,
+                            'alert alert-danger mb-0': state.phase === 'rejected',
+                            'text-muted': !busy and state.phase !== 'rejected'}"
+                         t-esc="busy ? '' : state.message"/>
                 </div>
-                <div t-if="!busy" class="mt-3" style="white-space: pre-line" t-att-class="{
-                        'alert alert-danger mb-0': state.phase === 'rejected',
-                        'text-muted': state.phase !== 'rejected'}"
-                     t-esc="state.message"/>
             </div>
             <t t-set-slot="footer">
                 <t t-if="state.phase === 'verified' or state.phase === 'unverifiable'">

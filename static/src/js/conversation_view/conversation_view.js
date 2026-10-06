@@ -284,6 +284,9 @@ export class ConversationView extends Component {
         // The pane row, so Expand can measure where the record's own pane
         // starts before it slides over the other three.
         this.panesRef = useRef("panes");
+        // The whole screen, top bar included: where a focus is looked for
+        // once the DOM has been redrawn.
+        this.rootRef = useRef("root");
 
         // Door 1: the chatter's Open in mail names the record it came from,
         // and whether one conversation is the answer or the reader has to
@@ -1067,28 +1070,96 @@ export class ConversationView extends Component {
         }
     }
 
-    /** Put the keyboard on `selector` once the screen has redrawn. */
-    focusAfterRender(selector) {
-        this.pendingFocus = selector;
+    /**
+     * Put the keyboard on the first of `selectors` that will take it, once
+     * the screen has redrawn. One selector or a list: the heading a Send
+     * leaves for may itself be behind a fold or in an inert pane, and the
+     * next name on the list is where the keyboard goes then.
+     */
+    focusAfterRender(selectors) {
+        this.pendingFocus = Array.isArray(selectors) ? selectors : [selectors];
     }
 
     /**
      * The `onPatched` half of `focusAfterRender`: the DOM is in place now.
      *
-     * Nothing is assumed to be there. The heading asked for may be behind a
-     * fold, inside an inert pane, or not rendered at all, and a focus that
-     * cannot land is simply not given.
+     * Nothing is assumed to be there. An element asked for may be behind a
+     * fold, inside an inert pane, or not rendered at all, and the browser
+     * refuses such a focus without a word -- so each one is tried and the
+     * answer is read back from `document.activeElement`. Searched from the
+     * screen's root rather than the pane row, so the top bar is somewhere
+     * the keyboard can be sent.
      */
     applyPendingFocus() {
-        const selector = this.pendingFocus;
-        if (!selector) {
+        const selectors = this.pendingFocus;
+        if (!selectors) {
             return;
         }
         this.pendingFocus = null;
-        const root = this.panesRef.el;
-        const target = root && root.querySelector(selector);
-        if (target && typeof target.focus === "function") {
+        const root = this.rootRef.el || this.panesRef.el?.closest(".o_mailpro_inbox");
+        if (!root) {
+            return;
+        }
+        for (const selector of selectors) {
+            const target = root.querySelector(selector);
+            if (!target || typeof target.focus !== "function") {
+                continue;
+            }
             target.focus();
+            if (document.activeElement === target) {
+                return;
+            }
+        }
+    }
+
+    /**
+     * A pane folded or unfolded from the top bar. On a phone that is the
+     * drawer, and a drawer is a dialog: the keyboard goes in with it, onto
+     * the folder that is open, the mailbox that is open or the first
+     * button there is, and comes back to the button that opened it. On a
+     * monitor nothing moves: the button stays, and so does the keyboard.
+     */
+    togglePane(pane) {
+        const opening = this.panes.folded(pane);
+        this.panes.togglePane(pane);
+        if (pane !== "mailbox_list" || !this.panes.state.small) {
+            return;
+        }
+        if (opening) {
+            this.focusAfterRender([
+                ".o_mailpro_mailbox_list .o_mailpro_folder_active",
+                ".o_mailpro_mailbox_list .o_mailpro_mailbox_active",
+                ".o_mailpro_mailbox_list button",
+            ]);
+        } else {
+            this.focusAfterRender([".o_mailpro_pane_toggle_mailbox_list"]);
+        }
+    }
+
+    /**
+     * The drawer closing, and where the keyboard lands when it does. By
+     * its own ways out -- Escape, the backdrop, the close button -- it is
+     * the button that opened it (`to: "toggle"`); after a pick it is the
+     * list that pick filled, with the same button as the fallback. Off a
+     * phone there is no drawer and nothing to do but the bookkeeping.
+     */
+    closeMailboxList({ to } = {}) {
+        const wasOpen = this.panes.drawerOpen();
+        this.panes.closeMailboxList();
+        if (!wasOpen) {
+            return;
+        }
+        this.focusAfterRender(to === "toggle"
+            ? [".o_mailpro_pane_toggle_mailbox_list"]
+            : [".o_mailpro_conversation_list_title", ".o_mailpro_pane_toggle_mailbox_list"]);
+    }
+
+    /** Escape is the drawer's way out from the keyboard. */
+    onMailboxListKey(ev) {
+        if (ev.key === "Escape" && this.panes.drawerOpen()) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            this.closeMailboxList({ to: "toggle" });
         }
     }
 
@@ -1118,7 +1189,7 @@ export class ConversationView extends Component {
      * the conversation's head, next to the Reply that comes back.
      */
     async discardComposer() {
-        this.focusAfterRender(".o_mailpro_conversation_title");
+        this.focusAfterRender([".o_mailpro_conversation_title", ".o_mailpro_new"]);
         if (this.composer.state.draftId) {
             await this.leaveComposer();
         } else {
@@ -1376,7 +1447,7 @@ export class ConversationView extends Component {
             this.state.liveFilter = null;
         }
         this.state.folder = folder;
-        this.panes.closeMailboxList();
+        this.closeMailboxList();
         // The search is a question about the folder you are in, so switching
         // folder keeps it: "linked to nothing" in Sent is a fair question,
         // and dropping it on every click is the thing that makes a search
@@ -1461,7 +1532,7 @@ export class ConversationView extends Component {
 
     /** Open another mailbox, from the mailbox list. Folders are per mailbox. */
     async setMailbox(mailboxId) {
-        this.panes.closeMailboxList();
+        this.closeMailboxList();
         if (mailboxId === this.state.mailboxId) {
             return;
         }
@@ -2262,8 +2333,8 @@ export class ConversationView extends Component {
             this.composer.state.mode === "note" ? _t("Note logged.") : _t("Email sent."),
             { type: "success" });
         // Send left with the composer; the conversation's head is what the
-        // keyboard goes back to.
-        this.focusAfterRender(".o_mailpro_conversation_title");
+        // keyboard goes back to, or New email when a new mail leaves no head.
+        this.focusAfterRender([".o_mailpro_conversation_title", ".o_mailpro_new"]);
         if (this.composer.state.mode === "new") {
             // A new mail belongs to no open thread. The list is re-read, and
             // the mail shows up there if it landed in the folder on screen.
@@ -2391,7 +2462,7 @@ export class ConversationView extends Component {
     async onDraftSaved() {
         this.state.compose = null;
         this.notification.add(_t("Draft saved."), { type: "success" });
-        this.focusAfterRender(".o_mailpro_conversation_title");
+        this.focusAfterRender([".o_mailpro_conversation_title", ".o_mailpro_new"]);
         await this.readConversation();
         await this.refresh({ keepSelection: true });
     }

@@ -23,8 +23,10 @@ from odoo.tests import TransactionCase, tagged
 from odoo.addons.pan_mail_pro.models.mail_mail import RoutingError
 from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     FOLDER_INBOX,
+    ThrottledError,
     get_provider_client,
 )
+from odoo.addons.pan_mail_pro.models.providers.http_utils import MAX_RETRIES
 
 # Patch requests.post specifically, not the whole module — the client catches
 # requests.exceptions.RequestException, which must stay a real class.
@@ -86,6 +88,20 @@ class TestGoogleProvider(TransactionCase):
             self.client._api_get(account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1')
         sleep.assert_not_called()
 
+    def test_a_long_wait_on_the_last_attempt_is_still_a_throttle(self):
+        """Gmail's own loop used to return the final 429 and let the caller
+        fail the mail; Graph's raised ThrottledError so the mail was deferred.
+        The shared loop takes Graph's answer on every attempt, the last one
+        included, and this is what keeps that a decision rather than a drift."""
+        account = self._google_account(access_token='t', token_expiry=fields.Datetime.now() + timedelta(hours=1))
+        short = self._status(429, {'Retry-After': '2'})
+        with patch(GMAIL_GET, side_effect=[short, short, short,
+                                            self._status(429, {'Retry-After': '90'})]), \
+                patch(GMAIL_SLEEP) as sleep, \
+                self.assertRaises(ThrottledError):
+            self.client._api_get(account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1')
+        self.assertEqual(sleep.call_count, MAX_RETRIES)
+
     def test_a_send_is_never_repeated_after_a_timeout(self):
         with patch(GMAIL_POST, side_effect=requests.exceptions.Timeout('slow')) as post, \
                 patch(GMAIL_SLEEP):
@@ -103,7 +119,7 @@ class TestGoogleProvider(TransactionCase):
                 # turns it into the UserError, so make the fake do its job.
                 get.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError('503')
                 self.client._api_get(account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1')
-        self.assertEqual(get.call_count, 4)  # 1 + MAX_RETRIES
+        self.assertEqual(get.call_count, 1 + MAX_RETRIES)
 
     # ------------------------------------------------------------------ #
     # Dispatch
@@ -536,6 +552,42 @@ class TestGoogleProvider(TransactionCase):
         self.assertIsNone(by_name['doc.pdf']['content_id'])
         self.assertEqual(by_name['doc.pdf']['content'], b'PDFBYTES')  # fetched via attachmentId
 
+    def test_the_full_message_is_not_fetched_twice_for_its_files(self):
+        """`format=full` already carries every part, so the files are read
+        off the message the fetcher just fetched rather than fetched again.
+        One GET for the message and its attachments; and a message that is
+        not the one asked about is not trusted for it."""
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'gmail_user@test.local', 'provider': 'gmail',
+            'owner_user_id': self.user.id,
+        })
+        account = self._google_account(refresh_token='r', access_token='a',
+                                       token_expiry=fields.Datetime.now() + timedelta(hours=1))
+        raw = self._gmail_message(
+            {'Message-Id': '<a@x>', 'From': 'a@b.com', 'To': 'c@d.com'},
+            html='<p>see attached</p>',
+            parts_extra=[
+                {'mimeType': 'application/pdf', 'filename': 'doc.pdf',
+                 'headers': [{'name': 'Content-Disposition', 'value': 'attachment'}],
+                 'body': {'attachmentId': 'att-1', 'size': 9}},
+            ])
+        Client = type(self.env['google.gmail.client'])
+        with patch.object(Client, '_gmail_get_message', return_value=raw) as get, \
+             patch.object(Client, '_gmail_get_attachment_data', return_value=b'PDFBYTES'):
+            message = self.client.get_message(account, mailbox, 'g1')
+            attachments = self.client.get_message_attachments(
+                account, mailbox, 'g1', full_message=message)
+            self.assertEqual(get.call_count, 1, 'the files came off the kept payload')
+            self.assertEqual([a['name'] for a in attachments], ['doc.pdf'])
+            self.assertEqual(attachments[0]['content'], b'PDFBYTES')
+
+            self.client.get_message_attachments(
+                account, mailbox, 'g2', full_message=message)
+            self.assertEqual(get.call_count, 2, 'another id is fetched, not trusted')
+
+        self.assertTrue(message['has_attachments'])
+        self.assertIs(message['_source'], raw)
+
     def test_an_attachment_failure_keeps_the_message_and_leaves_a_row(self):
         """The contract says an attachment failure must not sink the message.
         It also must not be silent: the mail is then in Odoo looking complete
@@ -558,6 +610,26 @@ class TestGoogleProvider(TransactionCase):
         self.assertEqual(row.level, 'warning')
         self.assertEqual(row.account_id, account)
         self.assertEqual(row.provider, 'gmail')
+
+    def test_a_throttle_during_the_attachment_fetch_is_not_an_attachment_failure(self):
+        """Google asked the mailbox to wait, not to go without this file.
+        Swallowed, the message lands without its attachments and the
+        duplicate gate never lets it back; raised, the fetcher keeps what
+        landed, holds the cursor and tries again next run."""
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'gmail_user@test.local', 'provider': 'gmail',
+            'owner_user_id': self.user.id,
+        })
+        account = self._google_account(refresh_token='r', access_token='a',
+                                       token_expiry=fields.Datetime.now() + timedelta(hours=1))
+        Client = type(self.env['google.gmail.client'])
+        with patch.object(Client, '_gmail_get_message',
+                          side_effect=ThrottledError('asked to wait', 90)):
+            with self.assertRaises(ThrottledError):
+                self.client.get_message_attachments(account, mailbox, 'g1')
+
+        self.assertFalse(self.env['pan.mail.error'].search(
+            [('code', '=', 'incoming.attachments_failed')], limit=1))
 
     # ------------------------------------------------------------------ #
     # Token lifecycle
