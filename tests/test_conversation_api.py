@@ -516,12 +516,13 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(len(rows), row['count'])
 
     def test_unfolding_is_for_people_who_read_a_mailbox(self):
-        """Every method on this layer is reachable over `call_kw`."""
+        """Every method on this layer is reachable over `call_kw`, by a
+        portal user too; an internal user is the one it is for."""
         outsider = self.env['res.users'].create({
             'name': 'Buitenstaander',
             'login': 'outsider@company.test',
             'email': 'outsider@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         self._mail()
         with self.assertRaises(AccessError):
@@ -881,12 +882,13 @@ class TestConversationApi(TransactionCase):
             'crm.lead', self.lead.id)['files']['ids']), 2)
 
     def test_the_inbox_is_for_people_who_read_a_mailbox(self):
-        """A group on a menu is not an access rule, so the methods check too."""
+        """A group on a menu is not an access rule, so the methods check too:
+        a portal user is refused, whatever the menu says."""
         stranger = self.env['res.users'].create({
             'name': 'Nina Nobody',
             'login': 'nina@company.test',
             'email': 'nina@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).search_conversations()
@@ -921,7 +923,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Nils Nobody',
             'login': 'nils@company.test',
             'email': 'nils@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).failure_remedy()

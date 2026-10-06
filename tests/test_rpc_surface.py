@@ -175,7 +175,7 @@ class TestRpcSurface(TransactionCase):
         self._every_inbox_method_refuses(
             self.env['pan.mail.conversation'].with_user(self.portal), 'portal user')
         as_plain = self.env['pan.mail.conversation'].with_user(self.plain)
-        self.assertEqual(as_plain.search_conversations(), [])
+        self.assertEqual(as_plain.search_conversations(in_a_mailbox=True), [])
         self.assertTrue(as_plain.inbox_search_view_id())
 
     def test_the_inbox_is_closed_on_an_unconnected_instance_on_every_method(self):

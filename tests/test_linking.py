@@ -372,10 +372,12 @@ class TestLinkPicker(TransactionCase):
         rows = self.Conversation.link_targets(search='Contact')
         self.assertEqual(rows[0]['model'], 'res.partner')
 
-    def test_the_picker_is_for_mailbox_managers(self):
+    def test_the_picker_is_for_internal_users(self):
+        """A portal user is refused at the door; an internal user gets the
+        picker, and what it offers is bounded by `has_access('write')`."""
         stranger = self.env['res.users'].create({
             'name': 'Buitenstaander', 'login': 'picker-stranger',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).link_targets()
