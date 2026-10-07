@@ -10,6 +10,7 @@
                   decoration-warning="health_status == 'warning'">
                 <field name="sequence" widget="handle"/>
                 <field name="email" string="Mailbox"/>
+                <field name="mailbox_type" string="Type" optional="show"/>
                 <field name="health_status" string="Status" widget="badge"
                        decoration-success="health_status == 'healthy'"
                        decoration-warning="health_status == 'warning'"
@@ -19,7 +20,6 @@
                      tick there. -->
                 <field name="is_notification_mailbox" string="Notification"
                        widget="boolean_toggle"/>
-                <field name="mailbox_type" string="Type" optional="hide"/>
                 <!-- What the provider says is at the address, as the access
                      check last found it. Odoo's policy word is the column
                      above; this is Exchange's or Gmail's factual one. -->
