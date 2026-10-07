@@ -268,10 +268,10 @@ class PanMailMailbox(models.Model):
         'pan.mail.mailbox.access', 'mailbox_id', string='Access',
         help='What each sign-in may do with this mailbox, as the provider last said.')
     access_state = fields.Selection([
-        ('open', 'Not tested yet'),
+        ('open', 'Not checked yet'),
         ('proven', 'Works'),
         ('fix', 'Needs a fix'),
-    ], string='Test', compute='_compute_access_state',
+    ], string='Check', compute='_compute_access_state',
         help='Works: a send from this address went through and the provider '
              'raised nothing. Needs a fix: the provider said no, and the '
              'sentence beside it says what to do. The last step of setting a '
@@ -398,16 +398,16 @@ class PanMailMailbox(models.Model):
         the right is granted there and never in Odoo."""
         rows = self.access_ids
         if self.address_kind in ('none', 'resource', 'alias'):
-            return _('Use the address of a real mailbox, then test again.')
+            return _('Use the address of a real mailbox, then check again.')
         if any(row.can_read == 'no' for row in rows):
             return _('Give that sign-in access to the mailbox in your mail '
-                     'admin, then test again.')
+                     'admin, then check again.')
         if any(row.can_send == 'no' for row in rows):
             return _('Allow that sign-in to send as this address in your mail '
-                     'admin, then test again.')
+                     'admin, then check again.')
         return False
 
-    def action_test_mailbox(self):
+    def action_check_mailbox(self):
         """The one test of setting a mailbox up: ask the provider who may read
         and send here, then send one email to whoever pressed it. After it the
         access table holds a real send, so the form can say "it works" rather

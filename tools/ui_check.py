@@ -2729,9 +2729,9 @@ class Checks:
                 self.fail(f'the Setup tab draws {steps} steps, expected 2')
             if self.page.query_selector('.o_mailpro_step table'):
                 self.fail('the test step shows a table instead of an answer')
-            # Not tested yet, so the test step offers the test.
-            if not self.page.query_selector('.o_mailpro_step button.btn-primary:has-text("Test mailbox")'):
-                self.fail('an untested mailbox does not offer "Test mailbox"')
+            # Not checked yet, so the check step offers the check.
+            if not self.page.query_selector('.o_mailpro_step button.btn-primary:has-text("Check mailbox")'):
+                self.fail('an unchecked mailbox does not offer "Check mailbox"')
             if 'Last synced' in text:
                 self.fail('the form still labels the fetch cursor "Last synced"')
 

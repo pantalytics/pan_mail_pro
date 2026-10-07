@@ -79,8 +79,8 @@ class TestMailboxTestSend(MailProTestCase):
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
-class TestMailboxSetupTest(MailProTestCase):
-    """"Test mailbox": the one test the Setup tab ends with.
+class TestMailboxSetupCheck(MailProTestCase):
+    """"Check mailbox": the one check the Setup tab ends with.
 
     It checks access, sends one email to whoever pressed it, and once a send
     went through the form shows the answer instead of the button.
@@ -90,7 +90,7 @@ class TestMailboxSetupTest(MailProTestCase):
         mailbox = self.shared_mailbox.with_user(self.salesperson)
         self.assertEqual(mailbox.access_state, 'open')
         with self.mock_graph():
-            result = mailbox.action_test_mailbox()
+            result = mailbox.action_check_mailbox()
 
         self.assertEqual(result['params']['type'], 'success')
         # The notification reloads the form, so the answer replaces the button.
@@ -106,17 +106,17 @@ class TestMailboxSetupTest(MailProTestCase):
             'can_read': 'yes', 'can_send': 'no'})
         self.assertEqual(self.shared_mailbox.access_state, 'fix')
         self.assertIn(account.email, self.shared_mailbox.access_message)
-        self.assertIn('then test again', self.shared_mailbox.access_message)
+        self.assertIn('then check again', self.shared_mailbox.access_message)
 
     def test_only_a_manager_runs_the_access_check(self):
         """Asking the provider is a manager's act; the send is anybody's who
         may send from the address."""
         Mailbox = type(self.env['pan.mail.mailbox'])
         with patch.object(Mailbox, '_verify_all_access') as check, self.mock_graph():
-            self.shared_mailbox.with_user(self.salesperson).action_test_mailbox()
+            self.shared_mailbox.with_user(self.salesperson).action_check_mailbox()
         check.assert_not_called()
 
         self.salesperson.group_ids += self.env.ref('pan_mail_pro.group_mail_mailbox_manager')
         with patch.object(Mailbox, '_verify_all_access') as check, self.mock_graph():
-            self.shared_mailbox.with_user(self.salesperson).action_test_mailbox()
+            self.shared_mailbox.with_user(self.salesperson).action_check_mailbox()
         check.assert_called_once()

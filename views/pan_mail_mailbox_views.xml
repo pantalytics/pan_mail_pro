@@ -97,7 +97,7 @@
                                    invisible="health_status == 'healthy' and access_state == 'open'"
                                    readonly="1"/>
                             <span class="badge rounded-pill text-bg-secondary"
-                                  invisible="health_status != 'healthy' or access_state != 'open'">Not tested</span>
+                                  invisible="health_status != 'healthy' or access_state != 'open'">Not checked</span>
                         </h1>
                         <div class="text-muted">
                             <field name="subtitle" readonly="1" nolabel="1"/>
@@ -211,7 +211,7 @@
                                           invisible="access_state != 'open'"/>
                                     <div class="o_mailpro_step_body">
                                         <div class="o_mailpro_step_head">
-                                            <span class="o_mailpro_step_name">2. Test</span>
+                                            <span class="o_mailpro_step_name">2. Check</span>
                                             <span class="o_mailpro_step_value">
                                                 <field name="access_state" nolabel="1" readonly="1"/>
                                             </span>
@@ -223,20 +223,20 @@
                                              Technical -> Email -> Mail Pro -> Mailbox
                                              access. -->
                                         <div class="o_mailpro_step_msg" invisible="access_state != 'open'">
-                                            <button name="action_test_mailbox" type="object"
-                                                    string="Test mailbox" class="btn-primary btn-sm me-2"/>
+                                            <button name="action_check_mailbox" type="object"
+                                                    string="Check mailbox" class="btn-primary btn-sm me-2"/>
                                             Checks who can read and send here, then sends one email to you.
                                         </div>
                                         <div class="o_mailpro_step_msg" invisible="access_state != 'fix'">
                                             <div class="o_mailpro_msg_warn mb-1">
                                                 <field name="access_message" nolabel="1" readonly="1"/>
                                             </div>
-                                            <button name="action_test_mailbox" type="object"
-                                                    string="Test again" class="btn-secondary btn-sm"/>
+                                            <button name="action_check_mailbox" type="object"
+                                                    string="Check again" class="btn-secondary btn-sm"/>
                                         </div>
                                         <div class="o_mailpro_step_msg" invisible="access_state != 'proven'">
-                                            <button name="action_test_mailbox" type="object"
-                                                    string="Test again" class="btn-link btn-sm p-0"/>
+                                            <button name="action_check_mailbox" type="object"
+                                                    string="Check again" class="btn-link btn-sm p-0"/>
                                         </div>
                                     </div>
                                 </div>
