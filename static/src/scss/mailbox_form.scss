@@ -26,8 +26,19 @@
         }
     }
 
-    .o_mailpro_mailbox_meta {
+    // One line. Odoo stretches every field under `.oe_title` to the full
+    // width, which broke the status, the identity and the last check onto
+    // three lines; a wrapping row gives each its own width back.
+    .oe_title .o_mailpro_mailbox_meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.25rem;
         font-size: 0.88rem;
+
+        .o_field_widget {
+            width: auto;
+        }
     }
 
     .o_mailpro_mailbox_lead {

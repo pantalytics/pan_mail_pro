@@ -2727,6 +2727,21 @@ class Checks:
                 self.fail('the mailbox form has no address with its status under it')
             elif gap > 24:
                 self.fail(f'the status badge sits {gap:.0f}px from the address column')
+            # The status, the identity and the last check are one line.
+            # Odoo stretches every field under `.oe_title` to full width,
+            # which put them on three.
+            spread = self.page.evaluate("""() => {
+                const meta = document.querySelector('.o_mailpro_mailbox_meta');
+                if (!meta) return null;
+                const mids = [...meta.children]
+                    .filter(el => el.getClientRects().length)
+                    .map(el => { const r = el.getBoundingClientRect();
+                                 return (r.top + r.bottom) / 2; });
+                return Math.max(...mids) - Math.min(...mids);
+            }""")
+            if spread is not None and spread > 12:
+                self.fail('the line under the mailbox address breaks onto more than '
+                          f'one line ({spread:.0f}px between its parts)')
             for gone in ('Sync Now', 'Send test email', 'Try again'):
                 if gone in text:
                     self.fail(f'a working mailbox still offers "{gone}"')
