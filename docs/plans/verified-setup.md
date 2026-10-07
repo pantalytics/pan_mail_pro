@@ -1,8 +1,29 @@
 # A setup the module can verify
 
-Status: proposal, 2026-10-07. Nothing built. Supersedes the "find out at the
-send" posture in ARCHITECTURE.md §2 *Connected as* and closes #266, #271 and
-#295 when it lands.
+Status: **built**, 19.0.28.0.0, except the probe matrix on a real tenant
+(step 0, §10): `docs/research/provider-probes.md` names every cell that is
+still the module's reading rather than an observed response, and the
+fixtures in `tests/test_mailbox_access.py` carry the same strings. The design
+has moved into ARCHITECTURE.md §2 *Connected as* and *Verified access*; this
+file stays for the reasoning until that matrix has run, then leaves.
+
+Four things landed differently from the plan below, each for a reason:
+
+- **The phase does not wait for the verified answer.** §3.3 said step 4 goes
+  green only after a read probe and a send, and it does; but `is_ready()`
+  keeps reading the credentials, because a phase that waited would stop every
+  existing database's incoming sync at the upgrade until both had happened.
+- **No `access_ok` on the heartbeat** (§7). mail-pro-admin refuses a field it
+  does not know, and a refused heartbeat at every customer is worse than a
+  missing boolean. The `access.*` codes ride the error list it accepts; the
+  boolean follows once the server takes one.
+- **No "Verified 7 Oct" line on the user form** (§6). The account form has
+  the date and the Users list already shows the sign-in; a third place to say
+  it is a line nobody asked for.
+- **`tools/ui_check.py` is unchanged.** The new menu is walked by the check
+  that opens every menu; the new sentences are asserted in
+  `tests/test_mailbox_health.py` rather than in the browser, since no browser
+  ran in the session that built this.
 
 ## 1. What went wrong, in one case
 

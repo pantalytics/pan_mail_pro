@@ -19,6 +19,30 @@ user. Grant the rights to that one.
 4. **Delegation → Read and manage (Full Access)** → Add the user
 5. **Delegation → Send As** → Add the user
 
+### "… cannot read …", "There is no mailbox at …", "… is a user account"
+
+Since 19.0.28 Mail Pro asks the provider what a configured address is and
+whether the sign-in that serves it may read it, once an hour and at every
+sign-in. What it found is the sentence on the mailbox form and on step 4 of
+Settings → Mail Pro; the table behind it is **Settings → Technical → Email →
+Mail Pro → Mailbox access**, one line per sign-in and mailbox.
+
+| The sentence says | What it means | What to do |
+|---|---|---|
+| *X cannot read Y* | the sign-in X has no Full Access on mailbox Y | grant Full Access on Y to X in the Exchange admin center, then Check access on the mailbox |
+| *There is no mailbox at Y* | Y is a group, a distribution list, a typo, or deleted | use a mailbox's own address, or create the mailbox |
+| *Y is a user account. Connect it as its own sign-in, or grant X Full Access and Send As on it* | Y is a person's mailbox, owned in Odoo by somebody signed in as X | the simple way: have somebody sign in to Odoo as Y and make them the owner. The other: both rights on Y for X |
+| *Y is an alias on another mailbox* | Y is an extra address on some mailbox, not one of its own | configure that mailbox's primary address |
+| *Reconnect X … so Mail Pro can check what Y is* | X's grant predates the permission the check needs | X presses Disconnect, then Connect mailbox, under My Preferences → Mail Pro |
+| *X has no send-as address for Y* (Google) | the Workspace account X may not put Y in From | sign in as Y, or add Y under Send mail as in X's Gmail settings |
+| *Y is a send-as alias of X that Google has not verified yet* | the alias is pending | finish the verification mail in Gmail settings |
+| *X may not send as Y: the server refused the sender* (SMTP) | the login may not use Y as MAIL FROM | ask the hoster to allow Y for that login, or use the login's own address |
+
+Send As on Microsoft 365 and SMTP is only ever proven by a send: a row
+reading **Sends: Not checked** is not a fault, it is waiting for the first
+mail. **Send test email** on the mailbox form is the way to make that
+happen now.
+
 ### "Mailbox not connected" warning, or the banner will not go away
 
 **Cause:** The user has not connected their account yet.
