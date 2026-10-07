@@ -2718,6 +2718,17 @@ class Checks:
                     self.fail(f'a working mailbox still offers "{gone}"')
             if 'Last checked' not in text:
                 self.fail('the mailbox form does not say when it was last checked')
+
+            # Setup, as the brand guide's settings page: two bordered cards,
+            # and no empty rows padding the access table.
+            self.page.click('.o_notebook .nav-link:has-text("Setup")')
+            self.page.wait_for_timeout(600)
+            self.shot('mailbox-setup.png')
+            cards = len(self.page.query_selector_all('.o_form_view .o_mailpro_card'))
+            if cards != 2:
+                self.fail(f'the Setup tab draws {cards} cards, expected 2')
+            if self.page.query_selector('.o_mailpro_access tbody tr:not(.o_data_row):visible'):
+                self.fail('the access table is padded with empty rows')
             if 'Last synced' in text:
                 self.fail('the form still labels the fetch cursor "Last synced"')
 

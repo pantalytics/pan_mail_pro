@@ -102,3 +102,27 @@
 .o_mailpro_about {
     max-width: 46rem;
 }
+
+// The mailbox form's Setup tab, as the brand guide's settings page: a card of
+// rows per section. No shadow; a 1px border is the only depth
+// (brand.pantalytics.com/product-ui).
+.o_mailpro_card {
+    border: 1px solid var(--border-color, rgba(0, 29, 33, 0.12));
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+}
+
+.o_mailpro_card_head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+// Odoo pads a short one2many list with empty rows so it keeps a height. On a
+// read-only table of one or two sign-ins they read as rows that failed to load.
+.o_mailpro_access tbody tr:not(.o_data_row) {
+    display: none;
+}
