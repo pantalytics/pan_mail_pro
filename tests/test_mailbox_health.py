@@ -135,6 +135,13 @@ class TestMailboxHealth(MailProTestCase):
                 self.assertEqual(mailbox.address_kind, 'unknown')
                 self.assertIsNone(mailbox._access_problem())
 
+    def test_a_working_mailbox_says_so_in_a_word(self):
+        """The badge names a state, the way the brand's status words do:
+        Working, Warning, Error. `OK` named nothing."""
+        labels = dict(self.env['pan.mail.mailbox']._fields['health_status']
+                      ._description_selection(self.env))
+        self.assertEqual(labels['healthy'], 'Working')
+
     # --------------------------------------------------------------- step 4
 
     def test_step_4_is_open_until_the_owner_has_been_seen_to_send(self):
