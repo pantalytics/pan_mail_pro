@@ -100,8 +100,7 @@ Rules that follow:
   "robert@stalero.nl" under a user whose email is "robert@emovr.nl", and that
   is the whole warning. Dropped case: enforcing a match. It would lock out
   every customer whose Odoo login is not their mailbox.
-- **Gmail** stores `sub`, `email`, `name` from userinfo into the same fields.
-  IMAP stores nothing new; its identity is its login.
+- **Gmail and IMAP/SMTP** fill the same fields from what they have; §8.
 
 `_identity_label` reads `display_name` instead of calling `/me`.
 
@@ -132,10 +131,10 @@ factual one. They are read together:
 - `alias`, `none`, `resource` → the mailbox is broken whatever else is true.
 
 The provider contract gets one method, `inspect_mailbox(account, address)`,
-returning `{'kind', 'can_read', 'error'}` in normalized form. Microsoft
-implements the ladder in §4; Gmail and IMAP return `kind='user'` and
-`can_read` from a cheap list call, because there an address is its own
-account and nothing else is possible. The boundary grep stays unbroken.
+returning `{'kind', 'can_read', 'can_send', 'error'}` in normalized form.
+Microsoft implements the ladder in §4 and answers `can_send = unknown`;
+Google and IMAP/SMTP answer it their own way, §8. The boundary grep stays
+unbroken: nothing outside a provider directory names an endpoint.
 
 ### 3.3 Access is a table
 
@@ -263,7 +262,112 @@ from" the day it happens rather than six months later (#266, #271).
 
 `[Access]` is the log tag.
 
-## 8. What is dropped
+## 8. Google Workspace and IMAP/SMTP
+
+The three providers answer the same three questions (who signed in, what is
+this address, may this sign-in read and send from it) with different
+evidence. The table, the health rungs and the screens are provider-neutral;
+only the probes differ. ARCHITECTURE §1 *Capability differences* gets the
+three rows below.
+
+| Question | Microsoft 365 | Google Workspace | IMAP/SMTP |
+|----------|---------------|------------------|-----------|
+| Identity | `/me` + id_token (`oid`, `tid`) | id_token (`sub`, `email`, `hd`) + Gmail profile | the login; nothing else exists |
+| Tenant | `tid` = app registration's tenant | `hd` = the Workspace domain the admin entered | none |
+| Kind | `userPurpose` + directory lookup | primary, or a verified send-as alias, or nothing | `account`: an IMAP login *is* a mailbox |
+| Can read | inbox probe with each sign-in | the account's own profile call | `SELECT INBOX` read-only |
+| Can send | only a send proves it | **`sendAs.list` proves it before a send** | only a send proves it |
+
+### 8.1 Google Workspace
+
+**Identity.** The callback asks for `openid email` already, so the id_token
+carries `sub` (stable id), `email` and `hd`, the hosted domain. `sub` fills
+`provider_user_id`, `hd` fills `tenant_id`. A consumer `@gmail.com` sign-in
+has no `hd` and is refused at the callback the way a foreign Microsoft tenant
+is: Mail Pro is a Workspace product and a personal Gmail cannot hold a shared
+address. `display_name` stays empty; the Gmail profile has none and
+`userinfo.profile` is a scope we do not add for a name.
+
+**Kind and Send As, in one call.** Gmail's
+`users.settings.sendAs.list` returns every address this account may put in
+`From:`, each with `isPrimary` and `verificationStatus`. It is covered by
+`gmail.modify`, which the module already holds, so no new consent. For a
+mailbox address and the account that serves it:
+
+| `sendAs.list` says | `address_kind` | `can_send` |
+|--------------------|----------------|------------|
+| `isPrimary` and `sendAsEmail` = address | `user` | yes |
+| `verificationStatus = accepted`, not primary | `alias` | yes |
+| `verificationStatus = pending` | `alias` | no: "awaiting verification in Gmail settings" |
+| absent | `none` for this sign-in | no: "this sign-in has no send-as address for X" |
+
+This is the one provider where Send As is a lookup rather than a guess, and
+it answers the Gmail shape of the Emovr mistake: an admin files
+`sales@customer.com` as a shared mailbox, signs in as themselves instead of
+as `sales@`, and every send would fail with Gmail's `Delegation denied`. The
+row says so the moment the mailbox is saved and the hour's probe runs.
+
+A Google Group with a collaborative inbox is `none` unless somebody has
+added it as a send-as alias on the account; the Directory and Groups APIs
+need admin scopes, same decision as §2. Gmail delegation (one user reading
+another's mailbox) is invisible to the Gmail API with the delegate's OAuth
+token, so a delegated mailbox cannot be served by its delegate and the
+module does not pretend otherwise: a shared mailbox on Google is a sign-in
+as that address, which is what `resolve_receiving_account` already says.
+
+**Can read** is the profile call the sync already makes. One probe per
+account, not per (mailbox, account): on Google there is exactly one sign-in
+that can read a given mailbox, its own.
+
+### 8.2 IMAP/SMTP
+
+**Identity.** A login and two hosts, typed by an administrator. There is
+no identity endpoint and nothing to verify the address against, so
+`provider_user_id`, `tenant_id` and `display_name` stay empty and the
+account's `email` is taken on faith. `verified_date` still moves on every
+successful probe.
+
+**Kind** is `account`: a login that opens a mailbox is a mailbox. Whether
+the address is somebody's alias or a group on the server is not knowable
+over IMAP, and the hard call is not to try: the one failure this hides (the
+admin typed `info@` but the login is `robert@`, so the sync reads Robert's
+inbox under the wrong label) is caught by the send, below.
+
+**Can read** is `SELECT INBOX` read-only, which `test_connection` does
+today and the sync does every minute. Free.
+
+**Can send.** SMTP has no Send As to query. `MAIL FROM` is sometimes
+refused on the spot (Microsoft and Google relays check it; most others say
+250 and bounce later), so a cheap probe is an envelope `MAIL FROM:<address>`
+followed by `RSET`: a 5xx sets `can_send = no` with the server's own line, a
+250 leaves it `unknown` until a delivered mail sets `yes`. That asymmetry is
+the truth of the protocol and the row shows it as such. The step-0 matrix
+gets an SMTP column: our GreenMail says 250 to anything, Exchange Online's
+SMTP AUTH relay refuses a `MAIL FROM` the login may not send as, and both
+answers go into the fixtures.
+
+**Sent copy.** The APPEND to Sent that ARCHITECTURE §9.6 does best-effort is a third
+right (write to a folder) and its failure already lands in
+`outgoing.sent_copy_failed`. It stays out of the access table: the mail was
+delivered, and a row that reads "no" over a missing Sent folder would send
+an admin to fix the wrong thing.
+
+### 8.3 What the shared code does with the differences
+
+`health_status` reads `can_read` and `can_send` and never asks which
+provider wrote them. The one provider-specific sentence is the fix line,
+which each client already owns (`_no_credentials_error` has one per
+provider today): Exchange says "Full Access and Send As", Gmail says "add
+the address under Send mail as in Gmail settings, or sign in as it", SMTP
+quotes the server's refusal.
+
+Step 4 of the checklist asks the same of the notification mailbox on every
+provider: `can_read = yes` and `can_send = yes` on the owner's row. On
+Google that is green after the hour's probe without anybody sending; on
+Microsoft and SMTP after the test email. The step's open-state line says
+which: "not yet sent from" only appears where a send is the only proof.
+
+## 9. What is dropped
 
 - **Rerouting to another identity** (#295). A send goes out with the sign-in
   the route named or not at all; §9.5 holds. Picking a working token silently
@@ -271,25 +375,27 @@ from" the day it happens rather than six months later (#266, #271).
 - **Enforcing account email = user email.** Shown, never refused (§3.1).
 - **Admin-consent scopes.** No naming the mailbox behind an alias, no
   distinguishing a group from a typo. Both say "no mailbox of its own here".
-- **Probing Send As without sending.** Impossible; the test email is the probe.
+- **Probing Send As without sending** on Microsoft and SMTP. Impossible on
+  the first, a 250 that means nothing on the second; the test email is the
+  probe. Google is the exception and gets the lookup (§8.1).
 - **Send on Behalf.** Exchange accepts it with the `from` header the module
   already sets; the recipient sees "on behalf of". Not detected, not
   documented as supported.
 - **Verifying from a constraint or at form load.** No network in either.
 
-## 9. Build order
+## 10. Build order
 
 Each step ships on its own, bumps the manifest, and passes
 `BASE_REF=origin/19.0 tools/ci_lint.sh` and the suite.
 
 | Step | What | Done when |
 |------|------|-----------|
-| 0 | Probe matrix on the Pantalytics tenant, `docs/research/graph-probes.md` | every cell of §4 has its real `code` |
-| 1 | Identity: scopes `MailboxSettings.Read` + `User.ReadBasic.All`, id_token claims, the §3.1 fields, tenant refusal, Gmail's userinfo. `tests/test_identity.py` | the callback stores six fields and refuses a foreign tenant |
-| 2 | `inspect_mailbox` on the contract, the Microsoft ladder, `address_kind`, `pan.mail.mailbox.access`, the three run moments. `tests/test_mailbox_access.py` on the step-0 fixtures | a fake Exchange that refuses Full Access produces a `no` row and an `access.read_denied` ledger row |
+| 0 | Probe matrix: Graph on the Pantalytics tenant, `sendAs.list` on a Workspace account with a pending and an accepted alias, `MAIL FROM` on GreenMail and on Exchange Online's SMTP relay. `docs/research/provider-probes.md` | every cell of §4 and §8 has its real response |
+| 1 | Identity: scopes `MailboxSettings.Read` + `User.ReadBasic.All`, id_token claims on both OAuth providers, the §3.1 fields, tenant / `hd` refusal. `tests/test_identity.py` | the callback stores six fields and refuses a foreign tenant and a consumer Gmail |
+| 2 | `inspect_mailbox` on the contract, the Microsoft ladder, Gmail's `sendAs.list`, the SMTP envelope probe, `address_kind`, `pan.mail.mailbox.access`, the three run moments. `tests/test_mailbox_access.py` on the step-0 fixtures, one class per provider, and `test_provider_contract.py` asserting all three implement it | a fake Exchange that refuses Full Access produces a `no` row and an `access.read_denied` ledger row; a fake Gmail with a pending alias produces `can_send = no` |
 | 3 | Health, status, step 4, heartbeat and `failure_reason` read the table. The 404 draft error mapped. Extend `test_microsoft_provider.py`, `test_connected_as.py` | Emovr's shape (user kind, owner on another address) renders the §3.2 sentence; `health_status = error` |
 | 4 | Screens: the form lines, the Access technical list, the Kind column. `tools/ui_check.py`: step 4 red line text, the per-sender list on a shared mailbox | the browser check reads both |
-| 5 | ARCHITECTURE.md §2 (replace *Connected as* and the `userPurpose` rejection), §13 (the limitation narrows to Send As), `docs/troubleshooting.md`, README scopes. This file leaves `docs/plans/` | CI's model-in-ARCHITECTURE check passes |
+| 5 | ARCHITECTURE.md §1 capability table (three rows), §2 (replace *Connected as* and the `userPurpose` rejection), §13 (the limitation narrows to Send As on Microsoft and SMTP), `docs/troubleshooting.md` per provider, README scopes. This file leaves `docs/plans/` | CI's model-in-ARCHITECTURE check passes |
 
 Migration: `19.0.28.0.0` adds columns only. `address_kind` starts at
 `unknown` on every row and the first cron hour fills it. No backfill from
