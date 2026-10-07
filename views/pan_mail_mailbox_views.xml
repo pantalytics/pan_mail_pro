@@ -48,7 +48,7 @@
         <field name="name">pan.mail.mailbox.form</field>
         <field name="model">pan.mail.mailbox</field>
         <field name="arch" type="xml">
-            <form string="Mailbox">
+            <form string="Mailbox" class="o_mailpro_mailbox_form">
                 <!-- No header. A mailbox that works has no action to offer,
                      and a header carrying two buttons on such a screen is the
                      module admitting it cannot tell the reader whether the
@@ -79,31 +79,34 @@
                         </button>
                     </div>
 
-                    <!-- The identity: read, not filled in. -->
-                    <div class="oe_title">
+                    <!-- The identity: read, not filled in. The address and its
+                         status on one line, then one grey line of facts: the
+                         brand's overview page is a title, its status, and
+                         nothing that needs a second line to explain it. -->
+                    <div class="oe_title o_mailpro_mailbox_head">
                         <h1 class="d-flex align-items-center gap-3">
                             <field name="email" placeholder="support@company.com"
-                                   class="flex-grow-1"/>
+                                   class="o_mailpro_mailbox_address"/>
                             <field name="health_status" string="Status" widget="badge"
                                    decoration-success="health_status == 'healthy'"
                                    decoration-warning="health_status == 'warning'"
                                    decoration-danger="health_status == 'error'"
                                    readonly="1"/>
                         </h1>
-                        <div class="text-muted">
-                            <field name="subtitle" readonly="1" nolabel="1"/>
-                        </div>
                         <!-- Time Machine's line, for the same reason: a result
                              nobody can see any other way has to be stated. The
                              reader of this mailbox sees the sync working in
                              the Inbox; the admin setting up an address for
                              somebody else's team never does. -->
-                        <div class="text-muted small" invisible="is_notification_mailbox">
-                            <span invisible="not last_check_date">
-                                Last checked <field name="last_check_date" readonly="1" nolabel="1"
-                                                    class="d-inline-block"/>
+                        <div class="text-muted o_mailpro_mailbox_meta">
+                            <field name="subtitle" readonly="1" nolabel="1" class="d-inline"/>
+                            <span invisible="is_notification_mailbox or not last_check_date">
+                                · Last checked <field name="last_check_date" readonly="1" nolabel="1"
+                                                           class="d-inline"/>
                             </span>
-                            <span invisible="last_check_date">Not checked yet</span>
+                            <span invisible="is_notification_mailbox or last_check_date">
+                                · Not checked yet
+                            </span>
                         </div>
                     </div>
 
@@ -114,47 +117,44 @@
                               invisible="is_notification_mailbox">
                             <!-- Sending is stated, not asked. Whether this
                                  address is used is decided per message, in the
-                                 composer's Send From. -->
-                            <div class="text-muted mb-3">
-                                Emails you send from Odoo with this mailbox picked under
-                                Send From go out from this address. They show up in the
-                                Sent Items of your mail app like any other mail. A note
-                                sends nothing.
-                            </div>
+                                 composer's Send From. One sentence: the brand
+                                 allows no more under a heading. -->
+                            <p class="text-muted o_mailpro_mailbox_lead">
+                                Mail you send from Odoo with this address under Send From
+                                leaves from it and lands in your Sent Items.
+                            </p>
 
-                            <!-- One ladder. Each answer keeps strictly more of
-                                 the mailbox than the one above it, so the widest
-                                 answer is three deliberate clicks from the
-                                 default and says out loud what it does. -->
-                            <span class="o_form_label">Sync level</span>
-                            <field name="sync_level" widget="radio" nolabel="1" class="mt-1"/>
-                            <div class="alert alert-warning mt-2 mb-0" role="alert"
+                            <!-- Rows, label left and value right, in Odoo's own
+                                 group: the label used to run straight into the
+                                 first radio. One ladder; each answer keeps
+                                 strictly more of the mailbox than the one above
+                                 it, so the widest is three deliberate clicks
+                                 from the default and says out loud what it does. -->
+                            <group class="o_mailpro_mailbox_rows">
+                                <field name="sync_level" string="Sync level" widget="radio"/>
+                                <!-- Where a new conversation lands only matters
+                                     once new conversations come in, so it
+                                     appears with the rung that lets them in. -->
+                                <label for="route_to_team" string="Route to a team"
+                                       invisible="sync_level not in ('contacts', 'everyone')"/>
+                                <div invisible="sync_level not in ('contacts', 'everyone')">
+                                    <field name="route_to_team" widget="boolean_toggle" nolabel="1"
+                                           class="d-inline-block"/>
+                                    <div class="text-muted">
+                                        Off: new email lands on the sender's contact.
+                                    </div>
+                                </div>
+                                <field name="alias_id" string="Team"
+                                       invisible="sync_level not in ('contacts', 'everyone') or not route_to_team"
+                                       required="route_to_team"
+                                       options="{'no_create': True, 'no_create_edit': True}"
+                                       placeholder="Select team..."/>
+                            </group>
+                            <div class="alert alert-warning mb-0" role="alert"
                                  invisible="sync_level != 'everyone'">
                                 Every sender becomes a contact in Odoo, newsletters
                                 and private email included. Pick this only for an
                                 address that exists to hear from strangers.
-                            </div>
-
-                            <!-- Where a new conversation lands only matters
-                                 once new conversations come in, so it appears
-                                 with the rung that lets them in. -->
-                            <div class="mt-3" invisible="sync_level not in ('contacts', 'everyone')">
-                                <label for="route_to_team" string="Route new conversations to a team"
-                                       class="o_form_label me-2"/>
-                                <field name="route_to_team" widget="boolean_toggle" nolabel="1"
-                                       class="d-inline-block"/>
-                                <div class="text-muted mt-1">
-                                    Off: email lands on the sender's contact.
-                                    On: it goes to the team behind the alias you pick.
-                                </div>
-                                <div class="mt-2" invisible="not route_to_team">
-                                    <label for="alias_id" string="Team" class="o_form_label me-2"/>
-                                    <field name="alias_id" nolabel="1"
-                                           required="route_to_team"
-                                           options="{'no_create': True, 'no_create_edit': True}"
-                                           placeholder="Select team..."
-                                           class="d-inline-block"/>
-                                </div>
                             </div>
                         </page>
 
