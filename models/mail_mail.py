@@ -239,7 +239,7 @@ class MailMail(models.Model):
             awaiting.write({'failure_reason': NOTIFICATION_PENDING_REASON})
             mails -= awaiting
 
-        mails = mails._one_send_per_recipient()
+        mails = mails._one_mail_for_the_addressees()._one_send_per_recipient()
 
         # What the sends of one batch may share. A message split into one
         # send per follower is still one message: its reply context is built
@@ -304,6 +304,61 @@ class MailMail(models.Model):
         every `mail.mail` created directly is `email_outgoing`, a password
         reset included."""
         return bool(self.env.context.get(INTERACTIVE_SEND))
+
+    def _one_mail_for_the_addressees(self):
+        """Everyone the sender put in To on one mail, as a mail client sends it.
+
+        Odoo renders a notification once per language and per recipient group
+        (internal user, portal, customer) and makes a `mail.mail` for each, so
+        a colleague and a customer in one To line were two sends with one
+        address each. The addressees (the message's own `partner_ids`) are
+        moved onto one of those mails, notifications along, and a mail left
+        with nobody to send to is deleted. Followers stay where Odoo put them:
+        someone who only follows gets a notification, not a place in To.
+
+        The mail that carries them is one with an external addressee if there
+        is one, so a customer never gets the internal layout's backend button;
+        a colleague reading the customer's layout loses nothing. Its language
+        is that mail's. Named dropped cases: a To line in two languages is one
+        mail in one of them; a colleague who set Odoo to notify them in Odoo
+        rather than by email has no mail to move and gets none; a mail nobody
+        chose a sender for is left as Odoo made it (see the guard); past fifty
+        recipients the queue may batch the siblings apart, and they go as
+        Odoo made them.
+        """
+        result = self
+        Notification = self.env['mail.notification'].sudo()
+        for message in self.filtered('is_notification').mail_message_id:
+            addressed = message.partner_ids
+            if len(addressed) < 2:
+                continue
+            # Odoo hands them over as one batch (`send_after_commit` on every
+            # mail of the post), so the siblings are in `self`.
+            siblings = result.filtered(lambda m: m.is_notification
+                                       and m.mail_message_id == message
+                                       and m.recipient_ids & addressed)
+            senders = siblings.x_send_from_mailbox_id
+            if len(siblings) < 2 or len(senders) != 1 or not all(siblings.mapped('x_send_from_mailbox_id')):
+                # Only where somebody chose the sender: without that choice a
+                # colleague on the mail sends it from notifications@
+                # (`_is_internal_user_notification`), and the customer's copy
+                # would follow it there.
+                continue
+            carrier = (siblings.filtered(
+                lambda m: (m.recipient_ids & addressed).filtered('partner_share'))
+                or siblings)[:1]
+            for sibling in siblings - carrier:
+                moving = sibling.recipient_ids & addressed
+                Notification.search([
+                    ('mail_mail_id', '=', sibling.id),
+                    ('res_partner_id', 'in', moving.ids),
+                ]).write({'mail_mail_id': carrier.id})
+                carrier.sudo().write({'recipient_ids': [(4, pid) for pid in moving.ids]})
+                sibling.sudo().write({'recipient_ids': [(3, pid) for pid in moving.ids]})
+                if not sibling.recipient_ids and not sibling.email_to and not sibling.email_cc:
+                    result -= sibling
+                    sibling.sudo().unlink()
+        return result
 
     def _one_send_per_recipient(self):
         """One provider send per recipient partner, as Odoo's own path sends.

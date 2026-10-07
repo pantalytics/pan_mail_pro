@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""One provider send per recipient partner (#96), and what happens after a send.
+"""One mail for the To line, one send per follower (#96), and what happens after a send.
 
 Odoo's own SMTP path sends one message per notified partner, so two customers
 following the same lead never see each other's address. The provider clients
@@ -90,6 +90,70 @@ class TestOneSendPerRecipient(MailProTestCase):
             sorted(send['to'] for send in self.sends),
             [['customer@example.com', 'other@elsewhere.example'],
              ['follower@elsewhere.example']])
+
+    def _two_groups(self, first, second):
+        """The two `mail.mail` rows Odoo makes for one post when its
+        recipients fall in two groups (internal user and customer) or two
+        languages, with a notification per partner as Odoo writes them."""
+        mail = self._mail(recipient_ids=[(6, 0, first.ids)])
+        other = self._mail(mail_message_id=mail.mail_message_id.id,
+                           recipient_ids=[(6, 0, second.ids)])
+        for row, partners in ((mail, first), (other, second)):
+            for partner in partners:
+                self.env['mail.notification'].sudo().create({
+                    'mail_message_id': mail.mail_message_id.id,
+                    'res_partner_id': partner.id,
+                    'notification_type': 'email',
+                    'notification_status': 'ready',
+                    'mail_mail_id': row.id,
+                })
+        return mail, other
+
+    def test_a_colleague_and_a_customer_in_to_are_one_send(self):
+        """Odoo makes one mail per recipient group; the person wrote one.
+        The customer's row carries it, and the emptied row is gone."""
+        colleague = self.other_user.partner_id
+        internal, customer = self._two_groups(colleague, self.external_partner)
+        message = internal.mail_message_id
+        message.partner_ids = colleague | self.external_partner
+        with self._fake_send():
+            (internal | customer).send()
+        self.assertEqual(len(self.sends), 1)
+        self.assertEqual(self.sends[0]['to'], ['customer@example.com', 'other@test.local'])
+        self.assertEqual(self.sends[0]['mail'], customer)
+        self.assertFalse(internal.exists())
+        notifications = self.env['mail.notification'].sudo().search([
+            ('mail_message_id', '=', message.id)])
+        self.assertEqual(len(notifications), 2)
+        self.assertEqual(set(notifications.mapped('notification_status')), {'sent'})
+
+    def test_followers_in_either_group_still_go_alone(self):
+        """The addressees of both rows meet on one mail; a follower on
+        either row keeps a copy of their own and sees nobody else."""
+        colleague = self.other_user.partner_id
+        follower = self.env['res.partner'].create({
+            'name': 'Follower', 'email': 'follower@elsewhere.example'})
+        internal, customer = self._two_groups(
+            colleague | self.inbox_user.partner_id, self.external_partner | follower)
+        internal.mail_message_id.partner_ids = colleague | self.external_partner
+        with self._fake_send():
+            (internal | customer).send()
+        self.assertEqual(
+            sorted(send['to'] for send in self.sends),
+            [['customer@example.com', 'other@test.local'],
+             ['follower@elsewhere.example'],
+             ['inbox@test.local']])
+
+    def test_without_a_chosen_sender_the_groups_are_left_alone(self):
+        """A colleague on a mail nobody chose a sender for sends it from
+        notifications@; merging would take the customer's copy there too."""
+        colleague = self.other_user.partner_id
+        internal, customer = self._two_groups(colleague, self.external_partner)
+        (internal | customer).write({'x_send_from_mailbox_id': False})
+        internal.mail_message_id.partner_ids = colleague | self.external_partner
+        merged = (internal | customer)._one_mail_for_the_addressees()
+        self.assertEqual(merged, internal | customer)
+        self.assertEqual(customer.recipient_ids, self.external_partner)
 
     def test_typed_addresses_stay_together_and_partners_go_alone(self):
         """As core: `email_to` is one message, with the Cc once; every
