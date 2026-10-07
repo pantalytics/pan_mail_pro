@@ -27,6 +27,7 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     get_provider_client,
 )
 from odoo.addons.pan_mail_pro.models.providers.http_utils import MAX_RETRIES
+from odoo.addons.pan_mail_pro.models.providers.google import gmail_client as gmail_mod
 
 # Patch requests.post specifically, not the whole module — the client catches
 # requests.exceptions.RequestException, which must stay a real class.
@@ -551,6 +552,32 @@ class TestGoogleProvider(TransactionCase):
         self.assertFalse(by_name['doc.pdf']['is_inline'])
         self.assertIsNone(by_name['doc.pdf']['content_id'])
         self.assertEqual(by_name['doc.pdf']['content'], b'PDFBYTES')  # fetched via attachmentId
+
+    def test_a_file_over_the_cap_is_listed_not_downloaded(self):
+        """Gmail says each part's size before its body is fetched; a file over
+        the cap comes back with no content and costs no download."""
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'gmail_user@test.local', 'provider': 'gmail',
+            'owner_user_id': self.user.id,
+        })
+        account = self._google_account(refresh_token='r', access_token='a',
+                                       token_expiry=fields.Datetime.now() + timedelta(hours=1))
+        raw = self._gmail_message(
+            {'Message-Id': '<a@x>', 'From': 'a@b.com', 'To': 'c@d.com'},
+            parts_extra=[
+                {'mimeType': 'application/pdf', 'filename': 'scan.pdf',
+                 'headers': [{'name': 'Content-Disposition', 'value': 'attachment'}],
+                 'body': {'attachmentId': 'att-big', 'size': 50}},
+            ])
+        Client = type(self.env['google.gmail.client'])
+        with patch.object(Client, '_gmail_get_message', return_value=raw), \
+             patch.object(Client, '_gmail_get_attachment_data') as download, \
+             patch.object(gmail_mod, 'MAX_INCOMING_ATTACHMENT_BYTES', 10):
+            attachments = self.client.get_message_attachments(account, mailbox, 'g1')
+
+        download.assert_not_called()
+        self.assertEqual([(a['name'], a['content'], a['size']) for a in attachments],
+                         [('scan.pdf', None, 50)])
 
     def test_the_full_message_is_not_fetched_twice_for_its_files(self):
         """`format=full` already carries every part, so the files are read

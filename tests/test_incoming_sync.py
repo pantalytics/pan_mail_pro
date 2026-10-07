@@ -18,7 +18,9 @@ from unittest.mock import MagicMock, patch
 from odoo import fields
 from odoo.tests import tagged
 
+from odoo.addons.pan_mail_pro.models import pan_mail_fetcher as fetcher_mod
 from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import FETCH_BATCH_SIZE, odoo_db_marker
+from odoo.addons.pan_mail_pro.models.providers.microsoft import graph_client as graph_mod
 
 from .common import MailProTestCase
 
@@ -149,8 +151,15 @@ class TestIncomingSync(MailProTestCase):
                 return self._response({'value': inbox_value})
             if '/mailFolders/SentItems/messages' in url:
                 return self._response({'value': []})
+            # The list comes without bytes; each file is its own GET by id.
+            listed = [dict(a, id=a.get('id') or str(i)) for i, a in enumerate(attachments or [])]
             if url.endswith('/attachments'):
-                return self._response({'value': attachments or []})
+                return self._response({'value': [
+                    {k: v for k, v in a.items() if k not in ('contentBytes', 'contentId')}
+                    for a in listed]})
+            if '/attachments/' in url:
+                wanted = url.rsplit('/', 1)[1]
+                return self._response(next((a for a in listed if a['id'] == wanted), {}))
             if f'/messages/{MSG_ID}' in url:
                 return self._response(full)
             return self._response({})
@@ -437,6 +446,43 @@ class TestIncomingSync(MailProTestCase):
 
         message = self._messages_on(self.external_partner)
         self.assertEqual(message.attachment_ids.mapped('name'), ['real.txt'])
+
+    def test_an_attachment_over_the_cap_stays_in_the_mailbox(self):
+        """Graph's list says the size; a file over the cap is never fetched,
+        the mail lands with the rest, and its body names what was left out.
+        A worker holding a 100 MB file is a worker killed every minute on the
+        same message (issue #304)."""
+        attachments = [
+            {'@odata.type': '#microsoft.graph.fileAttachment', 'id': 'big',
+             'name': 'scan.pdf', 'contentType': 'application/pdf', 'size': 50,
+             'contentBytes': base64.b64encode(b'x' * 50).decode(), 'isInline': False},
+            {'@odata.type': '#microsoft.graph.fileAttachment', 'id': 'small',
+             'name': 'note.txt', 'contentType': 'text/plain', 'size': 5,
+             'contentBytes': base64.b64encode(b'hello').decode(), 'isInline': False},
+        ]
+        with patch.object(graph_mod, 'MAX_INCOMING_ATTACHMENT_BYTES', 10), \
+                patch.object(fetcher_mod, 'MAX_INCOMING_ATTACHMENT_BYTES', 10):
+            self._sync(full=self._full_message(hasAttachments=True), attachments=attachments)
+
+        message = self._messages_on(self.external_partner)
+        self.assertEqual(message.attachment_ids.mapped('name'), ['note.txt'])
+        self.assertIn('scan.pdf', message.body)
+        self.assertFalse([u for u in self.fetched_urls if u.endswith('/attachments/big')],
+                         'a file over the cap must not be downloaded')
+
+    def test_the_cap_holds_when_the_provider_downloaded_it_anyway(self):
+        """IMAP reads the whole message; the fetcher holds it to the same line."""
+        attachments = [{
+            '@odata.type': '#microsoft.graph.fileAttachment', 'name': 'scan.pdf',
+            'contentType': 'application/pdf', 'size': 5,  # the list understated it
+            'contentBytes': base64.b64encode(b'x' * 50).decode(), 'isInline': False,
+        }]
+        with patch.object(fetcher_mod, 'MAX_INCOMING_ATTACHMENT_BYTES', 10):
+            self._sync(full=self._full_message(hasAttachments=True), attachments=attachments)
+
+        message = self._messages_on(self.external_partner)
+        self.assertFalse(message.attachment_ids)
+        self.assertIn('scan.pdf', message.body)
 
     def test_attachments_not_fetched_for_skipped_message(self):
         """Attachments are fetched lazily, after the skip checks - not before.

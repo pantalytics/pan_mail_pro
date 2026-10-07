@@ -16,6 +16,7 @@ from .. import http_utils
 from ...mail_provider_client import (
     FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
     FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
+    MAX_INCOMING_ATTACHMENT_BYTES,
     ERROR_ACCESS_DENIED, ERROR_THROTTLED,
     ThrottledError,
     access_shape, decode_jwt_claims, identity_shape, no_recipients_result,
@@ -1234,16 +1235,56 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         `full_message` is accepted and ignored: Graph's message resource
         carries no attachment bodies, they are a call of their own.
+
+        The list is asked for without `contentBytes`, and each file under the
+        cap is fetched on its own: one list call with the bytes in it hands a
+        worker every file of the message at once, base64, whatever its size.
+        A file over the cap is listed with `content: None` and never fetched.
         """
         # A token the provider refuses is the message's problem, not the
         # attachment's: asked for first, outside the catch below, so it
         # propagates the way it always did. `_graph_call` asks again and
         # finds the token this just stored.
         self.get_valid_token(account)
+        base = f'/users/{mailbox.email}/messages/{provider_message_id}/attachments'
+        attachments = []
         try:
-            data = self._graph_call(
-                account, 'get',
-                f'/users/{mailbox.email}/messages/{provider_message_id}/attachments')
+            listed = self._graph_call(account, 'get', base, params={
+                '$select': 'id,name,contentType,size,isInline'}).get('value', [])
+            for raw in listed:
+                # Graph also returns itemAttachment / referenceAttachment, which
+                # carry no bytes we can store as an ir.attachment.
+                if raw.get('@odata.type') != '#microsoft.graph.fileAttachment':
+                    continue
+                name = raw.get('name') or 'unnamed'
+                size = raw.get('size') or 0
+                if size > MAX_INCOMING_ATTACHMENT_BYTES:
+                    attachments.append({
+                        'name': name,
+                        'mimetype': raw.get('contentType') or 'application/octet-stream',
+                        'content': None,
+                        'size': size,
+                        'is_inline': bool(raw.get('isInline')),
+                        'content_id': None,
+                    })
+                    continue
+                item = self._graph_call(account, 'get', f"{base}/{raw.get('id')}")
+                content_b64 = item.get('contentBytes')
+                if not content_b64:
+                    continue
+                try:
+                    content = base64.b64decode(content_b64)
+                except Exception as e:
+                    _logger.warning(f"[Graph API] Failed to decode attachment {name}: {e}")
+                    continue
+                attachments.append({
+                    'name': name,
+                    'mimetype': raw.get('contentType') or 'application/octet-stream',
+                    'content': content,
+                    'size': len(content),
+                    'is_inline': bool(raw.get('isInline')),
+                    'content_id': item.get('contentId') or None,
+                })
         except ThrottledError:
             # Not an attachment failure: Microsoft asked the whole mailbox to
             # wait, and the fetcher keeps what landed and holds the cursor.
@@ -1254,30 +1295,6 @@ class MicrosoftGraphClient(models.AbstractModel):
             self.env['pan.mail.error']._record(
                 'incoming.attachments_failed', e, level='warning', account=account)
             return []
-        raw_attachments = data.get('value', [])
-
-        attachments = []
-        for raw in raw_attachments:
-            # Graph also returns itemAttachment / referenceAttachment, which
-            # carry no bytes we can store as an ir.attachment.
-            if raw.get('@odata.type') != '#microsoft.graph.fileAttachment':
-                continue
-            content_b64 = raw.get('contentBytes')
-            if not content_b64:
-                continue
-            name = raw.get('name') or 'unnamed'
-            try:
-                content = base64.b64decode(content_b64)
-            except Exception as e:
-                _logger.warning(f"[Graph API] Failed to decode attachment {name}: {e}")
-                continue
-            attachments.append({
-                'name': name,
-                'mimetype': raw.get('contentType') or 'application/octet-stream',
-                'content': content,
-                'is_inline': bool(raw.get('isInline')),
-                'content_id': raw.get('contentId') or None,
-            })
         return attachments
 
     # -------------------------------------------------------------------------

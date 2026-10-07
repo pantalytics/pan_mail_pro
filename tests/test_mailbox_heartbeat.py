@@ -135,3 +135,29 @@ class TestMailboxHeartbeat(MailProTestCase):
         self.mailbox.write({'state': 'error', 'error_message': 'Graph said 503'})
         self.mailbox.invalidate_recordset()
         self.assertEqual(self.mailbox.status_message, 'Graph said 503')
+
+    # ------------------------------------------------- reported to Pantalytics
+
+    def _stale_in_heartbeat(self):
+        body = self.env['pan.mail.license']._heartbeat_body()
+        counts = {e['code']: e['count'] for e in body['errors']}
+        return body, counts.get('incoming.sync_stale')
+
+    def test_a_stale_mailbox_is_not_reported_healthy(self):
+        """State `active` and a cron that stopped getting through: the form
+        has said so since `last_check_date`, the heartbeat said `sync_ok`."""
+        self._working()
+        self._checked(STALE_AFTER_MINUTES + 5)
+
+        body, stale = self._stale_in_heartbeat()
+
+        self.assertFalse(body['sync_ok'])
+        self.assertGreaterEqual(stale or 0, 1)
+
+    def test_a_fresh_mailbox_adds_no_stale_count(self):
+        self._working()
+        self._checked(STALE_AFTER_MINUTES + 5)
+        _body, before = self._stale_in_heartbeat()
+        self._checked(1)
+        _body, after = self._stale_in_heartbeat()
+        self.assertEqual((after or 0), before - 1)
