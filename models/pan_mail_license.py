@@ -850,7 +850,11 @@ class PanMailLicense(models.Model):
             # What failed here in the last day, as codes and counts
             # (`pan.mail.error.CODES`): the server draws one `heartbeat_error`
             # per code, which is how a release that breaks sending for one
-            # provider shows up the same day instead of in a ticket.
+            # provider shows up the same day instead of in a ticket. The
+            # `access.*` codes ride here too, so a mailbox nobody can send
+            # from is a count on the day it is found; the server accepts no
+            # key it does not know, so there is no boolean beside `sync_ok`
+            # until mail-pro-admin takes one.
             'errors': self.env['pan.mail.error'].codes_since(since),
         }
 

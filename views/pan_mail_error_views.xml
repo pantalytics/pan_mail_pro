@@ -69,6 +69,7 @@
                 <separator/>
                 <filter name="incoming" string="Incoming" domain="[('flow', '=', 'incoming')]"/>
                 <filter name="outgoing" string="Outgoing" domain="[('flow', '=', 'outgoing')]"/>
+                <filter name="access" string="Mailbox access" domain="[('flow', '=', 'access')]"/>
                 <filter name="inbox" string="Inbox" domain="[('flow', '=', 'inbox')]"/>
                 <separator/>
                 <filter name="today" string="Today"
