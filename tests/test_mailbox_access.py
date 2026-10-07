@@ -60,7 +60,7 @@ class GraphFake:
         self.inbox, self.purpose, self.directory = inbox, purpose, directory
         self.paths = []
 
-    def __call__(self, method, url, headers, timeout=30, idempotent=True, **kwargs):
+    def __call__(self, url, headers=None, timeout=None, **kwargs):
         self.paths.append(url)
         if '/mailFolders/inbox' in url:
             return self.inbox
@@ -106,7 +106,7 @@ class TestMicrosoftLadder(TransactionCase):
 
     def _inspect(self, fake, address='info@emovr.test'):
         with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
-                patch.object(type(self.client), '_request_with_retry', side_effect=fake):
+                patch(f'{GRAPH}.requests.get', side_effect=fake):
             return self.client.inspect_mailbox(self.account, address)
 
     def test_a_user_mailbox_the_sign_in_can_read(self):
@@ -207,14 +207,14 @@ class TestGmailSendAs(TransactionCase):
             'refresh_token': 'r', 'access_token': 'a'})
 
     def _inspect(self, send_as, address='sales@workspace.test', own='sales@workspace.test'):
-        def fake_get(account, url, params=None):
+        def fake_get(url, headers=None, timeout=None, **kwargs):
             if url.endswith('/profile'):
-                return {'emailAddress': own}
+                return graph_response(200, {'emailAddress': own})
             if url.endswith('/settings/sendAs'):
-                return {'sendAs': send_as}
+                return graph_response(200, {'sendAs': send_as})
             raise AssertionError(url)
         with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
-                patch.object(type(self.client), '_api_get', side_effect=fake_get):
+                patch(f'{GMAIL}.requests.get', side_effect=fake_get):
             return self.client.inspect_mailbox(self.account, address)
 
     def test_the_primary_address_is_a_user_that_may_send(self):

@@ -479,11 +479,15 @@ class MicrosoftGraphClient(models.AbstractModel):
         A refusal is an answer here, not an exception: the status and
         Exchange's `error.code` come back for the ladder to read, and only
         a transport failure with no response at all raises.
+
+        One attempt, no retry loop: a probe runs inside the consent callback
+        and before a Try again, where three backoffs on a dead network would
+        hold the page, and the cron asks again within the hour anyway.
         """
         headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
         url = f'https://graph.microsoft.com/v1.0{path}'
         try:
-            response = self._request_with_retry('get', url, headers, timeout=15)
+            response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             response = getattr(e, 'response', None)

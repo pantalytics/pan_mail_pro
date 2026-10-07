@@ -773,6 +773,27 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   there). A `user` kind on a `shared` type is the Emovr shape, and it is a
   warning naming both ways out, not an error: Daniëlle, connected as the
   address itself, sends fine from it while Robert cannot.
+- **A recordset is falsy when empty, and an AbstractModel recordset is
+  always empty.** `client = self._get_client()`, then `if client and
+  client.supports_shared_mailbox` skipped every rung that needed the
+  receiving sign-in, on every mailbox, and six health tests read healthy
+  where the table said no. The connect route fell into the same hole in
+  19.0.6 (its comment is still there). Test a client with `is not None`.
+- **A probe retries into a hang.** Odoo's test runner blocks external HTTP
+  with a `ConnectionError` subclass, which `http_utils.request_with_retry`
+  backs off on three times; the consent callback's access check then held
+  the HttpCase past its timeout. A probe that runs inside a request is one
+  `requests.get`, no retry loop: the cron asks again within the hour.
+- **The suite runs without Docker in a cloud session.** PostgreSQL 16 is on
+  the image (`pg_createcluster 16 main && pg_ctlcluster 16 main start`, a
+  superuser role `odoo`), `git clone --depth 1 --branch 19.0 odoo/odoo`,
+  the requirements installed unpinned one by one (skip `rl-renderPM`,
+  `pypiwin32`, `python-ldap`; `num2words` with `--no-deps`), then
+  `odoo-bin -d x --addons-path=odoo-src/addons,<parent of the module> -i
+  pan_mail_pro,sale,mass_mailing --test-enable --test-tags pan_mail_pro
+  --stop-after-init`. Twenty minutes to set up, 80 seconds per full run,
+  and `odoo-bin shell` for the case the assertion message does not explain.
+  CI took eleven minutes per round and said "healthy != warning".
 - **The heartbeat takes no key the server does not know.** `access_ok` was
   in the plan and is not in the body: mail-pro-admin refuses an unknown
   field, and a refused heartbeat at every customer is worse than a missing

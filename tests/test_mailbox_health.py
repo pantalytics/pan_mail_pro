@@ -23,6 +23,12 @@ class TestMailboxHealth(MailProTestCase):
         super().setUp()
         self.Access = self.env['pan.mail.mailbox.access']
         self.Setup = self.env['pan.mail.setup']
+        # The fixture has no application registration, and without one step 2
+        # is open and the phase is `setup` whatever the mailboxes say. The
+        # two assertions on the phase below need it answered.
+        self.env['pan.mail.provider'].create({
+            'provider': 'outlook', 'client_id': 'id', 'client_secret': 'secret',
+            'tenant_id': '11111111-2222-3333-4444-555555555555'})
         self.owner_account = self.notif_owner.x_pan_mail_account_ids
         self.sales_account = self.salesperson.x_pan_mail_account_ids
 

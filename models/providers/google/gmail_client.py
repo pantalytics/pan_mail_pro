@@ -727,6 +727,19 @@ class GoogleGmailClient(models.AbstractModel):
             'add it under Send mail as in the Gmail settings of %(who)s.',
             who=account.email, mailbox=mailbox.email)
 
+    def _probe_get(self, account, url):
+        """One GET for the access check, with no retry loop: a probe runs
+        inside the consent callback, where three backoffs on a dead network
+        would hold the page, and the cron asks again within the hour."""
+        token = self.get_valid_token(account)
+        try:
+            response = requests.get(
+                url, headers={'Authorization': f'Bearer {token}'}, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            raise UserError(_('Gmail request failed: %s') % self._error_detail(e))
+
     @api.model
     def inspect_mailbox(self, account, address):
         """What `address` is to this sign-in, off the send-as list.
@@ -741,7 +754,7 @@ class GoogleGmailClient(models.AbstractModel):
         answer = access_shape()
         wanted = (address or '').strip().lower()
         try:
-            profile = self._api_get(
+            profile = self._probe_get(
                 account, 'https://gmail.googleapis.com/gmail/v1/users/me/profile')
         except UserError as e:
             answer['error'] = str(e)
@@ -756,7 +769,7 @@ class GoogleGmailClient(models.AbstractModel):
                 who=account.email, own=own or '-', mailbox=address))
 
         try:
-            listing = self._api_get(
+            listing = self._probe_get(
                 account, 'https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs')
         except UserError as e:
             answer['error'] = answer['error'] or str(e)

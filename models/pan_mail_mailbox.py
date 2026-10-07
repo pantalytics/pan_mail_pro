@@ -585,8 +585,13 @@ class PanMailMailbox(models.Model):
         self.ensure_one()
         Access = self.env['pan.mail.mailbox.access']
         rows = self.access_ids.sudo()
+        # `is not None`, never truthiness: the client is an AbstractModel
+        # recordset, and an empty recordset is falsy -- the same trap the
+        # connect route fell into, which sent every provider to the settings
+        # page. Here it made every rung that needs the receiving sign-in
+        # silently skip, on every mailbox.
         client = self._get_client() if self.provider else None
-        receiving = client.resolve_receiving_account(self) if client else None
+        receiving = client.resolve_receiving_account(self) if client is not None else None
         own = Access.for_pair(self, receiving)
 
         if self.address_kind in ('none', 'resource', 'alias'):
@@ -610,7 +615,8 @@ class PanMailMailbox(models.Model):
                 '%(who)s may not send as %(mailbox)s.', who=receiving.email, mailbox=self.email)
 
         if (self.address_kind == 'user' and self.mailbox_type == 'shared'
-                and self.owner_user_id and client and client.supports_shared_mailbox):
+                and self.owner_user_id and client is not None
+                and client.supports_shared_mailbox):
             # The Emovr shape. A person's mailbox, owned in Odoo by somebody
             # connected as another address, so every send borrows the
             # sender's token and Exchange refuses it unless an admin granted
