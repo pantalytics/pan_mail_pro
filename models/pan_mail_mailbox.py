@@ -1176,6 +1176,11 @@ class PanMailMailbox(models.Model):
         if not self._has_working_credentials():
             raise UserError(self._no_credentials_error())
 
+        # The access check first: a right granted in Exchange a minute ago is
+        # the usual reason somebody presses Try again, and a run that reads
+        # fine while the row still says refused would leave the red alert up.
+        self._verify_access()
+
         # Trigger the processor for this mailbox
         processor = self.env['pan.mail.fetcher']
         stall = processor._process_mailbox(self)

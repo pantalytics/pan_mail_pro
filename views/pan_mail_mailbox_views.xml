@@ -20,6 +20,10 @@
                 <field name="is_notification_mailbox" string="Notification"
                        widget="boolean_toggle"/>
                 <field name="mailbox_type" string="Type" optional="hide"/>
+                <!-- What the provider says is at the address, as the access
+                     check last found it. Odoo's policy word is the column
+                     above; this is Exchange's or Gmail's factual one. -->
+                <field name="address_kind" string="Kind" optional="hide"/>
                 <field name="provider" string="Provider" optional="hide"/>
                 <field name="owner_user_id" string="Owner" optional="hide"/>
                 <field name="sync_level" string="Sync" optional="hide"/>
@@ -182,6 +186,14 @@
                                             personal: only they send from it. Any other
                                             address is shared: everyone can send from it.
                                         </div>
+                                        <!-- The provider's own word for the address,
+                                             once the access check has asked. Silent
+                                             until then: "not checked yet" under a type
+                                             that is already stated reads as a fault. -->
+                                        <div class="text-muted mt-1" invisible="address_kind == 'unknown'">
+                                            At the provider: <field name="address_kind" nolabel="1"
+                                                                   readonly="1" class="d-inline-block"/>
+                                        </div>
                                     </div>
                                     <label for="is_notification_mailbox"/>
                                     <div>
@@ -213,6 +225,21 @@
                                             can actually send.
                                         </div>
                                     </div>
+                                    <!-- The access check, by hand. It runs on its
+                                         own at every consent and once an hour under
+                                         the sync; this is for the admin who just
+                                         granted a right in Exchange and wants to see
+                                         it land. Secondary: the one primary action on
+                                         this tab stays the test email. -->
+                                    <div groups="pan_mail_pro.group_mail_mailbox_manager">
+                                        <button name="action_check_access" type="object"
+                                                string="Check access" class="btn-link ps-0"
+                                                icon="fa-check-circle-o"/>
+                                        <div class="text-muted mt-1">
+                                            Asks the provider what this address is and whether
+                                            each sign-in may read and send from it.
+                                        </div>
+                                    </div>
                                     <div invisible="provider != 'imap'">
                                         <button name="action_open_account" type="object"
                                                 string="Server credentials" class="btn-link ps-0"
@@ -224,6 +251,28 @@
                                     </div>
                                 </group>
                             </group>
+                            <!-- Who may do what here, as the provider last said:
+                                 one line per sign-in that reads this mailbox or
+                                 has sent through it. On a Microsoft shared
+                                 mailbox that is each sender in turn, and the one
+                                 Exchange refused is the line an admin needs when
+                                 a quotation did not leave. Drawn only once there
+                                 is a line to draw. -->
+                            <div invisible="not access_ids" class="mt-3">
+                                <span class="o_form_label">Access</span>
+                                <field name="access_ids" nolabel="1" readonly="1" class="mt-1">
+                                    <list create="false" edit="false" delete="false"
+                                          decoration-danger="can_read == 'no' or can_send == 'no'"
+                                          decoration-muted="can_read == 'unknown' and can_send == 'unknown'">
+                                        <field name="account_id" string="Sign-in"/>
+                                        <field name="can_read" string="Reads"/>
+                                        <field name="can_send" string="Sends"/>
+                                        <field name="checked_date" string="Checked"/>
+                                        <field name="sent_date" string="Last send" optional="hide"/>
+                                        <field name="error" string="Reason"/>
+                                    </list>
+                                </field>
+                            </div>
                         </page>
                     </notebook>
 

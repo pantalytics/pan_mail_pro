@@ -138,6 +138,7 @@
         'views/pan_mail_menus.xml',
         'views/pan_mail_conversation_views.xml',
         'views/pan_mail_mailbox_views.xml',
+        'views/pan_mail_mailbox_access_views.xml',
         'views/pan_mail_routing_log_views.xml',
         'views/pan_mail_error_views.xml',
         'views/pan_mail_provider_views.xml',
