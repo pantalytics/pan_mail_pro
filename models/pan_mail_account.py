@@ -119,7 +119,10 @@ class PanMailAccount(models.Model):
         help='The name the sign-in is known by at the provider '
              '(userPrincipalName on Microsoft 365), which is not always the '
              'mail address.')
-    display_name = fields.Char(
+    # Not `display_name`: that is Odoo's own computed label on every model
+    # (`_rec_name`, the address here), and a stored column of that name is
+    # overwritten by the compute on every read.
+    identity_name = fields.Char(
         string='Name', readonly=True, copy=False,
         help='What the provider calls the person.')
     tenant_id = fields.Char(
@@ -257,7 +260,7 @@ class PanMailAccount(models.Model):
         """A normalized identity as one string: the name with the address
         behind it where the provider gives a name, the address alone otherwise."""
         email = identity.get('email') or self.email
-        name = identity.get('name') or self.display_name
+        name = identity.get('name') or self.identity_name
         return f'{name} ({email})' if name and name != email else email
 
     def has_scope(self, scope):
@@ -303,7 +306,7 @@ class PanMailAccount(models.Model):
             vals['granted_scopes'] = scopes or False
         for key, field_name in (('provider_user_id', 'provider_user_id'),
                                 ('principal_name', 'principal_name'),
-                                ('name', 'display_name'),
+                                ('name', 'identity_name'),
                                 ('tenant_id', 'tenant_id')):
             if identity and identity.get(key) is not None:
                 vals[field_name] = identity[key]

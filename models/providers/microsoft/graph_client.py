@@ -507,7 +507,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         it, and the answer is left to the first real send.
         """
         token = self.get_valid_token(account)
-        who = f'{account.display_name} ({account.email})' if account.display_name else account.email
+        who = f'{account.identity_name} ({account.email})' if account.identity_name else account.email
         target = requests.utils.quote(address, safe='@')
         answer = access_shape()
 

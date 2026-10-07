@@ -152,7 +152,7 @@ class TestIdentityStored(TransactionCase):
                 email='nora@company.test', name='Nora Employee', provider_user_id='obj-1',
                 principal_name='nora@company.test', tenant_id=TENANT),
             scopes='openid Mail.Send MailboxSettings.Read')
-        self.assertEqual(account.display_name, 'Nora Employee')
+        self.assertEqual(account.identity_name, 'Nora Employee')
         self.assertEqual(account.provider_user_id, 'obj-1')
         self.assertEqual(account.tenant_id, TENANT)
         self.assertTrue(account.connected_date)
@@ -219,7 +219,7 @@ class TestIdentityCallback(HttpCase):
             response = self.url_open('/microsoft_oauth/callback?code=c&state=nonce-123')
         self.assertIn('Mailbox Connected', response.text)
         account = self._accounts()
-        self.assertEqual(account.display_name, 'Nora Employee')
+        self.assertEqual(account.identity_name, 'Nora Employee')
         self.assertEqual(account.tenant_id, TENANT)
         self.assertEqual(account.provider_user_id, 'obj-1')
         self.assertTrue(account.has_scope('User.ReadBasic.All'))

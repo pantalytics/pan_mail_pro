@@ -49,7 +49,7 @@
                          IMAP, whose identity is the login above. -->
                     <group string="Identity" invisible="provider == 'imap'">
                         <group>
-                            <field name="display_name"/>
+                            <field name="identity_name"/>
                             <field name="principal_name"/>
                             <field name="tenant_id"/>
                         </group>

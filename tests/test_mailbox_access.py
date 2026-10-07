@@ -101,7 +101,7 @@ class TestMicrosoftLadder(TransactionCase):
             'name': 'Robert', 'login': 'robert@stalero.test', 'email': 'robert@stalero.test'})
         self.account = self.env['pan.mail.account'].create({
             'email': 'robert@stalero.test', 'provider': 'outlook', 'user_id': self.user.id,
-            'refresh_token': 'r', 'access_token': 'a', 'display_name': 'Robert van Laar',
+            'refresh_token': 'r', 'access_token': 'a', 'identity_name': 'Robert van Laar',
             'granted_scopes': ALL_SCOPES})
 
     def _inspect(self, fake, address='info@emovr.test'):

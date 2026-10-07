@@ -701,7 +701,7 @@ class GoogleGmailClient(models.AbstractModel):
             )
             response.raise_for_status()
             email = response.json().get('emailAddress')
-        except requests.exceptions.RequestException as e:
+        except Exception as e:  # noqa: BLE001 - the contract says never raise here
             _logger.warning('[Gmail API] Could not read the signed-in user: %s', self._error_detail(e))
             return identity_shape(provider_user_id=claims.get('sub'), tenant_id=claims.get('hd'))
         return identity_shape(
