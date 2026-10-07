@@ -97,7 +97,9 @@
                             <!-- Green says it works, so it waits for the test
                                  that proves it: a healthy mailbox nobody has
                                  sent from yet is grey, "not started" in the
-                                 brand guide's colours, and says what is missing.
+                                 brand guide's colours, and says what is missing:
+                                 "Not tested", never "Not checked", beside a
+                                 "Last checked" that means the sync ran.
                                  Only this badge waits; `health_status` itself,
                                  which the Inbox and the list read, does not. -->
                             <field name="health_status" string="Status" widget="badge"
@@ -107,7 +109,7 @@
                                    invisible="health_status == 'healthy' and access_state == 'open'"
                                    readonly="1" class="d-inline-block me-2"/>
                             <span class="badge rounded-pill text-bg-secondary me-2"
-                                  invisible="health_status != 'healthy' or access_state != 'open'">Not checked</span>
+                                  invisible="health_status != 'healthy' or access_state != 'open'">Not tested</span>
                             <field name="subtitle" readonly="1" nolabel="1" class="d-inline-block"/>
                             <span invisible="is_notification_mailbox or not last_check_date">
                                 · Last checked <field name="last_check_date" readonly="1" nolabel="1"
