@@ -32,7 +32,7 @@ from ...mail_provider_client import (
     FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
     ERROR_THROTTLED,
     ThrottledError,
-    no_recipients_result,
+    decode_jwt_claims, identity_shape, no_recipients_result,
 )
 from .. import mime_utils
 
@@ -245,6 +245,10 @@ class GoogleGmailClient(models.AbstractModel):
                 'access_token': token_data.get('access_token'),
                 'refresh_token': token_data.get('refresh_token'),
                 'token_expiry': fields.Datetime.now() + timedelta(seconds=expires_in),
+                # `openid email` puts an id_token beside the access token:
+                # `sub`, `email` and, on a Workspace account, `hd`.
+                'id_token': token_data.get('id_token'),
+                'scope': token_data.get('scope'),
             }
         except requests.exceptions.RequestException as e:
             raise UserError(_('Failed to authenticate with Google: %s') % self._error_detail(e))
@@ -667,7 +671,7 @@ class GoogleGmailClient(models.AbstractModel):
         try:
             token = self.get_valid_token(account)
         except UserError as e:
-            return {'success': False, 'error': str(e), 'email': None, 'name': None}
+            return {'success': False, 'error': str(e), **identity_shape()}
         identity = self.read_user_info(token)
         if not identity.get('email'):
             return {'success': False, 'error': _('Google did not name the '
@@ -675,13 +679,16 @@ class GoogleGmailClient(models.AbstractModel):
         return {'success': True, 'error': None, **identity}
 
     @api.model
-    def read_user_info(self, access_token):
+    def read_user_info(self, access_token, id_token=None):
         """Who this token is: the Gmail profile (see contract).
 
         The profile endpoint is covered by the gmail.modify scope we already
         hold, so no extra consent. It carries no display name; the address
-        is the identity.
+        is the identity. The id_token adds `sub`, Google's stable id for the
+        account, and `hd`, the Workspace domain it belongs to -- the tenant,
+        in Microsoft's word -- which a consumer account does not have.
         """
+        claims = decode_jwt_claims(id_token) if id_token else {}
         try:
             response = requests.get(
                 'https://gmail.googleapis.com/gmail/v1/users/me/profile',
@@ -689,10 +696,34 @@ class GoogleGmailClient(models.AbstractModel):
                 timeout=10,
             )
             response.raise_for_status()
-            return {'email': response.json().get('emailAddress'), 'name': None}
+            email = response.json().get('emailAddress')
         except requests.exceptions.RequestException as e:
             _logger.warning('[Gmail API] Could not read the signed-in user: %s', self._error_detail(e))
-            return {'email': None, 'name': None}
+            return identity_shape(provider_user_id=claims.get('sub'), tenant_id=claims.get('hd'))
+        return identity_shape(
+            email=email,
+            provider_user_id=claims.get('sub'),
+            principal_name=claims.get('email') or email,
+            tenant_id=claims.get('hd'),
+        )
+
+    @api.model
+    def identity_refusal(self, identity):
+        """A consumer Google account is refused.
+
+        Mail Pro on Google is a Workspace product: a shared address is a
+        Workspace user signed in as itself, and the internal domain list is
+        the company's own. A sign-in without `hd` is an @gmail.com account,
+        and nothing in a workspace can be served from one. Only said when
+        the id_token was there to say it: an identity read without one has
+        no `hd` either way, and refusing on an absent token would refuse
+        every test and every older grant.
+        """
+        if identity.get('provider_user_id') and not identity.get('tenant_id'):
+            return _(
+                '%s is a personal Google account. Sign in with a Google '
+                'Workspace account of your organization.', identity.get('email') or _('This'))
+        return None
 
     # -------------------------------------------------------------------------
     # Error helpers

@@ -56,8 +56,9 @@ from email.utils import (
 from odoo import models, api, _
 from odoo.exceptions import UserError
 from ...mail_provider_client import (
-    ERROR_NO_RECIPIENTS, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_ROLES, FOLDER_SENT,
-    FOLDER_TRASH, UNREAD_CAP, ThrottledError, no_recipients_result,
+    ERROR_NO_RECIPIENTS, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_ROLES,
+    FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP, ThrottledError, identity_shape,
+    no_recipients_result,
 )
 from .. import mime_utils
 
@@ -250,10 +251,10 @@ class ImapSmtpClient(models.AbstractModel):
         raise self._no_oauth_error()
 
     @api.model
-    def read_user_info(self, token):
+    def read_user_info(self, token, id_token=None):
         """No token authenticates anybody here; the address is configuration,
         not something the server tells us."""
-        return {'email': None, 'name': None}
+        return identity_shape()
 
     @api.model
     def test_connection(self, account):
@@ -268,19 +269,14 @@ class ImapSmtpClient(models.AbstractModel):
                 conn.select('INBOX', readonly=True)
         except Exception as e:
             return {'success': False, 'error': _('IMAP: %s') % self._error_text(e),
-                    'email': address, 'name': None}
+                    **identity_shape(email=address)}
         try:
             with self._smtp(account):
                 pass
         except Exception as e:
             return {'success': False, 'error': _('SMTP: %s') % self._error_text(e),
-                    'email': address, 'name': None}
-        return {
-            'success': True,
-            'error': None,
-            'email': address,
-            'name': None,
-        }
+                    **identity_shape(email=address)}
+        return {'success': True, 'error': None, **identity_shape(email=address)}
 
     # -------------------------------------------------------------------------
     # Connections

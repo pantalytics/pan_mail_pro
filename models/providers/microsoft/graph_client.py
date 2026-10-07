@@ -18,7 +18,7 @@ from ...mail_provider_client import (
     FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
     ERROR_THROTTLED,
     ThrottledError,
-    no_recipients_result,
+    decode_jwt_claims, identity_shape, no_recipients_result,
 )
 from .. import mime_utils
 
@@ -31,6 +31,28 @@ _logger = logging.getLogger(__name__)
 # needs the endpoint to log you in.
 AUTH_URL = 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize'
 TOKEN_URL = 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token'
+
+# Every delegated permission the consent screen asks for. The README and the
+# manifest list the same names; `tests/test_microsoft_provider.py` holds the
+# three to one another.
+GRAPH_SCOPES = (
+    'openid',
+    'profile',
+    'email',
+    'offline_access',
+    'User.Read',
+    'Mail.ReadWrite',
+    'Mail.ReadWrite.Shared',
+    'Mail.Send',
+    'Mail.Send.Shared',
+    'MailboxSettings.Read',
+    'User.ReadBasic.All',
+)
+# The two `inspect_mailbox` needs beyond what a sending grant carries, each
+# checked against the account's `granted_scopes` before the call is made: a
+# probe that would 403 for want of consent is not a refusal of rights.
+SCOPE_MAILBOX_SETTINGS = 'MailboxSettings.Read'
+SCOPE_DIRECTORY_READ = 'User.ReadBasic.All'
 
 # What Azure's AADSTS codes mean in terms of the three fields on the provider
 # form. Azure's own error_description is accurate and unreadable ("AADSTS7000215:
@@ -255,17 +277,13 @@ class MicrosoftGraphClient(models.AbstractModel):
         # incremental consent. A permission granted in the portal but absent
         # from this list is not in the token; the .Shared pair is the same
         # story for a shared mailbox.
-        scopes = [
-            'openid',
-            'profile',
-            'email',
-            'offline_access',
-            'User.Read',
-            'Mail.ReadWrite',
-            'Mail.ReadWrite.Shared',
-            'Mail.Send',
-            'Mail.Send.Shared',
-        ]
+        #
+        # The last two are what `inspect_mailbox` reads: `userPurpose` says
+        # whether an address is a user, a shared mailbox or a room, and the
+        # directory lookup tells a mailbox's own address from an alias on it.
+        # Neither needs admin consent. A grant that predates them lacks them,
+        # which `granted_scopes` records and the probe reads before calling.
+        scopes = list(GRAPH_SCOPES)
 
         params = {
             'client_id': client_id,
@@ -310,6 +328,11 @@ class MicrosoftGraphClient(models.AbstractModel):
                 'access_token': token_data.get('access_token'),
                 'refresh_token': token_data.get('refresh_token'),
                 'token_expiry': expiry,
+                # The OpenID token names the tenant and the object id; the
+                # scope line is what this grant actually carries, which is
+                # not always what was asked for.
+                'id_token': token_data.get('id_token'),
+                'scope': token_data.get('scope'),
             }
         except requests.exceptions.RequestException as e:
             # Log detailed error information
@@ -427,7 +450,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         try:
             token = self.get_valid_token(account)
         except UserError as e:
-            return {'success': False, 'error': str(e), 'email': None, 'name': None}
+            return {'success': False, 'error': str(e), **identity_shape()}
         identity = self.read_user_info(token)
         if not identity.get('email'):
             return {'success': False, 'error': _('Microsoft 365 did not name the '
@@ -1250,27 +1273,63 @@ class MicrosoftGraphClient(models.AbstractModel):
             headers=headers, timeout=timeout, idempotent=idempotent, **kwargs)
 
     @api.model
-    def read_user_info(self, token):
+    def read_user_info(self, token, id_token=None):
         """Who this token is: Graph's `/me` (see contract).
 
         `mail` is the primary SMTP address; `userPrincipalName` is the sign-in
-        and stands in when the directory has no mail attribute.
+        and stands in when the directory has no mail attribute. The tenant
+        comes off the id_token (`tid`); `/me` does not carry it.
         """
+        claims = decode_jwt_claims(id_token) if id_token else {}
         try:
             headers = {
                 'Authorization': f'Bearer {token}',
                 'Content-Type': 'application/json',
             }
-            response = requests.get('https://graph.microsoft.com/v1.0/me', headers=headers, timeout=10)
+            response = requests.get(
+                'https://graph.microsoft.com/v1.0/me'
+                '?$select=id,mail,userPrincipalName,displayName',
+                headers=headers, timeout=10)
             response.raise_for_status()
             user_info = response.json()
         except Exception as e:
             _logger.warning(f"[Graph API] Could not read the signed-in user: {e}")
-            return {'email': None, 'name': None}
-        return {
-            'email': user_info.get('mail') or user_info.get('userPrincipalName'),
-            'name': user_info.get('displayName'),
-        }
+            return identity_shape(tenant_id=claims.get('tid'))
+        return identity_shape(
+            email=user_info.get('mail') or user_info.get('userPrincipalName'),
+            name=user_info.get('displayName'),
+            provider_user_id=user_info.get('id') or claims.get('oid'),
+            principal_name=user_info.get('userPrincipalName'),
+            tenant_id=claims.get('tid'),
+        )
+
+    # The tenant placeholders a multi-tenant registration may carry instead of
+    # a tenant id. A sign-in from any directory is what those ask for.
+    _ANY_TENANT = ('common', 'organizations', 'consumers')
+
+    @api.model
+    def identity_refusal(self, identity):
+        """A sign-in from another tenant than the registration's is refused.
+
+        The registration is single-tenant (README), so Entra itself refuses
+        most of these at the consent screen. What reaches here is the case
+        Entra allows and the module cannot serve: a guest account, or a
+        registration somebody widened to `organizations`, consenting with a
+        directory that holds none of the mailboxes. Every later call would
+        fail on a mailbox that is not in that directory, with a 404 that
+        reads like a missing right.
+        """
+        expected = (self._get_config_params().get('tenant_id') or '').strip().lower()
+        actual = (identity.get('tenant_id') or '').strip().lower()
+        if not expected or expected in self._ANY_TENANT or not actual:
+            return None
+        if actual == expected:
+            return None
+        return _(
+            'This sign-in belongs to Microsoft tenant %(actual)s, and Mail Pro '
+            'is registered in tenant %(expected)s. Sign in with an account of '
+            'the organization whose mailboxes Odoo should use.',
+            actual=actual, expected=expected)
 
     # -------------------------------------------------------------------------
     # Mailbox actions — contract implementation

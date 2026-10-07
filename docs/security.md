@@ -44,6 +44,13 @@ user, never as an administrator.
 | `Mail.ReadWrite.Shared` | Create drafts in shared mailbox |
 | `Mail.Send.Shared` | Send from shared mailbox |
 
+**Access check (additional):**
+
+| Permission | Purpose |
+|------------|---------|
+| `MailboxSettings.Read` | Whether a configured address is a user, a shared mailbox or a room |
+| `User.ReadBasic.All` | Whether a configured address is a mailbox's own or an alias on it |
+
 **Note:** All permissions are delegated. Users authorize their own accounts.
 
 #### Google Workspace

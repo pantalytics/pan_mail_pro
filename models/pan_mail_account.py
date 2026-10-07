@@ -100,6 +100,45 @@ class PanMailAccount(models.Model):
     )
 
     # -------------------------------------------------------------------------
+    # The identity behind the credentials
+    #
+    # What the provider said about this sign-in at consent, kept rather than
+    # discarded. The address alone is what the module stored until 19.0.28,
+    # and the address is the one thing a directory renames: the stable id is
+    # what says "same sign-in", the principal name is what an administrator
+    # sees in Entra, the tenant is what refuses a sign-in from the wrong
+    # directory before it fails at the first send. All of it is the
+    # provider's word, written by the consent callback and never typed.
+    # -------------------------------------------------------------------------
+    provider_user_id = fields.Char(
+        string='Provider id', readonly=True, copy=False,
+        help="The provider's own stable id for this sign-in: the object id "
+             "in Entra, `sub` on Google. Survives a rename of the address.")
+    principal_name = fields.Char(
+        string='Sign-in name', readonly=True, copy=False,
+        help='The name the sign-in is known by at the provider '
+             '(userPrincipalName on Microsoft 365), which is not always the '
+             'mail address.')
+    display_name = fields.Char(
+        string='Name', readonly=True, copy=False,
+        help='What the provider calls the person.')
+    tenant_id = fields.Char(
+        string='Tenant', readonly=True, copy=False,
+        help='The directory this sign-in belongs to: the Entra tenant id, or '
+             'the Google Workspace domain.')
+    granted_scopes = fields.Char(
+        string='Granted scopes', readonly=True, copy=False,
+        help='The permissions this grant carries, as the provider reported '
+             'them at consent. A permission added to the module after this '
+             'grant is not in it until the person reconnects.')
+    connected_date = fields.Datetime(
+        string='Connected on', readonly=True, copy=False,
+        help='When this grant was made.')
+    verified_date = fields.Datetime(
+        string='Verified on', readonly=True, copy=False,
+        help='When these credentials last answered the provider.')
+
+    # -------------------------------------------------------------------------
     # IMAP / SMTP credentials
     #
     # Only meaningful for provider='imap'. They live here rather than on a
@@ -218,11 +257,25 @@ class PanMailAccount(models.Model):
         """A normalized identity as one string: the name with the address
         behind it where the provider gives a name, the address alone otherwise."""
         email = identity.get('email') or self.email
-        name = identity.get('name')
+        name = identity.get('name') or self.display_name
         return f'{name} ({email})' if name and name != email else email
 
+    def has_scope(self, scope):
+        """Does this grant carry `scope`, as the provider reported it?
+
+        False when nothing was recorded: a grant from before `granted_scopes`
+        existed may well carry the permission, but a probe that assumes so
+        and meets a 403 cannot tell consent from rights. The person
+        reconnects once and the answer is known from then on.
+        """
+        self.ensure_one()
+        granted = (self.granted_scopes or '').split()
+        return scope in granted or any(
+            item.rsplit('/', 1)[-1] == scope for item in granted)
+
     @api.model
-    def _store_tokens(self, provider, user, email, access_token, refresh_token, token_expiry):
+    def _store_tokens(self, provider, user, email, access_token, refresh_token, token_expiry,
+                      identity=None, scopes=None):
         """Upsert the OAuth tokens for one user's account on one provider.
 
         The direct path for providers built after Phase 2 (Google): the OAuth
@@ -232,6 +285,10 @@ class PanMailAccount(models.Model):
         refresh_token is written only when present - Google returns it on the
         first consent but not on later re-authorizations, and overwriting it with
         an empty value would disconnect the account.
+
+        `identity` is the normalized identity the provider reported
+        (`identity_shape`), `scopes` the scope line of the grant; both are
+        kept on the row beside the tokens, as metadata about the sign-in.
         """
         account = self.sudo().with_context(active_test=False).search([
             ('user_id', '=', user.id), ('provider', '=', provider),
@@ -240,6 +297,16 @@ class PanMailAccount(models.Model):
         vals = {'access_token': access_token, 'token_expiry': token_expiry}
         if refresh_token:
             vals['refresh_token'] = refresh_token
+        now = fields.Datetime.now()
+        vals.update({'connected_date': now, 'verified_date': now})
+        if scopes is not None:
+            vals['granted_scopes'] = scopes or False
+        for key, field_name in (('provider_user_id', 'provider_user_id'),
+                                ('principal_name', 'principal_name'),
+                                ('name', 'display_name'),
+                                ('tenant_id', 'tenant_id')):
+            if identity and identity.get(key) is not None:
+                vals[field_name] = identity[key]
 
         if account:
             if email and account.email and email.lower() != account.email.lower():

@@ -54,6 +54,11 @@ Azure shows two columns here: **Value** and **Secret ID**. Odoo needs the
    - `Mail.ReadWrite.Shared` - Create drafts in shared mailbox
    - `Mail.Send.Shared` - Send from shared mailbox
 
+   **Required for the access check** (what a configured address is, and
+   whether the sign-in can reach it; neither needs admin consent):
+   - `MailboxSettings.Read` - Read whether an address is a user, a shared mailbox or a room
+   - `User.ReadBasic.All` - Tell a mailbox's own address from an alias on it
+
 6. Click **Grant admin consent** (requires Azure admin)
 
 ## Step 5: Configure in Odoo

@@ -108,7 +108,9 @@ class MailProOAuthController(http.Controller):
         try:
             tokens = client._exchange_code_for_tokens(
                 code, oauth_redirect_uri(request.env, provider))
-            email = client.read_user_info(tokens['access_token']).get('email')
+            identity = client.read_user_info(
+                tokens['access_token'], id_token=tokens.get('id_token'))
+            email = identity.get('email')
             if not email:
                 # Every client answers a failed /me with no address rather
                 # than raising, and the account's "connected as A, consented
@@ -121,9 +123,23 @@ class MailProOAuthController(http.Controller):
                     'The provider did not say which address was authorized, '
                     'so nothing was stored. Try connecting again.'))
 
+            # A sign-in the registration cannot serve -- another tenant, a
+            # consumer Google account -- is refused with the reason now,
+            # rather than at the first send with a 404 that reads like a
+            # missing right. Its own ledger row, so the heartbeat can count
+            # it apart from a callback that merely broke.
+            refusal = client.identity_refusal(identity)
+            if refusal:
+                _logger.warning('[OAuth] Refused %s sign-in %s for Odoo user %s: %s',
+                                provider, email, user.login, refusal)
+                request.env['pan.mail.error']._record(
+                    'oauth.tenant_mismatch', level='warning', detail=refusal)
+                return _result_page(False, _('Connection Failed'), refusal)
+
             request.env['pan.mail.account'].sudo()._store_tokens(
                 provider, user, email,
                 tokens['access_token'], tokens.get('refresh_token'), tokens['token_expiry'],
+                identity=identity, scopes=tokens.get('scope'),
             )
             _logger.info('[OAuth] Connected %s account %s for Odoo user %s',
                          provider, email, user.login)

@@ -24,8 +24,10 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     FOLDER_INBOX,
     FOLDER_SENT,
     HEADER_ALLOWLIST,
+    IDENTITY_KEYS,
     PROVIDER_CLIENTS,
     get_provider_client,
+    identity_shape,
 )
 from odoo.addons.pan_mail_pro.models import mail_provider_client
 from odoo.addons.pan_mail_pro.models.providers import mime_utils
@@ -65,6 +67,7 @@ class TestProviderRegistry(TransactionCase):
             'resolve_receiving_account', 'get_authorization_url',
             '_exchange_code_for_tokens', 'refresh_access_token',
             'get_valid_token', 'read_user_info', 'test_connection',
+            'inspect_mailbox',
             'send_message', 'fetch_messages', 'get_message',
             'get_message_attachments',
             # The mailbox actions. `tests/test_mailbox_actions.py` checks the
@@ -259,8 +262,8 @@ class TestAccountActions(TransactionCase):
     None, would break the callback for one provider and not the others.
     """
 
-    IDENTITY_KEYS = {'email', 'name'}
-    CONNECTION_KEYS = {'success', 'error', 'email', 'name'}
+    IDENTITY_KEYS = set(IDENTITY_KEYS)
+    CONNECTION_KEYS = {'success', 'error'} | set(IDENTITY_KEYS)
 
     def setUp(self):
         super().setUp()
@@ -291,7 +294,9 @@ class TestAccountActions(TransactionCase):
             'displayName': 'Danielle Jansen', 'id': 'opaque'}
         with patch(f'{GRAPH_MODULE}.requests.get', return_value=response):
             identity = get_provider_client(self.env, 'outlook').read_user_info('token')
-        self.assertEqual(identity, {'email': 'danielle@contoso.com', 'name': 'Danielle Jansen'})
+        self.assertEqual(identity, identity_shape(
+            email='danielle@contoso.com', name='Danielle Jansen', provider_user_id='opaque',
+            principal_name='danielle_contoso.com#EXT#'))
 
     def test_gmail_has_no_display_name_and_says_so(self):
         response = MagicMock()
@@ -299,7 +304,8 @@ class TestAccountActions(TransactionCase):
         response.json.return_value = {'emailAddress': 'sales@workspace.test'}
         with patch(f'{GMAIL_MODULE}.requests.get', return_value=response):
             identity = get_provider_client(self.env, 'gmail').read_user_info('token')
-        self.assertEqual(identity, {'email': 'sales@workspace.test', 'name': None})
+        self.assertEqual(identity, identity_shape(
+            email='sales@workspace.test', principal_name='sales@workspace.test'))
 
     def test_a_failed_connection_test_still_has_the_whole_shape(self):
         """On a neutralized copy no client gets a token, and IMAP has no
