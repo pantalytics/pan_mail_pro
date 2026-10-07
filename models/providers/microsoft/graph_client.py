@@ -45,14 +45,20 @@ GRAPH_SCOPES = (
     'Mail.ReadWrite.Shared',
     'Mail.Send',
     'Mail.Send.Shared',
-    'MailboxSettings.Read',
-    'User.ReadBasic.All',
 )
-# The two `inspect_mailbox` needs beyond what a sending grant carries, each
-# checked against the account's `granted_scopes` before the call is made: a
-# probe that would 403 for want of consent is not a refusal of rights.
+# The two `inspect_mailbox` reads beyond what a sending grant carries: what an
+# address is (rung 3) and whether it is a mailbox's own (rung 4). Asked for
+# only when `INSPECT_SCOPES_PARAM` is set, because a scope in the request that
+# the customer's registration does not carry turns every reconnect into a
+# "needs admin approval" screen on a tenant without user consent. Off, the
+# two rungs are skipped in silence and `address_kind` stays `unknown`; rung 2
+# and the send outcomes need nothing a sending grant lacks. Each is checked
+# against the account's `granted_scopes` before the call is made: a probe
+# that would 403 for want of consent is not a refusal of rights.
 SCOPE_MAILBOX_SETTINGS = 'MailboxSettings.Read'
 SCOPE_DIRECTORY_READ = 'User.ReadBasic.All'
+INSPECT_SCOPES = (SCOPE_MAILBOX_SETTINGS, SCOPE_DIRECTORY_READ)
+INSPECT_SCOPES_PARAM = 'pan_mail_pro.graph_inspect_scopes'
 
 # What Azure's AADSTS codes mean in terms of the three fields on the provider
 # form. Azure's own error_description is accurate and unreadable ("AADSTS7000215:
@@ -278,12 +284,9 @@ class MicrosoftGraphClient(models.AbstractModel):
         # from this list is not in the token; the .Shared pair is the same
         # story for a shared mailbox.
         #
-        # The last two are what `inspect_mailbox` reads: `userPurpose` says
-        # whether an address is a user, a shared mailbox or a room, and the
-        # directory lookup tells a mailbox's own address from an alias on it.
-        # Neither needs admin consent. A grant that predates them lacks them,
-        # which `granted_scopes` records and the probe reads before calling.
         scopes = list(GRAPH_SCOPES)
+        if self._inspect_scopes_wanted():
+            scopes.extend(INSPECT_SCOPES)
 
         params = {
             'client_id': client_id,
@@ -500,6 +503,14 @@ class MicrosoftGraphClient(models.AbstractModel):
             return response.status_code, None, {}
 
     @api.model
+    def _inspect_scopes_wanted(self):
+        """Has this database opted in to the two inspection scopes? A system
+        parameter, no screen: the admin who sets it is the one who added the
+        permissions to the Azure registration, and everyone reconnects after."""
+        value = self.env['ir.config_parameter'].sudo().get_param(INSPECT_SCOPES_PARAM, '')
+        return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+    @api.model
     def inspect_mailbox(self, account, address):
         """The probe ladder (docs/plans/verified-setup.md §4): can this
         sign-in read the mailbox, what is it, is the address its own.
@@ -535,15 +546,13 @@ class MicrosoftGraphClient(models.AbstractModel):
                                 mailbox=address)
             return answer
 
-        # Rung 3: what the mailbox is. Needs a scope a grant from before
-        # 19.0.28 does not carry; a probe that would 403 for want of consent
-        # cannot be told from a refusal of rights, so it is not made.
-        if not account.has_scope(SCOPE_MAILBOX_SETTINGS):
-            answer['needs_reconnect'] = True
-            answer['error'] = answer['error'] or _(
-                'Reconnect %(who)s under My Preferences, Mail Pro, so Mail Pro '
-                'can check what %(mailbox)s is.', who=who, mailbox=address)
-        elif answer['can_read'] == 'yes':
+        # Rung 3: what the mailbox is. Needs a scope the grant carries only
+        # once the database opted in (`INSPECT_SCOPES_PARAM`) and the person
+        # reconnected; a probe that would 403 for want of consent cannot be
+        # told from a refusal of rights, so without it the rung is skipped
+        # and the kind stays `unknown`. Nothing is said about it: a grant
+        # that lacks an optional permission is not a fault of the setup.
+        if answer['can_read'] == 'yes' and account.has_scope(SCOPE_MAILBOX_SETTINGS):
             status, code, payload = self._probe(
                 token, f'/users/{target}/mailboxSettings/userPurpose')
             if status == 200:

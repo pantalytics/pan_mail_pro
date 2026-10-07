@@ -734,6 +734,21 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
 
+### A scope in the request is a change at every customer (19.0.28.1.0)
+
+- **Adding a delegated scope to the consent request is not free, even when
+  Microsoft says it needs no admin consent.** Most business tenants turn
+  user consent off, so a scope the app registration does not carry turns
+  every connect into a *needs admin approval* screen: a per-customer Azure
+  change, admin consent again, and every user reconnecting. 19.0.28.0.0
+  asked for `MailboxSettings.Read` and `User.ReadBasic.All` by default and
+  wrote "Reconnect" on every mailbox of every upgraded database. They are
+  behind `pan_mail_pro.graph_inspect_scopes` now, and the rungs that need
+  them are silent without it. The rung that catches the Emovr case (can
+  the sign-in read the mailbox) and the send outcomes need nothing a
+  sending grant lacks, which is the test for whether a scope is worth its
+  rollout: what does the check lose without it?
+
 ### A setup the module can verify (19.0.28.0.0)
 
 - **"Find out at the send" is the customer finding out.** The module refused

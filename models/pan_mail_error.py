@@ -84,7 +84,6 @@ CODES = {
     'access.read_denied': 'A sign-in cannot read a mailbox it is expected to read',
     'access.send_denied': 'The provider refused a send as the address: a right is missing',
     'access.no_mailbox': 'There is no mailbox at a configured address',
-    'access.scope_missing': 'The grant predates a permission the check needs; the person reconnects',
     'access.check_failed': 'The access check itself raised, before the provider could answer',
     'license.heartbeat_failed': 'The heartbeat to Pantalytics raised or was refused',
     'inbox.rpc_failed': 'A request from the browser failed inside this module',

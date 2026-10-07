@@ -334,9 +334,6 @@ class PanMailMailbox(models.Model):
         elif answer['can_read'] == 'no':
             Error._record('access.read_denied', mailbox=self, account=account,
                           detail=answer.get('error'))
-        elif answer.get('needs_reconnect'):
-            Error._record('access.scope_missing', level='warning', mailbox=self,
-                          account=account, detail=answer.get('error'))
         _logger.info('[Access] %s with %s: kind=%s read=%s send=%s',
                      self.email, account.email, answer['kind'],
                      answer['can_read'], answer['can_send'])

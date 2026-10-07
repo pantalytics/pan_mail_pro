@@ -54,8 +54,8 @@ Azure shows two columns here: **Value** and **Secret ID**. Odoo needs the
    - `Mail.ReadWrite.Shared` - Create drafts in shared mailbox
    - `Mail.Send.Shared` - Send from shared mailbox
 
-   **Required for the access check** (what a configured address is, and
-   whether the sign-in can reach it; neither needs admin consent):
+   **Optional** (skip on a first setup; see *Telling a user account from a
+   shared mailbox* below):
    - `MailboxSettings.Read` - Read whether an address is a user, a shared mailbox or a room
    - `User.ReadBasic.All` - Tell a mailbox's own address from an alias on it
 
@@ -74,6 +74,28 @@ Azure shows two columns here: **Value** and **Secret ID**. Odoo needs the
 5. Click **Sign in** in that dialog. This walks the real consent screen, which
    is the only check that also covers the Callback URL, the permissions from
    Step 4 and whether your tenant lets users consent at all.
+
+## Telling a user account from a shared mailbox (optional)
+
+Mail Pro checks on its own whether each sign-in can read a configured mailbox
+and whether its sends go through; that needs none of the permissions below.
+What it cannot tell without them is *what* an address is: a shared mailbox, a
+person's own mailbox, or an alias. The Kind column on the mailbox list then
+says *Unknown*, and nothing else changes.
+
+To have it say so:
+
+1. Add `MailboxSettings.Read` and `User.ReadBasic.All` (delegated) to the
+   API permissions of the app registration and grant admin consent again
+2. In Odoo, under **Settings → Technical → System Parameters**, create
+   `pan_mail_pro.graph_inspect_scopes` with value `True`
+3. Everyone presses Disconnect, then Connect mailbox, under My Preferences →
+   Mail Pro. A grant from before the change lacks the two permissions, and
+   Mail Pro does not make a call the grant cannot answer
+
+Do step 1 before step 2. With the parameter set and the permissions missing,
+a tenant that does not allow user consent shows *needs admin approval* on
+every connect.
 
 ## Next Steps
 
