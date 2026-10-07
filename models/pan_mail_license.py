@@ -82,6 +82,7 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 
 from . import encryption_utils
 from .neutralization import database_is_neutralized
+from .pan_mail_error import MAX_CODES_REPORTED
 
 _logger = logging.getLogger(__name__)
 
@@ -825,6 +826,15 @@ class PanMailLicense(models.Model):
         Mailbox = self.env['pan.mail.mailbox'].sudo()
         mailboxes = Mailbox.search_count([])
         since = fields.Datetime.now() - timedelta(hours=24)
+        # A mailbox whose cron stopped getting through (a worker killed for its
+        # memory, a cron Odoo switched off) is `active` and reads healthy by
+        # state alone. The form already says it is stale; this says it to us.
+        stale = len(Mailbox.search([('state', '=', 'active')]).filtered(
+            lambda mailbox: mailbox._sync_is_stale()))
+        errors = self.env['pan.mail.error'].codes_since(since)
+        if stale:
+            errors = ([{'code': 'incoming.sync_stale', 'count': stale}]
+                      + errors)[:MAX_CODES_REPORTED]
         rules = self.env['pan.mail.routing.log'].rule_counts_since(since)
         Message = self.env['mail.message'].sudo()
         return {
@@ -837,7 +847,7 @@ class PanMailLicense(models.Model):
                 [('x_direction', '=', 'outgoing'), ('date', '>=', since)]),
             'mails_received_24h': Message.search_count(
                 [('x_direction', '=', 'incoming'), ('date', '>=', since)]),
-            'sync_ok': (not Mailbox.search_count([('state', '=', 'error')])
+            'sync_ok': (not stale and not Mailbox.search_count([('state', '=', 'error')])
                         if mailboxes else None),
             # The three setup steps as `pan.mail.setup` answers them, which is
             # the same answer the checklist on the settings page draws. Three
@@ -854,8 +864,11 @@ class PanMailLicense(models.Model):
             # `access.*` codes ride here too, so a mailbox nobody can send
             # from is a count on the day it is found; the server accepts no
             # key it does not know, so there is no boolean beside `sync_ok`
-            # until mail-pro-admin takes one.
-            'errors': self.env['pan.mail.error'].codes_since(since),
+            # until mail-pro-admin takes one. A stale mailbox rides the same
+            # way: `incoming.sync_stale`, counted per mailbox, is computed
+            # here rather than recorded, because the cron that would record it
+            # is the one not getting through.
+            'errors': errors,
         }
 
     # -------------------------------------------------------------------------
