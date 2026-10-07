@@ -84,11 +84,20 @@
                         <h1 class="d-flex align-items-center gap-3">
                             <field name="email" placeholder="support@company.com"
                                    class="flex-grow-1"/>
+                            <!-- Green says it works, so it waits for the test
+                                 that proves it: a healthy mailbox nobody has
+                                 sent from yet is grey, "not started" in the
+                                 brand guide's colours, and says what is missing.
+                                 Only this badge waits; `health_status` itself,
+                                 which the Inbox and the list read, does not. -->
                             <field name="health_status" string="Status" widget="badge"
                                    decoration-success="health_status == 'healthy'"
                                    decoration-warning="health_status == 'warning'"
                                    decoration-danger="health_status == 'error'"
+                                   invisible="health_status == 'healthy' and access_state == 'open'"
                                    readonly="1"/>
+                            <span class="badge rounded-pill text-bg-secondary"
+                                  invisible="health_status != 'healthy' or access_state != 'open'">Not tested</span>
                         </h1>
                         <div class="text-muted">
                             <field name="subtitle" readonly="1" nolabel="1"/>
