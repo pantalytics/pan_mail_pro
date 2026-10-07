@@ -365,7 +365,7 @@ met de eerste vier).**
 
 - [x] Na de upgrade leest elke mailbox healthy of met de zin die de tabel
       geeft, nooit "Reconnect": soort is *Unknown* en dat kleurt niets
-- [x] Mailbox → **Check access**: rij voor de eigen sign-in met *can read:
+- [x] Mailbox → **Check mailbox**: rij voor de eigen sign-in met *can read:
       yes*; `access_checked_date` gezet; geen rij in Errors
 - [x] Testmail vanaf notifications@: aangekomen; rij *can send: yes*; stap 4
       van de checklist groen (Settings → Mail Pro)
@@ -373,7 +373,7 @@ met de eerste vier).**
       consent-scherm is ongewijzigd, geen *needs admin approval*
 - [ ] **De Emovr-vorm.** Maak een shared mailbox voor een adres waar jouw
       sign-in geen Full Access op heeft (bijv. `daniel@pantalytics.com`
-      met jou als owner). Check access: badge *error*, zin "rutger@… cannot
+      met jou als owner). Check mailbox: badge *error*, zin "rutger@… cannot
       read daniel@…. An administrator grants Full Access…"; rij in Errors
       onder `access.read_denied`. Dit is de check die bij Emovr zes maanden
       ontbrak
@@ -381,20 +381,20 @@ met de eerste vier).**
       dezelfde zin, de rij zegt *can send: no*, Errors krijgt
       `access.send_denied`. Geen omleiding naar een ander adres
 - [ ] Geef in het Exchange admin center Full Access (nog geen Send As),
-      wacht een paar minuten, Check access: *can read: yes*, badge weg.
+      wacht een paar minuten, Check mailbox: *can read: yes*, badge weg.
       Verstuur: `ErrorSendAsDenied`, zin noemt Send As. Geef Send As,
       verstuur: *can send: yes*, healthy. De tabel onthoudt de `yes` en een
       latere check overschrijft die niet met `unknown`
 - [ ] Een adres dat niet bestaat als mailbox (een distributielijst of een
-      typefout): Check access zegt "There is no mailbox at …"; badge *error*;
+      typefout): Check mailbox zegt "There is no mailbox at …"; badge *error*;
       de mailboxes-regel op Settings toont de alert
 - [ ] Het uurlijkse pad: wacht een uur, `access_checked_date` is bijgewerkt
-      zonder dat iemand op Check access drukte; de sync zelf is niet
+      zonder dat iemand op Check mailbox drukte; de sync zelf is niet
       vertraagd
-- [ ] Gmail (mailpro-dev of een Workspace-account): Check access op de eigen
+- [ ] Gmail (mailpro-dev of een Workspace-account): Check mailbox op de eigen
       mailbox leest *yes* via het profiel; een shared Gmail-adres zonder
       send-as geeft "X has no send-as address for Y"
-- [ ] IMAP (Soverin): Check access doet `SELECT INBOX` en `MAIL FROM`/`RSET`;
+- [ ] IMAP (Soverin): Check mailbox doet `SELECT INBOX` en `MAIL FROM`/`RSET`;
       een afzender die de server weigert geeft de 5xx-regel van de server
 
 **Deel 2: opt-in, alleen op de Pantalytics-tenant.** Dit vult de cellen
@@ -408,7 +408,7 @@ Azure-registratie aan te raken.
 - [ ] Reconnect één sign-in. Op de account (Settings → Technical → Email →
       Mail Pro → Accounts) staan beide scopes in *granted scopes*; `tid` en
       de principal name zijn gevuld
-- [ ] Check access: Kind wordt *User* op een persoonlijk adres, *Shared* op
+- [ ] Check mailbox: Kind wordt *User* op een persoonlijk adres, *Shared* op
       `notifications@` (als dat in Exchange echt een shared mailbox is). Noteer
       het antwoord van `userPurpose` in `provider-probes.md` en zet de
       cel op *observed*
@@ -419,13 +419,13 @@ Azure-registratie aan te raken.
       *Alias*, badge *error*, zin "… is an alias on another mailbox". Noteer
       de exacte 404-code van de directory-lookup in `provider-probes.md`
 - [ ] Een room of equipment mailbox: Kind *Resource*, *can send: no*
-- [ ] Een sign-in die níét is gereconnect: Check access slaat rung 3 en 4
+- [ ] Een sign-in die níét is gereconnect: Check mailbox slaat rung 3 en 4
       stil over, soort blijft *Unknown*, geen zin, geen rij in Errors
 - [ ] Parameter weer op `False` of verwijderen: nieuwe connects vragen de
       scopes niet meer; bestaande grants houden ze en de rungen blijven
       werken voor die accounts
 
-**Deel 3: Emovr.** Na de upgrade van odoo-customer-emovr: Check access op
+**Deel 3: Emovr.** Na de upgrade van odoo-customer-emovr: Check mailbox op
 `info@emovr.nl` met Robert als owner geeft precies de zin uit deel 1
 (`robert@stalero.nl cannot read info@emovr.nl`), en Daniëlle, aangemeld als
 `info@` zelf, leest *yes*. De fix is één van de twee uitwegen uit de zin, en

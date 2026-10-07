@@ -30,6 +30,7 @@ from .. import http_utils
 from ...mail_provider_client import (
     FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
     FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
+    MAX_INCOMING_ATTACHMENT_BYTES,
     ERROR_ACCESS_DENIED, ERROR_THROTTLED,
     ThrottledError,
     access_shape, decode_jwt_claims, identity_shape, no_recipients_result,
@@ -549,6 +550,24 @@ class GoogleGmailClient(models.AbstractModel):
                 if not filename:
                     continue
                 body = part.get('body') or {}
+                part_headers = self._headers_dict(part)
+                content_id = (part_headers.get('content-id') or '').strip('<>')
+                # Inline if the sender said so or gave it a Content-Id to
+                # reference from the body — the same test Graph applies.
+                disposition = (part_headers.get('content-disposition') or '').lower()
+                is_inline = 'inline' in disposition or bool(content_id)
+                size = body.get('size') or 0
+                if body.get('attachmentId') and size > MAX_INCOMING_ATTACHMENT_BYTES:
+                    # Over the cap: listed, never downloaded (see the contract).
+                    attachments.append({
+                        'name': filename,
+                        'mimetype': part.get('mimeType') or 'application/octet-stream',
+                        'content': None,
+                        'size': size,
+                        'is_inline': is_inline,
+                        'content_id': content_id or None,
+                    })
+                    continue
                 if body.get('data'):
                     content = base64.urlsafe_b64decode(body['data'])
                 elif body.get('attachmentId'):
@@ -558,16 +577,11 @@ class GoogleGmailClient(models.AbstractModel):
                     continue
                 if not content:
                     continue
-                part_headers = self._headers_dict(part)
-                content_id = (part_headers.get('content-id') or '').strip('<>')
-                # Inline if the sender said so or gave it a Content-Id to
-                # reference from the body — the same test Graph applies.
-                disposition = (part_headers.get('content-disposition') or '').lower()
-                is_inline = 'inline' in disposition or bool(content_id)
                 attachments.append({
                     'name': filename,
                     'mimetype': part.get('mimeType') or 'application/octet-stream',
                     'content': content,
+                    'size': len(content),
                     'is_inline': is_inline,
                     'content_id': content_id or None,
                 })

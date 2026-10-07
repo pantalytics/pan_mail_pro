@@ -94,11 +94,20 @@
                              the Inbox; the admin setting up an address for
                              somebody else's team never does. -->
                         <div class="text-muted o_mailpro_mailbox_meta">
+                            <!-- Green says it works, so it waits for the test
+                                 that proves it: a healthy mailbox nobody has
+                                 sent from yet is grey, "not started" in the
+                                 brand guide's colours, and says what is missing.
+                                 Only this badge waits; `health_status` itself,
+                                 which the Inbox and the list read, does not. -->
                             <field name="health_status" string="Status" widget="badge"
                                    decoration-success="health_status == 'healthy'"
                                    decoration-warning="health_status == 'warning'"
                                    decoration-danger="health_status == 'error'"
+                                   invisible="health_status == 'healthy' and access_state == 'open'"
                                    readonly="1" class="d-inline-block me-2"/>
+                            <span class="badge rounded-pill text-bg-secondary me-2"
+                                  invisible="health_status != 'healthy' or access_state != 'open'">Not checked</span>
                             <field name="subtitle" readonly="1" nolabel="1" class="d-inline-block"/>
                             <span invisible="is_notification_mailbox or not last_check_date">
                                 · Last checked <field name="last_check_date" readonly="1" nolabel="1"
@@ -159,119 +168,104 @@
                         </page>
 
                         <!-- The things you set once. One click away rather than
-                             one screen away. -->
+                             one screen away. Setting a mailbox up is a flow,
+                             so it reads as one: the same step line as the
+                             Settings checklist (DESIGN_SYSTEM.md, "Every step
+                             is the same line"), a dot, a name, the answer.
+                             Whose sign-in it sends with, then the test that
+                             proves it. What is set rather than done sits
+                             below in a card of rows, the brand guide's
+                             settings shape (brand.pantalytics.com/product-ui). -->
                         <page string="Setup" name="setup">
-                            <group>
-                                <group>
-                                    <label for="owner_user_id"/>
-                                    <div>
-                                        <field name="owner_user_id" nolabel="1" class="d-inline-block"
-                                               required="is_notification_mailbox"/>
-                                        <!-- Whose sign-in the mail leaves with: the
-                                             owner's on a personal or notification
-                                             mailbox, each sender's own on a shared one.
-                                             The address named is the one the provider
-                                             has to allow, which is not always the
-                                             owner's own. -->
-                                        <div class="text-muted mt-1" invisible="not sends_with">
+                            <div class="o_mailpro_steps o_mailpro_flow">
+                                <!-- 1. Whose sign-in the mail leaves with: the
+                                     owner's on a personal or notification
+                                     mailbox, each sender's own on a shared one. -->
+                                <div class="o_mailpro_step">
+                                    <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
+                                          invisible="not sends_with"/>
+                                    <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
+                                          invisible="sends_with"/>
+                                    <div class="o_mailpro_step_body">
+                                        <div class="o_mailpro_step_head">
+                                            <span class="o_mailpro_step_name">1. Owner</span>
+                                            <field name="owner_user_id" nolabel="1" class="o_mailpro_step_value"
+                                                   required="is_notification_mailbox"/>
+                                        </div>
+                                        <div class="o_mailpro_step_msg" invisible="not sends_with">
                                             <field name="sends_with" nolabel="1" readonly="1"/>
                                         </div>
                                     </div>
-                                    <!-- Derived, not asked: see _compute_mailbox_type. -->
+                                </div>
+                                <!-- 2. The test that ends the setup: check access,
+                                     then one email to whoever pressed it. Open
+                                     until a send went through and nobody was
+                                     refused; then the answer is the step and the
+                                     test steps back to a link. -->
+                                <div class="o_mailpro_step">
+                                    <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
+                                          invisible="access_state != 'proven'"/>
+                                    <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Broken" title="Broken"
+                                          invisible="access_state != 'fix'"/>
+                                    <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
+                                          invisible="access_state != 'open'"/>
+                                    <div class="o_mailpro_step_body">
+                                        <div class="o_mailpro_step_head">
+                                            <span class="o_mailpro_step_name">2. Check</span>
+                                            <span class="o_mailpro_step_value">
+                                                <field name="access_state" nolabel="1" readonly="1"/>
+                                            </span>
+                                        </div>
+                                        <!-- The answer, not the evidence: works,
+                                             or the one sentence that says what is
+                                             wrong and what to do. Who may read and
+                                             send, line by line, is under Settings ->
+                                             Technical -> Email -> Mail Pro -> Mailbox
+                                             access. -->
+                                        <div class="o_mailpro_step_msg" invisible="access_state != 'open'">
+                                            <button name="action_check_mailbox" type="object"
+                                                    string="Check mailbox" class="btn-primary btn-sm me-2"/>
+                                            Checks who can read and send here, then sends one email to you.
+                                        </div>
+                                        <div class="o_mailpro_step_msg" invisible="access_state != 'fix'">
+                                            <div class="o_mailpro_msg_warn mb-1">
+                                                <field name="access_message" nolabel="1" readonly="1"/>
+                                            </div>
+                                            <button name="action_check_mailbox" type="object"
+                                                    string="Check again" class="btn-secondary btn-sm"/>
+                                        </div>
+                                        <div class="o_mailpro_step_msg" invisible="access_state != 'proven'">
+                                            <button name="action_check_mailbox" type="object"
+                                                    string="Check again" class="btn-link btn-sm p-0"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="o_mailpro_card mt-4">
+                                <group class="my-0">
+                                    <!-- Derived, not asked: see _compute_mailbox_type.
+                                         The provider's own word for the address sits
+                                         beside it once the access check has asked. -->
                                     <label for="mailbox_type" string="Type"/>
                                     <div>
                                         <field name="mailbox_type" nolabel="1" class="d-inline-block"/>
-                                        <div class="text-muted mt-1">
-                                            Follows from the owner. Their own address is
-                                            personal: only they send from it. Any other
-                                            address is shared: everyone can send from it.
-                                        </div>
-                                        <!-- The provider's own word for the address,
-                                             once the access check has asked. Silent
-                                             until then: "not checked yet" under a type
-                                             that is already stated reads as a fault. -->
-                                        <div class="text-muted mt-1" invisible="address_kind == 'unknown'">
+                                        <span class="text-muted ms-2" invisible="address_kind == 'unknown'">
                                             At the provider: <field name="address_kind" nolabel="1"
                                                                    readonly="1" class="d-inline-block"/>
-                                        </div>
+                                        </span>
                                     </div>
-                                    <label for="is_notification_mailbox"/>
-                                    <div>
-                                        <field name="is_notification_mailbox" widget="boolean_toggle"
-                                               nolabel="1" class="d-inline-block"/>
-                                        <div class="text-muted mt-1">
-                                            Odoo's own email leaves from here: invitations,
-                                            password resets, reminders. Exactly one mailbox.
-                                        </div>
-                                    </div>
+                                    <field name="is_notification_mailbox" string="Notification mailbox"
+                                           widget="boolean_toggle"/>
                                     <field name="sync_start_date" string="Import from"
                                            invisible="is_notification_mailbox"/>
-                                </group>
-                                <group>
-                                    <!-- Sending is the one thing the consent
-                                         screen does not prove: a missing send
-                                         scope, an ungranted SendAs, an SPF or
-                                         DMARC record that rejects the address.
-                                         So it belongs to setting the mailbox
-                                         up, not to looking at one. The mail
-                                         goes to whoever presses it, never to
-                                         this address. -->
-                                    <div>
-                                        <button name="action_test_send" type="object"
-                                                string="Send test email" class="btn-link ps-0"
-                                                icon="fa-paper-plane"/>
-                                        <div class="text-muted mt-1">
-                                            Sends one email to you, to prove this address
-                                            can actually send.
-                                        </div>
-                                    </div>
-                                    <!-- The access check, by hand. It runs on its
-                                         own at every consent and once an hour under
-                                         the sync; this is for the admin who just
-                                         granted a right in Exchange and wants to see
-                                         it land. Secondary: the one primary action on
-                                         this tab stays the test email. -->
-                                    <div groups="pan_mail_pro.group_mail_mailbox_manager">
-                                        <button name="action_check_access" type="object"
-                                                string="Check access" class="btn-link ps-0"
-                                                icon="fa-check-circle-o"/>
-                                        <div class="text-muted mt-1">
-                                            Asks the provider what this address is and whether
-                                            each sign-in may read and send from it.
-                                        </div>
-                                    </div>
+                                    <label for="provider" string="Server login"
+                                           invisible="provider != 'imap'"/>
                                     <div invisible="provider != 'imap'">
                                         <button name="action_open_account" type="object"
-                                                string="Server credentials" class="btn-link ps-0"
-                                                icon="fa-key"/>
-                                        <div class="text-muted mt-1">
-                                            This address is reached with a server, a login and a
-                                            password rather than a consent screen.
-                                        </div>
+                                                string="Edit server login" class="btn-link p-0"/>
                                     </div>
                                 </group>
-                            </group>
-                            <!-- Who may do what here, as the provider last said:
-                                 one line per sign-in that reads this mailbox or
-                                 has sent through it. On a Microsoft shared
-                                 mailbox that is each sender in turn, and the one
-                                 Exchange refused is the line an admin needs when
-                                 a quotation did not leave. Drawn only once there
-                                 is a line to draw. -->
-                            <div invisible="not access_ids" class="mt-3">
-                                <span class="o_form_label">Access</span>
-                                <field name="access_ids" nolabel="1" readonly="1" class="mt-1">
-                                    <list create="false" edit="false" delete="false"
-                                          decoration-danger="can_read == 'no' or can_send == 'no'"
-                                          decoration-muted="can_read == 'unknown' and can_send == 'unknown'">
-                                        <field name="account_id" string="Sign-in"/>
-                                        <field name="can_read" string="Reads"/>
-                                        <field name="can_send" string="Sends"/>
-                                        <field name="checked_date" string="Checked"/>
-                                        <field name="sent_date" string="Last send" optional="hide"/>
-                                        <field name="error" string="Reason"/>
-                                    </list>
-                                </field>
                             </div>
                         </page>
                     </notebook>
@@ -282,7 +276,7 @@
                          running leaves the state at `active` and used to say
                          nothing at all. Nothing is drawn while it works. -->
                     <div class="alert alert-danger mt-3" role="alert"
-                         invisible="health_status == 'healthy'">
+                         invisible="health_status == 'healthy' or access_state == 'fix'">
                         <field name="status_message" nolabel="1" readonly="1"/>
                         <button name="action_sync_now" type="object" string="Try again"
                                 class="btn-secondary btn-sm ms-2"

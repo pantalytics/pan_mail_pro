@@ -74,6 +74,7 @@ CODES = {
     'incoming.rule_failed': 'A matching rule raised and was skipped; the mail may have landed lower',
     'incoming.index_failed': 'The Message-ID or thread index could not be written; later replies may not thread',
     'incoming.attachments_failed': 'The attachments of a message could not be fetched; the mail was imported without them',
+    'incoming.sync_stale': 'A mailbox has not finished a sync run in 15 minutes; its cron is not getting through',
     'outgoing.no_route': 'No mailbox could send this mail',
     'outgoing.send_failed': 'The provider refused the send or the send raised',
     'outgoing.throttled': 'The provider asked the send to wait',

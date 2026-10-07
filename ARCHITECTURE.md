@@ -259,6 +259,14 @@ full_message=...)` lets a client read the attachments off the payload
 `get_message` already fetched, kept under a private `_source` key the
 fetcher drops before anything is stored.
 
+An incoming file over `MAX_INCOMING_ATTACHMENT_BYTES` (10 MB) is not
+imported. Graph and Gmail say a file's size before its bytes, so the client
+lists it with `content: None` and never downloads it; IMAP already read the
+whole message, and the fetcher holds it to the same line. The mail lands with
+one line in its body naming each file left out, which stays in the mailbox.
+A worker holds every file of a message in memory, base64 on top, and one large
+scan was a worker killed for its memory limit every minute on the same mail.
+
 ### Capability differences
 
 Providers disagree about sending as somebody else, which is why
@@ -1078,8 +1086,9 @@ nothing; Gmail is the one provider where Send As is a lookup
 would put an HTTP call where the ORM expects none. At the consent callback,
 for every mailbox the new sign-in serves, so the person who just consented
 sees the answer on the screen they land on. Once an hour per mailbox under
-the sync cron, in a savepoint of its own. From Check access on the mailbox
-form, and before the sync when Try again is pressed.
+the sync cron, in a savepoint of its own. From Check mailbox on the mailbox
+form (which then sends one email to whoever pressed it, so the
+row also holds a real send), and before the sync when Try again is pressed.
 
 **The probes, per provider.** Microsoft: `GET /users/{address}/mailFolders/inbox`
 with the sign-in's token is the Full Access probe; `mailboxSettings/userPurpose`
@@ -2015,6 +2024,11 @@ lost:
   mail was imported without them
 - `outgoing.sent_copy_failed`: the mail went out but its copy could not be
   filed in the Sent folder
+
+One code is never recorded: `incoming.sync_stale` is counted when the
+heartbeat is built, one per `active` mailbox that has not finished a sync run
+in 15 minutes, because the cron that would record it is the one not getting
+through. The same count turns `sync_ok` false.
 
 `_record()` is private: a Python call site inside the module, never RPC.
 Adding a failure to catch is adding a code to `CODES` and one `_record()` call
@@ -3019,7 +3033,7 @@ eight groups:
 | Contracts | `test_provider_contract.py` | Every provider answers the contract identically |
 | Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_imap_live.py`, `test_pan_mail_provider.py`, `test_mail_account.py` | Wire-level behaviour per vendor, the application registration, and the credential rows behind them |
 | Pipeline | `test_incoming_sync.py`, `test_incoming_sync_gmail.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_internal_domains.py`, `test_mail_matcher.py`, `test_thread_drift.py`, `test_reply_sync.py`, `test_attachments.py`, `test_routing_log.py`, `test_mail_coverage.py`, `test_sync_sends_nothing.py` | Fetch → filter → match → post, the reply that comes back to its record, and the one invariant of the sync's outbound side |
-| Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one send per recipient, what leaves when nothing is configured, and what a note never does |
+| Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, and the one mailbox setting a user owns |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, and the four pane names |
 | The outside | `test_oauth_routes.py`, `test_connect_banner.py`, `test_license.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, the Pantalytics link, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
