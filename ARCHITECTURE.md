@@ -1078,8 +1078,9 @@ nothing; Gmail is the one provider where Send As is a lookup
 would put an HTTP call where the ORM expects none. At the consent callback,
 for every mailbox the new sign-in serves, so the person who just consented
 sees the answer on the screen they land on. Once an hour per mailbox under
-the sync cron, in a savepoint of its own. From Check access on the mailbox
-form, and before the sync when Try again is pressed.
+the sync cron, in a savepoint of its own. From Test mailbox on the mailbox
+form (which then sends one email to whoever pressed it, so the
+row also holds a real send), and before the sync when Try again is pressed.
 
 **The probes, per provider.** Microsoft: `GET /users/{address}/mailFolders/inbox`
 with the sign-in's token is the Full Access probe; `mailboxSettings/userPurpose`

@@ -2729,6 +2729,9 @@ class Checks:
                 self.fail(f'the Setup tab draws {cards} cards, expected 2')
             if self.page.query_selector('.o_mailpro_access tbody tr:not(.o_data_row):visible'):
                 self.fail('the access table is padded with empty rows')
+            # Not tested yet, so the card leads with the one test.
+            if not self.page.query_selector('.o_form_view button.btn-primary:has-text("Test mailbox")'):
+                self.fail('an untested mailbox does not offer "Test mailbox"')
             if 'Last synced' in text:
                 self.fail('the form still labels the fetch cursor "Last synced"')
 

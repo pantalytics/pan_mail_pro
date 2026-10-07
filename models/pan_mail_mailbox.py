@@ -267,6 +267,10 @@ class PanMailMailbox(models.Model):
     access_ids = fields.One2many(
         'pan.mail.mailbox.access', 'mailbox_id', string='Access',
         help='What each sign-in may do with this mailbox, as the provider last said.')
+    access_proven = fields.Boolean(
+        compute='_compute_access_proven',
+        help='A send from this address went through and no sign-in was refused: '
+             'the setup works, so the form shows the answer instead of the test.')
     access_checked_date = fields.Datetime(
         string='Access checked', readonly=True, copy=False,
         help='When the access check last asked the provider about this mailbox.')
@@ -360,6 +364,28 @@ class PanMailMailbox(models.Model):
                       or account in mailbox.access_ids.mapped('account_id'))
             if serves:
                 mailbox._verify_access(account)
+
+    @api.depends('access_ids.can_read', 'access_ids.can_send')
+    def _compute_access_proven(self):
+        for mailbox in self:
+            rows = mailbox.access_ids
+            mailbox.access_proven = (
+                any(row.can_send == 'yes' for row in rows)
+                and not any('no' in (row.can_read, row.can_send) for row in rows))
+
+    def action_test_mailbox(self):
+        """The one test of setting a mailbox up: ask the provider who may read
+        and send here, then send one email to whoever pressed it. After it the
+        access table holds a real send, so the form can say "it works" rather
+        than offer a button. The check is a manager's; anybody who may send
+        from the address gets the send. The notification reloads the form,
+        so the answer lands where the button was."""
+        self.ensure_one()
+        if self.env.su or self.env.user.has_group('pan_mail_pro.group_mail_mailbox_manager'):
+            self._verify_all_access()
+        result = self.action_test_send()
+        result['params']['next'] = {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+        return result
 
     def action_check_access(self):
         """The check, from the form, for every sign-in on this mailbox."""

@@ -10,6 +10,8 @@ What is asserted here is mostly about *who the test mail goes to*. It goes to
 the person who pressed the button and never to the mailbox itself, because a
 mail addressed to the mailbox comes straight back in through the sync.
 """
+from unittest.mock import patch
+
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -74,3 +76,44 @@ class TestMailboxTestSend(MailProTestCase):
         outcome the reader can do something about."""
         with self.assertRaises(UserError):
             self.personal_mailbox.with_user(self.other_user).action_test_send()
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestMailboxSetupTest(MailProTestCase):
+    """"Test mailbox": the one test the Setup tab ends with.
+
+    It checks access, sends one email to whoever pressed it, and once a send
+    went through the form shows the answer instead of the button.
+    """
+
+    def test_a_sent_test_proves_the_mailbox(self):
+        mailbox = self.shared_mailbox.with_user(self.salesperson)
+        self.assertFalse(mailbox.access_proven)
+        with self.mock_graph():
+            result = mailbox.action_test_mailbox()
+
+        self.assertEqual(result['params']['type'], 'success')
+        # The notification reloads the form, so the answer replaces the button.
+        self.assertEqual(result['params']['next']['tag'], 'soft_reload')
+        self.shared_mailbox.invalidate_recordset(['access_ids', 'access_proven'])
+        self.assertTrue(self.shared_mailbox.access_proven)
+
+    def test_a_refused_sign_in_is_not_proven(self):
+        account = self.salesperson.x_pan_mail_account_ids[:1]
+        self.env['pan.mail.mailbox.access'].create({
+            'mailbox_id': self.shared_mailbox.id, 'account_id': account.id,
+            'can_read': 'no', 'can_send': 'yes'})
+        self.assertFalse(self.shared_mailbox.access_proven)
+
+    def test_only_a_manager_runs_the_access_check(self):
+        """Asking the provider is a manager's act; the send is anybody's who
+        may send from the address."""
+        Mailbox = type(self.env['pan.mail.mailbox'])
+        with patch.object(Mailbox, '_verify_all_access') as check, self.mock_graph():
+            self.shared_mailbox.with_user(self.salesperson).action_test_mailbox()
+        check.assert_not_called()
+
+        self.salesperson.group_ids += self.env.ref('pan_mail_pro.group_mail_mailbox_manager')
+        with patch.object(Mailbox, '_verify_all_access') as check, self.mock_graph():
+            self.shared_mailbox.with_user(self.salesperson).action_test_mailbox()
+        check.assert_called_once()

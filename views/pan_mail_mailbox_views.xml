@@ -196,6 +196,12 @@
                                            widget="boolean_toggle"/>
                                     <field name="sync_start_date" string="Import from"
                                            invisible="is_notification_mailbox"/>
+                                    <label for="provider" string="Server login"
+                                           invisible="provider != 'imap'"/>
+                                    <div invisible="provider != 'imap'">
+                                        <button name="action_open_account" type="object"
+                                                string="Edit server login" class="btn-link p-0"/>
+                                    </div>
                                 </group>
                             </div>
 
@@ -204,31 +210,21 @@
                                  has sent through it. On a Microsoft shared
                                  mailbox that is each sender in turn, and the one
                                  Exchange refused is the line an admin needs when
-                                 a quotation did not leave. The actions that
-                                 answer that question sit on the card's header,
-                                 all outline: none of them is the page's one
-                                 primary action. -->
+                                 a quotation did not leave.
+
+                                 Setting a mailbox up ends in one test, so the
+                                 card leads with it until it has passed: check
+                                 access, then one email to you. Once a send went
+                                 through and nobody was refused, the table is
+                                 the answer and the test steps back to a link. -->
                             <div class="o_mailpro_card mt-3">
-                                <div class="o_mailpro_card_head">
-                                    <span class="o_form_label">Access</span>
-                                    <div class="d-flex flex-wrap gap-2">
-                                        <!-- The access check, by hand. It runs on
-                                             its own at every consent and once an
-                                             hour under the sync; this is for the
-                                             admin who just granted a right in
-                                             Exchange and wants to see it land. -->
-                                        <button name="action_check_access" type="object"
-                                                string="Check access" class="btn-secondary btn-sm"
-                                                groups="pan_mail_pro.group_mail_mailbox_manager"/>
-                                        <!-- Sending is the one thing the consent
-                                             screen does not prove. The mail goes
-                                             to whoever presses it, never to this
-                                             address. -->
-                                        <button name="action_test_send" type="object"
-                                                string="Send test email" class="btn-secondary btn-sm"/>
-                                        <button name="action_open_account" type="object"
-                                                string="Edit server login" class="btn-secondary btn-sm"
-                                                invisible="provider != 'imap'"/>
+                                <span class="o_form_label d-block mb-2">Access</span>
+                                <field name="access_proven" invisible="1"/>
+                                <div class="mb-3" invisible="access_proven">
+                                    <button name="action_test_mailbox" type="object"
+                                            string="Test mailbox" class="btn-primary"/>
+                                    <div class="text-muted mt-1">
+                                        Checks who can read and send here, then sends one email to you.
                                     </div>
                                 </div>
                                 <field name="access_ids" nolabel="1" readonly="1"
@@ -248,7 +244,9 @@
                                         <field name="error" string="Reason"/>
                                     </list>
                                 </field>
-                                <div class="text-muted" invisible="access_ids">Not checked yet</div>
+                                <button name="action_test_mailbox" type="object"
+                                        string="Test again" class="btn-link p-0"
+                                        invisible="not access_proven"/>
                             </div>
                         </page>
                     </notebook>
