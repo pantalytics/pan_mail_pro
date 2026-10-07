@@ -75,6 +75,22 @@ class TestOneSendPerRecipient(MailProTestCase):
             self.assertEqual(len(send['to']), 1)
             self.assertFalse(send['email_to'])
 
+    def test_the_people_put_in_to_are_one_send_together(self):
+        """Two people typed into the composer's To are one mail with both in
+        the header, as a mail client sends it. A follower notified on top of
+        them still gets a copy of their own."""
+        follower = self.env['res.partner'].create({
+            'name': 'Follower', 'email': 'follower@elsewhere.example'})
+        mail = self._mail(recipient_ids=[(6, 0, [
+            self.external_partner.id, self.second_partner.id, follower.id])])
+        mail.mail_message_id.partner_ids = self.external_partner | self.second_partner
+        with self._fake_send():
+            mail.send()
+        self.assertEqual(
+            sorted(send['to'] for send in self.sends),
+            [['customer@example.com', 'other@elsewhere.example'],
+             ['follower@elsewhere.example']])
+
     def test_typed_addresses_stay_together_and_partners_go_alone(self):
         """As core: `email_to` is one message, with the Cc once; every
         partner is a message of its own."""

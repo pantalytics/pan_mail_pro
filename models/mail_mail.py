@@ -318,6 +318,11 @@ class MailMail(models.Model):
         per partner with its notification moved along. Addresses typed into
         `email_to` stay together on the original, as core keeps them, and
         `email_cc` goes with them once.
+
+        The people the sender put in To themselves (the message's own
+        `partner_ids`) are one mail with all of them in the header, the way a
+        mail client sends it: they were addressed together and already know of
+        each other. Only the followers notified on top of them go alone.
         """
         result = self.env['mail.mail']
         for mail in self:
@@ -333,7 +338,8 @@ class MailMail(models.Model):
                 # to several partners still puts them in one header.
                 result |= mail
                 continue
-            keep = partners.browse() if mail.email_to else partners[:1]
+            addressed = partners & mail.mail_message_id.partner_ids
+            keep = addressed or (partners.browse() if mail.email_to else partners[:1])
             singles = partners - keep
             notifications = self.env['mail.notification'].sudo().search([
                 ('mail_mail_id', '=', mail.id),
