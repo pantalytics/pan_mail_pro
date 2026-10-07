@@ -267,10 +267,14 @@ class PanMailMailbox(models.Model):
     access_ids = fields.One2many(
         'pan.mail.mailbox.access', 'mailbox_id', string='Access',
         help='What each sign-in may do with this mailbox, as the provider last said.')
-    access_proven = fields.Boolean(
-        compute='_compute_access_proven',
-        help='A send from this address went through and no sign-in was refused: '
-             'the setup works, so the form shows the answer instead of the test.')
+    access_state = fields.Selection([
+        ('open', 'Not tested yet'),
+        ('proven', 'Works'),
+        ('refused', 'Refused'),
+    ], string='Test', compute='_compute_access_state',
+        help='Works: a send from this address went through and no sign-in was '
+             'refused. Refused: the provider said no to a sign-in. The last '
+             'step of setting a mailbox up.')
     access_checked_date = fields.Datetime(
         string='Access checked', readonly=True, copy=False,
         help='When the access check last asked the provider about this mailbox.')
@@ -366,12 +370,15 @@ class PanMailMailbox(models.Model):
                 mailbox._verify_access(account)
 
     @api.depends('access_ids.can_read', 'access_ids.can_send')
-    def _compute_access_proven(self):
+    def _compute_access_state(self):
         for mailbox in self:
             rows = mailbox.access_ids
-            mailbox.access_proven = (
-                any(row.can_send == 'yes' for row in rows)
-                and not any('no' in (row.can_read, row.can_send) for row in rows))
+            if any('no' in (row.can_read, row.can_send) for row in rows):
+                mailbox.access_state = 'refused'
+            elif any(row.can_send == 'yes' for row in rows):
+                mailbox.access_state = 'proven'
+            else:
+                mailbox.access_state = 'open'
 
     def action_test_mailbox(self):
         """The one test of setting a mailbox up: ask the provider who may read

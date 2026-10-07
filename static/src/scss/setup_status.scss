@@ -117,3 +117,18 @@
 .o_mailpro_access tbody tr:not(.o_data_row) {
     display: none;
 }
+
+// The mailbox's own setup flow. An editable many2one is taller than a name, so
+// the line sits on the text baseline rather than the box centre; and the
+// access table under the test is part of that step, so it keeps the step's
+// left edge instead of the negative margins Odoo gives a list in a sheet.
+.o_mailpro_flow {
+    .o_mailpro_step_head { align-items: baseline; }
+
+    .o_mailpro_access {
+        display: block;
+        margin-top: 0.75rem;
+
+        .o_list_renderer { margin: 0 !important; }
+    }
+}

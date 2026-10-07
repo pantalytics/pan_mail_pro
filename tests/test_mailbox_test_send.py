@@ -88,22 +88,22 @@ class TestMailboxSetupTest(MailProTestCase):
 
     def test_a_sent_test_proves_the_mailbox(self):
         mailbox = self.shared_mailbox.with_user(self.salesperson)
-        self.assertFalse(mailbox.access_proven)
+        self.assertEqual(mailbox.access_state, 'open')
         with self.mock_graph():
             result = mailbox.action_test_mailbox()
 
         self.assertEqual(result['params']['type'], 'success')
         # The notification reloads the form, so the answer replaces the button.
         self.assertEqual(result['params']['next']['tag'], 'soft_reload')
-        self.shared_mailbox.invalidate_recordset(['access_ids', 'access_proven'])
-        self.assertTrue(self.shared_mailbox.access_proven)
+        self.shared_mailbox.invalidate_recordset(['access_ids', 'access_state'])
+        self.assertEqual(self.shared_mailbox.access_state, 'proven')
 
     def test_a_refused_sign_in_is_not_proven(self):
         account = self.salesperson.x_pan_mail_account_ids[:1]
         self.env['pan.mail.mailbox.access'].create({
             'mailbox_id': self.shared_mailbox.id, 'account_id': account.id,
             'can_read': 'no', 'can_send': 'yes'})
-        self.assertFalse(self.shared_mailbox.access_proven)
+        self.assertEqual(self.shared_mailbox.access_state, 'refused')
 
     def test_only_a_manager_runs_the_access_check(self):
         """Asking the provider is a manager's act; the send is anybody's who
