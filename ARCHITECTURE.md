@@ -1086,10 +1086,14 @@ with the sign-in's token is the Full Access probe; `mailboxSettings/userPurpose`
 is the kind; `GET /users/{address}` in the directory tells a mailbox's own
 address from an alias on it, since Exchange resolves any proxy address and
 the directory only principals. The last two need `MailboxSettings.Read` and
-`User.ReadBasic.All`, neither with admin consent, and a grant from before
-19.0.28 lacks them: the check reads `granted_scopes` and does not make a call
-that would 403 for want of consent, because that refusal cannot be told from
-one of rights; the row says "reconnect" instead. Gmail: the profile call is
+`User.ReadBasic.All`, which the consent request carries only when the system
+parameter `pan_mail_pro.graph_inspect_scopes` is set (19.0.28.1.0): a scope
+the customer's registration does not hold turns every reconnect into an
+admin-approval screen, so by default the request is the sending grant and
+nothing more. The check reads `granted_scopes` and does not make a call that
+would 403 for want of consent, because that refusal cannot be told from one
+of rights; without the scope the two rungs are skipped in silence and the
+kind stays `unknown`, which no screen colours. Gmail: the profile call is
 the read (a mailbox is read by its own sign-in or not at all), `sendAs.list`
 is the kind and the send answer. IMAP: `SELECT INBOX` read-only, then `MAIL
 FROM` and `RSET`: a 5xx is a refusal with the server's line. The response

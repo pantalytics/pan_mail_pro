@@ -46,7 +46,7 @@ Every call below is `GET`, with the sign-in's own token, against
 | `{"value": "linked"}` | `user` | documented |
 | `{"value": "shared"}` | `shared` | documented |
 | `room`, `equipment`, `others` | `resource` | documented |
-| 403, and the grant lacks `MailboxSettings.Read` | `unknown`, "reconnect" | by construction: the module reads `granted_scopes` and does not make the call |
+| the grant lacks `MailboxSettings.Read` | `unknown`, no sentence | by construction: the module reads `granted_scopes` and does not make the call. The scope is requested only when `pan_mail_pro.graph_inspect_scopes` is set |
 | 403 `ErrorAccessDenied` with the scope held | the rung-2 refusal again; `kind` is left as it was | unverified |
 
 ### Rung 4: is the address a principal or an alias

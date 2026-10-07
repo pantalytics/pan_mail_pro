@@ -1,8 +1,10 @@
 # A setup the module can verify
 
 Status: **built**, 19.0.28.0.0, except the probe matrix on a real tenant
-(step 0, §10): `docs/research/provider-probes.md` names every cell that is
-still the module's reading rather than an observed response, and the
+(step 0, §10). 19.0.28.1.0 made the two Graph inspection scopes opt-in
+(`pan_mail_pro.graph_inspect_scopes`): rungs 3 and 4 are silent without them,
+and no customer has to touch Azure or reconnect for the check that matters.
+`docs/research/provider-probes.md` names every cell that is still the module's reading rather than an observed response, and the
 fixtures in `tests/test_mailbox_access.py` carry the same strings. The design
 has moved into ARCHITECTURE.md §2 *Connected as* and *Verified access*; this
 file stays for the reasoning until that matrix has run, then leaves.
@@ -273,7 +275,7 @@ conclusion, not its rows.
 New codes in `pan.mail.error.CODES`, flow `access`:
 
 - `access.read_denied`, `access.send_denied`, `access.no_mailbox`,
-  `access.scope_missing`, `oauth.tenant_mismatch`.
+  `oauth.tenant_mismatch`.
 
 Each is one `_record()` at the rung that found it, with `mailbox` and
 `account`, so the ledger row names the pair. The heartbeat already carries

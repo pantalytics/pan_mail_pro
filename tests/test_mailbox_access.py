@@ -160,16 +160,37 @@ class TestMicrosoftLadder(TransactionCase):
         self.assertEqual(answer['kind'], 'alias')
         self.assertIn('alias on another mailbox', answer['error'])
 
-    def test_a_grant_without_the_scopes_reads_and_asks_to_reconnect(self):
-        """An older grant answers the question that matters (can it read)
-        and is not sent on a probe that would 403 for want of consent."""
+    def test_a_grant_without_the_inspection_scopes_reads_and_says_nothing_else(self):
+        """A sending grant answers the question that matters (can it read),
+        is not sent on a probe that would 403 for want of consent, and is
+        not told to reconnect for a permission the database never asked
+        for. The kind stays unknown, which no screen colours."""
         self.account.granted_scopes = 'openid Mail.ReadWrite Mail.Send'
         fake = GraphFake(graph_response(200, {'id': 'x'}))
         answer = self._inspect(fake)
         self.assertEqual((answer['kind'], answer['can_read']), ('unknown', 'yes'))
-        self.assertTrue(answer['needs_reconnect'])
-        self.assertIn('Reconnect', answer['error'])
+        self.assertIsNone(answer['error'])
+        self.assertNotIn('needs_reconnect', answer)
         self.assertEqual(len(fake.paths), 1)
+
+    def test_the_inspection_scopes_are_requested_only_on_opt_in(self):
+        """A scope in the request that the customer's registration does not
+        carry turns every reconnect into an admin-approval screen, so the
+        default request is the sending grant and nothing more."""
+        from odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client import (
+            INSPECT_SCOPES, INSPECT_SCOPES_PARAM)
+        self.env['pan.mail.provider'].create({
+            'provider': 'outlook', 'client_id': 'id', 'client_secret': 'secret',
+            'tenant_id': '11111111-2222-3333-4444-555555555555'})
+        client = self.env['microsoft.graph.client']
+        Param = self.env['ir.config_parameter'].sudo()
+        url = client.get_authorization_url('https://odoo.test/microsoft_oauth/callback')
+        for scope in INSPECT_SCOPES:
+            self.assertNotIn(scope, url)
+        Param.set_param(INSPECT_SCOPES_PARAM, 'True')
+        url = client.get_authorization_url('https://odoo.test/microsoft_oauth/callback')
+        for scope in INSPECT_SCOPES:
+            self.assertIn(scope, url)
 
     def test_an_unexpected_answer_is_kept_in_the_providers_words(self):
         answer = self._inspect(GraphFake(graph_refusal('ErrorServerBusy', 503)))

@@ -115,15 +115,17 @@ class TestMailboxHealth(MailProTestCase):
         self.assertEqual(mailbox.health_status, 'error')
         self.assertIn('Full Access and Send As', mailbox.status_message)
 
-    def test_a_reconnect_to_finish_the_check_is_a_warning(self):
+    def test_a_readable_mailbox_with_a_sentence_on_its_row_is_a_warning(self):
+        """The provider answered, could read, and still had something to say:
+        the row's sentence reaches the screen as a warning, never an error."""
         mailbox = self.personal_mailbox
         self.Access.note_check(mailbox, self.sales_account,
                                {'kind': 'unknown', 'can_read': 'yes', 'can_send': 'unknown',
-                                'error': 'Reconnect Sales Person under My Preferences, Mail '
-                                         'Pro, so Mail Pro can check what sales@company.test is.'})
+                                'error': 'Microsoft 365 answered 503 (ErrorServerBusy) when '
+                                         'asked about sales@company.test.'})
         self._refresh(mailbox)
         self.assertEqual(mailbox.health_status, 'warning')
-        self.assertIn('Reconnect', mailbox.status_message)
+        self.assertIn('503', mailbox.status_message)
 
     def test_a_mailbox_nobody_has_checked_reads_as_it_did(self):
         """`unknown` everywhere is the state every row starts in at the

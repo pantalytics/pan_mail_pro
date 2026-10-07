@@ -44,12 +44,16 @@ user, never as an administrator.
 | `Mail.ReadWrite.Shared` | Create drafts in shared mailbox |
 | `Mail.Send.Shared` | Send from shared mailbox |
 
-**Access check (additional):**
+**Optional, off by default** (requested only when the system parameter
+`pan_mail_pro.graph_inspect_scopes` is set to `True`):
 
 | Permission | Purpose |
 |------------|---------|
 | `MailboxSettings.Read` | Whether a configured address is a user, a shared mailbox or a room |
 | `User.ReadBasic.All` | Whether a configured address is a mailbox's own or an alias on it |
+
+The access check itself (can this sign-in read the mailbox, did the send go
+through) needs nothing beyond the permissions above.
 
 **Note:** All permissions are delegated. Users authorize their own accounts.
 
