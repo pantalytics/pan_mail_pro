@@ -79,19 +79,14 @@
                         </button>
                     </div>
 
-                    <!-- The identity: read, not filled in. The address and its
-                         status on one line, then one grey line of facts: the
-                         brand's overview page is a title, its status, and
-                         nothing that needs a second line to explain it. -->
+                    <!-- The identity: read, not filled in. The address, then
+                         one line that opens with its status: the brand's
+                         overview page is a title and its status. The badge
+                         used to sit in the h1, at heading size, at the far
+                         end of an address field Odoo stretches to full width. -->
                     <div class="oe_title o_mailpro_mailbox_head">
-                        <h1 class="d-flex align-items-center gap-3">
-                            <field name="email" placeholder="support@company.com"
-                                   class="o_mailpro_mailbox_address"/>
-                            <field name="health_status" string="Status" widget="badge"
-                                   decoration-success="health_status == 'healthy'"
-                                   decoration-warning="health_status == 'warning'"
-                                   decoration-danger="health_status == 'error'"
-                                   readonly="1"/>
+                        <h1>
+                            <field name="email" placeholder="support@company.com"/>
                         </h1>
                         <!-- Time Machine's line, for the same reason: a result
                              nobody can see any other way has to be stated. The
@@ -99,10 +94,15 @@
                              the Inbox; the admin setting up an address for
                              somebody else's team never does. -->
                         <div class="text-muted o_mailpro_mailbox_meta">
-                            <field name="subtitle" readonly="1" nolabel="1" class="d-inline"/>
+                            <field name="health_status" string="Status" widget="badge"
+                                   decoration-success="health_status == 'healthy'"
+                                   decoration-warning="health_status == 'warning'"
+                                   decoration-danger="health_status == 'error'"
+                                   readonly="1" class="d-inline-block me-2"/>
+                            <field name="subtitle" readonly="1" nolabel="1" class="d-inline-block"/>
                             <span invisible="is_notification_mailbox or not last_check_date">
                                 · Last checked <field name="last_check_date" readonly="1" nolabel="1"
-                                                           class="d-inline"/>
+                                                           class="d-inline-block"/>
                             </span>
                             <span invisible="is_notification_mailbox or last_check_date">
                                 · Not checked yet

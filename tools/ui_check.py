@@ -2713,19 +2713,20 @@ class Checks:
             quiet = marks()
             text = self.form_text(url)
             self.shot('mailbox-healthy.png')
-            # The status belongs to the address: a badge half a 2000px
-            # window away from it reads as a second thing.
+            # The status belongs to the address: it opens the line under it,
+            # in the same column. A badge half a 2000px window away from the
+            # address, at heading size, read as a second thing.
             gap = self.page.evaluate("""() => {
-                const head = document.querySelector('.o_mailpro_mailbox_head h1');
-                const input = head && head.querySelector('.o_mailpro_mailbox_address input');
-                const badge = head && head.querySelector('.badge');
-                if (!input || !badge) return null;
-                return badge.getBoundingClientRect().left - input.getBoundingClientRect().right;
+                const address = document.querySelector('.o_mailpro_mailbox_head h1 input');
+                const badge = document.querySelector('.o_mailpro_mailbox_meta .badge');
+                if (!address || !badge) return null;
+                return Math.abs(badge.getBoundingClientRect().left
+                                - address.getBoundingClientRect().left);
             }""")
             if gap is None:
-                self.fail('the mailbox form has no address and badge in its title')
-            elif gap > 48:
-                self.fail(f'the status badge sits {gap:.0f}px from the address')
+                self.fail('the mailbox form has no address with its status under it')
+            elif gap > 24:
+                self.fail(f'the status badge sits {gap:.0f}px from the address column')
             for gone in ('Sync Now', 'Send test email', 'Try again'):
                 if gone in text:
                     self.fail(f'a working mailbox still offers "{gone}"')
