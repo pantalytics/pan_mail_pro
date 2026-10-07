@@ -189,15 +189,24 @@
                     </div>
 
                     <div class="o_mailpro_step">
+                        <!-- Green only once the owner's sign-in has been seen to
+                             read and send from it (the access table), not once
+                             the row exists with a token on it: that is the
+                             difference between a step answered and a step that
+                             works, and it was the one the Emovr checklist could
+                             not tell. Red when the provider refused; the open
+                             dot while a probe or the test email is still to
+                             happen. -->
+                        <field name="x_notification_access_state" invisible="1"/>
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_notification_done or x_mailboxes_alert"/>
+                              invisible="not x_setup_notification_done or x_mailboxes_alert or x_notification_access_state != 'ok'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="not x_mailboxes_alert"/>
+                              invisible="not x_mailboxes_alert and x_notification_access_state != 'broken'"/>
                         <!-- A step that has stopped is one dot, not two: the
                              warning wins, and "still to do" is not additional
                              information next to it. -->
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_setup_notification_done or x_mailboxes_alert"/>
+                              invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or (x_setup_notification_done and x_notification_access_state == 'ok')"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">4. Mailboxes</span>
@@ -212,6 +221,17 @@
                             <div class="o_mailpro_step_msg" invisible="x_setup_notification_done">
                                 The addresses Mail Pro sends and receives on. One of them
                                 sends Odoo's own email.
+                            </div>
+                            <!-- What is still to happen before the dot turns:
+                                 one muted line while open, the provider's own
+                                 sentence in warning colour when it refused. -->
+                            <div class="o_mailpro_step_msg"
+                                 invisible="not x_setup_notification_done or x_notification_access_state != 'open' or not x_notification_access_msg">
+                                <field name="x_notification_access_msg" nolabel="1" readonly="1"/>
+                            </div>
+                            <div class="o_mailpro_step_msg o_mailpro_msg_warn"
+                                 invisible="x_notification_access_state != 'broken'">
+                                <field name="x_notification_access_msg" nolabel="1" readonly="1"/>
                             </div>
                             <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_mailboxes_alert">
                                 <field name="x_mailboxes_alert" nolabel="1" readonly="1"/>

@@ -46,7 +46,8 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `models/mail_compose_message.py` | Composer "Send From" dropdown + setup warning |
 | `models/mail_alias.py` | Cleaner alias display (name only, no domain) |
 | `models/pan_mail_mailbox.py` | Mailbox configuration + routing rules |
-| `models/pan_mail_account.py` | Credentials for one address on one provider |
+| `models/pan_mail_account.py` | Credentials for one address on one provider, and what the provider said about the sign-in at consent: its stable id, the principal name, the display name, the tenant, the scope line. `has_scope()` is what the access check reads before a call that needs a permission an older grant lacks |
+| `models/pan_mail_mailbox_access.py` | One row per (mailbox, sign-in): can it read, may it send, as the provider last said. Written by `pan.mail.mailbox._verify_access` and by `mail.mail` on every send outcome; read by health, the checklist, the alert. Never asks the provider itself |
 | `models/providers/microsoft/graph_client.py` | Microsoft 365 implementation of the contract |
 | `models/providers/google/gmail_client.py` | Gmail implementation of the contract |
 | `models/providers/imap_smtp/imap_client.py` | IMAP/SMTP implementation of the contract |
@@ -84,6 +85,9 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `tests/test_provider_contract.py` | Guards the contract seam itself |
 | `tests/test_connect_banner.py` | Who is asked to connect a mailbox, and who is left alone |
 | `tests/test_connected_as.py` | Which identity a user is connected as, and whose sign-in a mailbox sends with |
+| `tests/test_identity.py` | What the consent callback keeps about a sign-in, and the sign-ins it refuses: another tenant, a consumer Google account |
+| `tests/test_mailbox_access.py` | The access check, per provider, driven through `docs/research/provider-probes.md`'s responses: the Graph ladder, Gmail's send-as list, the IMAP select and the SMTP envelope probe, and the table they write |
+| `tests/test_mailbox_health.py` | What the screens say once the table has spoken: the badge, the sentence, step 4, the alert. The first case is Emovr's |
 | `tests/test_oauth_routes.py` | Every route this module opens, who may call it, and what the OAuth callback stores when it works and when it refuses |
 | `tests/test_incoming_mail.py` | Unit tests for incoming mail processor |
 | `tests/test_mail_matcher.py` | Unit tests for the matching ladder |
@@ -729,6 +733,71 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   and in the code.
 - **`--` is illegal inside an XML comment**, and Odoo's own loader will not
   tell you which file: `tools/ci_lint.sh`'s XML check does, in a second.
+
+### A setup the module can verify (19.0.28.0.0)
+
+- **"Find out at the send" is the customer finding out.** The module refused
+  to probe a sign-in's rights on a mailbox because Graph cannot list Send As,
+  and a check button was built and removed in one release on that argument.
+  At Emovr seventeen quotations failed on a missing Full Access while every
+  mailbox read healthy, for six months. Full Access *is* probeable (one GET
+  on the inbox), Send As is learned from the first real send, and a table
+  that remembers either is worth more than a philosophy about what cannot be
+  known. The plan is `docs/plans/verified-setup.md`.
+- **A 404 is not always "not found".** Exchange answers a draft in a mailbox
+  the sign-in may not open with `ErrorItemNotFound`, "The specified object
+  was not found in the store": the same missing right `ErrorAccessDenied`
+  names, phrased by the store. It was not in `_DELEGATION_ERRORS`, so the raw
+  Graph line reached `failure_reason` and sent the admin looking for a
+  missing mailbox. Every cell of the probe matrix carries its status
+  (documented, observed, unverified) in `docs/research/provider-probes.md`,
+  because a ladder built on a guessed code is the same bug with better
+  wording.
+- **An unanswered question is `unknown`, never a guess.** Microsoft cannot
+  say whether a sign-in may send as an address without a send, and an SMTP
+  server's 250 to MAIL FROM proves nothing. The access row says `unknown`
+  until a delivered mail or a refusal says otherwise, and the check never
+  overwrites a `yes` a real send wrote with an `unknown` it found.
+- **A probe that needs a scope the grant lacks is not made.** A 403 for want
+  of consent cannot be told from one of rights, so the check reads
+  `granted_scopes` first and the row says "reconnect" when the permission
+  is not there. An older grant answers the question that matters (can it
+  read) and is asked to reconnect for the one that explains it.
+- **The dot waits; the phase does not.** Step 4 turns green only once the
+  owner's sign-in has been seen to read and send from the notification
+  mailbox. The phase (`is_ready`) keeps reading the credentials, because a
+  phase that waited for a probe and a send would stop every existing
+  database's sync at the upgrade until both had happened.
+- **Two words for one address.** `mailbox_type` is Odoo's policy (who may
+  send, with whose token); `address_kind` is the provider's fact (what is
+  there). A `user` kind on a `shared` type is the Emovr shape, and it is a
+  warning naming both ways out, not an error: Daniëlle, connected as the
+  address itself, sends fine from it while Robert cannot.
+- **A recordset is falsy when empty, and an AbstractModel recordset is
+  always empty.** `client = self._get_client()`, then `if client and
+  client.supports_shared_mailbox` skipped every rung that needed the
+  receiving sign-in, on every mailbox, and six health tests read healthy
+  where the table said no. The connect route fell into the same hole in
+  19.0.6 (its comment is still there). Test a client with `is not None`.
+- **A probe retries into a hang.** Odoo's test runner blocks external HTTP
+  with a `ConnectionError` subclass, which `http_utils.request_with_retry`
+  backs off on three times; the consent callback's access check then held
+  the HttpCase past its timeout. A probe that runs inside a request is one
+  `requests.get`, no retry loop: the cron asks again within the hour.
+- **The suite runs without Docker in a cloud session.** PostgreSQL 16 is on
+  the image (`pg_createcluster 16 main && pg_ctlcluster 16 main start`, a
+  superuser role `odoo`), `git clone --depth 1 --branch 19.0 odoo/odoo`,
+  the requirements installed unpinned one by one (skip `rl-renderPM`,
+  `pypiwin32`, `python-ldap`; `num2words` with `--no-deps`), then
+  `odoo-bin -d x --addons-path=odoo-src/addons,<parent of the module> -i
+  pan_mail_pro,sale,mass_mailing --test-enable --test-tags pan_mail_pro
+  --stop-after-init`. Twenty minutes to set up, 80 seconds per full run,
+  and `odoo-bin shell` for the case the assertion message does not explain.
+  CI took eleven minutes per round and said "healthy != warning".
+- **The heartbeat takes no key the server does not know.** `access_ok` was
+  in the plan and is not in the body: mail-pro-admin refuses an unknown
+  field, and a refused heartbeat at every customer is worse than a missing
+  boolean. The `access.*` codes ride the error list it already accepts.
 
 ### Unlink, New, and a slot that read a getter (19.0.21.0.0)
 

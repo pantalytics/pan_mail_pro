@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- The access table, raw. The mailbox form shows its conclusion in one
+         sentence; this is every row, for the admin asking "which sign-in,
+         on which mailbox, since when". Read-only: the check and the send
+         path are the only writers. -->
+    <record id="view_pan_mail_mailbox_access_list" model="ir.ui.view">
+        <field name="name">pan.mail.mailbox.access.list</field>
+        <field name="model">pan.mail.mailbox.access</field>
+        <field name="arch" type="xml">
+            <list string="Mailbox access" create="false" edit="false"
+                  decoration-danger="can_read == 'no' or can_send == 'no'"
+                  decoration-muted="can_read == 'unknown' and can_send == 'unknown'">
+                <field name="mailbox_id"/>
+                <field name="account_id" string="Sign-in"/>
+                <field name="can_read" string="Reads"/>
+                <field name="can_send" string="Sends"/>
+                <field name="checked_date" string="Checked"/>
+                <field name="sent_date" string="Last send" optional="show"/>
+                <field name="error" string="Reason"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pan_mail_mailbox_access_search" model="ir.ui.view">
+        <field name="name">pan.mail.mailbox.access.search</field>
+        <field name="model">pan.mail.mailbox.access</field>
+        <field name="arch" type="xml">
+            <search string="Mailbox access">
+                <field name="mailbox_id"/>
+                <field name="account_id"/>
+                <filter name="refused" string="Refused"
+                        domain="['|', ('can_read', '=', 'no'), ('can_send', '=', 'no')]"/>
+                <filter name="unchecked" string="Not checked"
+                        domain="[('can_read', '=', 'unknown'), ('can_send', '=', 'unknown')]"/>
+                <separator/>
+                <filter name="group_mailbox" string="Mailbox" context="{'group_by': 'mailbox_id'}"/>
+                <filter name="group_account" string="Sign-in" context="{'group_by': 'account_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_pan_mail_mailbox_access" model="ir.actions.act_window">
+        <field name="name">Mailbox access</field>
+        <field name="res_model">pan.mail.mailbox.access</field>
+        <field name="view_mode">list</field>
+        <field name="search_view_id" ref="view_pan_mail_mailbox_access_search"/>
+        <field name="context">{'search_default_group_mailbox': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_empty_folder">Nothing checked yet</p>
+            <p>
+                One line per sign-in and mailbox: whether the provider lets
+                that sign-in read the mailbox and send as its address, as it
+                last answered. The sync checks every mailbox once an hour,
+                every consent checks the mailboxes it serves, and every send
+                writes what it met.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu: Settings → Technical → Email → Mail Pro → Mailbox access,
+         between Mail Routing (where did it go) and Errors (why did it not):
+         this one answers "may it, at all". -->
+    <menuitem id="menu_pan_mail_mailbox_access"
+              name="Mailbox access"
+              parent="pan_mail_pro.menu_pan_mail_root"
+              action="action_pan_mail_mailbox_access"
+              sequence="52"
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+</odoo>

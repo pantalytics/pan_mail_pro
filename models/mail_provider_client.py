@@ -102,24 +102,52 @@ Normalized folder (returned by list_folders)
 Normalized identity (returned by read_user_info / test_connection)
 -------------------------------------------------------------------
     {
-        'email': str or None,    # the address this sign-in is, at the provider
-        'name':  str or None,    # what the provider calls the person, if it does
+        'email':            str or None,  # the address this sign-in is, at the provider
+        'name':             str or None,  # what the provider calls the person, if it does
+        'provider_user_id': str or None,  # the provider's stable id for it (Graph `id`,
+                                          # Google `sub`); addresses get renamed, this does not
+        'principal_name':   str or None,  # the sign-in name the admin sees (Graph
+                                          # `userPrincipalName`); often not the address
+        'tenant_id':        str or None,  # whose directory it is: Entra `tid`, the
+                                          # Workspace domain (`hd`) on Google
     }
+
+`identity_shape()` builds one; every key is present on every provider, and
+the ones a provider cannot answer are None. IMAP answers None throughout:
+its identity is a login somebody typed.
+
+Normalized access (returned by inspect_mailbox)
+------------------------------------------------
+    {
+        'kind':     one of ADDRESS_KINDS,   # what the provider says the address is
+        'can_read': 'yes' | 'no' | 'unknown',
+        'can_send': 'yes' | 'no' | 'unknown',
+        'error':    str or None,            # the provider's own line, when it refused
+    }
+
+`access_shape()` builds one. `unknown` is an honest answer and the default:
+Microsoft cannot say whether a sign-in may send as an address without a
+send, and an SMTP server's 250 to MAIL FROM proves nothing.
 
 The account actions
 -------------------
-A sign-in is a `pan.mail.account`, and two things can be asked of one. They
+A sign-in is a `pan.mail.account`, and three things can be asked of one. They
 sit on the contract because the question is the same at every provider and
 only the call behind it differs, and a caller that asked the provider
 directly would be the second copy of that difference:
 
     read_user_info        who is this sign-in, at the provider
+    identity_refusal      why this sign-in may not be stored, if it may not
     test_connection       does this sign-in still work
+    inspect_mailbox       what an address is, and what this sign-in may do with it
 
 `read_user_info` is what "Connected as" stores at consent: the address the
 provider reports, which is not necessarily the address on the Odoo user who
 consented. Where a provider cannot answer (IMAP has no token to ask), the
-identity is configuration and the fields are None.
+identity is configuration and the fields are None. `identity_refusal` is
+asked right after, before anything is stored: a sign-in from another tenant
+than the application registration's, or a consumer Google account, is
+refused there with the reason, rather than at the first send.
 
 The mailbox actions
 -------------------
@@ -164,8 +192,10 @@ Two rules the actions inherit, and neither is negotiable in an implementation:
   rather than one with a marker argument because they are independent states,
   and a single call would have to be told which one it was *not* changing.
 """
+import base64
 import contextlib
 import hashlib
+import json
 import logging
 import re
 import secrets
@@ -220,6 +250,66 @@ ERROR_NO_RECIPIENTS = 'no_recipients'
 # result with this code carries `retry_after` (seconds); `mail.mail` keeps the
 # mail outgoing until then instead of failing it.
 ERROR_THROTTLED = 'throttled'
+# The provider refused the send on *rights*: the sign-in may not send as the
+# address. Exchange says ErrorSendAsDenied / ErrorAccessDenied /
+# ErrorItemNotFound, Gmail says "Delegation denied", an SMTP relay refuses
+# MAIL FROM. `mail.mail` writes it onto the access row for the pair
+# (`pan.mail.mailbox.access`), which is how the mailbox form and the setup
+# checklist learn it without anybody opening the failed mail.
+ERROR_ACCESS_DENIED = 'access_denied'
+
+# What a provider says an address is (`pan.mail.mailbox.address_kind`).
+ADDRESS_KINDS = [
+    ('unknown', 'Not checked yet'),
+    ('user', 'User mailbox'),
+    ('shared', 'Shared mailbox'),
+    ('alias', 'Alias'),
+    ('resource', 'Room or equipment'),
+    ('none', 'No mailbox'),
+    ('account', 'Account'),
+]
+ACCESS_ANSWERS = [('unknown', 'Not checked'), ('yes', 'Yes'), ('no', 'No')]
+
+# The identity keys, in one place: the contract's docstring, every client and
+# `pan.mail.account._store_tokens` read the same tuple.
+IDENTITY_KEYS = ('email', 'name', 'provider_user_id', 'principal_name', 'tenant_id')
+
+
+def identity_shape(**values):
+    """A normalized identity with every key present (see the module docstring)."""
+    unknown = set(values) - set(IDENTITY_KEYS)
+    if unknown:
+        raise ValueError(f'not an identity key: {sorted(unknown)}')
+    return {key: values.get(key) for key in IDENTITY_KEYS}
+
+
+def access_shape(kind='unknown', can_read='unknown', can_send='unknown', error=None):
+    """A normalized access answer with every key present (see the module docstring)."""
+    kinds = dict(ADDRESS_KINDS)
+    answers = dict(ACCESS_ANSWERS)
+    if kind not in kinds:
+        raise ValueError(f'not an address kind: {kind!r}')
+    for answer in (can_read, can_send):
+        if answer not in answers:
+            raise ValueError(f'not an access answer: {answer!r}')
+    return {'kind': kind, 'can_read': can_read, 'can_send': can_send, 'error': error}
+
+
+def decode_jwt_claims(token):
+    """The claims of an id_token, as a dict; `{}` for anything that is not one.
+
+    No signature check, on purpose: the token arrived in the same TLS answer
+    from the token endpoint as the access token beside it, which is the only
+    thing that vouches for either. What is read off it (`tid`, `oid`, `sub`,
+    `hd`) is stored as metadata about a sign-in, never used to authorize one.
+    """
+    try:
+        payload = token.split('.')[1]
+        payload += '=' * (-len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        return claims if isinstance(claims, dict) else {}
+    except (AttributeError, IndexError, ValueError, TypeError):
+        return {}
 
 
 def no_recipients_result():
@@ -668,7 +758,7 @@ class MailProviderClient(models.AbstractModel):
     # -------------------------------------------------------------------------
 
     @api.model
-    def read_user_info(self, token):
+    def read_user_info(self, token, id_token=None):
         """Who `token` is at the provider: the normalized identity.
 
         Asked with a bare token rather than an account because its first use
@@ -676,19 +766,53 @@ class MailProviderClient(models.AbstractModel):
         reports is what decides whether this is a new sign-in, the same one
         again, or somebody else on the same Odoo user (`_store_tokens`).
 
+        `id_token` is the OpenID token the exchange handed back beside the
+        access token, when the provider issues one; its claims (`tid`, `oid`,
+        `sub`, `hd`) fill the identity's directory fields without a call.
+
         Never raises: an identity the provider will not name is
-        `{'email': None, 'name': None}`, and the caller says what that means.
+        `identity_shape()` with every value None, and the caller says what
+        that means.
         """
         raise NotImplementedError
+
+    @api.model
+    def identity_refusal(self, identity):
+        """Why this sign-in may not be stored, as one sentence, or None.
+
+        Asked by the consent callback between `read_user_info` and
+        `_store_tokens`, with the identity just read. The default refuses
+        nothing; a provider refuses what its registration cannot serve: a
+        Microsoft sign-in from a tenant other than the single-tenant
+        registration's, a consumer Google account on a Workspace product.
+        """
+        return None
 
     @api.model
     def test_connection(self, account):
         """Verify the stored credentials still work.
 
         Returns:
-            dict: {'success': bool, 'error': str or None,
-                   'email': str or None, 'name': str or None}
+            dict: {'success': bool, 'error': str or None, **identity_shape()}
             -- the normalized identity, plus whether it could be read.
+        """
+        raise NotImplementedError
+
+    @api.model
+    def inspect_mailbox(self, account, address):
+        """What `address` is at the provider, and what `account` may do there.
+
+        Returns the normalized access answer (`access_shape()`): the kind of
+        thing the address is, whether this sign-in can read the mailbox, and
+        whether it may send as it -- where the provider can say so without a
+        send, which only Gmail can. Each question is answered as far as the
+        provider allows and the rest stays `unknown`; `error` carries the
+        provider's own line for a refusal, in the normalized vocabulary never
+        a URL or a payload.
+
+        Never raises on the provider's answer: a refusal *is* the answer.
+        Raises only when the account cannot be used at all (no token, a
+        neutralized copy), which the caller records as such.
         """
         raise NotImplementedError
 

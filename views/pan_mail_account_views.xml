@@ -43,6 +43,24 @@
                         </group>
                     </group>
 
+                    <!-- What the provider said about this sign-in at consent.
+                         Read, never typed: the consent callback writes it and
+                         the access check moves the verified date. Absent on
+                         IMAP, whose identity is the login above. -->
+                    <group string="Identity" invisible="provider == 'imap'">
+                        <group>
+                            <field name="identity_name"/>
+                            <field name="principal_name"/>
+                            <field name="tenant_id"/>
+                        </group>
+                        <group>
+                            <field name="connected_date"/>
+                            <field name="verified_date"/>
+                            <field name="provider_user_id" groups="base.group_no_one"/>
+                            <field name="granted_scopes" groups="base.group_no_one"/>
+                        </group>
+                    </group>
+
                     <!-- OAuth providers: nothing to type here, the consent
                          screen fills it in. -->
                     <div class="alert alert-info" role="alert" invisible="provider == 'imap'">

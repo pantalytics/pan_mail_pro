@@ -267,6 +267,9 @@ Providers disagree about sending as somebody else, which is why
 | | Microsoft 365 (`outlook`) | Gmail (`gmail`) | IMAP/SMTP (`imap`) |
 |---|---|---|---|
 | Auth | OAuth 2.0 | OAuth 2.0 | server + login + password |
+| Identity | `/me` + id_token (`oid`, `tid`) | id_token (`sub`, `email`, `hd`) + Gmail profile | the login; nothing else exists |
+| Kind of an address | `mailboxSettings/userPurpose` + a directory lookup | the send-as list: primary, verified alias, or nothing | `account`: a login that opens a mailbox is one |
+| Can read / can send | inbox probe per sign-in / only a send proves it | own profile / `sendAs.list` proves it before a send | `SELECT INBOX` / only a send proves it; `MAIL FROM` proves a refusal |
 | Shared mailbox | Yes (SendAs + author's own token) | Its own Workspace account (`user_id` null) | Its own login (`user_id` null) |
 | Delegation | — | Delegated account / Google Group | — |
 | Folders | `Inbox` / `SentItems` | `INBOX` / `SENT` labels | `INBOX` / `\Sent` special-use |
@@ -377,7 +380,8 @@ shows (§2), and the account form's Test Connection reads the same two fields.
 | Model | Purpose |
 |-------|---------|
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider` — inherited from `pan.mail.provider.current_code()`, never asked on the form) |
-| `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
+| `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`), and the identity behind them as the provider reported it at consent: its stable id, the principal name, the display name, the tenant, the scope line of the grant |
+| `pan.mail.mailbox.access` | What one sign-in may do with one mailbox, as the provider last said: `can_read`, `can_send`, each yes / no / unknown, and the provider's own sentence for a refusal. One row per (mailbox, account), written by the access check and by the send path; read by health, the checklist and the heartbeat (§2 *Verified access*) |
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.setup` | Setup steps 2 to 4 and the phase they add up to (abstract). Step 1, the Pantalytics account, is `pan.mail.license` |
@@ -872,7 +876,8 @@ pan_mail_pro/
 │   │   ├── mime_utils.py          # Outgoing message build, shared by every sender
 │   │   └── http_utils.py          # One retry-and-throttle loop for the two HTTP clients
 │   ├── pan_mail_mailbox.py        # Mailbox config + routing + provider dispatch
-│   ├── pan_mail_account.py        # Per-address credentials
+│   ├── pan_mail_account.py        # Per-address credentials, and the identity behind them
+│   ├── pan_mail_mailbox_access.py # What one sign-in may do with one mailbox, as the provider last said
 │   ├── pan_mail_provider.py       # The application registration: one row, no toggle (§9.13)
 │   ├── pan_mail_license.py        # The link to a Pantalytics account, the heartbeat, sync_allowed()
 │   ├── pan_mail_domain.py         # Internal domains + the fail-closed gate
@@ -1020,20 +1025,93 @@ as the Users list column, where the administrator reads at a glance that one
 user sends as somebody else. Nothing refuses it: `_store_tokens` already refuses the one
 case that breaks things, switching identity while the old one still works.
 
-Whether that identity may send from a shared mailbox is a delegation granted
-in Exchange, and Graph has no endpoint that lists it, so the module does not
-pretend to know before a send: a check button was built and taken out again
-in the same release, because a person who cannot send from a shared mailbox
-finds out at the send, and the right place for the answer is that refusal.
-A send Exchange refuses on delegation (`ErrorAccessDenied` on the draft,
-`ErrorSendAsDenied` on the send) lands in `failure_reason` as a sentence
-naming the **account's** address, the identity Exchange refused, rather than
-the Odoo user, who may be somebody else, and the two rights to grant.
+Since 19.0.28.0.0 the account keeps the rest of what the provider said about
+the sign-in, beside the address: its stable id (`provider_user_id`: the Entra
+object id, Google's `sub`), the principal name an administrator sees in the
+directory, the display name, the tenant (`tid`, or the Workspace domain `hd`)
+and the scope line of the grant. All of it comes off `/me` and the id_token
+in the consent callback (`read_user_info`), none of it is typed, and the
+tenant is checked there: a sign-in from another directory than the
+registration's, or a consumer Google account, is refused with the reason
+(`identity_refusal`, `oauth.tenant_mismatch`) rather than failing at the
+first send with a 404 that reads like a missing right.
 
-The mailbox form says the same rule from its side: `sends_with` is
+The mailbox form says the sending rule from its side: `sends_with` is
 `_resolve_sending_account` in one sentence -- the owner's sign-in and its
 address on a personal or notification mailbox, each sender's own on a
 Microsoft shared one, its own account on Gmail and IMAP.
+
+### Verified access
+
+Until 19.0.28.0.0 the module did not ask the provider whether a sign-in could
+reach a mailbox: a check button was built and taken out again in one release,
+on the argument that a person who cannot send from a shared mailbox finds out
+at the send. At Emovr the person who found out was the customer, seventeen
+quotations later, while every mailbox read healthy (#266). So the question is
+asked now, and the answer is kept where every screen reads it.
+
+**Two words for one address.** `mailbox_type` stays Odoo's policy question --
+who may send from here, with whose credentials, derived from the owner.
+`address_kind` is the provider's factual one -- what is at this address --
+and is written by the check, never typed: `user`, `shared`, `alias`,
+`resource`, `none`, `account` (IMAP: a login that opens a mailbox is one), or
+`unknown` until asked. Read together they name the Emovr shape: a `user`
+kind on a `shared` type is a person's mailbox owned in Odoo by a sign-in on
+another address, which Exchange will not let near it without rights admins
+rarely grant on a user mailbox, and the status line says so with both ways
+out.
+
+**The table.** `pan.mail.mailbox.access` holds one row per (mailbox, sign-in):
+`can_read`, `can_send`, each yes / no / unknown, and the provider's own
+sentence for a refusal. Two writers and nothing else: the check
+(`pan.mail.mailbox._verify_access`, which calls the contract's
+`inspect_mailbox`) and the send path (`mail.mail`, which writes what a real
+send met: `yes` on delivery, `no` on a refusal the client tagged
+`ERROR_ACCESS_DENIED`). `unknown` is the honest default. Microsoft cannot say
+whether a sign-in may send as an address without a send ("It's not currently
+possible to use Microsoft Graph to query which mailboxes the authenticated
+user has permissions for"), and an SMTP server's 250 to MAIL FROM proves
+nothing; Gmail is the one provider where Send As is a lookup
+(`sendAs.list`), so there the row is complete after the check alone.
+
+**When it runs.** Never in a constraint and never on opening a form; both
+would put an HTTP call where the ORM expects none. At the consent callback,
+for every mailbox the new sign-in serves, so the person who just consented
+sees the answer on the screen they land on. Once an hour per mailbox under
+the sync cron, in a savepoint of its own. From Check access on the mailbox
+form, and before the sync when Try again is pressed.
+
+**The probes, per provider.** Microsoft: `GET /users/{address}/mailFolders/inbox`
+with the sign-in's token is the Full Access probe; `mailboxSettings/userPurpose`
+is the kind; `GET /users/{address}` in the directory tells a mailbox's own
+address from an alias on it, since Exchange resolves any proxy address and
+the directory only principals. The last two need `MailboxSettings.Read` and
+`User.ReadBasic.All`, neither with admin consent, and a grant from before
+19.0.28 lacks them: the check reads `granted_scopes` and does not make a call
+that would 403 for want of consent, because that refusal cannot be told from
+one of rights; the row says "reconnect" instead. Gmail: the profile call is
+the read (a mailbox is read by its own sign-in or not at all), `sendAs.list`
+is the kind and the send answer. IMAP: `SELECT INBOX` read-only, then `MAIL
+FROM` and `RSET`: a 5xx is a refusal with the server's line. The response
+matrix, with every cell's status (documented, observed, unverified), is
+`docs/research/provider-probes.md`.
+
+**Who reads it.** `health_status` (`_access_problem`: a `none`, `resource`
+or `alias` kind, a reader refused, a system or personal sender refused, are
+errors; a refused sender on a shared mailbox, the Emovr shape, a grant to
+reconnect, are warnings), `status_message`, step 4 of the setup checklist
+(green only once the owner's sign-in has been seen to read *and* send from
+the notification mailbox; the phase keeps reading the credentials so no
+database stops syncing at the upgrade), the alert on the mailboxes line, and
+the heartbeat through the `access.*` error codes. The Mailbox access list
+under Settings → Technical is the raw table.
+
+A send Exchange refuses on delegation (`ErrorAccessDenied` on the draft,
+`ErrorSendAsDenied` on the send, and `ErrorItemNotFound`, the store's
+phrasing of the same missing Full Access) lands in `failure_reason` as a
+sentence naming the **account's** address, the identity Exchange refused,
+rather than the Odoo user, who may be somebody else, and the two rights to
+grant.
 
 ---
 
@@ -2979,11 +3057,13 @@ out of a browser history or a log is not a second grant.
 
 ## 13. Known limitations
 
-**SendAs permissions cannot be queried.** Microsoft Graph offers no endpoint to
-ask which shared mailboxes a user may send as
-([known limitation](https://learn.microsoft.com/en-us/answers/questions/1168052/)).
-So the module cannot show only accessible mailboxes: an admin adds them
-manually, and Azure validates at send time.
+**Send As cannot be queried on Microsoft 365 or SMTP.** Microsoft Graph offers
+no endpoint to ask which mailboxes a sign-in may send as
+([known limitation](https://learn.microsoft.com/en-us/answers/questions/1168052/)),
+and an SMTP server's 250 to MAIL FROM proves nothing. Whether a sign-in can
+*read* a mailbox is probed (§2 *Verified access*); whether it may send as the
+address is learned from the first real send, which is what the test email on
+the mailbox form is for. Gmail answers both before a send.
 
 **IMAP `SEARCH SINCE` is date-granular**, so the cursor is asked wide and
 narrowed in Python — see §9.6.

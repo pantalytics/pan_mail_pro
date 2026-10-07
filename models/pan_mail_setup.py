@@ -122,9 +122,40 @@ class PanMailSetup(models.AbstractModel):
 
     @api.model
     def notification_mailbox_usable(self):
-        """Not "does the record exist" — can it actually send?"""
+        """Not "does the record exist" — does it hold credentials to send with?
+
+        This is the phase's question, and it stays the credentials one on
+        purpose: the verified answer below can only be known after a probe
+        and a send, and a phase that waited for those would stop every
+        existing database's sync at the upgrade until both had happened.
+        """
         mailbox = self.env['mail.mail']._notification_mailbox()
         return bool(mailbox) and mailbox._has_working_credentials()
+
+    @api.model
+    def notification_mailbox_verified(self):
+        """Has the owner's sign-in been seen to read *and* send from it?
+
+        What the checklist's dot on step 4 reads (`pan.mail.mailbox.access`).
+        Returns ('ok' | 'open' | 'broken', sentence): `ok` when both answers
+        are yes, `broken` with the provider's sentence when either is no,
+        `open` with what is still to happen otherwise -- "not yet sent from"
+        on Microsoft and SMTP, where only a send proves Send As, and the test
+        email on the mailbox form is the way to make it happen.
+        """
+        mailbox = self.env['mail.mail']._notification_mailbox()
+        if not mailbox or not mailbox._has_working_credentials():
+            return 'open', ''
+        problem = mailbox._access_problem()
+        if problem and problem[0] == 'error':
+            return 'broken', problem[1]
+        account = mailbox._get_client().resolve_receiving_account(mailbox)
+        row = self.env['pan.mail.mailbox.access'].for_pair(mailbox, account)
+        if row and row.can_read == 'yes' and row.can_send == 'yes':
+            return 'ok', ''
+        if row and row.can_read == 'yes':
+            return 'open', _('Not yet sent from. Send the test email on the mailbox.')
+        return 'open', _('Not checked yet. The next sync run checks it.')
 
     @api.model
     def _provider_accounts(self, provider):
@@ -182,14 +213,26 @@ class PanMailSetup(models.AbstractModel):
         line that would otherwise show a green check while something is red.
         """
         broken = self._mailboxes_in_error()
-        if not broken:
-            return ''
-        return _('%(count)s mailbox(es) stopped syncing. The rest is unaffected.',
-                 count=len(broken))
+        if broken:
+            return _('%(count)s mailbox(es) stopped syncing. The rest is unaffected.',
+                     count=len(broken))
+        unreachable = self._mailboxes_refused()
+        if unreachable:
+            return _('%(count)s mailbox(es) the provider refuses: no mailbox at the '
+                     'address, or the sign-in may not reach it. The rest is unaffected.',
+                     count=len(unreachable))
+        return ''
 
     @api.model
     def _mailboxes_in_error(self):
         return self.env['pan.mail.mailbox'].sudo().search([('state', '=', 'error')])
+
+    @api.model
+    def _mailboxes_refused(self):
+        """The mailboxes the access table calls broken (`_access_problem`)."""
+        mailboxes = self.env['pan.mail.mailbox'].sudo().search([('state', '!=', 'error')])
+        return mailboxes.filtered(
+            lambda m: (m._access_problem() or (None,))[0] == 'error')
 
     @api.model
     def not_ready_error(self):

@@ -9,7 +9,7 @@ from odoo import fields, models, api, tools, _
 from odoo.addons.base.models.ir_mail_server import MailDeliveryException
 from odoo.exceptions import AccessError, UserError
 
-from .mail_provider_client import ERROR_NO_RECIPIENTS, ERROR_THROTTLED
+from .mail_provider_client import ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, ERROR_THROTTLED
 from .neutralization import database_is_neutralized
 
 # Set by the composer around its send: this batch is the thing the person did.
@@ -501,6 +501,9 @@ class MailMail(models.Model):
 
         if result['success']:
             self._record_sent(result, mailbox, account, reply_context, batch=batch)
+            # A delivered mail is the one proof of Send As on Microsoft and
+            # SMTP: the access row for this pair learns it here.
+            self.env['pan.mail.mailbox.access'].note_send(mailbox, account, True)
             if post_send_callback:
                 post_send_callback(self)
             return None
@@ -530,6 +533,16 @@ class MailMail(models.Model):
             self.write({'state': 'cancel'})
             self._sync_notifications()
             return None
+
+        if result.get('error_code') == ERROR_ACCESS_DENIED:
+            # The provider refused the *sign-in*, not the mail: a right is
+            # missing on the address. Written on the access row for the pair,
+            # which is where the mailbox form and the setup checklist read it,
+            # and under its own code, which is how the heartbeat tells "one
+            # mailbox nobody can send from" from a bounce.
+            reason = self._readable_reason(result.get('error'))
+            self.env['pan.mail.mailbox.access'].note_send(mailbox, account, False, error=reason)
+            return self._fail(reason, code='access.send_denied', mailbox=mailbox)
 
         # The client caught the transport error itself and handed back its
         # text: the same sentence-making applies as to one that escaped.

@@ -91,6 +91,13 @@ class ResConfigSettings(models.TransientModel):
     x_mailboxes_alert = fields.Char(compute='_compute_setup_status')
     x_setup_domains_done = fields.Boolean(compute='_compute_setup_status')
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
+    # Whether the notification mailbox's owner has been *seen* to read and
+    # send from it (`pan.mail.setup.notification_mailbox_verified`). The dot
+    # on step 4 reads this; the phase reads the credentials answer above.
+    x_notification_access_state = fields.Selection(
+        [('ok', 'Verified'), ('open', 'Not yet'), ('broken', 'Refused')],
+        compute='_compute_setup_status')
+    x_notification_access_msg = fields.Char(compute='_compute_setup_status')
 
     # -------------------------------------------------------------------------
     # Step 1 — the Pantalytics account, see pan_mail_license.py. Done when the
@@ -264,6 +271,7 @@ class ResConfigSettings(models.TransientModel):
         Setup = self.env['pan.mail.setup']
         alert = Setup.mailbox_alert()
         answers = Setup.answers()
+        access_state, access_msg = Setup.notification_mailbox_verified()
         active_provider = self.env['pan.mail.provider'].current()
         mailboxes = _counted(self.env['pan.mail.mailbox'].sudo().search_count([]),
                              _('1 mailbox'), _('%s mailboxes'))
@@ -279,5 +287,7 @@ class ResConfigSettings(models.TransientModel):
                 else _('Not set up yet'))
             record.x_setup_domains_done = bool(record.x_internal_domain_ids)
             record.x_setup_notification_done = answers['mailboxes']
+            record.x_notification_access_state = access_state
+            record.x_notification_access_msg = access_msg
             record.x_mailboxes_summary = mailboxes
             record.x_mailboxes_alert = alert
