@@ -259,6 +259,14 @@ full_message=...)` lets a client read the attachments off the payload
 `get_message` already fetched, kept under a private `_source` key the
 fetcher drops before anything is stored.
 
+An incoming file over `MAX_INCOMING_ATTACHMENT_BYTES` (10 MB) is not
+imported. Graph and Gmail say a file's size before its bytes, so the client
+lists it with `content: None` and never downloads it; IMAP already read the
+whole message, and the fetcher holds it to the same line. The mail lands with
+one line in its body naming each file left out, which stays in the mailbox.
+A worker holds every file of a message in memory, base64 on top, and one large
+scan was a worker killed for its memory limit every minute on the same mail.
+
 ### Capability differences
 
 Providers disagree about sending as somebody else, which is why
@@ -2015,6 +2023,11 @@ lost:
   mail was imported without them
 - `outgoing.sent_copy_failed`: the mail went out but its copy could not be
   filed in the Sent folder
+
+One code is never recorded: `incoming.sync_stale` is counted when the
+heartbeat is built, one per `active` mailbox that has not finished a sync run
+in 15 minutes, because the cron that would record it is the one not getting
+through. The same count turns `sync_ok` false.
 
 `_record()` is private: a Python call site inside the module, never RPC.
 Adding a failure to catch is adding a code to `CODES` and one `_record()` call

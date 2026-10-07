@@ -18,7 +18,8 @@ from odoo import models, api, fields, _
 from odoo.exceptions import UserError
 
 from .mail_provider_client import (
-    DB_MARKER_HEADER, FOLDER_INBOX, FOLDER_SENT, ThrottledError, odoo_db_marker,
+    DB_MARKER_HEADER, FOLDER_INBOX, FOLDER_SENT, MAX_INCOMING_ATTACHMENT_BYTES,
+    ThrottledError, odoo_db_marker,
 )
 from .mail_message import READ_MIRROR_CTX
 from .neutralization import database_is_neutralized
@@ -579,6 +580,22 @@ class PanMailFetcher(models.AbstractModel):
             return skip
         return None
 
+    @api.model
+    def _note_left_out(self, body, left_out):
+        """`body` with a line naming each file too large to import.
+
+        The file itself stays in the mailbox it arrived in; this line is how
+        the reader in Odoo learns it exists.
+        """
+        names = ', '.join(
+            '%s (%s MB)' % (a.get('name') or 'unnamed',
+                            round((a.get('size') or len(a.get('content') or b'')) / 1048576, 1))
+            for a in left_out)
+        limit = MAX_INCOMING_ATTACHMENT_BYTES // 1048576
+        note = _('Not imported, larger than %(limit)s MB: %(names)s. '
+                 'Open the mail in the mailbox to get it.', limit=limit, names=names)
+        return Markup('%s<p><em>%s</em></p>') % (body or '', note)
+
     def _full_message(self, ctx):
         """The full message, fetched once and cached on `ctx`.
 
@@ -1068,8 +1085,18 @@ class PanMailFetcher(models.AbstractModel):
         # Process attachments into Odoo's expected tuple format:
         # - Inline: 3-tuple so Odoo converts cid: → /web/image/
         # - Regular: 2-tuple stored as ir.attachment
+        #
+        # A file over the cap stays in the mailbox: the provider may already
+        # have left it undownloaded (`content` None), and IMAP, which had to
+        # read the whole message, is held to the same line here. The body
+        # names what was left out, so the mail does not read as complete.
         email_attachments = []
+        left_out = []
         for attachment in attachments:
+            content = attachment.get('content')
+            if content is None or len(content) > MAX_INCOMING_ATTACHMENT_BYTES:
+                left_out.append(attachment)
+                continue
             if attachment['is_inline'] and attachment['content_id']:
                 email_attachments.append((
                     attachment['name'],
@@ -1081,6 +1108,8 @@ class PanMailFetcher(models.AbstractModel):
 
         if full_message.get('body_is_html') and body_content:
             body_content = Markup(body_content)
+        if left_out:
+            body_content = self._note_left_out(body_content, left_out)
 
         # When the mail was written, not when we happened to import it. Odoo
         # defaults `date` to now(), which collapses a historical import into a

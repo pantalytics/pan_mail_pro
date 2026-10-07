@@ -76,10 +76,18 @@ Normalized attachment (returned by get_message_attachments)
     {
         'name':       str,
         'mimetype':   str,
-        'content':    bytes,      # already base64-decoded by the provider
+        'content':    bytes,      # already base64-decoded by the provider;
+                                  # None when the file is over the cap
+        'size':       int,        # bytes, when the provider says
         'is_inline':  bool,
         'content_id': str or None,   # Content-ID without angle brackets
     }
+
+A file over MAX_INCOMING_ATTACHMENT_BYTES is listed with `content: None` and
+not downloaded where the provider can say its size first (Graph, Gmail). The
+fetcher imports the mail without it and names it in the body, so the file
+stays in the mailbox and the worker never holds it. IMAP has the whole message
+in hand already; the fetcher applies the same cap to what it returns.
 
 Normalized send result (returned by send_message)
 --------------------------------------------------
@@ -233,6 +241,12 @@ FOLDER_JUNK = 'junk'
 # gets the answer for a bounded slice of them and keeps the rest as it found
 # them, rather than paging a provider on every visit to the Inbox.
 UNREAD_CAP = 500
+
+# The largest incoming file the sync downloads and stores. Above it the mail is
+# imported without the file. A worker holds every file of a message in memory,
+# twice over in base64, so one 100 MB attachment is a worker killed for its
+# memory limit, every minute, on the same message (issue #304).
+MAX_INCOMING_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 FOLDER_ROLES = {
     FOLDER_INBOX: 'INBOX',
