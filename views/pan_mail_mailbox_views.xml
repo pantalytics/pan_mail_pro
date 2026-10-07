@@ -206,7 +206,7 @@
                                     <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
                                           invisible="access_state != 'proven'"/>
                                     <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Broken" title="Broken"
-                                          invisible="access_state != 'refused'"/>
+                                          invisible="access_state != 'fix'"/>
                                     <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
                                           invisible="access_state != 'open'"/>
                                     <div class="o_mailpro_step_body">
@@ -216,37 +216,28 @@
                                                 <field name="access_state" nolabel="1" readonly="1"/>
                                             </span>
                                         </div>
-                                        <div class="o_mailpro_step_msg" invisible="access_state == 'proven'">
+                                        <!-- The answer, not the evidence: works,
+                                             or the one sentence that says what is
+                                             wrong and what to do. Who may read and
+                                             send, line by line, is under Settings ->
+                                             Technical -> Email -> Mail Pro -> Mailbox
+                                             access. -->
+                                        <div class="o_mailpro_step_msg" invisible="access_state != 'open'">
                                             <button name="action_test_mailbox" type="object"
                                                     string="Test mailbox" class="btn-primary btn-sm me-2"/>
                                             Checks who can read and send here, then sends one email to you.
                                         </div>
-                                        <!-- Who may do what here, as the provider
-                                             last said: one line per sign-in. On a
-                                             Microsoft shared mailbox that is each
-                                             sender in turn, and the one Exchange
-                                             refused is the line an admin needs when
-                                             a quotation did not leave. -->
-                                        <field name="access_ids" nolabel="1" readonly="1"
-                                               class="o_mailpro_access" invisible="not access_ids">
-                                            <list create="false" edit="false" delete="false">
-                                                <field name="account_id" string="Sign-in"/>
-                                                <!-- Colour is the status and nothing
-                                                     else: green works, red is refused,
-                                                     grey is not asked yet. -->
-                                                <field name="can_read" string="Reads" widget="badge"
-                                                       decoration-success="can_read == 'yes'"
-                                                       decoration-danger="can_read == 'no'"/>
-                                                <field name="can_send" string="Sends" widget="badge"
-                                                       decoration-success="can_send == 'yes'"
-                                                       decoration-danger="can_send == 'no'"/>
-                                                <field name="checked_date" string="Checked"/>
-                                                <field name="error" string="Reason"/>
-                                            </list>
-                                        </field>
-                                        <button name="action_test_mailbox" type="object"
-                                                string="Test again" class="btn-link btn-sm p-0"
-                                                invisible="access_state != 'proven'"/>
+                                        <div class="o_mailpro_step_msg" invisible="access_state != 'fix'">
+                                            <div class="o_mailpro_msg_warn mb-1">
+                                                <field name="access_message" nolabel="1" readonly="1"/>
+                                            </div>
+                                            <button name="action_test_mailbox" type="object"
+                                                    string="Test again" class="btn-secondary btn-sm"/>
+                                        </div>
+                                        <div class="o_mailpro_step_msg" invisible="access_state != 'proven'">
+                                            <button name="action_test_mailbox" type="object"
+                                                    string="Test again" class="btn-link btn-sm p-0"/>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -285,7 +276,7 @@
                          running leaves the state at `active` and used to say
                          nothing at all. Nothing is drawn while it works. -->
                     <div class="alert alert-danger mt-3" role="alert"
-                         invisible="health_status == 'healthy'">
+                         invisible="health_status == 'healthy' or access_state == 'fix'">
                         <field name="status_message" nolabel="1" readonly="1"/>
                         <button name="action_sync_now" type="object" string="Try again"
                                 class="btn-secondary btn-sm ms-2"

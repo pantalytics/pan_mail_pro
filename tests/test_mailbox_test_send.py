@@ -98,12 +98,15 @@ class TestMailboxSetupTest(MailProTestCase):
         self.shared_mailbox.invalidate_recordset(['access_ids', 'access_state'])
         self.assertEqual(self.shared_mailbox.access_state, 'proven')
 
-    def test_a_refused_sign_in_is_not_proven(self):
+    def test_a_refused_sender_needs_a_fix_and_says_which(self):
+        """The step answers in one sentence, the same one the badge reads."""
         account = self.salesperson.x_pan_mail_account_ids[:1]
         self.env['pan.mail.mailbox.access'].create({
             'mailbox_id': self.shared_mailbox.id, 'account_id': account.id,
-            'can_read': 'no', 'can_send': 'yes'})
-        self.assertEqual(self.shared_mailbox.access_state, 'refused')
+            'can_read': 'yes', 'can_send': 'no'})
+        self.assertEqual(self.shared_mailbox.access_state, 'fix')
+        self.assertIn(account.email, self.shared_mailbox.access_message)
+        self.assertIn('then test again', self.shared_mailbox.access_message)
 
     def test_only_a_manager_runs_the_access_check(self):
         """Asking the provider is a manager's act; the send is anybody's who

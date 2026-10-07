@@ -37,10 +37,10 @@ Mail Pro → Mailbox access**, one line per sign-in and mailbox.
 | *Y is a send-as alias of X that Google has not verified yet* | the alias is pending | finish the verification mail in Gmail settings |
 | *X may not send as Y: the server refused the sender* (SMTP) | the login may not use Y as MAIL FROM | ask the hoster to allow Y for that login, or use the login's own address |
 
-Send As on Microsoft 365 and SMTP is only ever proven by a send: a row
-reading **Sends: Not checked** is not a fault, it is waiting for the first
-mail. **Test mailbox** on the mailbox form is the way to make that
-happen now.
+Send As on Microsoft 365 and SMTP is only ever proven by a send: a mailbox
+whose Setup tab reads **2. Test: Not tested yet** is not a fault, it is
+waiting for the first mail. **Test mailbox** on that step is the way to make
+that happen now.
 
 ### "Mailbox not connected" warning, or the banner will not go away
 

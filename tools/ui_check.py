@@ -2719,16 +2719,16 @@ class Checks:
             if 'Last checked' not in text:
                 self.fail('the mailbox form does not say when it was last checked')
 
-            # Setup is a flow: two step lines, then one card of settings, and
-            # no empty rows padding the access table.
+            # Setup is a flow: two step lines, then one card of settings. The
+            # test step says whether it works, never as a table.
             self.page.click('.o_notebook .nav-link:has-text("Setup")')
             self.page.wait_for_timeout(600)
             self.shot('mailbox-setup.png')
             steps = len(self.page.query_selector_all('.o_form_view .o_mailpro_step'))
             if steps != 2:
                 self.fail(f'the Setup tab draws {steps} steps, expected 2')
-            if self.page.query_selector('.o_mailpro_access tbody tr:not(.o_data_row):visible'):
-                self.fail('the access table is padded with empty rows')
+            if self.page.query_selector('.o_mailpro_step table'):
+                self.fail('the test step shows a table instead of an answer')
             # Not tested yet, so the test step offers the test.
             if not self.page.query_selector('.o_mailpro_step button.btn-primary:has-text("Test mailbox")'):
                 self.fail('an untested mailbox does not offer "Test mailbox"')
