@@ -1,0 +1,52 @@
+// The mailbox form, as the brand's overview page (brand.pantalytics.com/product-ui):
+// the address, one grey line that opens with its status, then the
+// rows. Depth from a 1px rule, never a shadow. Colour is only status; the
+// tabs and the radios keep the theme's own, so this form does not become the
+// one screen in Odoo that looks different from the rest.
+
+.o_mailpro_mailbox_form {
+    // Text running the width of a 2000px window is two things, not one
+    // line. Same cap, same reason, as the setup checklist.
+    .o_form_sheet {
+        max-width: 60rem;
+        box-shadow: none;
+        border: 1px solid rgba(0, 29, 33, 0.12);
+        border-radius: 0.75rem;
+    }
+
+    .o_mailpro_mailbox_head {
+        margin-bottom: 1rem;
+
+        // A heading is Medium, never bold, and sized for a screen the reader
+        // works in rather than a page they land on.
+        h1 {
+            font-size: 1.78rem;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+    }
+
+    // One line. Odoo stretches every field under `.oe_title` to the full
+    // width, which broke the status, the identity and the last check onto
+    // three lines; a wrapping row gives each its own width back.
+    .oe_title .o_mailpro_mailbox_meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.88rem;
+
+        .o_field_widget {
+            width: auto;
+        }
+    }
+
+    .o_mailpro_mailbox_lead {
+        max-width: 42rem;
+        margin: 0.5rem 0 1rem;
+    }
+
+    .o_mailpro_mailbox_rows {
+        margin-top: 0;
+    }
+}

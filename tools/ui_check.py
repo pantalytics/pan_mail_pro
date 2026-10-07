@@ -2713,6 +2713,35 @@ class Checks:
             quiet = marks()
             text = self.form_text(url)
             self.shot('mailbox-healthy.png')
+            # The status belongs to the address: it opens the line under it,
+            # in the same column. A badge half a 2000px window away from the
+            # address, at heading size, read as a second thing.
+            gap = self.page.evaluate("""() => {
+                const address = document.querySelector('.o_mailpro_mailbox_head h1 input');
+                const badge = document.querySelector('.o_mailpro_mailbox_meta .badge');
+                if (!address || !badge) return null;
+                return Math.abs(badge.getBoundingClientRect().left
+                                - address.getBoundingClientRect().left);
+            }""")
+            if gap is None:
+                self.fail('the mailbox form has no address with its status under it')
+            elif gap > 24:
+                self.fail(f'the status badge sits {gap:.0f}px from the address column')
+            # The status, the identity and the last check are one line.
+            # Odoo stretches every field under `.oe_title` to full width,
+            # which put them on three.
+            spread = self.page.evaluate("""() => {
+                const meta = document.querySelector('.o_mailpro_mailbox_meta');
+                if (!meta) return null;
+                const mids = [...meta.children]
+                    .filter(el => el.getClientRects().length)
+                    .map(el => { const r = el.getBoundingClientRect();
+                                 return (r.top + r.bottom) / 2; });
+                return Math.max(...mids) - Math.min(...mids);
+            }""")
+            if spread is not None and spread > 12:
+                self.fail('the line under the mailbox address breaks onto more than '
+                          f'one line ({spread:.0f}px between its parts)')
             for gone in ('Sync Now', 'Send test email', 'Try again'):
                 if gone in text:
                     self.fail(f'a working mailbox still offers "{gone}"')

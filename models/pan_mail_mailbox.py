@@ -584,7 +584,7 @@ class PanMailMailbox(models.Model):
     # Health Status (computed for list view)
     # -------------------------------------------------------------------------
     health_status = fields.Selection([
-        ('healthy', 'OK'),
+        ('healthy', 'Working'),
         ('warning', 'Warning'),
         ('error', 'Error'),
     ], string='Status', compute='_compute_health_status', store=False)
