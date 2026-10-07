@@ -346,6 +346,91 @@ overleeft; of het scherm leest, niet.
       `heartbeat_error`-event. Rijen ouder dan dertig dagen zijn weg na de
       opruimcron
 
+### Geverifieerde setup (19.0.28.0.0, scopes opt-in sinds 19.0.28.1.0)
+
+De module vraagt de provider nu zelf of een sign-in een mailbox kan lezen en
+onthoudt per (mailbox, sign-in) hoe elke verzending afliep
+(`pan.mail.mailbox.access`). Het ontwerp staat in
+`docs/plans/verified-setup.md`; de antwoorden die CI heeft nagespeeld in
+`docs/research/provider-probes.md`, met per cel of die ooit op een echte
+tenant is gezien. Dat laatste is wat dit plan bewijst.
+
+**Geen Azure-wijziging nodig.** De leesprobe en de verzenduitkomsten gebruiken
+niets dat een bestaande grant mist. Deel 2 is het enige dat `MailboxSettings.Read`
+en `User.ReadBasic.All` vraagt, en dat is opt-in per database: alleen op onze
+eigen tenant doen, nooit als eis voor een klant.
+
+**Deel 1: standaardpad, op odoo.pantalytics.com (gedaan 2026-10-07 tot en
+met de eerste vier).**
+
+- [x] Na de upgrade leest elke mailbox healthy of met de zin die de tabel
+      geeft, nooit "Reconnect": soort is *Unknown* en dat kleurt niets
+- [x] Mailbox → **Check access**: rij voor de eigen sign-in met *can read:
+      yes*; `access_checked_date` gezet; geen rij in Errors
+- [x] Testmail vanaf notifications@: aangekomen; rij *can send: yes*; stap 4
+      van de checklist groen (Settings → Mail Pro)
+- [x] Disconnect, dan Connect mailbox onder My Preferences → Mail Pro: het
+      consent-scherm is ongewijzigd, geen *needs admin approval*
+- [ ] **De Emovr-vorm.** Maak een shared mailbox voor een adres waar jouw
+      sign-in geen Full Access op heeft (bijv. `daniel@pantalytics.com`
+      met jou als owner). Check access: badge *error*, zin "rutger@… cannot
+      read daniel@…. An administrator grants Full Access…"; rij in Errors
+      onder `access.read_denied`. Dit is de check die bij Emovr zes maanden
+      ontbrak
+- [ ] Verstuur toch een mail vanaf die mailbox: `failure_reason` draagt
+      dezelfde zin, de rij zegt *can send: no*, Errors krijgt
+      `access.send_denied`. Geen omleiding naar een ander adres
+- [ ] Geef in het Exchange admin center Full Access (nog geen Send As),
+      wacht een paar minuten, Check access: *can read: yes*, badge weg.
+      Verstuur: `ErrorSendAsDenied`, zin noemt Send As. Geef Send As,
+      verstuur: *can send: yes*, healthy. De tabel onthoudt de `yes` en een
+      latere check overschrijft die niet met `unknown`
+- [ ] Een adres dat niet bestaat als mailbox (een distributielijst of een
+      typefout): Check access zegt "There is no mailbox at …"; badge *error*;
+      de mailboxes-regel op Settings toont de alert
+- [ ] Het uurlijkse pad: wacht een uur, `access_checked_date` is bijgewerkt
+      zonder dat iemand op Check access drukte; de sync zelf is niet
+      vertraagd
+- [ ] Gmail (mailpro-dev of een Workspace-account): Check access op de eigen
+      mailbox leest *yes* via het profiel; een shared Gmail-adres zonder
+      send-as geeft "X has no send-as address for Y"
+- [ ] IMAP (Soverin): Check access doet `SELECT INBOX` en `MAIL FROM`/`RSET`;
+      een afzender die de server weigert geeft de 5xx-regel van de server
+
+**Deel 2: opt-in, alleen op de Pantalytics-tenant.** Dit vult de cellen
+*unverified* in `provider-probes.md` en is de enige reden om onze eigen
+Azure-registratie aan te raken.
+
+- [ ] Azure: `MailboxSettings.Read` en `User.ReadBasic.All` (delegated)
+      toevoegen aan de app-registratie, admin consent opnieuw geven
+- [ ] Odoo: Settings → Technical → System Parameters,
+      `pan_mail_pro.graph_inspect_scopes` = `True`
+- [ ] Reconnect één sign-in. Op de account (Settings → Technical → Email →
+      Mail Pro → Accounts) staan beide scopes in *granted scopes*; `tid` en
+      de principal name zijn gevuld
+- [ ] Check access: Kind wordt *User* op een persoonlijk adres, *Shared* op
+      `notifications@` (als dat in Exchange echt een shared mailbox is). Noteer
+      het antwoord van `userPurpose` in `provider-probes.md` en zet de
+      cel op *observed*
+- [ ] De Emovr-vorm met soort bekend: user-adres als shared type met een
+      owner die als een ander adres is aangemeld: badge *warning*, zin
+      "… is a user account. Connect it as its own sign-in, or grant …"
+- [ ] Een alias (proxy address op een bestaande mailbox) als mailbox: Kind
+      *Alias*, badge *error*, zin "… is an alias on another mailbox". Noteer
+      de exacte 404-code van de directory-lookup in `provider-probes.md`
+- [ ] Een room of equipment mailbox: Kind *Resource*, *can send: no*
+- [ ] Een sign-in die níét is gereconnect: Check access slaat rung 3 en 4
+      stil over, soort blijft *Unknown*, geen zin, geen rij in Errors
+- [ ] Parameter weer op `False` of verwijderen: nieuwe connects vragen de
+      scopes niet meer; bestaande grants houden ze en de rungen blijven
+      werken voor die accounts
+
+**Deel 3: Emovr.** Na de upgrade van odoo-customer-emovr: Check access op
+`info@emovr.nl` met Robert als owner geeft precies de zin uit deel 1
+(`robert@stalero.nl cannot read info@emovr.nl`), en Daniëlle, aangemeld als
+`info@` zelf, leest *yes*. De fix is één van de twee uitwegen uit de zin, en
+de badge bewijst welke is gekozen.
+
 ---
 
 ## Fase B — Dogfood (Pantalytics-database)
