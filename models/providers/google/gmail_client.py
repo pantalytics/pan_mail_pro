@@ -30,9 +30,9 @@ from .. import http_utils
 from ...mail_provider_client import (
     FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
     FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
-    ERROR_THROTTLED,
+    ERROR_ACCESS_DENIED, ERROR_THROTTLED,
     ThrottledError,
-    decode_jwt_claims, identity_shape, no_recipients_result,
+    access_shape, decode_jwt_claims, identity_shape, no_recipients_result,
 )
 from .. import mime_utils
 
@@ -349,6 +349,10 @@ class GoogleGmailClient(models.AbstractModel):
             return {'success': False, 'error': str(e), 'error_code': ERROR_THROTTLED,
                     'retry_after': e.wait}
         except requests.exceptions.RequestException as e:
+            denied = self._delegation_denied_reason(e, account, mailbox)
+            if denied:
+                _logger.warning('[Gmail API] %s', denied)
+                return {'success': False, 'error': denied, 'error_code': ERROR_ACCESS_DENIED}
             return {'success': False, 'error': self._error_detail(e),
                     'error_code': self._error_code(e)}
 
@@ -706,6 +710,74 @@ class GoogleGmailClient(models.AbstractModel):
             principal_name=claims.get('email') or email,
             tenant_id=claims.get('hd'),
         )
+
+    def _delegation_denied_reason(self, exception, account, mailbox):
+        """The sentence for a send Gmail refused on rights, or None.
+
+        Gmail refuses a `From:` the account may not use with a 403 whose
+        message says "Delegation denied for <address>". Named after the
+        Graph client's method on purpose: same question, same caller.
+        """
+        detail = self._error_detail(exception) or ''
+        status = getattr(getattr(exception, 'response', None), 'status_code', None)
+        if status != 403 or 'delegation denied' not in detail.lower():
+            return None
+        return _(
+            '%(who)s may not send as %(mailbox)s. Sign in as that address, or '
+            'add it under Send mail as in the Gmail settings of %(who)s.',
+            who=account.email, mailbox=mailbox.email)
+
+    @api.model
+    def inspect_mailbox(self, account, address):
+        """What `address` is to this sign-in, off the send-as list.
+
+        Gmail is the one provider where Send As is a lookup: `sendAs.list`
+        names every address the account may put in From, with whether it is
+        the primary and whether an alias is verified. Covered by the
+        `gmail.modify` scope every grant already carries. Reading is the
+        account's own mailbox or nothing: the Gmail API shows a delegate's
+        token no mailbox but its own.
+        """
+        answer = access_shape()
+        wanted = (address or '').strip().lower()
+        try:
+            profile = self._api_get(
+                account, 'https://gmail.googleapis.com/gmail/v1/users/me/profile')
+        except UserError as e:
+            answer['error'] = str(e)
+            return answer
+        own = (profile.get('emailAddress') or '').strip().lower()
+        if own == wanted:
+            answer['can_read'] = 'yes'
+        else:
+            answer.update(can_read='no', error=_(
+                '%(who)s is signed in as %(own)s. On Google a mailbox is read '
+                'by its own sign-in: connect %(mailbox)s as itself.',
+                who=account.email, own=own or '-', mailbox=address))
+
+        try:
+            listing = self._api_get(
+                account, 'https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs')
+        except UserError as e:
+            answer['error'] = answer['error'] or str(e)
+            return answer
+        entry = next((item for item in listing.get('sendAs') or []
+                      if (item.get('sendAsEmail') or '').strip().lower() == wanted), None)
+        if entry is None:
+            answer.update(can_send='no', error=answer['error'] or _(
+                '%(who)s has no send-as address for %(mailbox)s. Sign in as that '
+                'address, or add it under Send mail as in Gmail settings.',
+                who=account.email, mailbox=address))
+        elif entry.get('isPrimary'):
+            answer.update(kind='user', can_send='yes')
+        elif (entry.get('verificationStatus') or '').lower() == 'accepted':
+            answer.update(kind='alias', can_send='yes')
+        else:
+            answer.update(kind='alias', can_send='no', error=_(
+                '%(mailbox)s is a send-as alias of %(who)s that Google has not '
+                'verified yet. Finish the verification in Gmail settings.',
+                who=account.email, mailbox=address))
+        return answer
 
     @api.model
     def identity_refusal(self, identity):

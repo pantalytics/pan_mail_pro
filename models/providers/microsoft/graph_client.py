@@ -16,9 +16,9 @@ from .. import http_utils
 from ...mail_provider_client import (
     FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
     FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
-    ERROR_THROTTLED,
+    ERROR_ACCESS_DENIED, ERROR_THROTTLED,
     ThrottledError,
-    decode_jwt_claims, identity_shape, no_recipients_result,
+    access_shape, decode_jwt_claims, identity_shape, no_recipients_result,
 )
 from .. import mime_utils
 
@@ -459,8 +459,109 @@ class MicrosoftGraphClient(models.AbstractModel):
 
     # Exchange's own words for the two delegations a shared mailbox needs:
     # `ErrorAccessDenied` on the draft when Full Access is missing,
-    # `ErrorSendAsDenied` on the send when Send As is.
-    _DELEGATION_ERRORS = ('ErrorAccessDenied', 'ErrorSendAsDenied')
+    # `ErrorSendAsDenied` on the send when Send As is -- and
+    # `ErrorItemNotFound` ("The specified object was not found in the
+    # store"), which is the same missing Full Access phrased by the store:
+    # seventeen quotations at one customer carried that line raw before it
+    # was on this list (docs/research/provider-probes.md).
+    _DELEGATION_ERRORS = ('ErrorAccessDenied', 'ErrorSendAsDenied', 'ErrorItemNotFound')
+    # No mailbox at the address at all: a group, a list, a typo, deleted.
+    _NO_MAILBOX_ERRORS = ('ErrorInvalidUser', 'MailboxNotEnabledForRESTAPI', 'ResourceNotFound')
+    # What `userPurpose` says, in the contract's words.
+    _PURPOSE_KINDS = {
+        'user': 'user', 'linked': 'user', 'shared': 'shared',
+        'room': 'resource', 'equipment': 'resource', 'others': 'resource',
+    }
+
+    def _probe(self, token, path):
+        """One GET against Graph for the access check: (status, code, payload).
+
+        A refusal is an answer here, not an exception: the status and
+        Exchange's `error.code` come back for the ladder to read, and only
+        a transport failure with no response at all raises.
+        """
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        url = f'https://graph.microsoft.com/v1.0{path}'
+        try:
+            response = self._request_with_retry('get', url, headers, timeout=15)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            response = getattr(e, 'response', None)
+            if response is None:
+                raise
+            return response.status_code, self._graph_error_code(e), {}
+        try:
+            return response.status_code, None, response.json() or {}
+        except ValueError:
+            return response.status_code, None, {}
+
+    @api.model
+    def inspect_mailbox(self, account, address):
+        """The probe ladder (docs/plans/verified-setup.md §4): can this
+        sign-in read the mailbox, what is it, is the address its own.
+
+        Rung order is the contract. The inbox probe comes first because it
+        needs no scope a sending grant lacks, so an older grant answers the
+        question that matters before being asked to reconnect for the one
+        that explains it. Send As is never probed: Graph has no call for
+        it, and the answer is left to the first real send.
+        """
+        token = self.get_valid_token(account)
+        who = f'{account.display_name} ({account.email})' if account.display_name else account.email
+        target = requests.utils.quote(address, safe='@')
+        answer = access_shape()
+
+        # Rung 2: Full Access, or the sign-in's own mailbox.
+        status, code, _payload = self._probe(token, f'/users/{target}/mailFolders/inbox?$select=id')
+        if status == 200:
+            answer['can_read'] = 'yes'
+        elif code in self._NO_MAILBOX_ERRORS:
+            answer.update(kind='none', can_read='no', can_send='no', error=_(
+                'There is no mailbox at %s: the address is a group, a '
+                'distribution list, or does not exist.') % address)
+            return answer
+        elif code in self._DELEGATION_ERRORS or status in (403, 404):
+            answer.update(can_read='no', error=_(
+                '%(who)s cannot read %(mailbox)s. An administrator grants Full '
+                'Access on that address in the Exchange admin center.',
+                who=who, mailbox=address))
+        else:
+            answer['error'] = _('Microsoft 365 answered %(status)s (%(code)s) when asked '
+                                'about %(mailbox)s.', status=status, code=code or '-',
+                                mailbox=address)
+            return answer
+
+        # Rung 3: what the mailbox is. Needs a scope a grant from before
+        # 19.0.28 does not carry; a probe that would 403 for want of consent
+        # cannot be told from a refusal of rights, so it is not made.
+        if not account.has_scope(SCOPE_MAILBOX_SETTINGS):
+            answer['needs_reconnect'] = True
+            answer['error'] = answer['error'] or _(
+                'Reconnect %(who)s under My Preferences, Mail Pro, so Mail Pro '
+                'can check what %(mailbox)s is.', who=who, mailbox=address)
+        elif answer['can_read'] == 'yes':
+            status, code, payload = self._probe(
+                token, f'/users/{target}/mailboxSettings/userPurpose')
+            if status == 200:
+                answer['kind'] = self._PURPOSE_KINDS.get(
+                    (payload.get('value') or '').lower(), 'unknown')
+                if answer['kind'] == 'resource':
+                    answer.update(can_send='no', error=_(
+                        '%s is a room or equipment mailbox, not an address mail '
+                        'is sent from.') % address)
+                    return answer
+
+        # Rung 4: the address's own mailbox, or an alias on one. Exchange
+        # resolves any proxy address; the directory resolves only principals.
+        if answer['can_read'] == 'yes' and account.has_scope(SCOPE_DIRECTORY_READ):
+            status, code, payload = self._probe(
+                token, f'/users/{target}?$select=mail,userPrincipalName')
+            if status == 404:
+                answer.update(kind='alias', error=_(
+                    '%s is an alias on another mailbox, not a mailbox of its '
+                    'own. Mail sent from it leaves that mailbox, with that '
+                    "mailbox's rights.") % address)
+        return answer
 
     def _delegation_denied_reason(self, exception, account, mailbox):
         """The sentence for a send Exchange refused on delegation, or None.
@@ -1007,7 +1108,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             denied = self._delegation_denied_reason(e, account, mailbox)
             if denied:
                 _logger.warning('[Graph API] %s', denied)
-                return _send_result(False, error=denied)
+                return _send_result(False, error=denied, error_code=ERROR_ACCESS_DENIED)
             error_detail = str(e)
             if hasattr(e, 'response') and e.response is not None:
                 try:

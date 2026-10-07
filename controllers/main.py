@@ -136,13 +136,20 @@ class MailProOAuthController(http.Controller):
                     'oauth.tenant_mismatch', level='warning', detail=refusal)
                 return _result_page(False, _('Connection Failed'), refusal)
 
-            request.env['pan.mail.account'].sudo()._store_tokens(
+            account = request.env['pan.mail.account'].sudo()._store_tokens(
                 provider, user, email,
                 tokens['access_token'], tokens.get('refresh_token'), tokens['token_expiry'],
                 identity=identity, scopes=tokens.get('scope'),
             )
             _logger.info('[OAuth] Connected %s account %s for Odoo user %s',
                          provider, email, user.login)
+
+            # Every mailbox this sign-in serves, checked now: the person who
+            # just consented reads the answer on the screen they land on,
+            # not an hour later off the cron. Its own savepoint, and
+            # `_verify_access` raises nothing of its own.
+            with request.env.cr.savepoint():
+                request.env['pan.mail.mailbox'].sudo()._verify_for_account(account)
 
             # The credentials are the point; the mailbox is a convenience. A
             # claim that fails (the internal domains are not set yet, so the

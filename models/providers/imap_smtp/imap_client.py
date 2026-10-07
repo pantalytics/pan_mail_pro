@@ -56,8 +56,8 @@ from email.utils import (
 from odoo import models, api, _
 from odoo.exceptions import UserError
 from ...mail_provider_client import (
-    ERROR_NO_RECIPIENTS, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_ROLES,
-    FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP, ThrottledError, identity_shape,
+    ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_ROLES,
+    FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP, ThrottledError, access_shape, identity_shape,
     no_recipients_result,
 )
 from .. import mime_utils
@@ -255,6 +255,39 @@ class ImapSmtpClient(models.AbstractModel):
         """No token authenticates anybody here; the address is configuration,
         not something the server tells us."""
         return identity_shape()
+
+    @api.model
+    def inspect_mailbox(self, account, address):
+        """A login that opens a mailbox is a mailbox: the kind is `account`.
+
+        Reading is SELECT INBOX, which the sync does every minute. Sending is
+        an envelope probe, MAIL FROM then RSET: a 5xx is the server refusing
+        the sender and is written as such, with its own line; a 250 proves
+        nothing, since most servers accept any MAIL FROM and bounce later,
+        and stays `unknown` until a real send says otherwise.
+        """
+        answer = access_shape(kind='account')
+        try:
+            with self._imap(account) as conn:
+                conn.select('INBOX', readonly=True)
+            answer['can_read'] = 'yes'
+        except Exception as e:  # noqa: BLE001 - the server's refusal is the answer
+            answer.update(can_read='no', error=_('IMAP: %s') % self._error_text(e))
+        try:
+            with self._smtp(account) as conn:
+                code, line = conn.mail(parseaddr(address)[1] or address)
+                try:
+                    conn.rset()
+                except smtplib.SMTPException:
+                    pass
+            if code >= 500:
+                answer.update(can_send='no', error=_(
+                    '%(who)s may not send as %(mailbox)s: the server refused the '
+                    'sender (%(line)s).', who=account._imap_login(), mailbox=address,
+                    line=self._error_text(smtplib.SMTPResponseException(code, line))))
+        except Exception as e:  # noqa: BLE001 - said on the row, not raised at the cron
+            answer['error'] = answer['error'] or _('SMTP: %s') % self._error_text(e)
+        return answer
 
     @api.model
     def test_connection(self, account):
@@ -606,6 +639,15 @@ class ImapSmtpClient(models.AbstractModel):
                                   to_addrs=envelope)
         except UserError as e:
             return {'success': False, 'error': str(e), 'error_code': None}
+        except smtplib.SMTPSenderRefused as e:
+            # The server refused MAIL FROM: the login may not send as the
+            # address. A right, not a bounce, so the access row learns it.
+            reason = _(
+                '%(who)s may not send as %(mailbox)s: the server refused the '
+                'sender (%(line)s).', who=account._imap_login(), mailbox=mailbox.email,
+                line=self._error_text(e))
+            _logger.warning('[SMTP] %s', reason)
+            return {'success': False, 'error': reason, 'error_code': ERROR_ACCESS_DENIED}
         except (smtplib.SMTPException, OSError) as e:
             _logger.error('[SMTP] Sending mail %s from %s failed: %s',
                           mail_record.id, mailbox.email, self._error_text(e))

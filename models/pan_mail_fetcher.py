@@ -208,6 +208,13 @@ class PanMailFetcher(models.AbstractModel):
             cron._commit_progress(remaining=len(mailboxes))
 
         for index, mailbox in enumerate(mailboxes):
+            # Once an hour, before the run: what is this address, and may
+            # the sign-in that reads it do so. Its own savepoint, so a check
+            # that fails costs the run nothing; `_verify_access` records
+            # its own failures and raises none.
+            if mailbox._access_check_due():
+                with self.env.cr.savepoint():
+                    mailbox._verify_access()
             try:
                 with self.env.cr.savepoint():
                     stall = self._process_mailbox(mailbox)

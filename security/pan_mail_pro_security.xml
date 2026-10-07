@@ -75,6 +75,25 @@
             <field name="domain_force">[('user_id', 'in', [user.id, False])]</field>
         </record>
 
+        <!--
+            An access row names a sign-in and what it may do on a mailbox.
+            Same shape as the account rule: a user reads the rows of their
+            own sign-in and of the service accounts; a manager reads all.
+        -->
+        <record id="rule_mailbox_access_own" model="ir.rule">
+            <field name="name">Mailbox access: users see their own sign-in's rows</field>
+            <field name="model_id" ref="model_pan_mail_mailbox_access"/>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="domain_force">[('account_id.user_id', 'in', [user.id, False])]</field>
+        </record>
+
+        <record id="rule_mailbox_access_manager_all" model="ir.rule">
+            <field name="name">Mailbox access: managers see all rows</field>
+            <field name="model_id" ref="model_pan_mail_mailbox_access"/>
+            <field name="groups" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+        </record>
+
         <record id="rule_mail_account_manager_all" model="ir.rule">
             <field name="name">Mail account: managers see all accounts</field>
             <field name="model_id" ref="model_pan_mail_account"/>

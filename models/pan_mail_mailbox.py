@@ -4,6 +4,7 @@ import re
 from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, ValidationError, UserError
 from .mail_provider_client import (
+    ADDRESS_KINDS,
     FOLDER_INBOX,
     PROVIDER_SELECTION,
     UNREAD_CAP,
@@ -36,6 +37,13 @@ READ_STATE_TTL = 60
 # compute buys accuracy nobody asked for, and a customer who slows the cron to
 # five minutes is still inside this window.
 STALE_AFTER_MINUTES = 15
+
+# How often the sync cron asks the provider what a mailbox is and whether the
+# sign-in may read it. The inbox probe is a call the sync makes anyway; the
+# two behind it are two GETs an hour, which is nothing against a one-minute
+# cron and enough that a right revoked in the Exchange admin center shows on
+# the form the same morning.
+ACCESS_CHECK_INTERVAL_MINUTES = 60
 
 # The placeholder outgoing mail server the SMTP takeover puts in front of
 # Odoo's own. Its record ships in `data/mail_server_data.xml`
@@ -238,6 +246,137 @@ class PanMailMailbox(models.Model):
              'provider needs a person\'s to do so.',
         index=True
     )
+
+    # -------------------------------------------------------------------------
+    # Verified access
+    #
+    # `mailbox_type` above is Odoo's policy question: who may send from here,
+    # with whose credentials. `address_kind` is the provider's factual one:
+    # what is at this address. Exchange answers it (`userPurpose`), Gmail
+    # answers it off the send-as list, an IMAP login is a mailbox by
+    # definition. Written by `_verify_access`, never typed; `unknown` until
+    # the first check. Read together with the type: a `user` kind whose
+    # owner is connected as some other address is the Emovr shape, a
+    # personal mailbox that sends with a sign-in Exchange will not let near
+    # it, and the status line says so (`_access_problem`).
+    # -------------------------------------------------------------------------
+    address_kind = fields.Selection(
+        ADDRESS_KINDS, string='Kind', default='unknown', required=True, readonly=True,
+        copy=False,
+        help='What the provider says is at this address. Checked, never typed.')
+    access_ids = fields.One2many(
+        'pan.mail.mailbox.access', 'mailbox_id', string='Access',
+        help='What each sign-in may do with this mailbox, as the provider last said.')
+    access_checked_date = fields.Datetime(
+        string='Access checked', readonly=True, copy=False,
+        help='When the access check last asked the provider about this mailbox.')
+
+    def _access_check_due(self):
+        """Once an hour, and at once on a mailbox never checked."""
+        self.ensure_one()
+        if not self.access_checked_date:
+            return True
+        age = fields.Datetime.now() - self.access_checked_date
+        return age.total_seconds() > ACCESS_CHECK_INTERVAL_MINUTES * 60
+
+    def _accounts_to_verify(self):
+        """The sign-ins whose access to this mailbox is worth knowing.
+
+        The one that reads it, always; and every one that has sent through
+        it, which on a Microsoft shared mailbox is each sender in turn. A
+        sender who has not tried yet has no row and is not guessed at.
+        """
+        self.ensure_one()
+        client = self._get_client()
+        accounts = client.resolve_receiving_account(self)
+        accounts |= self.access_ids.mapped('account_id')
+        return accounts.filtered('connected')
+
+    def _verify_access(self, account=None):
+        """Ask the provider what this address is and what `account` may do
+        with it, and write the answer where every screen reads it.
+
+        `account` defaults to the sign-in that reads the mailbox. Never
+        raises: a check that could not reach the provider is a ledger row
+        (`access.check_failed`) and the previous answer stands. Returns the
+        normalized answer, or None when there was nothing to ask with.
+        """
+        self.ensure_one()
+        client = self._get_client()
+        account = account or client.resolve_receiving_account(self)
+        if not account or not account.connected:
+            return None
+        Access = self.env['pan.mail.mailbox.access']
+        Error = self.env['pan.mail.error']
+        try:
+            answer = client.inspect_mailbox(account, self.email)
+        except Exception as exception:  # noqa: BLE001 - recorded, the previous answer stands
+            _logger.warning('[Access] Could not check %s with %s: %s',
+                            self.email, account.email, exception)
+            Error._record('access.check_failed', exception, level='warning',
+                          mailbox=self, account=account)
+            return None
+
+        now = fields.Datetime.now()
+        vals = {'access_checked_date': now}
+        # The kind is the address's, whichever sign-in asked; a sign-in that
+        # was refused at the door learned nothing about it, so `unknown`
+        # from a refusal does not overwrite what an earlier check found.
+        if answer['kind'] != 'unknown' or self.address_kind == 'unknown':
+            vals['address_kind'] = answer['kind']
+        self.sudo().write(vals)
+        account.sudo().write({'verified_date': now})
+        row = Access.note_check(self, account, answer)
+
+        if answer['kind'] in ('none', 'resource'):
+            Error._record('access.no_mailbox', mailbox=self, account=account,
+                          detail=answer.get('error'))
+        elif answer['can_read'] == 'no':
+            Error._record('access.read_denied', mailbox=self, account=account,
+                          detail=answer.get('error'))
+        elif answer.get('needs_reconnect'):
+            Error._record('access.scope_missing', level='warning', mailbox=self,
+                          account=account, detail=answer.get('error'))
+        _logger.info('[Access] %s with %s: kind=%s read=%s send=%s',
+                     self.email, account.email, answer['kind'],
+                     answer['can_read'], answer['can_send'])
+        return row
+
+    def _verify_all_access(self):
+        """The check for every sign-in worth asking about, on each mailbox."""
+        for mailbox in self:
+            for account in mailbox._accounts_to_verify():
+                mailbox._verify_access(account)
+
+    @api.model
+    def _verify_for_account(self, account):
+        """Every mailbox this sign-in serves, checked. Called by the consent
+        callback the moment a grant lands, so the person who just signed in
+        sees the answer on the same screen rather than an hour later."""
+        if not account or not account.connected:
+            return
+        mailboxes = self.sudo().with_context(active_test=False).search([
+            ('provider', '=', account.provider), ('active', '=', True)])
+        for mailbox in mailboxes:
+            client = mailbox._get_client()
+            serves = (client.resolve_receiving_account(mailbox) == account
+                      or account in mailbox.access_ids.mapped('account_id'))
+            if serves:
+                mailbox._verify_access(account)
+
+    def action_check_access(self):
+        """The check, from the form, for every sign-in on this mailbox."""
+        self.ensure_one()
+        self._check_manager()
+        self._verify_all_access()
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'pan.mail.mailbox',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'views': [(False, 'form')],
+            'target': 'current',
+        }
 
     @api.depends('owner_user_id', 'owner_user_id.email', 'owner_user_id.login',
                  'owner_user_id.x_pan_mail_account_ids.email', 'email',

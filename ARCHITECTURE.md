@@ -377,7 +377,8 @@ shows (§2), and the account form's Test Connection reads the same two fields.
 | Model | Purpose |
 |-------|---------|
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider` — inherited from `pan.mail.provider.current_code()`, never asked on the form) |
-| `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`) |
+| `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`), and the identity behind them as the provider reported it at consent: its stable id, the principal name, the display name, the tenant, the scope line of the grant |
+| `pan.mail.mailbox.access` | What one sign-in may do with one mailbox, as the provider last said: `can_read`, `can_send`, each yes / no / unknown, and the provider's own sentence for a refusal. One row per (mailbox, account), written by the access check and by the send path; read by health, the checklist and the heartbeat (§2 *Verified access*) |
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.setup` | Setup steps 2 to 4 and the phase they add up to (abstract). Step 1, the Pantalytics account, is `pan.mail.license` |
