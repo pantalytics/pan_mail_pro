@@ -267,6 +267,18 @@ class PanMailMailbox(models.Model):
     access_ids = fields.One2many(
         'pan.mail.mailbox.access', 'mailbox_id', string='Access',
         help='What each sign-in may do with this mailbox, as the provider last said.')
+    access_state = fields.Selection([
+        ('open', 'Not checked yet'),
+        ('proven', 'Works'),
+        ('fix', 'Needs a fix'),
+    ], string='Check', compute='_compute_access_state',
+        help='Works: a send from this address went through and the provider '
+             'raised nothing. Needs a fix: the provider said no, and the '
+             'sentence beside it says what to do. The last step of setting a '
+             'mailbox up.')
+    access_message = fields.Char(
+        compute='_compute_access_state',
+        help='What is wrong with access and what to do about it, in one sentence.')
     access_checked_date = fields.Datetime(
         string='Access checked', readonly=True, copy=False,
         help='When the access check last asked the provider about this mailbox.')
@@ -360,6 +372,54 @@ class PanMailMailbox(models.Model):
                       or account in mailbox.access_ids.mapped('account_id'))
             if serves:
                 mailbox._verify_access(account)
+
+    @api.depends('access_ids.can_read', 'access_ids.can_send', 'access_ids.error',
+                 'address_kind', 'mailbox_type', 'owner_user_id')
+    def _compute_access_state(self):
+        """The answer the Setup tab gives, read from the same rungs as the
+        health badge (`_access_problem`), so the step and the badge cannot
+        disagree about whether a refusal matters."""
+        for mailbox in self:
+            problem = mailbox._access_problem()
+            if problem:
+                mailbox.access_state = 'fix'
+                mailbox.access_message = ' '.join(
+                    filter(None, [problem[1], mailbox._access_fix_hint()]))
+            elif any(row.can_send == 'yes' for row in mailbox.access_ids):
+                mailbox.access_state = 'proven'
+                mailbox.access_message = False
+            else:
+                mailbox.access_state = 'open'
+                mailbox.access_message = False
+
+    def _access_fix_hint(self):
+        """What to do about a refusal, when the provider's own sentence only
+        says what went wrong. Phrased for whoever runs the mail system, since
+        the right is granted there and never in Odoo."""
+        rows = self.access_ids
+        if self.address_kind in ('none', 'resource', 'alias'):
+            return _('Use the address of a real mailbox, then check again.')
+        if any(row.can_read == 'no' for row in rows):
+            return _('Give that sign-in access to the mailbox in your mail '
+                     'admin, then check again.')
+        if any(row.can_send == 'no' for row in rows):
+            return _('Allow that sign-in to send as this address in your mail '
+                     'admin, then check again.')
+        return False
+
+    def action_check_mailbox(self):
+        """The one test of setting a mailbox up: ask the provider who may read
+        and send here, then send one email to whoever pressed it. After it the
+        access table holds a real send, so the form can say "it works" rather
+        than offer a button. The check is a manager's; anybody who may send
+        from the address gets the send. The notification reloads the form,
+        so the answer lands where the button was."""
+        self.ensure_one()
+        if self.env.su or self.env.user.has_group('pan_mail_pro.group_mail_mailbox_manager'):
+            self._verify_all_access()
+        result = self.action_test_send()
+        result['params']['next'] = {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+        return result
 
     def action_check_access(self):
         """The check, from the form, for every sign-in on this mailbox."""

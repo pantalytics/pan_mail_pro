@@ -29,7 +29,7 @@ Mail Pro → Mailbox access**, one line per sign-in and mailbox.
 
 | The sentence says | What it means | What to do |
 |---|---|---|
-| *X cannot read Y* | the sign-in X has no Full Access on mailbox Y | grant Full Access on Y to X in the Exchange admin center, then Check access on the mailbox |
+| *X cannot read Y* | the sign-in X has no Full Access on mailbox Y | grant Full Access on Y to X in the Exchange admin center, then Check mailbox on the mailbox |
 | *There is no mailbox at Y* | Y is a group, a distribution list, a typo, or deleted | use a mailbox's own address, or create the mailbox |
 | *Y is a user account. Connect it as its own sign-in, or grant X Full Access and Send As on it* | Y is a person's mailbox, owned in Odoo by somebody signed in as X | the simple way: have somebody sign in to Odoo as Y and make them the owner. The other: both rights on Y for X |
 | *Y is an alias on another mailbox* | Y is an extra address on some mailbox, not one of its own | configure that mailbox's primary address |
@@ -37,10 +37,10 @@ Mail Pro → Mailbox access**, one line per sign-in and mailbox.
 | *Y is a send-as alias of X that Google has not verified yet* | the alias is pending | finish the verification mail in Gmail settings |
 | *X may not send as Y: the server refused the sender* (SMTP) | the login may not use Y as MAIL FROM | ask the hoster to allow Y for that login, or use the login's own address |
 
-Send As on Microsoft 365 and SMTP is only ever proven by a send: a row
-reading **Sends: Not checked** is not a fault, it is waiting for the first
-mail. **Send test email** on the mailbox form is the way to make that
-happen now.
+Send As on Microsoft 365 and SMTP is only ever proven by a send: a mailbox
+whose Setup tab reads **2. Check: Not checked yet** is not a fault, it is
+waiting for the first mail. **Check mailbox** on that step is the way to make
+that happen now.
 
 ### "Mailbox not connected" warning, or the banner will not go away
 

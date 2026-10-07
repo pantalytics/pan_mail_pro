@@ -2718,6 +2718,20 @@ class Checks:
                     self.fail(f'a working mailbox still offers "{gone}"')
             if 'Last checked' not in text:
                 self.fail('the mailbox form does not say when it was last checked')
+
+            # Setup is a flow: two step lines, then one card of settings. The
+            # test step says whether it works, never as a table.
+            self.page.click('.o_notebook .nav-link:has-text("Setup")')
+            self.page.wait_for_timeout(600)
+            self.shot('mailbox-setup.png')
+            steps = len(self.page.query_selector_all('.o_form_view .o_mailpro_step'))
+            if steps != 2:
+                self.fail(f'the Setup tab draws {steps} steps, expected 2')
+            if self.page.query_selector('.o_mailpro_step table'):
+                self.fail('the test step shows a table instead of an answer')
+            # Not checked yet, so the check step offers the check.
+            if not self.page.query_selector('.o_mailpro_step button.btn-primary:has-text("Check mailbox")'):
+                self.fail('an unchecked mailbox does not offer "Check mailbox"')
             if 'Last synced' in text:
                 self.fail('the form still labels the fetch cursor "Last synced"')
 
