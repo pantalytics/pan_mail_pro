@@ -1590,6 +1590,31 @@ class Checks:
         el = self.page.query_selector(selector)
         return bool(el and el.is_visible())
 
+    def swipe(self, selector, dx):
+        """A finger across `selector`, `dx` px sideways, in five steps.
+
+        Real touch events, built in the page: Playwright's own touchscreen
+        only taps, and the swipe is a touchstart, moves and a touchend.
+        Starts in the middle of the pane, clear of the edges a phone's
+        browser keeps for its own back gesture.
+        """
+        self.page.evaluate("""([selector, dx]) => {
+            const el = document.querySelector(selector);
+            const box = el.getBoundingClientRect();
+            const x0 = box.left + box.width / 2 - dx / 2;
+            const y = box.top + box.height / 2;
+            const touch = (x) => new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+            const fire = (type, x) => el.dispatchEvent(new TouchEvent(type, {
+                bubbles: true, cancelable: true,
+                touches: type === 'touchend' ? [] : [touch(x)],
+                changedTouches: [touch(x)],
+            }));
+            fire('touchstart', x0);
+            for (let i = 1; i <= 5; i++) fire('touchmove', x0 + dx * i / 5);
+            fire('touchend', x0 + dx);
+        }""", [selector, dx])
+        self.page.wait_for_timeout(700)
+
     def phone(self):
         """One pane at a time, the way a phone reads mail.
 
@@ -1742,6 +1767,23 @@ class Checks:
             self.fail('the list stayed on screen under the conversation on a phone')
         self.shot('inbox-phone.png')
 
+        # Reading is the mail and nothing else: the list's bar goes, what the
+        # conversation is linked to waits in the record pane, and Reply is
+        # over the bottom of the mail where a thumb is. The screenshot this
+        # started from had the first line of mail halfway down the phone.
+        if self.visible('.o_mailpro_topbar'):
+            self.fail('the search bar stays on screen while a phone reads a mail')
+        for selector in ('.o_mailpro_chips', '.o_mailpro_suggestion', '.o_mailpro_followers'):
+            if self.visible('.o_mailpro_conversation ' + selector):
+                self.fail(f'{selector} is still above the mail on a phone')
+        reading = page.query_selector('.o_mailpro_messages')
+        if reading and reading.bounding_box()['y'] > 844 * 0.25:
+            self.fail('the mail starts %dpx down a 844px phone'
+                      % reading.bounding_box()['y'])
+        floating = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
+        if floating and floating.bounding_box()['y'] < 844 * 0.75:
+            self.fail('Reply is not at the bottom of the phone, where a thumb is')
+
         # The head is chrome and the mail is the screen. It ran to three
         # lines of subject, two of correspondent and two of Linked-to, which
         # left the mail a third of a phone -- so what it may take is pinned
@@ -1781,11 +1823,27 @@ class Checks:
                 share = record.bounding_box()['width'] / 390
                 if share < 0.9:
                     self.fail('the phone record takes %d%% of the screen' % (share * 100))
+                if not self.visible('.o_mailpro_odoo_record .o_mailpro_phone_link'):
+                    self.fail('the record pane does not say what the conversation '
+                              'is linked to on a phone')
                 self.shot('inbox-phone-record.png')
-                page.query_selector('.o_mailpro_odoo_record_zoom').click()
+                back_to_inbox = page.query_selector(
+                    '.o_mailpro_odoo_record_zoom, .o_mailpro_odoo_record .o_mailpro_empty button')
+                back_to_inbox.click()
                 page.wait_for_timeout(500)
                 if not self.visible('.o_mailpro_conversation'):
                     self.fail('Back to the Inbox did not bring the conversation back on a phone')
+
+            # The same two moves with a finger: left to the record, right
+            # back from it.
+            self.swipe('.o_mailpro_conversation', -250)
+            if not self.visible('.o_mailpro_odoo_record'):
+                self.fail('swiping left on a phone conversation did not open the record')
+            else:
+                self.swipe('.o_mailpro_odoo_record', 250)
+                if self.visible('.o_mailpro_odoo_record') or not self.visible('.o_mailpro_conversation'):
+                    self.fail('swiping right on the phone record did not bring the '
+                              'conversation back')
 
         # Writing takes the whole phone: the composer is as wide as the
         # screen, the conversation's chips are gone from above it, and the
@@ -1834,6 +1892,16 @@ class Checks:
         page.wait_for_timeout(400)
         if not self.visible('.o_mailpro_conversation_list'):
             self.fail('Back did not bring the list back on a phone')
+            return
+        if not self.visible('.o_mailpro_topbar'):
+            self.fail('the search bar did not come back with the list on a phone')
+
+        # And with a finger: right from the conversation is the list.
+        page.query_selector('.o_mailpro_item').click()
+        page.wait_for_timeout(1200)
+        self.swipe('.o_mailpro_conversation', 250)
+        if not self.visible('.o_mailpro_conversation_list'):
+            self.fail('swiping right on a phone conversation did not bring the list back')
 
 
     def drafts(self, page):

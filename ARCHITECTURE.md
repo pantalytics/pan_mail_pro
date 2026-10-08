@@ -828,6 +828,22 @@ the Linked-to label dropped, because the chip says what it is. The browser
 check pins what the head may take, so the next thing added to it argues with
 a failing assertion.
 
+19.0.29.2.0 makes the phone read the way a phone mail app does. The panes
+are three screens side by side -- the list, the conversation, the Odoo
+record -- and a finger moves between them: right is back, left is the
+record, and the pane follows the finger before it commits or springs back
+(`swipe.js`). The edge of the glass stays the browser's, because iOS Safari
+keeps its own back gesture there, and a mail that scrolls sideways keeps its
+own scroll. Whichever pane arrives slides in from its side. What made the
+mail start halfway down the screen is gone from above it: the top bar is the
+list's and hides while a mail is open, Reply floats over the bottom of the
+mail where a thumb is, and what the conversation is linked to -- the chips,
+the suggestion, the followers -- is the top of the record pane, one swipe
+to the right. The record button in the head says when something waits there
+with a dot, and it is there on an unlinked conversation too, because linking
+one is then the reason to go. The tabs stay over the mail: they decide what
+the conversation pane shows, so they belong to it.
+
 19.0.14.2.0 finishes that row. Expand was the one control on the screen
 still wearing a label and a grey Bootstrap button, in a header whose whole
 job is to stay quiet, and it does the same thing to the same panes as the
