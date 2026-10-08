@@ -35,6 +35,7 @@ record that shares a provider thread handle. So a quote and the ticket that
 came out of it read as one conversation, which is what people open this screen
 to find.
 """
+import base64
 import logging
 import re
 from datetime import datetime
@@ -73,6 +74,17 @@ LIVE_LIMIT = 50
 # The ceiling on what a caller may ask for. `limit` arrives over RPC and every
 # query under it materialises rows; a page is a page.
 MAX_LIMIT = 200
+
+# An embedded image is referenced from the body as `src="cid:<Content-ID>"`,
+# which no browser resolves. The live pane swaps each one for the part itself
+# as a data: URI. Raster types only: the URI is built here, after the
+# sanitizer, so what may go into it is decided here too.
+CID_SRC = re.compile(r'''src=(["'])cid:([^"']+)\1''', re.IGNORECASE)
+INLINE_IMAGE_TYPES = {'image/png', 'image/jpeg', 'image/jpg', 'image/gif',
+                      'image/webp', 'image/bmp'}
+# Per image. A larger one keeps its broken cid: rather than putting megabytes
+# of base64 into one RPC answer; "Add to Odoo" still files it whole.
+MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024
 
 # Stop counting a folder here and say "99+". Nobody reads the exact number of
 # conversations in a busy mailbox, and counting it exactly means aggregating
@@ -1064,11 +1076,41 @@ class PanMailConversation(models.AbstractModel):
         # answers for the imported bodies: text is text until something turns
         # its newlines into line breaks, or the mail arrives as one block.
         body = message.get('body_html') or ''
-        row['body'] = html_sanitize(
-            body if message.get('body_is_html') else plaintext2html(body))
+        row['body'] = self._embed_inline_images(
+            client, account, mailbox, message,
+            html_sanitize(body if message.get('body_is_html') else plaintext2html(body)))
         row['linked_record'] = link or False
         row['to'] = [a.get('email') for a in (message.get('to') or []) if a.get('email')]
         return row
+
+    def _embed_inline_images(self, client, account, mailbox, message, body):
+        """Show the images a mail carries inside itself.
+
+        The import path gets this from Odoo: `message_post` turns a `cid:` it
+        has the part for into `/web/image/`. Nothing is stored here, so the
+        parts go into the answer as data: URIs instead. Asked only when the
+        body names a `cid:`, because Graph reports `hasAttachments=false` for
+        a mail whose only parts are inline images.
+        """
+        if 'cid:' not in body:
+            return body
+        images = {}
+        for part in client.get_message_attachments(
+                account=account, mailbox=mailbox,
+                provider_message_id=message.get('provider_message_id'),
+                full_message=message):
+            mimetype = (part.get('mimetype') or '').lower()
+            content = part.get('content')
+            if (part.get('content_id') and content
+                    and mimetype in INLINE_IMAGE_TYPES
+                    and len(content) <= MAX_INLINE_IMAGE_BYTES):
+                images[part['content_id']] = 'data:%s;base64,%s' % (
+                    mimetype, base64.b64encode(content).decode())
+
+        def swap(match):
+            uri = images.get(match.group(2).strip('<>'))
+            return 'src=%s%s%s' % (match.group(1), uri, match.group(1)) if uri else match.group(0)
+        return CID_SRC.sub(swap, body)
 
     @api.model
     def import_live_message(self, mailbox_id, provider_message_id):
