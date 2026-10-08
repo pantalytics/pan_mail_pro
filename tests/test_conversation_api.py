@@ -158,7 +158,26 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(view.model, 'mail.message',
                          'the search bar searches the mail the list groups')
         names = etree.fromstring(view.arch).xpath('//filter/@name')
-        self.assertEqual(names, ['unread', 'on_contact', 'unlinked', 'date'])
+        self.assertEqual(names, ['unread', 'on_contact', 'unlinked',
+                                 'not_in_odoo', 'in_odoo', 'date'])
+
+    def test_in_odoo_or_not_is_a_filter_the_live_read_can_hear(self):
+        """Not in Odoo / In Odoo sit in the search bar, not in the list header.
+
+        The live folder's rows are a provider's answer, so no domain reaches
+        them: the Inbox reads the two context keys and hands the question to
+        `live_messages`. Over an imported folder the domains say the same
+        thing, so Not in Odoo is empty there and In Odoo narrows nothing.
+        """
+        self._mail()
+        view = self.env.ref('pan_mail_pro.view_pan_mail_inbox_search')
+        arch = etree.fromstring(view.arch)
+        not_in = arch.find(".//filter[@name='not_in_odoo']")
+        in_odoo = arch.find(".//filter[@name='in_odoo']")
+        self.assertIn('pan_mail_not_in_odoo', not_in.get('context'))
+        self.assertIn('pan_mail_in_odoo', in_odoo.get('context'))
+        self.assertFalse(self.Conversation.search_conversations(
+            mailbox_id=self.mailbox.id, domain=[('id', '=', False)]))
 
     def test_the_search_bar_has_a_view_to_load(self):
         """The bar is Odoo's own, and Odoo's own asks for a view id."""
