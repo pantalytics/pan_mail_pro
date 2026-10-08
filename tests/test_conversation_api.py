@@ -916,8 +916,8 @@ class TestConversationApi(TransactionCase):
         self.assertEqual([row['subject'] for row in rows], ['On the lead'],
                          'the positive control: linked mail on a readable record')
         rows = as_reader.search_conversations(in_a_mailbox=True)
-        self.assertEqual([row['subject'] for row in rows], ['On the lead'],
-                         'All mailboxes is no way around it')
+        self.assertEqual(rows, [],
+                         'All mailboxes is the list, and the list leaves it out')
         counts = {entry['id']: entry['count']
                   for entry in as_reader.folder_counts(mailbox_id=theirs.id)}
         self.assertEqual(counts['inbox'], 1)
@@ -938,6 +938,34 @@ class TestConversationApi(TransactionCase):
         ids = [item['id'] for item in as_reader.customer_timeline(self.customer.id)['items']]
         self.assertNotIn(unlinked.id, ids)
         self.assertIn(linked.id, ids)
+
+    def test_the_mailbox_list_is_yours_and_the_team_s(self):
+        """Daniel's call: an administrator is a Mailbox Manager and sees
+        every mailbox in Settings, but the Inbox lists only their own
+        personal mailbox and the shared ones. The linked mail of a
+        colleague's mailbox stays on its record."""
+        owner, theirs = self._personal_mailbox('anna.list@company.test')
+        reader, mine = self._personal_mailbox('sam.list@company.test')
+        admin = self.env.ref('base.user_admin')
+
+        for user, own in ((reader, mine), (admin, None)):
+            with self.subTest(user=user.login):
+                listed = {row['email'] for row in
+                          self.Conversation.with_user(user).inbox_mailboxes()}
+                self.assertIn(self.mailbox.email, listed, 'the shared mailbox')
+                self.assertNotIn(theirs.email, listed, "a colleague's")
+                if own:
+                    self.assertIn(own.email, listed, 'their own')
+                self.assertTrue(self.env['pan.mail.mailbox'].with_user(user)
+                                .search([('id', '=', theirs.id)]),
+                                'Settings still lists it')
+
+        self._may_read_every_lead(reader)
+        self._mail(subject='On the lead', mailbox=theirs)
+        self.assertTrue(
+            self.Conversation.with_user(reader).read_conversation(
+                'crm.lead', self.lead.id)['messages'],
+            'the record still shows the mail')
 
     def test_linked_is_not_enough_the_record_has_to_be_theirs_to_read(self):
         """The second clause of the rule stays Odoo's: linked to a lead the

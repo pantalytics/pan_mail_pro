@@ -256,6 +256,10 @@ class PanMailConversation(models.AbstractModel):
         chatter sent before this module was installed, and Odoo's own -- which
         under a row that says "All mailboxes" is neither true nor useful.
 
+        "All of them" is the ones the mailbox list shows (`inbox_mailboxes`),
+        so a colleague's personal mailbox is not in it, for an administrator
+        either.
+
         It is off by default, because the other caller of "no mailbox" wants
         exactly the opposite: door 1 opens the Inbox on one record's mail
         wherever it arrived, and mail this module never handled is still that
@@ -265,7 +269,7 @@ class PanMailConversation(models.AbstractModel):
         if mailbox_id:
             base.append(('x_mailbox_id', '=', mailbox_id))
         elif in_a_mailbox:
-            base.append(('x_mailbox_id', '!=', False))
+            base.append(('x_mailbox_id', 'any', self._listed_mailbox_domain()))
         if partner_id:
             partner = self.env['res.partner'].browse(partner_id)
             # The company, not the person: jan@acme and inkoop@acme are one
@@ -284,6 +288,35 @@ class PanMailConversation(models.AbstractModel):
             # `search_read` from the same session may ask of it anyway.
             base += list(Domain(domain))
         return base
+
+    def _listed_mailbox_domain(self):
+        """The mailboxes the mailbox list shows: your own and the team's.
+
+        Not the mailbox rule's answer. The rule lets a Mailbox Manager see
+        every mailbox, which is what configuring them needs, and an
+        administrator is always one. In the Inbox that put every colleague's
+        personal address in the list, holding the mail of it that is linked
+        to a record. That mail is on the record's chatter anyway, so the row
+        added nothing but the feeling of reading somebody else's inbox. It
+        is a screen decision, not an access rule: the record still shows
+        that mail, and the Settings screens still list every mailbox.
+        """
+        return ['|', ('mailbox_type', '!=', 'personal'),
+                ('owner_user_id', '=', self.env.user.id)]
+
+    @api.model
+    def inbox_mailboxes(self):
+        """The mailbox list: active, not the notification mailbox, and
+        no colleague's personal one.
+
+        The notification mailbox is the one the module sends *from*, not one
+        anybody reads: opening the Inbox on it shows an empty screen.
+        """
+        self._check_caller()
+        return self.env['pan.mail.mailbox'].search_read(
+            [('is_notification_mailbox', '=', False)]
+            + self._listed_mailbox_domain(),
+            ['email', 'status_message'], limit=50, order='sequence, email')
 
     def _folder_domain(self, folder):
         """The extra clauses the chosen folder adds to the grouping query.
@@ -326,7 +359,7 @@ class PanMailConversation(models.AbstractModel):
 
         What each of them sees is the ORM's answer, not this method's. Every
         read here searches `mail.message` as the caller, the mailbox list is
-        the mailbox rule's (shared ones, and the personal one you own), and
+        the shared ones and the personal one you own (`inbox_mailboxes`), and
         a reply offers the mailboxes `_is_sendable_by` allows. Until
         19.0.27.0.0 the whole screen was the Mailbox Manager group's, which
         made the Inbox a screen for the people who configure mail rather than
