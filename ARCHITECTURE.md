@@ -550,7 +550,11 @@ go back to the mail client for. Drafts stays ours, every other mailbox and
 All mailboxes read what Odoo imported, and a live folder carries no number,
 because the one Odoo can count is not what the folder lists. `LIVE_FOLDERS`
 names the four, once on each side of the RPC. Over it, a filter asks the one question it
-exists for: in Odoo, or not. A row that is in Odoo opens the conversation that exists; one that is
+exists for: in Odoo, or not. **Not in Odoo** and **In Odoo** sit in the search
+bar's own filter menu (19.0.29.1.0; they were two pills in the list header).
+The live read takes them from the context keys they carry, because no domain
+over `mail.message` reaches a provider's rows; in an imported folder their
+domains say the same thing, all of it in Odoo and none of it not. A row that is in Odoo opens the conversation that exists; one that is
 not opens read-only with **Add to Odoo** under it.
 
 What Outlook does to a message you open, this does to the same message

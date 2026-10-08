@@ -394,7 +394,8 @@ class Checks:
     # one the rest of the web client already uses. The names come from the
     # Inbox's search view; Date is the standard month/quarter/year filter and
     # Custom Filter is Odoo's, so both prove the menu is really Odoo's.
-    FILTERS = ('Unread', 'On a contact only', 'Linked to nothing', 'Date')
+    FILTERS = ('Unread', 'On a contact only', 'Linked to nothing',
+               'Not in Odoo', 'In Odoo', 'Date')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.
@@ -1268,14 +1269,12 @@ class Checks:
 
         # A mailbox renders its folders as a block next to its row, and only
         # while it stands open. The screen opens on the first mailbox, which
-        # is a shared one: its Inbox is what Odoo imported, so no live filter.
+        # is a shared one: its Inbox is what Odoo imported.
         open_blocks = page.query_selector_all('.o_mailpro_folders')
         if not open_blocks:
             self.fail('no mailbox stands open in the mailbox list')
             self.leave_live_folder(was)
             return
-        if page.query_selector('.o_mailpro_live_filter'):
-            self.fail('a shared mailbox reads its Inbox from the provider')
 
         mailboxes = page.query_selector_all('.o_mailpro_mailbox')
         if len(mailboxes) < 2:
@@ -1323,25 +1322,31 @@ class Checks:
                 '.o_mailpro_conversation_list .o_mailpro_empty'):
             self.fail('the live folder listed mail it cannot have reached')
 
-        # Its own control, in the list header, rather than a facet in the
-        # search bar: the bar's filters are domains over `mail.message` and
-        # these rows are a provider's answer.
-        pills = [el.inner_text().strip()
-                 for el in page.query_selector_all('.o_mailpro_live_filter')]
-        if pills != list(self.LIVE_FILTERS):
-            self.fail(f'the live folder offers {pills}, expected {list(self.LIVE_FILTERS)}')
-        elif not page.query_selector(
-                '.o_mailpro_search_zone .o_mailpro_live_filter'):
-            # And one press marks it, which is the whole of what a browser
-            # can prove here: the list behind it is empty either way, because
-            # this instance reaches no provider.
+        # Two filters in Odoo's own filter menu, like every other question
+        # about the list. Picking one reads the provider again with it, and
+        # a second click puts it away. The list behind it is empty either
+        # way, because this instance reaches no provider.
+        page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
+        page.wait_for_timeout(800)
+        items = [el.inner_text().strip()
+                 for el in page.query_selector_all('.o_filter_menu .o_menu_item')]
+        missing = [name for name in self.LIVE_FILTERS if name not in items]
+        if missing:
+            self.fail(f'the filter menu has no {missing}: it reads {items}')
+        else:
+            pick = f'.o_filter_menu .o_menu_item:text-is("{self.LIVE_FILTERS[0]}")'
             with page.expect_response(
                     lambda response: 'live_messages' in response.url,
                     timeout=60000):
-                page.query_selector_all('.o_mailpro_live_filter')[0].click()
+                page.click(pick)
             page.wait_for_timeout(1000)
-            if not page.query_selector('.o_mailpro_live_filter_active'):
-                self.fail('pressing a live filter did not mark it as the one in use')
+            if not page.query_selector(f'{pick}.selected'):
+                self.fail('picking a live filter did not mark it as the one in use')
+            self.error_free('the live filter')
+            page.click(pick)
+            page.wait_for_timeout(1500)
+        page.keyboard.press('Escape')
+        page.wait_for_timeout(500)
         self.shot('inbox-live-folder.png')
         self.leave_live_folder(was)
 

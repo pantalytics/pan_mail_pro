@@ -78,15 +78,12 @@ const LIVE_ONLY_FOLDERS = [
 ];
 
 // What you can ask of that folder, and the reason it exists: does Odoo have
-// this mail. Deliberately *not* in the search bar next to it. Every filter in
-// that bar is a domain over `mail.message`, and these rows are not
-// `mail.message` rows at all -- they are a provider's answer, and the
-// question is whether Odoo has them. A control of its own says that; a facet
-// in a bar that cannot reach them would be a filter that lies.
-const LIVE_FILTERS = [
-    { id: "unlinked", name: _t("Not in Odoo") },
-    { id: "linked", name: _t("In Odoo") },
-];
+// this mail. Two filters in the search view, carrying these context keys:
+// the rows are a provider's answer that no domain over `mail.message`
+// reaches, so the live read takes the question from the context instead.
+// Both picked is the same as neither.
+const NOT_IN_ODOO_KEY = "pan_mail_not_in_odoo";
+const IN_ODOO_KEY = "pan_mail_in_odoo";
 
 // The context key the "Linked to nothing" filter carries. Mail filed on
 // nothing is not one conversation, and that is the one thing its domain
@@ -377,9 +374,6 @@ export class ConversationView extends Component {
             live: null,
             liveBusy: false,
             liveConnected: true,
-            // Which half of the live folder is on screen: the mail Odoo has,
-            // the mail it does not, or all of it.
-            liveFilter: null,
             conversations: [],
             // Door 1's narrowing: while it is set the list is the mail on one
             // record rather than the mail in one mailbox. Any folder,
@@ -800,8 +794,9 @@ export class ConversationView extends Component {
      * message for it yet.
      */
     async readLiveFolder() {
-        const linked = this.state.liveFilter === "linked" ? true
-            : this.state.liveFilter === "unlinked" ? false : null;
+        const context = this.searchModel.context;
+        const linked = context[IN_ODOO_KEY] === context[NOT_IN_ODOO_KEY] ? null
+            : !!context[IN_ODOO_KEY];
         const result = await this.orm.call(
             "pan.mail.conversation", "live_messages", [], {
                 mailbox_id: this.state.mailboxId,
@@ -1584,7 +1579,6 @@ export class ConversationView extends Component {
      */
     async setFolder(folder, mailboxId) {
         this.leaveRecord();
-        const wasLive = this.isLive;
         if (mailboxId !== undefined && mailboxId !== this.state.mailboxId) {
             this.state.mailboxId = mailboxId;
             // Opening a mailbox unfolds it: the folders are where you go next.
@@ -1592,13 +1586,7 @@ export class ConversationView extends Component {
             this.saveExpanded();
             this.saveMailbox();
         }
-        // The live folder's own filter is a question only it can ask, so
-        // leaving it puts the question away rather than carrying it into a
-        // folder with no control to show it in.
         this.state.folder = folder;
-        if (this.isLive !== wasLive) {
-            this.state.liveFilter = null;
-        }
         this.closeMailboxList();
         // The search is a question about the folder you are in, so switching
         // folder keeps it: "linked to nothing" in Sent is a fair question,
@@ -1666,28 +1654,6 @@ export class ConversationView extends Component {
             : live;
     }
 
-    /**
-     * The two questions the live folder answers, and the one in use.
-     *
-     * Its own control rather than a facet in the search bar: every filter in
-     * that bar is a domain over `mail.message`, and these rows are a
-     * provider's answer that no domain can reach.
-     */
-    get liveFilters() {
-        return LIVE_FILTERS;
-    }
-
-    get activeLiveFilter() {
-        return LIVE_FILTERS.find((pill) => pill.id === this.state.liveFilter) || null;
-    }
-
-    /** Narrow the live folder, or clear it with a second click. */
-    async setLiveFilter(filter) {
-        this.state.liveFilter = this.state.liveFilter === filter ? null : filter;
-        // The live folder is counted nowhere, so narrowing it recounts nothing.
-        await this.refresh({ counts: false });
-    }
-
     /** Open another mailbox, from the mailbox list. Folders are per mailbox. */
     async setMailbox(mailboxId) {
         this.closeMailboxList();
@@ -1695,7 +1661,6 @@ export class ConversationView extends Component {
             return;
         }
         this.leaveRecord();
-        const wasLive = this.isLive;
         this.state.mailboxId = mailboxId;
         // Opening a mailbox unfolds it: the folders are where you go next.
         this.state.expanded[this.mailboxKey()] = true;
@@ -1704,16 +1669,12 @@ export class ConversationView extends Component {
         // The folder and the search carry over. Every mailbox has the same
         // folders, and landing back in Inbox on every switch loses the one
         // thing somebody switching mailboxes is usually doing: working one
-        // view across all of them. The live filter does not: it is a
-        // question only your own mailbox can answer. Nor do Archive and
-        // Deleted, which only your own mailbox has: from there, another
+        // view across all of them. Archive and
+        // Deleted do not, which only your own mailbox has: from there, another
         // mailbox opens on its Inbox.
         if (LIVE_ONLY_FOLDERS.some((folder) => folder.id === this.state.folder)
             && !this.isLiveMailbox(mailboxId)) {
             this.state.folder = "inbox";
-        }
-        if (this.isLive !== wasLive) {
-            this.state.liveFilter = null;
         }
         this.state.limit = PAGE;
         await this.refresh();
