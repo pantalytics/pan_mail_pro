@@ -471,6 +471,9 @@ $mailpro-band-gutter: 3.5rem;
         box-shadow: inset 2px 0 0 0 $mailpro-accent;
     }
 
+    .o_mailpro_folder_icon { color: $mailpro-muted; }
+    .o_mailpro_folder_active .o_mailpro_folder_icon { color: $mailpro-accent-ink; }
+
     .o_mailpro_count { font-size: 0.75rem; color: $mailpro-muted; }
     .o_mailpro_folder_active .o_mailpro_count { color: $mailpro-accent-ink; font-weight: 600; }
 

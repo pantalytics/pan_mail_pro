@@ -60,11 +60,12 @@ import { compareDatetime } from "@mail/utils/common/misc";
 
 const PAGE = 30;
 
-// The folder that is your own mailbox rather than what Odoo imported. One
-// entry under your own mailbox and nowhere else: the imported folders are the
-// simple path and stay exactly as they were, and the whole mailbox is one
-// level deeper, for the days you want to work here instead of in Outlook.
-const LIVE_FOLDER = "all";
+// The folders that are read from the provider when the mailbox is your own.
+// Under your own mailbox, Inbox is the inbox your mail client shows, not the
+// subset Odoo imported: two folders called Inbox that list different mail is
+// a screen that reads as broken. Drafts stays ours, because a saved composer
+// is not provider mail. Everybody else's mailbox reads what Odoo imported.
+const LIVE_FOLDERS = ["inbox", "sent"];
 
 // What you can ask of that folder, and the reason it exists: does Odoo have
 // this mail. Deliberately *not* in the search bar next to it. Every filter in
@@ -82,6 +83,15 @@ const LIVE_FILTERS = [
 // cannot say. Kept in step with `UNGROUPED_KEY` in
 // `models/pan_mail_conversation.py`.
 const UNGROUPED_KEY = "pan_mail_ungrouped";
+
+// The icon beside each folder. Font Awesome, which Odoo already ships, drawn
+// the way Outlook and Gmail draw the same three folders: a tray, a paper
+// plane, a sheet being written on.
+const FOLDER_ICONS = {
+    inbox: "fa-inbox",
+    sent: "fa-paper-plane-o",
+    drafts: "fa-pencil-square-o",
+};
 
 // What a pane with nothing selected holds. A function rather than a constant:
 // four lists shared between two selections is one stale thread away from a
@@ -753,9 +763,19 @@ export class ConversationView extends Component {
 
     // ------------------------------------------------------------ live
 
-    /** Is the open folder the mailbox itself rather than what Odoo imported? */
+    /**
+     * Is the open folder the mailbox itself rather than what Odoo imported?
+     * Door 1's record list is never live: it is one record's mail, which is
+     * Odoo's question and not the provider's.
+     */
     get isLive() {
-        return this.state.folder === LIVE_FOLDER;
+        return this.liveFor(this.state.mailboxId, this.state.folder);
+    }
+
+    liveFor(mailboxId, folder) {
+        return !this.state.record
+            && LIVE_FOLDERS.includes(folder)
+            && this.isLiveMailbox(mailboxId);
     }
 
     /** May this mailbox be opened in full? Only its owner's own may. */
@@ -777,7 +797,7 @@ export class ConversationView extends Component {
         const result = await this.orm.call(
             "pan.mail.conversation", "live_messages", [], {
                 mailbox_id: this.state.mailboxId,
-                folder: "inbox",
+                folder: this.state.folder,
                 linked,
                 // The words out of the search bar, handed to the provider
                 // rather than compiled into a domain: this folder searches
@@ -1433,6 +1453,7 @@ export class ConversationView extends Component {
      */
     async setFolder(folder, mailboxId) {
         this.leaveRecord();
+        const wasLive = this.isLive;
         if (mailboxId !== undefined && mailboxId !== this.state.mailboxId) {
             this.state.mailboxId = mailboxId;
             // Opening a mailbox unfolds it: the folders are where you go next.
@@ -1443,10 +1464,10 @@ export class ConversationView extends Component {
         // The live folder's own filter is a question only it can ask, so
         // leaving it puts the question away rather than carrying it into a
         // folder with no control to show it in.
-        if ((folder === LIVE_FOLDER) !== this.isLive) {
+        this.state.folder = folder;
+        if (this.isLive !== wasLive) {
             this.state.liveFilter = null;
         }
-        this.state.folder = folder;
         this.closeMailboxList();
         // The search is a question about the folder you are in, so switching
         // folder keeps it: "linked to nothing" in Sent is a fair question,
@@ -1491,21 +1512,21 @@ export class ConversationView extends Component {
         }
     }
 
+    folderIcon(folder) {
+        return FOLDER_ICONS[folder.id] || "fa-folder-o";
+    }
+
     foldersFor(mailboxId) {
         const folders = this.state.counts[this.mailboxKey(mailboxId)] || [];
         if (!this.isLiveMailbox(mailboxId)) {
             return folders;
         }
-        // Last, and without a number. It is not a third place mail sits: it
-        // is the mailbox itself, and counting it would mean asking the
-        // provider how much mail you have every time a folder is unfolded.
-        return [...folders, {
-            id: LIVE_FOLDER,
-            name: _t("All email"),
-            kind: "folder",
-            count: 0,
-            capped: false,
-        }];
+        // A live folder carries no number. The one the counts hold is what
+        // Odoo imported, which is not what this folder lists, and the
+        // provider's own would be a call per unfolded mailbox on every click.
+        return folders.map((folder) => LIVE_FOLDERS.includes(folder.id)
+            ? { ...folder, count: 0, capped: false }
+            : folder);
     }
 
     /**
@@ -1537,18 +1558,18 @@ export class ConversationView extends Component {
             return;
         }
         this.leaveRecord();
+        const wasLive = this.isLive;
         this.state.mailboxId = mailboxId;
         // Opening a mailbox unfolds it: the folders are where you go next.
         this.state.expanded[this.mailboxKey()] = true;
         this.saveExpanded();
         this.saveMailbox();
         // The folder and the search carry over. Every mailbox has the same
-        // two folders, and landing back in Inbox on every switch loses the
-        // one thing somebody switching mailboxes is usually doing: working
-        // one view across all of them. Except the live folder, which not
-        // every mailbox has: a mailbox you do not own lands in Inbox.
-        if (this.isLive && !this.isLiveMailbox(mailboxId)) {
-            this.state.folder = "inbox";
+        // folders, and landing back in Inbox on every switch loses the one
+        // thing somebody switching mailboxes is usually doing: working one
+        // view across all of them. The live filter does not: it is a
+        // question only your own mailbox can answer.
+        if (this.isLive !== wasLive) {
             this.state.liveFilter = null;
         }
         this.state.limit = PAGE;

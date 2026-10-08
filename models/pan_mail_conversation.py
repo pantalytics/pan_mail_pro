@@ -1140,6 +1140,10 @@ class PanMailConversation(models.AbstractModel):
         which is also how the client tells the two apart.
         """
         sender = message.get('from') or {}
+        # Mail you wrote is listed under who it went to, the way Sent reads in
+        # every mail client: a column of your own name says nothing.
+        if self._is_own_address(mailbox, message) and message.get('to'):
+            sender = message['to'][0] or {}
         return {
             'model': (link or {}).get('model') or False,
             'res_id': (link or {}).get('res_id') or 0,
