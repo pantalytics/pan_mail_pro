@@ -1494,7 +1494,9 @@ $mailpro-band-gutter: 3.5rem;
         .o_mailpro_odoo_record_button:active { transform: none; }
 
         .o_mailpro_zoomed .o_mailpro_odoo_record,
-        .o_mailpro_zoom_leaving .o_mailpro_odoo_record { animation: none !important; }
+        .o_mailpro_zoom_leaving .o_mailpro_odoo_record,
+        .o_mailpro_slide_forward .o_mailpro_conversation,
+        .o_mailpro_slide_back .o_mailpro_conversation_list { animation: none !important; }
     }
 
     .o_mailpro_empty { padding: 2rem 1.375rem; }
@@ -1687,6 +1689,90 @@ $mailpro-band-gutter: 3.5rem;
 
         .o_mailpro_zoomed .o_mailpro_odoo_record .o_form_sheet,
     .o_mailpro_zoom_leaving .o_mailpro_odoo_record .o_form_sheet { padding: 1rem; }
+
+        // Reading. The bar on top is the list's -- the search, the mailboxes,
+        // New email -- and a phone that is showing a mail gives its height to
+        // the mail. The list brings it back. `!important` because the bar
+        // wears Bootstrap's `d-flex`.
+        &.o_mailpro_reading .o_mailpro_topbar { display: none !important; }
+
+        // The panes sit side by side on a phone the way they do on a
+        // monitor, only one screen wide at a time: the list to the left of
+        // the conversation, the record to the right of it. Whichever arrives
+        // slides in from its own side. The record already does (the zoom);
+        // these are the other two.
+        .o_mailpro_slide_forward .o_mailpro_conversation {
+            animation: o_mailpro_slide_in_right $mailpro-fold;
+        }
+
+        .o_mailpro_slide_back .o_mailpro_conversation_list {
+            animation: o_mailpro_slide_in_left $mailpro-fold;
+        }
+
+        // A finger is moving a pane: what it uncovers is the paper behind
+        // the panes, and on the record that is the conversation it came
+        // from, which the zoom otherwise hides once its slide is over.
+        .o_mailpro_panes.o_mailpro_swiping { background: $mailpro-panel; }
+
+        .o_mailpro_zoomed.o_mailpro_swiping .o_mailpro_conversation {
+            visibility: visible;
+            transition: none;
+        }
+
+        // Reply where a thumb is. It is still the head's button, in the
+        // head's markup, so everything that finds it there still does; the
+        // phone only draws it over the bottom of the mail. The mail keeps
+        // room under its last line so the button never covers the end of it.
+        .o_mailpro_conversation { position: relative; }
+
+        .o_mailpro_primary_action {
+            position: absolute;
+            right: 1rem;
+            bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+            z-index: 2;
+            padding: 0.625rem 1.375rem;
+            border-radius: 999px;
+            font-size: 0.9375rem;
+            box-shadow: 0 0.25rem 1rem rgba(0, 29, 33, 0.22);
+        }
+
+        .o_mailpro_messages,
+        .o_mailpro_files,
+        .o_mailpro_activities { padding-bottom: 5rem; }
+
+        // What the conversation is linked to, at the top of the record pane:
+        // the head's own rows, under the record's name and over its form.
+        .o_mailpro_phone_link {
+            padding: 0.75rem 1rem;
+            background: #fff;
+            border-bottom: 1px solid $mailpro-line;
+
+            .o_mailpro_chips { margin-top: 0; }
+            .o_mailpro_followers { margin-top: 0.5rem; }
+        }
+
+        // With nothing linked, the block above already says so and offers the
+        // link; the empty state keeps only its way back.
+        .o_mailpro_phone_link + .o_mailpro_empty {
+            padding-top: 1rem;
+
+            .o_mailpro_empty_title,
+            .o_mailpro_empty_text { display: none; }
+        }
+
+        // The way to the record says when something waits there: a
+        // suggestion, or no link at all.
+        .o_mailpro_odoo_record_button { position: relative; }
+
+        .o_mailpro_odoo_record_button_dot {
+            position: absolute;
+            top: 0.375rem;
+            right: 0.375rem;
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background: $mailpro-accent;
+        }
     }
 }
 
@@ -1761,6 +1847,20 @@ $mailpro-band-gutter: 3.5rem;
 }
 
 @keyframes o_mailpro_zoom_out {
-    from { transform: translateX(0); }
+    from { transform: translateX(var(--mailpro-swipe-from, 0px)); }
     to { transform: translateX(var(--mailpro-zoom-from, 0px)); }
+}
+
+// A phone's two other panes arriving: the conversation from the right, the
+// list from the left. The list moves less than a screen, the way the pane
+// underneath does in a phone mail app, so the eye reads it as coming back
+// rather than as something new.
+@keyframes o_mailpro_slide_in_right {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+@keyframes o_mailpro_slide_in_left {
+    from { transform: translateX(-30%); opacity: 0.6; }
+    to { transform: translateX(0); opacity: 1; }
 }

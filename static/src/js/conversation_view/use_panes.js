@@ -167,6 +167,14 @@ function defaults() {
         // A phone shows the list or the conversation; a tablet the
         // conversation or the record. Three positions, one word.
         stage: "conversation_list",
+        // Which way the phone last moved: "forward" into a conversation,
+        // "back" out of one. The pane that arrives slides in from that side,
+        // and a screen that has not moved yet does not slide at all.
+        slide: null,
+        // Where a swipe let go of the record, in px: the slide back starts
+        // there instead of jumping to where the record was before the
+        // finger moved it.
+        swipeFrom: 0,
     };
 }
 
@@ -214,7 +222,7 @@ export function usePanes() {
     function save() {
         try {
             const { zoom, zoomFrom, zoomLeaving, small, narrow, mailboxListOpen, stage,
-                    ...stored } = state;
+                    slide, swipeFrom, ...stored } = state;
             browser.localStorage.setItem(KEY, JSON.stringify(stored));
         } catch {
             // A width nobody can store is still a width you can drag today.
@@ -557,9 +565,12 @@ export function usePanes() {
          * `from` is that starting edge in px, which only the screen can
          * measure; the way back reuses the one the way in came from, because
          * a slide that returns somewhere else is two animations.
+         * `swipedFrom` is where a finger let go of the record on the way
+         * out, so the slide continues from there.
          */
-        toggleZoom(from) {
+        toggleZoom(from, swipedFrom = 0) {
             if (state.zoom) {
+                state.swipeFrom = swipedFrom;
                 state.zoom = false;
                 // The overlay is held for the slide back, and a reader who
                 // asked for no motion has no slide to wait through: holding
@@ -577,6 +588,7 @@ export function usePanes() {
             }
             browser.clearTimeout(leaving);
             state.zoomLeaving = false;
+            state.swipeFrom = 0;
             state.zoom = true;
         },
 
@@ -619,10 +631,16 @@ export function usePanes() {
          * to look at, whichever pane had the column before.
          */
         showConversation() {
+            if (state.stage !== "conversation") {
+                state.slide = "forward";
+            }
             state.stage = "conversation";
         },
 
         showConversationList() {
+            if (state.stage !== "conversation_list") {
+                state.slide = "back";
+            }
             state.stage = "conversation_list";
         },
 

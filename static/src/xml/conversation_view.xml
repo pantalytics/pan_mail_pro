@@ -17,7 +17,7 @@
     -->
     <t t-name="pan_mail_pro.ConversationView">
         <div class="o_content o_mailpro_inbox d-flex flex-column h-100" t-ref="root"
-             t-att-class="{ 'o_mailpro_small': panes.state.small, 'o_mailpro_narrow': panes.state.narrow }">
+             t-att-class="rootClass">
 
             <!--
                 Not connected: one button, nothing else. Mail Pro works on an
@@ -204,8 +204,10 @@
                 on a phone there are no dividers and so none of them.
             -->
             <div class="o_mailpro_panes d-flex flex-grow-1" t-ref="panes"
-                 t-attf-style="--mailpro-zoom-from: {{panes.state.zoomFrom}}px"
+                 t-attf-style="--mailpro-zoom-from: {{panes.state.zoomFrom}}px; --mailpro-swipe-from: {{panes.state.swipeFrom}}px"
                  t-att-class="{ 'o_mailpro_zoomed': panes.state.zoom,
+                                'o_mailpro_slide_forward': panes.state.small and panes.state.slide === 'forward',
+                                'o_mailpro_slide_back': panes.state.small and panes.state.slide === 'back',
                                 'o_mailpro_zoom_leaving': panes.state.zoomLeaving,
                                 'o_mailpro_lead_conversation': panes.toggleSide('conversation_list') === 'right',
                                 'o_mailpro_trail_conversation_list': panes.toggleSide('conversation_list') === 'left',
@@ -554,7 +556,11 @@
                                     'o_mailpro_conversation_fills': panes.conversationFills(showOdooRecord and selectedRecord),
                                     'o_mailpro_folded': panes.folded('conversation') }"
                      t-att-inert="panes.folded('conversation') or panes.state.zoom or panes.drawerOpen()"
-                     t-attf-style="flex-basis: {{panes.state.conversation}}px">
+                     t-attf-style="flex-basis: {{panes.state.conversation}}px"
+                     t-on-touchstart="(ev) => conversationSwipe.start(ev)"
+                     t-on-touchmove="(ev) => conversationSwipe.move(ev)"
+                     t-on-touchend="() => conversationSwipe.end()"
+                     t-on-touchcancel="() => conversationSwipe.end()">
                     <!--
                         A new mail takes the pane the way a reply does. There
                         is no conversation behind it yet, so the head names the
@@ -713,98 +719,33 @@
                                     -->
                                     <button t-if="showOdooRecordButton" type="button"
                                             class="o_mailpro_odoo_record_button flex-shrink-0"
-                                            t-att-title="selectedRecord.name"
+                                            t-att-title="selectedRecord ? selectedRecord.name : panes.toggleLabel('odoo_record')"
                                             t-att-aria-label="panes.toggleLabel('odoo_record')"
                                             t-on-click="() => this.showOdooRecordScreen()">
                                         <i class="fa fa-chevron-right" aria-hidden="true"/>
+                                        <!-- A suggestion waits on the
+                                             other side: the link is no
+                                             longer in sight on a phone, so
+                                             the way to it says so. -->
+                                        <span t-if="state.conversation.suggestion or !state.conversation.records.length"
+                                              class="o_mailpro_odoo_record_button_dot" aria-hidden="true"/>
                                     </button>
-                                    <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm"
+                                    <!-- On a phone these float over the
+                                         bottom of the mail, where a thumb
+                                         is; the head keeps the subject. -->
+                                    <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
                                             t-on-click="() => this.logNote()">Log note</button>
-                                    <button t-if="canReply" type="button" class="btn btn-primary btn-sm"
+                                    <button t-if="canReply" type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
                                             t-on-click="() => this.reply()">Reply</button>
                                 </div>
                                 <t t-if="composer.state.open" t-call="pan_mail_pro.ComposerButtons"/>
                             </div>
-                            <div t-if="state.conversation.records.length" class="o_mailpro_chips d-flex align-items-center gap-2">
-                                <span class="o_mailpro_label">Linked to</span>
-                                <button t-foreach="state.conversation.records" t-as="chip"
-                                        t-key="chip.model + '-' + chip.res_id"
-                                        type="button"
-                                        class="o_mailpro_chip_button"
-                                        t-on-click="() => this.openRecordChip(chip)">
-                                    <!-- The app's own tile says "a quotation"
-                                         faster than a word would, and the
-                                         word is still there for the mouse. -->
-                                    <img t-if="chip.icon" class="o_mailpro_chip_icon"
-                                         t-att-src="chip.icon" t-att-alt="chip.model_label"
-                                         t-att-title="chip.model_label"/>
-                                    <span t-esc="chip.name"/>
-                                </button>
-                                <!-- Secondary, and deliberately quiet: a
-                                     correctly linked conversation is the
-                                     normal case and this is the exception
-                                     next to it. -->
-                                <button type="button"
-                                        class="btn btn-link btn-sm p-0 o_mailpro_relink_toggle"
-                                        t-on-click="() => this.openLinkDialog()">Change link</button>
-                            </div>
                             <!--
-                                The suggestion is its own block, outside the
-                                unlinked one, because the case it matters most
-                                in is not "linked to nothing" but "linked to
-                                the contact": delivered, and to a place nobody is
-                                looking. A conversation with a real record never
-                                carries one, because the server only records
-                                a suggestion when the mail went somewhere else.
-
-                                One suggestion, never a list. Five
-                                possibilities hand the matching back to the
-                                reader; one asks them to confirm or ignore,
-                                which is a decision made in a second. The
-                                number behind it stays in the routing log, one
-                                level deeper.
+                                On a phone the link lives with the record, one
+                                swipe to the right: the conversation pane is
+                                the mail and nothing else.
                             -->
-                            <div t-if="state.conversation.suggestion"
-                                 class="o_mailpro_suggestion d-flex align-items-center flex-wrap gap-2">
-                                <span class="o_mailpro_suggestion_text">
-                                    Looks like
-                                    <strong t-esc="state.conversation.suggestion.name"/>
-                                </span>
-                                <span class="o_mailpro_muted" t-esc="state.conversation.suggestion.reason"/>
-                                <button type="button" class="btn btn-secondary btn-sm"
-                                        t-on-click="() => this.acceptSuggestion()">Link it here</button>
-                            </div>
-                            <div t-if="!state.conversation.records.length" class="o_mailpro_unlinked">
-                                <div class="d-flex align-items-center justify-content-between gap-2">
-                                    <span class="o_mailpro_unlinked_title">Not linked to a record yet.</span>
-                                    <button t-if="state.conversation.rejected.length"
-                                            type="button" class="btn btn-link btn-sm p-0"
-                                            t-att-aria-expanded="state.showRejected ? 'true' : 'false'"
-                                            t-on-click="() => state.showRejected = !state.showRejected">
-                                        <t t-if="state.showRejected">Hide why</t>
-                                        <t t-else="">Why?</t>
-                                    </button>
-                                </div>
-                                <ul t-if="state.showRejected" class="o_mailpro_unlinked_list">
-                                    <li t-foreach="state.conversation.rejected" t-as="row" t-key="row.id">
-                                        <span t-esc="row.rule_label"/>: <span t-esc="row.reason"/>
-                                    </li>
-                                </ul>
-                            </div>
-                            <!--
-                                The model first, the record second, both with
-                                a search box, both in one dialog. The row of
-                                model chips this replaced was fine for the
-                                four models a database files mail on and
-                                useless for the fifth, and it left the record
-                                to Odoo's own list dialog, which opens on
-                                everything and knows nothing about who wrote.
-                            -->
-                            <div t-if="state.selected and !state.conversation.records.length"
-                                 class="o_mailpro_relink_open">
-                                <button type="button" class="btn btn-link btn-sm p-0 o_mailpro_relink_toggle"
-                                        t-on-click="() => this.openLinkDialog()">Link to a record</button>
-                            </div>
+                            <t t-if="!panes.state.small" t-call="pan_mail_pro.ConversationLink"/>
                             <!--
                                 Four readings of one conversation, one strip.
                                 This is what the record pane's chatter used to
@@ -850,28 +791,7 @@
                                     again found null and crashed on
                                     `selfFollower`.
                                 -->
-                                <t t-set="followerThread" t-value="recordThread"/>
-                                <Dropdown t-if="followerThread" position="'bottom-end'"
-                                          menuClass="'o-mail-Followers-dropdown ' + mailStore.discussDropdownMenuClass(this)"
-                                          state="followerListDropdown">
-                                    <button type="button" class="o_mailpro_followers ms-auto"
-                                            t-att-class="{ 'o_mailpro_followers_following': followerThread.selfFollower }"
-                                            t-att-disabled="followerThread.hasReadAccess === false"
-                                            t-att-title="followerThread.selfFollower ? 'Following' : 'Followers'">
-                                        <i class="fa fa-fw" aria-hidden="true"
-                                           t-att-class="followerThread.selfFollower ? 'fa-user' : 'fa-user-o'"/>
-                                        <t t-if="followerThread.selfFollower">Following</t>
-                                        <t t-else="">Followers</t>
-                                        <span t-if="followerThread.followersCount" class="o_mailpro_tab_count"
-                                              t-esc="followerThread.followersCount"/>
-                                    </button>
-                                    <t t-set-slot="content">
-                                        <FollowerList onAddFollowers.bind="onAddFollowers"
-                                                      onFollowerChanged.bind="onFollowerChanged"
-                                                      thread="followerThread"
-                                                      dropdown="followerListDropdown"/>
-                                    </t>
-                                </Dropdown>
+                                <t t-if="!panes.state.small" t-call="pan_mail_pro.ConversationFollowers"/>
                             </div>
                         </div>
                         <!--
@@ -918,20 +838,38 @@
                 <div t-if="showOdooRecord" class="o_mailpro_odoo_record"
                      t-att-class="{ 'o_mailpro_folded': panes.folded('odoo_record') }"
                      t-att-inert="panes.folded('odoo_record') or panes.drawerOpen()"
-                     role="region" aria-label="Odoo record">
+                     role="region" aria-label="Odoo record"
+                     t-on-touchstart="(ev) => odooRecordSwipe.start(ev)"
+                     t-on-touchmove="(ev) => odooRecordSwipe.move(ev)"
+                     t-on-touchend="() => odooRecordSwipe.end()"
+                     t-on-touchcancel="() => odooRecordSwipe.end()">
                     <OdooRecordPane t-if="selectedRecord" record="selectedRecord"
                                 zoomed="panes.state.zoom"
                                 zoomLabel="panes.zoomLabel()"
-                                onToggleZoom.bind="() => this.toggleZoom()"/>
-                    <div t-else="" class="o_mailpro_empty">
-                        <h3 class="o_mailpro_empty_title">No record yet.</h3>
-                        <p class="o_mailpro_empty_text">Link this conversation and it appears here.</p>
-                        <!-- Zoom hides the way back with the rest of the
-                             screen, so the way back comes along. -->
-                        <button t-if="panes.state.zoom" type="button"
-                                class="btn btn-secondary btn-sm"
-                                t-on-click="() => this.toggleZoom()">Back to the Inbox</button>
-                    </div>
+                                onToggleZoom.bind="() => this.toggleZoom()">
+                        <!--
+                            The phone's half of the conversation head: what
+                            this mail is linked to, under the record's name
+                            and above its form. A slot rather than a block
+                            above the pane, so the record's name and its way
+                            back stay the first line on the screen.
+                        -->
+                        <t t-set-slot="link">
+                            <t t-if="showPhoneLink" t-call="pan_mail_pro.PhoneLink"/>
+                        </t>
+                    </OdooRecordPane>
+                    <t t-else="">
+                        <t t-if="showPhoneLink" t-call="pan_mail_pro.PhoneLink"/>
+                        <div class="o_mailpro_empty">
+                            <h3 class="o_mailpro_empty_title">No record yet.</h3>
+                            <p class="o_mailpro_empty_text">Link this conversation and it appears here.</p>
+                            <!-- Zoom hides the way back with the rest of the
+                                 screen, so the way back comes along. -->
+                            <button t-if="panes.state.zoom" type="button"
+                                    class="btn btn-secondary btn-sm"
+                                    t-on-click="() => this.toggleZoom()">Back to the Inbox</button>
+                        </div>
+                    </t>
                 </div>
 
             </div>
@@ -1267,6 +1205,129 @@
         </button>
     </t>
 
+    <!--
+        The record a conversation is linked to, the way to change it, and the
+        one suggestion. Beside the mail on a monitor; on a phone it is the top
+        of the Odoo record pane, because a phone has room for the mail or for
+        what it is linked to, and a swipe is the way between them.
+    -->
+    <t t-name="pan_mail_pro.ConversationLink">
+        <div t-if="state.conversation.records.length" class="o_mailpro_chips d-flex align-items-center gap-2">
+            <span class="o_mailpro_label">Linked to</span>
+            <button t-foreach="state.conversation.records" t-as="chip"
+                    t-key="chip.model + '-' + chip.res_id"
+                    type="button"
+                    class="o_mailpro_chip_button"
+                    t-on-click="() => this.openRecordChip(chip)">
+                <!-- The app's own tile says "a quotation"
+                     faster than a word would, and the
+                     word is still there for the mouse. -->
+                <img t-if="chip.icon" class="o_mailpro_chip_icon"
+                     t-att-src="chip.icon" t-att-alt="chip.model_label"
+                     t-att-title="chip.model_label"/>
+                <span t-esc="chip.name"/>
+            </button>
+            <!-- Secondary, and deliberately quiet: a
+                 correctly linked conversation is the
+                 normal case and this is the exception
+                 next to it. -->
+            <button type="button"
+                    class="btn btn-link btn-sm p-0 o_mailpro_relink_toggle"
+                    t-on-click="() => this.openLinkDialog()">Change link</button>
+        </div>
+        <!--
+            The suggestion is its own block, outside the
+            unlinked one, because the case it matters most
+            in is not "linked to nothing" but "linked to
+            the contact": delivered, and to a place nobody is
+            looking. A conversation with a real record never
+            carries one, because the server only records
+            a suggestion when the mail went somewhere else.
+
+            One suggestion, never a list. Five
+            possibilities hand the matching back to the
+            reader; one asks them to confirm or ignore,
+            which is a decision made in a second. The
+            number behind it stays in the routing log, one
+            level deeper.
+        -->
+        <div t-if="state.conversation.suggestion"
+             class="o_mailpro_suggestion d-flex align-items-center flex-wrap gap-2">
+            <span class="o_mailpro_suggestion_text">
+                Looks like
+                <strong t-esc="state.conversation.suggestion.name"/>
+            </span>
+            <span class="o_mailpro_muted" t-esc="state.conversation.suggestion.reason"/>
+            <button type="button" class="btn btn-secondary btn-sm"
+                    t-on-click="() => this.acceptSuggestion()">Link it here</button>
+        </div>
+        <div t-if="!state.conversation.records.length" class="o_mailpro_unlinked">
+            <div class="d-flex align-items-center justify-content-between gap-2">
+                <span class="o_mailpro_unlinked_title">Not linked to a record yet.</span>
+                <button t-if="state.conversation.rejected.length"
+                        type="button" class="btn btn-link btn-sm p-0"
+                        t-att-aria-expanded="state.showRejected ? 'true' : 'false'"
+                        t-on-click="() => state.showRejected = !state.showRejected">
+                    <t t-if="state.showRejected">Hide why</t>
+                    <t t-else="">Why?</t>
+                </button>
+            </div>
+            <ul t-if="state.showRejected" class="o_mailpro_unlinked_list">
+                <li t-foreach="state.conversation.rejected" t-as="row" t-key="row.id">
+                    <span t-esc="row.rule_label"/>: <span t-esc="row.reason"/>
+                </li>
+            </ul>
+        </div>
+        <!--
+            The model first, the record second, both with
+            a search box, both in one dialog. The row of
+            model chips this replaced was fine for the
+            four models a database files mail on and
+            useless for the fifth, and it left the record
+            to Odoo's own list dialog, which opens on
+            everything and knows nothing about who wrote.
+        -->
+        <div t-if="state.selected and !state.conversation.records.length"
+             class="o_mailpro_relink_open">
+            <button type="button" class="btn btn-link btn-sm p-0 o_mailpro_relink_toggle"
+                    t-on-click="() => this.openLinkDialog()">Link to a record</button>
+        </div>
+    </t>
+
+    <t t-name="pan_mail_pro.PhoneLink">
+        <div class="o_mailpro_phone_link">
+            <t t-call="pan_mail_pro.ConversationLink"/>
+            <div class="d-flex">
+                <t t-call="pan_mail_pro.ConversationFollowers"/>
+            </div>
+        </div>
+    </t>
+
+    <t t-name="pan_mail_pro.ConversationFollowers">
+        <t t-set="followerThread" t-value="recordThread"/>
+        <Dropdown t-if="followerThread" position="'bottom-end'"
+                  menuClass="'o-mail-Followers-dropdown ' + mailStore.discussDropdownMenuClass(this)"
+                  state="followerListDropdown">
+            <button type="button" class="o_mailpro_followers ms-auto"
+                    t-att-class="{ 'o_mailpro_followers_following': followerThread.selfFollower }"
+                    t-att-disabled="followerThread.hasReadAccess === false"
+                    t-att-title="followerThread.selfFollower ? 'Following' : 'Followers'">
+                <i class="fa fa-fw" aria-hidden="true"
+                   t-att-class="followerThread.selfFollower ? 'fa-user' : 'fa-user-o'"/>
+                <t t-if="followerThread.selfFollower">Following</t>
+                <t t-else="">Followers</t>
+                <span t-if="followerThread.followersCount" class="o_mailpro_tab_count"
+                      t-esc="followerThread.followersCount"/>
+            </button>
+            <t t-set-slot="content">
+                <FollowerList onAddFollowers.bind="onAddFollowers"
+                              onFollowerChanged.bind="onFollowerChanged"
+                              thread="followerThread"
+                              dropdown="followerListDropdown"/>
+            </t>
+        </Dropdown>
+    </t>
+
     <t t-name="pan_mail_pro.BackToList">
         <!-- Not while writing: the composer has the screen then, and
              Discard is its way out. A back arrow that drops a draft is a
@@ -1386,6 +1447,7 @@
                         </button>
                     </div>
                 </div>
+                <t t-slot="link"/>
                 <View t-props="viewProps"/>
             </t>
             <div t-else="" class="o_mailpro_empty">

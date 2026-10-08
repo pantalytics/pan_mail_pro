@@ -50,6 +50,7 @@ import { AttachmentList } from "@mail/core/common/attachment_list";
 import { useAttachmentUploader } from "@mail/core/common/attachment_uploader_hook";
 import { FileUploader } from "@web/views/fields/file_handler";
 import { useComposer, ComposerForm } from "./use_composer";
+import { Swipe } from "./swipe";
 // The Activities tab draws Odoo's own activity card. Borrowing the component
 // rather than restyling ours is what keeps the icons, the three state colours
 // and Mark Done / Edit / Cancel identical to the chatter, for free and
@@ -196,6 +197,7 @@ export class OdooRecordPane extends Component {
         record: { type: Object, optional: true },
         zoomed: { type: Boolean, optional: true },
         zoomLabel: { type: String, optional: true },
+        slots: { type: Object, optional: true },
         onToggleZoom: { type: Function, optional: true },
     };
 
@@ -267,6 +269,22 @@ export class ConversationView extends Component {
         // edit. The Inbox adds the button and nothing else.
         this.followerListDropdown = useDropdownState();
         this.panes = usePanes();
+        // A phone moves between its panes the way a phone mail app does:
+        // the list is left of the conversation and the Odoo record right of
+        // it, so a finger on the conversation goes either way and a finger
+        // on the record only back. Not while writing: a draft is not
+        // something a stray thumb should be able to leave.
+        this.conversationSwipe = new Swipe({
+            enabled: () => this.panes.state.small && !this.composer.state.open
+                && !this.panes.state.zoom && Boolean(this.state.selected),
+            onRight: () => this.backToList(),
+            onLeft: () => this.showOdooRecordScreen(),
+            can: (dir) => dir === "right" || this.showOdooRecordButton,
+        });
+        this.odooRecordSwipe = new Swipe({
+            enabled: () => this.panes.state.small && this.panes.state.zoom,
+            onRight: (dx) => this.toggleZoom(dx),
+        });
         // The systray, borrowed rather than rebuilt. This action is
         // `fullscreen`, so `web.WebClient` draws no navbar above the Inbox
         // and nothing else would render the activity and message counters,
@@ -1886,11 +1904,33 @@ export class ConversationView extends Component {
      */
     get showOdooRecordButton() {
         const panes = this.panes.state;
-        return panes.small && !panes.zoom && Boolean(this.selectedRecord);
+        return panes.small && !panes.zoom && Boolean(this.state.selected) && !this.state.live;
+    }
+
+    /**
+     * What the conversation is linked to, on a phone: the top of the record
+     * pane rather than the head of the conversation, so the conversation is
+     * the mail and nothing else. Also when there is no record yet -- linking
+     * one is then the reason to go there.
+     */
+    get showPhoneLink() {
+        return this.panes.state.small && Boolean(this.state.selected) && !this.state.live;
+    }
+
+    /** Where the root of the screen says what a phone is doing. */
+    get rootClass() {
+        const panes = this.panes.state;
+        return {
+            o_mailpro_small: panes.small,
+            o_mailpro_narrow: panes.narrow,
+            // Reading on a phone: the bar with the search, the mailboxes and
+            // New email belongs to the list, and the mail gets its height.
+            o_mailpro_reading: panes.small && (this.conversationOpen || panes.zoom),
+        };
     }
 
     showOdooRecordScreen() {
-        if (!this.panes.state.zoom) {
+        if (!this.panes.state.zoom && this.showOdooRecordButton) {
             // The button pressed leaves with the conversation's head, so the
             // keyboard lands on the record's name once it is on screen.
             this.focusNewPane(".o_mailpro_odoo_record_name");
@@ -1909,12 +1949,13 @@ export class ConversationView extends Component {
      * With no record pane in flow -- a phone, where the fourth pane is only
      * ever the whole screen -- it comes in from the edge instead.
      */
-    toggleZoom() {
+    toggleZoom(swipedFrom = 0) {
         if (this.panes.state.zoom) {
             // On a phone the record pane leaves with the button that was
             // pressed; the conversation's head is where the reader is back.
             this.focusNewPane(".o_mailpro_conversation_title");
-            this.panes.toggleZoom(); // The way back retraces the way in.
+            // The way back retraces the way in, from where a finger let go.
+            this.panes.toggleZoom(undefined, Number(swipedFrom) || 0);
             return;
         }
         const row = this.panesRef.el;
