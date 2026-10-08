@@ -125,7 +125,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.29.1.0',
+    'version': '19.0.29.1.1',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
@@ -166,6 +166,7 @@
             'pan_mail_pro/static/src/js/connect_banner.js',
             'pan_mail_pro/static/src/js/chatter_door.js',
             'pan_mail_pro/static/src/js/improve.js',
+            'pan_mail_pro/static/src/js/wallet_noise.js',
             'pan_mail_pro/static/src/js/conversation_view/use_panes.js',
             'pan_mail_pro/static/src/js/conversation_view/use_composer.js',
             'pan_mail_pro/static/src/js/conversation_view/link_dialog.js',
