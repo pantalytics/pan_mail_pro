@@ -84,6 +84,15 @@ const LIVE_FILTERS = [
 // `models/pan_mail_conversation.py`.
 const UNGROUPED_KEY = "pan_mail_ungrouped";
 
+// The icon beside each folder. Font Awesome, which Odoo already ships, drawn
+// the way Outlook and Gmail draw the same three folders: a tray, a paper
+// plane, a sheet being written on.
+const FOLDER_ICONS = {
+    inbox: "fa-inbox",
+    sent: "fa-paper-plane-o",
+    drafts: "fa-pencil-square-o",
+};
+
 // What a pane with nothing selected holds. A function rather than a constant:
 // four lists shared between two selections is one stale thread away from a
 // reply landing under the wrong subject.
@@ -1501,6 +1510,10 @@ export class ConversationView extends Component {
             console.warn("[Mail Pro] folder counts failed", error);
             this.state.counts[key] = [];
         }
+    }
+
+    folderIcon(folder) {
+        return FOLDER_ICONS[folder.id] || "fa-folder-o";
     }
 
     foldersFor(mailboxId) {

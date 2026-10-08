@@ -1100,7 +1100,10 @@
                 t-att-class="{ 'o_mailpro_folder_active': isOpenMailbox and folder.id === state.folder }"
                 t-att-aria-current="isOpenMailbox and folder.id === state.folder ? 'true' : undefined"
                 t-on-click="() => this.setFolder(folder.id, folderMailbox or null)">
-            <span t-esc="folder.name"/>
+            <span class="d-flex align-items-center gap-2 text-truncate">
+                <i t-attf-class="fa fa-fw {{ folderIcon(folder) }} o_mailpro_folder_icon" aria-hidden="true"/>
+                <span t-esc="folder.name"/>
+            </span>
             <span t-if="folder.count" class="o_mailpro_count" t-esc="folderCount(folder)"/>
         </button>
     </t>
