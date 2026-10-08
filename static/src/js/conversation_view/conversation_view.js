@@ -489,18 +489,14 @@ export class ConversationView extends Component {
     }
 
     async loadMailboxes() {
-        // The notification mailbox is the one the module sends *from*, not one
-        // anybody reads. Opening the inbox on it shows an empty screen to
-        // somebody whose mail is one dropdown away, which reads as broken.
+        // Your own mailbox and the shared ones: not a colleague's personal
+        // one, for an administrator either (`_listed_mailbox_domain` says why).
         // `status_message` is empty on a healthy mailbox, which is the whole
         // interface: this pane shows a marker on a truthy value and nothing at
         // all otherwise, rather than deciding for itself what healthy looks
         // like. The mailbox form's alert reads the same string.
-        this.state.mailboxes = await this.orm.searchRead(
-            "pan.mail.mailbox",
-            [["active", "=", true], ["is_notification_mailbox", "=", false]],
-            ["email", "status_message"],
-            { limit: 50, order: "sequence, email" }
+        this.state.mailboxes = await this.orm.call(
+            "pan.mail.conversation", "inbox_mailboxes", []
         );
         const known = new Set(this.state.mailboxes.map((mailbox) => mailbox.id));
         // Where this person left off, then where they land by default: All

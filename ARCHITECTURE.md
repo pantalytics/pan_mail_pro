@@ -2943,7 +2943,19 @@ screen for every mailbox manager, because a contact is readable by every
 internal user. A **shared** mailbox has no owner and is the team's: its
 contact-only mail stays on screen for every reader, because that is the
 pile somebody has to work through. Mail in no mailbox at all passes, for
-door 1. One case is left as Odoo has it: a mail in your own mailbox on a
+door 1.
+
+**Which mailboxes the Inbox lists.** Your own personal mailbox and the
+shared ones, for an administrator too (`_listed_mailbox_domain`, read by
+`inbox_mailboxes` and by All mailboxes). The mailbox rule lets a Mailbox
+Manager see every mailbox, which configuring them needs, so before
+19.0.28.11.0 every colleague's address sat in an administrator's list. The
+mail it held there was the linked mail, already on the record, so the row
+added nothing but the feeling of reading someone else's inbox. It is a
+screen decision, not an access rule: the record still shows that mail and
+Settings still lists the mailbox.
+
+One case is left as Odoo has it: a mail in your own mailbox on a
 record you may not open stays hidden here as it is in the chatter. Nothing
 in the Inbox takes `sudo()` for an answer, and that case is not worth the
 first one. `tests/test_conversation_api.py` pins all four sides.
