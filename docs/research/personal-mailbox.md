@@ -72,11 +72,13 @@ filters, never the objection.
 
 ## The screen
 
-Two folders read live and one filter menu, and that is the whole of it.
+Four folders read live and one filter menu, and that is the whole of it.
 
 - Under your own personal mailbox, **Inbox** and **Sent** are the provider's,
-  not what Odoo imported. Only there -- a shared mailbox reads its imported
-  mail, which is the access rule visible on screen. They carry no count:
+  not what Odoo imported, and **Archive** and **Deleted** follow them, because
+  Odoo imports neither and a mail you archived is the one you otherwise go
+  back to the mail client for. Only there -- a shared mailbox reads its
+  imported mail, which is the access rule visible on screen. They carry no count:
   counting them means asking the provider how much mail you have every time a
   mailbox is unfolded. (Until 19.0.28.9.0 this was a third folder, **All
   email**, beside an imported Inbox; two Inboxes listing different mail was

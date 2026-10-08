@@ -47,7 +47,9 @@ from odoo.tools import email_split, html2plaintext
 from odoo.tools.mail import html_sanitize, plaintext2html
 from odoo.tools.translate import LazyTranslate
 
-from .mail_provider_client import FOLDER_INBOX, FOLDER_SENT
+from .mail_provider_client import (
+    FOLDER_ARCHIVE, FOLDER_INBOX, FOLDER_SENT, FOLDER_TRASH,
+)
 
 _logger = logging.getLogger(__name__)
 # Module-level strings that reach the screen are translated when they are
@@ -116,6 +118,13 @@ MAILBOX_FOLDERS = [
     ('sent', 'Sent'),
     ('drafts', 'Drafts'),
 ]
+
+# The folders of your own mailbox that are read from the provider rather
+# than from `mail.message`. Inbox and Sent replace the imported ones of the
+# same name; Archive and Deleted exist only here, because Odoo imports
+# neither and a mail you archived is the one you otherwise go back to the
+# mail client for. Kept in step with `LIVE_FOLDERS` in `conversation_view.js`.
+LIVE_FOLDERS = (FOLDER_INBOX, FOLDER_SENT, FOLDER_ARCHIVE, FOLDER_TRASH)
 
 # The folder that is read from another table. Every query in this file is a
 # `WHERE` over `mail.message`; this one is not, so each entry point says so
@@ -957,7 +966,7 @@ class PanMailConversation(models.AbstractModel):
         mail from March anyway.
         """
         mailbox = self._own_mailbox(mailbox_id)
-        if folder not in (FOLDER_INBOX, FOLDER_SENT):
+        if folder not in LIVE_FOLDERS:
             raise AccessError(_('That folder is not one this screen reads.'))
         limit, _offset = self._page(limit, 0, default=LIVE_LIMIT)
         client = mailbox._get_client()

@@ -385,6 +385,10 @@ class Checks:
     # clothes, which is what people notice first and trust least.
     FOLDERS = ('Inbox', 'Sent', 'Drafts')
 
+    # Your own mailbox adds the two Odoo never imports, read live or not at
+    # all. A shared mailbox has no Archive here: there is nothing to read.
+    OWN_FOLDERS = FOLDERS + ('Archive', 'Deleted')
+
     # Those states, as filters in Odoo's own filter menu on the end of Odoo's
     # own search bar: one control for both ways of narrowing the list, and the
     # one the rest of the web client already uses. The names come from the
@@ -1281,12 +1285,13 @@ class Checks:
         mailboxes[-1].click()
         page.wait_for_timeout(2500)
 
-        # The same three folders as every other mailbox: Inbox is the live
-        # one now, and a fourth that says "the whole mailbox" would be two
-        # folders listing the same mail under different names.
+        # The three folders every mailbox has, with Inbox the live one now
+        # rather than a fourth that says "the whole mailbox", and after them
+        # the two only your own mailbox has: Odoo imports neither Archive
+        # nor Deleted, so they are read from the provider or not at all.
         own = folders(page.query_selector_all('.o_mailpro_folders')[-1])
-        if own != ['Inbox', 'Sent', 'Drafts']:
-            self.fail(f'the mailbox you own reads {own}, expected Inbox, Sent, Drafts')
+        if own != list(self.OWN_FOLDERS):
+            self.fail(f'the mailbox you own reads {own}, expected {list(self.OWN_FOLDERS)}')
             self.leave_live_folder(was)
             return
 

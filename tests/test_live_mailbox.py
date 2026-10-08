@@ -276,9 +276,21 @@ class TestLiveMailbox(TransactionCase):
         self.assertFalse(result['connected'])
         self.assertEqual(result['rows'], [])
 
+    def test_archive_and_deleted_are_read_too(self):
+        """A mail you archived or deleted is in neither Inbox nor Sent, so
+        without these two the reader goes back to the mail client for it,
+        which is the trip the live read exists to remove. The role goes to
+        the client as is: each provider resolves it to its own folder."""
+        for folder in ('archive', 'trash'):
+            search, get = self._serving([self._message()])
+            with search as served, get:
+                result = self._as_owner().live_messages(self.mailbox.id, folder=folder)
+            self.assertEqual(served.call_args.kwargs['folder'], folder)
+            self.assertEqual(len(result['rows']), 1, folder)
+
     def test_a_folder_this_screen_does_not_read(self):
         with self.assertRaises(AccessError):
-            self._as_owner().live_messages(self.mailbox.id, folder='trash')
+            self._as_owner().live_messages(self.mailbox.id, folder='junk')
 
     # ------------------------------------------------------------------ reading
 
