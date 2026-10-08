@@ -939,11 +939,22 @@ export class ConversationView extends Component {
             await this.continueDraft(conversation);
             return;
         }
+        // Read before `select`, whose own mark on the imported copy clears it.
+        const liveUnread = conversation.live && conversation.unread;
         const opened = this.select(conversation);
         if (conversation.count > 1 && !this.isUnfolded(conversation)) {
             await this.unfold(conversation);
         }
         await opened;
+        // A mail from your own mailbox is marked read at the provider once it
+        // is on screen, the way Outlook marks what you open: the dot here and
+        // the one in Outlook are the same fact. Only on a pick, never on the
+        // conversation the list opens by itself, and not when the read failed.
+        if (liveUnread && (conversation.linked || this.state.live)
+            && this.state.selected
+            && this.sameConversation(this.state.selected, conversation)) {
+            await this.liveMark(conversation, "read", { silent: true });
+        }
     }
 
     /**
@@ -953,6 +964,9 @@ export class ConversationView extends Component {
      * the same pairing.
      */
     rowMenuItems(conversation) {
+        if (conversation.live) {
+            return this.liveRowMenuItems(conversation);
+        }
         return [
             { id: "open", label: _t("Open conversation"), onSelected: () => this.pick(conversation) },
             {
@@ -972,10 +986,9 @@ export class ConversationView extends Component {
     }
 
     openRowMenu(ev, conversation) {
-        // Drafts and rows read live from the mailbox have no menu, and keep
-        // the browser's own.
+        // Drafts have no menu, and keep the browser's own.
         const button = ev.currentTarget.querySelector(".o_mailpro_row_menu");
-        if (!button || conversation.draft_id || conversation.live) {
+        if (!button || conversation.draft_id) {
             return;
         }
         ev.preventDefault();
@@ -1345,6 +1358,10 @@ export class ConversationView extends Component {
 
     /** Mark one conversation read or unread, open or not. */
     async setRead(conversation, read) {
+        if (conversation.live) {
+            await this.liveMark(conversation, read ? "read" : "unread");
+            return;
+        }
         let result;
         try {
             result = await this.orm.call("pan.mail.conversation", "set_read", [], {
@@ -1361,6 +1378,107 @@ export class ConversationView extends Component {
         }
         this.setUnreadLocally(conversation, !read, result.message_ids);
         await this.recountAfterReadChange(result);
+    }
+
+    /**
+     * The row menu of a mail read live from your own mailbox: what Outlook
+     * offers on the same message. No "Link to…": a mail Odoo does not have
+     * is added with the button in the pane, and the matcher links it.
+     */
+    liveRowMenuItems(conversation) {
+        const items = [
+            { id: "open", label: _t("Open"), onSelected: () => this.pick(conversation) },
+            {
+                id: "read",
+                label: conversation.unread ? _t("Mark read") : _t("Mark unread"),
+                onSelected: () => this.setRead(conversation, conversation.unread),
+            },
+            {
+                id: "flag",
+                label: this.flagLabel(conversation),
+                onSelected: () => this.toggleFlag(conversation),
+            },
+        ];
+        if (this.state.folder !== "archive") {
+            items.push({
+                id: "archive",
+                label: _t("Archive"),
+                onSelected: () => this.archiveLive(conversation),
+            });
+        }
+        return items;
+    }
+
+    flagLabel(conversation) {
+        return conversation && conversation.flagged ? _t("Unflag") : _t("Flag");
+    }
+
+    /**
+     * Read, unread, flag or unflag one live message, at the provider.
+     *
+     * The list is corrected in place, as `setRead` does for imported mail:
+     * a reload would re-sort and lose the reader's place.
+     */
+    async liveMark(conversation, action, { silent = false } = {}) {
+        const orm = silent ? this.orm.silent : this.orm;
+        try {
+            await orm.call("pan.mail.conversation", "live_mark", [], {
+                mailbox_id: this.state.mailboxId,
+                provider_message_id: conversation.live_id,
+                action,
+            });
+        } catch (error) {
+            console.warn("[Mail Pro] could not mark the live message", action, error);
+            return false;
+        }
+        const change = action === "read" || action === "unread"
+            ? { unread: action === "unread" }
+            : { flagged: action === "flag" };
+        for (const row of this.state.conversations) {
+            if (this.sameConversation(row, conversation)) {
+                Object.assign(row, change);
+            }
+        }
+        if (this.state.selected
+            && this.sameConversation(this.state.selected, conversation)) {
+            Object.assign(this.state.selected, change);
+        }
+        return true;
+    }
+
+    async toggleFlag(conversation) {
+        await this.liveMark(conversation, conversation.flagged ? "unflag" : "flag");
+    }
+
+    /**
+     * Archive one live message: Outlook's Archive button, on the same mail.
+     *
+     * It leaves this folder, so it leaves the list, and the pane with it
+     * when it was the one open.
+     */
+    async archiveLive(conversation) {
+        try {
+            await this.orm.call("pan.mail.conversation", "live_mark", [], {
+                mailbox_id: this.state.mailboxId,
+                provider_message_id: conversation.live_id,
+                action: "archive",
+            });
+        } catch (error) {
+            this.improve.failed("live_archive", error);
+            this.state.error = _t("Could not archive that email.");
+            console.warn("[Mail Pro] live archive failed", error);
+            return;
+        }
+        const wasOpen = this.state.selected
+            && this.sameConversation(this.state.selected, conversation);
+        this.state.conversations = this.state.conversations.filter(
+            (row) => !this.sameConversation(row, conversation));
+        if (wasOpen) {
+            await this.leaveComposer();
+            this.state.selected = null;
+            this.state.live = null;
+            this.state.conversation = EMPTY_CONVERSATION();
+        }
     }
 
     /**

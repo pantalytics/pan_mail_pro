@@ -421,7 +421,7 @@
                                     the pair rather than on the row, or the chevron
                                     column stays white next to the mail you have open.
                                 -->
-                                <t t-set="hasRowMenu" t-value="!conversation.draft_id and !conversation.live"/>
+                                <t t-set="hasRowMenu" t-value="!conversation.draft_id"/>
                                 <div class="o_mailpro_group_head d-flex align-items-start"
                                      t-att-class="{ 'o_mailpro_group_head_active': state.selected
                                          and sameConversation(conversation, state.selected) }"
@@ -469,6 +469,8 @@
                                             <span class="flex-grow-1 min-w-0">
                                                 <span class="d-flex justify-content-between align-items-baseline gap-2">
                                                     <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
+                                                    <i t-if="conversation.flagged" class="fa fa-flag o_mailpro_flagged ms-auto"
+                                                       title="Flagged" aria-label="Flagged"/>
                                                     <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
                                                           t-esc="day(conversation.date)"/>
                                                 </span>
@@ -580,6 +582,59 @@
                             <ComposerForm t-props="composer.formProps"/>
                         </div>
                     </t>
+                    <!--
+                        A mail Odoo does not have. Not a conversation: no
+                        thread to draw, no record beside it, and nothing to
+                        reply to yet. What it shows is the mail and the one
+                        button that changes that, with the sentence that
+                        makes filing a decision rather than a click: until
+                        you press it this mail is yours alone, and after it
+                        the usual Odoo rights apply.
+
+                        Before the conversation branch, not after it:
+                        opening a live row sets `state.selected` too, so a
+                        branch on `state.selected` above this one drew an
+                        empty conversation and this body never showed.
+                    -->
+                    <t t-elif="state.live">
+                        <div class="o_mailpro_conversation_head">
+                            <div class="d-flex align-items-start justify-content-between gap-3">
+                                <t t-call="pan_mail_pro.BackToList"/>
+                                <div class="min-w-0 flex-grow-1">
+                                    <h2 class="o_mailpro_conversation_title" tabindex="-1" t-esc="state.live.subject"/>
+                                    <div class="o_mailpro_conversation_sub">
+                                        <span t-esc="state.live.correspondent"/>
+                                        <span t-if="state.live.date">
+                                            &#183; <t t-esc="fullDate(state.live.date)"/>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                    <button type="button"
+                                            class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
+                                            t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
+                                            t-att-title="readToggleLabel"
+                                            t-on-click="() => this.toggleRead()">
+                                        <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
+                                           aria-hidden="true"/>
+                                        <span class="visually-hidden" t-esc="readToggleLabel"/>
+                                    </button>
+                                    <t t-call="pan_mail_pro.LiveMarks"/>
+                                    <button type="button" class="btn btn-primary btn-sm"
+                                            t-att-disabled="state.liveBusy"
+                                            t-on-click="() => this.importLive()">Add to Odoo</button>
+                                </div>
+                            </div>
+                            <div class="o_mailpro_unlinked">
+                                <span class="o_mailpro_unlinked_title">Not in Odoo. Only you can see this email.</span>
+                            </div>
+                        </div>
+                        <div class="o_mailpro_messages">
+                            <article class="o_mailpro_message o_mailpro_message_open">
+                                <div class="o_mailpro_body" t-out="safeBody(state.live.body)"/>
+                            </article>
+                        </div>
+                    </t>
                     <t t-elif="state.selected">
                         <div class="o_mailpro_conversation_head">
                             <div class="d-flex align-items-start justify-content-between gap-3">
@@ -635,6 +690,7 @@
                                            aria-hidden="true"/>
                                         <span class="visually-hidden" t-esc="readToggleLabel"/>
                                     </button>
+                                    <t t-if="state.selected and state.selected.live" t-call="pan_mail_pro.LiveMarks"/>
                                     <!--
                                         The way to the Odoo record, on a phone
                                         where it has no divider to carry its
@@ -849,44 +905,6 @@
                         <t t-else="">
                             <t t-call="pan_mail_pro.ConversationMessages"/>
                         </t>
-                    </t>
-                    <!--
-                        A mail Odoo does not have. Not a conversation: no
-                        thread to draw, no record beside it, and nothing to
-                        reply to yet. What it shows is the mail and the one
-                        button that changes that, with the sentence that
-                        makes filing a decision rather than a click: until
-                        you press it this mail is yours alone, and after it
-                        the usual Odoo rights apply.
-                    -->
-                    <t t-elif="state.live">
-                        <div class="o_mailpro_conversation_head">
-                            <div class="d-flex align-items-start justify-content-between gap-3">
-                                <t t-call="pan_mail_pro.BackToList"/>
-                                <div class="min-w-0 flex-grow-1">
-                                    <h2 class="o_mailpro_conversation_title" tabindex="-1" t-esc="state.live.subject"/>
-                                    <div class="o_mailpro_conversation_sub">
-                                        <span t-esc="state.live.correspondent"/>
-                                        <span t-if="state.live.date">
-                                            &#183; <t t-esc="fullDate(state.live.date)"/>
-                                        </span>
-                                    </div>
-                                </div>
-                                <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                                    <button type="button" class="btn btn-primary btn-sm"
-                                            t-att-disabled="state.liveBusy"
-                                            t-on-click="() => this.importLive()">Add to Odoo</button>
-                                </div>
-                            </div>
-                            <div class="o_mailpro_unlinked">
-                                <span class="o_mailpro_unlinked_title">Not in Odoo. Only you can see this email.</span>
-                            </div>
-                        </div>
-                        <div class="o_mailpro_messages">
-                            <article class="o_mailpro_message o_mailpro_message_open">
-                                <div class="o_mailpro_body" t-out="safeBody(state.live.body)"/>
-                            </article>
-                        </div>
                     </t>
                     <div t-else="" class="o_mailpro_empty">
                         <h3 class="o_mailpro_empty_title">Pick a conversation.</h3>
@@ -1225,6 +1243,30 @@
         two do not fit side by side. Nothing is deselected: the list still
         marks the conversation, and a second tap opens it again.
     -->
+    <!--
+        Flag and Archive, on a mail read live from your own mailbox: the two
+        buttons Outlook puts beside a message, done to the same message at
+        the provider. Only there, because a live row is one provider message;
+        an imported conversation is many, in mailboxes that are not yours.
+    -->
+    <t t-name="pan_mail_pro.LiveMarks">
+        <button type="button"
+                class="btn btn-link btn-sm p-0 o_mailpro_flag_toggle"
+                t-att-class="{ 'o_mailpro_flagged': state.selected.flagged }"
+                t-att-title="flagLabel(state.selected)"
+                t-on-click="() => this.toggleFlag(state.selected)">
+            <i t-att-class="state.selected.flagged ? 'fa fa-flag' : 'fa fa-flag-o'" aria-hidden="true"/>
+            <span class="visually-hidden" t-esc="flagLabel(state.selected)"/>
+        </button>
+        <button t-if="state.folder !== 'archive'" type="button"
+                class="btn btn-link btn-sm p-0 o_mailpro_archive"
+                title="Archive"
+                t-on-click="() => this.archiveLive(state.selected)">
+            <i class="fa fa-archive" aria-hidden="true"/>
+            <span class="visually-hidden">Archive</span>
+        </button>
+    </t>
+
     <t t-name="pan_mail_pro.BackToList">
         <!-- Not while writing: the composer has the screen then, and
              Discard is its way out. A back arrow that drops a draft is a

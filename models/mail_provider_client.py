@@ -48,6 +48,8 @@ Normalized message (returned by fetch_messages / get_message)
         'headers':             {lowercased header name: value},
                                       # allowlisted; see HEADER_ALLOWLIST
         'is_read':             bool,
+        'is_flagged':          bool,  # flagged in Outlook, starred in Gmail,
+                                      # \\Flagged on IMAP
     }
 
 Two details that are easy to get wrong and fail silently:

@@ -628,6 +628,7 @@ class GoogleGmailClient(models.AbstractModel):
             'has_attachments': any(part.get('filename') for part in self._walk(payload)),
             'headers': self.normalize_headers(headers),
             'is_read': 'UNREAD' not in label_ids,
+            'is_flagged': 'STARRED' in label_ids,
         }
 
     @api.model

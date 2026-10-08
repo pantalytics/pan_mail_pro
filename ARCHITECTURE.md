@@ -551,11 +551,23 @@ All mailboxes read what Odoo imported, and a live folder carries no number,
 because the one Odoo can count is not what the folder lists. `LIVE_FOLDERS`
 names the four, once on each side of the RPC. Over it, a filter asks the one question it
 exists for: in Odoo, or not. **Not in Odoo** and **In Odoo** sit in the search
-bar's own filter menu (19.0.28.12.0; they were two pills in the list header).
+bar's own filter menu (19.0.29.1.0; they were two pills in the list header).
 The live read takes them from the context keys they carry, because no domain
 over `mail.message` reaches a provider's rows; in an imported folder their
 domains say the same thing, all of it in Odoo and none of it not. A row that is in Odoo opens the conversation that exists; one that is
 not opens read-only with **Add to Odoo** under it.
+
+What Outlook does to a message you open, this does to the same message
+(19.0.29.0.0): `live_mark` marks it read at the provider once a pick has put
+it on screen (never the row the list opens by itself, never on a read that
+failed), and the row menu and the pane head carry **Mark unread**, **Flag**
+and **Archive**, done with `set_seen`, `set_flagged` and `move_messages` to
+`FOLDER_ARCHIVE`. `read_live_message` itself still changes nothing. An
+imported copy with the same handle follows: its read mirror is written under
+`READ_MIRROR_CTX`, and an archive hands it the new handle the move minted.
+Live rows only: a row there is one provider message in a mailbox you own,
+where an imported conversation is many, in mailboxes that may not be yours.
+Delete is not offered; Deleted is a folder this screen reads, not a button.
 
 The reasoning, including what it deliberately does not do (no reply to a mail
 Odoo does not have, no paging past the first page, no shared mailboxes), is in

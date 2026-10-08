@@ -931,6 +931,15 @@ class TestImapProvider(TransactionCase):
         with self._patch_imap(imap):
             message = self.client.fetch_messages(account, mailbox)[0]
         self.assertFalse(message['is_read'])
+        self.assertFalse(message['is_flagged'])
+
+    def test_flagged_message_is_reported_flagged(self):
+        account, mailbox = self._imap_account(), self._mailbox()
+        imap = FakeImap(uids=[b'7'], fetch=imap_fetch_item(
+            self._raw_email(), flags='\\Seen \\Flagged'))
+        with self._patch_imap(imap):
+            message = self.client.fetch_messages(account, mailbox)[0]
+        self.assertTrue(message['is_flagged'])
 
     # ------------------------------------------------------------------ #
     # Test connection

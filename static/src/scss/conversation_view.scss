@@ -747,6 +747,20 @@ $mailpro-band-gutter: 3.5rem;
         &:hover { color: $mailpro-accent; }
     }
 
+    // Flag and Archive beside it, quiet the same way. A flag is red where it
+    // is set, in the row and on the button, as Outlook draws it.
+    .o_mailpro_flag_toggle,
+    .o_mailpro_archive {
+        color: $mailpro-muted;
+
+        &:hover { color: $mailpro-ink; }
+    }
+
+    .o_mailpro_flagged,
+    .o_mailpro_flagged:hover { color: $mailpro-warn; }
+
+    i.o_mailpro_flagged { font-size: 0.6875rem; }
+
     .o_mailpro_from { font-size: 0.8125rem; font-weight: 500; }
     .o_mailpro_date { font-size: 0.6875rem; color: $mailpro-muted; white-space: nowrap; }
     .o_mailpro_subject { margin-top: 0.125rem; font-size: 0.8125rem; font-weight: 500; }

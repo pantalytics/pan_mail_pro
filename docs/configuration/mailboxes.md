@@ -85,6 +85,15 @@ account.
 | Sync level | How much of the mailbox is read; replies to Odoo's own mail always are |
 | Team | Alias for routing incoming emails |
 
+## Order in the Inbox
+
+The Inbox lists **All mailboxes** first, then each mailbox in the order of
+this list. Out of the box that is alphabetical by address, because every new
+mailbox gets the same position.
+
+To change it, drag a mailbox by the handle on the left of its row. The Inbox
+follows on the next load.
+
 ## Next Steps
 
 To enable incoming email sync, see [Incoming Email Sync](incoming-sync.md).
