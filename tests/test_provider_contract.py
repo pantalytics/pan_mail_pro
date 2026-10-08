@@ -358,12 +358,14 @@ class TestGraphNormalization(TransactionCase):
             'body': {'contentType': 'html', 'content': '<p>Hello</p>'},
             'hasAttachments': True,
             'isRead': False,
+            'flag': {'flagStatus': 'flagged'},
             'internetMessageHeaders': [
                 {'name': 'X-Odoo-Model', 'value': 'crm.lead'},
             ],
         }
 
         msg = self.client._normalize_message(raw)
+        self.assertTrue(msg['is_flagged'])
 
         self.assertEqual(msg['provider_message_id'], 'AAMkAG...')
         self.assertEqual(msg['message_id'], '<abc@contoso.com>')

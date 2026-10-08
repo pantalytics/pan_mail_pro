@@ -33,15 +33,15 @@ ALLOWED_PUBLIC = {
     'pan.mail.message.ref': {'record'},
     'pan.mail.thread.link': {'record', 'record_all'},
     # The whole API the Inbox has. Every one of these starts with
-    # `_check_caller()` -- directly, or through `_own_mailbox()` for the four
-    # live reads -- which is what the two loops below prove. A method added
+    # `_check_caller()` -- directly, or through `_own_mailbox()` for the five
+    # live calls -- which is what the two loops below prove. A method added
     # here is a method added to `CONVERSATION_CALLS` too, or the loops fail.
     'pan.mail.conversation': {
         'failure_remedy', 'inbox_search_view_id', 'folder_counts',
         'search_conversations', 'read_conversation', 'conversation_messages',
         'set_read', 'refresh_read_state', 'record_conversations',
         'customer_timeline', 'inbox_mailboxes', 'live_mailboxes', 'live_messages',
-        'read_live_message', 'import_live_message', 'link_targets',
+        'read_live_message', 'import_live_message', 'live_mark', 'link_targets',
         'link_scope', 'new_mail_recipients',
     },
 }
@@ -105,6 +105,7 @@ class TestRpcSurface(TransactionCase):
             'live_messages': (self.mailbox.id,),
             'read_live_message': (self.mailbox.id, 'provider-id'),
             'import_live_message': (self.mailbox.id, 'provider-id'),
+            'live_mark': (self.mailbox.id, 'provider-id', 'read'),
             'link_targets': (),
             'link_scope': ('crm.lead',),
             'new_mail_recipients': ('crm.lead', self.lead.id),
