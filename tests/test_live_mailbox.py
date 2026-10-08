@@ -12,6 +12,8 @@ The provider client is faked at the contract, not at the socket: these methods
 are the Odoo side of the seam and the three implementations have their own
 files.
 """
+import os
+import re
 from datetime import datetime
 from unittest.mock import patch
 
@@ -356,3 +358,20 @@ class TestLiveMailbox(TransactionCase):
         with search, get, self.assertRaises(AccessError):
             self.Conversation.with_user(self.colleague).import_live_message(
                 self.mailbox.id, 'AAA')
+
+
+    def test_two_unlinked_live_rows_are_two_conversations(self):
+        """Every unlinked live row has the same empty model, res_id and
+        message_id, so the client's `sameConversation` has to read the
+        provider handle too. Without it, picking one "Not in Odoo" row
+        painted the whole folder selected. Static, because the comparison
+        is JavaScript and the browser check reaches no provider."""
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'static', 'src', 'js', 'conversation_view', 'conversation_view.js')
+        with open(path, encoding='utf-8') as handle:
+            source = handle.read()
+        body = re.search(r'sameConversation\(left, right\) \{(.*?)\n    \}',
+                         source, re.S)
+        self.assertTrue(body, 'sameConversation is gone from the Inbox')
+        self.assertIn('live_id', body.group(1))

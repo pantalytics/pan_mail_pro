@@ -906,10 +906,15 @@ export class ConversationView extends Component {
         // A draft has no message to key on and there can be two of them on one
         // record, so its own id is what tells the rows apart. Undefined on
         // both sides for every other row, which is the ordinary case.
+        // A live row has no message either, and every unlinked one has the
+        // same empty model and res_id, so without its provider handle every
+        // "Not in Odoo" row is the same conversation: pick one and the whole
+        // folder paints selected. Undefined on every imported row.
         return left.model === right.model
             && left.res_id === right.res_id
             && left.message_id === right.message_id
-            && (left.draft_id || false) === (right.draft_id || false);
+            && (left.draft_id || false) === (right.draft_id || false)
+            && (left.live_id || false) === (right.live_id || false);
     }
 
     /**
