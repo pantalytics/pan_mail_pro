@@ -944,6 +944,8 @@ export class ConversationView extends Component {
             await this.continueDraft(conversation);
             return;
         }
+        // Read before `select`, whose own mark on the imported copy clears it.
+        const liveUnread = conversation.live && conversation.unread;
         const opened = this.select(conversation);
         if (conversation.count > 1 && !this.isUnfolded(conversation)) {
             await this.unfold(conversation);
@@ -953,7 +955,7 @@ export class ConversationView extends Component {
         // is on screen, the way Outlook marks what you open: the dot here and
         // the one in Outlook are the same fact. Only on a pick, never on the
         // conversation the list opens by itself, and not when the read failed.
-        if (conversation.live && conversation.unread && (conversation.linked || this.state.live)
+        if (liveUnread && (conversation.linked || this.state.live)
             && this.state.selected
             && this.sameConversation(this.state.selected, conversation)) {
             await this.liveMark(conversation, "read", { silent: true });

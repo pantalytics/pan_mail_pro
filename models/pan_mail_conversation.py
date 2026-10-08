@@ -1125,9 +1125,9 @@ class PanMailConversation(models.AbstractModel):
         Returns:
             dict: `live_id`, the handle the message has now.
         """
+        mailbox = self._own_mailbox(mailbox_id)
         if action not in LIVE_ACTIONS:
             raise AccessError(_('That is not something this screen does to a mail.'))
-        mailbox = self._own_mailbox(mailbox_id)
         client = mailbox._get_client()
         account = client.resolve_receiving_account(mailbox)
         handles = [provider_message_id]
