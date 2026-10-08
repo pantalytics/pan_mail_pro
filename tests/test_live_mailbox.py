@@ -387,3 +387,19 @@ class TestLiveMailbox(TransactionCase):
                          source, re.S)
         self.assertTrue(body, 'sameConversation is gone from the Inbox')
         self.assertIn('live_id', body.group(1))
+
+    def test_the_live_body_is_drawn_before_the_conversation(self):
+        """Opening a live row sets `state.selected` as well as `state.live`,
+        so whichever branch of the pane comes first wins. With the
+        conversation's first, a "Not in Odoo" mail opened on an empty
+        conversation and its body never showed. Static, for the same
+        reason as the test above."""
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'static', 'src', 'xml', 'conversation_view.xml')
+        with open(path, encoding='utf-8') as handle:
+            source = handle.read()
+        live = source.find('<t t-elif="state.live">')
+        selected = source.find('<t t-elif="state.selected">')
+        self.assertNotEqual(live, -1, 'the live branch is gone from the Inbox')
+        self.assertLess(live, selected)
