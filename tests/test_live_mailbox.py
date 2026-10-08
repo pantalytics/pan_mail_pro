@@ -12,6 +12,8 @@ The provider client is faked at the contract, not at the socket: these methods
 are the Odoo side of the seam and the three implementations have their own
 files.
 """
+import os
+import re
 from datetime import datetime
 from unittest.mock import patch
 
@@ -274,9 +276,21 @@ class TestLiveMailbox(TransactionCase):
         self.assertFalse(result['connected'])
         self.assertEqual(result['rows'], [])
 
+    def test_archive_and_deleted_are_read_too(self):
+        """A mail you archived or deleted is in neither Inbox nor Sent, so
+        without these two the reader goes back to the mail client for it,
+        which is the trip the live read exists to remove. The role goes to
+        the client as is: each provider resolves it to its own folder."""
+        for folder in ('archive', 'trash'):
+            search, get = self._serving([self._message()])
+            with search as served, get:
+                result = self._as_owner().live_messages(self.mailbox.id, folder=folder)
+            self.assertEqual(served.call_args.kwargs['folder'], folder)
+            self.assertEqual(len(result['rows']), 1, folder)
+
     def test_a_folder_this_screen_does_not_read(self):
         with self.assertRaises(AccessError):
-            self._as_owner().live_messages(self.mailbox.id, folder='trash')
+            self._as_owner().live_messages(self.mailbox.id, folder='junk')
 
     # ------------------------------------------------------------------ reading
 
@@ -356,3 +370,20 @@ class TestLiveMailbox(TransactionCase):
         with search, get, self.assertRaises(AccessError):
             self.Conversation.with_user(self.colleague).import_live_message(
                 self.mailbox.id, 'AAA')
+
+
+    def test_two_unlinked_live_rows_are_two_conversations(self):
+        """Every unlinked live row has the same empty model, res_id and
+        message_id, so the client's `sameConversation` has to read the
+        provider handle too. Without it, picking one "Not in Odoo" row
+        painted the whole folder selected. Static, because the comparison
+        is JavaScript and the browser check reaches no provider."""
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'static', 'src', 'js', 'conversation_view', 'conversation_view.js')
+        with open(path, encoding='utf-8') as handle:
+            source = handle.read()
+        body = re.search(r'sameConversation\(left, right\) \{(.*?)\n    \}',
+                         source, re.S)
+        self.assertTrue(body, 'sameConversation is gone from the Inbox')
+        self.assertIn('live_id', body.group(1))

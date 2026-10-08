@@ -65,7 +65,17 @@ const PAGE = 30;
 // subset Odoo imported: two folders called Inbox that list different mail is
 // a screen that reads as broken. Drafts stays ours, because a saved composer
 // is not provider mail. Everybody else's mailbox reads what Odoo imported.
-const LIVE_FOLDERS = ["inbox", "sent"];
+// Kept in step with `LIVE_FOLDERS` in `models/pan_mail_conversation.py`.
+const LIVE_FOLDERS = ["inbox", "sent", "archive", "trash"];
+
+// The two of those that exist nowhere else: Odoo imports neither, so they
+// are drawn under your own mailbox only, after the folders every mailbox
+// has. Without them a mail you archived is the one you go back to the mail
+// client for, which is the trip the live read exists to remove.
+const LIVE_ONLY_FOLDERS = [
+    { id: "archive", name: _t("Archive") },
+    { id: "trash", name: _t("Deleted") },
+];
 
 // What you can ask of that folder, and the reason it exists: does Odoo have
 // this mail. Deliberately *not* in the search bar next to it. Every filter in
@@ -91,6 +101,8 @@ const FOLDER_ICONS = {
     inbox: "fa-inbox",
     sent: "fa-paper-plane-o",
     drafts: "fa-pencil-square-o",
+    archive: "fa-archive",
+    trash: "fa-trash-o",
 };
 
 // What a pane with nothing selected holds. A function rather than a constant:
@@ -906,10 +918,15 @@ export class ConversationView extends Component {
         // A draft has no message to key on and there can be two of them on one
         // record, so its own id is what tells the rows apart. Undefined on
         // both sides for every other row, which is the ordinary case.
+        // A live row has no message either, and every unlinked one has the
+        // same empty model and res_id, so without its provider handle every
+        // "Not in Odoo" row is the same conversation: pick one and the whole
+        // folder paints selected. Undefined on every imported row.
         return left.model === right.model
             && left.res_id === right.res_id
             && left.message_id === right.message_id
-            && (left.draft_id || false) === (right.draft_id || false);
+            && (left.draft_id || false) === (right.draft_id || false)
+            && (left.live_id || false) === (right.live_id || false);
     }
 
     /**
@@ -1524,9 +1541,15 @@ export class ConversationView extends Component {
         // A live folder carries no number. The one the counts hold is what
         // Odoo imported, which is not what this folder lists, and the
         // provider's own would be a call per unfolded mailbox on every click.
-        return folders.map((folder) => LIVE_FOLDERS.includes(folder.id)
+        const live = folders.map((folder) => LIVE_FOLDERS.includes(folder.id)
             ? { ...folder, count: 0, capped: false }
             : folder);
+        // Nothing to draw under a mailbox whose counts are not in yet: the
+        // two extra folders would stand alone over an empty list.
+        return live.length
+            ? live.concat(LIVE_ONLY_FOLDERS.map(
+                (folder) => ({ ...folder, kind: "folder", count: 0, capped: false })))
+            : live;
     }
 
     /**
@@ -1568,7 +1591,13 @@ export class ConversationView extends Component {
         // folders, and landing back in Inbox on every switch loses the one
         // thing somebody switching mailboxes is usually doing: working one
         // view across all of them. The live filter does not: it is a
-        // question only your own mailbox can answer.
+        // question only your own mailbox can answer. Nor do Archive and
+        // Deleted, which only your own mailbox has: from there, another
+        // mailbox opens on its Inbox.
+        if (LIVE_ONLY_FOLDERS.some((folder) => folder.id === this.state.folder)
+            && !this.isLiveMailbox(mailboxId)) {
+            this.state.folder = "inbox";
+        }
         if (this.isLive !== wasLive) {
             this.state.liveFilter = null;
         }
