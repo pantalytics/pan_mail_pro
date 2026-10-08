@@ -74,6 +74,20 @@
                         domain="[('model', '=', False)]"
                         context="{'pan_mail_ungrouped': True}"/>
                 <separator/>
+                <!--
+                    Does Odoo have this mail. Only your own mailbox's Inbox,
+                    Sent, Archive and Deleted are read from the provider, and
+                    there the Inbox reads the two context keys and hands the
+                    question to `live_messages`. Everywhere else the list is
+                    what Odoo imported, and the domains say the same thing in
+                    that language: all of it is in Odoo, none of it is not.
+                -->
+                <filter name="not_in_odoo" string="Not in Odoo"
+                        domain="[('id', '=', False)]"
+                        context="{'pan_mail_not_in_odoo': True}"/>
+                <filter name="in_odoo" string="In Odoo"
+                        context="{'pan_mail_in_odoo': True}"/>
+                <separator/>
                 <filter name="date" string="Date" date="date"/>
             </search>
         </field>

@@ -362,23 +362,6 @@
                                 <i class="fa fa-times" aria-hidden="true"/>
                             </button>
                         </div>
-                        <!--
-                            The live folder's own two questions, here rather
-                            than in the search bar: every filter in that bar
-                            is a domain over `mail.message`, and these rows
-                            are a provider's answer no domain reaches. Two
-                            options is a pair of pills rather than a menu,
-                            and a second click on the one in use clears it.
-                        -->
-                        <div t-if="isLive" class="o_mailpro_live_filters d-flex align-items-center gap-1 flex-shrink-0">
-                            <button t-foreach="liveFilters" t-as="pill" t-key="pill.id"
-                                    type="button" class="o_mailpro_live_filter"
-                                    t-att-class="{ 'o_mailpro_live_filter_active': state.liveFilter === pill.id }"
-                                    t-att-aria-pressed="state.liveFilter === pill.id ? 'true' : 'false'"
-                                    t-on-click="() => this.setLiveFilter(pill.id)">
-                                <t t-esc="pill.name"/>
-                            </button>
-                        </div>
                     </div>
                     <!--
                         The list itself scrolls; the header above it does
