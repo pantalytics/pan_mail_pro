@@ -335,6 +335,53 @@ class TestLiveMailbox(TransactionCase):
         self.assertIn('</p><p>', row['body'])
         self.assertIn('<br', row['body'])
 
+    def _with_inline_logo(self, mimetype='image/png', content=b'\x89PNG fake'):
+        """A mail whose only part is an image its own body shows."""
+        message = self._message(
+            body_html='<p>Hoi</p><img src="cid:logo-1@notion">',
+            has_attachments=False)
+        part = {'name': 'logo.png', 'mimetype': mimetype, 'content': content,
+                'size': len(content or b''), 'is_inline': True,
+                'content_id': 'logo-1@notion'}
+        return message, part
+
+    def test_an_embedded_image_is_shown(self):
+        """`cid:` resolves nowhere in a browser. The part comes back inside
+        the answer, also when the provider said the mail has no attachments
+        (Graph says so for inline-only images)."""
+        message, part = self._with_inline_logo()
+        search, get = self._serving([message])
+        parts = patch.object(type(self.env[CLIENT]), 'get_message_attachments',
+                             return_value=[part])
+        with search, get, parts:
+            row = self._as_owner().read_live_message(self.mailbox.id, 'AAA')
+
+        self.assertNotIn('cid:', row['body'])
+        self.assertIn('src="data:image/png;base64,iVBORyBmYWtl"', row['body'])
+
+    def test_a_body_without_embedded_images_asks_for_no_parts(self):
+        search, get = self._serving([self._message()])
+        parts = patch.object(type(self.env[CLIENT]), 'get_message_attachments')
+        with search, get, parts as fetched:
+            self._as_owner().read_live_message(self.mailbox.id, 'AAA')
+
+        fetched.assert_not_called()
+
+    def test_only_a_raster_image_under_the_cap_is_embedded(self):
+        """The data: URI is built after the sanitizer, so what goes into it is
+        decided here. Anything else keeps its unresolved cid:."""
+        for mimetype, content in (('text/html', b'<script>x</script>'),
+                                  ('image/svg+xml', b'<svg/>'),
+                                  ('image/png', None),
+                                  ('image/png', b'x' * (2 * 1024 * 1024 + 1))):
+            message, part = self._with_inline_logo(mimetype, content)
+            search, get = self._serving([message])
+            parts = patch.object(type(self.env[CLIENT]),
+                                 'get_message_attachments', return_value=[part])
+            with search, get, parts:
+                row = self._as_owner().read_live_message(self.mailbox.id, 'AAA')
+            self.assertNotIn('data:', row['body'], mimetype)
+
     def test_reading_a_message_that_is_gone(self):
         search, get = self._serving([self._message()])
         with search, get, self.assertRaises(AccessError):
