@@ -1220,7 +1220,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             account, 'get', f'/users/{mailbox.email}/messages/{provider_message_id}',
             params={
                 '$select': 'id,internetMessageId,internetMessageHeaders,conversationId,subject,from,'
-                           'toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,isRead',
+                           'toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,isRead,flag',
                 # Belt and braces on the threading headers; see
                 # HEADER_EXTENDED_PROPERTIES.
                 '$expand': 'singleValueExtendedProperties($filter=%s)'
@@ -1366,6 +1366,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             'has_attachments': bool(raw.get('hasAttachments')),
             'headers': self.normalize_headers(headers),
             'is_read': bool(raw.get('isRead')),
+            'is_flagged': (raw.get('flag') or {}).get('flagStatus') == 'flagged',
         }
 
     # -------------------------------------------------------------------------
