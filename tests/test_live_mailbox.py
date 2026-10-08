@@ -184,6 +184,22 @@ class TestLiveMailbox(TransactionCase):
         self.assertTrue(second['unread'])
         self.assertIn('levertijd', second['preview'])
 
+    def test_sent_is_listed_under_who_it_went_to(self):
+        """Inbox and Sent of your own mailbox are both the provider's, and a
+        mail you wrote reads under its recipient, the way Sent reads in the
+        mail client next to this screen."""
+        sent = self._message(
+            provider_id='SSS', message_id='<sent@company.test>',
+            **{'from': {'email': 'rutger@company.test', 'name': 'Rutger'},
+               'to': [{'email': 'bart@vandermolen.test', 'name': 'Bart'}]})
+        search, get = self._serving([sent])
+        with search as served, get:
+            result = self._as_owner().live_messages(self.mailbox.id, folder='sent')
+
+        self.assertEqual(served.call_args.kwargs['folder'], 'sent')
+        self.assertEqual(result['rows'][0]['correspondent'], 'Bart')
+        self.assertEqual(result['rows'][0]['email'], 'bart@vandermolen.test')
+
     def test_the_filter_is_over_that_flag(self):
         self._already_in_odoo('<one@vandermolen.test>')
         messages = [self._message(),

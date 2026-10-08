@@ -1230,11 +1230,12 @@ class Checks:
     LIVE_FILTERS = ('Not in Odoo', 'In Odoo')
 
     def live_folder(self):
-        """Your own mailbox gets a third folder, and nobody else's does.
+        """Your own mailbox's Inbox is the mailbox itself, nobody else's is.
 
         The seed cannot reach a provider -- the token is the word "demo" --
-        so what this proves is the half a browser can: the folder is offered
-        on the mailbox you own and on no other, the filter menu over it asks
+        so what this proves is the half a browser can: Inbox under the
+        mailbox you own reads the provider and no other Inbox does, there is
+        no second folder claiming to be the whole mailbox, the filter over it asks
         about Odoo rather than about linking, and a folder that cannot reach
         its provider says so instead of throwing. Who may call the methods
         underneath is `tests/test_live_mailbox.py`, where it belongs.
@@ -1263,15 +1264,14 @@ class Checks:
 
         # A mailbox renders its folders as a block next to its row, and only
         # while it stands open. The screen opens on the first mailbox, which
-        # is a shared one: it has the two folders every mail client has and
-        # not the third.
+        # is a shared one: its Inbox is what Odoo imported, so no live filter.
         open_blocks = page.query_selector_all('.o_mailpro_folders')
         if not open_blocks:
             self.fail('no mailbox stands open in the mailbox list')
             self.leave_live_folder(was)
             return
-        if 'All email' in folders(open_blocks[0]):
-            self.fail('a shared mailbox offers the folder that reads a mailbox in full')
+        if page.query_selector('.o_mailpro_live_filter'):
+            self.fail('a shared mailbox reads its Inbox from the provider')
 
         mailboxes = page.query_selector_all('.o_mailpro_mailbox')
         if len(mailboxes) < 2:
@@ -1281,9 +1281,12 @@ class Checks:
         mailboxes[-1].click()
         page.wait_for_timeout(2500)
 
+        # The same three folders as every other mailbox: Inbox is the live
+        # one now, and a fourth that says "the whole mailbox" would be two
+        # folders listing the same mail under different names.
         own = folders(page.query_selector_all('.o_mailpro_folders')[-1])
-        if own[-1:] != ['All email']:
-            self.fail(f'the mailbox you own reads {own}, expected All email last')
+        if own != ['Inbox', 'Sent', 'Drafts']:
+            self.fail(f'the mailbox you own reads {own}, expected Inbox, Sent, Drafts')
             self.leave_live_folder(was)
             return
 
@@ -1295,7 +1298,7 @@ class Checks:
                 lambda response: 'live_messages' in response.url,
                 timeout=60000):
             page.query_selector_all('.o_mailpro_folders')[-1] \
-                .query_selector_all('.o_mailpro_folder')[-1].click()
+                .query_selector_all('.o_mailpro_folder')[0].click()
         # The read is in: what is left is the render.
         try:
             page.wait_for_selector(

@@ -72,12 +72,15 @@ filters, never the objection.
 
 ## The screen
 
-One folder and one filter menu, and that is the whole of it.
+Two folders read live and one filter menu, and that is the whole of it.
 
-- Under your own personal mailbox, below Inbox and Sent: **All email**. Only
-  there -- a shared mailbox does not offer it, which is the access rule
-  visible on screen. It carries no count: counting it means asking the
-  provider how much mail you have every time a mailbox is unfolded.
+- Under your own personal mailbox, **Inbox** and **Sent** are the provider's,
+  not what Odoo imported. Only there -- a shared mailbox reads its imported
+  mail, which is the access rule visible on screen. They carry no count:
+  counting them means asking the provider how much mail you have every time a
+  mailbox is unfolded. (Until 19.0.28.9.0 this was a third folder, **All
+  email**, beside an imported Inbox; two Inboxes listing different mail was
+  the first thing a user reported.)
 - The rows are the rows the list already draws. What a live row adds is a
   quiet **Not in Odoo** chip; what it lacks is a message id, which is how the
   screen tells the two apart.

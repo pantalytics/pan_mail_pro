@@ -540,9 +540,14 @@ move because no mail crosses it. Two consequences are the whole design:
   internal-domain filters and lifts neither the duplicate guard nor the
   contact block list.
 
-On screen it is one folder, **All email**, under your own mailbox and no
-other, with a filter menu that asks the one question it exists for: in Odoo,
-or not. A row that is in Odoo opens the conversation that exists; one that is
+On screen it is no folder of its own: under your own mailbox, **Inbox** and
+**Sent** are read from the provider, so they list what the mail client next to
+this screen lists (19.0.28.9.0; it was a separate **All email** folder beside
+an imported Inbox, and two folders called Inbox that list different mail read
+as a bug). Drafts stays ours, every other mailbox and All mailboxes read what
+Odoo imported, and a live folder carries no number, because the one Odoo can
+count is not what the folder lists. Over it, a filter asks the one question it
+exists for: in Odoo, or not. A row that is in Odoo opens the conversation that exists; one that is
 not opens read-only with **Add to Odoo** under it.
 
 The reasoning, including what it deliberately does not do (no reply to a mail

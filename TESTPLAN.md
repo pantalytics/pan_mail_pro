@@ -259,9 +259,10 @@ CI test dit tegen gemockte providers (`tests/test_live_mailbox.py`); wat
 alleen een echte mailbox laat zien is of de lijst klopt met wat Outlook/Gmail
 toont, en of er werkelijk niets wordt opgeslagen.
 
-- [ ] Inbox openen als eigenaar van een **persoonlijke** mailbox: onder die
-      mailbox staat de map **All email**, en onder geen andere. Een gedeelde
-      mailbox heeft hem niet, ook niet voor een Mailbox Manager
+- [ ] Inbox openen als eigenaar van een **persoonlijke** mailbox: Inbox en
+      Sent onder die mailbox tonen hetzelfde als Outlook/Gmail, zonder getal.
+      Een gedeelde mailbox toont wat Odoo importeerde, ook voor een Mailbox
+      Manager. Er is geen map **All email** meer
 - [ ] De lijst is de echte inbox van de provider, nieuwste eerst, met het
       filter "in Odoo / not in Odoo". Een mail die wel in Odoo staat opent de
       bestaande conversatie
