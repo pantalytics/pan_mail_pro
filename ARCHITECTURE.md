@@ -553,6 +553,18 @@ names the four, once on each side of the RPC. Over it, a filter asks the one que
 exists for: in Odoo, or not. A row that is in Odoo opens the conversation that exists; one that is
 not opens read-only with **Add to Odoo** under it.
 
+What Outlook does to a message you open, this does to the same message
+(19.0.29.0.0): `live_mark` marks it read at the provider once a pick has put
+it on screen (never the row the list opens by itself, never on a read that
+failed), and the row menu and the pane head carry **Mark unread**, **Flag**
+and **Archive**, done with `set_seen`, `set_flagged` and `move_messages` to
+`FOLDER_ARCHIVE`. `read_live_message` itself still changes nothing. An
+imported copy with the same handle follows: its read mirror is written under
+`READ_MIRROR_CTX`, and an archive hands it the new handle the move minted.
+Live rows only: a row there is one provider message in a mailbox you own,
+where an imported conversation is many, in mailboxes that may not be yours.
+Delete is not offered; Deleted is a folder this screen reads, not a button.
+
 The reasoning, including what it deliberately does not do (no reply to a mail
 Odoo does not have, no paging past the first page, no shared mailboxes), is in
 `docs/research/personal-mailbox.md`.

@@ -438,7 +438,7 @@
                                     the pair rather than on the row, or the chevron
                                     column stays white next to the mail you have open.
                                 -->
-                                <t t-set="hasRowMenu" t-value="!conversation.draft_id and !conversation.live"/>
+                                <t t-set="hasRowMenu" t-value="!conversation.draft_id"/>
                                 <div class="o_mailpro_group_head d-flex align-items-start"
                                      t-att-class="{ 'o_mailpro_group_head_active': state.selected
                                          and sameConversation(conversation, state.selected) }"
@@ -486,6 +486,8 @@
                                             <span class="flex-grow-1 min-w-0">
                                                 <span class="d-flex justify-content-between align-items-baseline gap-2">
                                                     <span class="o_mailpro_from text-truncate" t-esc="conversation.correspondent"/>
+                                                    <i t-if="conversation.flagged" class="fa fa-flag o_mailpro_flagged ms-auto"
+                                                       title="Flagged" aria-label="Flagged"/>
                                                     <span class="o_mailpro_date" t-att-title="fullDate(conversation.date)"
                                                           t-esc="day(conversation.date)"/>
                                                 </span>
@@ -652,6 +654,7 @@
                                            aria-hidden="true"/>
                                         <span class="visually-hidden" t-esc="readToggleLabel"/>
                                     </button>
+                                    <t t-if="state.selected and state.selected.live" t-call="pan_mail_pro.LiveMarks"/>
                                     <!--
                                         The way to the Odoo record, on a phone
                                         where it has no divider to carry its
@@ -890,6 +893,16 @@
                                     </div>
                                 </div>
                                 <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                    <button type="button"
+                                            class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
+                                            t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
+                                            t-att-title="readToggleLabel"
+                                            t-on-click="() => this.toggleRead()">
+                                        <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
+                                           aria-hidden="true"/>
+                                        <span class="visually-hidden" t-esc="readToggleLabel"/>
+                                    </button>
+                                    <t t-call="pan_mail_pro.LiveMarks"/>
                                     <button type="button" class="btn btn-primary btn-sm"
                                             t-att-disabled="state.liveBusy"
                                             t-on-click="() => this.importLive()">Add to Odoo</button>
@@ -1242,6 +1255,30 @@
         two do not fit side by side. Nothing is deselected: the list still
         marks the conversation, and a second tap opens it again.
     -->
+    <!--
+        Flag and Archive, on a mail read live from your own mailbox: the two
+        buttons Outlook puts beside a message, done to the same message at
+        the provider. Only there, because a live row is one provider message;
+        an imported conversation is many, in mailboxes that are not yours.
+    -->
+    <t t-name="pan_mail_pro.LiveMarks">
+        <button type="button"
+                class="btn btn-link btn-sm p-0 o_mailpro_flag_toggle"
+                t-att-class="{ 'o_mailpro_flagged': state.selected.flagged }"
+                t-att-title="flagLabel(state.selected)"
+                t-on-click="() => this.toggleFlag(state.selected)">
+            <i t-att-class="state.selected.flagged ? 'fa fa-flag' : 'fa fa-flag-o'" aria-hidden="true"/>
+            <span class="visually-hidden" t-esc="flagLabel(state.selected)"/>
+        </button>
+        <button t-if="state.folder !== 'archive'" type="button"
+                class="btn btn-link btn-sm p-0 o_mailpro_archive"
+                title="Archive"
+                t-on-click="() => this.archiveLive(state.selected)">
+            <i class="fa fa-archive" aria-hidden="true"/>
+            <span class="visually-hidden">Archive</span>
+        </button>
+    </t>
+
     <t t-name="pan_mail_pro.BackToList">
         <!-- Not while writing: the composer has the screen then, and
              Discard is its way out. A back arrow that drops a draft is a

@@ -295,9 +295,9 @@ class TestLiveMailbox(TransactionCase):
     # ------------------------------------------------------------------ reading
 
     def test_reading_does_not_mark_the_message_seen(self):
-        """Reading mail here must not change what the mail client open next to
-        this screen shows. A seen flag written from a preview is how people
-        lose an email."""
+        """The read itself changes nothing. The Inbox marks the mail with
+        `live_mark` once the reader opened it, so a preview or a read that
+        failed half-way cannot mark a mail nobody saw."""
         search, get = self._serving([self._message()])
         with search, get, patch.object(type(self.env[CLIENT]), 'set_seen') as seen:
             row = self._as_owner().read_live_message(self.mailbox.id, 'AAA')
@@ -387,3 +387,70 @@ class TestLiveMailbox(TransactionCase):
                          source, re.S)
         self.assertTrue(body, 'sameConversation is gone from the Inbox')
         self.assertIn('live_id', body.group(1))
+
+    # ------------------------------------------------------------------ marking
+
+    def _marking(self, name, return_value=1):
+        return patch.object(type(self.env[CLIENT]), name, return_value=return_value)
+
+    def test_opening_marks_it_read_at_the_provider(self):
+        """What Outlook does with a mail you open, done to the same mail, so
+        the dot here and the one in Outlook are one fact."""
+        with self._marking('set_seen') as seen:
+            result = self._as_owner().live_mark(self.mailbox.id, 'AAA', 'read')
+        self.assertEqual(seen.call_args.args[2], ['AAA'])
+        self.assertTrue(seen.call_args.kwargs['seen'])
+        self.assertEqual(result, {'live_id': 'AAA'})
+
+    def test_marking_read_moves_the_imported_copy_without_a_second_call(self):
+        """A mail the sync imported carries the same handle. Its mirror follows
+        the provider, and the mirror write itself pushes nothing."""
+        imported = self._already_in_odoo('<one@vandermolen.test>')
+        imported.write({'x_mailbox_id': self.mailbox.id,
+                        'x_provider_message_id': 'AAA'})
+        imported.with_context(pan_mail_read_mirror=True).write({'x_is_read': False})
+        with self._marking('set_seen') as seen:
+            self._as_owner().live_mark(self.mailbox.id, 'AAA', 'read')
+        self.assertEqual(seen.call_count, 1)
+        self.assertTrue(imported.x_is_read)
+
+    def test_unread_is_the_way_back(self):
+        with self._marking('set_seen') as seen:
+            self._as_owner().live_mark(self.mailbox.id, 'AAA', 'unread')
+        self.assertFalse(seen.call_args.kwargs['seen'])
+
+    def test_flag_and_unflag(self):
+        with self._marking('set_flagged') as flagged:
+            self._as_owner().live_mark(self.mailbox.id, 'AAA', 'flag')
+            self.assertTrue(flagged.call_args.kwargs['flagged'])
+            self._as_owner().live_mark(self.mailbox.id, 'AAA', 'unflag')
+            self.assertFalse(flagged.call_args.kwargs['flagged'])
+
+    def test_the_row_says_whether_it_is_flagged(self):
+        search, get = self._serving([self._message(is_flagged=True)])
+        with search, get:
+            row = self._as_owner().live_messages(self.mailbox.id)['rows'][0]
+        self.assertTrue(row['flagged'])
+
+    def test_archive_moves_it_and_the_handle_follows(self):
+        """Every provider mints a new handle on a move. The imported copy takes
+        the new one, or its next read state goes to a message that is gone."""
+        imported = self._already_in_odoo('<one@vandermolen.test>')
+        imported.write({'x_mailbox_id': self.mailbox.id,
+                        'x_provider_message_id': 'AAA'})
+        with self._marking('move_messages', return_value=['ZZZ']) as move:
+            result = self._as_owner().live_mark(self.mailbox.id, 'AAA', 'archive')
+        self.assertEqual(move.call_args.args[3], 'archive')
+        self.assertEqual(result, {'live_id': 'ZZZ'})
+        self.assertEqual(imported.x_provider_message_id, 'ZZZ')
+
+    def test_a_colleague_cannot_mark_your_mail(self):
+        with self._marking('set_seen') as seen, self.assertRaises(AccessError):
+            self.Conversation.with_user(self.colleague).live_mark(
+                self.mailbox.id, 'AAA', 'read')
+        seen.assert_not_called()
+
+    def test_delete_is_not_an_action_here(self):
+        """Trash is a folder this screen reads, not a button it offers."""
+        with self.assertRaises(AccessError):
+            self._as_owner().live_mark(self.mailbox.id, 'AAA', 'delete')

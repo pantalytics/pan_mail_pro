@@ -55,7 +55,9 @@ filters, never the objection.
 ## What this is not
 
 - **Not a second inbox to keep correct.** There is no mirror table, no flag of
-  ours on a provider message, no cursor. A read is a read.
+  ours on a provider message, no cursor. A read is a read. What the reader
+  does to a message -- open it, flag it, archive it -- is done to the
+  provider's own message, so Outlook shows it too (19.0.29.0.0).
 - **Not a reply path for mail Odoo does not have.** Replying to a live,
   unlinked message means importing it first (one click) and replying to the
   conversation. A send with no record behind it is the "linked to nothing"

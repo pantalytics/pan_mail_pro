@@ -47,6 +47,7 @@ from odoo.tools import email_split, html2plaintext
 from odoo.tools.mail import html_sanitize, plaintext2html
 from odoo.tools.translate import LazyTranslate
 
+from .mail_message import READ_MIRROR_CTX
 from .mail_provider_client import (
     FOLDER_ARCHIVE, FOLDER_INBOX, FOLDER_SENT, FOLDER_TRASH,
 )
@@ -125,6 +126,11 @@ MAILBOX_FOLDERS = [
 # neither and a mail you archived is the one you otherwise go back to the
 # mail client for. Kept in step with `LIVE_FOLDERS` in `conversation_view.js`.
 LIVE_FOLDERS = (FOLDER_INBOX, FOLDER_SENT, FOLDER_ARCHIVE, FOLDER_TRASH)
+
+# What `live_mark` may do to one message in your own mailbox: the buttons a
+# mail client puts beside it. Delete is not here; Trash is a folder you can
+# read, not a button this screen offers.
+LIVE_ACTIONS = ('read', 'unread', 'flag', 'unflag', 'archive')
 
 # The folder that is read from another table. Every query in this file is a
 # `WHERE` over `mail.message`; this one is not, so each entry point says so
@@ -1034,10 +1040,10 @@ class PanMailConversation(models.AbstractModel):
     def read_live_message(self, mailbox_id, provider_message_id):
         """One live message in full, for the reading pane.
 
-        A read and nothing else: it does not mark the message seen. Reading
-        mail here must not change what the mail client next to this screen
-        shows, and a seen flag written from a preview is the classic way to
-        lose an email.
+        A read and nothing else: it does not mark the message seen. The Inbox
+        marks it with `live_mark` once the reader has actually opened it,
+        the way Outlook does, so a read that only fills a preview or fails
+        half-way cannot mark a mail nobody saw.
         """
         mailbox = self._own_mailbox(mailbox_id)
         client = mailbox._get_client()
@@ -1100,6 +1106,47 @@ class PanMailConversation(models.AbstractModel):
                 pan_mail_force_import=True)._process_message(mailbox, message, folder)
         link = self._links_for_live([message]).get(message.get('message_id') or '')
         return {'imported': bool(imported), 'linked': link or False}
+
+    @api.model
+    def live_mark(self, mailbox_id, provider_message_id, action):
+        """Read, unread, flag, unflag or archive one message in your own mailbox.
+
+        What the buttons beside a message do in Outlook, done to the same
+        message at the provider, so the two screens never disagree. Opening a
+        message is a separate `read_live_message` that changes nothing; the
+        Inbox calls this with `read` right after, the way a mail client marks
+        what you open.
+
+        Odoo's copy follows: a mail the sync imported carries the same handle,
+        so its read mirror is written without a second provider call, and an
+        archive moves the handle with the message (a move mints a new one on
+        every provider).
+
+        Returns:
+            dict: `live_id`, the handle the message has now.
+        """
+        if action not in LIVE_ACTIONS:
+            raise AccessError(_('That is not something this screen does to a mail.'))
+        mailbox = self._own_mailbox(mailbox_id)
+        client = mailbox._get_client()
+        account = client.resolve_receiving_account(mailbox)
+        handles = [provider_message_id]
+        imported = self.env['mail.message'].sudo().search([
+            ('x_mailbox_id', '=', mailbox.id),
+            ('x_provider_message_id', '=', provider_message_id),
+        ])
+        if action in ('read', 'unread'):
+            read = action == 'read'
+            client.set_seen(account, mailbox, handles, seen=read)
+            imported.with_context(**READ_MIRROR_CTX).write({'x_is_read': read})
+            return {'live_id': provider_message_id}
+        if action in ('flag', 'unflag'):
+            client.set_flagged(account, mailbox, handles, flagged=action == 'flag')
+            return {'live_id': provider_message_id}
+        new_ids = client.move_messages(account, mailbox, handles, FOLDER_ARCHIVE)
+        new_id = (new_ids or [None])[0] or provider_message_id
+        imported.write({'x_provider_message_id': new_id})
+        return {'live_id': new_id}
 
     # ------------------------------------------------------------------
     # Live helpers
@@ -1202,6 +1249,7 @@ class PanMailConversation(models.AbstractModel):
             'count': 1,
             'record_name': (link or {}).get('name') or '',
             'unread': not message.get('is_read'),
+            'flagged': bool(message.get('is_flagged')),
             'mailbox': mailbox.email or '',
         }
 

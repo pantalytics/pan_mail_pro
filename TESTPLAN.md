@@ -274,6 +274,11 @@ toont, en of er werkelijk niets wordt opgeslagen.
       uitzondering), **nooit** bij een geblokkeerd contact
 - [ ] `mail_message` groeit niet door alleen bladeren: tel de rijen voor en na
       een minuut lezen zonder Add to Odoo
+- [ ] Een ongelezen mail aanklikken: in Outlook/Gmail is hij direct gelezen.
+      De mail die de lijst zelf opent bij het laden blijft ongelezen
+- [ ] **Flag** (kop of rijmenu ⋮): in Outlook vlag, in Gmail ster, rode vlag
+      op de rij. **Archive**: de mail verdwijnt uit de lijst en staat in
+      Outlook/Gmail in Archief
 
 ### Leesstatus heen en terug (19.0.15.4.0, ARCHITECTURE.md §9.18)
 

@@ -988,6 +988,7 @@ class ImapSmtpClient(models.AbstractModel):
                 part.get_filename() for part in msg.walk() if part.get_filename()),
             'headers': self.normalize_headers(headers),
             'is_read': '\\Seen' in (item.get('flags') or []),
+            'is_flagged': '\\Flagged' in (item.get('flags') or []),
         }
 
     @api.model
