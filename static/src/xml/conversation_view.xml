@@ -638,6 +638,12 @@
                             </div>
                             <div class="o_mailpro_unlinked">
                                 <span class="o_mailpro_unlinked_title">Not in Odoo. Only you can see this email.</span>
+                                <!-- The question this screen gets asked:
+                                     where is Reply? A reply is sent on a
+                                     record, so it waits for the one button
+                                     above. Said here because on a phone that
+                                     button is at the other end of the screen. -->
+                                <div class="o_mailpro_unlinked_hint">Add it to Odoo to reply.</div>
                             </div>
                         </div>
                         <div class="o_mailpro_messages">

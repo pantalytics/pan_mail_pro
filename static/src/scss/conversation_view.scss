@@ -902,6 +902,12 @@ $mailpro-band-gutter: 3.5rem;
     // The suggestion sits next to the state it belongs to, so "not linked"
     // and "but it looks like this" read as one state rather than two
     // competing announcements.
+    .o_mailpro_unlinked_hint {
+        margin-top: 0.125rem;
+        font-size: 0.8125rem;
+        color: $mailpro-muted;
+    }
+
     .o_mailpro_suggestion {
         margin-top: 0.625rem;
         font-size: 0.8125rem;
