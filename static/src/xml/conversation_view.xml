@@ -615,18 +615,23 @@
                                         </span>
                                     </div>
                                 </div>
-                                <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                                    <button type="button"
-                                            class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
-                                            t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
-                                            t-att-title="readToggleLabel"
-                                            t-on-click="() => this.toggleRead()">
-                                        <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
-                                           aria-hidden="true"/>
-                                        <span class="visually-hidden" t-esc="readToggleLabel"/>
-                                    </button>
-                                    <t t-call="pan_mail_pro.LiveMarks"/>
-                                    <button type="button" class="btn btn-primary btn-sm"
+                                <!-- On a phone this row is the bar at the
+                                     bottom of the screen; see the
+                                     stylesheet's `.o_mailpro_actions`. -->
+                                <div class="o_mailpro_actions d-flex align-items-center gap-2 flex-shrink-0">
+                                    <div class="o_mailpro_actions_icons d-flex align-items-center gap-2">
+                                        <button type="button"
+                                                class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
+                                                t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
+                                                t-att-title="readToggleLabel"
+                                                t-on-click="() => this.toggleRead()">
+                                            <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
+                                               aria-hidden="true"/>
+                                            <span class="visually-hidden" t-esc="readToggleLabel"/>
+                                        </button>
+                                        <t t-call="pan_mail_pro.LiveMarks"/>
+                                    </div>
+                                    <button type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
                                             t-att-disabled="state.liveBusy"
                                             t-on-click="() => this.importLive()">Add to Odoo</button>
                                 </div>
@@ -675,7 +680,7 @@
                                     place to write.
                                 -->
                                 <div t-if="!composer.state.open"
-                                     class="d-flex align-items-center gap-2 flex-shrink-0">
+                                     class="o_mailpro_actions d-flex align-items-center gap-2 flex-shrink-0">
                                     <!--
                                         The way out of "I opened it, I cannot
                                         deal with it now", and the way back.
@@ -687,16 +692,27 @@
                                         nothing is a button that reads as
                                         broken.
                                     -->
-                                    <button type="button"
-                                            class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
-                                            t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
-                                            t-att-title="readToggleLabel"
-                                            t-on-click="() => this.toggleRead()">
-                                        <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
-                                           aria-hidden="true"/>
-                                        <span class="visually-hidden" t-esc="readToggleLabel"/>
-                                    </button>
-                                    <t t-if="state.selected and state.selected.live" t-call="pan_mail_pro.LiveMarks"/>
+                                    <div class="o_mailpro_actions_icons d-flex align-items-center gap-2">
+                                        <button type="button"
+                                                class="btn btn-link btn-sm p-0 o_mailpro_read_toggle"
+                                                t-att-class="{ 'o_mailpro_read_toggle_unread': selectedUnread }"
+                                                t-att-title="readToggleLabel"
+                                                t-on-click="() => this.toggleRead()">
+                                            <i t-att-class="selectedUnread ? 'fa fa-envelope' : 'fa fa-envelope-open-o'"
+                                               aria-hidden="true"/>
+                                            <span class="visually-hidden" t-esc="readToggleLabel"/>
+                                        </button>
+                                        <t t-if="state.selected and state.selected.live" t-call="pan_mail_pro.LiveMarks"/>
+                                    </div>
+                                    <!-- On a phone this row is the bar at
+                                         the bottom of the screen, where a
+                                         thumb is; the head keeps the
+                                         subject and the way to the record. -->
+                                    <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
+                                            t-on-click="() => this.logNote()">Log note</button>
+                                    <button t-if="canReply" type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
+                                            t-on-click="() => this.reply()">Reply</button>
+                                </div>
                                     <!--
                                         The way to the Odoo record, on a phone
                                         where it has no divider to carry its
@@ -717,7 +733,7 @@
                                         same row: two identical arrows doing
                                         opposite things.
                                     -->
-                                    <button t-if="showOdooRecordButton" type="button"
+                                    <button t-if="showOdooRecordButton and !composer.state.open" type="button"
                                             class="o_mailpro_odoo_record_button flex-shrink-0"
                                             t-att-title="selectedRecord ? selectedRecord.name : panes.toggleLabel('odoo_record')"
                                             t-att-aria-label="panes.toggleLabel('odoo_record')"
@@ -730,14 +746,6 @@
                                         <span t-if="state.conversation.suggestion or !state.conversation.records.length"
                                               class="o_mailpro_odoo_record_button_dot" aria-hidden="true"/>
                                     </button>
-                                    <!-- On a phone these float over the
-                                         bottom of the mail, where a thumb
-                                         is; the head keeps the subject. -->
-                                    <button t-if="canLogNote" type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
-                                            t-on-click="() => this.logNote()">Log note</button>
-                                    <button t-if="canReply" type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
-                                            t-on-click="() => this.reply()">Reply</button>
-                                </div>
                                 <t t-if="composer.state.open" t-call="pan_mail_pro.ComposerButtons"/>
                             </div>
                             <!--
