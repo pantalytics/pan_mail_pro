@@ -54,8 +54,28 @@
                     an Odoo notification still wants you, which is a different
                     question with a screen of its own (ARCHITECTURE.md 9.18).
                 -->
+                <!--
+                    The context keys are for your own mailbox's live folders,
+                    where no domain reaches the rows: the Inbox hands them to
+                    `live_messages`, which asks the provider. Read and Unread
+                    share a group, so asking for both is asking for neither.
+                -->
                 <filter name="unread" string="Unread"
-                        domain="[('x_is_read', '=', False)]"/>
+                        domain="[('x_is_read', '=', False)]"
+                        context="{'pan_mail_unread': True}"/>
+                <filter name="read" string="Read"
+                        domain="[('x_is_read', '=', True)]"
+                        context="{'pan_mail_read': True}"/>
+                <separator/>
+                <!--
+                    The provider's flag (Outlook's flag, Gmail's star, IMAP's
+                    \Flagged). Odoo keeps no copy of it, so only the live
+                    folders can answer; over imported mail the filter says
+                    what Odoo knows, which is that it holds no flagged mail.
+                -->
+                <filter name="flagged" string="Flagged"
+                        domain="[('id', '=', False)]"
+                        context="{'pan_mail_flagged': True}"/>
                 <separator/>
                 <!--
                     The two states the link coverage report counts, as the

@@ -158,8 +158,8 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(view.model, 'mail.message',
                          'the search bar searches the mail the list groups')
         names = etree.fromstring(view.arch).xpath('//filter/@name')
-        self.assertEqual(names, ['unread', 'on_contact', 'unlinked',
-                                 'not_in_odoo', 'in_odoo', 'date'])
+        self.assertEqual(names, ['unread', 'read', 'flagged', 'on_contact',
+                                 'unlinked', 'not_in_odoo', 'in_odoo', 'date'])
 
     def test_in_odoo_or_not_is_a_filter_the_live_read_can_hear(self):
         """Not in Odoo / In Odoo sit in the search bar, not in the list header.
