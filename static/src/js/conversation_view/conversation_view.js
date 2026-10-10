@@ -347,7 +347,10 @@ export class ConversationView extends Component {
         // The token above already keeps a stale answer off the screen; the
         // abort also hands the browser its connection back, and a browser
         // holds six to a host -- ten clicks through a slow mailbox would
-        // otherwise queue the eleventh behind them.
+        // otherwise queue the eleventh behind them. An aborted read rejects,
+        // and its catch sees the newer token and stays quiet: a read that
+        // never settled instead left every caller awaiting it hanging, the
+        // confirmation dialog of Delete draft among them.
         this.listRequest = null;
         this.conversationRequest = null;
         // The last list read that also recounted the mailbox list, so a count
@@ -752,7 +755,7 @@ export class ConversationView extends Component {
             this.state.threadLoading = {};
             this.threadGen++;
         }
-        this.listRequest?.abort?.(false);
+        this.listRequest?.abort?.();
         try {
             const args = this.listArgs();
             // One count query per mailbox that is standing open. A folded
@@ -819,13 +822,16 @@ export class ConversationView extends Component {
                     // A read still out for the row that left must not land
                     // on the empty pane.
                     this.conversationSeq++;
-                    this.conversationRequest?.abort?.(false);
+                    this.conversationRequest?.abort?.();
                     this.state.conversationLoading = false;
                     this.state.selected = null;
                     this.state.conversation = EMPTY_CONVERSATION();
                 }
             }
         } catch (error) {
+            if (seq !== this.listSeq) {
+                return; // Aborted or overtaken by a newer read: not a failure.
+            }
             // Keep what the reader was looking at; say one line and offer a
             // retry rather than clearing the pane.
             this.improve.failed("conversation_list", error);
@@ -903,7 +909,7 @@ export class ConversationView extends Component {
      */
     async readLiveMessage(row) {
         const seq = ++this.conversationSeq;
-        this.conversationRequest?.abort?.(false);
+        this.conversationRequest?.abort?.();
         try {
             const message = await (this.conversationRequest = this.orm.call(
                 "pan.mail.conversation", "read_live_message", [], {
@@ -914,6 +920,9 @@ export class ConversationView extends Component {
                 this.state.live = message;
             }
         } catch (error) {
+            if (seq !== this.conversationSeq) {
+                return; // Aborted or overtaken by a newer read: not a failure.
+            }
             this.improve.failed("live_message", error);
             if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that email.");
@@ -1669,7 +1678,7 @@ export class ConversationView extends Component {
             return;
         }
         const seq = ++this.conversationSeq;
-        this.conversationRequest?.abort?.(false);
+        this.conversationRequest?.abort?.();
         try {
             const data = await (this.conversationRequest = this.orm.call(
                 "pan.mail.conversation", "read_conversation", [], {
@@ -1709,6 +1718,9 @@ export class ConversationView extends Component {
             this.loadActivities(seq);
             this.loadFollowers();
         } catch (error) {
+            if (seq !== this.conversationSeq) {
+                return; // Aborted or overtaken by a newer read: not a failure.
+            }
             this.improve.failed("conversation", error);
             if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that conversation.");
