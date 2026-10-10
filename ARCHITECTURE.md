@@ -558,7 +558,11 @@ exists for: in Odoo, or not. **Not in Odoo** and **In Odoo** sit in the search
 bar's own filter menu (19.0.29.1.0; they were two pills in the list header).
 The live read takes them from the context keys they carry, because no domain
 over `mail.message` reaches a provider's rows; in an imported folder their
-domains say the same thing, all of it in Odoo and none of it not. A row that is in Odoo opens the conversation that exists; one that is
+domains say the same thing, all of it in Odoo and none of it not.
+**Unread**, **Read** and **Flagged** reach the live read the same way
+(19.0.29.4.0): unread and flagged become the provider's own search terms, read
+narrows the page. Odoo keeps no copy of the flag, so over an imported folder
+Flagged is empty: the one case dropped, rather than a second mirror. A row that is in Odoo opens the conversation that exists; one that is
 not opens read-only with **Add to Odoo** under it. The button opens the
 link picker first (a kind of record, then the record, the same two steps as
 linking and New Email), checks the reader may write the pick, and hands it to

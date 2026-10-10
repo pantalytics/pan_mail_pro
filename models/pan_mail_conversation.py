@@ -1004,7 +1004,8 @@ class PanMailConversation(models.AbstractModel):
 
     @api.model
     def live_messages(self, mailbox_id, folder=FOLDER_INBOX, linked=None,
-                      search=None, limit=LIVE_LIMIT):
+                      search=None, unread=None, flagged=False,
+                      limit=LIVE_LIMIT):
         """One page of your own mailbox, newest first, straight from the provider.
 
         `linked` is the filter the whole feature is for: `False` asks for the
@@ -1013,6 +1014,11 @@ class PanMailConversation(models.AbstractModel):
         provider can be asked "is this in Odoo" -- which also means a page of
         50 filtered down may show fewer than 50 rows, and says so with
         `scanned`.
+
+        `unread` and `flagged` are the search bar's Unread / Read and Flagged
+        filters, which no domain can carry to a provider's answer. Unread and
+        flagged go to the provider as its own terms, so they search the whole
+        folder; read has no provider term and narrows the page instead.
 
         Not paged: `search_messages` takes a limit and no offset. Older mail
         is a search term rather than a scroll, which is how anybody finds a
@@ -1030,7 +1036,8 @@ class PanMailConversation(models.AbstractModel):
             with interactive():
                 messages = client.search_messages(
                     account=account, mailbox=mailbox, folder=folder,
-                    query=search or None, limit=limit,
+                    query=search or None, unread_only=unread is True,
+                    flagged_only=bool(flagged), limit=limit,
                 )
         except Exception:
             # A provider that cannot be reached right now -- an expired grant,
@@ -1047,6 +1054,8 @@ class PanMailConversation(models.AbstractModel):
         for message in messages:
             link = links.get(message.get('message_id') or '')
             if linked is not None and bool(link) != bool(linked):
+                continue
+            if unread is False and not message.get('is_read'):
                 continue
             rows.append(self._live_row(mailbox, message, link))
         return {'rows': rows, 'scanned': len(messages), 'connected': True}

@@ -218,6 +218,30 @@ class TestLiveMailbox(TransactionCase):
         # the provider cannot be asked "is this in Odoo".
         self.assertEqual(missing['scanned'], 2)
 
+    def test_unread_and_flagged_reach_the_provider(self):
+        """The search bar's Unread and Flagged filters carry no domain to a
+        provider's answer, so they arrive as arguments and become the
+        provider's own terms: the whole folder is searched, not one page."""
+        search, get = self._serving([self._message()])
+        with search as served, get:
+            self._as_owner().live_messages(self.mailbox.id, unread=True, flagged=True)
+
+        self.assertTrue(served.call_args.kwargs['unread_only'])
+        self.assertTrue(served.call_args.kwargs['flagged_only'])
+
+    def test_read_narrows_the_page(self):
+        """No provider takes "read only" as a term, so Read narrows what came
+        back."""
+        messages = [self._message(),
+                    self._message(provider_id='BBB', is_read=True,
+                                  message_id='<two@vandermolen.test>')]
+        search, get = self._serving(messages)
+        with search as served, get:
+            result = self._as_owner().live_messages(self.mailbox.id, unread=False)
+
+        self.assertFalse(served.call_args.kwargs['unread_only'])
+        self.assertEqual([r['live_id'] for r in result['rows']], ['BBB'])
+
     def test_odoo_has_it_is_answered_without_naming_the_record(self):
         """The ref index is read as sudo, so it can answer for a record the
         reader may not open. What it may say then is "yes", never what it is

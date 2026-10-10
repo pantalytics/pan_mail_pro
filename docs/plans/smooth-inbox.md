@@ -1,6 +1,6 @@
 # A smooth Inbox: never frozen, always answering
 
-Status: **built**, 19.0.29.4.0, steps 1 to 6 and the first half of 7. Five
+Status: **built**, 19.0.29.5.0, steps 1 to 6 and the first half of 7. Five
 things landed differently from the plan below, each for a reason:
 
 - **The 150ms delay is in the stylesheet, not a `useDelayedFlag` hook.** An

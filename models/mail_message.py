@@ -76,7 +76,8 @@ class MailMessage(models.Model):
     )
 
     x_is_read = fields.Boolean(
-        string='Read',
+        # "status" so a Custom Filter search for the word Outlook uses finds it.
+        string='Read status',
         default=True,
         # Indexed because the Unread filter is a clause on it. The default is
         # True on purpose: a message nobody ever mirrored is not evidence of
