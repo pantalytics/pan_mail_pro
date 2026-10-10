@@ -401,6 +401,37 @@ class TestLiveMailbox(TransactionCase):
         self.assertEqual(result['linked']['model'], 'res.partner')
         self.assertEqual(result['linked']['res_id'], self.customer.id)
 
+    def test_importing_lands_on_the_record_the_reader_picked(self):
+        """Add to Odoo asks for a model and a record first. The answer is the
+        matcher's first rule, so the mail lands there and not on the sender's
+        contact, the routing log says why, and the conversation is linked to
+        that record for the next reply."""
+        self.owner.group_ids |= self.env.ref('sales_team.group_sale_salesman')
+        lead = self.env['crm.lead'].create({'name': 'Levertijd Vandermolen'})
+        search, get = self._serving([self._message()])
+        with search, get:
+            result = self._as_owner().import_live_message(
+                self.mailbox.id, 'AAA', model='crm.lead', res_id=lead.id)
+
+        self.assertTrue(result['imported'])
+        self.assertEqual(result['linked']['model'], 'crm.lead')
+        self.assertEqual(result['linked']['res_id'], lead.id)
+        log = self.env['pan.mail.routing.log'].search(
+            [('mailbox_id', '=', self.mailbox.id)], order='id desc', limit=1)
+        self.assertEqual(log.rule, 'chosen')
+        link = self.env['pan.mail.thread.link'].search([
+            ('mailbox_id', '=', self.mailbox.id), ('thread_id', '=', 'thread-AAA')])
+        self.assertEqual((link.model, link.res_id), ('crm.lead', lead.id))
+
+    def test_importing_onto_a_record_you_may_not_write_is_refused(self):
+        """The import runs as the system, so the pick is checked as the
+        reader: no sales rights, no mail on a lead."""
+        lead = self.env['crm.lead'].create({'name': 'Not yours'})
+        search, get = self._serving([self._message()])
+        with search, get, self.assertRaises(AccessError):
+            self._as_owner().import_live_message(
+                self.mailbox.id, 'AAA', model='crm.lead', res_id=lead.id)
+
     def test_importing_does_not_overrule_the_block_list(self):
         """`force_import` lifts the filters. An objection to processing is not
         a filter."""

@@ -78,6 +78,7 @@ _logger = logging.getLogger(__name__)
 
 # Rule identifiers. Stored in the decision so a log line, and later a UI, can
 # say *why* a mail landed where it did.
+RULE_CHOSEN = 'chosen'
 RULE_ODOO_HEADERS = 'odoo_headers'
 RULE_REFERENCES = 'references'
 RULE_THREAD_LINK = 'thread_link'
@@ -284,6 +285,7 @@ class PanMailMatcher(models.AbstractModel):
         before it has already failed to settle the question.
         """
         return [
+            '_rule_chosen',
             '_rule_odoo_headers',
             '_rule_references',
             '_rule_thread_link',
@@ -295,6 +297,26 @@ class PanMailMatcher(models.AbstractModel):
     # ------------------------------------------------------------------ #
     # Rules
     # ------------------------------------------------------------------ #
+
+    def _rule_chosen(self, ctx):
+        """The record somebody picked when they added the mail to Odoo.
+
+        Add to Odoo asks for the model and the record before it imports, and
+        passes the answer as `pan_mail_link_target` in the context. A person
+        who just said where the mail belongs outranks every rule below, so it
+        sits first; everything after the decision (the thread link, the routing
+        log) is the ordinary path, which is why the next reply in this
+        conversation lands on the same record without being asked again.
+        Never set by the cron: without the key this rule is silent.
+        """
+        target = self.env.context.get('pan_mail_link_target')
+        if not target:
+            return []
+        model, res_id = target
+        if not self._is_routable(model, res_id, ctx['exclude_models']):
+            return []
+        return [self._candidate(model, res_id, RULE_CHOSEN, 1.0,
+                                'Chosen when it was added to Odoo')]
 
     def _rule_odoo_headers(self, ctx):
         """Our own X-Odoo-* headers, when a mail we sent comes back to us.
