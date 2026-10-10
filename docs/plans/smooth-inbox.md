@@ -1,7 +1,29 @@
 # A smooth Inbox: never frozen, always answering
 
-Status: **agreed, not built.** Seven steps, in the order below; each one ships
-on its own and is worth shipping without the ones after it.
+Status: **built**, 19.0.29.3.0, steps 1 to 6 and the first half of 7. Five
+things landed differently from the plan below, each for a reason:
+
+- **The 150ms delay is in the stylesheet, not a `useDelayedFlag` hook.** An
+  `animation-delay` on the skeleton does the same thing with no timer to start,
+  clear or leak, and every pane gets it from one rule.
+- **The old list stays dimmed and never turns into skeleton rows.** Swapping
+  rows for a skeleton halfway through a wait makes the list jump twice; dimmed
+  rows say "this is the previous answer" and jump once.
+- **Linking stays a round trip.** Which record a conversation lands on is the
+  server's answer, so it cannot be drawn before it is given. Read, flag and
+  archive answer in the same frame.
+- **`onActivityChanged` re-reads the conversation in place** instead of
+  reloading only the activities: the tab counts come from the same read.
+- **Step 7 is the row menus and nothing else.** Containment does not stop a
+  pane relaying out its own content while its width animates, and
+  `content-visibility` clips the focus ring on a row. The fold stays as it is
+  until somebody measures it janky on a real database; then the answer is a
+  transform rewrite, not a CSS hint. The `activities` and
+  `countsFollowReadState` getters turned out to run only on their own tab and
+  on a click, so they were left alone.
+
+The slow-network check (`slow_network` in `tools/ui_check.py`) is built as
+described; the long-task timing on a fold is not, for the reason above.
 
 ## The problem
 
@@ -26,7 +48,7 @@ it feel heavy, and none of them is raw speed:
 
 ## The rules (brand.pantalytics.com, applied to this screen)
 
-The brand site sets two rules that decide most of this plan:
+brand.pantalytics.com sets two rules that decide most of this plan:
 
 - **Skeleton loaders, not spinners.** A skeleton has the shape of the answer,
   so nothing jumps when the answer arrives.

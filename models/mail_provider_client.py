@@ -204,6 +204,7 @@ Two rules the actions inherit, and neither is negotiable in an implementation:
 """
 import base64
 import contextlib
+import contextvars
 import hashlib
 import json
 import logging
@@ -354,6 +355,44 @@ class ThrottledError(UserError):
     def __init__(self, message, wait):
         super().__init__(message)
         self.wait = wait
+
+# -----------------------------------------------------------------------------
+# A person is waiting
+#
+# The cron can afford a slow provider: it retries with backoff and asks again
+# next minute. A person in the Inbox cannot. A live read that inherits the
+# cron's three retries and 30s timeouts can hold the screen for two minutes,
+# and that is the screen freezing however good the skeleton looks. So a call
+# made while somebody waits is one attempt with a short timeout, and the cron
+# is what retries -- the rule the access probe already follows.
+#
+# A context variable rather than an argument, because the timeout is set three
+# layers down (the HTTP loop, the IMAP connection) and every contract method in
+# between would otherwise carry a flag it does nothing with.
+
+INTERACTIVE_TIMEOUT_SECONDS = 10
+
+_interactive = contextvars.ContextVar('pan_mail_interactive', default=False)
+
+
+@contextlib.contextmanager
+def interactive():
+    """Provider calls in this block are made while a person waits."""
+    token = _interactive.set(True)
+    try:
+        yield
+    finally:
+        _interactive.reset(token)
+
+
+def is_interactive():
+    return _interactive.get()
+
+
+def call_timeout(timeout):
+    """`timeout`, capped while a person waits."""
+    return min(timeout, INTERACTIVE_TIMEOUT_SECONDS) if is_interactive() else timeout
+
 
 # -----------------------------------------------------------------------------
 # Headers that may cross the provider boundary

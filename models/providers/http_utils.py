@@ -22,7 +22,7 @@ import requests
 
 from odoo import _
 
-from ..mail_provider_client import ThrottledError
+from ..mail_provider_client import ThrottledError, call_timeout, is_interactive
 
 _logger = logging.getLogger(__name__)
 
@@ -73,8 +73,12 @@ def request_with_retry(method, url, *, label, log_tag, headers=None, timeout=30,
     """
     last_exception = None
     backoff = INITIAL_BACKOFF_SECONDS
+    # Somebody is waiting on this answer: one short attempt, no sleeps. The
+    # cron retries; the person does not wait for it (`interactive()`).
+    retries = 0 if is_interactive() else MAX_RETRIES
+    timeout = call_timeout(timeout)
 
-    for attempt in range(MAX_RETRIES + 1):
+    for attempt in range(retries + 1):
         try:
             response = getattr(requests, method)(url, headers=headers, timeout=timeout, **kwargs)
 
@@ -92,7 +96,7 @@ def request_with_retry(method, url, *, label, log_tag, headers=None, timeout=30,
                         label=label, wait=wait_time,
                     ), wait_time)
 
-                if attempt < MAX_RETRIES:
+                if attempt < retries:
                     _logger.warning('%s Rate limited (429), waiting %ss before retry %s/%s',
                                     log_tag, wait_time, attempt + 1, MAX_RETRIES)
                     time.sleep(wait_time)
@@ -100,7 +104,7 @@ def request_with_retry(method, url, *, label, log_tag, headers=None, timeout=30,
                     continue
                 response.raise_for_status()  # Raise on final attempt
 
-            if response.status_code in (500, 502, 503, 504) and attempt < MAX_RETRIES and idempotent:
+            if response.status_code in (500, 502, 503, 504) and attempt < retries and idempotent:
                 _logger.warning('%s Server error (%s), retrying in %ss (%s/%s)',
                                 log_tag, response.status_code, backoff, attempt + 1, MAX_RETRIES)
                 time.sleep(backoff)
@@ -111,7 +115,7 @@ def request_with_retry(method, url, *, label, log_tag, headers=None, timeout=30,
 
         except requests.exceptions.Timeout as e:
             last_exception = e
-            if attempt < MAX_RETRIES and idempotent:
+            if attempt < retries and idempotent:
                 _logger.warning('%s Request timeout, retrying in %ss (%s/%s)',
                                 log_tag, backoff, attempt + 1, MAX_RETRIES)
                 time.sleep(backoff)
@@ -121,7 +125,7 @@ def request_with_retry(method, url, *, label, log_tag, headers=None, timeout=30,
 
         except requests.exceptions.ConnectionError as e:
             last_exception = e
-            if attempt < MAX_RETRIES and idempotent:
+            if attempt < retries and idempotent:
                 _logger.warning('%s Connection error, retrying in %ss (%s/%s)',
                                 log_tag, backoff, attempt + 1, MAX_RETRIES)
                 time.sleep(backoff)

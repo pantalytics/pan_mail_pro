@@ -23,8 +23,10 @@ from odoo.tests import TransactionCase, tagged
 from odoo.addons.pan_mail_pro.models.mail_mail import RoutingError
 from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     FOLDER_INBOX,
+    INTERACTIVE_TIMEOUT_SECONDS,
     ThrottledError,
     get_provider_client,
+    interactive,
 )
 from odoo.addons.pan_mail_pro.models.providers.http_utils import MAX_RETRIES
 from odoo.addons.pan_mail_pro.models.providers.google import gmail_client as gmail_mod
@@ -121,6 +123,21 @@ class TestGoogleProvider(TransactionCase):
                 get.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError('503')
                 self.client._api_get(account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1')
         self.assertEqual(get.call_count, 1 + MAX_RETRIES)
+
+    def test_a_read_somebody_waits_on_is_one_short_attempt(self):
+        """The Inbox's live reads run inside `interactive()`: a 503 is
+        reported at once, after one call with the short timeout, instead of
+        three backed-off retries at 30s each holding the screen for two
+        minutes. The cron, outside the block, keeps retrying (above)."""
+        account = self._google_account(access_token='t', token_expiry=fields.Datetime.now() + timedelta(hours=1))
+        with patch(GMAIL_GET, return_value=self._status(503)) as get, \
+                patch(GMAIL_SLEEP) as sleep, interactive():
+            get.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError('503')
+            with self.assertRaises(UserError):
+                self.client._api_get(account, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1')
+        self.assertEqual(get.call_count, 1)
+        self.assertEqual(get.call_args.kwargs['timeout'], INTERACTIVE_TIMEOUT_SECONDS)
+        sleep.assert_not_called()
 
     # ------------------------------------------------------------------ #
     # Dispatch

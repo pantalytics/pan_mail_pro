@@ -1141,6 +1141,133 @@ class Checks:
                           'conversation left did not reach it' % (WIDE, record))
             self.shot('inbox-wide-record.png')
 
+    def slow_network(self):
+        """A slow server is a waiting screen, never a frozen or a wrong one.
+
+        Every other check runs against a server on the same machine, where
+        each answer lands before a person could see the screen wait -- so the
+        skeletons, the dimmed list and the token that drops a stale answer
+        were all green by never being reached. Here the two reads a person
+        waits on are held in the browser and released by hand, and the screen
+        is read while they are out (docs/plans/smooth-inbox.md):
+
+        - the four panes are drawn before the list has answered;
+        - the list shows its skeleton, and the conversation pane its own,
+          never "Not linked to a record yet" over a conversation that may be;
+        - a second click while the first read is out ends on the second;
+        - a folder switch dims the old list instead of blanking it;
+        - an answer inside 150ms shows no skeleton at all.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            return
+        page = self.browser.new_page(viewport={'width': WIDE, 'height': 1100})
+        login(page, self.base)
+        held = []
+        holding = {'on': True}
+
+        def hold(route):
+            if holding['on']:
+                held.append(route)
+            else:
+                route.continue_()
+
+        def release():
+            while held:
+                route = held.pop(0)
+                try:
+                    route.continue_()
+                except Exception:
+                    pass  # aborted by the screen itself: the point of the abort
+
+        def opacity(selector):
+            return page.evaluate(
+                "(s) => { const el = document.querySelector(s);"
+                " return el ? Number(getComputedStyle(el).opacity) : null; }", selector)
+
+        for method in ('search_conversations', 'read_conversation'):
+            page.route(f'**/web/dataset/call_kw/pan.mail.conversation/{method}*', hold)
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_conversation_list', timeout=30000)
+        except Exception:
+            self.fail('the Inbox waits for its list before drawing anything')
+            release()
+            page.close()
+            return
+        page.wait_for_timeout(600)
+        if not held:
+            self.fail('the Inbox read no list after it was drawn')
+        if (opacity('.o_mailpro_conversation_list .o_mailpro_skeleton') or 0) < 0.9:
+            self.fail('the conversation list shows no skeleton while it waits')
+
+        # The list answers; the conversation it opens is still out.
+        release()
+        try:
+            page.wait_for_selector('.o_mailpro_group', timeout=15000)
+        except Exception:
+            self.fail('the conversation list did not fill once its read was released')
+            page.close()
+            return
+        page.wait_for_timeout(600)
+        if page.query_selector('.o_mailpro_conversation .o_mailpro_unlinked_title, '
+                               '.o_mailpro_conversation .o_mailpro_relink_open'):
+            self.fail('the conversation pane says "not linked" before its read answered')
+        if (opacity('.o_mailpro_conversation .o_mailpro_pane_skeleton') or 0) < 0.9:
+            self.fail('the conversation pane shows no skeleton while it waits')
+        if page.query_selector('.o_mailpro_odoo_record .o_mailpro_empty_title'):
+            self.fail('the record pane says "No record yet" before the read answered')
+        self.shot('slow_conversation')
+
+        # A second click while the first read is out: the second one wins.
+        rows = page.query_selector_all('.o_mailpro_group_head')
+        if len(rows) >= 2:
+            want = rows[1].query_selector('.o_mailpro_subject').inner_text().strip()
+            rows[1].query_selector('.o_mailpro_item').click()
+            page.wait_for_timeout(300)
+            release()
+            page.wait_for_timeout(1500)
+            release()
+            page.wait_for_timeout(800)
+            title = page.query_selector('.o_mailpro_conversation .o_mailpro_conversation_title')
+            got = title.inner_text().strip() if title else ''
+            if got != want:
+                self.fail(f'a second click while the first read was out ended on '
+                          f'{got!r}, not {want!r}')
+        release()
+
+        # Another folder: the old rows stay, dimmed, while the new ones come.
+        page.wait_for_timeout(500)
+        folder = page.query_selector('.o_mailpro_folder:not(.o_mailpro_folder_active)')
+        if folder:
+            folder.click()
+            page.wait_for_timeout(600)
+            if not page.query_selector('.o_mailpro_conversation_list_body.o_mailpro_stale'):
+                self.fail('a folder switch does not mark the old list as stale')
+            elif (opacity('.o_mailpro_conversation_list_body') or 1) > 0.75:
+                self.fail('a folder switch leaves the old list looking current')
+            release()
+            page.wait_for_timeout(800)
+            if page.query_selector('.o_mailpro_conversation_list_body.o_mailpro_stale'):
+                self.fail('the list stays dimmed after its answer arrived')
+
+        # A fast answer: whatever skeleton the click drew is still invisible.
+        holding['on'] = False
+        release()
+        page.wait_for_timeout(500)
+        row = page.query_selector('.o_mailpro_item:not(.o_mailpro_item_active)')
+        if row:
+            row.click()
+            seen = opacity('.o_mailpro_conversation .o_mailpro_pane_skeleton')
+            if seen is not None and seen > 0.05:
+                self.fail('a skeleton shows the moment a conversation is clicked')
+        page.wait_for_timeout(800)
+        dialog = page.query_selector('.o_error_dialog, .o_dialog_error')
+        if dialog:
+            self.fail(f'the Inbox on a slow network opened an error dialog: '
+                      f'{dialog.inner_text()[:200]}')
+        page.close()
+
     def chatter_door(self):
         """Door 1: a record's chatter has a way into the Inbox, and it works.
 
@@ -3608,6 +3735,7 @@ def main():
         checks.inbox_not_connected()
         checks.menus()
         checks.conversation_view()
+        checks.slow_network()
         checks.chatter_door()
         checks.live_folder()
         checks.linking()

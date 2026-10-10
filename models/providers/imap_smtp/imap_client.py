@@ -57,8 +57,8 @@ from odoo import models, api, _
 from odoo.exceptions import UserError
 from ...mail_provider_client import (
     ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_ROLES,
-    FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP, ThrottledError, access_shape, identity_shape,
-    no_recipients_result,
+    FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP, ThrottledError, access_shape, call_timeout,
+    identity_shape, no_recipients_result,
 )
 from .. import mime_utils
 
@@ -382,12 +382,14 @@ class ImapSmtpClient(models.AbstractModel):
         """Dial and log in, or say why not in the contract's terms."""
         self._require_credentials(account)
         host, port = account.imap_host, account.imap_port or 993
+        # Shorter while a person waits on the answer (`interactive()`).
+        timeout = call_timeout(IMAP_TIMEOUT)
         try:
             if account.imap_security == 'ssl':
-                conn = imaplib.IMAP4_SSL(host, port, timeout=IMAP_TIMEOUT,
+                conn = imaplib.IMAP4_SSL(host, port, timeout=timeout,
                                          ssl_context=ssl.create_default_context())
             else:
-                conn = imaplib.IMAP4(host, port, timeout=IMAP_TIMEOUT)
+                conn = imaplib.IMAP4(host, port, timeout=timeout)
                 if account.imap_security == 'starttls':
                     conn.starttls(ssl.create_default_context())
             conn.login(account._imap_login(), account.password)

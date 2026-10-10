@@ -55,6 +55,11 @@ patch(Chatter.prototype, {
         try {
             const door = await this.mailProOrm.call(
                 "pan.mail.conversation", "record_conversations", [model, threadId]);
+            // The record may have changed while this was out: the pager's
+            // next record must not wear the previous one's count.
+            if (model !== this.props.threadModel || threadId !== this.props.threadId) {
+                return;
+            }
             this.mailPro.threads = door.here ? door.threads || 1 : 0;
         } catch (error) {
             // A door that cannot be drawn is a chatter without a button, not
