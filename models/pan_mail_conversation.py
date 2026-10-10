@@ -41,7 +41,7 @@ import re
 from datetime import datetime
 
 from odoo import models, api, tools, _
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, UserError
 from odoo.fields import Domain
 from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import email_split, html2plaintext
@@ -167,6 +167,7 @@ KINDS = {value: 'folder' for value, _label in MAILBOX_FOLDERS}
 # these, and a rule without a label would show its code there instead.
 # `tests/test_linking.py` keeps the two lists the same length.
 ROUTING_RULES = {
+    'chosen': _lt('Chosen when it was added to Odoo'),
     'odoo_headers': _lt('Our own headers on a reply'),
     'references': _lt('The reply headers of this conversation'),
     'thread_link': _lt('A conversation already linked to this record'),
@@ -1084,6 +1085,10 @@ class PanMailConversation(models.AbstractModel):
                 client, account, mailbox, message,
                 html_sanitize(body if message.get('body_is_html') else plaintext2html(body)))
         row['linked_record'] = link or False
+        # Whose mail this is, for the head start of the picker Add to Odoo
+        # opens. One message, so one lookup; the list rows go without.
+        partner = self.env['pan.mail.fetcher']._find_partner(row['email'])
+        row['partner_id'] = partner.id if partner else False
         row['to'] = [a.get('email') for a in (message.get('to') or []) if a.get('email')]
         return row
 
@@ -1117,8 +1122,8 @@ class PanMailConversation(models.AbstractModel):
         return CID_SRC.sub(swap, body)
 
     @api.model
-    def import_live_message(self, mailbox_id, provider_message_id):
-        """File one live message in Odoo, and say where it landed.
+    def import_live_message(self, mailbox_id, provider_message_id, model=None, res_id=None):
+        """File one live message in Odoo, on the record the reader picked.
 
         This is the moment a private read becomes Odoo data, so it is an
         explicit act with its own button and never a side effect of opening a
@@ -1133,8 +1138,23 @@ class PanMailConversation(models.AbstractModel):
         message that is in a mailbox you own -- and what happens next is the
         import this module already does, triggered by hand instead of by the
         clock. The gates run either way, so the block list still holds.
+
+        `model` and `res_id` are the answer to the link picker the button
+        opens first. They reach the matcher as its first rule, so the mail
+        lands there and its conversation is linked there for the next reply.
+        The reader must be able to write that record: the import itself runs
+        as the system, so this is the check that stops it posting somebody's
+        mail on a record they may not touch. Without them the matcher decides,
+        as it does for the cron.
         """
         mailbox = self._own_mailbox(mailbox_id)
+        target = None
+        if model:
+            record = self._link_model(model).browse(int(res_id or 0)).exists()
+            if not record:
+                raise UserError(_('That record no longer exists.'))
+            record.check_access('write')
+            target = (record._name, record.id)
         client = mailbox._get_client()
         account = client.resolve_receiving_account(mailbox)
         # One session for the read and the import behind it: on IMAP the
@@ -1149,7 +1169,9 @@ class PanMailConversation(models.AbstractModel):
                 raise AccessError(_('That message is no longer in this mailbox.'))
             folder = FOLDER_SENT if self._is_own_address(mailbox, message) else FOLDER_INBOX
             imported = self.env['pan.mail.fetcher'].sudo().with_context(
-                pan_mail_force_import=True)._process_message(mailbox, message, folder)
+                pan_mail_force_import=True,
+                pan_mail_link_target=target,
+            )._process_message(mailbox, message, folder)
         link = self._links_for_live([message]).get(message.get('message_id') or '')
         return {'imported': bool(imported), 'linked': link or False}
 

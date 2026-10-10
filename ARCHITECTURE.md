@@ -559,7 +559,12 @@ bar's own filter menu (19.0.29.1.0; they were two pills in the list header).
 The live read takes them from the context keys they carry, because no domain
 over `mail.message` reaches a provider's rows; in an imported folder their
 domains say the same thing, all of it in Odoo and none of it not. A row that is in Odoo opens the conversation that exists; one that is
-not opens read-only with **Add to Odoo** under it.
+not opens read-only with **Add to Odoo** under it. The button opens the
+link picker first (a kind of record, then the record, the same two steps as
+linking and New Email), checks the reader may write the pick, and hands it to
+the matcher as rule 0, so the mail lands there and its conversation is linked
+there for the next reply. It never defaults to the sender's contact: that is
+the unlinked state, and the reader just said where the mail belongs.
 
 What Outlook does to a message you open, this does to the same message
 (19.0.29.0.0): `live_mark` marks it read at the provider once a pick has put
@@ -1499,6 +1504,7 @@ Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
 
 | # | Rule | Conf. | Basis |
 |---|------|-------|-------|
+| 0 | `chosen` | 1.0 | the record picked in **Add to Odoo**, passed as `pan_mail_link_target`. Never set by the cron |
 | 1 | `odoo_headers` | 1.0 | `X-Odoo-Model` / `X-Odoo-Record-Id` |
 | 2 | `references` | 1.0 | `In-Reply-To` + the full `References` chain |
 | 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread key) — every key from `thread_keys()` |

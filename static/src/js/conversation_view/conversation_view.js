@@ -937,24 +937,38 @@ export class ConversationView extends Component {
     }
 
     /**
-     * File the open live message in Odoo.
+     * File the open live message in Odoo, on the record the reader picks.
      *
      * The moment a private read becomes Odoo data, which is why it is a
      * button and not something opening a message does on its own. Where it
-     * lands is the matcher's answer, so the list is read again and the
-     * conversation it became is opened.
+     * lands is a question, asked in the same two steps as linking and New
+     * Email (a kind of record, then the record), because a mail dropped on
+     * the sender's contact is the "Linked to nothing" state by another name.
+     * The answer goes to the matcher as its first rule, so the next reply in
+     * this conversation lands on the same record without being asked.
      */
-    async importLive() {
+    importLive() {
         const row = this.state.selected;
         if (!row || !row.live || this.state.liveBusy) {
             return;
         }
+        this.dialog.add(LinkDialog, {
+            title: _t("Add to Odoo on"),
+            partnerId: this.state.live?.partner_id || false,
+            correspondent: row.correspondent || "",
+            onSelect: (model, resId) => this.importLiveOn(row, model, resId),
+        });
+    }
+
+    async importLiveOn(row, model, resId) {
         this.state.liveBusy = true;
         try {
             const result = await this.orm.call(
                 "pan.mail.conversation", "import_live_message", [], {
                     mailbox_id: this.state.mailboxId,
                     provider_message_id: row.live_id,
+                    model,
+                    res_id: resId,
                 });
             if (!result.linked) {
                 this.state.error = _t("Odoo would not take that email in.");
