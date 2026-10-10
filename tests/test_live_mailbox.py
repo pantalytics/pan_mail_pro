@@ -407,7 +407,8 @@ class TestLiveMailbox(TransactionCase):
         contact, the routing log says why, and the conversation is linked to
         that record for the next reply."""
         self.owner.group_ids |= self.env.ref('sales_team.group_sale_salesman')
-        lead = self.env['crm.lead'].create({'name': 'Levertijd Vandermolen'})
+        lead = self.env['crm.lead'].create({
+            'name': 'Levertijd Vandermolen', 'user_id': self.owner.id})
         search, get = self._serving([self._message()])
         with search, get:
             result = self._as_owner().import_live_message(
