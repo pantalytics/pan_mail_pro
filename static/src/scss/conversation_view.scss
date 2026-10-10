@@ -902,6 +902,12 @@ $mailpro-band-gutter: 3.5rem;
     // The suggestion sits next to the state it belongs to, so "not linked"
     // and "but it looks like this" read as one state rather than two
     // competing announcements.
+    .o_mailpro_unlinked_hint {
+        margin-top: 0.125rem;
+        font-size: 0.8125rem;
+        color: $mailpro-muted;
+    }
+
     .o_mailpro_suggestion {
         margin-top: 0.625rem;
         font-size: 0.8125rem;
@@ -1719,26 +1725,79 @@ $mailpro-band-gutter: 3.5rem;
             transition: none;
         }
 
-        // Reply where a thumb is. It is still the head's button, in the
-        // head's markup, so everything that finds it there still does; the
-        // phone only draws it over the bottom of the mail. The mail keeps
-        // room under its last line so the button never covers the end of it.
+        // The head's buttons are the bar at the bottom of the phone, where a
+        // thumb is, at the size a phone mail app draws them: 44px targets,
+        // the quiet ones together in one pill on the left, the one action
+        // the screen is for on its own on the right. Still the head's markup,
+        // so everything that finds a button there still does; the phone only
+        // draws the row elsewhere. The pane is the box it sits in, so it
+        // follows the pane when a finger moves it.
         .o_mailpro_conversation { position: relative; }
 
-        .o_mailpro_primary_action {
+        .o_mailpro_actions {
             position: absolute;
+            left: 1rem;
             right: 1rem;
             bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
             z-index: 2;
-            padding: 0.625rem 1.375rem;
+            justify-content: space-between;
+            // The gap between the two halves is the mail, and stays readable
+            // and tappable.
+            pointer-events: none;
+
+            > * { pointer-events: auto; }
+        }
+
+        .o_mailpro_actions_icons {
+            gap: 0.25rem !important;
+            padding: 0.25rem;
             border-radius: 999px;
-            font-size: 0.9375rem;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 0.25rem 1rem rgba(0, 29, 33, 0.18);
+
+            // Empty on a mail with nothing quiet to offer: no pill at all.
+            &:empty { display: none !important; }
+
+            .btn {
+                display: flex;
+                width: 2.75rem;
+                height: 2.75rem;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                font-size: 1.25rem;
+            }
+        }
+
+        .o_mailpro_primary_action {
+            height: 3.25rem;
+            padding: 0 1.5rem;
+            border-radius: 999px;
+            font-size: 1rem;
             box-shadow: 0 0.25rem 1rem rgba(0, 29, 33, 0.22);
         }
 
+        // The two at the top, the way back and the way to the record, at the
+        // same 44px.
+        .o_mailpro_back,
+        .o_mailpro_odoo_record_button {
+            width: 2.75rem;
+            height: 2.75rem;
+            font-size: 1.125rem;
+        }
+
+        // The mail takes the width. On a monitor the body is indented to sit
+        // under the sender's name beside the avatar; on a phone that column
+        // was a fifth of the screen, so the text starts under the avatar.
+        .o_mailpro_messages { padding-left: 0.5rem; padding-right: 0.5rem; }
+
+        .o_mailpro_meta,
+        .o_mailpro_body,
+        .o_mailpro_quote_block { padding-left: 0.875rem; }
+
         .o_mailpro_messages,
         .o_mailpro_files,
-        .o_mailpro_activities { padding-bottom: 5rem; }
+        .o_mailpro_activities { padding-bottom: 6rem; }
 
         // What the conversation is linked to, at the top of the record pane:
         // the head's own rows, under the record's name and over its form.

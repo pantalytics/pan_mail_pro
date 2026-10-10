@@ -1783,6 +1783,27 @@ class Checks:
         floating = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
         if floating and floating.bounding_box()['y'] < 844 * 0.75:
             self.fail('Reply is not at the bottom of the phone, where a thumb is')
+        # A finger, not a pointer: every button in that bar and the two at
+        # the top are at least the 44px a phone mail app draws them at. The
+        # first version had 24px icons beside a 36px Reply.
+        for button in page.query_selector_all(
+                '.o_mailpro_actions button, .o_mailpro_back, .o_mailpro_odoo_record_button'):
+            if not button.is_visible():
+                continue
+            box = button.bounding_box()
+            if box['height'] < 43 or box['width'] < 43:
+                self.fail('a phone button is %dx%dpx, smaller than a fingertip: %r'
+                          % (box['width'], box['height'],
+                             (button.get_attribute('title') or button.inner_text())[:30]))
+        # The mail takes the width: the open body starts under the avatar,
+        # not beside it.
+        body = page.query_selector('.o_mailpro_message_open .o_mailpro_body')
+        if body:
+            text_left = page.evaluate(
+                "el => el.getBoundingClientRect().left"
+                " + parseFloat(getComputedStyle(el).paddingLeft)", body)
+            if text_left > 390 * 0.15:
+                self.fail('the mail text starts %dpx in on a 390px phone' % text_left)
 
         # The head is chrome and the mail is the screen. It ran to three
         # lines of subject, two of correspondent and two of Linked-to, which
