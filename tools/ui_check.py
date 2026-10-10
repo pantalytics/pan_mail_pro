@@ -1217,7 +1217,8 @@ class Checks:
             self.fail('the conversation pane shows no skeleton while it waits')
         if page.query_selector('.o_mailpro_odoo_record .o_mailpro_empty_title'):
             self.fail('the record pane says "No record yet" before the read answered')
-        self.shot('slow_conversation')
+        if self.out:
+            page.screenshot(path=os.path.join(self.out, 'slow_conversation.png'))
 
         # A second click while the first read is out: the second one wins.
         rows = page.query_selector_all('.o_mailpro_group_head')
