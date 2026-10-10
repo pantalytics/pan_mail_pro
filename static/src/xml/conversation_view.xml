@@ -374,12 +374,20 @@
                         be worse; one that starts under the head is the
                         same list with nothing crossing the boundary.
                     -->
-                    <div class="o_mailpro_conversation_list_body">
+                    <!-- `stale`: the rows answer the folder before this one.
+                         They stay, dimmed after 150ms, rather than turn into a
+                         skeleton: a fast answer then swaps rows without a
+                         flash, and a slow one says so without the list
+                         jumping twice. -->
+                    <div class="o_mailpro_conversation_list_body"
+                         t-att-class="{ 'o_mailpro_stale': state.stale }"
+                         t-att-aria-busy="state.loading ? 'true' : undefined">
                         <t t-if="state.loading and !state.conversations.length">
                             <div class="o_mailpro_skeleton" aria-hidden="true">
                                 <div class="o_mailpro_skeleton_row" t-foreach="[1, 2, 3, 4, 5]" t-as="row" t-key="row"/>
                             </div>
                             <span class="visually-hidden" role="status">Loading conversations</span>
+                            <t t-call="pan_mail_pro.Slow"/>
                         </t>
                         <t t-elif="!state.conversations.length">
                             <!-- An empty search is not an empty folder: "new
@@ -749,7 +757,7 @@
                                              other side: the link is no
                                              longer in sight on a phone, so
                                              the way to it says so. -->
-                                        <span t-if="state.conversation.suggestion or !state.conversation.records.length"
+                                        <span t-if="!state.conversationLoading and (state.conversation.suggestion or !state.conversation.records.length)"
                                               class="o_mailpro_odoo_record_button_dot" aria-hidden="true"/>
                                     </button>
                                 <t t-if="composer.state.open" t-call="pan_mail_pro.ComposerButtons"/>
@@ -759,7 +767,7 @@
                                 swipe to the right: the conversation pane is
                                 the mail and nothing else.
                             -->
-                            <t t-if="!panes.state.small" t-call="pan_mail_pro.ConversationLink"/>
+                            <t t-if="!panes.state.small and !state.conversationLoading" t-call="pan_mail_pro.ConversationLink"/>
                             <!--
                                 Four readings of one conversation, one strip.
                                 This is what the record pane's chatter used to
@@ -822,7 +830,11 @@
                             sentence being answered is a scroll away instead
                             of behind a Discard.
                         -->
-                        <div t-if="composer.state.open" class="o_mailpro_composing">
+                        <!-- The row's subject and sender are already up
+                             there; what the read brings is drawn as its
+                             shape until it lands. -->
+                        <t t-if="state.conversationLoading" t-call="pan_mail_pro.PaneSkeleton"/>
+                        <div t-elif="composer.state.open" class="o_mailpro_composing">
                             <div class="o_mailpro_composer"
                                  role="region" t-att-aria-label="composer.state.mode === 'note' ? 'Internal note' : 'Reply'"
                                  t-att-aria-busy="composer.state.sending ? 'true' : undefined">
@@ -872,6 +884,10 @@
                             <t t-if="showPhoneLink" t-call="pan_mail_pro.PhoneLink"/>
                         </t>
                     </OdooRecordPane>
+                    <!-- "No record yet" is an answer, so it waits for one. -->
+                    <t t-elif="state.conversationLoading">
+                        <t t-call="pan_mail_pro.PaneSkeleton"/>
+                    </t>
                     <t t-else="">
                         <t t-if="showPhoneLink" t-call="pan_mail_pro.PhoneLink"/>
                         <div class="o_mailpro_empty">
@@ -889,6 +905,34 @@
             </div>
             </t>
         </div>
+    </t>
+
+    <!--
+        A pane waiting for its read: the shape of what is coming, never a
+        spinner (brand.pantalytics.com, Product UI). Invisible for the first
+        150ms, so an answer faster than that shows no skeleton at all; the
+        delay is in the stylesheet rather than a timer, so there is nothing to
+        clear when the answer lands.
+    -->
+    <t t-name="pan_mail_pro.PaneSkeleton">
+        <div class="o_mailpro_pane_skeleton" aria-hidden="true">
+            <div class="o_mailpro_skeleton_line o_mailpro_skeleton_line_short"/>
+            <div class="o_mailpro_skeleton_block"/>
+            <div class="o_mailpro_skeleton_line"/>
+            <div class="o_mailpro_skeleton_line o_mailpro_skeleton_line_short"/>
+        </div>
+        <span class="visually-hidden" role="status">Loading</span>
+        <t t-call="pan_mail_pro.Slow"/>
+    </t>
+
+    <!--
+        Said after 8 seconds, and only then: a read that slow is a mailbox or a
+        server having a bad minute, and a skeleton that just keeps breathing
+        reads as a screen that froze. Shown by the stylesheet's delay, like the
+        skeleton itself.
+    -->
+    <t t-name="pan_mail_pro.Slow">
+        <p class="o_mailpro_slow">This is taking longer than usual.</p>
     </t>
 
     <t t-name="pan_mail_pro.ConversationMessages">

@@ -50,7 +50,7 @@ from odoo.tools.translate import LazyTranslate
 
 from .mail_message import READ_MIRROR_CTX
 from .mail_provider_client import (
-    FOLDER_ARCHIVE, FOLDER_INBOX, FOLDER_SENT, FOLDER_TRASH,
+    FOLDER_ARCHIVE, FOLDER_INBOX, FOLDER_SENT, FOLDER_TRASH, interactive,
 )
 
 _logger = logging.getLogger(__name__)
@@ -821,7 +821,8 @@ class PanMailConversation(models.AbstractModel):
         # this reader may ask about, and a `browse()` would step around it.
         Mailbox = self.env['pan.mail.mailbox']
         domain = [('id', '=', int(mailbox_id))] if mailbox_id else []
-        return sum(mailbox.refresh_read_state() for mailbox in Mailbox.search(domain))
+        with interactive():
+            return sum(mailbox.refresh_read_state() for mailbox in Mailbox.search(domain))
 
     @api.model
     def record_conversations(self, model, res_id):
@@ -1032,11 +1033,12 @@ class PanMailConversation(models.AbstractModel):
         if not account.connected:
             return {'rows': [], 'scanned': 0, 'connected': False}
         try:
-            messages = client.search_messages(
-                account=account, mailbox=mailbox, folder=folder,
-                query=search or None, unread_only=unread is True,
-                flagged_only=bool(flagged), limit=limit,
-            )
+            with interactive():
+                messages = client.search_messages(
+                    account=account, mailbox=mailbox, folder=folder,
+                    query=search or None, unread_only=unread is True,
+                    flagged_only=bool(flagged), limit=limit,
+                )
         except Exception:
             # A provider that cannot be reached right now -- an expired grant,
             # a network that is down, a mailbox that moved -- is this folder
@@ -1070,10 +1072,11 @@ class PanMailConversation(models.AbstractModel):
         mailbox = self._own_mailbox(mailbox_id)
         client = mailbox._get_client()
         account = client.resolve_receiving_account(mailbox)
-        message = client.get_message(
-            account=account, mailbox=mailbox,
-            provider_message_id=provider_message_id,
-        )
+        with interactive():
+            message = client.get_message(
+                account=account, mailbox=mailbox,
+                provider_message_id=provider_message_id,
+            )
         if not message:
             raise AccessError(_('That message is no longer in this mailbox.'))
         link = self._links_for_live([message]).get(message.get('message_id') or '')
@@ -1086,9 +1089,10 @@ class PanMailConversation(models.AbstractModel):
         # answers for the imported bodies: text is text until something turns
         # its newlines into line breaks, or the mail arrives as one block.
         body = message.get('body_html') or ''
-        row['body'] = self._embed_inline_images(
-            client, account, mailbox, message,
-            html_sanitize(body if message.get('body_is_html') else plaintext2html(body)))
+        with interactive():
+            row['body'] = self._embed_inline_images(
+                client, account, mailbox, message,
+                html_sanitize(body if message.get('body_is_html') else plaintext2html(body)))
         row['linked_record'] = link or False
         # Whose mail this is, for the head start of the picker Add to Odoo
         # opens. One message, so one lookup; the list rows go without.
@@ -1165,7 +1169,7 @@ class PanMailConversation(models.AbstractModel):
         # One session for the read and the import behind it: on IMAP the
         # fetcher reads the body and the attachments over the connection this
         # opened, rather than dialling in once per read.
-        with client.receiving_session(account):
+        with interactive(), client.receiving_session(account):
             message = client.get_message(
                 account=account, mailbox=mailbox,
                 provider_message_id=provider_message_id,
@@ -1210,13 +1214,16 @@ class PanMailConversation(models.AbstractModel):
         ])
         if action in ('read', 'unread'):
             read = action == 'read'
-            client.set_seen(account, mailbox, handles, seen=read)
+            with interactive():
+                client.set_seen(account, mailbox, handles, seen=read)
             imported.with_context(**READ_MIRROR_CTX).write({'x_is_read': read})
             return {'live_id': provider_message_id}
         if action in ('flag', 'unflag'):
-            client.set_flagged(account, mailbox, handles, flagged=action == 'flag')
+            with interactive():
+                client.set_flagged(account, mailbox, handles, flagged=action == 'flag')
             return {'live_id': provider_message_id}
-        new_ids = client.move_messages(account, mailbox, handles, FOLDER_ARCHIVE)
+        with interactive():
+            new_ids = client.move_messages(account, mailbox, handles, FOLDER_ARCHIVE)
         new_id = (new_ids or [None])[0] or provider_message_id
         imported.write({'x_provider_message_id': new_id})
         return {'live_id': new_id}

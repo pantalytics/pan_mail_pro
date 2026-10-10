@@ -19,7 +19,7 @@
  * over the screen; that lives in `use_composer.js`.
  */
 
-import { Component, useState, useSubEnv, useRef, onWillStart, onPatched, onError, markup } from "@odoo/owl";
+import { Component, useState, useSubEnv, useRef, onWillStart, onMounted, onPatched, onError, markup, toRaw } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useBus, useService } from "@web/core/utils/hooks";
@@ -348,6 +348,22 @@ export class ConversationView extends Component {
         // wins the screen -- which need not be the one they asked for last.
         this.listSeq = 0;
         this.conversationSeq = 0;
+        // The read each pane is waiting on, so a newer click can abort it.
+        // The token above already keeps a stale answer off the screen; the
+        // abort also hands the browser its connection back, and a browser
+        // holds six to a host -- ten clicks through a slow mailbox would
+        // otherwise queue the eleventh behind them. An aborted read rejects,
+        // and its catch sees the newer token and stays quiet: a read that
+        // never settled instead left every caller awaiting it hanging, the
+        // confirmation dialog of Delete draft among them.
+        this.listRequest = null;
+        this.conversationRequest = null;
+        // The last list read that also recounted the mailbox list, so a count
+        // asked for before it cannot land over the numbers it brought.
+        this.countedSeq = 0;
+        // Bumped whenever the unfolded threads are thrown away, so a thread
+        // read that was already out cannot reopen one under another list.
+        this.threadGen = 0;
 
         // Where the keyboard goes once the screen has redrawn. Several
         // controls here remove themselves when pressed -- Reply when the
@@ -361,6 +377,15 @@ export class ConversationView extends Component {
 
         this.state = useState({
             loading: true,
+            // The list on screen answers the previous folder, mailbox or
+            // search while the next one is read. Drawn dimmed rather than
+            // replaced, so a fast answer swaps rows and a slow one says so.
+            stale: false,
+            // The conversation pane is waiting for its read. Its own flag,
+            // because the pane draws its skeleton instead of a body that
+            // does not belong to the row picked -- "Not linked to a record
+            // yet" over a conversation that is.
+            conversationLoading: false,
             // Whether this Odoo is connected to a Pantalytics account. Until
             // it is, the screen is one button and nothing else: the read
             // layer refuses anyway, and four empty panes over a refusal is a
@@ -441,6 +466,9 @@ export class ConversationView extends Component {
         // state. Outside `state` on purpose: it is derived from a message that
         // cannot change, so it is a cache and not a fact.
         this.split = new Map();
+        // Each row's menu, kept per row: see `rowMenuItems`. Weak, so a list
+        // that is read again takes its old rows' menus with it.
+        this.rowMenus = new WeakMap();
 
         onWillStart(async () => {
             // The session's answer is a page load old. When it says no, ask
@@ -453,20 +481,25 @@ export class ConversationView extends Component {
                 this.state.loading = false;
                 return;
             }
-            const [, searchViewId] = await Promise.all([
+            // Only what the frame needs to draw: the mailboxes and the search
+            // bar. The bar's view is asked for beside the mailboxes rather
+            // than after them, so the screen is two round trips from the
+            // click and not three.
+            await Promise.all([
                 this.loadMailboxes(),
-                this.orm.call("pan.mail.conversation", "inbox_search_view_id", []),
+                this.orm.call("pan.mail.conversation", "inbox_search_view_id", [])
+                    .then((searchViewId) => this.searchModel.load({
+                        resModel: "mail.message",
+                        searchViewId,
+                        // Filters, and nothing else. Group By is a question
+                        // about a list over a table and this list is a
+                        // mailbox: the grouping is the conversation. A
+                        // favourite would be a saved search per model rather
+                        // than per screen, which is a promise this one cannot
+                        // keep.
+                        searchMenuTypes: ["filter"],
+                    })),
             ]);
-            await this.searchModel.load({
-                resModel: "mail.message",
-                searchViewId,
-                // Filters, and nothing else. Group By is a question about a
-                // list over a table and this list is a mailbox: the grouping
-                // is the conversation. A favourite would be a saved search
-                // per model rather than per screen, which is a promise this
-                // one cannot keep.
-                searchMenuTypes: ["filter"],
-            });
             if (this.openedOn) {
                 this.state.record = {
                     model: this.openedOn.model,
@@ -478,10 +511,20 @@ export class ConversationView extends Component {
                 // may well have been synced by another one.
                 this.state.mailboxId = null;
             }
-            await this.refresh({ select: this.openedOn ? this.openedOn.select : true });
-            // Deliberately not awaited: the list is already on screen and
-            // this only corrects the dots on it. Waiting would make the first
-            // paint as slow as the provider is.
+        });
+
+        // The list and the conversation are read once the four panes are on
+        // screen, not before: Owl mounts nothing until `onWillStart` is done,
+        // so everything awaited there is time spent looking at a blank page.
+        // Drawn first, each pane holds its own skeleton until its answer
+        // arrives (docs/plans/smooth-inbox.md, step 1).
+        onMounted(() => {
+            if (!this.state.connected) {
+                return;
+            }
+            this.refresh({ select: this.openedOn ? this.openedOn.select : true });
+            // Not awaited either: this only corrects the dots on the list.
+            // Waiting would make the first paint as slow as the provider is.
             this.refreshReadState();
         });
     }
@@ -512,9 +555,18 @@ export class ConversationView extends Component {
         // interface: this pane shows a marker on a truthy value and nothing at
         // all otherwise, rather than deciding for itself what healthy looks
         // like. The mailbox form's alert reads the same string.
-        this.state.mailboxes = await this.orm.call(
-            "pan.mail.conversation", "inbox_mailboxes", []
-        );
+        // The live mailboxes beside the list of mailboxes rather than after
+        // it: neither answer depends on the other.
+        const [mailboxes, live] = await Promise.all([
+            this.orm.call("pan.mail.conversation", "inbox_mailboxes", []),
+            this.orm.call("pan.mail.conversation", "live_mailboxes", []).catch((error) => {
+                // No live folder is a smaller inbox, not a broken one.
+                console.warn("[Mail Pro] live mailboxes failed", error);
+                return [];
+            }),
+        ]);
+        this.state.mailboxes = mailboxes;
+        this.state.liveIds = live.map((mailbox) => mailbox.id);
         const known = new Set(this.state.mailboxes.map((mailbox) => mailbox.id));
         // Where this person left off, then where they land by default: All
         // mailboxes when there is more than one, that one when there is not.
@@ -529,14 +581,6 @@ export class ConversationView extends Component {
         }
         // Where leaving door 1's narrowing puts the reader back.
         this.defaultMailboxId = this.state.mailboxId;
-        try {
-            const live = await this.orm.call("pan.mail.conversation", "live_mailboxes", []);
-            this.state.liveIds = live.map((mailbox) => mailbox.id);
-        } catch (error) {
-            // No live folder is a smaller inbox, not a broken one.
-            console.warn("[Mail Pro] live mailboxes failed", error);
-            this.state.liveIds = [];
-        }
         // What stood open last time, minus the mailboxes that are gone. The
         // one you land in is always open: a mailbox list that opens fully folded
         // hides the folder you are looking at.
@@ -701,6 +745,9 @@ export class ConversationView extends Component {
     async refresh({ keepSelection = false, select = true, counts = true } = {}) {
         const seq = ++this.listSeq;
         this.state.loading = true;
+        // A read under the same list (a reply going out, the read state
+        // corrected) keeps it bright: nothing the reader asked for changed.
+        this.state.stale = !keepSelection && !!this.state.conversations.length;
         this.state.error = "";
         this.state.errorReason = "";
         this.state.errorRemedy = "";
@@ -711,14 +758,16 @@ export class ConversationView extends Component {
             this.state.unfolded = {};
             this.state.thread = {};
             this.state.threadLoading = {};
+            this.threadGen++;
         }
+        this.listRequest?.abort?.();
         try {
             const args = this.listArgs();
             // One count query per mailbox that is standing open. A folded
             // mailbox is not counted, which is what keeps a mailbox list of six
             // accounts from costing six times the queries of one.
             const keys = counts ? this.expandedKeys() : [];
-            const [countRows, conversations] = await Promise.all([
+            let [countRows, conversations] = await Promise.all([
                 Promise.all(keys.map((key) => this.orm.call(
                     "pan.mail.conversation", "folder_counts", [], {
                         ...this.searchArgs(),
@@ -730,17 +779,22 @@ export class ConversationView extends Component {
                 // The live folder is read from the provider, so it takes
                 // neither the domain the search bar built nor the folder the
                 // counts are for.
-                this.isLive
+                (this.listRequest = this.isLive
                     ? this.readLiveFolder()
                     : this.orm.call("pan.mail.conversation", "search_conversations", [], {
                         ...args,
                         limit: this.state.limit,
-                    }),
+                    })),
             ]);
             if (seq !== this.listSeq) {
                 return; // A newer request is already on its way.
             }
+            if (this.isLive) {
+                this.state.liveConnected = conversations.connected;
+                conversations = conversations.rows;
+            }
             if (counts) {
+                this.countedSeq = seq;
                 this.state.counts = Object.fromEntries(
                     keys.map((key, index) => [key, countRows[index]]));
             }
@@ -755,6 +809,11 @@ export class ConversationView extends Component {
                 // list. It comes off the mail rather than a read of its own.
                 this.state.record.name = conversations[0].record_name || "";
             }
+            // The list is the answer; the conversation below is the pane's
+            // own read, with its own skeleton. Waiting for it here kept the
+            // list dimmed for a second round trip it had nothing to do with.
+            this.state.loading = false;
+            this.state.stale = false;
 
             const stillThere = keepSelection && this.state.selected
                 && conversations.some((row) => this.sameConversation(row, this.state.selected));
@@ -765,11 +824,19 @@ export class ConversationView extends Component {
                     // reader has to back out of before they have read it.
                     await this.select(conversations[0]);
                 } else {
+                    // A read still out for the row that left must not land
+                    // on the empty pane.
+                    this.conversationSeq++;
+                    this.conversationRequest?.abort?.();
+                    this.state.conversationLoading = false;
                     this.state.selected = null;
                     this.state.conversation = EMPTY_CONVERSATION();
                 }
             }
         } catch (error) {
+            if (seq !== this.listSeq) {
+                return; // Aborted or overtaken by a newer read: not a failure.
+            }
             // Keep what the reader was looking at; say one line and offer a
             // retry rather than clearing the pane.
             this.improve.failed("conversation_list", error);
@@ -781,7 +848,9 @@ export class ConversationView extends Component {
             console.warn("[Mail Pro] conversation list failed", error);
         } finally {
             if (seq === this.listSeq) {
+                this.listRequest = null;
                 this.state.loading = false;
+                this.state.stale = false;
             }
         }
     }
@@ -816,13 +885,16 @@ export class ConversationView extends Component {
      * `linked`, and what it lacks is a `message_id`, because Odoo has no
      * message for it yet.
      */
-    async readLiveFolder() {
+    readLiveFolder() {
         const context = this.searchModel.context;
         const linked = context[IN_ODOO_KEY] === context[NOT_IN_ODOO_KEY] ? null
             : !!context[IN_ODOO_KEY];
         const unread = !!context[UNREAD_KEY] === !!context[READ_KEY] ? null
             : !!context[UNREAD_KEY];
-        const result = await this.orm.call(
+        // The whole answer, `connected` included: `refresh` reads it once its
+        // token says this answer is still the one on screen. Written here, a
+        // slow live read landed "not connected" over the folder after it.
+        return this.orm.call(
             "pan.mail.conversation", "live_messages", [], {
                 mailbox_id: this.state.mailboxId,
                 folder: this.state.folder,
@@ -835,8 +907,6 @@ export class ConversationView extends Component {
                 // than the imported list beside it.
                 search: this.searchText(),
             });
-        this.state.liveConnected = result.connected;
-        return result.rows;
     }
 
     /**
@@ -848,21 +918,30 @@ export class ConversationView extends Component {
      */
     async readLiveMessage(row) {
         const seq = ++this.conversationSeq;
+        this.conversationRequest?.abort?.();
         try {
-            const message = await this.orm.call(
+            const message = await (this.conversationRequest = this.orm.call(
                 "pan.mail.conversation", "read_live_message", [], {
                     mailbox_id: this.state.mailboxId,
                     provider_message_id: row.live_id,
-                });
+                }));
             if (seq === this.conversationSeq) {
                 this.state.live = message;
             }
         } catch (error) {
+            if (seq !== this.conversationSeq) {
+                return; // Aborted or overtaken by a newer read: not a failure.
+            }
             this.improve.failed("live_message", error);
             if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that email.");
             }
             console.warn("[Mail Pro] live message failed to open", error);
+        } finally {
+            if (seq === this.conversationSeq) {
+                this.conversationRequest = null;
+                this.state.conversationLoading = false;
+            }
         }
     }
 
@@ -905,7 +984,9 @@ export class ConversationView extends Component {
                 return;
             }
             this.state.live = null;
-            await this.refresh();
+            // The list without opening its first row: the row to open is the
+            // one just filed, and opening both read the conversation twice.
+            await this.refresh({ select: false });
             await this.select({
                 ...row,
                 linked: true,
@@ -1005,6 +1086,21 @@ export class ConversationView extends Component {
      * the same pairing.
      */
     rowMenuItems(conversation) {
+        // The same array for the same row until what it says changes. A new
+        // one on every render is a changed prop on every row's Dropdown, so
+        // a hover anywhere on the screen redrew thirty menus nobody opened.
+        const key = toRaw(conversation);
+        const signature = `${conversation.unread}|${conversation.flagged}|${this.state.folder}`;
+        const cached = this.rowMenus.get(key);
+        if (cached && cached.signature === signature) {
+            return cached.items;
+        }
+        const items = this.buildRowMenuItems(conversation);
+        this.rowMenus.set(key, { signature, items });
+        return items;
+    }
+
+    buildRowMenuItems(conversation) {
         if (conversation.live) {
             return this.liveRowMenuItems(conversation);
         }
@@ -1093,15 +1189,23 @@ export class ConversationView extends Component {
             return;
         }
         this.state.threadLoading[key] = true;
+        const gen = this.threadGen;
         try {
-            this.state.thread[key] = await this.orm.call(
+            const rows = await this.orm.call(
                 "pan.mail.conversation", "conversation_messages", [], {
                     model: conversation.model,
                     res_id: conversation.res_id,
                     message_id: conversation.message_id,
                     mailbox_id: this.state.mailboxId,
                 });
+            if (gen !== this.threadGen) {
+                return; // The list was rebuilt; this thread is not on it.
+            }
+            this.state.thread[key] = rows;
         } catch (error) {
+            if (gen !== this.threadGen) {
+                return;
+            }
             // Fold it back rather than leave an empty box standing open: the
             // row above it still opens the conversation, which is the way in
             // that matters.
@@ -1111,7 +1215,9 @@ export class ConversationView extends Component {
                 _t("Could not read that conversation."), { type: "warning" });
             console.warn("[Mail Pro] could not unfold a conversation", error);
         } finally {
-            this.state.threadLoading[key] = false;
+            if (gen === this.threadGen) {
+                this.state.threadLoading[key] = false;
+            }
         }
     }
 
@@ -1306,14 +1412,19 @@ export class ConversationView extends Component {
         this.state.details = {};
         this.split.clear();
         this.state.live = null;
+        // The pane draws a skeleton until the read lands, never the empty
+        // conversation it was just reset to.
+        this.state.conversationLoading = true;
         if (conversation.live && !conversation.linked) {
             await this.readLiveMessage(conversation);
             return;
         }
-        await this.readConversation();
         if (!conversation.draft_id) {
-            await this.markRead(conversation);
+            // Beside the read, not after it: the dot goes in this frame, and
+            // the server is told while the conversation is still on its way.
+            this.markRead(conversation);
         }
+        await this.readConversation();
     }
 
     /**
@@ -1331,6 +1442,10 @@ export class ConversationView extends Component {
      * error over a conversation the reader has in front of them.
      */
     async markRead(conversation) {
+        // The row and the header answer now. Only the rows under the chevron
+        // wait, because which of those moved is the server's answer.
+        const wasUnread = !!conversation.unread;
+        this.setUnreadLocally(conversation, false);
         let result;
         try {
             result = await this.orm.silent.call(
@@ -1343,6 +1458,7 @@ export class ConversationView extends Component {
                 });
         } catch (error) {
             console.warn("[Mail Pro] could not mark the conversation read", error);
+            this.setUnreadLocally(conversation, wasUnread);
             return;
         }
         this.setUnreadLocally(conversation, false, result.message_ids);
@@ -1403,6 +1519,10 @@ export class ConversationView extends Component {
             await this.liveMark(conversation, read ? "read" : "unread");
             return;
         }
+        // Answered in this frame, put back if the server says no: a click
+        // people make fifty times a day should not wait on a round trip.
+        const wasUnread = !!conversation.unread;
+        this.setUnreadLocally(conversation, !read);
         let result;
         try {
             result = await this.orm.call("pan.mail.conversation", "set_read", [], {
@@ -1415,6 +1535,7 @@ export class ConversationView extends Component {
         } catch (error) {
             console.warn("[Mail Pro] could not change the conversation's read state",
                          error);
+            this.setUnreadLocally(conversation, wasUnread);
             return;
         }
         this.setUnreadLocally(conversation, !read, result.message_ids);
@@ -1462,6 +1583,16 @@ export class ConversationView extends Component {
      */
     async liveMark(conversation, action, { silent = false } = {}) {
         const orm = silent ? this.orm.silent : this.orm;
+        const reading = action === "read" || action === "unread";
+        const change = reading
+            ? { unread: action === "unread" }
+            : { flagged: action === "flag" };
+        const before = reading
+            ? { unread: !!conversation.unread }
+            : { flagged: !!conversation.flagged };
+        // The row first, the provider after: this one goes through Outlook or
+        // Gmail, which is the slowest round trip on the screen.
+        this.applyLiveChange(conversation, change);
         try {
             await orm.call("pan.mail.conversation", "live_mark", [], {
                 mailbox_id: this.state.mailboxId,
@@ -1470,11 +1601,14 @@ export class ConversationView extends Component {
             });
         } catch (error) {
             console.warn("[Mail Pro] could not mark the live message", action, error);
+            this.applyLiveChange(conversation, before);
             return false;
         }
-        const change = action === "read" || action === "unread"
-            ? { unread: action === "unread" }
-            : { flagged: action === "flag" };
+        return true;
+    }
+
+    /** One live row's dot or flag, on the list and in the header. */
+    applyLiveChange(conversation, change) {
         for (const row of this.state.conversations) {
             if (this.sameConversation(row, conversation)) {
                 Object.assign(row, change);
@@ -1484,7 +1618,6 @@ export class ConversationView extends Component {
             && this.sameConversation(this.state.selected, conversation)) {
             Object.assign(this.state.selected, change);
         }
-        return true;
     }
 
     async toggleFlag(conversation) {
@@ -1498,6 +1631,13 @@ export class ConversationView extends Component {
      * when it was the one open.
      */
     async archiveLive(conversation) {
+        // Gone from the list at once, back in its place if the provider
+        // refuses: the move is the slow part, not the decision.
+        const rows = this.state.conversations;
+        const wasOpen = this.state.selected
+            && this.sameConversation(this.state.selected, conversation);
+        this.state.conversations = rows.filter(
+            (row) => !this.sameConversation(row, conversation));
         try {
             await this.orm.call("pan.mail.conversation", "live_mark", [], {
                 mailbox_id: this.state.mailboxId,
@@ -1508,12 +1648,9 @@ export class ConversationView extends Component {
             this.improve.failed("live_archive", error);
             this.state.error = _t("Could not archive that email.");
             console.warn("[Mail Pro] live archive failed", error);
+            this.state.conversations = rows;
             return;
         }
-        const wasOpen = this.state.selected
-            && this.sameConversation(this.state.selected, conversation);
-        this.state.conversations = this.state.conversations.filter(
-            (row) => !this.sameConversation(row, conversation));
         if (wasOpen) {
             await this.leaveComposer();
             this.state.selected = null;
@@ -1564,8 +1701,9 @@ export class ConversationView extends Component {
             return;
         }
         const seq = ++this.conversationSeq;
+        this.conversationRequest?.abort?.();
         try {
-            const data = await this.orm.call(
+            const data = await (this.conversationRequest = this.orm.call(
                 "pan.mail.conversation", "read_conversation", [], {
                     model: conversation.model,
                     res_id: conversation.res_id,
@@ -1575,7 +1713,7 @@ export class ConversationView extends Component {
                     // conversation, so they read the mail thread underneath.
                     scope: this.state.tab === "all" ? "all" : "mail",
                 }
-            );
+            ));
             if (seq !== this.conversationSeq) {
                 return;
             }
@@ -1603,6 +1741,9 @@ export class ConversationView extends Component {
             this.loadActivities(seq);
             this.loadFollowers();
         } catch (error) {
+            if (seq !== this.conversationSeq) {
+                return; // Aborted or overtaken by a newer read: not a failure.
+            }
             this.improve.failed("conversation", error);
             if (seq === this.conversationSeq) {
                 this.state.error = _t("Could not open that conversation.");
@@ -1610,6 +1751,11 @@ export class ConversationView extends Component {
                 this.loadRemedy(error);
             }
             console.warn("[Mail Pro] conversation failed to open", error);
+        } finally {
+            if (seq === this.conversationSeq) {
+                this.conversationRequest = null;
+                this.state.conversationLoading = false;
+            }
         }
     }
 
@@ -1657,13 +1803,19 @@ export class ConversationView extends Component {
 
     /** The folder counts of one mailbox, loaded when it is unfolded. */
     async loadCounts(key) {
+        const seq = this.listSeq;
         try {
-            this.state.counts[key] = await this.orm.call(
+            const counts = await this.orm.call(
                 "pan.mail.conversation", "folder_counts", [], {
                     mailbox_id: key || null,
                     ...this.searchArgs(),
                     in_a_mailbox: !key && this.showAllMailboxes,
                 });
+            // A list read that recounted since this was asked brought newer
+            // numbers, under a search this answer may not know about.
+            if (this.countedSeq <= seq) {
+                this.state.counts[key] = counts;
+            }
         } catch (error) {
             // A mailbox list that cannot count is a mailbox list without numbers, not an
             // error banner over the mail somebody is reading.
@@ -2202,10 +2354,14 @@ export class ConversationView extends Component {
         return (rows.find((row) => row.id === activity.id) || {}).record_name || "";
     }
 
-    /** An activity changed under us. Re-read the conversation, counts and all. */
+    /**
+     * An activity changed under us. Re-read the conversation, counts and all,
+     * in place: `select()` would blank the pane and close what was open for
+     * a change to one card.
+     */
     onActivityChanged() {
         if (this.state.selected) {
-            this.select(this.state.selected);
+            this.readConversation();
         }
     }
 
@@ -2531,8 +2687,12 @@ export class ConversationView extends Component {
             await this.refresh({ keepSelection: true });
             return;
         }
-        await this.readConversation({ openNewest: true });
-        await this.refresh({ keepSelection: true });
+        // The conversation and the list are two reads that do not wait on
+        // each other.
+        await Promise.all([
+            this.readConversation({ openNewest: true }),
+            this.refresh({ keepSelection: true }),
+        ]);
     }
 
     /**
@@ -2637,8 +2797,7 @@ export class ConversationView extends Component {
         if (this.composer.state.draftId === draftId) {
             this.composer.close();
         }
-        await this.readConversation();
-        await this.refresh({ keepSelection: true });
+        await Promise.all([this.readConversation(), this.refresh({ keepSelection: true })]);
     }
 
     /**
@@ -2652,8 +2811,7 @@ export class ConversationView extends Component {
         this.state.compose = null;
         this.notification.add(_t("Draft saved."), { type: "success" });
         this.focusAfterRender([".o_mailpro_conversation_title", ".o_mailpro_new"]);
-        await this.readConversation();
-        await this.refresh({ keepSelection: true });
+        await Promise.all([this.readConversation(), this.refresh({ keepSelection: true })]);
     }
 
     /**
@@ -2769,13 +2927,14 @@ export class ConversationView extends Component {
         this.state.selected = {
             ...this.state.selected, model: linked.model, res_id: linked.res_id,
         };
-        await this.refresh({ keepSelection: true });
-        if (this.state.selected && this.state.selected.model === linked.model
-            && this.state.selected.res_id === linked.res_id) {
-            // Still on it: re-read the conversation so the chips replace the
-            // suggestion instead of the screen still offering it.
-            await this.select(this.state.selected);
-        }
+        // The list and the conversation at once. The conversation is re-read
+        // so the chips replace the suggestion instead of the screen still
+        // offering it; when the list moved on to the next row instead, its
+        // own `select()` takes the pane and this read's token drops it.
+        await Promise.all([
+            this.refresh({ keepSelection: true }),
+            this.readConversation(),
+        ]);
     }
 
     openRecordChip(chip) {

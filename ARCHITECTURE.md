@@ -251,7 +251,11 @@ message (recipients, the X-Odoo-* headers and the database marker, the MIME
 itself) for every sender, Graph included, which maps the same pairs onto its
 JSON; `providers/http_utils.py` is the one retry-and-throttle loop both HTTP
 clients call, so a `Retry-After` is read the same way whichever provider sent
-it. Two optional seams on the contract keep a sync run cheap without changing
+it. That loop, and the IMAP connection, ask the contract's `interactive()`
+whether a person is waiting on the answer: the Inbox's live reads and marks run
+inside it, and get one attempt with a 10-second timeout instead of the cron's
+three retries at 30 seconds each. The cron retries; the person does not wait
+for it. Two optional seams on the contract keep a sync run cheap without changing
 a caller: `receiving_session(account)` is a context the fetcher enters once
 per mailbox run (a no-op for Graph and Gmail; one IMAP login and one SELECT
 per folder instead of one per message), and `get_message_attachments(...,

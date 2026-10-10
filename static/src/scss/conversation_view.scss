@@ -42,8 +42,21 @@ $mailpro-fold-duration: 0.28s;
 $mailpro-fold: $mailpro-fold-duration cubic-bezier(0.2, 0, 0, 1);
 
 // The hover and the press on a control. Shorter than a fold, because this is
-// a pointer being answered rather than a pane moving.
-$mailpro-tap: 0.15s ease;
+// a pointer being answered rather than a pane moving. 150ms ease is the
+// brand's one transition (brand.pantalytics.com); the fold above is the only
+// motion that takes longer, because it is the only one that travels.
+$mailpro-tap-duration: 0.15s;
+$mailpro-tap: $mailpro-tap-duration ease;
+
+// How long a read may take before the screen says it is waiting. Below it a
+// skeleton would only flash; above it a pane with nothing in it reads as
+// frozen. The same 150ms, so "answered" means one thing everywhere.
+$mailpro-wait: $mailpro-tap-duration;
+
+// How long before a wait is worth a sentence (docs/plans/smooth-inbox.md).
+$mailpro-slow: 8s;
+
+$mailpro-skeleton: #eceff1;
 
 // Every control that moves a boundary is the same circle: the mailboxes
 // button in the top bar, the two on the dividers, the phone's way back to the
@@ -1503,6 +1516,15 @@ $mailpro-band-gutter: 3.5rem;
         .o_mailpro_zoom_leaving .o_mailpro_odoo_record,
         .o_mailpro_slide_forward .o_mailpro_conversation,
         .o_mailpro_slide_back .o_mailpro_conversation_list { animation: none !important; }
+
+        // A skeleton that stands still is still a skeleton. The delay before
+        // it appears is a wait and not a motion, so it stays.
+        .o_mailpro_skeleton_row,
+        .o_mailpro_skeleton_line,
+        .o_mailpro_skeleton_block { animation: none !important; }
+
+        .o_mailpro_conversation_list_body,
+        .o_mailpro_conversation_list_body.o_mailpro_stale { transition: none !important; }
     }
 
     .o_mailpro_empty { padding: 2rem 1.375rem; }
@@ -1510,13 +1532,46 @@ $mailpro-band-gutter: 3.5rem;
     .o_mailpro_empty_text { margin: 0.375rem 0 0.875rem; font-size: 0.8125rem; color: $mailpro-muted; }
 
     // Loading keeps the layout, so a fast screen does not read as a slow one.
-    .o_mailpro_skeleton { padding: 0.75rem 1rem; }
+    // Nothing is drawn for the first `$mailpro-wait`: an answer inside it
+    // replaces the old rows without a skeleton flashing between them. Past
+    // it the shapes fade in and breathe, so a slow read looks busy rather
+    // than broken.
+    .o_mailpro_skeleton,
+    .o_mailpro_pane_skeleton,
+    .o_mailpro_thread_loading {
+        animation: o_mailpro_appear $mailpro-tap $mailpro-wait both;
+    }
 
-    .o_mailpro_skeleton_row {
-        height: 3.25rem;
-        margin-bottom: 0.75rem;
+    .o_mailpro_skeleton { padding: 0.75rem 1rem; }
+    .o_mailpro_pane_skeleton { padding: 1rem 1.375rem; }
+
+    .o_mailpro_skeleton_row,
+    .o_mailpro_skeleton_line,
+    .o_mailpro_skeleton_block {
         border-radius: 0.25rem;
-        background: linear-gradient(90deg, #f1f3f4 25%, #e8ebec 50%, #f1f3f4 75%);
+        background: $mailpro-skeleton;
+        animation: o_mailpro_breathe 1.2s ease-in-out infinite;
+    }
+
+    .o_mailpro_skeleton_row { height: 3.25rem; margin-bottom: 0.75rem; }
+    .o_mailpro_skeleton_line { height: 0.75rem; margin-bottom: 0.75rem; }
+    .o_mailpro_skeleton_line_short { width: 40%; }
+    .o_mailpro_skeleton_block { height: 8rem; margin-bottom: 1rem; }
+
+    // The previous list while the next one is read: dimmed after the same
+    // wait, bright again at once when the answer lands.
+    .o_mailpro_conversation_list_body { transition: opacity $mailpro-tap; }
+    .o_mailpro_conversation_list_body.o_mailpro_stale {
+        opacity: 0.5;
+        transition: opacity $mailpro-tap $mailpro-wait;
+    }
+
+    .o_mailpro_slow {
+        margin: 0;
+        padding: 0 1.375rem;
+        font-size: 0.8125rem;
+        color: $mailpro-muted;
+        animation: o_mailpro_appear $mailpro-tap $mailpro-slow both;
     }
 
     // A tablet: the conversation and the record share the third column
@@ -1922,4 +1977,17 @@ $mailpro-band-gutter: 3.5rem;
 @keyframes o_mailpro_slide_in_left {
     from { transform: translateX(-30%); opacity: 0.6; }
     to { transform: translateX(0); opacity: 1; }
+}
+
+// A wait made visible: from nothing to there, after the delay its caller
+// gives it. Opacity only, so it costs no layout.
+@keyframes o_mailpro_appear {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+// A skeleton breathing. Opacity only, for the same reason.
+@keyframes o_mailpro_breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
 }
