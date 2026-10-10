@@ -85,6 +85,11 @@ const LIVE_ONLY_FOLDERS = [
 // Both picked is the same as neither.
 const NOT_IN_ODOO_KEY = "pan_mail_not_in_odoo";
 const IN_ODOO_KEY = "pan_mail_in_odoo";
+// Read state and the flag, for the same reason: the live folder's rows are
+// the provider's answer, so these reach it as arguments and not as a domain.
+const UNREAD_KEY = "pan_mail_unread";
+const READ_KEY = "pan_mail_read";
+const FLAGGED_KEY = "pan_mail_flagged";
 
 // The context key the "Linked to nothing" filter carries. Mail filed on
 // nothing is not one conversation, and that is the one thing its domain
@@ -815,11 +820,15 @@ export class ConversationView extends Component {
         const context = this.searchModel.context;
         const linked = context[IN_ODOO_KEY] === context[NOT_IN_ODOO_KEY] ? null
             : !!context[IN_ODOO_KEY];
+        const unread = !!context[UNREAD_KEY] === !!context[READ_KEY] ? null
+            : !!context[UNREAD_KEY];
         const result = await this.orm.call(
             "pan.mail.conversation", "live_messages", [], {
                 mailbox_id: this.state.mailboxId,
                 folder: this.state.folder,
                 linked,
+                unread,
+                flagged: !!context[FLAGGED_KEY],
                 // The words out of the search bar, handed to the provider
                 // rather than compiled into a domain: this folder searches
                 // the whole mailbox, which is the one thing it does better
