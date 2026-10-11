@@ -1478,7 +1478,68 @@ class Checks:
         page.keyboard.press('Escape')
         page.wait_for_timeout(500)
         self.shot('inbox-live-folder.png')
+        self.live_row_in_odoo()
         self.leave_live_folder(was)
+
+    def live_row_in_odoo(self):
+        """A mail in your own mailbox that Odoo imported through another one.
+
+        The everyday shape of it: you are on Cc, a colleague's mailbox (or
+        info@) imported the thread first, and your own Inbox lists it as
+        in Odoo. Narrowed to your mailbox, the read found none of that mail
+        and the pane drew a subject, a Files count and nothing else.
+
+        The seed reaches no provider, so the row is the provider's answer
+        stood in for: one live row linked to the lead whose mail the seed
+        put in sales@. What is proved is the half that broke -- the mail
+        Odoo has is read wherever it arrived.
+        """
+        page = self.page
+        lead = self.call('crm.lead', 'search_read',
+                         [('name', '=', 'Asafdichtingen, revisie')],
+                         fields=['id', 'name'])
+        if not lead:
+            self.fail('the seed has no lead for the live row to point at')
+            return
+        row = {
+            'model': 'crm.lead', 'res_id': lead[0]['id'], 'message_id': False,
+            'live': True, 'live_id': 'ui-check-live', 'linked': True,
+            'subject': 'Re: Offerte revisie asafdichtingen',
+            'preview': 'Prima. Dan graag opdracht bevestigen.',
+            'correspondent': 'Vandermolen Techniek B.V.',
+            'email': 'bart@vandermolen.example', 'partner_id': False,
+            'date': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
+            'count': 1, 'record_name': lead[0]['name'], 'unread': False,
+            'flagged': False, 'mailbox': 'rutger@example.com',
+        }
+
+        def answer(route):
+            request_id = (route.request.post_data_json or {}).get('id')
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({
+                'jsonrpc': '2.0', 'id': request_id,
+                'result': {'rows': [row], 'scanned': 1, 'connected': True}}))
+
+        page.route('**/pan.mail.conversation/live_messages', answer)
+        try:
+            with page.expect_response(
+                    lambda response: 'live_messages' in response.url,
+                    timeout=60000):
+                page.query_selector_all('.o_mailpro_folders')[-1] \
+                    .query_selector_all('.o_mailpro_folder')[0].click()
+            page.wait_for_selector('.o_mailpro_conversation_list .o_mailpro_item',
+                                   timeout=15000)
+            with page.expect_response(
+                    lambda response: 'read_conversation' in response.url,
+                    timeout=60000):
+                page.click('.o_mailpro_conversation_list .o_mailpro_item')
+            page.wait_for_timeout(1000)
+            if not page.query_selector('.o_mailpro_conversation .o_mailpro_message'):
+                self.fail('a live row that is in Odoo opens on no mail when another '
+                          'mailbox imported it')
+            self.error_free('a live row in Odoo')
+            self.shot('inbox-live-row-in-odoo.png')
+        finally:
+            page.unroute('**/pan.mail.conversation/live_messages')
 
     def leave_live_folder(self, viewport):
         """Back to the first mailbox's Inbox, at the window we came in on."""
