@@ -1196,7 +1196,7 @@ export class ConversationView extends Component {
                     model: conversation.model,
                     res_id: conversation.res_id,
                     message_id: conversation.message_id,
-                    mailbox_id: this.state.mailboxId,
+                    mailbox_id: this.threadMailboxId(conversation),
                 });
             if (gen !== this.threadGen) {
                 return; // The list was rebuilt; this thread is not on it.
@@ -1685,6 +1685,20 @@ export class ConversationView extends Component {
     }
 
     /**
+     * The mailbox a conversation's Odoo mail is read in.
+     *
+     * The folder's, except under a live row that Odoo already has. That
+     * row is in your own mailbox because the provider says so; the copy
+     * Odoo keeps came in through whichever mailbox imported it first --
+     * a colleague's, or info@ -- and narrowing the read to yours found
+     * none of it: the pane drew a subject, a Files count and no mail. So
+     * it reads the record's mail wherever it arrived, the way door 1 does.
+     */
+    threadMailboxId(conversation) {
+        return conversation?.live ? null : this.state.mailboxId;
+    }
+
+    /**
      * Read the open conversation, leaving on screen whatever is there.
      *
      * `select()` empties the pane before calling this, because another
@@ -1708,7 +1722,7 @@ export class ConversationView extends Component {
                     model: conversation.model,
                     res_id: conversation.res_id,
                     message_id: conversation.message_id,
-                    mailbox_id: this.state.mailboxId,
+                    mailbox_id: this.threadMailboxId(conversation),
                     // Files and Activities are two other lists over the same
                     // conversation, so they read the mail thread underneath.
                     scope: this.state.tab === "all" ? "all" : "mail",
