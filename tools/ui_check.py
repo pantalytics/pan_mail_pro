@@ -1779,15 +1779,16 @@ class Checks:
         el = self.page.query_selector(selector)
         return bool(el and el.is_visible())
 
-    def swipe(self, selector, dx):
+    def swipe(self, selector, dx, release=True, start=True):
         """A finger across `selector`, `dx` px sideways, in five steps.
 
         Real touch events, built in the page: Playwright's own touchscreen
         only taps, and the swipe is a touchstart, moves and a touchend.
         Starts in the middle of the pane, clear of the edges a phone's
-        browser keeps for its own back gesture.
+        browser keeps for its own back gesture. `release=False` keeps the
+        finger down, and `start=False` with `dx=0` is that finger let go.
         """
-        self.page.evaluate("""([selector, dx]) => {
+        self.page.evaluate("""([selector, dx, release, start]) => {
             const el = document.querySelector(selector);
             const box = el.getBoundingClientRect();
             const x0 = box.left + box.width / 2 - dx / 2;
@@ -1798,11 +1799,14 @@ class Checks:
                 touches: type === 'touchend' ? [] : [touch(x)],
                 changedTouches: [touch(x)],
             }));
-            fire('touchstart', x0);
-            for (let i = 1; i <= 5; i++) fire('touchmove', x0 + dx * i / 5);
-            fire('touchend', x0 + dx);
-        }""", [selector, dx])
-        self.page.wait_for_timeout(700)
+            if (start) {
+                fire('touchstart', x0);
+                for (let i = 1; i <= 5; i++) fire('touchmove', x0 + dx * i / 5);
+            }
+            if (release) fire('touchend', x0 + dx);
+        }""", [selector, dx, release, start])
+        # Held past a flick, so letting go is a slow drag's decision.
+        self.page.wait_for_timeout(700 if release else 300)
 
     def phone(self):
         """One pane at a time, the way a phone reads mail.
@@ -2045,7 +2049,19 @@ class Checks:
                     self.fail('Back to the Inbox did not bring the conversation back on a phone')
 
             # The same two moves with a finger: left to the record, right
-            # back from it.
+            # back from it. The record is loaded before the finger arrives
+            # and comes in under it, rather than a blank pane while it builds.
+            if not page.query_selector('.o_mailpro_odoo_record .o_form_view, '
+                                       '.o_mailpro_odoo_record .o_mailpro_empty'):
+                self.fail('the phone record is not loaded before a swipe asks for it')
+            self.swipe('.o_mailpro_conversation', -80, release=False)
+            box = page.query_selector('.o_mailpro_odoo_record').bounding_box()
+            if not self.visible('.o_mailpro_odoo_record') or box['x'] > 390 - 60:
+                self.fail('a finger swiping left on a phone conversation uncovers '
+                          'an empty screen instead of the record')
+            self.swipe('.o_mailpro_conversation', 0, release=True, start=False)
+            if self.visible('.o_mailpro_odoo_record'):
+                self.fail('a swipe let go short left the phone record on screen')
             self.swipe('.o_mailpro_conversation', -250)
             if not self.visible('.o_mailpro_odoo_record'):
                 self.fail('swiping left on a phone conversation did not open the record')
