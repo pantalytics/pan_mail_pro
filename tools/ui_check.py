@@ -394,8 +394,10 @@ class Checks:
     # one the rest of the web client already uses. The names come from the
     # Inbox's search view; Date is the standard month/quarter/year filter and
     # Custom Filter is Odoo's, so both prove the menu is really Odoo's.
-    FILTERS = ('Unread', 'Read', 'Flagged', 'On a contact only', 'Linked to nothing',
-               'Not in Odoo', 'In Odoo', 'Date')
+    # The two everyday questions -- have I read it, is it in Odoo -- come
+    # first; the triage filters sit under them.
+    FILTERS = ('Unread', 'Read', 'Not in Odoo', 'In Odoo', 'Flagged',
+               'On a contact only', 'Linked to nothing', 'Date')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.
