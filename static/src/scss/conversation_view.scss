@@ -282,7 +282,10 @@ $mailpro-band-gutter: 3.5rem;
     // flex line and covers it while it has the screen. It is also what clips
     // the slide -- an overlay the width of the whole row, parked one row to
     // the right, is a horizontal scrollbar on everything that does not.
-    .o_mailpro_panes { min-height: 0; position: relative; overflow: hidden; }
+    // `clip`, not only `hidden`: a hidden box still scrolls from script, and
+    // a `scrollIntoView` in a pane sliding in moved the whole row sideways
+    // onto the phone's record waiting off the glass.
+    .o_mailpro_panes { min-height: 0; position: relative; overflow: hidden; overflow: clip; }
 
     // The dividers.
     //
