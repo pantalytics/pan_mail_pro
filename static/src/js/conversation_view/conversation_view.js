@@ -2080,9 +2080,15 @@ export class ConversationView extends Component {
         return !panes.small || this.conversationOpen;
     }
 
+    /**
+     * On a phone the record waits off the glass to the right, already
+     * loaded, while its conversation is open: a finger swiping left brings
+     * it in from there, and so does the button. Mounting it at the press
+     * made the slide play over a blank pane and a form being built.
+     */
     get showOdooRecord() {
         const panes = this.panes.state;
-        return panes.zoom || panes.zoomLeaving || !panes.small;
+        return panes.zoom || panes.zoomLeaving || !panes.small || this.showOdooRecordButton;
     }
 
     /**

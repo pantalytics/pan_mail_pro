@@ -15,6 +15,11 @@
  * (a wide table in a mail), and a touch that starts out vertical (that is
  * reading). A direction nobody handles still moves a little, against
  * resistance, so the pane says "nothing that way" rather than going dead.
+ *
+ * The pane row is told which way and how far, as `o_mailpro_swiping_left` /
+ * `_right` and `--mailpro-swipe-dx`, so a pane waiting off the glass on that
+ * side can come in under the same finger instead of the finger uncovering
+ * an empty screen.
  */
 
 // px kept for the browser's own edge gesture.
@@ -60,6 +65,22 @@ export class Swipe {
         this.onLeft = onLeft;
         this.can = can;
         this.pane = null;
+        this.row = null;
+    }
+
+    /** Tell the pane row where the finger is, or that it has gone. */
+    mark(row, dx) {
+        if (!row) {
+            return;
+        }
+        if (dx === null) {
+            row.classList.remove("o_mailpro_swiping_left", "o_mailpro_swiping_right");
+            row.style.removeProperty("--mailpro-swipe-dx");
+            return;
+        }
+        row.classList.toggle("o_mailpro_swiping_left", dx < 0);
+        row.classList.toggle("o_mailpro_swiping_right", dx > 0);
+        row.style.setProperty("--mailpro-swipe-dx", `${dx}px`);
     }
 
     /** The handler for that direction, if it leads anywhere right now. */
@@ -104,11 +125,13 @@ export class Swipe {
                 return;
             }
             this.pane.style.transition = "none";
-            this.pane.closest(".o_mailpro_panes")?.classList.add("o_mailpro_swiping");
+            this.row = this.pane.closest(".o_mailpro_panes");
+            this.row?.classList.add("o_mailpro_swiping");
         }
         ev.preventDefault();
         this.dx = this.handler(dx) ? dx : dx * RESIST;
         this.pane.style.transform = `translateX(${this.dx}px)`;
+        this.mark(this.row, this.dx);
     }
 
     end() {
@@ -117,7 +140,9 @@ export class Swipe {
         if (!pane || this.axis !== "x") {
             return;
         }
-        pane.closest(".o_mailpro_panes")?.classList.remove("o_mailpro_swiping");
+        const row = this.row;
+        this.row = null;
+        row?.classList.remove("o_mailpro_swiping");
         const dx = this.dx;
         const far = Math.abs(dx) > pane.getBoundingClientRect().width * COMMIT;
         const flick = Math.abs(dx) > FLICK_PX && Date.now() - this.t0 < FLICK_MS;
@@ -125,25 +150,32 @@ export class Swipe {
         if (go && (far || flick)) {
             // The pane stays where the finger left it: the move that follows
             // takes it from there, and putting it back first is a frame of
-            // the old screen in between.
+            // the old screen in between. The pane coming in stays where the
+            // finger brought it for the same reason.
             pane.style.transition = "";
             go(dx);
             // A pane that is still here once the next one has slid over it
             // is a pane somebody will come back to: put it where they left it.
             setTimeout(() => {
+                this.mark(row, null);
                 if (pane.isConnected) {
                     pane.style.transform = "";
                 }
             }, SETTLE_MS);
             return;
         }
-        this.springBack(pane);
+        this.springBack(pane, row);
     }
 
     /** Back where it was, at the speed a released spring would go. */
-    springBack(pane) {
+    springBack(pane, row) {
         pane.style.transition = `transform ${SPRING_MS}ms ease-out`;
         pane.style.transform = "";
-        setTimeout(() => (pane.style.transition = ""), SPRING_MS);
+        // The pane that came in under the finger goes back out with it.
+        row?.style.setProperty("--mailpro-swipe-dx", "0px");
+        setTimeout(() => {
+            pane.style.transition = "";
+            this.mark(row, null);
+        }, SPRING_MS);
     }
 }

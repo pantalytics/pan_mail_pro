@@ -282,7 +282,10 @@ $mailpro-band-gutter: 3.5rem;
     // flex line and covers it while it has the screen. It is also what clips
     // the slide -- an overlay the width of the whole row, parked one row to
     // the right, is a horizontal scrollbar on everything that does not.
-    .o_mailpro_panes { min-height: 0; position: relative; overflow: hidden; }
+    // `clip`, not only `hidden`: a hidden box still scrolls from script, and
+    // a `scrollIntoView` in a pane sliding in moved the whole row sideways
+    // onto the phone's record waiting off the glass.
+    .o_mailpro_panes { min-height: 0; position: relative; overflow: hidden; overflow: clip; }
 
     // The dividers.
     //
@@ -1682,6 +1685,36 @@ $mailpro-band-gutter: 3.5rem;
             max-width: none;
         }
 
+        // The record waits one screen to the right of its conversation,
+        // already laid out and loaded, so a finger swiping left brings it in
+        // under the finger (`--mailpro-swipe-dx`) and the zoom takes over
+        // from wherever it was let go. Out of the flex line, like the zoom;
+        // its own layer, so the slide is a move and not a repaint.
+        .o_mailpro_panes:not(.o_mailpro_zoomed):not(.o_mailpro_zoom_leaving) .o_mailpro_odoo_record {
+            position: absolute;
+            inset: 0;
+            z-index: 4;
+            flex: none !important;
+            opacity: 1;
+            overflow: hidden auto;
+            transform: translateX(calc(100% + var(--mailpro-swipe-dx, 0px)));
+            // The spring back when a swipe is let go short (SPRING_MS).
+            transition: transform 0.2s ease-out;
+            will-change: transform;
+        }
+
+        .o_mailpro_panes.o_mailpro_swiping_left:not(.o_mailpro_zoomed) .o_mailpro_odoo_record {
+            visibility: visible;
+        }
+
+        // The finger, not the spring, while it is down.
+        .o_mailpro_panes.o_mailpro_swiping:not(.o_mailpro_zoomed):not(.o_mailpro_zoom_leaving) .o_mailpro_odoo_record {
+            transition: none;
+        }
+
+        .o_mailpro_swiping .o_mailpro_conversation,
+        .o_mailpro_zoomed .o_mailpro_odoo_record { will-change: transform; }
+
         // The head is chrome above the mail, and on a phone it was most of
         // the screen: a subject over three lines, a correspondent over two,
         // the Linked-to row over two more. Everything here is the same
@@ -1742,14 +1775,18 @@ $mailpro-band-gutter: 3.5rem;
             .o_mailpro_composer { max-width: none; }
         }
 
-        // The form is a phone wide now, so the zoom's two columns would be
+        // The form is a phone wide, so the zoom's two columns would be
         // two half-columns: the single column the pane draws is right here.
-        .o_mailpro_zoomed .o_mailpro_odoo_record .o_inner_group {
+        // Not only while zoomed: the record waits off the glass in the shape
+        // it arrives in, or the first frame of the slide is a relayout.
+        .o_mailpro_odoo_record .o_inner_group {
             grid-template-columns: minmax(0, 1fr) !important;
         }
 
-        .o_mailpro_zoomed .o_mailpro_odoo_record .o_form_sheet,
-    .o_mailpro_zoom_leaving .o_mailpro_odoo_record .o_form_sheet { padding: 1rem; }
+        .o_mailpro_odoo_record .o_form_sheet {
+            margin: 0 auto;
+            padding: 1rem;
+        }
 
         // Reading. The bar on top is the list's -- the search, the mailboxes,
         // New email -- and a phone that is showing a mail gives its height to
