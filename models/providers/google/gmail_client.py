@@ -196,12 +196,15 @@ class GoogleGmailClient(models.AbstractModel):
         }
 
     @api.model
-    def get_authorization_url(self, redirect_uri, state=None):
+    def get_authorization_url(self, redirect_uri, state=None, login_hint=None,
+                              prompt=None):
         """Build the Google consent URL.
 
         access_type=offline + prompt=consent is what makes Google return a
         refresh token; without them a re-authorizing user gets an access token
-        only and the account silently stops working after an hour.
+        only and the account silently stops working after an hour. A
+        confirm-it's-you round passes its own `prompt` (`none`, then nothing)
+        because it wants no new grant, only the sign-in.
         """
         config = self._get_config_params()
         client_id = config['client_id']
@@ -218,6 +221,12 @@ class GoogleGmailClient(models.AbstractModel):
         }
         if state:
             params['state'] = state
+        if login_hint:
+            params['login_hint'] = login_hint
+        if prompt is not None:
+            params['prompt'] = prompt
+            if not prompt:
+                del params['prompt']
 
         query = '&'.join(f'{k}={requests.utils.quote(str(v))}' for k, v in params.items())
         return f'{GOOGLE_AUTH_URL}?{query}'

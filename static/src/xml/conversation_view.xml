@@ -382,6 +382,20 @@
                     <div class="o_mailpro_conversation_list_body"
                          t-att-class="{ 'o_mailpro_stale': state.stale }"
                          t-att-aria-busy="state.loading ? 'true' : undefined">
+                        <!-- Your own mailbox before this session has the
+                             provider's word that it is you: one line, one
+                             action, over whatever Odoo imported. The server
+                             refuses the live read regardless; this is only
+                             how the reader gets to the sign-in. -->
+                        <div t-if="verifyNeeded" class="o_mailpro_verify" role="region" aria-label="Confirm it's you">
+                            <p t-if="verifyInfo.uses_oauth">Sign in with <t t-esc="verifyInfo.provider_label"/> to see your whole mailbox.</p>
+                            <p t-else="">Enter your mailbox password to see your whole mailbox.</p>
+                            <button type="button" class="btn btn-secondary btn-sm o_mailpro_verify_action"
+                                    t-on-click="verifyMailbox">
+                                <t t-if="verifyInfo.uses_oauth">Sign in with <t t-esc="verifyInfo.provider_label"/></t>
+                                <t t-else="">Enter mailbox password</t>
+                            </button>
+                        </div>
                         <t t-if="state.loading and !state.conversations.length">
                             <div class="o_mailpro_skeleton" aria-hidden="true">
                                 <div class="o_mailpro_skeleton_row" t-foreach="[1, 2, 3, 4, 5]" t-as="row" t-key="row"/>
@@ -409,7 +423,11 @@
                                     This is your mailbox itself, read as it is right now.
                                 </p>
                             </div>
-                            <div t-else="" class="o_mailpro_empty">
+                            <!-- Before the proof, Archive and Deleted are the
+                                 confirm line above and nothing else: "Nothing
+                                 in Archive" would say the folder is empty when
+                                 it has not been read. -->
+                            <div t-elif="!verifyNeeded" class="o_mailpro_empty">
                                 <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel"/> yet.</h3>
                                 <p t-if="state.folder === 'drafts'" class="o_mailpro_empty_text">
                                     Mail you save instead of sending appears here.

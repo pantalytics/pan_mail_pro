@@ -583,6 +583,32 @@ Live rows only: a row there is one provider message in a mailbox you own,
 where an imported conversation is many, in mailboxes that may not be yours.
 Delete is not offered; Deleted is a folder this screen reads, not a button.
 
+**And ownership is not enough** (19.0.30.0.0). An Odoo session as the owner
+is minted by a hoster's "log in as", by an administrator who resets the
+password, and by the owner, and Odoo cannot tell them apart. So `_own_mailbox`
+also wants the provider to have said, in *this* session, that the person at
+the keyboard is the sign-in behind the mailbox. For Microsoft and Google that
+is one round trip through the consent screen with `login_hint` and
+`prompt=none` first (a browser already signed in there comes straight back;
+a refusal is sent again with a screen), compared on the way back by the
+stable id the account stored at consent (`provider_user_id`; the address
+when a grant predates it) and never by the address alone, and with the
+round's own tokens dropped. For IMAP it is one `LOGIN` with a password typed
+in a dialog, never the stored one (`verify_password` on the contract). The
+proof is `request.session['pan_mail_verified']`, keyed on the account and the
+uid: a session is a file in the filestore, not a row, so there is no table to
+widen an ACL to, and a fresh session (which is what every impersonation is)
+starts without it. It lives as long as the session. `live_mailboxes` reports
+`verified` per mailbox, and before it the four live folders draw the brand's
+one-line empty state over whatever Odoo imported (Inbox, Sent) or over
+nothing (Archive, Deleted); the imported mail itself is not behind the gate,
+because it was readable to the same people before. What this does not stop,
+on purpose: somebody at the owner's unlocked laptop (the same as the mail
+client beside it), and a server administrator with the database and the key.
+The round trip's nonce lives in the session too (`pan_mail_verify`), so the
+proof is bound to the browser that asked for it, and the two flows are told
+apart at the callback by which nonce came back.
+
 The reasoning, including what it deliberately does not do (no reply to a mail
 Odoo does not have, no paging past the first page, no shared mailboxes), is in
 `docs/research/personal-mailbox.md`.

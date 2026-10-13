@@ -64,4 +64,5 @@ from . import test_oauth_routes
 from . import test_mailbox_actions
 from . import test_user_sync_level
 from . import test_live_mailbox
+from . import test_live_verify
 from . import test_session_schema_behind

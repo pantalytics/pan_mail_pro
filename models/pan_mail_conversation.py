@@ -40,9 +40,10 @@ import logging
 import re
 from datetime import datetime
 
-from odoo import models, api, tools, _
+from odoo import models, api, fields, tools, _
 from odoo.exceptions import AccessError, UserError
 from odoo.fields import Domain
+from odoo.http import request
 from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import email_split, html2plaintext
 from odoo.tools.mail import html_sanitize, plaintext2html
@@ -968,14 +969,34 @@ class PanMailConversation(models.AbstractModel):
     # owner may. A shared mailbox has no owner and is refused outright, which
     # is also the answer to "can a colleague read my mail this way": no, and
     # not because of a menu.
+    #
+    # **And ownership is not enough.** An Odoo session as the owner is minted
+    # by a hoster's "log in as", by an administrator who resets the password,
+    # and by the owner. Odoo cannot tell them apart, so the live read also
+    # wants the provider to have said, in *this* session, that the person at
+    # the keyboard is the sign-in behind the mailbox: one Microsoft or Google
+    # round trip with the account's stable id compared on the way back, or
+    # one IMAP login with a password typed rather than stored. The proof is
+    # written into `request.session`, which is a file in the filestore and
+    # not a row: nothing an ACL can be widened to reach, and a fresh session
+    # (which is what every impersonation is) starts without it. What Odoo
+    # already imported is not behind this; it was readable to the same
+    # people before.
     # ------------------------------------------------------------------
 
-    def _own_mailbox(self, mailbox_id):
-        """The mailbox, if it is the caller's own personal one.
+    # The session key, and what is under it: `{'uid': the user it was
+    # written for, 'accounts': {account id: when}}`. The uid is belt and
+    # braces for a session that changes user without rotating.
+    VERIFIED_SESSION_KEY = 'pan_mail_verified'
+
+    def _own_mailbox(self, mailbox_id, verified=True):
+        """The mailbox, if it is the caller's own personal one and, unless
+        `verified` is off, the session has the provider's word for it.
 
         Deliberately not `_is_sendable_by`: that one lets anybody send through
         the notification mailbox, which is right for sending and would be a
-        hole here.
+        hole here. `verified=False` is for the two callers that *produce* the
+        proof and for the list that says whether it is there.
         """
         self._check_caller()
         try:
@@ -989,18 +1010,90 @@ class PanMailConversation(models.AbstractModel):
             raise AccessError(
                 _('Reading a mailbox in full is for its own owner. A shared '
                   'mailbox is read through what the sync imported.'))
+        if verified and not self._session_verified(self._live_account(mailbox)):
+            raise AccessError(_(
+                'Confirm it is you first: sign in at your mail provider from '
+                'the Inbox, then this mailbox opens here.'))
         return mailbox
+
+    def _live_account(self, mailbox):
+        """The credentials the live read uses, which is what the proof is for."""
+        return mailbox._get_client().resolve_receiving_account(mailbox)
+
+    @api.model
+    def _session_verified(self, account):
+        """Has this session proven the sign-in behind `account`?
+
+        No request -- a cron, a shell, a Python test -- is no session, and the
+        answer is no: the live read is for a person in a browser.
+        """
+        if not account or not request:
+            return False
+        proof = request.session.get(self.VERIFIED_SESSION_KEY) or {}
+        return (proof.get('uid') == self.env.user.id
+                and str(account.id) in (proof.get('accounts') or {}))
+
+    @api.model
+    def _mark_session_verified(self, account):
+        """The provider said yes for `account`: remember it for this session."""
+        proof = dict(request.session.get(self.VERIFIED_SESSION_KEY) or {})
+        if proof.get('uid') != self.env.user.id:
+            proof = {'uid': self.env.user.id, 'accounts': {}}
+        accounts = dict(proof.get('accounts') or {})
+        accounts[str(account.id)] = fields.Datetime.to_string(fields.Datetime.now())
+        proof['accounts'] = accounts
+        request.session[self.VERIFIED_SESSION_KEY] = proof
 
     @api.model
     def live_mailboxes(self):
-        """The mailboxes this user may read in full: their own, if any."""
+        """The mailboxes this user may read in full: their own, if any.
+
+        `verified` says whether this session may read it yet; the rest is
+        what the Inbox needs to ask for the proof: which provider, and
+        whether that means a sign-in screen or a password.
+        """
         self._check_caller()
         mailboxes = self.env['pan.mail.mailbox'].search([
             ('mailbox_type', '=', 'personal'),
             ('owner_user_id', '=', self.env.user.id),
         ])
-        return [{'id': m.id, 'email': m.email}
-                for m in mailboxes if m._has_working_credentials()]
+        rows = []
+        for mailbox in mailboxes:
+            if not mailbox._has_working_credentials():
+                continue
+            client = mailbox._get_client()
+            rows.append({
+                'id': mailbox.id,
+                'email': mailbox.email,
+                'verified': self._session_verified(self._live_account(mailbox)),
+                'provider_label': client.provider_label(),
+                'uses_oauth': client.uses_oauth,
+            })
+        return rows
+
+    @api.model
+    def verify_mailbox_password(self, mailbox_id, password):
+        """The confirm-it's-you round for a mailbox with no sign-in screen.
+
+        One IMAP login with `password`, which is neither stored nor compared
+        with what is stored. Returns whether the session now holds the proof;
+        a wrong password is False, so the dialog can say so without a
+        traceback. An OAuth mailbox is refused here: its proof comes back
+        through the consent callback.
+        """
+        mailbox = self._own_mailbox(mailbox_id, verified=False)
+        client = mailbox._get_client()
+        if client.uses_oauth:
+            raise UserError(_('This mailbox is confirmed by signing in at %s.')
+                            % client.provider_label())
+        account = self._live_account(mailbox)
+        if not account:
+            return False
+        with interactive():
+            verified = client.verify_password(account, password or '')
+        if verified and request:
+            self._mark_session_verified(account)
+        return bool(verified and request)
 
     @api.model
     def live_messages(self, mailbox_id, folder=FOLDER_INBOX, linked=None,

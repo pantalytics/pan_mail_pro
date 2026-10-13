@@ -256,12 +256,16 @@ class MicrosoftGraphClient(models.AbstractModel):
         }
 
     @api.model
-    def get_authorization_url(self, redirect_uri, state=None):
+    def get_authorization_url(self, redirect_uri, state=None, login_hint=None,
+                              prompt=None):
         """Generate OAuth authorization URL with CSRF state parameter.
 
         Args:
             redirect_uri: The OAuth callback URL
             state: CSRF state token (generated via generate_oauth_state())
+            login_hint: the address the sign-in screen opens on
+            prompt: Microsoft's `prompt` (`none` fails silently rather than
+                asking, which is the first try of a confirm-it's-you round)
 
         Returns:
             str: The authorization URL to redirect the user to
@@ -300,6 +304,10 @@ class MicrosoftGraphClient(models.AbstractModel):
         # Add state parameter for CSRF protection
         if state:
             params['state'] = state
+        if login_hint:
+            params['login_hint'] = login_hint
+        if prompt:
+            params['prompt'] = prompt
 
         query_string = '&'.join([f'{k}={requests.utils.quote(str(v))}' for k, v in params.items()])
         return f"{auth_url}?{query_string}"

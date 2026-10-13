@@ -69,6 +69,23 @@ It is your setting, not an administrator's: nobody else can change it, and you
 can move up or down at any time. Shared mailboxes are configured by an
 administrator under Settings.
 
+## Reading your whole mailbox
+
+Under your own mailbox, **Inbox**, **Sent**, **Archive** and **Deleted** show
+your mailbox as it is at Microsoft, Google or your mail server, not only what
+Odoo imported. That is read live and never stored, so it opens only in a
+browser where you have signed in there yourself: the first time in a browser,
+and again after a week away, the folder shows one line, *Sign in with
+Microsoft 365 to see your whole mailbox*, with a button. If your browser is
+already signed in at Microsoft or Google, the button is a flash; otherwise
+you sign in there as usual. On an IMAP mailbox the button asks for your
+mailbox password instead, which is checked against your mail server and not
+kept.
+
+Nobody who merely holds your Odoo login gets past this, an administrator
+included: the sign-in has to be yours. What Odoo already imported is not
+behind it.
+
 ## Sending emails
 
 1. Open any email composer (from CRM, Helpdesk, a sales order)

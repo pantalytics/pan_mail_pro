@@ -290,6 +290,20 @@ class ImapSmtpClient(models.AbstractModel):
         return answer
 
     @api.model
+    def verify_password(self, account, password):
+        """One IMAP LOGIN with what was typed (see contract). The stored
+        password is never compared against: the server is the judge, and a
+        wrong answer is False, not a traceback."""
+        if not password:
+            return False
+        try:
+            conn = self._connect(account, password=password)
+        except UserError:
+            return False
+        self._logout(conn, account.imap_host)
+        return True
+
+    @api.model
     def test_connection(self, account):
         """Check both halves — a mailbox that can read but not send is broken.
 
@@ -378,8 +392,12 @@ class ImapSmtpClient(models.AbstractModel):
             session.drop()
             raise
 
-    def _connect(self, account):
-        """Dial and log in, or say why not in the contract's terms."""
+    def _connect(self, account, password=None):
+        """Dial and log in, or say why not in the contract's terms.
+
+        `password` is for `verify_password` only: the one the person typed,
+        tried in place of the stored one and kept nowhere.
+        """
         self._require_credentials(account)
         host, port = account.imap_host, account.imap_port or 993
         # Shorter while a person waits on the answer (`interactive()`).
@@ -392,7 +410,8 @@ class ImapSmtpClient(models.AbstractModel):
                 conn = imaplib.IMAP4(host, port, timeout=timeout)
                 if account.imap_security == 'starttls':
                     conn.starttls(ssl.create_default_context())
-            conn.login(account._imap_login(), account.password)
+            conn.login(account._imap_login(),
+                       password if password is not None else account.password)
         except (imaplib.IMAP4.error, OSError) as e:
             raise UserError(_(
                 'Could not connect to IMAP server %(host)s: %(error)s',
