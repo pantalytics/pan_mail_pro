@@ -17,6 +17,7 @@ Provides:
 """
 import base64
 import contextlib
+import types
 from unittest.mock import patch, MagicMock
 
 from odoo.exceptions import UserError
@@ -287,3 +288,44 @@ class MailProTestCase(TransactionCase):
             'datas': base64.b64encode(raw),
             'mimetype': mimetype,
         })
+
+
+class _FakeSession(dict):
+    """A session with the two attributes Odoo's own code reads off one."""
+    debug = ''
+    uid = None
+
+
+@contextlib.contextmanager
+def proven_session(env, accounts=(), uid=None, session=None):
+    """A request whose session holds the live read's proof for `accounts`.
+
+    The live read asks `request.session` whether the provider has confirmed,
+    in this browser, that the reader is the sign-in behind the mailbox. A
+    `TransactionCase` has no request, and no request is no: this stands one
+    up with just the session, which is the only thing the gate reads. `uid`
+    is whose proof it is (the caller's by default); `session` lets a test
+    hand in its own mapping and look at what the round trip wrote into it.
+    """
+    from odoo import http
+    from odoo.addons.pan_mail_pro.models.pan_mail_conversation import PanMailConversation
+
+    if session is None:
+        session = _FakeSession()
+    session.debug = ''
+    session.uid = uid or env.user.id
+    if accounts:
+        session[PanMailConversation.VERIFIED_SESSION_KEY] = {
+            'uid': uid or env.user.id,
+            'accounts': {str(account.id): '2026-10-13 10:00:00' for account in accounts},
+        }
+    # Only what the gate reads, plus the cookies `utm.mixin` looks at on
+    # every create that happens under a request. Anything else Odoo asks of
+    # a request raises here, which is the right answer: the live read must
+    # not depend on more of the request than a session.
+    fake = types.SimpleNamespace(session=session, env=env, cookies={})
+    http._request_stack.push(fake)
+    try:
+        yield session
+    finally:
+        http._request_stack.pop()

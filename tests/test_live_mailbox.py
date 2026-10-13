@@ -20,6 +20,8 @@ from unittest.mock import patch
 from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, new_test_user, tagged
 
+from .common import proven_session
+
 CLIENT = 'imap.smtp.client'
 
 
@@ -59,6 +61,15 @@ class TestLiveMailbox(TransactionCase):
             'name': 'Asafdichtingen',
             'partner_id': cls.customer.id,
         })
+
+    def setUp(self):
+        super().setUp()
+        # Every read here is made by the owner, in a browser where the
+        # provider has already said it is them. The gate itself, and what a
+        # session without that word gets, is `tests/test_live_verify.py`.
+        proven = proven_session(self.env, accounts=[self.account], uid=self.owner.id)
+        proven.__enter__()
+        self.addCleanup(proven.__exit__, None, None, None)
 
     # ------------------------------------------------------------------ fakes
 

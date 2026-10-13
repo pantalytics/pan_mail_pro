@@ -17,6 +17,19 @@ _logger = logging.getLogger(__name__)
 # `<app>` element in `res_config_settings_views.xml`; anything else lands on
 # the general settings page with no sign that a jump was intended.
 SETTINGS_URL = '/odoo/settings#pan_mail_pro'
+# Where a confirm-it's-you round lands when it was not told where to go back.
+INBOX_URL = '/odoo/action-pan_mail_pro.action_pan_mail_conversation'
+
+# The one round trip in flight for this session, under this key: the nonce
+# it must come back with, the mailbox it is for, where to land, and whether
+# it was the silent try. In the session rather than on the user row, so the
+# proof it produces is bound to the browser that asked for it.
+VERIFY_SESSION_KEY = 'pan_mail_verify'
+
+# What a silent sign-in (`prompt=none`) answers when it would have had to ask:
+# both providers' words for "come back with a screen".
+SILENT_REFUSALS = ('login_required', 'interaction_required', 'consent_required',
+                   'account_selection_required')
 
 
 def _result_page(success, title, message):
@@ -36,7 +49,10 @@ class MailProConnectController(http.Controller):
     """
 
     @http.route('/mail_pro/connect', type='http', auth='user', website=True)
-    def connect_mailbox(self, provider=None, **kwargs):
+    def connect_mailbox(self, provider=None, verify=None, mailbox_id=None,
+                        back=None, **kwargs):
+        if verify:
+            return self._start_verify(mailbox_id, back, silent=True)
         # `get_provider_client` hands back a *recordset*, and an empty one is
         # falsy — so `if not client` was true for every provider that exists and
         # this route redirected everybody to the settings page instead of to the
@@ -50,6 +66,41 @@ class MailProConnectController(http.Controller):
 
         action = request.env.user.action_connect_mailbox(provider)
         return request.redirect(action['url'], local=False)
+
+    @staticmethod
+    def _safe_back(back):
+        """A path on this Odoo, or the Inbox. Never another host."""
+        if back and back.startswith('/') and not back.startswith('//'):
+            return back
+        return INBOX_URL
+
+    @classmethod
+    def _start_verify(cls, mailbox_id, back, silent):
+        """Send the owner of `mailbox_id` to their provider's sign-in, to
+        come back with the provider's word that it is them.
+
+        The silent try first (`prompt=none`): a browser already signed in at
+        the provider as this address comes straight back, and one that is
+        not is sent again with a screen (`_finish_verify`). The address is
+        the hint, the stable id is what is compared on the way back.
+        """
+        Conversation = request.env['pan.mail.conversation']
+        mailbox = Conversation._own_mailbox(mailbox_id, verified=False)
+        client = mailbox._get_client()
+        back = cls._safe_back(back)
+        if not client.uses_oauth:
+            # A password provider is confirmed from the Inbox itself.
+            return request.redirect(back)
+        account = Conversation._live_account(mailbox)
+        state = client.generate_oauth_state()
+        request.session[VERIFY_SESSION_KEY] = {
+            'state': state, 'mailbox_id': mailbox.id, 'back': back,
+            'silent': bool(silent), 'provider': mailbox.provider,
+        }
+        url = client.get_authorization_url(
+            oauth_redirect_uri(request.env, mailbox.provider), state=state,
+            login_hint=account.email, prompt='none' if silent else '')
+        return request.redirect(url, local=False)
 
 
 class MailProOAuthController(http.Controller):
@@ -82,6 +133,17 @@ class MailProOAuthController(http.Controller):
             _logger.warning('[OAuth] Portal user %s reached the %s callback', user.id, provider)
             return _result_page(False, _('Connection Failed'),
                                 _('Only internal users connect a mailbox.'))
+
+        # A confirm-it's-you round comes back through the same registered
+        # URL and is told apart by its nonce, which lives in the session and
+        # is good once. Checked before the error branch: a silent try that
+        # was refused is an error here and the reason to try again with a
+        # screen.
+        pending = request.session.get(VERIFY_SESSION_KEY)
+        if pending and kwargs.get('state') and kwargs['state'] == pending.get('state') \
+                and pending.get('provider') == provider:
+            del request.session[VERIFY_SESSION_KEY]
+            return self._finish_verify(provider, client, pending, kwargs)
 
         error = kwargs.get('error')
         if error:
@@ -183,6 +245,65 @@ class MailProOAuthController(http.Controller):
             _logger.exception('[OAuth] Failed to handle the %s callback', provider)
             request.env['pan.mail.error']._record('oauth.callback_failed', exception)
             return _result_page(False, _('Connection Failed'), str(exception))
+
+    def _finish_verify(self, provider, client, pending, kwargs):
+        """The provider's answer to "is this the person behind the mailbox".
+
+        Nothing is written to the account either way: the tokens of this
+        round are dropped, and the one thing that changes on a yes is the
+        session. A different stable id than the account's is the refusal
+        this exists for (an administrator with the owner's Odoo session and
+        their own Microsoft account), and it says so with both addresses.
+        """
+        back = MailProConnectController._safe_back(pending.get('back'))
+        error = kwargs.get('error')
+        if error:
+            if pending.get('silent') and error in SILENT_REFUSALS:
+                return MailProConnectController._start_verify(
+                    pending.get('mailbox_id'), back, silent=False)
+            _logger.warning('[OAuth] %s refused the identity check: %s - %s',
+                            provider, error, kwargs.get('error_description'))
+            return _result_page(False, _('Not confirmed'), _(
+                '%s did not confirm the sign-in. Try again from the Inbox.')
+                % client.provider_label())
+        code = kwargs.get('code')
+        if not code:
+            return _result_page(False, _('Not confirmed'), _(
+                '%s sent no sign-in back. Try again from the Inbox.')
+                % client.provider_label())
+        Conversation = request.env['pan.mail.conversation']
+        try:
+            mailbox = Conversation._own_mailbox(pending.get('mailbox_id'), verified=False)
+            account = Conversation._live_account(mailbox)
+            tokens = client._exchange_code_for_tokens(
+                code, oauth_redirect_uri(request.env, provider))
+            identity = client.read_user_info(
+                tokens['access_token'], id_token=tokens.get('id_token'))
+        except Exception as exception:
+            _logger.exception('[OAuth] The %s identity check broke', provider)
+            request.env['pan.mail.error']._record('oauth.callback_failed', exception)
+            return _result_page(False, _('Not confirmed'), str(exception))
+        if not self._same_sign_in(account, identity):
+            _logger.warning('[OAuth] %s confirmed %s, not the %s behind mailbox %s',
+                            provider, identity.get('email'), account.email, mailbox.id)
+            return _result_page(False, _('Not confirmed'), _(
+                'That sign-in is %(theirs)s. Sign in as %(ours)s to read this '
+                'mailbox here. Nothing changed.',
+                theirs=identity.get('email') or _('another account'),
+                ours=account.email))
+        Conversation._mark_session_verified(account)
+        _logger.info('[OAuth] %s confirmed %s for this session', provider, account.email)
+        return request.redirect(back)
+
+    @staticmethod
+    def _same_sign_in(account, identity):
+        """The stable id when both sides have one (a grant stored before
+        19.0.28 may not), else the address, case aside."""
+        theirs = identity.get('provider_user_id')
+        if account.provider_user_id and theirs:
+            return account.provider_user_id == theirs
+        email = identity.get('email')
+        return bool(email) and email.lower() == (account.email or '').lower()
 
     def _retry_error_mailboxes(self, user, provider):
         """A mailbox that failed for want of a token deserves another go."""

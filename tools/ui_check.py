@@ -1365,18 +1365,23 @@ class Checks:
     LIVE_FILTERS = ('Not in Odoo', 'In Odoo')
 
     def live_folder(self):
-        """Your own mailbox's Inbox is the mailbox itself, nobody else's is.
+        """Your own mailbox's Inbox is the mailbox itself, nobody else's is,
+        and not before this session has the provider's word that it is you.
 
         The seed cannot reach a provider -- the token is the word "demo" --
-        so what this proves is the half a browser can: Inbox under the
-        mailbox you own reads the provider and no other Inbox does, there is
-        no second folder claiming to be the whole mailbox, the filter over it asks
-        about Odoo rather than about linking, and a folder that cannot reach
-        its provider says so instead of throwing. Who may call the methods
-        underneath is `tests/test_live_mailbox.py`, where it belongs.
+        so what this proves is the half a browser can: a fresh session is
+        asked to confirm it is you and makes no live read until it has, the
+        action goes to Microsoft with the address filled in, and then, with
+        the proof stood in for at the browser, Inbox under the mailbox you
+        own reads the provider and no other Inbox does, the filter over it
+        asks about Odoo rather than about linking, and a folder that cannot
+        reach its provider says so instead of throwing. Who may call the
+        methods underneath, and what the server says to a session without
+        the proof, is `tests/test_live_mailbox.py` and
+        `tests/test_live_verify.py`, where it belongs.
         """
-        action = dict(module_menu_actions(self.call)).get('Inbox')
-        if not action:
+        action_id = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action_id:
             return  # `conversation_view` already said so.
 
         page = self.page
@@ -1384,7 +1389,7 @@ class Checks:
         # the window and the folder go back where they were found.
         was = dict(page.viewport_size)
         page.set_viewport_size({'width': 1600, 'height': 1000})
-        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        page.goto(f'{self.base}/odoo/action-{action_id}', wait_until='domcontentloaded')
         try:
             page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
         except Exception:
@@ -1424,6 +1429,103 @@ class Checks:
             self.leave_live_folder(was)
             return
 
+        # Before this session has the provider's word that it is the owner,
+        # the live folders ask for it: one line and one action over what Odoo
+        # imported, and no live read at all -- a fresh browser is exactly the
+        # session a hoster's "log in as" opens, so a live request here would
+        # be the hole the gate exists to close. `tests/test_live_verify.py`
+        # proves the server refuses; this proves the screen does not ask.
+        asked = []
+        page.route('**/pan.mail.conversation/live_messages',
+                   lambda route: (asked.append(route.request.url), route.continue_()))
+        page.query_selector_all('.o_mailpro_folders')[-1] \
+            .query_selector_all('.o_mailpro_folder')[0].click()
+        try:
+            page.wait_for_selector('.o_mailpro_conversation_list .o_mailpro_verify',
+                                   timeout=15000)
+        except Exception:
+            self.fail('the live folder did not ask to confirm it is you')
+            page.unroute('**/pan.mail.conversation/live_messages')
+            self.leave_live_folder(was)
+            return
+        page.wait_for_timeout(500)
+        self.error_free('the live folder before the proof')
+        line = page.query_selector('.o_mailpro_conversation_list .o_mailpro_verify')
+        if 'Sign in with Microsoft 365' not in line.inner_text():
+            self.fail(f'the confirm line reads {line.inner_text()!r}, '
+                      'expected the provider by name')
+        action = page.query_selector('.o_mailpro_verify_action')
+        if not action or action.inner_text().strip() != 'Sign in with Microsoft 365':
+            self.fail('the confirm line has no "Sign in with Microsoft 365" action')
+        if page.query_selector_all('.o_mailpro_verify') != [line]:
+            self.fail('the confirm line is drawn more than once')
+        # Archive has nothing Odoo imported, so before the proof it is the
+        # line and nothing else: not "Nothing in Archive", which would say
+        # the folder is empty when it has not been read.
+        page.query_selector_all('.o_mailpro_folders')[-1] \
+            .query_selector_all('.o_mailpro_folder')[3].click()
+        page.wait_for_timeout(1500)
+        if not page.query_selector('.o_mailpro_conversation_list .o_mailpro_verify'):
+            self.fail('Archive before the proof does not ask to confirm it is you')
+        if page.query_selector('.o_mailpro_conversation_list .o_mailpro_empty'):
+            self.fail('Archive before the proof claims to be empty')
+        if asked:
+            self.fail(f'the live folder was read before the proof: {asked}')
+        self.shot('inbox-live-confirm.png')
+        page.unroute('**/pan.mail.conversation/live_messages')
+
+        # The action is a full page round trip to Microsoft with the address
+        # filled in and the silent try first. The seed's registration is
+        # fake, so Microsoft is stood in for at the network: what is
+        # asserted is the URL this Odoo sends the browser to.
+        sent = []
+
+        def microsoft(route):
+            sent.append(route.request.url)
+            route.fulfill(status=200, content_type='text/html',
+                          body='<title>Microsoft (stood in for)</title>')
+
+        page.route('**/login.microsoftonline.com/**', microsoft)
+        try:
+            with page.expect_request('**/login.microsoftonline.com/**', timeout=30000):
+                page.click('.o_mailpro_verify_action')
+        except Exception:
+            self.fail('Sign in with Microsoft 365 did not reach Microsoft')
+        finally:
+            page.unroute('**/login.microsoftonline.com/**')
+        if sent:
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(sent[0]).query)
+            if query.get('login_hint') != ['rutger@example.com']:
+                self.fail(f'the sign-in opens on {query.get("login_hint")}, '
+                          'not on the mailbox address')
+            if query.get('prompt') != ['none']:
+                self.fail('the first try at Microsoft is not the silent one')
+
+        # From here the session is treated as proven, at the browser: the
+        # list that says so is answered with `verified` on, and the live read
+        # with what this seed can reach, which is nothing. The server's own
+        # answer to a session without the proof is the test file's.
+        def proven(route):
+            response = route.fetch()
+            rows = response.json()
+            for row in rows.get('result') or []:
+                row['verified'] = True
+            route.fulfill(response=response, json=rows)
+
+        def unreachable(route):
+            request_id = (route.request.post_data_json or {}).get('id')
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({
+                'jsonrpc': '2.0', 'id': request_id,
+                'result': {'rows': [], 'scanned': 0, 'connected': False}}))
+
+        page.route('**/pan.mail.conversation/live_mailboxes', proven)
+        page.route('**/pan.mail.conversation/live_messages', unreachable)
+        page.goto(f'{self.base}/odoo/action-{action_id}', wait_until='domcontentloaded')
+        page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
+        page.wait_for_timeout(2500)
+        page.query_selector_all('.o_mailpro_mailbox')[-1].click()
+        page.wait_for_timeout(2500)
+
         # Waited on by its own request rather than by what is on screen.
         # Every DOM condition here is true of the folder you just left --
         # its rows are still up, and Owl has not drawn the skeleton yet --
@@ -1444,6 +1546,8 @@ class Checks:
             return
         page.wait_for_timeout(500)
         self.error_free('the live folder')
+        if page.query_selector('.o_mailpro_conversation_list .o_mailpro_verify'):
+            self.fail('a proven session is still asked to confirm it is you')
 
         # An unreachable provider is this folder being unavailable, not this
         # screen breaking. Asserted inside the list, because the pane next to
@@ -1479,6 +1583,8 @@ class Checks:
         page.wait_for_timeout(500)
         self.shot('inbox-live-folder.png')
         self.live_row_in_odoo()
+        page.unroute('**/pan.mail.conversation/live_messages')
+        page.unroute('**/pan.mail.conversation/live_mailboxes')
         self.leave_live_folder(was)
 
     def live_row_in_odoo(self):

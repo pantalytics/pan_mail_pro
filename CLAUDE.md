@@ -612,6 +612,38 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 
 ## Lessons Learned
 
+### An Odoo session is not a person (19.0.30.0.0)
+
+- **"Only the owner may read it" was checked against `env.user`, and
+  `env.user` is whoever holds a session as the owner.** Cloudpepper's "log
+  in as" opens one, and so does an administrator who resets the password.
+  Ownership was the right rule and the wrong proof. The live read now also
+  wants the provider's word, per session: a sign-in round compared on the
+  stable id, or an IMAP login with a typed password.
+- **Put the proof where an ACL cannot reach it.** The first draft was a
+  `pan.mail.device` table with hashed tokens and a revoke screen. A table is
+  a row an administrator with Technical mode can make, after widening the
+  ACL they also administer. `request.session` is a file in the filestore,
+  Odoo's own `check_identity` keeps its proof there too, and a fresh session
+  is exactly what every impersonation is. No model, no cookie, no screen.
+- **Do not detect the impersonation; it is invisible from inside Odoo** and
+  host-specific, and it misses the reset password. Require the thing an
+  impersonator does not have.
+- **Compare on the id, not the address.** `provider_user_id` was already
+  stored at consent for the identity tests; an address can be reassigned in
+  a directory, an object id cannot. The address is the fallback for a grant
+  that predates the id, and the test says so.
+- **A test that proves "refused without a request" has to run without one.**
+  `TransactionCase` has no request, which is the right answer for the gate
+  and the wrong one for every existing live test. `tests/common.py`'s
+  `proven_session` pushes a request with just a session onto
+  `odoo.http._request_stack`; it is the one thing the gate reads.
+- **The browser check cannot do OAuth, and should not pretend to.** It
+  asserts the fresh session is asked and makes no live read, that the button
+  reaches Microsoft with `login_hint` and `prompt=none` (stood in for at the
+  network), and then stands the proof in at the browser for the checks that
+  need a live folder. The server's refusal is the test file's.
+
 ### Docker
 - **`data_dir` must match volume mount**: `data_dir = /var/lib/odoo` in odoo.conf must match `odoo-data:/var/lib/odoo` in docker-compose.yml. Mismatch = filestore lost on restart.
 - **Stale asset attachments after volume reset**: If assets 404, run: `docker-compose exec -T db psql -U odoo -d test_db -c "DELETE FROM ir_attachment WHERE url LIKE '/web/assets/%';"` then restart. Odoo regenerates them.

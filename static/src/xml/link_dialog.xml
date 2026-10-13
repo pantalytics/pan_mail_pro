@@ -42,4 +42,31 @@
         </Dialog>
     </t>
 
+    <!--
+        Confirm it's you, for a mailbox with no sign-in screen: one field,
+        tried once against the mail server. The dialog's own footer, so
+        Confirm is the one primary on it.
+    -->
+    <t t-name="pan_mail_pro.VerifyDialog">
+        <Dialog size="'sm'" title="title" contentClass="'o_mailpro_verify_dialog'">
+            <label class="form-label" for="o_mailpro_verify_password">
+                Password of <t t-esc="props.email"/> at your mail server
+            </label>
+            <input type="password" id="o_mailpro_verify_password" class="form-control"
+                   t-ref="password" autocomplete="current-password"
+                   t-att-disabled="state.busy"
+                   t-on-keydown="onKeydown"/>
+            <p t-if="state.wrong" class="o_mailpro_verify_wrong mb-0 mt-2" role="alert">
+                The mail server did not accept that password. Try again.
+            </p>
+            <p t-if="state.error" class="o_mailpro_verify_wrong mb-0 mt-2" role="alert" t-esc="state.error"/>
+            <t t-set-slot="footer">
+                <button type="button" class="btn btn-primary o_mailpro_verify_confirm"
+                        t-att-disabled="state.busy" t-on-click="confirm">Confirm</button>
+                <button type="button" class="btn btn-secondary"
+                        t-att-disabled="state.busy" t-on-click="props.close">Cancel</button>
+            </t>
+        </Dialog>
+    </t>
+
 </templates>

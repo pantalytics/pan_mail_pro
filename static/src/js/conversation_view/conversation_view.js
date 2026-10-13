@@ -46,6 +46,7 @@ import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { usePanes } from "./use_panes";
 import { useImprove } from "../improve";
 import { LinkDialog } from "./link_dialog";
+import { VerifyDialog } from "./verify_dialog";
 import { AttachmentList } from "@mail/core/common/attachment_list";
 import { useAttachmentUploader } from "@mail/core/common/attachment_uploader_hook";
 import { FileUploader } from "@web/views/fields/file_handler";
@@ -415,6 +416,10 @@ export class ConversationView extends Component {
             // answer. Empty for somebody who reads only shared mailboxes,
             // and then the live folder is simply not drawn.
             liveIds: [],
+            // What `live_mailboxes` said about each of them, by id: whether
+            // this session has the provider's word that the reader is the
+            // sign-in behind it (`verified`), and how to get that word.
+            liveInfo: {},
             // The live message being read, when it is one Odoo does not
             // have. A conversation and a loose message are different things
             // on screen: this one has no thread, no record and no reply,
@@ -567,6 +572,7 @@ export class ConversationView extends Component {
         ]);
         this.state.mailboxes = mailboxes;
         this.state.liveIds = live.map((mailbox) => mailbox.id);
+        this.state.liveInfo = Object.fromEntries(live.map((mailbox) => [mailbox.id, mailbox]));
         const known = new Set(this.state.mailboxes.map((mailbox) => mailbox.id));
         // Where this person left off, then where they land by default: All
         // mailboxes when there is more than one, that one when there is not.
@@ -781,6 +787,11 @@ export class ConversationView extends Component {
                 // counts are for.
                 (this.listRequest = this.isLive
                     ? this.readLiveFolder()
+                    // Before the proof, Archive and Deleted have nothing to
+                    // list: Odoo imports neither. Inbox and Sent fall through
+                    // to what it did import, the way every other mailbox reads.
+                    : this.verifyNeeded && LIVE_ONLY_FOLDERS.some((f) => f.id === this.state.folder)
+                    ? Promise.resolve([])
                     : this.orm.call("pan.mail.conversation", "search_conversations", [], {
                         ...args,
                         limit: this.state.limit,
@@ -863,7 +874,20 @@ export class ConversationView extends Component {
      * Odoo's question and not the provider's.
      */
     get isLive() {
-        return this.liveFor(this.state.mailboxId, this.state.folder);
+        return this.liveFor(this.state.mailboxId, this.state.folder)
+            && this.liveVerified(this.state.mailboxId);
+    }
+
+    /**
+     * The folder would be live, and this session has not yet shown the
+     * provider that the reader is the owner. Inbox and Sent then list what
+     * Odoo imported, Archive and Deleted nothing, and the list carries the
+     * one line that asks for the proof. The server refuses the live read
+     * either way; this only decides what to draw instead.
+     */
+    get verifyNeeded() {
+        return this.liveFor(this.state.mailboxId, this.state.folder)
+            && !this.liveVerified(this.state.mailboxId);
     }
 
     liveFor(mailboxId, folder) {
@@ -875,6 +899,48 @@ export class ConversationView extends Component {
     /** May this mailbox be opened in full? Only its owner's own may. */
     isLiveMailbox(mailboxId) {
         return this.state.liveIds.includes(this.mailboxKey(mailboxId));
+    }
+
+    /** Has the provider confirmed, in this session, that it is the owner? */
+    liveVerified(mailboxId) {
+        return !!this.state.liveInfo[this.mailboxKey(mailboxId)]?.verified;
+    }
+
+    /** What the proof is asked with: the provider's name, or a password. */
+    get verifyInfo() {
+        return this.state.liveInfo[this.mailboxKey(this.state.mailboxId)] || {};
+    }
+
+    /**
+     * Ask the provider to confirm it is the owner, for this session.
+     *
+     * A sign-in provider is a full page round trip: off to Microsoft or
+     * Google with the address filled in, and back to this very folder. A
+     * password provider has no screen to go to, so it is one field in a
+     * dialog and the proof lands without leaving the page.
+     */
+    verifyMailbox() {
+        const info = this.verifyInfo;
+        if (!info.id) {
+            return;
+        }
+        if (info.uses_oauth) {
+            const back = encodeURIComponent(
+                browser.location.pathname + browser.location.search + browser.location.hash);
+            browser.location.assign(
+                `/mail_pro/connect?verify=1&mailbox_id=${info.id}&back=${back}`);
+            return;
+        }
+        this.dialog.add(VerifyDialog, {
+            email: info.email,
+            verify: (password) => this.orm.call(
+                "pan.mail.conversation", "verify_mailbox_password", [],
+                { mailbox_id: info.id, password }),
+            onVerified: async () => {
+                await this.loadMailboxes();
+                await this.refresh();
+            },
+        });
     }
 
     /**

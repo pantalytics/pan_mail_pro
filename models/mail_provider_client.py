@@ -782,9 +782,29 @@ class MailProviderClient(models.AbstractModel):
         return secrets.token_urlsafe(32)
 
     @api.model
-    def get_authorization_url(self, redirect_uri, state=None):
-        """Return the URL to send the user to in order to grant access."""
+    def get_authorization_url(self, redirect_uri, state=None, login_hint=None,
+                              prompt=None):
+        """Return the URL to send the user to in order to grant access.
+
+        `login_hint` names the address the screen opens on; `prompt` is the
+        provider's own word for how much to ask (`none` for a silent round
+        trip that fails rather than asks). Both are what the Inbox's
+        "confirm it's you" round uses (`verify_password` is the other half,
+        for a provider with no sign-in screen); a plain connect passes
+        neither.
+        """
         raise NotImplementedError
+
+    @api.model
+    def verify_password(self, account, password):
+        """Does `password` open `account`'s mailbox right now?
+
+        The identity check for a provider without OAuth: one login with the
+        password the person typed, never the stored one, so a stolen Odoo
+        session proves nothing on its own. An OAuth provider answers False:
+        there the provider's own sign-in is the check.
+        """
+        return False
 
     @api.model
     def _exchange_code_for_tokens(self, authorization_code, redirect_uri):

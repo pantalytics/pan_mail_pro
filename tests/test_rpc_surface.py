@@ -42,7 +42,7 @@ ALLOWED_PUBLIC = {
         'set_read', 'refresh_read_state', 'record_conversations',
         'customer_timeline', 'inbox_mailboxes', 'live_mailboxes', 'live_messages',
         'read_live_message', 'import_live_message', 'live_mark', 'link_targets',
-        'link_scope', 'new_mail_recipients',
+        'link_scope', 'new_mail_recipients', 'verify_mailbox_password',
     },
 }
 
@@ -106,6 +106,7 @@ class TestRpcSurface(TransactionCase):
             'read_live_message': (self.mailbox.id, 'provider-id'),
             'import_live_message': (self.mailbox.id, 'provider-id'),
             'live_mark': (self.mailbox.id, 'provider-id', 'read'),
+            'verify_mailbox_password': (self.mailbox.id, 'password'),
             'link_targets': (),
             'link_scope': ('crm.lead',),
             'new_mail_recipients': ('crm.lead', self.lead.id),

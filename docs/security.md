@@ -124,6 +124,29 @@ over the stored parameter and nothing is written to `ir.config_parameter`.
 - **IMAP/SMTP:** the address's login and password, entered by an administrator
   and stored encrypted.
 
+## Your Own Mailbox, Read Live
+
+The Inbox reads a user's own mailbox straight from the provider, without
+storing it. An Odoo session as that user is not enough to read it: a
+hoster's "log in as", an administrator who resets the password and the user
+all hold one. Before the live read answers, the provider has to confirm, in
+that browser session, that the person is the sign-in behind the mailbox:
+
+- **Microsoft 365 / Google Workspace:** one sign-in round through the
+  provider, compared on the account's stable id (object id / `sub`), not
+  the address. The tokens of that round are discarded.
+- **IMAP/SMTP:** one login with the mailbox password typed by the user,
+  which is never compared with the stored one and never kept.
+
+The proof is held in the Odoo session (a file, not a database row) for the
+session's lifetime, so it cannot be granted from the database and a fresh
+session starts without it. Mail Odoo already imported is governed by Odoo's
+own record rules, as before.
+
+What this does not cover: a person at the user's unlocked, signed-in
+computer, and a server administrator who holds the database and the
+encryption key.
+
 ## Data Flow
 
 ```
