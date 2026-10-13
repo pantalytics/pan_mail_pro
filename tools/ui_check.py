@@ -1457,7 +1457,7 @@ class Checks:
         action = page.query_selector('.o_mailpro_verify_action')
         if not action or action.inner_text().strip() != 'Sign in with Microsoft 365':
             self.fail('the confirm line has no "Sign in with Microsoft 365" action')
-        if page.query_selector_all('.o_mailpro_verify') != [line]:
+        if len(page.query_selector_all('.o_mailpro_verify')) != 1:
             self.fail('the confirm line is drawn more than once')
         # Archive has nothing Odoo imported, so before the proof it is the
         # line and nothing else: not "Nothing in Archive", which would say

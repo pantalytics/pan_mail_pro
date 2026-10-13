@@ -411,7 +411,6 @@
                                 <h3 class="o_mailpro_empty_title">Nothing matches that search in <t t-esc="folderLabel"/>.</h3>
                                 <p class="o_mailpro_empty_text" t-esc="searchScope"/>
                             </div>
-                            <t t-elif="verifyNeeded"/>
                             <div t-elif="isLive and !state.liveConnected" class="o_mailpro_empty">
                                 <h3 class="o_mailpro_empty_title">This mailbox is not connected.</h3>
                                 <p class="o_mailpro_empty_text">
@@ -424,7 +423,11 @@
                                     This is your mailbox itself, read as it is right now.
                                 </p>
                             </div>
-                            <div t-else="" class="o_mailpro_empty">
+                            <!-- Before the proof, Archive and Deleted are the
+                                 confirm line above and nothing else: "Nothing
+                                 in Archive" would say the folder is empty when
+                                 it has not been read. -->
+                            <div t-elif="!verifyNeeded" class="o_mailpro_empty">
                                 <h3 class="o_mailpro_empty_title">Nothing in <t t-esc="folderLabel"/> yet.</h3>
                                 <p t-if="state.folder === 'drafts'" class="o_mailpro_empty_text">
                                     Mail you save instead of sending appears here.
