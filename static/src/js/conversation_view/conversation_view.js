@@ -841,6 +841,10 @@ export class ConversationView extends Component {
                     this.conversationRequest?.abort?.();
                     this.state.conversationLoading = false;
                     this.state.selected = null;
+                    // A live mail open in the pane goes with its row: its
+                    // header reads `state.selected`, and a filter that left
+                    // nothing to select drew it over a null.
+                    this.state.live = null;
                     this.state.conversation = EMPTY_CONVERSATION();
                 }
             }

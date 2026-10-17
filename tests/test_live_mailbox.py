@@ -518,6 +518,22 @@ class TestLiveMailbox(TransactionCase):
         self.assertNotEqual(live, -1, 'the live branch is gone from the Inbox')
         self.assertLess(live, selected)
 
+    def test_an_emptied_selection_takes_the_live_mail_with_it(self):
+        """The live header's Flag button reads `state.selected`. A filter
+        that leaves nothing to select (Flagged, on a folder with no flagged
+        mail) cleared the selection and kept `state.live`, so the header
+        drew over a null: "Cannot read properties of null (reading
+        'flagged')". Static, for the same reason as the tests above."""
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'static', 'src', 'js', 'conversation_view', 'conversation_view.js')
+        with open(path, encoding='utf-8') as handle:
+            source = handle.read()
+        for match in re.finditer(r'this\.state\.selected = null;', source):
+            nearby = source[match.start():match.start() + 400]
+            self.assertIn('this.state.live = null;', nearby,
+                          'a cleared selection leaves a live mail open')
+
     # ------------------------------------------------------------------ marking
 
     def _marking(self, name, return_value=1):
