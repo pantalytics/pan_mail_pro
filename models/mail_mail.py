@@ -34,13 +34,6 @@ NOTIFICATION_PENDING_REASON = (
     'Waiting for the Notification mailbox to be configured '
     '(Settings → Mail Pro). This email will be sent automatically once it is.'
 )
-# Marker written on a mail a staging copy pretended to send. The mail reads as
-# sent everywhere a person looks -- chatter included -- and this is the one
-# place that says it never left the database.
-STAGING_NOT_SENT_REASON = (
-    'Not sent: this Odoo instance is neutralized (a staging or test copy). '
-    'It was recorded in the chatter as if it had gone out.'
-)
 
 
 class RoutingError(Exception):
@@ -155,8 +148,8 @@ class MailMail(models.Model):
           fresh install working before anyone has been to Azure.
         - Internal notifications during the setup window are left queued. See
           `_is_awaiting_notification_mailbox`.
-        - A neutralized database records the mail as sent without sending it.
-          See `_deliver_nowhere`.
+        - A neutralized database hands every mail to Odoo's own SMTP path, so
+          the host's staging catcher gets it. See `_send_on_staging`.
 
         Everything else is sent by a mailbox or fails saying which one it
         wanted. It is never quietly rerouted.
@@ -225,10 +218,11 @@ class MailMail(models.Model):
             )
 
         if database_is_neutralized(self.env):
-            # The queue runs as a cron: its toast would land on whoever
-            # happens to be logged in, about mail they did not send.
-            mails._deliver_nowhere(notify=not auto_commit)
-            return True
+            return mails._send_on_staging(
+                auto_commit=auto_commit,
+                raise_exception=raise_exception,
+                post_send_callback=post_send_callback,
+            )
 
         awaiting = mails.filtered(lambda m: m._is_awaiting_notification_mailbox())
         if awaiting:
@@ -472,59 +466,34 @@ class MailMail(models.Model):
             reason=failures[0], others=len(failures) - 1,
         )
 
-    def _deliver_nowhere(self, notify=True):
-        """Record this batch as sent without sending it. Staging only.
+    def _send_on_staging(self, auto_commit=False, raise_exception=False, post_send_callback=None):
+        """Send a neutralized database's mail the way Odoo would without us.
 
-        A neutralized database must not mail customers, but the person testing
-        on it is testing the *flow*: press Send, see the email on the record,
-        answer it, watch the follow-up. Refusing the send used to raise, which
-        unwound the whole `message_post` with it — no chatter entry, no trace,
-        and a dialog where the test was supposed to be.
+        Staging is where the *flow* is tested, and the person testing wants to
+        read the email that went out. Every host already has an answer for
+        that, and it is SMTP-shaped: neutralizing leaves one active
+        `ir_mail_server`, and the host decides where it leads. Cloudpepper
+        catches staging mail in MailHog, odoo.sh on the build's Mails tab, and
+        a bare restore fails at the invalid host Odoo inserted. So the module
+        steps aside, as it does before any mailbox exists, and inherits each
+        host's answer instead of writing its own.
 
-        So the refusal moved: nothing leaves the database, and everything Odoo
-        writes about a sent mail is written anyway. The chatter shows the
-        message, the recipient rows read `sent`, and `failure_reason` on the
-        mail is the one place that says it never went out.
-
-        Nothing here can reach a provider by accident. `data/neutralize.sql`
-        has already dropped the credentials, `decrypt_value` refuses to read
-        one, and every client refuses before its transport — this method simply
-        never asks. It is the readable half of a refusal three layers below it.
+        Never a provider: no Graph, no Gmail, not the module's own IMAP/SMTP
+        client. This method asks no mailbox, account or client, and the three
+        layers underneath still refuse on their own (`data/neutralize.sql`
+        drops the credentials, `decrypt_value` reads none, every client stops
+        before its transport). What it does trust is the database's own
+        `ir_mail_server` rows, which is Odoo's contract for a neutralized copy.
         """
         _logger.info(
-            "[Outgoing Mail] Database is neutralized — recording %s email(s) as "
-            "sent without sending them", len(self)
+            "[Outgoing Mail] Database is neutralized — handing %s email(s) to "
+            "Odoo's own SMTP path, never to a provider", len(self)
         )
-        self.write({'state': 'sent', 'failure_reason': STAGING_NOT_SENT_REASON})
-        for mail in self:
-            mail._sync_notifications()
-        if notify:
-            self._notify_staging_not_sent()
-
-    def _notify_staging_not_sent(self):
-        """Tell the sender, without the rollback a raise would cost.
-
-        A `UserError` is the module's usual way of saying "this did not go
-        out", and it is exactly wrong here: it would take the chatter entry
-        with it. A bus notification survives the commit instead, so the tester
-        gets both halves — the warning, and the record they were testing.
-
-        Not called from the mail queue: see `_deliver_nowhere`'s caller.
-        """
-        partner = self.env.user.partner_id
-        if not partner:
-            return
-        partner._bus_send('simple_notification', {
-            'type': 'warning',
-            'sticky': True,
-            'title': _('Not sent (staging)'),
-            'message': _(
-                '%(count)s email(s) were recorded on the record as if sent. '
-                'This Odoo instance is neutralized (a staging or test copy), so '
-                'nothing left it.',
-                count=len(self),
-            ),
-        })
+        return super(MailMail, self).send(
+            auto_commit=auto_commit,
+            raise_exception=raise_exception,
+            post_send_callback=post_send_callback,
+        )
 
     def _send_one(self, raise_exception=False, post_send_callback=None, batch=None):
         """Send one mail. Returns the failure reason, or None when it went out.
