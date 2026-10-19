@@ -274,6 +274,10 @@ A list of steps, each showing a check and its answer, says it in one look.
   else is a sentence on the line.
 - **Never a colour that means nothing.** Green for done, red for broken. There
   is no third.
+- **Never a colour with one side.** Odoo compiles each stylesheet once per
+  colour scheme. A colour is a `$mailpro-*` token that picks light or dark from
+  `$o-webclient-color-scheme`, never a literal; `tests/test_dark_mode.py`
+  fails on one.
 
 ### The checklist is one column, and so is everything under it
 
