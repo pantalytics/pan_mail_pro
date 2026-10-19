@@ -1005,7 +1005,6 @@ $mailpro-band-gutter: 3.5rem;
         flex: 1 1 auto;
         min-width: 0;
         overflow: hidden auto;
-        max-width: 48rem;
 
         .o_form_renderer {
             display: block !important;
@@ -1058,13 +1057,13 @@ $mailpro-band-gutter: 3.5rem;
         }
     }
 
-    // Mail is prose, and prose has a comfortable width. The column stops
-    // well before the window does.
+    // The mail takes the pane's whole width. The pane is what has a
+    // measure: its divider is dragged, and with the record folded away a cap
+    // in here only left blank paper where the record used to be.
     .o_mailpro_messages {
         flex: 1 1 auto;
         padding: 1.25rem 1.375rem;
         overflow-y: auto;
-        max-width: 48rem;
     }
 
     // A conversation is a stack: closed messages are rows, the open one is a card.
@@ -1185,7 +1184,6 @@ $mailpro-band-gutter: 3.5rem;
         flex: 1 1 auto;
         padding: 0.75rem 1.375rem;
         overflow-y: auto;
-        max-width: 48rem;
     }
 
     .o_mailpro_activities_head { margin-bottom: 0.75rem; }
@@ -1771,8 +1769,7 @@ $mailpro-band-gutter: 3.5rem;
         // Writing takes the whole phone. The head keeps the subject and the
         // two buttons that end it; the chips, the suggestion and the
         // subtitle are the conversation's, and the conversation is not what
-        // is on screen while somebody types. The 48rem cap on the composer
-        // is for a wide pane, not a phone.
+        // is on screen while somebody types.
         .o_mailpro_conversation_composing {
             .o_mailpro_conversation_head { padding: 0.5rem; }
 
@@ -1783,8 +1780,6 @@ $mailpro-band-gutter: 3.5rem;
             .o_mailpro_suggestion,
             .o_mailpro_unlinked,
             .o_mailpro_relink_open { display: none !important; }
-
-            .o_mailpro_composer { max-width: none; }
         }
 
         // The form is a phone wide, so the zoom's two columns would be

@@ -99,9 +99,9 @@ const ICONS = {
 const PANES = {
     mailbox_list: { start: 232, min: 140, max: 380 },
     conversation_list: { start: 352, min: 260, max: 620 },
-    // 48rem: the width the messages, the composer and both other tabs already
-    // stop at. The pane stops with them, so nothing is stretched and nothing
-    // is cut off.
+    // 48rem to start: a comfortable measure for mail. The pane is the only
+    // cap -- its contents fill it -- so with the record folded the mail takes
+    // the whole width rather than leaving blank paper beside it.
     conversation: { start: 768, min: 360, max: 1040 },
 };
 

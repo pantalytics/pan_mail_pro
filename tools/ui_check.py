@@ -1124,10 +1124,9 @@ class Checks:
             if not self.visible(selector):
                 self.fail(f'{name} did not come back at {WIDE}px')
 
-        # The middle of a wide monitor is the most expensive space on it. The
-        # mail column stops at its own 48rem whatever the pane does, so a
-        # conversation pane wider than that is empty paper between the mail
-        # and the form -- which is exactly what the record is there to take.
+        # The middle of a wide monitor is the most expensive space on it. Mail
+        # reads best at about 48rem, so a conversation pane much wider than
+        # that leaves room the record is there to take.
         # Only a pane with a record in it can take it, so the empty state is
         # not this assertion's business.
         if page.query_selector('.o_mailpro_odoo_record .o_form_view'):
@@ -2661,6 +2660,15 @@ class Checks:
             self.fail('the folded record divider lost its separator')
         elif handle.get_attribute('tabindex') is not None:
             self.fail('the folded record divider still takes the keyboard')
+        # The room the record gave up goes to the mail, not to blank paper
+        # beside a column that stopped at its own measure.
+        pane = page.query_selector('.o_mailpro_conversation')
+        mail = page.query_selector('.o_mailpro_messages')
+        if pane and mail:
+            gap = pane.bounding_box()['width'] - mail.bounding_box()['width']
+            if gap > 40:
+                self.fail('with the record folded the mail stops %dpx short of '
+                          'its pane' % gap)
         self.shot('inbox-folded.png')
 
         # Both of those are a preference, not a gesture: they survive the
@@ -2702,9 +2710,8 @@ class Checks:
             self.fail('the record pane did not come back when unfolded')
 
         # The list folds too, the same way, and the room it leaves goes to the
-        # pane that has no width of its own: the Odoo record. The mail column
-        # stops at its own measure whatever the window does, so a fold that
-        # stretched it would only be moving the empty space around.
+        # pane that has no width of its own: the Odoo record, not the
+        # conversation, which keeps the width its divider was dragged to.
         record_before = page.query_selector('.o_mailpro_odoo_record').bounding_box()['width']
         thread_before = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
         fold = page.query_selector('.o_mailpro_split_conversation_list .o_mailpro_split_toggle')
