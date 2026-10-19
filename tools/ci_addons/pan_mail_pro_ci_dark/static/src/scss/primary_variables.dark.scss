@@ -16,3 +16,9 @@ $o-gray-800: #e4e6eb;
 $o-gray-900: #f9fafb;
 
 $o-view-background-color: #262a36;
+
+// Links and the action colour lighten too, or Odoo's own tabs and link
+// buttons read 2.3:1 on the dark sheet -- a gap in this stand-in, not in
+// Mail Pro, and the check cannot tell the two apart.
+$o-action: #4fc6cb;
+$o-main-link-color: #4fc6cb;
