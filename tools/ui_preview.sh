@@ -19,10 +19,10 @@ SERIES=$(python3 -c "import ast;print('.'.join(ast.literal_eval(open('$REPO/__ma
 MODE=${1:-boot}
 
 odoo_cli() {
-    docker run --rm --network "$NET" -v "$REPO:/mnt/extra-addons/pan_mail_pro:ro" \
+    docker run --rm --network "$NET" -v "$REPO:/mnt/extra-addons/pan_mail_pro:ro" -v "$REPO/tools/ci_addons:/mnt/ci-addons:ro" \
         --entrypoint odoo "odoo:${SERIES}" -d "$DBNAME" \
         --db_host="$DB" --db_port=5432 --db_user=odoo --db_password=odoo \
-        --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
+        --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons,/mnt/ci-addons \
         --stop-after-init --max-cron-threads=0 --log-level=warn "$@"
 }
 
@@ -51,11 +51,13 @@ for _ in $(seq 1 60); do
 done
 echo " ready."
 
-odoo_cli -i pan_mail_pro --without-demo=all
+# The second module is the dark mode Enterprise has and the community image
+# does not; tools/ci_addons/pan_mail_pro_ci_dark/ says why.
+odoo_cli -i pan_mail_pro,pan_mail_pro_ci_dark --without-demo=all
 docker run -d --name "$ODOO" --network "$NET" -p 8069:8069 \
-    -v "$REPO:/mnt/extra-addons/pan_mail_pro:ro" --entrypoint odoo "odoo:${SERIES}" \
+    -v "$REPO:/mnt/extra-addons/pan_mail_pro:ro" -v "$REPO/tools/ci_addons:/mnt/ci-addons:ro" --entrypoint odoo "odoo:${SERIES}" \
     -d "$DBNAME" --db_host="$DB" --db_port=5432 --db_user=odoo --db_password=odoo \
-    --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
+    --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons,/mnt/ci-addons \
     --max-cron-threads=0 --log-level=warn --dev=xml >/dev/null
 
 echo -n "Waiting for Odoo"
