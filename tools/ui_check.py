@@ -3303,6 +3303,133 @@ class Checks:
             self.fail('the connect banner is registered in WebClient.components, '
                       'which Enterprise has already snapshotted — it will white-screen there')
 
+    # Every visible line of text in the Inbox, with the colour it is drawn in
+    # and the colour it actually sits on: the background of the nearest
+    # ancestor that paints one, translucent layers composited on the way up.
+    # Returns the lines below `min` contrast, worst first.
+    LOW_CONTRAST_JS = """(min) => {
+        const rgba = (value) => {
+            const m = value.match(/rgba?\\(([^)]+)\\)/);
+            if (!m) return null;
+            const p = m[1].split(',').map(Number);
+            return {r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1};
+        };
+        const over = (top, under) => ({
+            r: top.r * top.a + under.r * (1 - top.a),
+            g: top.g * top.a + under.g * (1 - top.a),
+            b: top.b * top.a + under.b * (1 - top.a), a: 1});
+        const backdrop = (el) => {
+            const layers = [];
+            for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+                const bg = rgba(getComputedStyle(node).backgroundColor);
+                if (bg && bg.a > 0) {
+                    layers.push(bg);
+                    if (bg.a >= 1) break;
+                }
+            }
+            let colour = {r: 255, g: 255, b: 255, a: 1};
+            for (const layer of layers.reverse()) colour = over(layer, colour);
+            return colour;
+        };
+        const lum = (c) => {
+            const ch = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+            return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+        };
+        const ratio = (a, b) => {
+            const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+            return (hi + 0.05) / (lo + 0.05);
+        };
+        const root = document.querySelector('.o_mailpro_inbox');
+        const low = [];
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const seen = new Set();
+        for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+            const el = text.parentElement;
+            if (!text.textContent.trim() || seen.has(el)) continue;
+            seen.add(el);
+            const style = getComputedStyle(el);
+            const box = el.getBoundingClientRect();
+            if (!box.width || !box.height || style.visibility !== 'visible'
+                || el.closest('[aria-hidden="true"], .o_mailpro_skeleton, :disabled')) continue;
+            const ink = rgba(style.color);
+            if (!ink) continue;
+            const ground = backdrop(el);
+            const value = ratio(over(ink, ground), ground);
+            if (value < min) {
+                low.push({text: text.textContent.trim().slice(0, 40),
+                          cls: (el.className || el.tagName).toString().slice(0, 60),
+                          ratio: Math.round(value * 100) / 100});
+            }
+        }
+        return low.sort((a, b) => a.ratio - b.ratio);
+    }"""
+
+    def dark_mode(self):
+        """The Inbox in Odoo's dark mode: dark panes, and text you can read.
+
+        Odoo builds a second stylesheet for dark mode, and every colour this
+        module paints has to come from the palette that follows it. A literal
+        stays light: white panes around a dark Odoo record, and the record's
+        values in #001d21 on a dark sheet, which is what a customer saw.
+
+        Dark mode is Enterprise. The community image CI runs gets it from
+        `tools/ci_addons/pan_mail_pro_ci_dark`, so the first assertion is
+        that the dark bundle actually loaded: without it everything below
+        would pass by looking at the light screen.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            return
+        context = self.browser.new_context(viewport={'width': WIDE, 'height': 1100})
+        host = urllib.parse.urlparse(self.base).hostname
+        context.add_cookies([{'name': 'color_scheme', 'value': 'dark',
+                              'domain': host, 'path': '/'}])
+        page = context.new_page()
+        try:
+            login(page, self.base)
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            page.wait_for_selector('.o_mailpro_inbox .o_mailpro_item', timeout=30000)
+            page.wait_for_selector('.o_mailpro_odoo_record .o_form_view', timeout=30000)
+            page.wait_for_timeout(2000)
+            if self.out:
+                page.screenshot(path=os.path.join(self.out, 'inbox-dark.png'))
+
+            scheme = page.evaluate("() => getComputedStyle(document.documentElement)"
+                                   ".getPropertyValue('--o-webclient-color-scheme').trim()")
+            if scheme != 'dark':
+                self.fail(f'the dark bundle did not load (color scheme {scheme!r}): '
+                          'the dark-mode checks below prove nothing')
+                return
+
+            # Every pane, and the record's head, paints a dark background.
+            for selector in ('.o_mailpro_inbox', '.o_mailpro_mailbox_list',
+                             '.o_mailpro_conversation_list', '.o_mailpro_conversation',
+                             '.o_mailpro_odoo_record_head', '.o_mailpro_odoo_record'):
+                colour = page.evaluate(
+                    """(sel) => { const el = document.querySelector(sel);
+                       if (!el) return null;
+                       for (let n = el; n; n = n.parentElement) {
+                           const bg = getComputedStyle(n).backgroundColor;
+                           const p = (bg.match(/[\\d.]+/g) || []).map(Number);
+                           if (p.length && (p.length < 4 || p[3] > 0)) return p.slice(0, 3);
+                       }
+                       return null; }""", selector)
+                if colour is None:
+                    self.fail(f'dark mode: {selector} is not on the screen')
+                elif sum(colour) / 3 > 96:
+                    self.fail(f'dark mode: {selector} is painted rgb{tuple(colour)}, '
+                              'a light colour that does not follow the scheme')
+
+            # 3:1, WCAG's floor for anything on screen. The palette's own
+            # muted grey clears 4.5; a colour with no dark side lands near 1.
+            low = page.evaluate(self.LOW_CONTRAST_JS, 3)
+            if low:
+                lines = '; '.join(f"{item['text']!r} ({item['cls']}) {item['ratio']}:1"
+                                  for item in low[:8])
+                self.fail(f'dark mode: {len(low)} line(s) of text below 3:1 -- {lines}')
+        finally:
+            context.close()
+
     def form_text(self, url):
         self.page.goto(url, wait_until='domcontentloaded')
         self.page.wait_for_selector('.o_form_view', timeout=30000)
@@ -3948,6 +4075,7 @@ def main():
         checks.mailbox_status()
         checks.connect_banner()
         checks.preferences()
+        checks.dark_mode()
         browser.close()
 
     if checks.failures:

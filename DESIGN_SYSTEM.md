@@ -277,7 +277,8 @@ A list of steps, each showing a check and its answer, says it in one look.
 - **Never a colour with one side.** Odoo compiles each stylesheet once per
   colour scheme. A colour is a `$mailpro-*` token that picks light or dark from
   `$o-webclient-color-scheme`, never a literal; `tests/test_dark_mode.py`
-  fails on one.
+  fails on one, and `tools/ui_check.py` opens the Inbox in dark mode and
+  fails on a light pane or a line of text below 3:1.
 
 ### The checklist is one column, and so is everything under it
 

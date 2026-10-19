@@ -1,0 +1,18 @@
+// Compiled ahead of web's primary variables in the dark bundle, so these win
+// over its `!default`s. Greys inverted, as Enterprise's dark theme does.
+$o-webclient-color-scheme: dark;
+
+$o-white: #000000;
+$o-black: #ffffff;
+
+$o-gray-100: #1b1d26;
+$o-gray-200: #262a36;
+$o-gray-300: #3c3e4b;
+$o-gray-400: #5f6574;
+$o-gray-500: #9a9ca5;
+$o-gray-600: #b9bcc2;
+$o-gray-700: #d1d3d8;
+$o-gray-800: #e4e6eb;
+$o-gray-900: #f9fafb;
+
+$o-view-background-color: #262a36;
