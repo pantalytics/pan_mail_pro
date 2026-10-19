@@ -4,6 +4,13 @@
 // shape — a coloured dot saying where the step stands, its name, the answer,
 // and the way to the place it is changed. Palette from brand.pantalytics.com.
 
+// Light and dark: Odoo compiles this file once per colour scheme, see the
+// palette at the top of conversation_view.scss.
+$mailpro-dark: if(global-variable-exists(o-webclient-color-scheme),
+                  $o-webclient-color-scheme == dark, false);
+$mailpro-ink: if($mailpro-dark, #fff, #001d21);
+$mailpro-warn: if($mailpro-dark, #ff7a6b, #c0392b);
+
 // The checklist's own box. `o_setting_box` gives it the indent and the width
 // cap of a standard settings block; what is left is the row it contains, which
 // must not stretch to a 2000px window — a name on the left and an arrow on the
@@ -24,7 +31,7 @@
     align-items: flex-start;
     gap: 0.7rem;
     padding: 0.6rem 0;
-    border-bottom: 1px solid rgba(0, 29, 33, 0.06);
+    border-bottom: 1px solid rgba($mailpro-ink, 0.06);
 
     // The rules separate the steps; one under the last of them separates it
     // from nothing.
@@ -41,14 +48,14 @@
     }
 
     .o_mailpro_dot_ok { background: #1f9d63; }
-    .o_mailpro_dot_warn { background: #c0392b; }
+    .o_mailpro_dot_warn { background: $mailpro-warn; }
 
     // Not done is not the same as wrong, and a setup page that opens in red
     // reads as broken. An outline, not a fill.
     .o_mailpro_dot_todo {
         background: transparent;
         // Dark enough to be seen (3:1 on the page), still an outline.
-        box-shadow: inset 0 0 0 1px rgba(0, 29, 33, 0.65);
+        box-shadow: inset 0 0 0 1px rgba($mailpro-ink, 0.65);
     }
 
     .o_mailpro_step_body {
@@ -69,12 +76,12 @@
     // longest name, "1. Pantalytics Account".
     .o_mailpro_step_name {
         font-weight: 600;
-        color: #001d21;
+        color: $mailpro-ink;
         min-width: 11.5rem;
     }
 
     .o_mailpro_step_value {
-        color: rgba(0, 29, 33, 0.6);
+        color: rgba($mailpro-ink, 0.6);
         min-width: 0;
     }
 
@@ -84,11 +91,11 @@
     .o_mailpro_step_msg {
         margin-top: 0.2rem;
         font-size: 0.9em;
-        color: rgba(0, 29, 33, 0.6);
+        color: rgba($mailpro-ink, 0.6);
     }
 
     .o_mailpro_msg_warn {
-        color: #c0392b;
+        color: $mailpro-warn;
     }
 
     .o_mailpro_step_edit {
@@ -107,7 +114,7 @@
 // rows per section. No shadow; a 1px border is the only depth
 // (brand.pantalytics.com/product-ui).
 .o_mailpro_card {
-    border: 1px solid var(--border-color, rgba(0, 29, 33, 0.12));
+    border: 1px solid var(--border-color, rgba($mailpro-ink, 0.12));
     border-radius: 0.5rem;
     padding: 1rem 1.25rem;
 }

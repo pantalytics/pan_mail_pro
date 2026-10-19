@@ -4,13 +4,19 @@
 // tabs and the radios keep the theme's own, so this form does not become the
 // one screen in Odoo that looks different from the rest.
 
+// Light and dark: Odoo compiles this file once per colour scheme, see the
+// palette at the top of conversation_view.scss.
+$mailpro-dark: if(global-variable-exists(o-webclient-color-scheme),
+                  $o-webclient-color-scheme == dark, false);
+$mailpro-ink: if($mailpro-dark, #fff, #001d21);
+
 .o_mailpro_mailbox_form {
     // Text running the width of a 2000px window is two things, not one
     // line. Same cap, same reason, as the setup checklist.
     .o_form_sheet {
         max-width: 60rem;
         box-shadow: none;
-        border: 1px solid rgba(0, 29, 33, 0.12);
+        border: 1px solid rgba($mailpro-ink, 0.12);
         border-radius: 0.75rem;
     }
 
