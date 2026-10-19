@@ -382,6 +382,11 @@ $mailpro-band-gutter: 3.5rem;
     .o_mailpro_trail_conversation .o_mailpro_conversation_head { padding-right: $mailpro-band-gutter; }
     .o_mailpro_trail_conversation_list .o_mailpro_conversation_list_head { padding-right: $mailpro-band-gutter; }
     .o_mailpro_lead_odoo_record .o_mailpro_odoo_record_head { padding-left: $mailpro-band-gutter; }
+    // An empty pane has no header, so its sentence is what sits beside the
+    // button and keeps the same room.
+    .o_mailpro_lead_conversation .o_mailpro_conversation > .o_mailpro_empty { padding-left: $mailpro-band-gutter; }
+    .o_mailpro_trail_conversation .o_mailpro_conversation > .o_mailpro_empty { padding-right: $mailpro-band-gutter; }
+    .o_mailpro_lead_odoo_record .o_mailpro_odoo_record > .o_mailpro_empty { padding-left: $mailpro-band-gutter; }
 
     // 1. the mailbox list
     .o_mailpro_mailbox_list {

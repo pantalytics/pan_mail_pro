@@ -1545,6 +1545,16 @@ class Checks:
             return
         page.wait_for_timeout(500)
         self.error_free('the live folder')
+        # With no conversation open the pane is a sentence, and the fold
+        # button on its edge must sit beside it, not on it.
+        title = page.query_selector('.o_mailpro_conversation > .o_mailpro_empty .o_mailpro_empty_title')
+        for button in page.query_selector_all('.o_mailpro_split_toggle'):
+            if not title or not button.is_visible():
+                continue
+            a, b = title.bounding_box(), button.bounding_box()
+            if (a['x'] < b['x'] + b['width'] and b['x'] < a['x'] + a['width']
+                    and a['y'] < b['y'] + b['height'] and b['y'] < a['y'] + a['height']):
+                self.fail('a fold button covers "%s"' % title.inner_text().strip())
         if page.query_selector('.o_mailpro_conversation_list .o_mailpro_verify'):
             self.fail('a proven session is still asked to confirm it is you')
 
