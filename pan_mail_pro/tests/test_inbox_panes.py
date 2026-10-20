@@ -48,7 +48,8 @@ class TestInboxPanes(TransactionCase):
         self.panes_js = read('static', 'src', 'js', 'conversation_view', 'use_panes.js')
         self.template = read('static', 'src', 'xml', 'conversation_view.xml')
         self.scss = read('static', 'src', 'scss', 'conversation_view.scss')
-        self.architecture = read('ARCHITECTURE.md')
+        # The repository's, one folder above the module.
+        self.architecture = read('..', 'ARCHITECTURE.md')
 
     def test_use_panes_knows_the_four_names(self):
         """The three lists a pane name has to be on to exist at all.
@@ -101,7 +102,7 @@ class TestInboxPanes(TransactionCase):
         `query_selector` just answers None and the check reports the button
         as missing. That is exactly how the rename reached 19.0 red.
         """
-        ui_check = read('tools', 'ui_check.py')
+        ui_check = read('..', 'tools', 'ui_check.py')
         for name in set(re.findall(r'o_mailpro_pane_toggle_([a-z_]+)', ui_check)):
             self.assertIn(name, PANES,
                           'ui_check.py looks for the toggle of "%s", '

@@ -23,7 +23,8 @@ from odoo.addons.pan_mail_pro.models import encryption_utils
 
 _MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 _MIGRATION = os.path.join(_MODULE, 'migrations', '19.0.6.0.0')
-_RENAME_SQL = os.path.join(_MODULE, 'tools', 'rename_to_mail_pro.sql')
+# The repository's, one folder above the module.
+_RENAME_SQL = os.path.join(_MODULE, '..', 'tools', 'rename_to_mail_pro.sql')
 
 _STALE = 'Outlook Pro - Microsoft 365 Email Integration'
 

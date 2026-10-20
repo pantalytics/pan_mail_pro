@@ -15,11 +15,11 @@ set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 NET=pan_ui_net; DB=pan_ui_db; ODOO=pan_ui_odoo; DBNAME=ui_db
-SERIES=$(python3 -c "import ast;print('.'.join(ast.literal_eval(open('$REPO/__manifest__.py').read())['version'].split('.')[:2]))")
+SERIES=$(python3 -c "import ast;print('.'.join(ast.literal_eval(open('$REPO/pan_mail_pro/__manifest__.py').read())['version'].split('.')[:2]))")
 MODE=${1:-boot}
 
 odoo_cli() {
-    docker run --rm --network "$NET" -v "$REPO:/mnt/extra-addons/pan_mail_pro:ro" -v "$REPO/tools/ci_addons:/mnt/ci-addons:ro" \
+    docker run --rm --network "$NET" -v "$REPO:/mnt/extra-addons:ro" -v "$REPO/tools/ci_addons:/mnt/ci-addons:ro" \
         --entrypoint odoo "odoo:${SERIES}" -d "$DBNAME" \
         --db_host="$DB" --db_port=5432 --db_user=odoo --db_password=odoo \
         --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons,/mnt/ci-addons \
@@ -55,7 +55,7 @@ echo " ready."
 # does not; tools/ci_addons/pan_mail_pro_ci_dark/ says why.
 odoo_cli -i pan_mail_pro,pan_mail_pro_ci_dark --without-demo=all
 docker run -d --name "$ODOO" --network "$NET" -p 8069:8069 \
-    -v "$REPO:/mnt/extra-addons/pan_mail_pro:ro" -v "$REPO/tools/ci_addons:/mnt/ci-addons:ro" --entrypoint odoo "odoo:${SERIES}" \
+    -v "$REPO:/mnt/extra-addons:ro" -v "$REPO/tools/ci_addons:/mnt/ci-addons:ro" --entrypoint odoo "odoo:${SERIES}" \
     -d "$DBNAME" --db_host="$DB" --db_port=5432 --db_user=odoo --db_password=odoo \
     --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons,/mnt/ci-addons \
     --max-cron-threads=0 --log-level=warn --dev=xml >/dev/null

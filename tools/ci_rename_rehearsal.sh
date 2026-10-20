@@ -50,7 +50,7 @@ DBNAME=rehearse
 
 SERIES=$(python3 - "$REPO" <<'PY'
 import ast, sys
-manifest = ast.literal_eval(open(f"{sys.argv[1]}/__manifest__.py").read())
+manifest = ast.literal_eval(open(f"{sys.argv[1]}/pan_mail_pro/__manifest__.py").read())
 print(".".join(manifest['version'].split('.')[:2]))
 PY
 )
@@ -191,7 +191,7 @@ LOG="$LOG_DIR/odoo-rehearsal.log"
 set -o pipefail
 TEST_ARGS="--test-enable --test-tags=pan_mail_pro"
 [ -n "$BASE_DUMP" ] && TEST_ARGS=""
-odoo_run "$REPO" pan_mail_pro \
+odoo_run "$REPO/pan_mail_pro" pan_mail_pro \
     -u pan_mail_pro $TEST_ARGS --log-level=info 2>&1 \
     | tee "$LOG"
 

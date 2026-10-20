@@ -12,6 +12,10 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
+# The module is the pan_mail_pro/ folder; everything else at the root is the
+# repository around it (docs, tools, CI). Odoo hosts and the Apps store all
+# want that shape -- see ARCHITECTURE.md §9.16.
+M=pan_mail_pro
 
 FAILURES=0
 step() { printf '\n=== %s\n' "$1"; }
@@ -21,7 +25,7 @@ fail() { echo "::error::$1"; FAILURES=$((FAILURES + 1)); }
 step "Odoo series from the manifest"
 SERIES=$(python3 - <<'PY'
 import ast
-manifest = ast.literal_eval(open('__manifest__.py').read())
+manifest = ast.literal_eval(open('pan_mail_pro/__manifest__.py').read())
 version = manifest['version']
 parts = version.split('.')
 assert len(parts) == 5, f"version must be <series>.<x>.<y>.<z> style, got {version!r}"
@@ -43,8 +47,6 @@ step "XML is well-formed"
 python3 - <<'PY' || fail "Malformed XML."
 import os, sys
 from xml.etree import ElementTree
-# os.walk, not rglob: the repo carries a `pan_mail_pro -> .` symlink for the
-# local Docker addons_path, and rglob would follow it forever.
 failed = checked = 0
 for root, dirs, files in os.walk('.'):
     dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__'}]
@@ -96,7 +98,7 @@ fi
 # explanation, and the title carries only what it does not collect. The
 # exemption is keyed on the first words of that title.
 step "UI — no setting explained only inside a tooltip"
-if grep -rn -A 2 'fa-info-circle' --include='*.xml' views/ | grep -v 'On for your Pantalytics workspace' | grep -E 'title="[^"]{40,}'; then
+if grep -rn -A 2 'fa-info-circle' --include='*.xml' "$M/views/" | grep -v 'On for your Pantalytics workspace' | grep -E 'title="[^"]{40,}'; then
     fail "Put the sentence on the screen as a text-muted line, not in a title attribute."
 else
     echo "OK: no setting hidden in a tooltip."
@@ -116,7 +118,7 @@ fi
 
 step "Boundary — provider SDKs stay inside models/providers/"
 if grep -rn 'graph\.microsoft\.com\|gmail\.googleapis\.com' --include='*.py' . \
-   | grep -v '^./models/providers/' | grep -v '^./tests/'; then
+   | grep -v "^./$M/models/providers/" | grep -v "^./$M/tests/"; then
     fail "Provider URLs may only appear inside models/providers/."
 else
     echo "OK: provider boundary intact."
@@ -136,7 +138,7 @@ import glob, sys
 from xml.etree import ElementTree
 
 bad = []
-for path in glob.glob('static/src/xml/*.xml'):
+for path in glob.glob('pan_mail_pro/static/src/xml/*.xml'):
     for template in ElementTree.parse(path).getroot():
         inherited = template.get('t-inherit')
         if not inherited or inherited.startswith('pan_mail_pro.'):
@@ -154,7 +156,7 @@ step "Every model is named in ARCHITECTURE.md"
 MISSING=0
 # sed, not `grep -oP`: -P is GNU-only, and on macOS BSD grep rejects it and
 # matches nothing -- which made this loop run zero times and report OK.
-for model in $(find models -name '*.py' -exec \
+for model in $(find "$M/models" -name '*.py' -exec \
         sed -n "s/^[[:space:]]*_name = '\([^']*\)'.*/\1/p" {} + | sort -u); do
     if ! grep -qF "\`$model\`" ARCHITECTURE.md; then
         echo "::error file=ARCHITECTURE.md::Model '$model' is not documented in ARCHITECTURE.md"
@@ -175,9 +177,9 @@ step "Every test file is imported by tests/__init__.py"
 # asserting the sync sends no mail, so the green build proved the opposite of
 # what it appeared to. ci_assert_tests.sh cannot see it -- a suite that never
 # had the tests has no count to have lost.
-ON_DISK=$(cd tests && ls test_*.py 2>/dev/null | sed 's/\.py$//' | sort)
+ON_DISK=$(cd "$M/tests" && ls test_*.py 2>/dev/null | sed 's/\.py$//' | sort)
 # sed, not `grep -oP`: -P is GNU-only and this must run on macOS too.
-IMPORTED=$(sed -n 's/^from \. import \(test_[A-Za-z0-9_]*\).*/\1/p' tests/__init__.py | sort)
+IMPORTED=$(sed -n 's/^from \. import \(test_[A-Za-z0-9_]*\).*/\1/p' "$M/tests/__init__.py" | sort)
 if [ "$ON_DISK" != "$IMPORTED" ]; then
     comm -23 <(echo "$ON_DISK") <(echo "$IMPORTED") | while read -r f; do
         [ -n "$f" ] && echo "::error file=tests/__init__.py::tests/$f.py is never imported, so it never runs"
@@ -192,8 +194,8 @@ fi
 
 # ---------------------------------------------------------------------------
 step "Migration folder is not above the manifest version"
-VERSION=$(python3 -c "import ast,pathlib;print(ast.literal_eval(pathlib.Path('__manifest__.py').read_text())['version'])")
-LATEST=$(ls migrations 2>/dev/null | sort -V | tail -1)
+VERSION=$(python3 -c "import ast,pathlib;print(ast.literal_eval(pathlib.Path('pan_mail_pro/__manifest__.py').read_text())['version'])")
+LATEST=$(ls "$M/migrations" 2>/dev/null | sort -V | tail -1)
 if [ -n "$LATEST" ]; then
     HIGHEST=$(printf '%s\n%s\n' "$VERSION" "$LATEST" | sort -V | tail -1)
     if [ "$HIGHEST" != "$VERSION" ]; then
@@ -209,10 +211,11 @@ fi
 step "Manifest data files exist"
 python3 - <<'PY' || fail "Manifest references files that are not on disk."
 import ast, pathlib, sys
-manifest = ast.literal_eval(open('__manifest__.py').read())
-missing = [f for f in manifest.get('data', []) if not pathlib.Path(f).is_file()]
+module = pathlib.Path('pan_mail_pro')
+manifest = ast.literal_eval((module / '__manifest__.py').read_text())
+missing = [f for f in manifest.get('data', []) if not (module / f).is_file()]
 missing += [f for f in manifest.get('assets', {}).get('web.assets_backend', [])
-            if not pathlib.Path(f.split('/', 1)[1]).is_file()]
+            if not (module / f.split('/', 1)[1]).is_file()]
 if missing:
     print("Referenced in __manifest__.py but missing on disk:")
     print("\n".join(f"  - {m}" for m in missing))
@@ -235,7 +238,7 @@ import ast, re, sys
 # json` — which is exactly how the statement shipped unable to run at all. Only
 # `tests/test_rename_migration.py` proves it executes; this one proves it says
 # the right thing when it does.
-manifest = ast.literal_eval(open('__manifest__.py').read())
+manifest = ast.literal_eval(open('pan_mail_pro/__manifest__.py').read())
 sql = open('tools/rename_to_mail_pro.sql').read()
 wrong = [f"{col} = jsonb_build_object('en_US', {manifest[key]!r})"
          for col, key in (('shortdesc', 'name'), ('summary', 'summary'))
@@ -263,7 +266,7 @@ if [ -n "${BASE_REF:-}" ]; then
     else
         step "Models changed implies tests changed (vs $BASE_REF)"
         CHANGED=$(git diff --name-only "$MERGE_BASE" HEAD)
-        if echo "$CHANGED" | grep -q '^models/' && ! echo "$CHANGED" | grep -q '^tests/'; then
+        if echo "$CHANGED" | grep -q "^$M/models/" && ! echo "$CHANGED" | grep -q "^$M/tests/"; then
             fail "This branch changes models/ but no test. Add or update one."
         else
             echo "OK: model changes are accompanied by tests."
