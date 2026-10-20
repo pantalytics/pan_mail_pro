@@ -165,9 +165,9 @@ names it explicitly:
 A new URL means a new directory and a stale `addons_path` entry pointing at the
 old one, so the module would vanish from the addons path mid-upgrade. That
 directory is a path entry rather than the addon itself — Odoo finds the module
-inside it through the `pan_mail_pro -> .` symlink at the repository root, which
-is what lets one single-addon repo be served under its own technical name from
-a directory called something else. The old directory name is therefore harmless
+inside it as the `pan_mail_pro/` folder (up to 19.0.30.2.0 a `pan_mail_pro -> .`
+symlink at the repository root), which is what lets the repo be served under the
+module's own technical name from a directory called something else. The old directory name is therefore harmless
 and the rename of the source is a separate, later change that also edits
 `addons_path`.
 

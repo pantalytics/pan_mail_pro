@@ -2681,6 +2681,18 @@ the terms.
 Releases up to and including `v19.0.7.13.1` were published under LGPL-3 and
 stay there; the relicence applies from `19.0.7.14.0` onwards.
 
+**The module is the `pan_mail_pro/` folder, not the repository root.** Every
+host reads a repository the same way: the checkout is an `addons_path` entry
+and each folder in it holding a `__manifest__.py` is a module. Cloudpepper
+names the checkout after the URL, Odoo.sh adds a submodule's folder, and the
+Apps store refuses a repository with no module folder at all ("No module found
+in repository"). Up to 19.0.30.2.0 the module sat at the root with a
+`pan_mail_pro -> .` symlink standing in for the folder; Cloudpepper and
+Odoo.sh followed it, the Apps store does not. A real folder is the one shape
+all three read, so whether to list in the store stays the licence decision
+above and never becomes a repository change. The repository around the module
+(docs, `tools/`, CI, this file) stays at the root and does not ship with it.
+
 ### 9.17 Connecting to Pantalytics, and working only when connected
 
 Settings → Mail Pro → Pantalytics Account. The admin presses **Connect to

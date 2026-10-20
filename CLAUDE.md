@@ -37,6 +37,10 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 
 ## Key Files
 
+The module is the `pan_mail_pro/` folder; the paths below are relative to it.
+Docs, `tools/` and CI sit at the repository root around it (ARCHITECTURE.md
+§9.16 says why).
+
 | File | Purpose |
 |------|---------|
 | `models/mail_provider_client.py` | Provider-agnostic client contract + registry |
@@ -200,7 +204,7 @@ Each addon repo can be tested independently with its own `.local/` directory. A 
 
 | Repo | Mount | Effect |
 |------|-------|--------|
-| pan_mail_pro | `..:/mnt/extra-addons/pan_mail_pro` | Single addon, direct from repo |
+| pan_mail_pro | `..:/mnt/extra-addons` | The repo is the addons path entry; the module is its `pan_mail_pro/` folder |
 | odoo-pantalytics | `../addons:/mnt/extra-addons` | All addons via submodules |
 | odoo-customer-example | `../addons:/mnt/extra-addons` | All addons via submodules |
 

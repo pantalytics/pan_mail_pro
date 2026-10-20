@@ -59,19 +59,21 @@ most changes. A release that adds fields or views also needs **Apps → Mail Pro
 
 ### Your own server or Docker
 
-1. Clone the branch into a folder on Odoo's `addons_path`:
+1. Clone the branch and add the clone itself to Odoo's `addons_path`. The
+   module is the `pan_mail_pro/` folder inside it:
 
 ```bash
-cd /path/to/your/addons
+cd /opt/odoo
 git clone -b 19.0 https://github.com/pantalytics/pan_mail_pro
+# odoo.conf: addons_path = ...,/opt/odoo/pan_mail_pro
 ```
 
 2. Make sure Odoo's Python has `cryptography`: `pip install cryptography`
    (the official `odoo:19.0` Docker image already has it)
 3. Restart Odoo
 
-In Docker, mount the folder that holds the clone as an extra addons directory,
-for example `./addons:/mnt/extra-addons`, and put `/mnt/extra-addons` in
+In Docker, mount the clone as an extra addons directory, for example
+`./pan_mail_pro:/mnt/extra-addons`, and put `/mnt/extra-addons` in
 `addons_path` in `odoo.conf`.
 
 ### Then, on every host

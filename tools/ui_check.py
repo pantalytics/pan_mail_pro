@@ -59,7 +59,7 @@ PROVIDER_CODES = ('outlook', 'gmail', 'imap')
 
 
 def manifest_version():
-    manifest = ast.literal_eval(open(f'{REPO}/__manifest__.py').read())
+    manifest = ast.literal_eval(open(f'{REPO}/pan_mail_pro/__manifest__.py').read())
     return manifest['version']
 
 
