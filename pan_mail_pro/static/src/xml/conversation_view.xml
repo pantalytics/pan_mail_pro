@@ -1070,6 +1070,10 @@
                                     <span class="o_mailpro_meta_key">Cc</span>
                                     <t t-esc="message.cc"/>
                                 </t>
+                                <t t-if="threadSpansMailboxes and message.mailbox">
+                                    <span class="o_mailpro_meta_key">Mailbox</span>
+                                    <t t-esc="message.mailbox"/>
+                                </t>
                             </span>
                             <i class="fa fa-chevron-down o_mailpro_meta_chevron flex-shrink-0"
                                aria-hidden="true"/>
@@ -1082,6 +1086,10 @@
                             <t t-if="message.cc">
                                 <dt>Cc</dt>
                                 <dd t-esc="message.cc"/>
+                            </t>
+                            <t t-if="threadSpansMailboxes and message.mailbox">
+                                <dt>Mailbox</dt>
+                                <dd t-esc="message.mailbox"/>
                             </t>
                             <dt>Date</dt>
                             <dd t-esc="fullDate(message.date)"/>
