@@ -251,7 +251,11 @@ message (recipients, the X-Odoo-* headers and the database marker, the MIME
 itself) for every sender, Graph included, which maps the same pairs onto its
 JSON; `providers/http_utils.py` is the one retry-and-throttle loop both HTTP
 clients call, so a `Retry-After` is read the same way whichever provider sent
-it. Two optional seams on the contract keep a sync run cheap without changing
+it. That loop, and the IMAP connection, ask the contract's `interactive()`
+whether a person is waiting on the answer: the Inbox's live reads and marks run
+inside it, and get one attempt with a 10-second timeout instead of the cron's
+three retries at 30 seconds each. The cron retries; the person does not wait
+for it. Two optional seams on the contract keep a sync run cheap without changing
 a caller: `receiving_session(account)` is a context the fetcher enters once
 per mailbox run (a no-op for Graph and Gmail; one IMAP login and one SELECT
 per folder instead of one per message), and `get_message_attachments(...,
@@ -551,11 +555,21 @@ All mailboxes read what Odoo imported, and a live folder carries no number,
 because the one Odoo can count is not what the folder lists. `LIVE_FOLDERS`
 names the four, once on each side of the RPC. Over it, a filter asks the one question it
 exists for: in Odoo, or not. **Not in Odoo** and **In Odoo** sit in the search
-bar's own filter menu (19.0.29.1.0; they were two pills in the list header).
+bar's own filter menu (19.0.29.1.0; they were two pills in the list header),
+right under Unread and Read since 19.0.29.6.0: the two everyday questions first.
 The live read takes them from the context keys they carry, because no domain
 over `mail.message` reaches a provider's rows; in an imported folder their
-domains say the same thing, all of it in Odoo and none of it not. A row that is in Odoo opens the conversation that exists; one that is
-not opens read-only with **Add to Odoo** under it.
+domains say the same thing, all of it in Odoo and none of it not.
+**Unread**, **Read** and **Flagged** reach the live read the same way
+(19.0.29.4.0): unread and flagged become the provider's own search terms, read
+narrows the page. Odoo keeps no copy of the flag, so over an imported folder
+Flagged is empty: the one case dropped, rather than a second mirror. A row that is in Odoo opens the conversation that exists; one that is
+not opens read-only with **Add to Odoo** under it. The button opens the
+link picker first (a kind of record, then the record, the same two steps as
+linking and New Email), checks the reader may write the pick, and hands it to
+the matcher as rule 0, so the mail lands there and its conversation is linked
+there for the next reply. It never defaults to the sender's contact: that is
+the unlinked state, and the reader just said where the mail belongs.
 
 What Outlook does to a message you open, this does to the same message
 (19.0.29.0.0): `live_mark` marks it read at the provider once a pick has put
@@ -569,9 +583,47 @@ Live rows only: a row there is one provider message in a mailbox you own,
 where an imported conversation is many, in mailboxes that may not be yours.
 Delete is not offered; Deleted is a folder this screen reads, not a button.
 
+**And ownership is not enough** (19.0.30.0.0). An Odoo session as the owner
+is minted by a hoster's "log in as", by an administrator who resets the
+password, and by the owner, and Odoo cannot tell them apart. So `_own_mailbox`
+also wants the provider to have said, in *this* session, that the person at
+the keyboard is the sign-in behind the mailbox. For Microsoft and Google that
+is one round trip through the consent screen with `login_hint` and
+`prompt=none` first (a browser already signed in there comes straight back;
+a refusal is sent again with a screen), compared on the way back by the
+stable id the account stored at consent (`provider_user_id`; the address
+when a grant predates it) and never by the address alone, and with the
+round's own tokens dropped. For IMAP it is one `LOGIN` with a password typed
+in a dialog, never the stored one (`verify_password` on the contract). The
+proof is `request.session['pan_mail_verified']`, keyed on the account and the
+uid: a session is a file in the filestore, not a row, so there is no table to
+widen an ACL to, and a fresh session (which is what every impersonation is)
+starts without it. It lives as long as the session. `live_mailboxes` reports
+`verified` per mailbox, and before it the four live folders draw the brand's
+one-line empty state over whatever Odoo imported (Inbox, Sent) or over
+nothing (Archive, Deleted); the imported mail itself is not behind the gate,
+because it was readable to the same people before. What this does not stop,
+on purpose: somebody at the owner's unlocked laptop (the same as the mail
+client beside it), and a server administrator with the database and the key.
+The round trip's nonce lives in the session too (`pan_mail_verify`), so the
+proof is bound to the browser that asked for it, and the two flows are told
+apart at the callback by which nonce came back.
+
 The reasoning, including what it deliberately does not do (no reply to a mail
 Odoo does not have, no paging past the first page, no shared mailboxes), is in
 `docs/research/personal-mailbox.md`.
+
+**The list asks about a mailbox, the pane asks about a record.** The mailbox is
+a clause on every list query (the folders, the counts, the rows) and not on
+`read_conversation` for a record. A thread two colleagues are on is synced by
+both mailboxes and the Message-ID dedup leaves each message in whichever one
+fetched it first, so a pane filtered by mailbox cut it along a line the reader
+cannot see (#206). Nothing is widened: the pane runs without `sudo()` and
+`_whose_domain` still applies. A thread that spans more than one mailbox says
+so per message, and the reply leaves from the mailbox of the newest incoming
+message. Marking read keeps the mailbox, because a provider's read state
+belongs to one mailbox and opening a thread must not mark a colleague's mail
+read.
 
 Replying happens in the conversation pane, not in a dialog over the screen: a
 dialog hides the list, the record and the mail being answered, which are the
@@ -827,6 +879,22 @@ rather than wrapped, because it is in the list above and the mail below, and
 the Linked-to label dropped, because the chip says what it is. The browser
 check pins what the head may take, so the next thing added to it argues with
 a failing assertion.
+
+19.0.29.2.0 makes the phone read the way a phone mail app does. The panes
+are three screens side by side -- the list, the conversation, the Odoo
+record -- and a finger moves between them: right is back, left is the
+record, and the pane follows the finger before it commits or springs back
+(`swipe.js`). The edge of the glass stays the browser's, because iOS Safari
+keeps its own back gesture there, and a mail that scrolls sideways keeps its
+own scroll. Whichever pane arrives slides in from its side. What made the
+mail start halfway down the screen is gone from above it: the top bar is the
+list's and hides while a mail is open, Reply floats over the bottom of the
+mail where a thumb is, and what the conversation is linked to -- the chips,
+the suggestion, the followers -- is the top of the record pane, one swipe
+to the right. The record button in the head says when something waits there
+with a dot, and it is there on an unlinked conversation too, because linking
+one is then the reason to go. The tabs stay over the mail: they decide what
+the conversation pane shows, so they belong to it.
 
 19.0.14.2.0 finishes that row. Expand was the one control on the screen
 still wearing a label and a grey Bootstrap button, in a header whose whole
@@ -1479,6 +1547,7 @@ Rules run strongest first; the first one at or above `AUTO_ROUTE_CONFIDENCE`
 
 | # | Rule | Conf. | Basis |
 |---|------|-------|-------|
+| 0 | `chosen` | 1.0 | the record picked in **Add to Odoo**, passed as `pan_mail_link_target`. Never set by the cron |
 | 1 | `odoo_headers` | 1.0 | `X-Odoo-Model` / `X-Odoo-Record-Id` |
 | 2 | `references` | 1.0 | `In-Reply-To` + the full `References` chain |
 | 3 | `thread_link` | 0.9 | (provider, **mailbox**, thread key) — every key from `thread_keys()` |
@@ -2316,18 +2385,28 @@ stopped.
 Incoming sync refuses outright: there is nothing to preserve, and reading a
 customer's live mailbox from a test copy is the thing being prevented.
 
-Outgoing mail is different, because staging is where the *flow* gets tested.
-`mail.mail.send()` marks the batch `sent` without routing it (`_deliver_nowhere`)
-— the chatter entry stays, the recipient rows read `sent`, and `failure_reason`
-on the mail is the one place that says it never left the database. The sender is
-told by a bus notification rather than a `UserError`, because the raise would
-unwind the `message_post` that produced the mail and take the tester's chatter
-entry with it. That is the whole reason the refusal moved out of `_resolve_route`.
+Outgoing mail is different, because staging is where the *flow* gets tested,
+and the tester wants to read the email that went out. `mail.mail.send()` hands
+the batch to Odoo's own SMTP path (`_send_on_staging`), exactly as it does
+before any mailbox exists. Neutralizing leaves one active `ir_mail_server`, and
+each host already decides where that leads: Cloudpepper catches staging mail in
+MailHog, odoo.sh shows it on the build's Mails tab, and a bare restore fails at
+the invalid host Odoo inserted. The module inherits that answer rather than
+writing its own; an earlier version recorded the mail as sent and delivered it
+nowhere, which hid the one thing the tester came to look at.
 
-Nothing is at risk in doing so. `_deliver_nowhere` asks no mailbox, no
-credential and no client, and the three layers underneath still refuse
-independently. The mail queue takes the same path minus the notification: its
-run belongs to a cron, not to whoever is logged in.
+Never a provider. `_send_on_staging` asks no mailbox, no account and no client,
+so Graph, Gmail and the module's own IMAP/SMTP client are out of reach by
+construction, and the three layers underneath still refuse on their own. The
+check sits after the mailbox count, so switching a mailbox back on in staging
+changes nothing. What it trusts is the database's `ir_mail_server` rows, which
+is Odoo's own contract for a neutralized copy.
+
+The composer says so, once. On a copy every mailbox is archived and every
+credential gone, so the real Send From would be an empty list and the connect
+warning would ask for something that cannot work. On `x_on_test_instance` both
+are hidden, and a read-only Send From reading "Test inbox" takes the dropdown's
+place, with one line under it saying why it cannot be changed.
 
 ---
 
@@ -2584,7 +2663,7 @@ whole attempt runs in one savepoint: a failed test that left a `mail.mail`
 behind would be delivered by the queue cron minutes later, which is a test
 email arriving out of nowhere long after the reader concluded it had failed.
 
-### 9.16 Source-available, sold direct, not through the Odoo Apps store
+### 9.16 Source-available, free in the Odoo Apps store, paid in the app
 
 The licence is the Elastic License 2.0 (`LICENSE`), the same one Odoo MCP Pro
 uses. It protects the thing being sold — offering Mail Pro to third parties as
@@ -2596,23 +2675,36 @@ Odoo's manifest has no value for a source-available licence, so
 `__manifest__.py` reads `'license': 'Other proprietary'` and `LICENSE` carries
 the real terms.
 
-**That value is only legal outside the Odoo Apps store, and that is the
-decision.** apps.odoo.com requires `OPL-1` for a paid app, which is a stricter
-licence than we want: it also forbids a customer from redistributing a
-modified copy, which the Elastic License permits and which costs us nothing.
-Mail Pro is sold direct from pantalytics.com, so the store's constraint does
-not apply.
+**The store listing is free; the money is in the app (decided 2026-10-20).**
+apps.odoo.com requires `OPL-1` for a *paid* app, which is a stricter licence
+than we want: it also forbids a customer from redistributing a modified copy,
+which the Elastic License permits and which costs us nothing. A free listing
+carries no such requirement, and the store's one-off price could not express
+our pricing anyway: Free, Pro and Max are a Pantalytics subscription, bought
+from the Billing page of the workspace the instance connects to (step 1). The
+listing is a way to be found and installed, not a way to be paid.
 
 The consequence for anyone changing this: **do not set the manifest licence to
-`OPL-1` to "fix" a store listing.** If distributing through the Odoo Apps store
-is ever wanted, that is a licence change and a business decision, not a
-manifest edit — take it deliberately, and re-check `LICENSE`, the About block
+`OPL-1` to "fix" a store listing, and do not put a price on it.** A paid
+listing is a licence change and a business decision, not a manifest edit — take it deliberately, and re-check `LICENSE`, the About block
 in `views/res_config_settings_views.xml` and the licence section of
 `README.md` together, because all three state the terms and only one of them is
 the terms.
 
 Releases up to and including `v19.0.7.13.1` were published under LGPL-3 and
 stay there; the relicence applies from `19.0.7.14.0` onwards.
+
+**The module is the `pan_mail_pro/` folder, not the repository root.** Every
+host reads a repository the same way: the checkout is an `addons_path` entry
+and each folder in it holding a `__manifest__.py` is a module. Cloudpepper
+names the checkout after the URL, Odoo.sh adds a submodule's folder, and the
+Apps store refuses a repository with no module folder at all ("No module found
+in repository"). Up to 19.0.30.2.0 the module sat at the root with a
+`pan_mail_pro -> .` symlink standing in for the folder; Cloudpepper and
+Odoo.sh followed it, the Apps store does not. A real folder is the one shape
+all three read, so whether to list in the store stays the licence decision
+above and never becomes a repository change. The repository around the module
+(docs, `tools/`, CI, this file) stays at the root and does not ship with it.
 
 ### 9.17 Connecting to Pantalytics, and working only when connected
 
@@ -3071,7 +3163,7 @@ eight groups:
 | Pipeline | `test_incoming_sync.py`, `test_incoming_sync_gmail.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_internal_domains.py`, `test_mail_matcher.py`, `test_thread_drift.py`, `test_reply_sync.py`, `test_attachments.py`, `test_routing_log.py`, `test_mail_coverage.py`, `test_sync_sends_nothing.py` | Fetch → filter → match → post, the reply that comes back to its record, and the one invariant of the sync's outbound side |
 | Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, and the one mailbox setting a user owns |
-| The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, and the four pane names |
+| The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, and that no colour lacks a dark side |
 | The outside | `test_oauth_routes.py`, `test_connect_banner.py`, `test_license.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, the Pantalytics link, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 

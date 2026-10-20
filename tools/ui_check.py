@@ -59,7 +59,7 @@ PROVIDER_CODES = ('outlook', 'gmail', 'imap')
 
 
 def manifest_version():
-    manifest = ast.literal_eval(open(f'{REPO}/__manifest__.py').read())
+    manifest = ast.literal_eval(open(f'{REPO}/pan_mail_pro/__manifest__.py').read())
     return manifest['version']
 
 
@@ -394,8 +394,10 @@ class Checks:
     # one the rest of the web client already uses. The names come from the
     # Inbox's search view; Date is the standard month/quarter/year filter and
     # Custom Filter is Odoo's, so both prove the menu is really Odoo's.
-    FILTERS = ('Unread', 'On a contact only', 'Linked to nothing',
-               'Not in Odoo', 'In Odoo', 'Date')
+    # The two everyday questions -- have I read it, is it in Odoo -- come
+    # first; the triage filters sit under them.
+    FILTERS = ('Unread', 'Read', 'Not in Odoo', 'In Odoo', 'Flagged',
+               'On a contact only', 'Linked to nothing', 'Date')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.
@@ -1122,10 +1124,9 @@ class Checks:
             if not self.visible(selector):
                 self.fail(f'{name} did not come back at {WIDE}px')
 
-        # The middle of a wide monitor is the most expensive space on it. The
-        # mail column stops at its own 48rem whatever the pane does, so a
-        # conversation pane wider than that is empty paper between the mail
-        # and the form -- which is exactly what the record is there to take.
+        # The middle of a wide monitor is the most expensive space on it. Mail
+        # reads best at about 48rem, so a conversation pane much wider than
+        # that leaves room the record is there to take.
         # Only a pane with a record in it can take it, so the empty state is
         # not this assertion's business.
         if page.query_selector('.o_mailpro_odoo_record .o_form_view'):
@@ -1140,6 +1141,134 @@ class Checks:
                 self.fail('at %dpx the record pane is %dpx wide: the room the '
                           'conversation left did not reach it' % (WIDE, record))
             self.shot('inbox-wide-record.png')
+
+    def slow_network(self):
+        """A slow server is a waiting screen, never a frozen or a wrong one.
+
+        Every other check runs against a server on the same machine, where
+        each answer lands before a person could see the screen wait -- so the
+        skeletons, the dimmed list and the token that drops a stale answer
+        were all green by never being reached. Here the two reads a person
+        waits on are held in the browser and released by hand, and the screen
+        is read while they are out (docs/plans/smooth-inbox.md):
+
+        - the four panes are drawn before the list has answered;
+        - the list shows its skeleton, and the conversation pane its own,
+          never "Not linked to a record yet" over a conversation that may be;
+        - a second click while the first read is out ends on the second;
+        - a folder switch dims the old list instead of blanking it;
+        - an answer inside 150ms shows no skeleton at all.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            return
+        page = self.browser.new_page(viewport={'width': WIDE, 'height': 1100})
+        login(page, self.base)
+        held = []
+        holding = {'on': True}
+
+        def hold(route):
+            if holding['on']:
+                held.append(route)
+            else:
+                route.continue_()
+
+        def release():
+            while held:
+                route = held.pop(0)
+                try:
+                    route.continue_()
+                except Exception:
+                    pass  # aborted by the screen itself: the point of the abort
+
+        def opacity(selector):
+            return page.evaluate(
+                "(s) => { const el = document.querySelector(s);"
+                " return el ? Number(getComputedStyle(el).opacity) : null; }", selector)
+
+        for method in ('search_conversations', 'read_conversation'):
+            page.route(f'**/web/dataset/call_kw/pan.mail.conversation/{method}*', hold)
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_conversation_list', timeout=30000)
+        except Exception:
+            self.fail('the Inbox waits for its list before drawing anything')
+            release()
+            page.close()
+            return
+        page.wait_for_timeout(600)
+        if not held:
+            self.fail('the Inbox read no list after it was drawn')
+        if (opacity('.o_mailpro_conversation_list .o_mailpro_skeleton') or 0) < 0.9:
+            self.fail('the conversation list shows no skeleton while it waits')
+
+        # The list answers; the conversation it opens is still out.
+        release()
+        try:
+            page.wait_for_selector('.o_mailpro_group', timeout=15000)
+        except Exception:
+            self.fail('the conversation list did not fill once its read was released')
+            page.close()
+            return
+        page.wait_for_timeout(600)
+        if page.query_selector('.o_mailpro_conversation .o_mailpro_unlinked_title, '
+                               '.o_mailpro_conversation .o_mailpro_relink_open'):
+            self.fail('the conversation pane says "not linked" before its read answered')
+        if (opacity('.o_mailpro_conversation .o_mailpro_pane_skeleton') or 0) < 0.9:
+            self.fail('the conversation pane shows no skeleton while it waits')
+        if page.query_selector('.o_mailpro_odoo_record .o_mailpro_empty_title'):
+            self.fail('the record pane says "No record yet" before the read answered')
+        if self.out:
+            page.screenshot(path=os.path.join(self.out, 'slow_conversation.png'))
+
+        # A second click while the first read is out: the second one wins.
+        rows = page.query_selector_all('.o_mailpro_group_head')
+        if len(rows) >= 2:
+            want = rows[1].query_selector('.o_mailpro_subject').inner_text().strip()
+            rows[1].query_selector('.o_mailpro_item').click()
+            page.wait_for_timeout(300)
+            release()
+            page.wait_for_timeout(1500)
+            release()
+            page.wait_for_timeout(800)
+            title = page.query_selector('.o_mailpro_conversation .o_mailpro_conversation_title')
+            got = title.inner_text().strip() if title else ''
+            if got != want:
+                self.fail(f'a second click while the first read was out ended on '
+                          f'{got!r}, not {want!r}')
+        release()
+
+        # Another folder: the old rows stay, dimmed, while the new ones come.
+        page.wait_for_timeout(500)
+        folder = page.query_selector('.o_mailpro_folder:not(.o_mailpro_folder_active)')
+        if folder:
+            folder.click()
+            page.wait_for_timeout(600)
+            if not page.query_selector('.o_mailpro_conversation_list_body.o_mailpro_stale'):
+                self.fail('a folder switch does not mark the old list as stale')
+            elif (opacity('.o_mailpro_conversation_list_body') or 1) > 0.75:
+                self.fail('a folder switch leaves the old list looking current')
+            release()
+            page.wait_for_timeout(800)
+            if page.query_selector('.o_mailpro_conversation_list_body.o_mailpro_stale'):
+                self.fail('the list stays dimmed after its answer arrived')
+
+        # A fast answer: whatever skeleton the click drew is still invisible.
+        holding['on'] = False
+        release()
+        page.wait_for_timeout(500)
+        row = page.query_selector('.o_mailpro_item:not(.o_mailpro_item_active)')
+        if row:
+            row.click()
+            seen = opacity('.o_mailpro_conversation .o_mailpro_pane_skeleton')
+            if seen is not None and seen > 0.05:
+                self.fail('a skeleton shows the moment a conversation is clicked')
+        page.wait_for_timeout(800)
+        dialog = page.query_selector('.o_error_dialog, .o_dialog_error')
+        if dialog:
+            self.fail(f'the Inbox on a slow network opened an error dialog: '
+                      f'{dialog.inner_text()[:200]}')
+        page.close()
 
     def chatter_door(self):
         """Door 1: a record's chatter has a way into the Inbox, and it works.
@@ -1235,18 +1364,23 @@ class Checks:
     LIVE_FILTERS = ('Not in Odoo', 'In Odoo')
 
     def live_folder(self):
-        """Your own mailbox's Inbox is the mailbox itself, nobody else's is.
+        """Your own mailbox's Inbox is the mailbox itself, nobody else's is,
+        and not before this session has the provider's word that it is you.
 
         The seed cannot reach a provider -- the token is the word "demo" --
-        so what this proves is the half a browser can: Inbox under the
-        mailbox you own reads the provider and no other Inbox does, there is
-        no second folder claiming to be the whole mailbox, the filter over it asks
-        about Odoo rather than about linking, and a folder that cannot reach
-        its provider says so instead of throwing. Who may call the methods
-        underneath is `tests/test_live_mailbox.py`, where it belongs.
+        so what this proves is the half a browser can: a fresh session is
+        asked to confirm it is you and makes no live read until it has, the
+        action goes to Microsoft with the address filled in, and then, with
+        the proof stood in for at the browser, Inbox under the mailbox you
+        own reads the provider and no other Inbox does, the filter over it
+        asks about Odoo rather than about linking, and a folder that cannot
+        reach its provider says so instead of throwing. Who may call the
+        methods underneath, and what the server says to a session without
+        the proof, is `tests/test_live_mailbox.py` and
+        `tests/test_live_verify.py`, where it belongs.
         """
-        action = dict(module_menu_actions(self.call)).get('Inbox')
-        if not action:
+        action_id = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action_id:
             return  # `conversation_view` already said so.
 
         page = self.page
@@ -1254,7 +1388,7 @@ class Checks:
         # the window and the folder go back where they were found.
         was = dict(page.viewport_size)
         page.set_viewport_size({'width': 1600, 'height': 1000})
-        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        page.goto(f'{self.base}/odoo/action-{action_id}', wait_until='domcontentloaded')
         try:
             page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
         except Exception:
@@ -1294,6 +1428,103 @@ class Checks:
             self.leave_live_folder(was)
             return
 
+        # Before this session has the provider's word that it is the owner,
+        # the live folders ask for it: one line and one action over what Odoo
+        # imported, and no live read at all -- a fresh browser is exactly the
+        # session a hoster's "log in as" opens, so a live request here would
+        # be the hole the gate exists to close. `tests/test_live_verify.py`
+        # proves the server refuses; this proves the screen does not ask.
+        asked = []
+        page.route('**/pan.mail.conversation/live_messages',
+                   lambda route: (asked.append(route.request.url), route.continue_()))
+        page.query_selector_all('.o_mailpro_folders')[-1] \
+            .query_selector_all('.o_mailpro_folder')[0].click()
+        try:
+            page.wait_for_selector('.o_mailpro_conversation_list .o_mailpro_verify',
+                                   timeout=15000)
+        except Exception:
+            self.fail('the live folder did not ask to confirm it is you')
+            page.unroute('**/pan.mail.conversation/live_messages')
+            self.leave_live_folder(was)
+            return
+        page.wait_for_timeout(500)
+        self.error_free('the live folder before the proof')
+        line = page.query_selector('.o_mailpro_conversation_list .o_mailpro_verify')
+        if 'Sign in with Microsoft 365' not in line.inner_text():
+            self.fail(f'the confirm line reads {line.inner_text()!r}, '
+                      'expected the provider by name')
+        action = page.query_selector('.o_mailpro_verify_action')
+        if not action or action.inner_text().strip() != 'Sign in with Microsoft 365':
+            self.fail('the confirm line has no "Sign in with Microsoft 365" action')
+        if len(page.query_selector_all('.o_mailpro_verify')) != 1:
+            self.fail('the confirm line is drawn more than once')
+        # Archive has nothing Odoo imported, so before the proof it is the
+        # line and nothing else: not "Nothing in Archive", which would say
+        # the folder is empty when it has not been read.
+        page.query_selector_all('.o_mailpro_folders')[-1] \
+            .query_selector_all('.o_mailpro_folder')[3].click()
+        page.wait_for_timeout(1500)
+        if not page.query_selector('.o_mailpro_conversation_list .o_mailpro_verify'):
+            self.fail('Archive before the proof does not ask to confirm it is you')
+        if page.query_selector('.o_mailpro_conversation_list .o_mailpro_empty'):
+            self.fail('Archive before the proof claims to be empty')
+        if asked:
+            self.fail(f'the live folder was read before the proof: {asked}')
+        self.shot('inbox-live-confirm.png')
+        page.unroute('**/pan.mail.conversation/live_messages')
+
+        # The action is a full page round trip to Microsoft with the address
+        # filled in and the silent try first. The seed's registration is
+        # fake, so Microsoft is stood in for at the network: what is
+        # asserted is the URL this Odoo sends the browser to.
+        sent = []
+
+        def microsoft(route):
+            sent.append(route.request.url)
+            route.fulfill(status=200, content_type='text/html',
+                          body='<title>Microsoft (stood in for)</title>')
+
+        page.route('**/login.microsoftonline.com/**', microsoft)
+        try:
+            with page.expect_request('**/login.microsoftonline.com/**', timeout=30000):
+                page.click('.o_mailpro_verify_action')
+        except Exception:
+            self.fail('Sign in with Microsoft 365 did not reach Microsoft')
+        finally:
+            page.unroute('**/login.microsoftonline.com/**')
+        if sent:
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(sent[0]).query)
+            if query.get('login_hint') != ['rutger@example.com']:
+                self.fail(f'the sign-in opens on {query.get("login_hint")}, '
+                          'not on the mailbox address')
+            if query.get('prompt') != ['none']:
+                self.fail('the first try at Microsoft is not the silent one')
+
+        # From here the session is treated as proven, at the browser: the
+        # list that says so is answered with `verified` on, and the live read
+        # with what this seed can reach, which is nothing. The server's own
+        # answer to a session without the proof is the test file's.
+        def proven(route):
+            response = route.fetch()
+            rows = response.json()
+            for row in rows.get('result') or []:
+                row['verified'] = True
+            route.fulfill(response=response, json=rows)
+
+        def unreachable(route):
+            request_id = (route.request.post_data_json or {}).get('id')
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({
+                'jsonrpc': '2.0', 'id': request_id,
+                'result': {'rows': [], 'scanned': 0, 'connected': False}}))
+
+        page.route('**/pan.mail.conversation/live_mailboxes', proven)
+        page.route('**/pan.mail.conversation/live_messages', unreachable)
+        page.goto(f'{self.base}/odoo/action-{action_id}', wait_until='domcontentloaded')
+        page.wait_for_selector('.o_mailpro_inbox', timeout=30000)
+        page.wait_for_timeout(2500)
+        page.query_selector_all('.o_mailpro_mailbox')[-1].click()
+        page.wait_for_timeout(2500)
+
         # Waited on by its own request rather than by what is on screen.
         # Every DOM condition here is true of the folder you just left --
         # its rows are still up, and Owl has not drawn the skeleton yet --
@@ -1314,6 +1545,18 @@ class Checks:
             return
         page.wait_for_timeout(500)
         self.error_free('the live folder')
+        # With no conversation open the pane is a sentence, and the fold
+        # button on its edge must sit beside it, not on it.
+        title = page.query_selector('.o_mailpro_conversation > .o_mailpro_empty .o_mailpro_empty_title')
+        for button in page.query_selector_all('.o_mailpro_split_toggle'):
+            if not title or not button.is_visible():
+                continue
+            a, b = title.bounding_box(), button.bounding_box()
+            if (a['x'] < b['x'] + b['width'] and b['x'] < a['x'] + a['width']
+                    and a['y'] < b['y'] + b['height'] and b['y'] < a['y'] + a['height']):
+                self.fail('a fold button covers "%s"' % title.inner_text().strip())
+        if page.query_selector('.o_mailpro_conversation_list .o_mailpro_verify'):
+            self.fail('a proven session is still asked to confirm it is you')
 
         # An unreachable provider is this folder being unavailable, not this
         # screen breaking. Asserted inside the list, because the pane next to
@@ -1348,7 +1591,70 @@ class Checks:
         page.keyboard.press('Escape')
         page.wait_for_timeout(500)
         self.shot('inbox-live-folder.png')
+        self.live_row_in_odoo()
+        page.unroute('**/pan.mail.conversation/live_messages')
+        page.unroute('**/pan.mail.conversation/live_mailboxes')
         self.leave_live_folder(was)
+
+    def live_row_in_odoo(self):
+        """A mail in your own mailbox that Odoo imported through another one.
+
+        The everyday shape of it: you are on Cc, a colleague's mailbox (or
+        info@) imported the thread first, and your own Inbox lists it as
+        in Odoo. Narrowed to your mailbox, the read found none of that mail
+        and the pane drew a subject, a Files count and nothing else.
+
+        The seed reaches no provider, so the row is the provider's answer
+        stood in for: one live row linked to the lead whose mail the seed
+        put in sales@. What is proved is the half that broke -- the mail
+        Odoo has is read wherever it arrived.
+        """
+        page = self.page
+        lead = self.call('crm.lead', 'search_read',
+                         [('name', '=', 'Asafdichtingen, revisie')],
+                         fields=['id', 'name'])
+        if not lead:
+            self.fail('the seed has no lead for the live row to point at')
+            return
+        row = {
+            'model': 'crm.lead', 'res_id': lead[0]['id'], 'message_id': False,
+            'live': True, 'live_id': 'ui-check-live', 'linked': True,
+            'subject': 'Re: Offerte revisie asafdichtingen',
+            'preview': 'Prima. Dan graag opdracht bevestigen.',
+            'correspondent': 'Vandermolen Techniek B.V.',
+            'email': 'bart@vandermolen.example', 'partner_id': False,
+            'date': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
+            'count': 1, 'record_name': lead[0]['name'], 'unread': False,
+            'flagged': False, 'mailbox': 'rutger@example.com',
+        }
+
+        def answer(route):
+            request_id = (route.request.post_data_json or {}).get('id')
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({
+                'jsonrpc': '2.0', 'id': request_id,
+                'result': {'rows': [row], 'scanned': 1, 'connected': True}}))
+
+        page.route('**/pan.mail.conversation/live_messages', answer)
+        try:
+            with page.expect_response(
+                    lambda response: 'live_messages' in response.url,
+                    timeout=60000):
+                page.query_selector_all('.o_mailpro_folders')[-1] \
+                    .query_selector_all('.o_mailpro_folder')[0].click()
+            page.wait_for_selector('.o_mailpro_conversation_list .o_mailpro_item',
+                                   timeout=15000)
+            with page.expect_response(
+                    lambda response: 'read_conversation' in response.url,
+                    timeout=60000):
+                page.click('.o_mailpro_conversation_list .o_mailpro_item')
+            page.wait_for_timeout(1000)
+            if not page.query_selector('.o_mailpro_conversation .o_mailpro_message'):
+                self.fail('a live row that is in Odoo opens on no mail when another '
+                          'mailbox imported it')
+            self.error_free('a live row in Odoo')
+            self.shot('inbox-live-row-in-odoo.png')
+        finally:
+            page.unroute('**/pan.mail.conversation/live_messages')
 
     def leave_live_folder(self, viewport):
         """Back to the first mailbox's Inbox, at the window we came in on."""
@@ -1590,6 +1896,35 @@ class Checks:
         el = self.page.query_selector(selector)
         return bool(el and el.is_visible())
 
+    def swipe(self, selector, dx, release=True, start=True):
+        """A finger across `selector`, `dx` px sideways, in five steps.
+
+        Real touch events, built in the page: Playwright's own touchscreen
+        only taps, and the swipe is a touchstart, moves and a touchend.
+        Starts in the middle of the pane, clear of the edges a phone's
+        browser keeps for its own back gesture. `release=False` keeps the
+        finger down, and `start=False` with `dx=0` is that finger let go.
+        """
+        self.page.evaluate("""([selector, dx, release, start]) => {
+            const el = document.querySelector(selector);
+            const box = el.getBoundingClientRect();
+            const x0 = box.left + box.width / 2 - dx / 2;
+            const y = box.top + box.height / 2;
+            const touch = (x) => new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+            const fire = (type, x) => el.dispatchEvent(new TouchEvent(type, {
+                bubbles: true, cancelable: true,
+                touches: type === 'touchend' ? [] : [touch(x)],
+                changedTouches: [touch(x)],
+            }));
+            if (start) {
+                fire('touchstart', x0);
+                for (let i = 1; i <= 5; i++) fire('touchmove', x0 + dx * i / 5);
+            }
+            if (release) fire('touchend', x0 + dx);
+        }""", [selector, dx, release, start])
+        # Held past a flick, so letting go is a slow drag's decision.
+        self.page.wait_for_timeout(700 if release else 300)
+
     def phone(self):
         """One pane at a time, the way a phone reads mail.
 
@@ -1742,6 +2077,44 @@ class Checks:
             self.fail('the list stayed on screen under the conversation on a phone')
         self.shot('inbox-phone.png')
 
+        # Reading is the mail and nothing else: the list's bar goes, what the
+        # conversation is linked to waits in the record pane, and Reply is
+        # over the bottom of the mail where a thumb is. The screenshot this
+        # started from had the first line of mail halfway down the phone.
+        if self.visible('.o_mailpro_topbar'):
+            self.fail('the search bar stays on screen while a phone reads a mail')
+        for selector in ('.o_mailpro_chips', '.o_mailpro_suggestion', '.o_mailpro_followers'):
+            if self.visible('.o_mailpro_conversation ' + selector):
+                self.fail(f'{selector} is still above the mail on a phone')
+        reading = page.query_selector('.o_mailpro_messages')
+        if reading and reading.bounding_box()['y'] > 844 * 0.25:
+            self.fail('the mail starts %dpx down a 844px phone'
+                      % reading.bounding_box()['y'])
+        floating = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
+        if floating and floating.bounding_box()['y'] < 844 * 0.75:
+            self.fail('Reply is not at the bottom of the phone, where a thumb is')
+        # A finger, not a pointer: every button in that bar and the two at
+        # the top are at least the 44px a phone mail app draws them at. The
+        # first version had 24px icons beside a 36px Reply.
+        for button in page.query_selector_all(
+                '.o_mailpro_actions button, .o_mailpro_back, .o_mailpro_odoo_record_button'):
+            if not button.is_visible():
+                continue
+            box = button.bounding_box()
+            if box['height'] < 43 or box['width'] < 43:
+                self.fail('a phone button is %dx%dpx, smaller than a fingertip: %r'
+                          % (box['width'], box['height'],
+                             (button.get_attribute('title') or button.inner_text())[:30]))
+        # The mail takes the width: the open body starts under the avatar,
+        # not beside it.
+        body = page.query_selector('.o_mailpro_message_open .o_mailpro_body')
+        if body:
+            text_left = page.evaluate(
+                "el => el.getBoundingClientRect().left"
+                " + parseFloat(getComputedStyle(el).paddingLeft)", body)
+            if text_left > 390 * 0.15:
+                self.fail('the mail text starts %dpx in on a 390px phone' % text_left)
+
         # The head is chrome and the mail is the screen. It ran to three
         # lines of subject, two of correspondent and two of Linked-to, which
         # left the mail a third of a phone -- so what it may take is pinned
@@ -1781,11 +2154,39 @@ class Checks:
                 share = record.bounding_box()['width'] / 390
                 if share < 0.9:
                     self.fail('the phone record takes %d%% of the screen' % (share * 100))
+                if not self.visible('.o_mailpro_odoo_record .o_mailpro_phone_link'):
+                    self.fail('the record pane does not say what the conversation '
+                              'is linked to on a phone')
                 self.shot('inbox-phone-record.png')
-                page.query_selector('.o_mailpro_odoo_record_zoom').click()
+                back_to_inbox = page.query_selector(
+                    '.o_mailpro_odoo_record_zoom, .o_mailpro_odoo_record .o_mailpro_empty button')
+                back_to_inbox.click()
                 page.wait_for_timeout(500)
                 if not self.visible('.o_mailpro_conversation'):
                     self.fail('Back to the Inbox did not bring the conversation back on a phone')
+
+            # The same two moves with a finger: left to the record, right
+            # back from it. The record is loaded before the finger arrives
+            # and comes in under it, rather than a blank pane while it builds.
+            if not page.query_selector('.o_mailpro_odoo_record .o_form_view, '
+                                       '.o_mailpro_odoo_record .o_mailpro_empty'):
+                self.fail('the phone record is not loaded before a swipe asks for it')
+            self.swipe('.o_mailpro_conversation', -80, release=False)
+            box = page.query_selector('.o_mailpro_odoo_record').bounding_box()
+            if not self.visible('.o_mailpro_odoo_record') or box['x'] > 390 - 60:
+                self.fail('a finger swiping left on a phone conversation uncovers '
+                          'an empty screen instead of the record')
+            self.swipe('.o_mailpro_conversation', 0, release=True, start=False)
+            if self.visible('.o_mailpro_odoo_record'):
+                self.fail('a swipe let go short left the phone record on screen')
+            self.swipe('.o_mailpro_conversation', -250)
+            if not self.visible('.o_mailpro_odoo_record'):
+                self.fail('swiping left on a phone conversation did not open the record')
+            else:
+                self.swipe('.o_mailpro_odoo_record', 250)
+                if self.visible('.o_mailpro_odoo_record') or not self.visible('.o_mailpro_conversation'):
+                    self.fail('swiping right on the phone record did not bring the '
+                              'conversation back')
 
         # Writing takes the whole phone: the composer is as wide as the
         # screen, the conversation's chips are gone from above it, and the
@@ -1834,6 +2235,16 @@ class Checks:
         page.wait_for_timeout(400)
         if not self.visible('.o_mailpro_conversation_list'):
             self.fail('Back did not bring the list back on a phone')
+            return
+        if not self.visible('.o_mailpro_topbar'):
+            self.fail('the search bar did not come back with the list on a phone')
+
+        # And with a finger: right from the conversation is the list.
+        page.query_selector('.o_mailpro_item').click()
+        page.wait_for_timeout(1200)
+        self.swipe('.o_mailpro_conversation', 250)
+        if not self.visible('.o_mailpro_conversation_list'):
+            self.fail('swiping right on a phone conversation did not bring the list back')
 
 
     def drafts(self, page):
@@ -2259,6 +2670,15 @@ class Checks:
             self.fail('the folded record divider lost its separator')
         elif handle.get_attribute('tabindex') is not None:
             self.fail('the folded record divider still takes the keyboard')
+        # The room the record gave up goes to the mail, not to blank paper
+        # beside a column that stopped at its own measure.
+        pane = page.query_selector('.o_mailpro_conversation')
+        mail = page.query_selector('.o_mailpro_messages')
+        if pane and mail:
+            gap = pane.bounding_box()['width'] - mail.bounding_box()['width']
+            if gap > 40:
+                self.fail('with the record folded the mail stops %dpx short of '
+                          'its pane' % gap)
         self.shot('inbox-folded.png')
 
         # Both of those are a preference, not a gesture: they survive the
@@ -2300,9 +2720,8 @@ class Checks:
             self.fail('the record pane did not come back when unfolded')
 
         # The list folds too, the same way, and the room it leaves goes to the
-        # pane that has no width of its own: the Odoo record. The mail column
-        # stops at its own measure whatever the window does, so a fold that
-        # stretched it would only be moving the empty space around.
+        # pane that has no width of its own: the Odoo record, not the
+        # conversation, which keeps the width its divider was dragged to.
         record_before = page.query_selector('.o_mailpro_odoo_record').bounding_box()['width']
         thread_before = page.query_selector('.o_mailpro_conversation').bounding_box()['width']
         fold = page.query_selector('.o_mailpro_split_conversation_list .o_mailpro_split_toggle')
@@ -2883,6 +3302,133 @@ class Checks:
         elif any(key.startswith('MailPro') for key in keys):
             self.fail('the connect banner is registered in WebClient.components, '
                       'which Enterprise has already snapshotted — it will white-screen there')
+
+    # Every visible line of text in the Inbox, with the colour it is drawn in
+    # and the colour it actually sits on: the background of the nearest
+    # ancestor that paints one, translucent layers composited on the way up.
+    # Returns the lines below `min` contrast, worst first.
+    LOW_CONTRAST_JS = """(min) => {
+        const rgba = (value) => {
+            const m = value.match(/rgba?\\(([^)]+)\\)/);
+            if (!m) return null;
+            const p = m[1].split(',').map(Number);
+            return {r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1};
+        };
+        const over = (top, under) => ({
+            r: top.r * top.a + under.r * (1 - top.a),
+            g: top.g * top.a + under.g * (1 - top.a),
+            b: top.b * top.a + under.b * (1 - top.a), a: 1});
+        const backdrop = (el) => {
+            const layers = [];
+            for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+                const bg = rgba(getComputedStyle(node).backgroundColor);
+                if (bg && bg.a > 0) {
+                    layers.push(bg);
+                    if (bg.a >= 1) break;
+                }
+            }
+            let colour = {r: 255, g: 255, b: 255, a: 1};
+            for (const layer of layers.reverse()) colour = over(layer, colour);
+            return colour;
+        };
+        const lum = (c) => {
+            const ch = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+            return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+        };
+        const ratio = (a, b) => {
+            const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+            return (hi + 0.05) / (lo + 0.05);
+        };
+        const root = document.querySelector('.o_mailpro_inbox');
+        const low = [];
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const seen = new Set();
+        for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+            const el = text.parentElement;
+            if (!text.textContent.trim() || seen.has(el)) continue;
+            seen.add(el);
+            const style = getComputedStyle(el);
+            const box = el.getBoundingClientRect();
+            if (!box.width || !box.height || style.visibility !== 'visible'
+                || el.closest('[aria-hidden="true"], .o_mailpro_skeleton, :disabled')) continue;
+            const ink = rgba(style.color);
+            if (!ink) continue;
+            const ground = backdrop(el);
+            const value = ratio(over(ink, ground), ground);
+            if (value < min) {
+                low.push({text: text.textContent.trim().slice(0, 40),
+                          cls: (el.className || el.tagName).toString().slice(0, 60),
+                          ratio: Math.round(value * 100) / 100});
+            }
+        }
+        return low.sort((a, b) => a.ratio - b.ratio);
+    }"""
+
+    def dark_mode(self):
+        """The Inbox in Odoo's dark mode: dark panes, and text you can read.
+
+        Odoo builds a second stylesheet for dark mode, and every colour this
+        module paints has to come from the palette that follows it. A literal
+        stays light: white panes around a dark Odoo record, and the record's
+        values in #001d21 on a dark sheet, which is what a customer saw.
+
+        Dark mode is Enterprise. The community image CI runs gets it from
+        `tools/ci_addons/pan_mail_pro_ci_dark`, so the first assertion is
+        that the dark bundle actually loaded: without it everything below
+        would pass by looking at the light screen.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            return
+        context = self.browser.new_context(viewport={'width': WIDE, 'height': 1100})
+        host = urllib.parse.urlparse(self.base).hostname
+        context.add_cookies([{'name': 'color_scheme', 'value': 'dark',
+                              'domain': host, 'path': '/'}])
+        page = context.new_page()
+        try:
+            login(page, self.base)
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            page.wait_for_selector('.o_mailpro_inbox .o_mailpro_item', timeout=30000)
+            page.wait_for_selector('.o_mailpro_odoo_record .o_form_view', timeout=30000)
+            page.wait_for_timeout(2000)
+            if self.out:
+                page.screenshot(path=os.path.join(self.out, 'inbox-dark.png'))
+
+            scheme = page.evaluate("() => getComputedStyle(document.documentElement)"
+                                   ".getPropertyValue('--o-webclient-color-scheme').trim()")
+            if scheme != 'dark':
+                self.fail(f'the dark bundle did not load (color scheme {scheme!r}): '
+                          'the dark-mode checks below prove nothing')
+                return
+
+            # Every pane, and the record's head, paints a dark background.
+            for selector in ('.o_mailpro_inbox', '.o_mailpro_mailbox_list',
+                             '.o_mailpro_conversation_list', '.o_mailpro_conversation',
+                             '.o_mailpro_odoo_record_head', '.o_mailpro_odoo_record'):
+                colour = page.evaluate(
+                    """(sel) => { const el = document.querySelector(sel);
+                       if (!el) return null;
+                       for (let n = el; n; n = n.parentElement) {
+                           const bg = getComputedStyle(n).backgroundColor;
+                           const p = (bg.match(/[\\d.]+/g) || []).map(Number);
+                           if (p.length && (p.length < 4 || p[3] > 0)) return p.slice(0, 3);
+                       }
+                       return null; }""", selector)
+                if colour is None:
+                    self.fail(f'dark mode: {selector} is not on the screen')
+                elif sum(colour) / 3 > 96:
+                    self.fail(f'dark mode: {selector} is painted rgb{tuple(colour)}, '
+                              'a light colour that does not follow the scheme')
+
+            # 3:1, WCAG's floor for anything on screen. The palette's own
+            # muted grey clears 4.5; a colour with no dark side lands near 1.
+            low = page.evaluate(self.LOW_CONTRAST_JS, 3)
+            if low:
+                lines = '; '.join(f"{item['text']!r} ({item['cls']}) {item['ratio']}:1"
+                                  for item in low[:8])
+                self.fail(f'dark mode: {len(low)} line(s) of text below 3:1 -- {lines}')
+        finally:
+            context.close()
 
     def form_text(self, url):
         self.page.goto(url, wait_until='domcontentloaded')
@@ -3519,6 +4065,7 @@ def main():
         checks.inbox_not_connected()
         checks.menus()
         checks.conversation_view()
+        checks.slow_network()
         checks.chatter_door()
         checks.live_folder()
         checks.linking()
@@ -3528,6 +4075,7 @@ def main():
         checks.mailbox_status()
         checks.connect_banner()
         checks.preferences()
+        checks.dark_mode()
         browser.close()
 
     if checks.failures:

@@ -28,7 +28,7 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import ast
-          print("version=" + ast.literal_eval(open('__manifest__.py').read())['version'])
+          print("version=" + ast.literal_eval(open('pan_mail_pro/__manifest__.py').read())['version'])
           PY
 
       # Not every merge is a release — docs and CI changes land without a bump.
@@ -66,10 +66,11 @@ jobs:
             --title "pan_mail_pro ${VERSION}" \
             --generate-notes \
             --notes-file - <<EOF
-          Odoo 19.0 · install from this tag:
+          Odoo 19.0 · install from this tag, then add the clone's folder to
+          \`addons_path\` (the module is the \`pan_mail_pro/\` inside it):
 
           \`\`\`
-          git clone --branch v${VERSION} https://github.com/${{ github.repository }}.git pan_mail_pro
+          git clone --branch v${VERSION} https://github.com/${{ github.repository }}.git
           \`\`\`
 
           Upgrading an existing database runs every migration between your

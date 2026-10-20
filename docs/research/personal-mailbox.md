@@ -3,6 +3,9 @@
 Status: **shipped**, 19.0.16.0.0, read side and screen. The design lives in
 ARCHITECTURE.md §1 now; this file is the reasoning behind it, kept for the
 record. What is deliberately not in it is under "What this is not".
+19.0.30.0.0 added the one thing ownership could not say: that the Odoo
+session is the owner's own (*Your own mailbox, read live* in ARCHITECTURE.md,
+and issue #327 for the threat model).
 
 ## The problem
 

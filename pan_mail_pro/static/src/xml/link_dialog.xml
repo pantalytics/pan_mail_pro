@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!--
+        Step one of two: the kind of record, as a search box over a short
+        list. Step two is Odoo's own record picker, so it has no template
+        here.
+    -->
+    <t t-name="pan_mail_pro.LinkDialog">
+        <Dialog size="'md'" title="title" footer="false" contentClass="'o_mailpro_link_dialog'">
+            <input type="text" class="form-control o_mailpro_link_search"
+                   t-ref="search" autofocus="autofocus"
+                   aria-label="Search for a kind of record"
+                   placeholder="Search for a kind of record..."
+                   t-on-input="onSearch"/>
+            <ul class="o_mailpro_link_list">
+                <li t-foreach="state.rows" t-as="row" t-key="row.model + (row.unlink ? '-unlink' : '')">
+                    <button type="button" class="o_mailpro_link_row"
+                            t-att-class="{ o_mailpro_link_row_current: row.current, o_mailpro_link_row_unlink: row.unlink }"
+                            t-on-click="() => this.choose(row)">
+                        <!-- The app's tile, where the model has one: the same
+                             tile the Linked-to chips wear. The slot stays
+                             when it has not, so the labels line up. -->
+                        <span class="o_mailpro_link_icon">
+                            <img t-if="row.icon" t-att-src="row.icon" alt=""/>
+                        </span>
+                        <t t-esc="row.label"/>
+                        <!-- Where the conversation is now, so the top row
+                             reads as "another one of these". -->
+                        <span t-if="row.current" class="o_mailpro_link_row_note">where it is now</span>
+                    </button>
+                </li>
+            </ul>
+            <!-- The region is always there, so a screen reader hears the
+                 empty result arrive instead of meeting it on the next tab. -->
+            <div aria-live="polite">
+                <p t-if="!state.rows.length and !state.loading" class="o_mailpro_link_empty">
+                    <t t-if="state.search">Nothing matches that.</t>
+                    <t t-else="">Nothing to link to here.</t>
+                </p>
+            </div>
+        </Dialog>
+    </t>
+
+    <!--
+        Confirm it's you, for a mailbox with no sign-in screen: one field,
+        tried once against the mail server. The dialog's own footer, so
+        Confirm is the one primary on it.
+    -->
+    <t t-name="pan_mail_pro.VerifyDialog">
+        <Dialog size="'sm'" title="title" contentClass="'o_mailpro_verify_dialog'">
+            <label class="form-label" for="o_mailpro_verify_password">
+                Password of <t t-esc="props.email"/> at your mail server
+            </label>
+            <input type="password" id="o_mailpro_verify_password" class="form-control"
+                   t-ref="password" autocomplete="current-password"
+                   t-att-disabled="state.busy"
+                   t-on-keydown="onKeydown"/>
+            <p t-if="state.wrong" class="o_mailpro_verify_wrong mb-0 mt-2" role="alert">
+                The mail server did not accept that password. Try again.
+            </p>
+            <p t-if="state.error" class="o_mailpro_verify_wrong mb-0 mt-2" role="alert" t-esc="state.error"/>
+            <t t-set-slot="footer">
+                <button type="button" class="btn btn-primary o_mailpro_verify_confirm"
+                        t-att-disabled="state.busy" t-on-click="confirm">Confirm</button>
+                <button type="button" class="btn btn-secondary"
+                        t-att-disabled="state.busy" t-on-click="props.close">Cancel</button>
+            </t>
+        </Dialog>
+    </t>
+
+</templates>

@@ -29,7 +29,7 @@ mkdir -p "$LOG_DIR"
 
 SERIES=$(python3 - "$REPO" <<'PY'
 import ast, sys
-manifest = ast.literal_eval(open(f"{sys.argv[1]}/__manifest__.py").read())
+manifest = ast.literal_eval(open(f"{sys.argv[1]}/pan_mail_pro/__manifest__.py").read())
 print(".".join(manifest['version'].split('.')[:2]))
 PY
 )
@@ -100,14 +100,15 @@ for _ in $(seq 1 60); do
 done
 
 odoo_run() {
-    # $1 = the module directory on the host, $2 = database, rest = odoo arguments
-    local module=$1 db=$2
+    # $1 = a checkout of the repository on the host, $2 = database, rest = odoo arguments
+    local tree=$1 db=$2
     shift 2
-    # Mounted at its own name under the addons path. A host symlink inside a
-    # bind mount would not resolve in the container, so the module directory is
-    # mounted directly rather than a parent full of links.
+    # The checkout itself is the addons path entry, the way Cloudpepper and
+    # Odoo.sh use it: Odoo finds pan_mail_pro/ inside. A release before
+    # 19.0.30.2.1 has the module at the root and a relative `pan_mail_pro -> .`
+    # symlink, which resolves inside the mount too, so both shapes load.
     docker run --rm --network "$NET" \
-        -v "${module}:/mnt/extra-addons/pan_mail_pro:ro" \
+        -v "${tree}:/mnt/extra-addons:ro" \
         -e PAN_TEST_IMAP_HOST="$MAIL" \
         --entrypoint odoo "odoo:${SERIES}" \
         -d "$db" \
@@ -189,7 +190,7 @@ git -C "$REPO" archive "$TAG" | tar -x -C "$BASE_ADDONS"
 # then cannot read the mount and reports the module as an invalid addons
 # directory -- a confusing way to say "permission denied".
 chmod -R a+rX "$BASE_ADDONS"
-grep "'version'" "$BASE_ADDONS/__manifest__.py"
+grep "'version'" "$BASE_ADDONS/pan_mail_pro/__manifest__.py"
 
 set -o pipefail
 odoo_run "$BASE_ADDONS" ci_upgrade \

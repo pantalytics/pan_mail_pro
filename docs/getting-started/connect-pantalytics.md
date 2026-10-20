@@ -15,17 +15,18 @@ workspace afterwards, under **Members**.
 ## Connect
 
 1. Go to **Settings** and scroll to **Mail Pro**
-2. Press **Connect to Pantalytics**. A new tab opens on `mcp.pantalytics.com`
-   with a short code already filled in; the same code is shown in Odoo
+2. Press **Connect to Pantalytics**. The page moves to `mcp.pantalytics.com`,
+   with a short code already filled in
 3. Sign in with your Pantalytics account, or create one
 4. Check that the page names this Odoo instance, and press **Approve**
-5. Press the button back to your Odoo. Step 1 now reads **Connected** and
+5. You land back in Odoo. Step 1 now reads **Connected** and
    steps 2 to 4 appear below it. The arrow on step 1 opens the account page:
    who connected it and when, the plan and its valid-until date, **Usage and
    billing**, and **Disconnect**
 
-No tab opened? The Settings page shows the link under the code. Approved but
-Odoo still says it is waiting? Press **Check Approval**. Connected, but the
+Came back without approving? The Settings page shows the code and a link to
+the Pantalytics page. Approved but
+Odoo still says it is waiting? Press **Check approval**. Connected, but the
 page still says incoming mail is not synced? Press **Check again**: the
 instance asks Pantalytics once more, which it also does by itself every ten
 minutes.

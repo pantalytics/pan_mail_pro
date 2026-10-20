@@ -37,6 +37,10 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 
 ## Key Files
 
+The module is the `pan_mail_pro/` folder; the paths below are relative to it.
+Docs, `tools/` and CI sit at the repository root around it (ARCHITECTURE.md
+§9.16 says why).
+
 | File | Purpose |
 |------|---------|
 | `models/mail_provider_client.py` | Provider-agnostic client contract + registry |
@@ -79,6 +83,7 @@ provider-neutral rename of models, fields, xml ids and config parameters in
 | `static/src/js/conversation_view/conversation_view.js` | The Inbox itself: four panes (**mailbox list, conversation list, conversation, Odoo record** -- the names are fixed in ARCHITECTURE.md §1), one client action, the tab strip (Mail / Mail + notes / Files / Activities) that replaced the record pane's chatter, the Followers button at its end that opens the chatter's own follower list, the chevron in the conversation list that unfolds a conversation into its own mails and opens the pane on the one you pick, and Odoo's own `SearchBar` over the top: the filters are a search view (`view_pan_mail_inbox_search`), what it produces is a domain over `mail.message` |
 | `static/src/js/chatter_door.js` | Door 1: **Open in mail** in Odoo's own chatter, on a record that carries an emailed message. Counts the record's threads, then opens the Inbox on the conversation or on the record's list |
 | `static/src/js/conversation_view/use_panes.js` | How wide each pane is, which ones are folded away (the mailbox list from a round button in the top bar left of New Email, the conversation list and the Odoo record from a round button on their own divider), and whether the record has the screen to itself. Dragged, keyboard-resizable, stored in the browser -- except the zoom, which is a reading mode and not a preference, and which slides the record over the other three panes rather than replacing them (`--mailpro-zoom-from` is where it starts, measured by the screen), and the window's shape: below 1400px the conversation and the Odoo record take turns in one column, swapped from the record's divider button; below 768px every pane takes turns and the mailbox list is a drawer. A folded pane stays in the DOM at no width so the fold animates |
+| `static/src/js/conversation_view/swipe.js` | The phone's swipe between panes: right is back, left is the Odoo record. The pane follows the finger, then commits or springs back; the browser's edge gesture and a mail that scrolls sideways are left alone |
 | `static/src/js/conversation_view/use_composer.js` | The reply, in the conversation pane instead of a dialog: Odoo's own composer form, the inline view it needs, the Send that saves it and calls `action_send_mail`, and the Save draft beside it that stores the same wizard as a `pan.mail.draft` |
 | `tests/test_conversation_api.py` | What the Inbox may show, and to whom |
 | `tests/test_read_state.py` | Who decides whether a mail is read: the provider, mirrored onto `mail.message`, and the one way Odoo's own bell is cleared |
@@ -199,7 +204,7 @@ Each addon repo can be tested independently with its own `.local/` directory. A 
 
 | Repo | Mount | Effect |
 |------|-------|--------|
-| pan_mail_pro | `..:/mnt/extra-addons/pan_mail_pro` | Single addon, direct from repo |
+| pan_mail_pro | `..:/mnt/extra-addons` | The repo is the addons path entry; the module is its `pan_mail_pro/` folder |
 | odoo-pantalytics | `../addons:/mnt/extra-addons` | All addons via submodules |
 | odoo-customer-example | `../addons:/mnt/extra-addons` | All addons via submodules |
 
@@ -348,7 +353,7 @@ tools/ci.sh upgrade               # install last release, upgrade, run the suite
 tools/ci.sh ui                    # the browser checks against a seeded instance
 tools/ci.sh                       # all four, in CI's order
 
-BASE_REF=origin/19.0 tools/ci_lint.sh   # + the diff-shape and version-bump checks
+BASE_REF=origin/main tools/ci_lint.sh   # + the diff-shape and version-bump checks
 ```
 
 Docker and Docker Hub access are the only requirements. `tools/ci_odoo.sh`
@@ -368,7 +373,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user beside the address they are connected as, and the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user beside the address they are connected as, the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal, and the Inbox in dark mode: every pane dark and no line of text below 3:1 (dark mode is Enterprise; `tools/ci_addons/pan_mail_pro_ci_dark` stands it in on the community image) |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
@@ -433,8 +438,10 @@ layout bug, and that is the width the complaint arrives from.
 
 ## Working from Claude Code (mobile, web, cloud sessions)
 
-`19.0` is protected: no direct pushes, PR + green CI required. The full loop
-without a desktop:
+**Branches:** `main` is the source; `19.0` is a release branch. Every PR goes
+to `main`. A release is a PR from `main` into `19.0`, which Cloudpepper and
+Odoo.sh deploy from and `release.yml` tags. Nobody commits to `19.0` directly.
+The full loop without a desktop:
 
 ```bash
 git checkout -b feature/<name>
@@ -447,7 +454,7 @@ git push -u origin HEAD
 Then open the PR and let GitHub merge it when CI turns green. Two ways,
 depending on where the session runs:
 
-- **Terminal with `gh`:** `gh pr create --fill --base 19.0` then
+- **Terminal with `gh`:** `gh pr create --fill --base main` then
   `gh pr merge --auto --squash --delete-branch`. Check back with
   `gh pr checks` or `gh run watch`.
 - **Cloud session (claude.ai/code):** there is no `gh` CLI. Use the GitHub MCP
@@ -610,6 +617,38 @@ registry.category("views").add("my_list", myListView);
 After every `/compact`, update the **Lessons Learned** section below with new insights from the session (gotchas, errors, solutions). This ensures continuity across context compactions.
 
 ## Lessons Learned
+
+### An Odoo session is not a person (19.0.30.0.0)
+
+- **"Only the owner may read it" was checked against `env.user`, and
+  `env.user` is whoever holds a session as the owner.** Cloudpepper's "log
+  in as" opens one, and so does an administrator who resets the password.
+  Ownership was the right rule and the wrong proof. The live read now also
+  wants the provider's word, per session: a sign-in round compared on the
+  stable id, or an IMAP login with a typed password.
+- **Put the proof where an ACL cannot reach it.** The first draft was a
+  `pan.mail.device` table with hashed tokens and a revoke screen. A table is
+  a row an administrator with Technical mode can make, after widening the
+  ACL they also administer. `request.session` is a file in the filestore,
+  Odoo's own `check_identity` keeps its proof there too, and a fresh session
+  is exactly what every impersonation is. No model, no cookie, no screen.
+- **Do not detect the impersonation; it is invisible from inside Odoo** and
+  host-specific, and it misses the reset password. Require the thing an
+  impersonator does not have.
+- **Compare on the id, not the address.** `provider_user_id` was already
+  stored at consent for the identity tests; an address can be reassigned in
+  a directory, an object id cannot. The address is the fallback for a grant
+  that predates the id, and the test says so.
+- **A test that proves "refused without a request" has to run without one.**
+  `TransactionCase` has no request, which is the right answer for the gate
+  and the wrong one for every existing live test. `tests/common.py`'s
+  `proven_session` pushes a request with just a session onto
+  `odoo.http._request_stack`; it is the one thing the gate reads.
+- **The browser check cannot do OAuth, and should not pretend to.** It
+  asserts the fresh session is asked and makes no live read, that the button
+  reaches Microsoft with `login_hint` and `prompt=none` (stood in for at the
+  network), and then stands the proof in at the browser for the checks that
+  need a live folder. The server's refusal is the test file's.
 
 ### Docker
 - **`data_dir` must match volume mount**: `data_dir = /var/lib/odoo` in odoo.conf must match `odoo-data:/var/lib/odoo` in docker-compose.yml. Mismatch = filestore lost on restart.
@@ -944,7 +983,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   screen, and it is what caught the two identical chevrons that every
   assertion was happy with.
 - **No Docker in a cloud session means no `tools/ci.sh test|ui`.** What still
-  runs: `tools/ci.sh lint`, `BASE_REF=origin/19.0 tools/ci_lint.sh`,
+  runs: `tools/ci.sh lint`, `BASE_REF=origin/main tools/ci_lint.sh`,
   `pip install libsass` + `sass.compile(filename=...)` on the stylesheet, and
   the static assertions of `tests/test_inbox_panes.py` re-run by hand as a
   script. That is enough to keep a bundle from failing to compile; it is not
@@ -1112,7 +1151,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   short word, because there the document is the only thing it can mean.
 - **The lint job's diff-shape checks only run with `BASE_REF`.** A bare
   `tools/ci.sh lint` passes while CI fails on "changes models/ but no test" --
-  run `BASE_REF=origin/19.0 tools/ci_lint.sh` before pushing.
+  run `BASE_REF=origin/main tools/ci_lint.sh` before pushing.
 
 ### Small screens (19.0.13.4.0)
 - **Odoo compiles SCSS with libsass, and libsass reads `min()` / `max()` as

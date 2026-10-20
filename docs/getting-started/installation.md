@@ -1,103 +1,86 @@
 # Installation
 
-Two steps: put the module on your Odoo, then connect it to your Pantalytics
-account. If you have not created that account yet, do it first at
-<a href="https://mcp.pantalytics.com/admin/mail-pro" target="_blank">mcp.pantalytics.com/admin/mail-pro</a>:
-it takes a work email address and a minute, and the page you land on repeats
-the steps below for the host you run.
+Three steps and about ten minutes: add the module to your Odoo, install it,
+and connect it to your Pantalytics account.
 
-## Requirements
+> 💡 You need Odoo 19.0, Community or Enterprise, on Odoo.sh, Cloudpepper or
+> your own server. Odoo Online does not allow extra modules.
 
-- Odoo 19.0, Community or Enterprise (routing to Helpdesk teams needs Enterprise)
-- The `cryptography` Python package (for encrypted credential storage). Odoo.sh
-  and Cloudpepper have it; on your own server, see below
-- A mailbox on one of the supported providers:
+**Someone else manages your Odoo, such as an Odoo partner?** Send them this
+page. They do steps 1 and 2. Step 3 is yours, because it signs in with your
+Pantalytics account.
 
-| Provider | You also need |
-|----------|---------------|
-| Microsoft 365 | Azure AD admin access, to create an app registration |
-| Google Workspace | Google Cloud access, to create an OAuth client |
-| IMAP/SMTP | The server names, a login and a password |
+## Step 1: Add the module from GitHub
 
-Mail Pro is distributed from its GitHub repository,
-<a href="https://github.com/pantalytics/pan_mail_pro" target="_blank">github.com/pantalytics/pan_mail_pro</a>,
-branch `19.0`, under the Elastic License 2.0. It is not on the Odoo App Store.
-
-## Step 1: Add the module to your Odoo
-
-Pick the host you run.
+The code is on
+<a href="https://github.com/pantalytics/pan_mail_pro" target="_blank">GitHub</a>,
+branch `19.0`. How you add it depends on where your Odoo runs: Odoo.sh,
+Cloudpepper or your own server.
 
 ### Odoo.sh
 
-1. In Odoo.sh, go to **Settings → Submodules** and click **Add submodule**
-2. Enter `git@github.com:pantalytics/pan_mail_pro.git`, branch `19.0`, and
-   copy the **Public Key** shown
-3. The repository is public, so the key is only needed if your Odoo.sh project
-   pulls over SSH. If it asks for one: send it to support@pantalytics.com and
-   we add it as a read-only deploy key
-4. Or from your own repository, on your machine:
+Start on a staging branch, not on production.
+
+1. Open the branch, click **Submodule** at the top right, then **Run on
+   Odoo.sh**
+2. Repository URL: `git@github.com:pantalytics/pan_mail_pro.git` (Odoo.sh
+   only takes this form, not `https://`)
+3. Branch: pick `19.0` from the list. Path: leave what Odoo.sh fills in
+4. Click **Add a submodule**. Odoo.sh commits it and builds the branch
+
+> 💡 The repository is public, so you need no deploy key. Odoo explains
+> submodules in its own guide:
+> <a href="https://www.odoo.com/documentation/19.0/administration/odoo_sh/advanced/submodules.html" target="_blank">Odoo.sh submodules</a>.
+
+Rather use the command line:
 
 ```bash
-git submodule add -b 19.0 https://github.com/pantalytics/pan_mail_pro addons/pan_mail_pro
-git commit -m "Add pan_mail_pro"
-git push
+git submodule add -b 19.0 https://github.com/pantalytics/pan_mail_pro pantalytics/pan_mail_pro
+git commit -m "Add Mail Pro" && git push
 ```
-
-Odoo.sh builds the branch and restarts.
 
 ### Cloudpepper
 
-1. Open your instance in the Cloudpepper dashboard and go to **Modules → Git**
-2. Add the repository `https://github.com/pantalytics/pan_mail_pro`, branch
-   `19.0`. Leave **webhook** on so a new release is pulled on push; leave
-   **auto upgrade** off on production, so an upgrade is a step you take
-3. **Restart** the instance
-
-Later releases: Cloudpepper pulls the code and restarts, which is enough for
-most changes. A release that adds fields or views also needs **Apps → Mail Pro
-→ Upgrade**; the release notes say so when it does.
+Your instance → **Modules → Git** → add
+`https://github.com/pantalytics/pan_mail_pro`, branch `19.0` → **Restart**.
+Leave auto upgrade off on production.
 
 ### Your own server or Docker
 
-1. Clone the branch into a folder on Odoo's `addons_path`:
-
 ```bash
-cd /path/to/your/addons
+cd /opt/odoo
 git clone -b 19.0 https://github.com/pantalytics/pan_mail_pro
+# odoo.conf: addons_path = ...,/opt/odoo/pan_mail_pro
 ```
 
-2. Make sure Odoo's Python has `cryptography`: `pip install cryptography`
-   (the official `odoo:19.0` Docker image already has it)
-3. Restart Odoo
+Restart Odoo. Odoo's Python needs `cryptography`; the official `odoo:19.0`
+image has it.
 
-In Docker, mount the folder that holds the clone as an extra addons directory,
-for example `./addons:/mnt/extra-addons`, and put `/mnt/extra-addons` in
-`addons_path` in `odoo.conf`.
+## Step 2: Install it in Odoo
 
-### Then, on every host
+**Apps → Update Apps List** → search "Mail Pro" → **Install**. Installing
+takes a few minutes.
 
-1. Go to **Apps** in Odoo
-2. Click **Update Apps List**
-3. Search for "Mail Pro"
-4. Click **Install**
+> ⚠️ On Odoo.sh, merging into production does not install the module there.
+> Open **Apps** on production and install Mail Pro once more.
 
-## Step 2: Connect to Pantalytics
+## Step 3: Connect to Pantalytics
 
-Go to **Settings → Mail Pro** and press **Connect to Pantalytics**. A tab opens
-on `mcp.pantalytics.com` with a code already filled in; sign in, check
-that the page names this Odoo, and approve. The full walk-through, and what
-happens if the tab does not open, is in
-[Connect to Pantalytics](connect-pantalytics.md).
+**Settings → Mail Pro → Connect to Pantalytics**. Pantalytics opens in the
+same tab with a code filled in: sign in, check it names this Odoo, approve.
+You land back in Odoo, connected. No account yet? Create one first at
+<a href="https://mcp.pantalytics.com/admin/mail-pro" target="_blank">mcp.pantalytics.com/admin/mail-pro</a>.
+Stuck? See [Connect to Pantalytics](connect-pantalytics.md).
 
-Free covers 100 mails a day per Odoo instance. Pro (1,000 a day) and Max
-(5,000 a day) are one button on the Billing page of your Pantalytics
-workspace.
+> ✅ Done. The Settings page now walks you through the mailbox. Pick your
+> provider: [Microsoft 365](azure-setup.md), [Google Workspace](google-setup.md)
+> or [IMAP/SMTP](imap-setup.md).
 
-## Next Steps
+## Updating to a new release
 
-The Settings page is a checklist of four steps, and connecting was step 1.
-Step 2 opens the provider form; pick yours and follow its guide:
+- **Odoo.sh or git:** `git submodule update --remote pantalytics/pan_mail_pro`,
+  commit, push. A submodule never moves on its own, so you decide when.
+- **Cloudpepper:** pulls the release and restarts by itself.
 
-- [Microsoft 365 Setup](azure-setup.md)
-- [Google Workspace Setup](google-setup.md)
-- [IMAP/SMTP Setup](imap-setup.md)
+A release that adds fields or screens also needs **Apps → Mail Pro →
+Upgrade**. The release notes say when.

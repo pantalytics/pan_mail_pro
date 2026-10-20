@@ -191,7 +191,15 @@ the drift this rule exists to stop.
 
 Motion is two lengths and no more: `$mailpro-fold` for a pane or a drawer
 moving, `$mailpro-tap` for a pointer being answered. Both are off under
-`prefers-reduced-motion`.
+`prefers-reduced-motion`. The tap is the brand's 150ms ease; the fold is
+longer on purpose, because it is the only motion that travels, and a pane
+crossing 400px in 150ms reads as a jump.
+
+Waiting is a skeleton, never a spinner: the shape of the answer, drawn after
+`$mailpro-wait` (150ms) so a fast answer shows none, breathing so a slow one
+reads as busy, and one sentence after `$mailpro-slow` (8s). A list being
+replaced stays on screen dimmed rather than blanked. Every delay is in the
+stylesheet, so there is no timer to clear when the answer lands.
 
 ### Messages
 
@@ -266,6 +274,11 @@ A list of steps, each showing a check and its answer, says it in one look.
   else is a sentence on the line.
 - **Never a colour that means nothing.** Green for done, red for broken. There
   is no third.
+- **Never a colour with one side.** Odoo compiles each stylesheet once per
+  colour scheme. A colour is a `$mailpro-*` token that picks light or dark from
+  `$o-webclient-color-scheme`, never a literal; `tests/test_dark_mode.py`
+  fails on one, and `tools/ui_check.py` opens the Inbox in dark mode and
+  fails on a light pane or a line of text below 3:1.
 
 ### The checklist is one column, and so is everything under it
 

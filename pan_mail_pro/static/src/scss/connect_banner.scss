@@ -1,0 +1,36 @@
+// "Your mailbox is not connected" — one line across the top of the client.
+//
+// Shaped like Odoo's own database notices rather than an alert: this is a
+// thing to do, not a thing that went wrong, and a red bar on every screen
+// teaches people to stop reading bars. Palette from brand.pantalytics.com.
+
+// Light and dark: Odoo compiles this file once per colour scheme, see the
+// palette at the top of conversation_view.scss.
+$mailpro-dark: if(global-variable-exists(o-webclient-color-scheme),
+                  $o-webclient-color-scheme == dark, false);
+$mailpro-ink: if($mailpro-dark, #fff, #001d21);
+$mailpro-accent: if($mailpro-dark, #9b99ff, #5d5bd6);
+
+.o_mailpro_connect_banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 1rem;
+    background: rgba($mailpro-accent, 0.08);
+    border-left: 3px solid $mailpro-accent;
+    color: $mailpro-ink;
+
+    .o_mailpro_connect_text {
+        flex: 1 1 20rem;
+        min-width: 0;
+    }
+
+    .o_mailpro_connect_close {
+        flex: 0 0 auto;
+        color: rgba($mailpro-ink, 0.5);
+        text-decoration: none;
+
+        &:hover { color: $mailpro-ink; }
+    }
+}

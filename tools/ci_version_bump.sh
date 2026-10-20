@@ -4,7 +4,7 @@
 # to the installed one. A code change that ships without a bump is simply never
 # applied on the target database.
 #
-#   tools/ci_version_bump.sh <base-ref>     # e.g. origin/19.0
+#   tools/ci_version_bump.sh <base-ref>     # e.g. origin/main
 #
 # Called by the version-bump job in ci.yml, and by tools/ci_lint.sh when
 # BASE_REF is set.
@@ -23,8 +23,7 @@ fi
 echo "Comparing against $BASE_REF at $MERGE_BASE"
 
 CODE_CHANGED=$(git diff --name-only "$MERGE_BASE" HEAD \
-    -- 'models/**' 'views/**' 'wizard/**' 'controllers/**' \
-       'security/**' 'data/**' 'migrations/**' 'static/**' '__manifest__.py' | wc -l)
+    -- pan_mail_pro/ | wc -l)
 if [ "$CODE_CHANGED" -eq 0 ]; then
     echo "No module code touched — version bump not required."
     exit 0
@@ -41,11 +40,19 @@ base = sys.argv[1]
 def version_of(text):
     return tuple(int(p) for p in ast.literal_eval(text)['version'].split('.'))
 
-new = version_of(open('__manifest__.py').read())
-old = version_of(subprocess.run(['git', 'show', f'{base}:__manifest__.py'],
-                                capture_output=True, text=True, check=True).stdout)
+def show(path):
+    return subprocess.run(['git', 'show', f'{base}:{path}'], capture_output=True, text=True)
+
+new = version_of(open('pan_mail_pro/__manifest__.py').read())
+# Up to 19.0.30.2.0 the module sat at the root, with pan_mail_pro a symlink to
+# it that `git show` does not follow.
+found = show('pan_mail_pro/__manifest__.py')
+if found.returncode:
+    found = show('__manifest__.py')
+    found.check_returncode()
+old = version_of(found.stdout)
 if new <= old:
-    print(f"::error file=__manifest__.py::Module code changed but version was not bumped "
+    print(f"::error file=pan_mail_pro/__manifest__.py::Module code changed but version was not bumped "
           f"({'.'.join(map(str, old))} -> {'.'.join(map(str, new))}). "
           f"Odoo skips the upgrade without a higher version. "
           f"If {base} moved on, take the next free number above it.")

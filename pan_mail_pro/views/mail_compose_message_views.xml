@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Extend mail compose message form to add Send From dropdown and warning -->
+    <record id="view_mail_compose_message_form_inherit" model="ir.ui.view">
+        <field name="name">mail.compose.message.form.inherit</field>
+        <field name="model">mail.compose.message</field>
+        <field name="inherit_id" ref="mail.email_compose_message_wizard_form"/>
+        <field name="arch" type="xml">
+            <!-- Add warning banner at top of form (before first group) -->
+            <xpath expr="//form/group[1]" position="before">
+                <field name="x_on_test_instance" invisible="1"/>
+                <div invisible="not x_setup_warning or subtype_is_log or x_on_test_instance"
+                     class="alert alert-warning mb-2 mx-3 mt-2" role="alert">
+                    <field name="x_setup_warning" readonly="1" nolabel="1"/>
+                </div>
+            </xpath>
+            <!-- Add Send From field after the email_from field -->
+            <xpath expr="//field[@name='email_from']" position="after">
+                <field name="x_send_from_mailbox_id"
+                       placeholder="Select mailbox to send from..."
+                       invisible="subtype_is_log or x_on_test_instance"
+                       domain="['&amp;', ('active', '=', True), ('is_notification_mailbox', '=', False), '|', ('mailbox_type', '=', 'shared'), '&amp;', ('mailbox_type', '=', 'personal'), ('owner_user_id', '=', uid)]"
+                       options="{'no_create': True, 'no_open': True}"/>
+                <field name="x_test_send_from" readonly="1"
+                       invisible="not x_on_test_instance or subtype_is_log"/>
+                <div colspan="2" class="text-muted o_mailpro_test_instance"
+                     invisible="not x_on_test_instance or subtype_is_log">
+                    This is a test Odoo instance. Every email goes to the test inbox, not to the recipient, so you cannot pick another sender.
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+    <!--
+        The same composer, for the Inbox's own pane.
+
+        `FormController` cuts every <footer> out of the arch and renders it
+        only inside a dialog, so mounted in a pane the paperclip and the
+        template selector are not drawn at all. They move into the body here.
+        Send and Discard do not come with them: the pane is what closes, so
+        the pane owns those two buttons — see
+        static/src/js/conversation_view/use_composer.js.
+    -->
+    <record id="mail_compose_message_inline_form" model="ir.ui.view">
+        <field name="name">mail.compose.message.form.inline</field>
+        <field name="model">mail.compose.message</field>
+        <field name="inherit_id" ref="mail.email_compose_message_wizard_form"/>
+        <field name="mode">primary</field>
+        <field name="priority">100</field>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="attributes">
+                <attribute name="js_class">pan_mail_inline_composer_form</attribute>
+            </xpath>
+            <xpath expr="//footer" position="replace">
+                <div class="o_mailpro_composer_tools d-flex align-items-center gap-2">
+                    <field name="attachment_ids" widget="mail_composer_attachment_selector"
+                           invisible="not can_edit_body"/>
+                    <field name="template_id" widget="mail_composer_template_selector"/>
+                </div>
+            </xpath>
+        </field>
+    </record>
+</odoo>

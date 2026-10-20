@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- One row: the provider this database runs on. Credentials and status
+         live here, not on the settings page — the settings page only links to
+         this table, the same way it links to Internal Domains and Mailboxes. -->
+    <record id="view_pan_mail_provider_list" model="ir.ui.view">
+        <field name="name">pan.mail.provider.list</field>
+        <field name="model">pan.mail.provider</field>
+        <field name="arch" type="xml">
+            <list string="Providers">
+                <field name="provider"/>
+                <field name="status" widget="badge"
+                       decoration-success="status == 'connected'"
+                       decoration-warning="status == 'not_connected'"
+                       decoration-danger="status == 'not_configured'"/>
+                <field name="client_id" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pan_mail_provider_form" model="ir.ui.view">
+        <field name="name">pan.mail.provider.form</field>
+        <field name="model">pan.mail.provider</field>
+        <field name="arch" type="xml">
+            <!-- No header buttons. Saving a changed registration opens the
+                 verify dialog (pan_mail_provider_form): the check runs at the
+                 moment the fields change, and signing in is the step it
+                 offers next. A connected provider has nothing to press. -->
+            <form string="Provider" js_class="pan_mail_provider_form">
+                <sheet>
+                    <field name="uses_oauth" invisible="1"/>
+                    <field name="credentials_set" invisible="1"/>
+                    <group>
+                        <group>
+                            <field name="provider"/>
+                            <field name="status" widget="badge" readonly="1"
+                                   decoration-success="status == 'connected'"
+                                   decoration-warning="status == 'not_connected'"
+                                   decoration-danger="status == 'not_configured'"/>
+                        </group>
+                    </group>
+
+                    <!-- What to do and where the steps are, before the
+                         fields: the form alone asks for three IDs nobody has
+                         yet. The steps themselves stay in the knowledge base,
+                         one click deeper, so the form keeps its four fields. -->
+                    <div class="alert alert-info mb-3" role="status" invisible="provider != 'outlook'">
+                        Mail Pro signs in through an app registration in your Microsoft
+                        Entra admin center. Creating one takes about ten minutes; you paste
+                        three values from it here.
+                        <a href="https://odoo.pantalytics.com/knowledge/article/118" target="_blank"
+                           class="fw-bold ms-1">Step-by-step guide</a>
+                    </div>
+                    <div class="alert alert-info mb-3" role="status" invisible="provider != 'gmail'">
+                        Mail Pro signs in through an OAuth client in your Google Cloud
+                        project. Creating one takes about ten minutes; you paste its Client
+                        ID and secret here.
+                        <a href="https://odoo.pantalytics.com/knowledge/article/128" target="_blank"
+                           class="fw-bold ms-1">Step-by-step guide</a>
+                    </div>
+
+                    <group string="Application registration" invisible="not uses_oauth">
+                        <group>
+                            <!-- Microsoft's own words, copied from the app
+                                 registration's Overview page. A field labelled
+                                 anything else is a field the admin has to
+                                 translate while copying, which is how a client
+                                 secret ends up in the tenant box. -->
+                            <field name="client_id" string="Application (client) ID"
+                                   invisible="provider != 'outlook'"
+                                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                            <field name="client_secret" string="Client Secret Value"
+                                   password="True" invisible="provider != 'outlook'"
+                                   help="Certificates &amp; secrets in Azure shows a Value and a Secret ID. Paste the Value — it is shown once, right after you create the secret. The Secret ID is not used."/>
+                            <field name="tenant_id" string="Directory (tenant) ID"
+                                   invisible="provider != 'outlook'"
+                                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                            <!-- Google's console says "Client ID" and "Client
+                                 secret", and has no tenant at all. -->
+                            <field name="client_id" invisible="provider == 'outlook'"/>
+                            <field name="client_secret" password="True"
+                                   invisible="provider == 'outlook'"/>
+                        </group>
+                        <group>
+                            <label for="redirect_uri"/>
+                            <div>
+                                <field name="redirect_uri" nolabel="1" readonly="1" widget="CopyClipboardChar"/>
+                                <div class="text-muted mt-1">
+                                    Paste this into the provider console's redirect URIs.
+                                    Sign-in fails until it matches exactly.
+                                </div>
+                            </div>
+                        </group>
+                    </group>
+
+                    <!-- `not uses_oauth` is also true before a provider is
+                         chosen, so a brand new record opened with IMAP's
+                         explanation on it. Say it about IMAP, not about the
+                         empty form. -->
+                    <div class="alert alert-info" role="alert"
+                         invisible="uses_oauth or not provider">
+                        <i class="fa fa-info-circle me-2" title="Info"/>
+                        IMAP/SMTP has no application registration — a server, login and
+                        password are per address. "Configured" means at least one account
+                        exists; add one under Settings → Technical → Email → Email Accounts.
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pan_mail_provider" model="ir.actions.act_window">
+        <field name="name">Providers</field>
+        <field name="res_model">pan.mail.provider</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add a provider
+            </p>
+            <p>
+                Microsoft 365 and Gmail need an application registration here first;
+                IMAP/SMTP needs none — just add an account. Mail Pro runs on one
+                provider: change this row to move to another one.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu: Settings → Technical → Email → Providers -->
+    <menuitem id="menu_pan_mail_provider"
+              name="Providers"
+              parent="pan_mail_pro.menu_pan_mail_root"
+              action="action_pan_mail_provider"
+              sequence="10"
+              groups="base.group_system"/>
+</odoo>
