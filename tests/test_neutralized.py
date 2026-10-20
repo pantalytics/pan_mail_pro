@@ -111,6 +111,26 @@ class TestNeutralizedDatabase(MailProTestCase):
 
         self.assertTrue(message.exists(), 'The chatter entry was rolled back')
 
+    def test_the_composer_says_where_the_mail_goes(self):
+        """Send From is filled in with the test inbox, and says why it is fixed.
+
+        Every mailbox is archived on a copy, so the real dropdown would be an
+        empty list and the connect warning would ask for something that cannot
+        work here. The arch is checked too, so the flag cannot stop meaning
+        something on screen.
+        """
+        composer = self.env['mail.compose.message'].with_user(self.salesperson).new({})
+        self.assertTrue(composer.x_on_test_instance)
+        self.assertEqual(composer.x_test_send_from, 'Test inbox')
+
+        arch = self.env.ref('pan_mail_pro.view_mail_compose_message_form_inherit').arch
+        self.assertIn('subtype_is_log or x_on_test_instance', arch)
+        self.assertIn('Every email goes to the test inbox', arch)
+
+        self.env['ir.config_parameter'].sudo().set_param('database.is_neutralized', False)
+        self.assertFalse(
+            self.env['mail.compose.message'].with_user(self.salesperson).new({}).x_on_test_instance)
+
     def test_neutralize_sql_takes_every_credential_away(self):
         """The at-rest half. The SQL names columns by hand and is found by
         path, so nothing but this notices a rename or a column it forgot."""
