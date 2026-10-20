@@ -4,7 +4,7 @@
 # to the installed one. A code change that ships without a bump is simply never
 # applied on the target database.
 #
-#   tools/ci_version_bump.sh <base-ref>     # e.g. origin/19.0
+#   tools/ci_version_bump.sh <base-ref>     # e.g. origin/main
 #
 # Called by the version-bump job in ci.yml, and by tools/ci_lint.sh when
 # BASE_REF is set.
