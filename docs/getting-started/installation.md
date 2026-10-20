@@ -29,21 +29,32 @@ Pick the host you run.
 
 ### Odoo.sh
 
-1. In Odoo.sh, go to **Settings → Submodules** and click **Add submodule**
-2. Enter `git@github.com:pantalytics/pan_mail_pro.git`, branch `19.0`, and
-   copy the **Public Key** shown
-3. The repository is public, so the key is only needed if your Odoo.sh project
-   pulls over SSH. If it asks for one: send it to support@pantalytics.com and
-   we add it as a read-only deploy key
-4. Or from your own repository, on your machine:
+Start on a staging or development branch, not on production.
+
+1. In your Odoo.sh project, open that branch and click **Submodule** at the
+   top right
+2. Repository: `git@github.com:pantalytics/pan_mail_pro.git`. Branch: `19.0`.
+   Path: `addons/pan_mail_pro`
+3. Save. Odoo.sh commits the submodule to your branch, builds it and restarts
+
+The repository is public, so you do not need a deploy key. **Settings →
+Submodules** is only for private repositories; you can skip it.
+
+Prefer git? From your own clone of the project:
 
 ```bash
 git submodule add -b 19.0 https://github.com/pantalytics/pan_mail_pro addons/pan_mail_pro
-git commit -m "Add pan_mail_pro"
+git commit -m "Add Mail Pro"
 git push
 ```
 
-Odoo.sh builds the branch and restarts.
+Install it on that branch (see *Then, on every host* below), check it works,
+and merge the branch into production. Odoo.sh does not install a new module
+on merge: open **Apps** on production and install Mail Pro there too.
+
+A new release: `git submodule update --remote addons/pan_mail_pro`, commit,
+push. Odoo.sh never moves a submodule on its own, so you decide when an
+update lands.
 
 ### Cloudpepper
 
