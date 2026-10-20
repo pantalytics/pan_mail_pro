@@ -73,6 +73,24 @@ The panel sees which station each installation is stuck on. Two rules:
 No automation beyond a list in the panel and a daily look at it. Built when
 the hundred do not fit on one screen.
 
+## Why this shape: the research behind each choice
+
+Each choice below rests on a finding that has held up. One that did not is
+named too, so nobody builds on it later.
+
+| Finding | What it says | What we do with it |
+|---|---|---|
+| **Endowed progress** (Nunes & Drèze 2006, car wash cards) | The same eight washes were finished by 19% with a blank 8-stamp card and by 34% with a 10-stamp card that already had two stamps. It works best when the head start has a reason | The line in Odoo opens with two stations done, **Spot claimed** and **Mail Pro on your Odoo**. Both are true, and the reason is visible: you did them |
+| **Goal gradient** (Kivetz, Urminsky & Zheng 2006, café card) | People speed up as the reward gets close. A 12-stamp card with two bonus stamps finished faster than a plain 10-stamp card | Station 3 is the hard one and sits early, so it counts its own ticks (callback copied, values pasted, verified) and the line keeps moving through it. The copy counts down: "2 steps to your first mail" |
+| **Resumption** (Ovsiankina; Ghibellini & Meier 2025 meta-analysis) | People tend to pick an interrupted task back up. The famous half of this, Zeigarnik's "unfinished tasks stay in memory", did **not** replicate | The unfinished line is on every Mail Pro screen until it is done, the way MCP Pro's strip is, and the stuck mail shows the line with the next station. We do not count on people remembering |
+| **Defaults** (Johnson & Goldstein 2003/2004, organ donation) | Most people keep whatever is preset, because changing it costs effort | The internal domain and the notification mailbox are proposed, not asked |
+| **Implementation intentions** (Gollwitzer & Sheeran 2006, 94 tests, d = 0.65) | A concrete "when X, I do Y" plan clearly raises follow-through | Someone leaving at station 3 gets one concrete choice: book fifteen minutes, or forward the steps to their partner. Not "come back later" |
+| **IKEA effect** (Norton, Mochon & Ariely 2012) | People value what they built themselves more, but only if they **finish** it. Half-built, the effect is gone | A half-done setup is the worst outcome, which is one more reason for the person-to-person help. And the price question goes out at station 5, when they have just finished |
+| **Peak-end rule** (Redelmeier & Kahneman 1996; 682-patient trial 2003) | An experience is remembered by its best or worst moment and by how it ends, much more than by how long it took | Station 5 is the peak and the ending in one: their own customer's mail, on their own record, with a link to it. That is the screen they remember, not the console detour |
+
+The figures come from the papers' abstracts and from reviews of them. The
+exact numbers are in the original papers.
+
 ## Measuring
 
 One PostHog event per station reached (`onboarding_station`, with the station
