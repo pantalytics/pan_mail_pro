@@ -55,11 +55,11 @@ Create a Pantalytics account at
 `19.0`, to your Odoo. The full guide per host is
 [docs/getting-started/installation.md](docs/getting-started/installation.md).
 
-**Odoo.sh**: open a branch → **Submodule** → `git@github.com:pantalytics/pan_mail_pro.git`,
-branch `19.0`, path `addons/pan_mail_pro`. Or from your repository:
+**Odoo.sh**: open a branch → **Submodule** → **Run on Odoo.sh** → `git@github.com:pantalytics/pan_mail_pro.git`,
+branch `19.0`, keep the suggested path. Or from your repository:
 
 ```bash
-git submodule add -b 19.0 https://github.com/pantalytics/pan_mail_pro addons/pan_mail_pro
+git submodule add -b 19.0 https://github.com/pantalytics/pan_mail_pro pantalytics/pan_mail_pro
 git commit -m "Add pan_mail_pro" && git push
 ```
 

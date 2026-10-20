@@ -6,6 +6,10 @@ and connect it to your Pantalytics account.
 > 💡 You need Odoo 19.0, Community or Enterprise, on Odoo.sh, Cloudpepper or
 > your own server. Odoo Online does not allow extra modules.
 
+**Someone else manages your Odoo, such as an Odoo partner?** Send them this
+page. They do steps 1 and 2. Step 3 is yours, because it signs in with your
+Pantalytics account.
+
 ## Step 1: Add the module from GitHub
 
 The code is on
@@ -17,10 +21,12 @@ Cloudpepper or your own server.
 
 Start on a staging branch, not on production.
 
-1. Open the branch and click **Submodule** at the top right
-2. Repository `git@github.com:pantalytics/pan_mail_pro.git`, branch `19.0`,
-   path `addons/pan_mail_pro`
-3. Save. Odoo.sh builds the branch and restarts
+1. Open the branch, click **Submodule** at the top right, then **Run on
+   Odoo.sh**
+2. Repository URL: `git@github.com:pantalytics/pan_mail_pro.git` (Odoo.sh
+   only takes this form, not `https://`)
+3. Branch: pick `19.0` from the list. Path: leave what Odoo.sh fills in
+4. Click **Add a submodule**. Odoo.sh commits it and builds the branch
 
 > 💡 The repository is public, so you need no deploy key. Odoo explains
 > submodules in its own guide:
@@ -29,7 +35,7 @@ Start on a staging branch, not on production.
 Rather use the command line:
 
 ```bash
-git submodule add -b 19.0 https://github.com/pantalytics/pan_mail_pro addons/pan_mail_pro
+git submodule add -b 19.0 https://github.com/pantalytics/pan_mail_pro pantalytics/pan_mail_pro
 git commit -m "Add Mail Pro" && git push
 ```
 
@@ -71,7 +77,7 @@ Stuck? See [Connect to Pantalytics](connect-pantalytics.md).
 
 ## Updating to a new release
 
-- **Odoo.sh or git:** `git submodule update --remote addons/pan_mail_pro`,
+- **Odoo.sh or git:** `git submodule update --remote pantalytics/pan_mail_pro`,
   commit, push. A submodule never moves on its own, so you decide when.
 - **Cloudpepper:** pulls the release and restarts by itself.
 
