@@ -353,9 +353,9 @@ class PanMailConversation(models.AbstractModel):
                              mailbox_id=None):
         """The mail of one conversation, however the caller named it.
 
-        Reading it and marking it read have to mean the same set of messages,
-        so they ask the same method rather than each building the clauses
-        again.
+        Reading it and marking it read ask the same method rather than each
+        building the clauses again. The one difference is `read_conversation`,
+        which drops the mailbox for a record: see there.
         """
         base = self._base_domain(mailbox_id)
         if model:
@@ -677,12 +677,24 @@ class PanMailConversation(models.AbstractModel):
 
         A conversation linked to nothing has no record to key on, so it is
         addressed by `message_id` instead.
+
+        **The whole record's correspondence, never one mailbox's half of it.**
+        The list says which mail reached the mailbox you have open; the pane
+        says what the correspondence on this record is. A thread two
+        colleagues are on is synced by both mailboxes, and the Message-ID
+        dedup leaves each message in whichever one fetched it first, so a pane
+        filtered by mailbox cut the thread along a line the reader cannot see,
+        and the missing half held the newest reply (#206). Nothing is widened:
+        this runs without `sudo()` and `_whose_domain` still applies, so every
+        message it adds is one the reader may read anyway. Marking read keeps
+        the mailbox (`set_read`): a provider's read state belongs to one
+        mailbox, and opening a thread must not mark a colleague's mail read.
         """
         self._check_caller()
         limit, offset = self._page(limit, offset, default=50)
         Message = self.env['mail.message']
         domain = Domain(self._conversation_domain(
-            model, res_id, message_id, mailbox_id))
+            model, res_id, message_id, None if model else mailbox_id))
         if model and scope == 'all':
             # A note and a stage change belong to the record, not to a
             # mailbox, and carry no direction. Running them through the
@@ -1607,6 +1619,10 @@ class PanMailConversation(models.AbstractModel):
             'res_id': message.res_id or 0,
             'record_name': message.x_document_name or message.record_name or '',
             'mailbox': message.x_mailbox_id.email or '',
+            # Which mailbox this one arrived in: the pane shows it once a
+            # thread spans more than one, and a reply leaves from the mailbox
+            # of the message it answers.
+            'mailbox_id': message.x_mailbox_id.id or False,
             # The mail's own To/Cc when the sync or the send path wrote them,
             # and Odoo's notified partners for everything else (mail posted
             # from the chatter, and every message that predates the two

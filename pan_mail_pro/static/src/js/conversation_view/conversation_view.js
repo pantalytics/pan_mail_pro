@@ -620,6 +620,22 @@ export class ConversationView extends Component {
         return this.state.mailboxes.length > 1;
     }
 
+    /**
+     * Does the open thread hold mail from more than one mailbox.
+     *
+     * The pane reads the whole record, so a thread two colleagues are on
+     * arrives half in each mailbox. Then every message says which one it
+     * came in on; with one mailbox it is the same answer on every line.
+     */
+    get threadSpansMailboxes() {
+        const mailboxes = new Set(
+            (this.state.conversation.messages || [])
+                .map((m) => m.mailbox)
+                .filter(Boolean)
+        );
+        return mailboxes.size > 1;
+    }
+
     /** Does the list on screen hold mail from more than one mailbox. */
     get spansMailboxes() {
         return this.showAllMailboxes && !this.state.mailboxId;
@@ -2679,8 +2695,12 @@ export class ConversationView extends Component {
             // answers a customer from an address they never wrote to. The
             // composer drops it again if this person may not send from it and
             // falls back to their own default.
+            // The pane holds the whole record's thread, so the newest turn
+            // from their side may have reached a colleague's mailbox: the
+            // reply answers from that one.
             default_x_send_from_mailbox_id:
-                conversation.mailbox_id || this.state.mailboxId || false,
+                this.newestIncoming()?.mailbox_id
+                || conversation.mailbox_id || this.state.mailboxId || false,
             // The chatter fills "To" from the record's suggested recipients;
             // the composer itself fills nothing, and since 18.2 the customer
             // is no longer a follower by default. A reply with an empty "To"
