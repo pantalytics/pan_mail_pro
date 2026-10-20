@@ -58,16 +58,17 @@ image has it.
 
 ## Step 2: Install it in Odoo
 
-**Apps → Update Apps List** → search "Mail Pro" → **Install**.
+**Apps → Update Apps List** → search "Mail Pro" → **Install**. Installing
+takes a few minutes.
 
 > ⚠️ On Odoo.sh, merging into production does not install the module there.
 > Open **Apps** on production and install Mail Pro once more.
 
 ## Step 3: Connect to Pantalytics
 
-**Settings → Mail Pro → Connect to Pantalytics**. A tab opens with a code
-filled in: sign in, check it names this Odoo, approve. No account yet? Create
-one first at
+**Settings → Mail Pro → Connect to Pantalytics**. Pantalytics opens in the
+same tab with a code filled in: sign in, check it names this Odoo, approve.
+You land back in Odoo, connected. No account yet? Create one first at
 <a href="https://mcp.pantalytics.com/admin/mail-pro" target="_blank">mcp.pantalytics.com/admin/mail-pro</a>.
 Stuck? See [Connect to Pantalytics](connect-pantalytics.md).
 

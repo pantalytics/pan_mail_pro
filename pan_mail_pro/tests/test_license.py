@@ -126,10 +126,12 @@ class TestLicense(TransactionCase):
         self.assertEqual(self.calls[0]['json']['db_uuid'], self.db_uuid)
 
     def test_the_settings_button_opens_the_page_with_the_code_in_it(self):
+        """In the same tab: a new one opened after the call answers is a popup
+        the browser blocks, and the approval page comes back here anyway."""
         with patch(POST, side_effect=self.server()):
             action = self.env['res.config.settings'].create({}).action_license_connect()
         self.assertEqual(action['type'], 'ir.actions.act_url')
-        self.assertEqual(action['target'], 'new')
+        self.assertEqual(action['target'], 'self')
         self.assertEqual(action['url'], 'https://mailpro.test/link?code=ABCD-EFGH')
 
     def test_an_older_server_without_the_complete_link_still_works(self):

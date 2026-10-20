@@ -72,13 +72,13 @@
                                         string="Connect to Pantalytics" class="btn-primary"/>
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_state != 'pending'">
-                                Approve the connection in the Pantalytics tab that just opened.
+                                Approve the connection on the Pantalytics page.
                                 It shows this code:
                                 <field name="x_license_user_code" nolabel="1" readonly="1" class="fw-bold ms-1"/>
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_state != 'pending'">
-                                No tab? <field name="x_license_verify_url" widget="url" nolabel="1" readonly="1"
-                                               options="{'website_path': False}" text="Open it again"/>
+                                Not approved yet? <field name="x_license_verify_url" widget="url" nolabel="1" readonly="1"
+                                               options="{'website_path': False}" text="Open the Pantalytics page"/>
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_state != 'pending'">
                                 <button name="action_license_check" type="object"
