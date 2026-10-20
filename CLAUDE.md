@@ -353,7 +353,7 @@ tools/ci.sh upgrade               # install last release, upgrade, run the suite
 tools/ci.sh ui                    # the browser checks against a seeded instance
 tools/ci.sh                       # all four, in CI's order
 
-BASE_REF=origin/19.0 tools/ci_lint.sh   # + the diff-shape and version-bump checks
+BASE_REF=origin/main tools/ci_lint.sh   # + the diff-shape and version-bump checks
 ```
 
 Docker and Docker Hub access are the only requirements. `tools/ci_odoo.sh`
@@ -438,8 +438,10 @@ layout bug, and that is the width the complaint arrives from.
 
 ## Working from Claude Code (mobile, web, cloud sessions)
 
-`19.0` is protected: no direct pushes, PR + green CI required. The full loop
-without a desktop:
+**Branches:** `main` is the source; `19.0` is a release branch. Every PR goes
+to `main`. A release is a PR from `main` into `19.0`, which Cloudpepper and
+Odoo.sh deploy from and `release.yml` tags. Nobody commits to `19.0` directly.
+The full loop without a desktop:
 
 ```bash
 git checkout -b feature/<name>
@@ -452,7 +454,7 @@ git push -u origin HEAD
 Then open the PR and let GitHub merge it when CI turns green. Two ways,
 depending on where the session runs:
 
-- **Terminal with `gh`:** `gh pr create --fill --base 19.0` then
+- **Terminal with `gh`:** `gh pr create --fill --base main` then
   `gh pr merge --auto --squash --delete-branch`. Check back with
   `gh pr checks` or `gh run watch`.
 - **Cloud session (claude.ai/code):** there is no `gh` CLI. Use the GitHub MCP
@@ -981,7 +983,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   screen, and it is what caught the two identical chevrons that every
   assertion was happy with.
 - **No Docker in a cloud session means no `tools/ci.sh test|ui`.** What still
-  runs: `tools/ci.sh lint`, `BASE_REF=origin/19.0 tools/ci_lint.sh`,
+  runs: `tools/ci.sh lint`, `BASE_REF=origin/main tools/ci_lint.sh`,
   `pip install libsass` + `sass.compile(filename=...)` on the stylesheet, and
   the static assertions of `tests/test_inbox_panes.py` re-run by hand as a
   script. That is enough to keep a bundle from failing to compile; it is not
@@ -1149,7 +1151,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   short word, because there the document is the only thing it can mean.
 - **The lint job's diff-shape checks only run with `BASE_REF`.** A bare
   `tools/ci.sh lint` passes while CI fails on "changes models/ but no test" --
-  run `BASE_REF=origin/19.0 tools/ci_lint.sh` before pushing.
+  run `BASE_REF=origin/main tools/ci_lint.sh` before pushing.
 
 ### Small screens (19.0.13.4.0)
 - **Odoo compiles SCSS with libsass, and libsass reads `min()` / `max()` as
