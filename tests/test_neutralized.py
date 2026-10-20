@@ -7,9 +7,12 @@ inserting an invalid one. Mail Pro never touches `ir_mail_server`, so that
 protection misses it entirely and a restored dump mails real customers with the
 real credentials. `data/neutralize.sql` takes those credentials away; these
 tests cover the runtime half, which holds even when a mailbox is put back.
+Outgoing mail still leaves, through Odoo's own SMTP path, so the host's
+staging catcher (MailHog, odoo.sh's Mails tab) shows what was sent.
 """
 import os
-from unittest.mock import patch
+from contextlib import ExitStack
+from unittest.mock import MagicMock, patch
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
@@ -25,82 +28,88 @@ class TestNeutralizedDatabase(MailProTestCase):
         super().setUp()
         self.env['ir.config_parameter'].sudo().set_param('database.is_neutralized', 'True')
 
-    def test_outgoing_mail_is_recorded_but_never_routed(self):
-        """It reads as sent, and no mailbox or provider was asked anything.
-
-        Staging is where the *flow* is tested, so the mail has to land on the
-        record like any other. It must still not reach a provider -- which is
-        why the assertion is on `_send_one` not being called at all, rather
-        than on a client that would have refused one layer further down.
-        """
-        mail = self.env['mail.mail'].create({
-            'subject': 'Staging must not send this',
+    def _mail(self):
+        return self.env['mail.mail'].create({
+            'subject': 'Staging must not reach a provider',
             'body_html': '<p>Hi</p>',
             'email_to': 'customer@example.com',
             'author_id': self.salesperson.partner_id.id,
         })
 
-        with patch.object(type(mail), '_send_one', autospec=True) as send_one:
+    def _smtp_and_providers(self, mail):
+        """Odoo's SMTP send, and the one door to every provider, both watched.
+
+        The SMTP connect is stood in for as well: Odoo opens the session before
+        it calls `send_email`, and the test runner has no server to open it to.
+        `_disable_send` is Odoo's own test-mode switch, which skips the send
+        "unless monkeypatched".
+        """
+        mail_server = type(self.env['ir.mail_server'])
+        stack = ExitStack()
+        stack.enter_context(patch.object(mail_server, '_disable_send', return_value=False))
+        stack.enter_context(patch.object(mail_server, '_connect__', return_value=MagicMock()))
+        send_one = stack.enter_context(patch.object(type(mail), '_send_one', autospec=True))
+        send_email = stack.enter_context(patch.object(
+            mail_server, 'send_email', autospec=True, return_value='<staging@example.com>'))
+        return stack, send_one, send_email
+
+    def test_outgoing_mail_goes_to_odoos_own_smtp(self):
+        """The host's staging catcher gets it, and no provider is asked.
+
+        Staging is where the *flow* is tested, and every host already catches
+        SMTP there (Cloudpepper's MailHog, odoo.sh's Mails tab). So the mail
+        takes Odoo's own path, the one neutralization protects. The provider
+        assertion is on `_send_one` not being called at all -- Graph, Gmail
+        and the module's own IMAP/SMTP client all sit behind it -- rather than
+        on a client that would have refused one layer further down.
+        """
+        mail = self._mail()
+        watched, send_one, send_email = self._smtp_and_providers(mail)
+
+        with watched:
             error = send_and_capture(mail)
 
         self.assertIsNone(error, 'Staging must not interrupt the sender')
         send_one.assert_not_called()
-        self.assertEqual(mail.state, 'sent')
-        self.assertIn('neutralized', mail.failure_reason)
+        send_email.assert_called_once()
+
+    def test_a_mailbox_put_back_still_does_not_send(self):
+        """Reactivating a mailbox on staging does not reopen the provider door.
+
+        `data/neutralize.sql` archives every mailbox; an admin testing setup
+        might switch one back on. The neutralized check sits after the
+        mailbox count, so it is the flag that decides, not the mailboxes.
+        """
+        self.env['pan.mail.mailbox'].sudo().with_context(active_test=False).search(
+            []).write({'active': True})
+        mail = self._mail()
+        watched, send_one, send_email = self._smtp_and_providers(mail)
+
+        with watched:
+            send_and_capture(mail)
+
+        send_one.assert_not_called()
+        send_email.assert_called_once()
 
     def test_the_chatter_keeps_the_message(self):
-        """The whole point: the email is on the record as if it had gone out.
+        """A post on staging lands on the record like any other.
 
         Refusing with a `UserError` used to unwind the `message_post` that
         created it, so the tester got a dialog where the test was supposed to
-        be. The recipient row has to read `sent` too -- it outlives the
-        `mail.mail` and is what the chatter renders.
+        be. Odoo's own send records a failed delivery on the mail instead of
+        raising at the poster, so the entry stays either way.
         """
-        message = self.external_partner.with_user(self.salesperson).sudo().message_post(
-            body='<p>Testing the flow</p>',
-            subject='Staging',
-            partner_ids=[self.external_partner.id],
-            message_type='comment',
-            subtype_xmlid='mail.mt_comment',
-        )
+        watched, _send_one, _send_email = self._smtp_and_providers(self.env['mail.mail'])
+        with watched:
+            message = self.external_partner.with_user(self.salesperson).sudo().message_post(
+                body='<p>Testing the flow</p>',
+                subject='Staging',
+                partner_ids=[self.external_partner.id],
+                message_type='comment',
+                subtype_xmlid='mail.mt_comment',
+            )
 
         self.assertTrue(message.exists(), 'The chatter entry was rolled back')
-        notification = self.env['mail.notification'].search([
-            ('mail_message_id', '=', message.id),
-            ('res_partner_id', '=', self.external_partner.id),
-        ])
-        self.assertEqual(notification.notification_status, 'sent')
-
-    def test_the_sender_is_told(self):
-        """A toast, because the usual way of saying it would roll back the post."""
-        mail = self.env['mail.mail'].create({
-            'subject': 'Staging must not send this',
-            'body_html': '<p>Hi</p>',
-            'email_to': 'customer@example.com',
-            'author_id': self.salesperson.partner_id.id,
-        })
-
-        with patch.object(type(self.env['res.partner']), '_bus_send') as bus_send:
-            mail.send()
-
-        bus_send.assert_called_once()
-        self.assertEqual(bus_send.call_args[0][0], 'simple_notification')
-        self.assertIn('neutralized', bus_send.call_args[0][1]['message'])
-
-    def test_the_mail_queue_tells_nobody(self):
-        """The cron sends on nobody's behalf, so it raises no toast."""
-        mail = self.env['mail.mail'].create({
-            'subject': 'Queued before the restore',
-            'body_html': '<p>Hi</p>',
-            'email_to': 'customer@example.com',
-            'author_id': self.salesperson.partner_id.id,
-        })
-
-        with patch.object(type(self.env['res.partner']), '_bus_send') as bus_send:
-            mail.send(auto_commit=True)
-
-        bus_send.assert_not_called()
-        self.assertEqual(mail.state, 'sent')
 
     def test_neutralize_sql_takes_every_credential_away(self):
         """The at-rest half. The SQL names columns by hand and is found by

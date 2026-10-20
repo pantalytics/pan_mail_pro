@@ -2373,18 +2373,22 @@ stopped.
 Incoming sync refuses outright: there is nothing to preserve, and reading a
 customer's live mailbox from a test copy is the thing being prevented.
 
-Outgoing mail is different, because staging is where the *flow* gets tested.
-`mail.mail.send()` marks the batch `sent` without routing it (`_deliver_nowhere`)
-— the chatter entry stays, the recipient rows read `sent`, and `failure_reason`
-on the mail is the one place that says it never left the database. The sender is
-told by a bus notification rather than a `UserError`, because the raise would
-unwind the `message_post` that produced the mail and take the tester's chatter
-entry with it. That is the whole reason the refusal moved out of `_resolve_route`.
+Outgoing mail is different, because staging is where the *flow* gets tested,
+and the tester wants to read the email that went out. `mail.mail.send()` hands
+the batch to Odoo's own SMTP path (`_send_on_staging`), exactly as it does
+before any mailbox exists. Neutralizing leaves one active `ir_mail_server`, and
+each host already decides where that leads: Cloudpepper catches staging mail in
+MailHog, odoo.sh shows it on the build's Mails tab, and a bare restore fails at
+the invalid host Odoo inserted. The module inherits that answer rather than
+writing its own; an earlier version recorded the mail as sent and delivered it
+nowhere, which hid the one thing the tester came to look at.
 
-Nothing is at risk in doing so. `_deliver_nowhere` asks no mailbox, no
-credential and no client, and the three layers underneath still refuse
-independently. The mail queue takes the same path minus the notification: its
-run belongs to a cron, not to whoever is logged in.
+Never a provider. `_send_on_staging` asks no mailbox, no account and no client,
+so Graph, Gmail and the module's own IMAP/SMTP client are out of reach by
+construction, and the three layers underneath still refuse on their own. The
+check sits after the mailbox count, so switching a mailbox back on in staging
+changes nothing. What it trusts is the database's `ir_mail_server` rows, which
+is Odoo's own contract for a neutralized copy.
 
 ---
 
