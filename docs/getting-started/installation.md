@@ -8,9 +8,10 @@ and connect it to your Pantalytics account.
 
 ## Step 1: Add the module from GitHub
 
-Mail Pro lives at
-<a href="https://github.com/pantalytics/pan_mail_pro" target="_blank">github.com/pantalytics/pan_mail_pro</a>,
-branch `19.0`. Pick your host.
+The code is on
+<a href="https://github.com/pantalytics/pan_mail_pro" target="_blank">GitHub</a>,
+branch `19.0`. How you add it depends on where your Odoo runs: Odoo.sh,
+Cloudpepper or your own server.
 
 ### Odoo.sh
 
