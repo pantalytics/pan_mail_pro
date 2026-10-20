@@ -2390,6 +2390,12 @@ check sits after the mailbox count, so switching a mailbox back on in staging
 changes nothing. What it trusts is the database's `ir_mail_server` rows, which
 is Odoo's own contract for a neutralized copy.
 
+The composer says so, once. On a copy every mailbox is archived and every
+credential gone, so the real Send From would be an empty list and the connect
+warning would ask for something that cannot work. On `x_on_test_instance` both
+are hidden, and a read-only Send From reading "Test inbox" takes the dropdown's
+place, with one line under it saying why it cannot be changed.
+
 ---
 
 ### 9.10 An imported message notifies nobody

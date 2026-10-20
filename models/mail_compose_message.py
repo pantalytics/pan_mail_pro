@@ -3,6 +3,7 @@ from odoo import fields, models, api, _
 from odoo.exceptions import ValidationError
 
 from .mail_mail import INTERACTIVE_SEND
+from .neutralization import database_is_neutralized
 
 
 class MailComposeMessage(models.TransientModel):
@@ -20,6 +21,17 @@ class MailComposeMessage(models.TransientModel):
         string='Setup Warning',
         compute='_compute_setup_warning',
         store=False
+    )
+    x_on_test_instance = fields.Boolean(
+        string='On a Test Instance',
+        compute='_compute_on_test_instance',
+        help='A neutralized copy: mail goes to the host\'s test inbox, so there '
+             'is no mailbox to pick and nothing to connect.',
+    )
+    x_test_send_from = fields.Char(
+        string='Send From',
+        compute='_compute_on_test_instance',
+        help='Fixed on a test instance: every email goes to the test inbox.',
     )
 
     @api.constrains('x_send_from_mailbox_id')
@@ -47,6 +59,20 @@ class MailComposeMessage(models.TransientModel):
         else (see `_is_the_action`)."""
         return super(MailComposeMessage, self.with_context(
             **{INTERACTIVE_SEND: True}))._action_send_mail(auto_commit=auto_commit)
+
+    def _compute_on_test_instance(self):
+        """On staging, Send From is filled in and fixed: the test inbox.
+
+        `data/neutralize.sql` archives every mailbox and drops every
+        credential, so the real dropdown would be an empty list and the
+        connect warning would ask for something that cannot work here. The
+        person testing still sees a Send From with an answer in it, and one
+        line saying why they cannot change it (`mail.mail._send_on_staging`).
+        """
+        on_test = database_is_neutralized(self.env)
+        for record in self:
+            record.x_on_test_instance = on_test
+            record.x_test_send_from = _('Test inbox') if on_test else False
 
     @api.depends('x_send_from_mailbox_id')
     @api.depends_context('uid')
