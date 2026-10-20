@@ -102,7 +102,7 @@ class TestInboxPanes(TransactionCase):
         `query_selector` just answers None and the check reports the button
         as missing. That is exactly how the rename reached 19.0 red.
         """
-        ui_check = read('tools', 'ui_check.py')
+        ui_check = read('..', 'tools', 'ui_check.py')
         for name in set(re.findall(r'o_mailpro_pane_toggle_([a-z_]+)', ui_check)):
             self.assertIn(name, PANES,
                           'ui_check.py looks for the toggle of "%s", '
