@@ -613,6 +613,18 @@ The reasoning, including what it deliberately does not do (no reply to a mail
 Odoo does not have, no paging past the first page, no shared mailboxes), is in
 `docs/research/personal-mailbox.md`.
 
+**The list asks about a mailbox, the pane asks about a record.** The mailbox is
+a clause on every list query (the folders, the counts, the rows) and not on
+`read_conversation` for a record. A thread two colleagues are on is synced by
+both mailboxes and the Message-ID dedup leaves each message in whichever one
+fetched it first, so a pane filtered by mailbox cut it along a line the reader
+cannot see (#206). Nothing is widened: the pane runs without `sudo()` and
+`_whose_domain` still applies. A thread that spans more than one mailbox says
+so per message, and the reply leaves from the mailbox of the newest incoming
+message. Marking read keeps the mailbox, because a provider's read state
+belongs to one mailbox and opening a thread must not mark a colleague's mail
+read.
+
 Replying happens in the conversation pane, not in a dialog over the screen: a
 dialog hides the list, the record and the mail being answered, which are the
 three things somebody looks at while writing. It is still `mail.compose.message`

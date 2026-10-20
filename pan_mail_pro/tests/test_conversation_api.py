@@ -476,6 +476,49 @@ class TestConversationApi(TransactionCase):
         self.assertIn('records', thread)
         self.assertIn('rejected', thread)
 
+    def test_the_pane_holds_the_whole_record_not_one_mailbox_s_half(self):
+        """A thread two colleagues are on lands half in each mailbox (#206).
+
+        Both mailboxes sync it and the Message-ID dedup leaves each message
+        in whichever one fetched it first, so a pane filtered by mailbox cut
+        the conversation along a line the reader cannot see, and the missing
+        half held the newest reply. The list still says which mail reached
+        this mailbox; the pane says what the correspondence on the record is.
+        Marking read stays the mailbox's own: opening the thread must not
+        mark a colleague's mail read at their provider.
+        """
+        colleague = self.env['pan.mail.mailbox'].create({
+            'email': 'daniel@company.test',
+            'provider': 'imap',
+            'mailbox_type': 'shared',
+        })
+        mine = self._mail(subject='Out of office')
+        quiet = {'pan_mail_read_mirror': True}
+        mine.with_context(**quiet).write({'date': '2026-09-18 07:26:00', 'x_is_read': False})
+        theirs = self._mail(subject='Re: Ready Partner worden', mailbox=colleague)
+        theirs.with_context(**quiet).write({'date': '2026-09-21 07:06:00', 'x_is_read': False})
+
+        thread = self.Conversation.read_conversation(
+            'crm.lead', self.lead.id, mailbox_id=self.mailbox.id)
+        self.assertEqual([m['id'] for m in thread['messages']],
+                         [theirs.id, mine.id],
+                         'the newest turn is in the pane whichever mailbox '
+                         'fetched it')
+        self.assertEqual({m['id']: m['mailbox_id'] for m in thread['messages']},
+                         {mine.id: self.mailbox.id, theirs.id: colleague.id},
+                         'each message says where it arrived, and the reply '
+                         'leaves from the one it answers')
+
+        rows = self.Conversation.search_conversations(mailbox_id=self.mailbox.id)
+        self.assertEqual([row['message_id'] for row in rows], [mine.id],
+                         'the list is the mailbox\'s question, unchanged')
+
+        self.Conversation.set_read('crm.lead', self.lead.id,
+                                   mailbox_id=self.mailbox.id)
+        self.assertTrue(mine.x_is_read)
+        self.assertFalse(theirs.x_is_read,
+                         'a colleague\'s mail keeps its own read state')
+
     def test_the_thread_reads_newest_first(self):
         """The message you came for is the newest one, and it is the one the
         pane opens. Below fifty collapsed headers it is an open message
