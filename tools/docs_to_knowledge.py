@@ -82,9 +82,27 @@ def rewrite_links(text, src):
     return LINK.sub(repl, text)
 
 
+# A quote that opens with one of these is a callout, and becomes Odoo's own
+# banner (html_editor's insertBanner), so it can still be edited in Knowledge.
+BANNERS = {"💡": "info", "⚠️": "warning", "✅": "success"}
+QUOTE = re.compile(r"<blockquote>\s*<p>(💡|⚠️|✅)\s*(.*?)</blockquote>", re.S)
+
+
+def banner(match):
+    return (
+        '<div class="o_editor_banner user-select-none o-contenteditable-false lh-1 '
+        f'd-flex align-items-center alert alert-{BANNERS[match.group(1)]} pb-0 pt-3 ps-3 pe-3" '
+        'data-oe-role="status">'
+        f'<i class="o_editor_banner_icon mb-3 fst-normal">{match.group(1)}</i>'
+        '<div class="o_editor_banner_content o-contenteditable-true w-100 px-3">'
+        f"<p>{match.group(2).strip()}</div></div>"
+    )
+
+
 def convert(src):
     text = rewrite_links(normalize((DOCS / src).read_text()), src)
     html = markdown.markdown(text, extensions=["tables", "fenced_code", "sane_lists"])
+    html = QUOTE.sub(banner, html)
     # Knowledge renders the article name itself, so the page title would be a
     # second heading above the body.
     return re.sub(r"^<h1>.*?</h1>\s*", "", html, count=1, flags=re.S)

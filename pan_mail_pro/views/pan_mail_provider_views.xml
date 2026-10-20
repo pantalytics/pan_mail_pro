@@ -40,6 +40,25 @@
                         </group>
                     </group>
 
+                    <!-- What to do and where the steps are, before the
+                         fields: the form alone asks for three IDs nobody has
+                         yet. The steps themselves stay in the knowledge base,
+                         one click deeper, so the form keeps its four fields. -->
+                    <div class="alert alert-info mb-3" role="status" invisible="provider != 'outlook'">
+                        Mail Pro signs in through an app registration in your Microsoft
+                        Entra admin center. Creating one takes about ten minutes; you paste
+                        three values from it here.
+                        <a href="https://odoo.pantalytics.com/knowledge/article/118" target="_blank"
+                           class="fw-bold ms-1">Step-by-step guide</a>
+                    </div>
+                    <div class="alert alert-info mb-3" role="status" invisible="provider != 'gmail'">
+                        Mail Pro signs in through an OAuth client in your Google Cloud
+                        project. Creating one takes about ten minutes; you paste its Client
+                        ID and secret here.
+                        <a href="https://odoo.pantalytics.com/knowledge/article/128" target="_blank"
+                           class="fw-bold ms-1">Step-by-step guide</a>
+                    </div>
+
                     <group string="Application registration" invisible="not uses_oauth">
                         <group>
                             <!-- Microsoft's own words, copied from the app
