@@ -21,7 +21,7 @@ the steps below for the host you run.
 
 Mail Pro is distributed from its GitHub repository,
 <a href="https://github.com/pantalytics/pan_mail_pro" target="_blank">github.com/pantalytics/pan_mail_pro</a>,
-branch `19.0`, under the Elastic License 2.0. It is not on the Odoo App Store.
+branch `19.0`, under the Elastic License 2.0, and listed free on the Odoo App Store.
 
 ## Step 1: Add the module to your Odoo
 

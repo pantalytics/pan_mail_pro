@@ -2651,7 +2651,7 @@ whole attempt runs in one savepoint: a failed test that left a `mail.mail`
 behind would be delivered by the queue cron minutes later, which is a test
 email arriving out of nowhere long after the reader concluded it had failed.
 
-### 9.16 Source-available, sold direct, not through the Odoo Apps store
+### 9.16 Source-available, free in the Odoo Apps store, paid in the app
 
 The licence is the Elastic License 2.0 (`LICENSE`), the same one Odoo MCP Pro
 uses. It protects the thing being sold — offering Mail Pro to third parties as
@@ -2663,17 +2663,18 @@ Odoo's manifest has no value for a source-available licence, so
 `__manifest__.py` reads `'license': 'Other proprietary'` and `LICENSE` carries
 the real terms.
 
-**That value is only legal outside the Odoo Apps store, and that is the
-decision.** apps.odoo.com requires `OPL-1` for a paid app, which is a stricter
-licence than we want: it also forbids a customer from redistributing a
-modified copy, which the Elastic License permits and which costs us nothing.
-Mail Pro is sold direct from pantalytics.com, so the store's constraint does
-not apply.
+**The store listing is free; the money is in the app (decided 2026-10-20).**
+apps.odoo.com requires `OPL-1` for a *paid* app, which is a stricter licence
+than we want: it also forbids a customer from redistributing a modified copy,
+which the Elastic License permits and which costs us nothing. A free listing
+carries no such requirement, and the store's one-off price could not express
+our pricing anyway: Free, Pro and Max are a Pantalytics subscription, bought
+from the Billing page of the workspace the instance connects to (step 1). The
+listing is a way to be found and installed, not a way to be paid.
 
 The consequence for anyone changing this: **do not set the manifest licence to
-`OPL-1` to "fix" a store listing.** If distributing through the Odoo Apps store
-is ever wanted, that is a licence change and a business decision, not a
-manifest edit — take it deliberately, and re-check `LICENSE`, the About block
+`OPL-1` to "fix" a store listing, and do not put a price on it.** A paid
+listing is a licence change and a business decision, not a manifest edit — take it deliberately, and re-check `LICENSE`, the About block
 in `views/res_config_settings_views.xml` and the licence section of
 `README.md` together, because all three state the terms and only one of them is
 the terms.
