@@ -222,8 +222,11 @@ class MailProOAuthController(http.Controller):
             try:
                 with request.env.cr.savepoint():
                     self._retry_error_mailboxes(user, provider)
+                    setup = request.env['pan.mail.setup']
+                    setup.propose_internal_domain(user, email)
                     if not request.env['pan.mail.domain'].configuration_error():
                         self._claim_personal_mailbox(user, provider, email)
+                        setup.propose_notification_mailbox(user, email)
             except Exception as exception:  # noqa: BLE001 - recorded, the account stays
                 _logger.exception('[OAuth] Connected %s, but its mailbox could not be '
                                   'claimed yet', email)
