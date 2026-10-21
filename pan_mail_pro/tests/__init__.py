@@ -67,3 +67,4 @@ from . import test_live_mailbox
 from . import test_live_verify
 from . import test_session_schema_behind
 from . import test_dark_mode
+from . import test_setup_defaults

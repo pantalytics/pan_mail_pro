@@ -50,6 +50,8 @@ import logging
 
 from odoo import _, api, models
 
+from .pan_mail_domain import PUBLIC_MAIL_DOMAINS
+
 _logger = logging.getLogger(__name__)
 
 PHASE_SETUP = 'setup'
@@ -199,6 +201,62 @@ class PanMailSetup(models.AbstractModel):
         index, _code, label = blocking
         return _('Step %(index)s of %(total)s — %(label)s',
                  index=index, total=ACCOUNT_STEP + len(STEPS), label=label)
+
+    # -------------------------------------------------------------------------
+    # Answers proposed instead of asked
+    # -------------------------------------------------------------------------
+    #
+    # Steps 3 and 4 are questions the first sign-in already answers: the domain
+    # the provider just verified is the company's, and the mailbox the admin
+    # just connected can send. Proposed, never imposed: both only fill an empty
+    # answer, and both are one Change away on the settings page
+    # (docs/plans/onboarding-flow.md, "Fewer decisions").
+
+    @api.model
+    def propose_internal_domain(self, user, email):
+        """The signed-in address's domain as the first internal domain.
+
+        Only while the list is empty, only for a mailbox manager (the list is
+        theirs to keep, `pan.mail.domain.set_domains`), and never a public mail
+        domain: marking gmail.com internal would silently stop syncing every
+        customer on Gmail. Nothing else is derived here, on purpose: the
+        provider vouched for this one address, while alias domains and other
+        users' addresses mean something else (ARCHITECTURE.md §9.12). A
+        company's second domain is added by hand, on the same line.
+        """
+        Domain = self.env['pan.mail.domain'].sudo()
+        if Domain.is_configured():
+            return Domain.browse()
+        if not user.has_group('pan_mail_pro.group_mail_mailbox_manager'):
+            return Domain.browse()
+        names = [n for n in Domain._parse(email) if n not in PUBLIC_MAIL_DOMAINS]
+        if not names:
+            return Domain.browse()
+        _logger.info('[OAuth] Proposed %s as the internal domain', names[0])
+        return Domain.create({'name': names[0]})
+
+    @api.model
+    def propose_notification_mailbox(self, user, email):
+        """The admin's own mailbox as the one system mail goes out from.
+
+        Only while no mailbox has the job and only for a mailbox manager: a
+        plain user's sign-in must not decide where everybody's password resets
+        come from. The mailbox's own constraints still apply (an owner who
+        signed in, one notification mailbox), so a proposal that would break
+        one is not made rather than forced.
+        """
+        Mailbox = self.env['pan.mail.mailbox'].sudo()
+        if not user.has_group('pan_mail_pro.group_mail_mailbox_manager'):
+            return Mailbox.browse()
+        if Mailbox.search_count([('is_notification_mailbox', '=', True)], limit=1):
+            return Mailbox.browse()
+        mailbox = Mailbox.search(
+            [('email', '=ilike', email), ('owner_user_id', '=', user.id)], limit=1)
+        if not mailbox:
+            return Mailbox.browse()
+        mailbox.is_notification_mailbox = True
+        _logger.info('[OAuth] Proposed %s as the notification mailbox', mailbox.email)
+        return mailbox
 
     # -------------------------------------------------------------------------
     # Something broke after setup
