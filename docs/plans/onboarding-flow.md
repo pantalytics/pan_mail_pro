@@ -1,6 +1,7 @@
 # Onboarding: from the beta mail to the first mail on a record
 
-Status: **plan, 2026-10-20.** Nothing here is built. Written after walking the
+Status: **plan, 2026-10-20.** Step 1 of the order (the two defaults) ships
+in 19.0.30.4.0, proposed from the admin's own sign-in; the rest is not built. Written after walking the
 whole beta install on a real Odoo.sh project. Install and Connect went fine,
 then the provider form asked for a Client ID and secret with nothing on screen
 to say where they come from.

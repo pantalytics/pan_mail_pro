@@ -241,8 +241,10 @@ class TestConversationApi(TransactionCase):
 
     def test_sent_is_every_thread_written_in_not_the_last_word(self):
         """A customer answering does not take a thread out of Sent."""
-        self._mail(direction='outgoing', subject='Offerte')
-        self._mail(direction='incoming', subject='Re: Offerte')
+        sent = self._mail(direction='outgoing', subject='Offerte')
+        reply = self._mail(direction='incoming', subject='Re: Offerte')
+        # Both are created in the same second; the reply has to be later.
+        reply.date = sent.date + timedelta(minutes=1)
 
         rows = self.Conversation.search_conversations(
             mailbox_id=self.mailbox.id, folder='sent')
