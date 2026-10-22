@@ -90,10 +90,12 @@ is answered:
    goes with it. The redirect URI to paste back into the provider's console
    is shown on that form. IMAP/SMTP has no global credential; see below.
 3. **Internal domains** - your own email domains. Required: no mailbox can sync
-   until this is answered. Odoo suggests them from your mailboxes, company
-   email and alias domains.
-4. **Mailboxes** - create the first mailbox, tick it as the notification
-   mailbox, and configure sending and incoming sync.
+   until this is answered. When an admin connects their own mailbox, the
+   domain of that address is filled in for you (never a public one like
+   gmail.com). Add a second domain or change it on the same line.
+4. **Mailboxes** - the admin's own mailbox, once connected, becomes the
+   notification mailbox if none is ticked yet. Pick another one from the
+   mailbox list whenever you like.
 
 Who has connected a mailbox, and the invite for the rest, are on the user
 list. A database runs on one provider; switching means editing that row,

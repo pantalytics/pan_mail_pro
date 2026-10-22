@@ -1485,11 +1485,22 @@ class PanMailConversation(models.AbstractModel):
         Message = self.env['mail.message']
         if not groups:
             return Message.browse()
+        # The groups' dates come from the folder's slice: in Sent that is our
+        # own last mail, and a customer's later reply is the newest. So the
+        # dates are asked again of `domain`, which is the whole conversation.
+        pairs = Domain.OR(
+            Domain([('model', '=', model or False),
+                    ('res_id', '=', res_id or False)])
+            for model, res_id, _count, _date in groups
+        )
+        latest = Message._read_group(
+            Domain.AND([Domain(domain), pairs]),
+            groupby=['model', 'res_id'], aggregates=['date:max'])
         keys = Domain.OR(
             Domain([('model', '=', model or False),
                     ('res_id', '=', res_id or False),
                     ('date', '=', date)])
-            for model, res_id, _count, date in groups
+            for model, res_id, date in latest
         )
         candidates = Message.search(Domain.AND([Domain(domain), keys]),
                                     order='date desc, id desc')
