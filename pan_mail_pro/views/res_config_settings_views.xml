@@ -106,7 +106,7 @@
                             </div>
                         </div>
                         <button name="action_license_open" type="object"
-                                icon="oi-arrow-right" title="Pantalytics account"
+                                icon="oi-chevron-right" title="Pantalytics account"
                                 class="oe_link o_mailpro_step_edit"
                                 invisible="x_license_state != 'connected'"/>
                     </div>
@@ -145,11 +145,11 @@
                         </div>
                         <field name="x_setup_provider_needs_account" invisible="1"/>
                         <button type="action" name="%(action_pan_mail_provider)d"
-                                icon="oi-arrow-right" title="Providers"
+                                icon="oi-chevron-right" title="Providers"
                                 class="oe_link o_mailpro_step_edit"
                                 invisible="x_setup_provider_needs_account"/>
                         <button type="action" name="%(action_pan_mail_account)d"
-                                icon="oi-arrow-right" title="Email Accounts"
+                                icon="oi-chevron-right" title="Email Accounts"
                                 class="oe_link o_mailpro_step_edit"
                                 invisible="not x_setup_provider_needs_account"/>
                     </div>
@@ -184,7 +184,7 @@
                             </div>
                         </div>
                         <button type="action" name="%(action_pan_mail_domain)d"
-                                icon="oi-arrow-right" title="Internal domains"
+                                icon="oi-chevron-right" title="Internal domains"
                                 class="oe_link o_mailpro_step_edit"/>
                     </div>
 
@@ -238,7 +238,7 @@
                             </div>
                         </div>
                         <button type="action" name="%(action_pan_mail_mailbox)d"
-                                icon="oi-arrow-right" title="Mailboxes"
+                                icon="oi-chevron-right" title="Mailboxes"
                                 class="oe_link o_mailpro_step_edit"/>
                     </div>
 

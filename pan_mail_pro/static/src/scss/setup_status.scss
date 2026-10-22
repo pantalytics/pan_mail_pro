@@ -14,9 +14,14 @@ $mailpro-warn: if($mailpro-dark, #ff7a6b, #c0392b);
 // The checklist's own box. `o_setting_box` gives it the indent and the width
 // cap of a standard settings block; what is left is the row it contains, which
 // must not stretch to a 2000px window — a name on the left and an arrow on the
-// far right is two things, not one line.
+// far right is two things, not one line. The rows sit in one rounded group
+// with a 1px border, the way a phone's Settings app lists them (the brand:
+// borders, no shadow).
 .o_mailpro_steps {
     max-width: 46rem;
+    border: 1px solid rgba($mailpro-ink, 0.12);
+    border-radius: 12px;
+    overflow: hidden;
 }
 
 // One step, one line. Baymard's accordion-checkout finding applies here too:
@@ -30,8 +35,8 @@ $mailpro-warn: if($mailpro-dark, #ff7a6b, #c0392b);
     display: flex;
     align-items: flex-start;
     gap: 0.7rem;
-    padding: 0.6rem 0;
-    border-bottom: 1px solid rgba($mailpro-ink, 0.06);
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid rgba($mailpro-ink, 0.08);
 
     // The rules separate the steps; one under the last of them separates it
     // from nothing.
@@ -66,23 +71,32 @@ $mailpro-warn: if($mailpro-dark, #ff7a6b, #c0392b);
     .o_mailpro_step_head {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        flex-wrap: wrap;
+        gap: 0.75rem;
+        min-height: 1.6rem;
     }
 
-    // Fixed column so the four answers start at the same x. Four names of
-    // different lengths put four values in four places, and a ragged column
-    // is the thing that made this page look unfinished. Wide enough for the
-    // longest name, "1. Pantalytics Account".
     .o_mailpro_step_name {
         font-weight: 600;
         color: $mailpro-ink;
-        min-width: 11.5rem;
+        flex: 0 0 auto;
     }
 
+    // The answer at the trailing end of the line, in a quieter grey, the way
+    // a phone's Settings row carries its value. Four names of different
+    // lengths then put four answers on one right edge, so the column stays a
+    // column. Cut with an ellipsis rather than wrapped: the page behind the
+    // chevron holds the whole of it.
     .o_mailpro_step_value {
         color: rgba($mailpro-ink, 0.6);
+        margin-left: auto;
+        text-align: right;
         min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        .o_field_widget, .o_field_widget span, .o_field_widget div {
+            display: inline;
+        }
     }
 
     // Anything longer than an answer: a warning, or the fix for one. Under the
@@ -98,9 +112,13 @@ $mailpro-warn: if($mailpro-dark, #ff7a6b, #c0392b);
         color: $mailpro-warn;
     }
 
+    // The chevron at the end of the line: the way to where the step is changed.
     .o_mailpro_step_edit {
         flex: 0 0 auto;
-        margin-left: auto;
+        align-self: center;
+        color: rgba($mailpro-ink, 0.35);
+        padding: 0;
+        &:hover { color: rgba($mailpro-ink, 0.7); }
     }
 }
 
@@ -120,7 +138,16 @@ $mailpro-warn: if($mailpro-dark, #ff7a6b, #c0392b);
 }
 
 // The mailbox's own setup flow. An editable many2one is taller than a name, so
-// the line sits on the text baseline rather than the box centre.
+// the line sits on the text baseline rather than the box centre; and a field
+// you type in stays beside the name, where the cursor lands, rather than at
+// the far end of the line.
 .o_mailpro_flow {
     .o_mailpro_step_head { align-items: baseline; }
+    .o_mailpro_step_value {
+        margin-left: 0;
+        text-align: left;
+        white-space: normal;
+        overflow: visible;
+        .o_field_widget, .o_field_widget span, .o_field_widget div { display: revert; }
+    }
 }

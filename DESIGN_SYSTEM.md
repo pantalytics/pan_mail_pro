@@ -301,7 +301,9 @@ alternatives to each other, and never for a step of the checklist.
 ### Every step is the same line
 
 A setup step is one line, and all of them are the same line: a coloured dot, its
-name, the answer itself, and the way to the place it is changed.
+name, the answer itself at the end of the line, and a chevron that is the way
+to the place it is changed. The rows sit in one rounded group with a 1px
+border, the way a phone's Settings app lists them.
 
 ```xml
 <div class="o_mailpro_step">
@@ -324,7 +326,7 @@ name, the answer itself, and the way to the place it is changed.
         </div>
     </div>
     <button type="action" name="%(action_pan_mail_domain)d"
-            icon="oi-arrow-right" title="Internal Domains"
+            icon="oi-chevron-right" title="Internal Domains"
             class="oe_link o_mailpro_step_edit"/>
 </div>
 ```
@@ -342,8 +344,14 @@ name, the answer itself, and the way to the place it is changed.
   reads `Connected`, the domains line `3 domains`, the mailboxes line
   `4 mailboxes` -- not the plan and its dates, not `company.com, company.nl`,
   not a row of tag chips. A list does not fit on a line and a count always
-  does; the list is one arrow away. Chips beside a bold heading look like
+  does; the list is one chevron away. Chips beside a bold heading look like
   part of it, and the four lines stop matching.
+- **The answer sits at the end of the line, in grey.** Four names of
+  different lengths put four answers on one right edge, so the column of
+  names stays a column without a fixed width. An answer too long for the
+  line is cut with an ellipsis, never wrapped: the page behind the chevron
+  holds the whole of it. In the mailbox's own setup flow, where the answer
+  is a field you type in, it stays beside the name instead.
 - **Red is for broken, never for a choice.** A mailbox on a domain the admin
   left off the internal list is treated as external, which is the setting
   working. It got a red warning line for one commit, and a warning about
