@@ -63,7 +63,7 @@ Docs, `tools/` and CI sit at the repository root around it (ARCHITECTURE.md
 | `models/pan_mail_routing_log.py` | Where each incoming mail landed and why (+ review queue) |
 | `models/pan_mail_error.py` | Why it did not work: one row per failure the module caught, under a code from `CODES`. `_record()` writes on its own cursor so a rolled-back transaction keeps its row; `codes_since()` is what the heartbeat carries. Adding a failure to catch is adding a code to the list and one `_record()` call at the catch site |
 | `models/pan_mail_domain.py` | Internal domain list + the fail-closed gate on incoming sync |
-| `models/pan_mail_provider.py` | The application registration of the provider this database runs on. One row, no toggle |
+| `models/pan_mail_provider.py` | The application registration of the provider this database runs on. One row, no toggle. For Microsoft, `registration` is whose app: the Pantalytics app by default (no secret, PKCE, started at our platform by `pan.mail.license.microsoft_start`), or the customer's own |
 | `models/pan_mail_setup.py` | Setup steps 2 to 4 and the phase (`setup` / `syncing`) they add up to. Step 1 is the account, below |
 | `models/pan_mail_license.py` | Step 1: the link to a Pantalytics account. Connect, who connected and when, the signed entitlement, the daily heartbeat, and `sync_allowed()`: incoming sync and new accounts need a connected instance |
 | `models/neutralization.py` | Is this database a copy? Asked by `decrypt_value` (the hard gate) and by the callers that can say why |
@@ -76,7 +76,7 @@ Docs, `tools/` and CI sit at the repository root around it (ARCHITECTURE.md
 | `static/lib/posthog/` | posthog-js, vendored (MIT), pinned so the masking check in `tools/ui_check.py` proves the version that ships |
 | `tests/test_improve.py` | What the session carries once the workspace said yes: a host, a token, a pseudonym, nothing that names anyone |
 | `tests/test_errors.py` | The error ledger: every code a call site uses is in the list, a row survives, the heartbeat carries codes and counts and no address, a new code is reported within the minute |
-| `controllers/main.py` | One OAuth callback implementation, two provider routes |
+| `controllers/main.py` | One OAuth callback implementation, two provider routes, and `/mail_pro/microsoft/return`, where our platform hands back a sign-in through the Pantalytics app (ARCHITECTURE.md §9.20) |
 | `models/pan_mail_coverage.py` | Link-coverage measurement: the screen, and `counts_since()`, whose last 24 hours ride the heartbeat |
 | `models/pan_mail_draft.py` | The one thing the Inbox stores: a saved composer, on the record its mail will be sent from, private to its author. Not the provider's draft -- see ARCHITECTURE.md §1 |
 | `models/pan_mail_conversation.py` | The read side of the Inbox, open to every internal user: the RPC methods behind the screen, no table, no sudo for an answer. `conversation_messages()` is the one the chevron in the conversation list unfolds, and it returns three fields per mail rather than a body |

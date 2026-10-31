@@ -1,9 +1,19 @@
 # Microsoft 365 Setup
 
-This guide walks you through creating a Microsoft Entra ID (Azure AD) app
-registration for Mail Pro.
+Most organizations need nothing from this page. Mail Pro signs in with the
+**Pantalytics Mail Pro** app (verified publisher Pantalytics BV): once this
+Odoo is connected to Pantalytics, press **Use Microsoft 365** on step 2 of
+Settings, Mail Pro, and everybody connects their mailbox with their own
+Microsoft sign-in. If your organization does not let users approve apps
+themselves, the first person to connect is offered **Approve for the
+organization**, which a Microsoft 365 administrator presses once.
 
-You only need this if your mail is hosted at Microsoft 365. For Google
+The rest of this guide is for an organization that wants its own Microsoft
+Entra ID (Azure AD) app registration instead. Open the provider under
+Settings, Mail Pro, step 2, choose **Your own app registration**, and follow
+the steps below.
+
+You only need Microsoft 365 if your mail is hosted there. For Google
 Workspace see [Google Workspace Setup](google-setup.md); for any other host see
 [IMAP/SMTP Setup](imap-setup.md).
 
