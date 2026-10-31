@@ -3045,6 +3045,14 @@ class Checks:
             self.call('pan.mail.provider', 'write', [row_id], {'provider': 'outlook'})
             self.provider_verify(f'{self.base}/odoo/action-{action}/{row_id}')
 
+            # An own registration offers the way to the Pantalytics app: the
+            # switch on a connected Odoo, the step it waits for otherwise.
+            text = self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
+            self.shot('provider-outlook-own.png')
+            if 'Switch to the Pantalytics app' not in text \
+                    and 'with the Pantalytics Mail Pro app instead' not in text:
+                self.fail('the own registration form offers no way to the Pantalytics app')
+
             # Microsoft through the Pantalytics app: nothing to register, so
             # none of Azure's fields and no Callback URL to paste.
             self.call('pan.mail.provider', 'write', [row_id], {'registration': 'pantalytics'})

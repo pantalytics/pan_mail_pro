@@ -209,7 +209,7 @@ class TestConnectBannerSession(HttpCase):
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestSessionFlagsCost(TransactionCase):
-    """The four session flags look the Pantalytics link up once.
+    """The session flags look the Pantalytics link up once.
 
     Three of them are questions about that row, and `session_info` runs for
     every internal user on every page load. Each question used to search
@@ -249,6 +249,7 @@ class TestSessionFlagsCost(TransactionCase):
         License = self.env['pan.mail.license']
         expected = {
             'pan_mail_connect_prompt': self.env.user._pan_mail_should_prompt_connect(),
+            'pan_mail_reconnect_prompt': self.env.user._pan_mail_should_prompt_reconnect(),
             'pan_mail_improve': License.improve_config(),
             'pan_mail_connected': License.sync_allowed(),
         }

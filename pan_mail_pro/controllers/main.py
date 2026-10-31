@@ -121,7 +121,13 @@ class MailProConnectController(http.Controller):
             return request.redirect(back)
         account = Conversation._live_account(mailbox)
         prompt = 'none' if silent else ''
+        # Through the app that issued the account's token: after a move off
+        # the customer's own app registration, an account that has not
+        # reconnected yet is confirmed by the app it already consented to,
+        # not sent to a consent screen for ours in the middle of reading.
         app_row = request.env['pan.mail.provider']._pantalytics_row(mailbox.provider)
+        if app_row and account.registration == 'own':
+            app_row = app_row.browse()
         if app_row:
             # Through the Pantalytics app the platform issues the state, and
             # Microsoft answers on its redirect URI, which hands the round to
@@ -135,7 +141,7 @@ class MailProConnectController(http.Controller):
             state = client.generate_oauth_state()
             url = client.get_authorization_url(
                 oauth_redirect_uri(request.env, mailbox.provider), state=state,
-                login_hint=account.email, prompt=prompt)
+                login_hint=account.email, prompt=prompt, registration='own')
         request.session[VERIFY_SESSION_KEY] = {
             'state': state, 'mailbox_id': mailbox.id, 'back': back,
             'silent': bool(silent), 'provider': mailbox.provider,
@@ -285,7 +291,7 @@ class MailProOAuthController(http.Controller):
             # rather than at the first send with a 404 that reads like a
             # missing right. Its own ledger row, so the heartbeat can count
             # it apart from a callback that merely broke.
-            refusal = client.identity_refusal(identity)
+            refusal = client.identity_refusal(identity, registration=self._registration(sign_in))
             if refusal:
                 _logger.warning('[OAuth] Refused %s sign-in %s for Odoo user %s: %s',
                                 provider, email, user.login, refusal)
@@ -297,6 +303,7 @@ class MailProOAuthController(http.Controller):
                 provider, user, email,
                 tokens['access_token'], tokens.get('refresh_token'), tokens['token_expiry'],
                 identity=identity, scopes=tokens.get('scope'),
+                registration=self._registration(sign_in),
             )
             _logger.info('[OAuth] Connected %s account %s for Odoo user %s',
                          provider, email, user.login)
@@ -345,14 +352,26 @@ class MailProOAuthController(http.Controller):
             return _result_page(False, _('Connection Failed'), str(exception))
 
     @staticmethod
-    def _exchange(client, provider, code, sign_in):
+    def _registration(sign_in):
+        """Whose app the round went through: the Pantalytics app when it came
+        back through `/mail_pro/microsoft/return`, the customer's own when it
+        came back to the callback registered in their console. Said by the
+        round, not by the provider row, which may have switched apps while
+        the round was out."""
+        return 'pantalytics' if sign_in else 'own'
+
+    @classmethod
+    def _exchange(cls, client, provider, code, sign_in):
         """The code exchange: at the registered callback with the secret, or,
         through the Pantalytics app, at the platform's redirect URI with this
         session's PKCE verifier. Neither the code nor the tokens are logged."""
         if sign_in:
             return client._exchange_code_for_tokens(
-                code, sign_in['redirect_uri'], code_verifier=sign_in.get('code_verifier'))
-        return client._exchange_code_for_tokens(code, oauth_redirect_uri(request.env, provider))
+                code, sign_in['redirect_uri'], code_verifier=sign_in.get('code_verifier'),
+                registration=cls._registration(sign_in))
+        return client._exchange_code_for_tokens(
+            code, oauth_redirect_uri(request.env, provider),
+            registration=cls._registration(sign_in))
 
     def _finish_verify(self, provider, client, pending, kwargs, sign_in=None):
         """The provider's answer to "is this the person behind the mailbox".

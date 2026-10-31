@@ -249,7 +249,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         return self._FOLDER_MAP.get(folder, folder)
 
     @api.model
-    def _get_config_params(self):
+    def _get_config_params(self, registration=None):
         """Microsoft's own application registration — its `pan.mail.provider` row.
 
         Looked up by provider code, not by which provider is active: a
@@ -260,10 +260,16 @@ class MicrosoftGraphClient(models.AbstractModel):
         app's client id, no secret and the `organizations` authority, and
         says so (`public_client`): every call below then sends the PKCE
         verifier where it would have sent the secret.
+
+        `registration` names the app outright, whatever the row chooses for
+        new sign-ins: a token is refreshed by the app that issued it
+        (`pan.mail.account.registration`), so an account signed in through
+        the customer's own app keeps refreshing with that app's id, secret
+        and tenant after the row moved to the Pantalytics app (§9.20).
         """
         provider = self.env['pan.mail.provider'].sudo().search(
             [('provider', '=', 'outlook')], limit=1)
-        if provider.registration == 'pantalytics':
+        if (registration or provider.registration) == 'pantalytics':
             return {
                 'client_id': provider.pantalytics_client_id,
                 'client_secret': False,
@@ -282,8 +288,15 @@ class MicrosoftGraphClient(models.AbstractModel):
         }
 
     @api.model
+    def _account_config(self, account):
+        """The registration that issued `account`'s token, which is the one
+        that refreshes it. An account that predates the field has none, and
+        takes the row's choice, which is what it was issued by."""
+        return self._get_config_params(account.registration or None)
+
+    @api.model
     def get_authorization_url(self, redirect_uri, state=None, login_hint=None,
-                              prompt=None, code_challenge=None):
+                              prompt=None, code_challenge=None, registration=None):
         """Generate OAuth authorization URL with CSRF state parameter.
 
         Args:
@@ -293,11 +306,13 @@ class MicrosoftGraphClient(models.AbstractModel):
             prompt: Microsoft's `prompt` (`none` fails silently rather than
                 asking, which is the first try of a confirm-it's-you round)
             code_challenge: the S256 PKCE challenge, for the Pantalytics app
+            registration: whose app the round goes through; the row's
+                choice when not given
 
         Returns:
             str: The authorization URL to redirect the user to
         """
-        config = self._get_config_params()
+        config = self._get_config_params(registration)
         tenant_id = config['tenant_id']
         client_id = config['client_id']
 
@@ -356,7 +371,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         `admin_consent=True&tenant=...` or an error, and grants every
         permission the app registration carries.
         """
-        config = self._get_config_params()
+        config = self._get_config_params('pantalytics')
         if not config.get('public_client') or not config.get('client_id'):
             raise UserError(_('Approving for the organization is for the '
                               'Pantalytics Mail Pro app only.'))
@@ -381,15 +396,17 @@ class MicrosoftGraphClient(models.AbstractModel):
 
     @api.model
     def _exchange_code_for_tokens(self, authorization_code, redirect_uri,
-                                  code_verifier=None):
+                                  code_verifier=None, registration=None):
         """Exchange authorization code for access and refresh tokens.
 
         The Pantalytics app is a public client: no secret, the PKCE verifier
         of the round instead, and `redirect_uri` is the platform's callback
-        the code was issued to.
+        the code was issued to. `registration` is the app the round went
+        through, which a round started before the row switched apps still
+        names correctly.
         """
         self._refuse_when_neutralized()
-        config = self._get_config_params()
+        config = self._get_config_params(registration)
         token_url = TOKEN_URL.format(tenant=config['tenant_id'])
 
         data = {
@@ -442,7 +459,7 @@ class MicrosoftGraphClient(models.AbstractModel):
         if not account.refresh_token:
             raise UserError(_('No refresh token available. Please reconnect your Microsoft account.'))
 
-        config = self._get_config_params()
+        config = self._account_config(account)
         token_url = TOKEN_URL.format(tenant=config['tenant_id'])
 
         data = {
@@ -1532,7 +1549,7 @@ class MicrosoftGraphClient(models.AbstractModel):
     _ANY_TENANT = ('common', 'organizations', 'consumers')
 
     @api.model
-    def identity_refusal(self, identity):
+    def identity_refusal(self, identity, registration=None):
         """A sign-in from another tenant than the registration's is refused.
 
         The registration is single-tenant (README), so Entra itself refuses
@@ -1543,13 +1560,17 @@ class MicrosoftGraphClient(models.AbstractModel):
         fail on a mailbox that is not in that directory, with a 404 that
         reads like a missing right.
         """
-        config = self._get_config_params()
+        config = self._get_config_params(registration)
         expected = (config.get('tenant_id') or '').strip().lower()
         if config.get('public_client'):
             # The Pantalytics app is multitenant, so the registration names
             # no tenant. The directory the mailboxes already connected here
             # belong to is the one this Odoo serves; the first sign-in sets it.
-            expected = self._connected_tenant()
+            # A database that moved off its own app and has no tenant on any
+            # account yet (grants from before 19.0.28 kept none) still knows
+            # it: the own registration's Directory (tenant) ID, kept on the
+            # row until an administrator removes it.
+            expected = self._connected_tenant() or self._own_registration_tenant()
         actual = (identity.get('tenant_id') or '').strip().lower()
         if not expected or expected in self._ANY_TENANT or not actual:
             return None
@@ -1568,6 +1589,16 @@ class MicrosoftGraphClient(models.AbstractModel):
         account = self.env['pan.mail.account'].sudo().with_context(active_test=False).search(
             [('provider', '=', 'outlook'), ('tenant_id', '!=', False)], order='id', limit=1)
         return (account.tenant_id or '').strip().lower()
+
+    @api.model
+    def _own_registration_tenant(self):
+        """The Directory (tenant) ID of the customer's own app registration,
+        when it is one: a GUID, which is what an id token's `tid` is. A
+        verified domain or a multi-tenant literal names no directory a
+        sign-in can be compared with, so it answers ''."""
+        from ...pan_mail_provider import _GUID_RE
+        tenant = (self._get_config_params('own').get('tenant_id') or '').strip().lower()
+        return tenant if _GUID_RE.match(tenant) else ''
 
     # -------------------------------------------------------------------------
     # Mailbox actions — contract implementation

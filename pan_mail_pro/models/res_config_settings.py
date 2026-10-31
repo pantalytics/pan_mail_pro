@@ -59,6 +59,13 @@ class ResConfigSettings(models.TransientModel):
     # first step is done when the first account exists.
     x_setup_provider_todo = fields.Char(compute='_compute_setup_status')
     x_setup_provider_needs_account = fields.Boolean(compute='_compute_setup_status')
+    # The move off an own Azure app registration (§9.20), as fix lines on
+    # step 2: the switch while the row is on its own app, then how many
+    # people have still to reconnect, then the offer to remove the old
+    # credentials once nobody has.
+    x_microsoft_switchable = fields.Boolean(compute='_compute_setup_status')
+    x_microsoft_own_left = fields.Char(compute='_compute_setup_status')
+    x_microsoft_own_removable = fields.Boolean(compute='_compute_setup_status')
 
     # -------------------------------------------------------------------------
     # Step 3 — internal domains
@@ -239,6 +246,19 @@ class ResConfigSettings(models.TransientModel):
         if not Provider.current():
             Provider.create({'provider': 'outlook', 'registration': 'pantalytics'})
 
+    def action_switch_microsoft_app(self):
+        """Step 2's fix line on an own app registration: switch to the
+        Pantalytics app, and sign in through it (`pan.mail.provider
+        .action_switch_to_pantalytics`). As the administrator pressing it,
+        not as the system `current()` hands back."""
+        self.ensure_one()
+        return self.env['pan.mail.provider'].current().sudo(False).action_switch_to_pantalytics()
+
+    def action_remove_own_registration(self):
+        """Step 2's last fix line of the move: forget the old app."""
+        self.ensure_one()
+        self.env['pan.mail.provider'].current().sudo(False).action_remove_own_registration()
+
     # -------------------------------------------------------------------------
     # Internal domains
     # -------------------------------------------------------------------------
@@ -296,6 +316,19 @@ class ResConfigSettings(models.TransientModel):
         active_provider = self.env['pan.mail.provider'].current()
         mailboxes = _counted(self.env['pan.mail.mailbox'].sudo().search_count([]),
                              _('1 mailbox'), _('%s mailboxes'))
+        microsoft = active_provider if active_provider.provider == 'outlook' else \
+            active_provider.browse()
+        microsoft_switchable = bool(microsoft) and microsoft.registration == 'own'
+        left = microsoft.own_account_count if microsoft else 0
+        own_left = _counted(
+            left,
+            _('1 person still signs in through your own app registration. Mail Pro '
+              'asks them to reconnect; their mail keeps working until they do.'),
+            _('%s people still sign in through your own app registration. Mail Pro '
+              'asks them to reconnect; their mail keeps working until they do.'),
+        ) if left else False
+        own_removable = bool(microsoft) and microsoft.uses_pantalytics_app() \
+            and microsoft.has_own_registration and not left
 
         for record in self:
             record.x_active_provider_id = active_provider
@@ -306,6 +339,9 @@ class ResConfigSettings(models.TransientModel):
             record.x_setup_provider_todo = (
                 _('IMAP/SMTP: add the first account') if needs_account
                 else _('Not set up yet'))
+            record.x_microsoft_switchable = microsoft_switchable
+            record.x_microsoft_own_left = own_left
+            record.x_microsoft_own_removable = own_removable
             record.x_setup_domains_done = bool(record.x_internal_domain_ids)
             record.x_setup_notification_done = answers['mailboxes']
             record.x_notification_access_state = access_state

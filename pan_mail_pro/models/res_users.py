@@ -233,8 +233,9 @@ class ResUsers(models.Model):
                 'enters its server, login and password on the account.'
             ))
         License = self.env['pan.mail.license']
-        if not License.sync_allowed() and not self.sudo().x_pan_mail_account_ids.filtered(
-                lambda account: account.provider == provider):
+        account = self.sudo().x_pan_mail_account_ids.filtered(
+            lambda account: account.provider == provider)[:1]
+        if not License.sync_allowed() and not account:
             # Refused here, before the consent screen, with the same sentence
             # the account's create() would refuse with after it. Walking a
             # person through Microsoft's consent and then telling them no is
@@ -246,9 +247,12 @@ class ResUsers(models.Model):
         # verifier) lives in its session, not on this row. Same tab: the
         # browser opens a new one only on the click itself, and this answer
         # arrives after an RPC, so Brave and Safari block a new tab here.
+        # A reconnect opens on the address this user is connected as, so the
+        # move off an own app registration is one click on Microsoft's side
+        # too rather than an account picker.
         app_row = self.env['pan.mail.provider']._pantalytics_row(provider)
         if app_row:
-            url, _state = app_row._pantalytics_sign_in()
+            url, _state = app_row._pantalytics_sign_in(login_hint=account.email or None)
             return {'type': 'ir.actions.act_url', 'url': url, 'target': 'self'}
 
         state = client.generate_oauth_state()
@@ -331,6 +335,31 @@ class ResUsers(models.Model):
         if database_is_neutralized(self.env):
             return False
         return not self._pan_mail_connect_blocker(link=link, sync_allowed=sync_allowed)
+
+    def _pan_mail_should_prompt_reconnect(self, link=None):
+        """Should this user be asked to sign in once more, through the
+        Pantalytics app?
+
+        Only after the provider row moved off the customer's own app
+        registration (`pan.mail.provider.action_switch_to_pantalytics`), and
+        only for a user whose connected Microsoft account was still issued
+        by the own app. Their token keeps working meanwhile, so this is a
+        nudge and never a gate. Not on a copy, and not while this Odoo
+        cannot start a sign-in through the app: a button that ends in "not
+        connected to Pantalytics" is a nudge towards an error.
+        """
+        self.ensure_one()
+        if not self._is_internal() or database_is_neutralized(self.env):
+            return False
+        account = self.sudo().x_pan_mail_account_ids.filtered(
+            lambda account: account.registration == 'own' and account.connected)
+        if not account:
+            return False
+        Provider = self.env['pan.mail.provider']
+        for provider in set(account.mapped('provider')):
+            if Provider._pantalytics_row(provider):
+                return Provider._pantalytics_connected(link=link)
+        return False
 
     def action_disconnect_mailbox(self, provider=None):
         """Forget this user's stored credentials.

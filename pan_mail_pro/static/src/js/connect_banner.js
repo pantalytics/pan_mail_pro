@@ -10,6 +10,8 @@ import { WebClient } from "@web/webclient/webclient";
 // not a preference worth a column, and a banner that never comes back is a
 // banner that stopped working for everyone who clicked it once by reflex.
 const DISMISSED_KEY = "pan_mail_pro.connect_banner_dismissed";
+// The reconnect nudge has its own: hiding one is not an answer to the other.
+const RECONNECT_DISMISSED_KEY = "pan_mail_pro.reconnect_banner_dismissed";
 
 /**
  * "Your mailbox is not connected" -- above every screen, until it is.
@@ -18,22 +20,32 @@ const DISMISSED_KEY = "pan_mail_pro.connect_banner_dismissed";
  * (`res.users._pan_mail_should_prompt_connect`); this only draws it. The
  * button is a plain link to the same `/mail_pro/connect` route the invitation
  * email uses, so there is one way into consent rather than two.
+ *
+ * The same banner asks a connected user to reconnect once, after Microsoft
+ * 365 moved off the customer's own app registration to the Pantalytics app
+ * (`res.users._pan_mail_should_prompt_reconnect`). Same route: connecting
+ * again through the app is what moves their account.
  */
 export class MailProConnectBanner extends Component {
     static template = "pan_mail_pro.ConnectBanner";
     static props = {};
 
     setup() {
+        this.reconnect =
+            !session.pan_mail_connect_prompt && Boolean(session.pan_mail_reconnect_prompt);
+        const asked = Boolean(session.pan_mail_connect_prompt) || this.reconnect;
         this.state = useState({
-            visible:
-                Boolean(session.pan_mail_connect_prompt) &&
-                !browser.sessionStorage.getItem(DISMISSED_KEY),
+            visible: asked && !browser.sessionStorage.getItem(this.dismissedKey),
         });
+    }
+
+    get dismissedKey() {
+        return this.reconnect ? RECONNECT_DISMISSED_KEY : DISMISSED_KEY;
     }
 
     onDismiss() {
         this.state.visible = false;
-        browser.sessionStorage.setItem(DISMISSED_KEY, "1");
+        browser.sessionStorage.setItem(this.dismissedKey, "1");
     }
 }
 

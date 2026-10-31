@@ -11,6 +11,7 @@ from . import test_incoming_mail
 from . import test_internal_domains
 from . import test_pan_mail_provider
 from . import test_pantalytics_app
+from . import test_pantalytics_switch
 from . import test_provider_migration
 from . import test_onboarding
 from . import test_incoming_sync

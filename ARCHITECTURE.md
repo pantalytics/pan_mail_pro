@@ -392,7 +392,7 @@ shows (§2), and the account form's Test Connection reads the same two fields.
 | Model | Purpose |
 |-------|---------|
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider` — inherited from `pan.mail.provider.current_code()`, never asked on the form) |
-| `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`), and the identity behind them as the provider reported it at consent: its stable id, the principal name, the display name, the tenant, the scope line of the grant |
+| `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`), and the identity behind them as the provider reported it at consent: its stable id, the principal name, the display name, the tenant, the scope line of the grant. `registration` is the app that issued the tokens (`pantalytics` / `own`), and the one every refresh goes through (§9.20) |
 | `pan.mail.mailbox.access` | What one sign-in may do with one mailbox, as the provider last said: `can_read`, `can_send`, each yes / no / unknown, and the provider's own sentence for a refusal. One row per (mailbox, account), written by the access check and by the send path; read by health, the checklist and the heartbeat (§2 *Verified access*) |
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro. For Microsoft, `registration` says whose app: the Pantalytics app (default, nothing to register, §9.20) or the customer's own |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
@@ -2610,6 +2610,14 @@ for setup to finish — the first person to connect is usually the administrator
 standing on step 3, who needs a connected owner before a notification mailbox
 can send.
 
+**The same banner asks a connected user to reconnect once** after Microsoft
+365 moved off the customer's own app registration (§9.20):
+`_pan_mail_should_prompt_reconnect()` is true for a user whose connected
+account was issued by the own app while the row now signs in through ours,
+and the session carries it as `pan_mail_reconnect_prompt`. Same button, same
+`/mail_pro/connect`: connecting through the app again is what moves the
+account. Their token keeps working meanwhile, so it is never a gate.
+
 **Dismissal is per browser session, and is not stored.** A field for "not now"
 is a preference nobody asked to express, and a banner dismissed forever is a
 banner that stopped working for everyone who clicked the cross by reflex.
@@ -3041,6 +3049,50 @@ Odoo's own address, and Microsoft's answer passes through the platform's
 callback on its way back. The tokens are fetched by this Odoo and stored in
 the encrypted account fields only; neither the code nor a token is logged.
 
+**Moving an own registration to the app (19.0.32.0.0).** A refresh token is
+bound to the client id that issued it, so a customer on their own Azure app
+cannot be moved silently: every person signs in once more, through ours.
+What the move guarantees is that nothing stops in between.
+
+- *Each account names its app.* `pan.mail.account.registration` is written
+  by the consent callback from the round that produced the tokens: `own`
+  when it came back to `/microsoft_oauth/callback`, `pantalytics` when it
+  came back through `/mail_pro/microsoft/return` (the controller's
+  `_registration`, never the row, which may have switched while the round
+  was out). The refresh, the code exchange and the tenant check take that
+  app's client id, secret, tenant and redirect URI
+  (`_get_config_params(registration)`, `_account_config(account)`), not the
+  row's current choice. `migrations/19.0.32.0.0` sets every existing
+  Microsoft and Google account to `own`, except on a database that already
+  signed in through the app on 19.0.31.0.0.
+- *The switch is one click.* **Switch to the Pantalytics app** is a fix
+  line on step 2 and a button on the provider form while the row is on its
+  own app (`pan.mail.provider.action_switch_to_pantalytics`). It needs this
+  Odoo connected to Pantalytics, else it says so. It sets `registration`
+  and keeps the own app's client id, secret and tenant on the row, because
+  the accounts it signed in still refresh with them. The radio no longer
+  moves an own row that has credentials; the switch does.
+- *The administrator goes first.* The same click signs the administrator in
+  through the app, in the same transaction: a platform that cannot start
+  the round undoes the switch, and a tenant that wants an administrator to
+  approve the app answers that first round with **Approve for the
+  organization**, in front of the person most likely to be able to.
+- *Everyone else reconnects once, gently.* The connect banner (§9.14) asks
+  each user whose account is still `own`, with the address they are
+  connected as as the login hint. Reconnecting replaces the account's
+  tokens and flips it to `pantalytics`. The tenant check accepts the same
+  directory the own app served: the tenant of the accounts already stored,
+  or the own registration's Directory (tenant) ID when no account kept one
+  (grants from before 19.0.28.0.0).
+- *The confirm-it's-you round* of an account still on the own app goes
+  through the own app, so reading the Inbox never sends somebody to a
+  consent screen for ours.
+- *Done.* Step 2 and the form say how many connected accounts are still on
+  the own app (`own_account_count`). At zero they offer **Remove your old
+  app registration** (`action_remove_own_registration`), which clears the
+  three fields; it is never done on its own, and refused while any account
+  still needs them.
+
 ## 10. Security and permissions
 
 All Microsoft permissions are **delegated** (user context, never application) —
@@ -3243,7 +3295,7 @@ eight groups:
 | Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, and the one mailbox setting a user owns |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, and that no colour lacks a dark side |
-| The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_connect_banner.py`, `test_license.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app, the Pantalytics link, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
+| The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 
 `tests/common.py` provides the shared fixture -- a notification mailbox, a
