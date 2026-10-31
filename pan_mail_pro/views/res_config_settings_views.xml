@@ -142,6 +142,35 @@
                             <div class="o_mailpro_step_msg" invisible="not x_setup_provider_needs_account">
                                 Each IMAP/SMTP address is an account with its own server, login and password.
                             </div>
+                            <!-- A fix line while nothing is chosen: Microsoft 365
+                                 through the Pantalytics app needs nothing typed,
+                                 so choosing it is the whole step. Every other
+                                 choice, and an own app registration, is behind
+                                 the arrow. -->
+                            <div class="o_mailpro_step_msg" invisible="x_active_provider_id">
+                                <button name="action_use_microsoft_app" type="object"
+                                        string="Use Microsoft 365" class="btn-link p-0"/>
+                            </div>
+                            <!-- Moving an own Azure app registration to the
+                                 Pantalytics app (ARCHITECTURE.md §9.20): one
+                                 fix line at a time. The switch, then who has
+                                 still to reconnect, then the old credentials
+                                 to remove once nobody signs in with them. -->
+                            <field name="x_microsoft_switchable" invisible="1"/>
+                            <field name="x_microsoft_own_removable" invisible="1"/>
+                            <div class="o_mailpro_step_msg" invisible="not x_microsoft_switchable">
+                                <button name="action_switch_microsoft_app" type="object"
+                                        string="Switch to the Pantalytics app" class="btn-link p-0"
+                                        confirm="From now on Mail Pro signs in with its own Microsoft app, and your Azure app registration is no longer needed. You sign in once now. Everyone else is asked to reconnect once; until they do, their mail keeps working as it does today."/>
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="not x_microsoft_own_left">
+                                <field name="x_microsoft_own_left" nolabel="1" readonly="1"/>
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="not x_microsoft_own_removable">
+                                <button name="action_remove_own_registration" type="object"
+                                        string="Remove your old app registration" class="btn-link p-0"
+                                        confirm="Everyone signs in through the Pantalytics app now. Remove the Client ID, secret and tenant of your own app registration from Odoo? You can delete the app in Azure afterwards."/>
+                            </div>
                         </div>
                         <field name="x_setup_provider_needs_account" invisible="1"/>
                         <button type="action" name="%(action_pan_mail_provider)d"

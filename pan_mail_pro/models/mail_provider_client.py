@@ -507,6 +507,21 @@ OAUTH_CALLBACK_PATHS = {
 DEFAULT_PROVIDER = 'outlook'
 
 
+def pkce_pair():
+    """A PKCE verifier and its S256 challenge (RFC 7636), for one sign-in.
+
+    What stands in for a client secret when the application is a public
+    client: the challenge goes out with the authorization request, the
+    verifier with the code exchange, so only whoever started the round can
+    finish it. The verifier is kept in the session of the browser that
+    started it and nowhere else.
+    """
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode('ascii')).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
+    return verifier, challenge
+
+
 def tidy_address(address):
     """Trim and lowercase an address before it goes on the wire.
 
@@ -783,7 +798,7 @@ class MailProviderClient(models.AbstractModel):
 
     @api.model
     def get_authorization_url(self, redirect_uri, state=None, login_hint=None,
-                              prompt=None):
+                              prompt=None, code_challenge=None, registration=None):
         """Return the URL to send the user to in order to grant access.
 
         `login_hint` names the address the screen opens on; `prompt` is the
@@ -791,7 +806,14 @@ class MailProviderClient(models.AbstractModel):
         trip that fails rather than asks). Both are what the Inbox's
         "confirm it's you" round uses (`verify_password` is the other half,
         for a provider with no sign-in screen); a plain connect passes
-        neither.
+        neither. `code_challenge` is the S256 half of `pkce_pair()`, passed
+        only by a sign-in through an application with no client secret (the
+        Pantalytics app, `pan.mail.provider.registration`).
+
+        `registration` names whose application the round goes through
+        (`pantalytics` / `own`, as on `pan.mail.provider` and
+        `pan.mail.account`); None is the provider row's current choice. A
+        provider with only the customer's own application ignores it.
         """
         raise NotImplementedError
 
@@ -807,8 +829,15 @@ class MailProviderClient(models.AbstractModel):
         return False
 
     @api.model
-    def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
+    def _exchange_code_for_tokens(self, authorization_code, redirect_uri,
+                                  code_verifier=None, registration=None):
         """Trade an OAuth authorization code for tokens.
+
+        `code_verifier` is the PKCE verifier of the round, for the same
+        public-client sign-in that sent a `code_challenge`. `registration`
+        is the application the round went through (see
+        `get_authorization_url`): the code is redeemed by the app it was
+        issued to, whichever one the row has chosen since.
 
         Returns:
             dict: {'access_token', 'refresh_token', 'token_expiry'}
@@ -817,7 +846,12 @@ class MailProviderClient(models.AbstractModel):
 
     @api.model
     def refresh_access_token(self, account):
-        """Refresh and persist `account`'s access token. Returns the new token."""
+        """Refresh and persist `account`'s access token. Returns the new token.
+
+        With the application that issued it (`account.registration`), never
+        the one the provider row has chosen for new sign-ins since: a
+        refresh token is bound to the client id it was issued to.
+        """
         raise NotImplementedError
 
     @api.model
@@ -852,14 +886,15 @@ class MailProviderClient(models.AbstractModel):
         raise NotImplementedError
 
     @api.model
-    def identity_refusal(self, identity):
+    def identity_refusal(self, identity, registration=None):
         """Why this sign-in may not be stored, as one sentence, or None.
 
         Asked by the consent callback between `read_user_info` and
-        `_store_tokens`, with the identity just read. The default refuses
-        nothing; a provider refuses what its registration cannot serve: a
-        Microsoft sign-in from a tenant other than the single-tenant
-        registration's, a consumer Google account on a Workspace product.
+        `_store_tokens`, with the identity just read and the application the
+        round went through. The default refuses nothing; a provider refuses
+        what its registration cannot serve: a Microsoft sign-in from a
+        tenant other than the single-tenant registration's, a consumer
+        Google account on a Workspace product.
         """
         return None
 

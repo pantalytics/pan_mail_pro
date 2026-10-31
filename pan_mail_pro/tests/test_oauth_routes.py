@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""The four routes this module opens, and the one that hands over credentials.
+"""The five routes this module opens, and the one that hands over credentials.
 
 The OAuth callback is where a consent grant turns into a stored refresh token
 and a mailbox. It had no test of any kind: `tests/test_connect_banner.py`
@@ -30,6 +30,7 @@ DECLARED_ROUTES = {
     '/microsoft_oauth/callback': 'user',
     '/google_oauth/callback': 'user',
     '/mail_pro/pantalytics/return': 'user',
+    '/mail_pro/microsoft/return': 'user',
 }
 
 

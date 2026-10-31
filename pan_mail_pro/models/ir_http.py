@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Three things in the session: does this user still have to connect a
-mailbox, is this Odoo connected to a Pantalytics account, and may the Inbox
-report how it is used.
+"""Four things in the session: does this user still have to connect a
+mailbox, or reconnect it through the Pantalytics app, is this Odoo connected
+to a Pantalytics account, and may the Inbox report how it is used.
 
 The webclient asks nothing extra for it. `session_info` is already fetched once
 per page load, so the banner knows whether to draw itself before the first
@@ -45,8 +45,8 @@ class IrHttp(models.AbstractModel):
         result = super().session_info()
         if self.env.user._is_internal():
             flags = dict.fromkeys((
-                'pan_mail_connect_prompt', 'pan_mail_improve',
-                'pan_mail_connected'), False)
+                'pan_mail_connect_prompt', 'pan_mail_reconnect_prompt',
+                'pan_mail_improve', 'pan_mail_connected'), False)
             try:
                 with self.env.cr.savepoint():
                     flags.update(self._pan_mail_session_flags())
@@ -107,6 +107,10 @@ class IrHttp(models.AbstractModel):
         result['pan_mail_connect_prompt'] = \
             self.env.user._pan_mail_should_prompt_connect(
                 link=link, sync_allowed=allowed)
+        # The same banner, for a user still signed in through the customer's
+        # own Microsoft app after the move to ours: once more, never a gate.
+        result['pan_mail_reconnect_prompt'] = \
+            self.env.user._pan_mail_should_prompt_reconnect(link=link)
         # Help improve Mail Pro, for the same reason and with the same
         # staleness: the answer changes once a day at most, and the Inbox
         # reads it before its first paint (pan_mail_license.improve_config).

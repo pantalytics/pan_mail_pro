@@ -3,11 +3,20 @@
 
     <t t-name="pan_mail_pro.ConnectBanner">
         <div t-if="state.visible" class="o_mailpro_connect_banner" role="status">
-            <span class="o_mailpro_connect_text">
-                Your mailbox is not connected yet. Sign in once and Odoo sends
-                and receives mail from your own address.
-            </span>
-            <a class="btn btn-primary btn-sm" href="/mail_pro/connect">Connect my mailbox</a>
+            <t t-if="reconnect">
+                <span class="o_mailpro_connect_text">
+                    Mail Pro now signs in with its own Microsoft app. Reconnect
+                    once; your mail keeps working until you do.
+                </span>
+                <a class="btn btn-primary btn-sm" href="/mail_pro/connect">Reconnect</a>
+            </t>
+            <t t-else="">
+                <span class="o_mailpro_connect_text">
+                    Your mailbox is not connected yet. Sign in once and Odoo sends
+                    and receives mail from your own address.
+                </span>
+                <a class="btn btn-primary btn-sm" href="/mail_pro/connect">Connect my mailbox</a>
+            </t>
             <button type="button" class="btn btn-link btn-sm o_mailpro_connect_close"
                     title="Hide until next sign-in" t-on-click="() => this.onDismiss()">
                 <i class="fa fa-times"/>
