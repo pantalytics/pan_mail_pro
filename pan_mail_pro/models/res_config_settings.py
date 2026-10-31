@@ -223,6 +223,23 @@ class ResConfigSettings(models.TransientModel):
         return self.env['pan.mail.license'].current().action_open()
 
     # -------------------------------------------------------------------------
+    # Email provider
+    # -------------------------------------------------------------------------
+
+    def action_use_microsoft_app(self):
+        """Step 2 in one click: Microsoft 365 through the Pantalytics app.
+
+        The one provider that needs nothing typed, so the open step offers it
+        on the line. Gmail, IMAP/SMTP and an own Azure app registration are
+        on the Providers table behind the arrow. Returns nothing, so the page
+        redraws with the step answered.
+        """
+        self.ensure_one()
+        Provider = self.env['pan.mail.provider']
+        if not Provider.current():
+            Provider.create({'provider': 'outlook', 'registration': 'pantalytics'})
+
+    # -------------------------------------------------------------------------
     # Internal domains
     # -------------------------------------------------------------------------
 

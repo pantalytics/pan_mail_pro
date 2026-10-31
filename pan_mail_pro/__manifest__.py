@@ -45,7 +45,9 @@
         **Security:**
         - OAuth 2.0 authentication where the provider offers it
         - Encrypted credential storage using Fernet encryption
-        - Single-tenant Azure App Registration for Microsoft 365
+        - Microsoft 365 signs in through the Pantalytics Mail Pro app
+          (verified publisher Pantalytics BV, no client secret), or through
+          your own single-tenant Azure app registration if you prefer
 
         How to Use:
         -----------
@@ -79,15 +81,18 @@
         After installation, go to Settings → Mail Pro
         Follow the step-by-step guide for your provider.
 
-        API Permissions needed in Azure for Microsoft 365 (delegated; the same ones the setup
-        guide lists and the OAuth request asks for, because a permission
-        granted in the portal but absent from the request is not in the token):
+        API Permissions for Microsoft 365 (delegated). The Pantalytics Mail Pro
+        app carries all of them; an own app registration needs them in Azure,
+        the same ones the setup guide lists and the OAuth request asks for,
+        because a permission granted in the portal but absent from the request
+        is not in the token:
         - User.Read, offline_access (authentication and refresh tokens)
         - Mail.ReadWrite, Mail.ReadWrite.Shared (create the draft, read mail)
         - Mail.Send, Mail.Send.Shared (send the draft)
-        - MailboxSettings.Read, User.ReadBasic.All: optional, asked for only
-          when the system parameter pan_mail_pro.graph_inspect_scopes is set
-          (tell a user account from a shared mailbox and an alias; the
+        - MailboxSettings.Read, User.ReadBasic.All: always asked for through
+          the Pantalytics app; with an own app registration optional, asked
+          for only when the system parameter pan_mail_pro.graph_inspect_scopes
+          is set (tell a user account from a shared mailbox and an alias; the
           access check itself needs nothing beyond the permissions above)
 
         Data Disclosure:
@@ -111,6 +116,11 @@
           codes such as "outgoing.send_failed", with a count each).
           Counts, rule names and error codes. Never an address, subject,
           body, name, exception text or traceback.
+        - Signing in with the Pantalytics Mail Pro app asks Pantalytics to
+          start each Microsoft sign-in, sending this Odoo's own address to
+          come back to. Microsoft's answer passes through Pantalytics on its
+          way back to this Odoo; the tokens are fetched by this Odoo and
+          stored here only.
         - Help improve Mail Pro is a switch on the Pantalytics workspace, off
           until an administrator turns it on there. When it is on, the Mail
           Pro inbox in the browser reports which screens, tabs and buttons
@@ -125,7 +135,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.30.5.0',
+    'version': '19.0.31.0.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {

@@ -32,6 +32,19 @@ _logger = logging.getLogger(__name__)
 # needs the endpoint to log you in.
 AUTH_URL = 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize'
 TOKEN_URL = 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token'
+ADMIN_CONSENT_URL = 'https://login.microsoftonline.com/{tenant}/v2.0/adminconsent'
+ADMIN_CONSENT_SCOPE = 'https://graph.microsoft.com/.default'
+
+# The Pantalytics Mail Pro app: multitenant, a public client (no secret), so
+# the authority is the work-and-school one. A personal outlook.com account is
+# out on purpose. Its client id is not a constant: the platform hands it out
+# with every start, and `pan.mail.provider.pantalytics_client_id` keeps the
+# last one, which is what a refresh is made with.
+PANTALYTICS_TENANT = 'organizations'
+# What Microsoft answers when the tenant wants an administrator to approve
+# the app before a user may consent: `consent_required`, or an access_denied
+# whose description carries one of these.
+ADMIN_CONSENT_CODES = ('AADSTS65001', 'AADSTS90094')
 
 # Every delegated permission the consent screen asks for. The README and the
 # manifest list the same names; `tests/test_microsoft_provider.py` holds the
@@ -242,9 +255,21 @@ class MicrosoftGraphClient(models.AbstractModel):
         Looked up by provider code, not by which provider is active: a
         database that switched to Gmail and back must find its old Azure
         registration exactly as it left it.
+
+        A row that signs in through the Pantalytics app answers with that
+        app's client id, no secret and the `organizations` authority, and
+        says so (`public_client`): every call below then sends the PKCE
+        verifier where it would have sent the secret.
         """
         provider = self.env['pan.mail.provider'].sudo().search(
             [('provider', '=', 'outlook')], limit=1)
+        if provider.registration == 'pantalytics':
+            return {
+                'client_id': provider.pantalytics_client_id,
+                'client_secret': False,
+                'tenant_id': PANTALYTICS_TENANT,
+                'public_client': True,
+            }
         client_secret = encryption_utils.decrypt_value(
             self.env, provider.client_secret_encrypted
         ) if provider.client_secret_encrypted else False
@@ -253,11 +278,12 @@ class MicrosoftGraphClient(models.AbstractModel):
             'client_id': provider.client_id,
             'client_secret': client_secret,
             'tenant_id': provider.tenant_id,
+            'public_client': False,
         }
 
     @api.model
     def get_authorization_url(self, redirect_uri, state=None, login_hint=None,
-                              prompt=None):
+                              prompt=None, code_challenge=None):
         """Generate OAuth authorization URL with CSRF state parameter.
 
         Args:
@@ -266,6 +292,7 @@ class MicrosoftGraphClient(models.AbstractModel):
             login_hint: the address the sign-in screen opens on
             prompt: Microsoft's `prompt` (`none` fails silently rather than
                 asking, which is the first try of a confirm-it's-you round)
+            code_challenge: the S256 PKCE challenge, for the Pantalytics app
 
         Returns:
             str: The authorization URL to redirect the user to
@@ -289,8 +316,12 @@ class MicrosoftGraphClient(models.AbstractModel):
         # from this list is not in the token; the .Shared pair is the same
         # story for a shared mailbox.
         #
+        # The Pantalytics app carries the two inspection scopes on its own
+        # registration, so asking for them costs no customer an Azure change
+        # (the lesson behind `INSPECT_SCOPES_PARAM` is about a registration
+        # the customer owns). An own registration keeps the opt-in.
         scopes = list(GRAPH_SCOPES)
-        if self._inspect_scopes_wanted():
+        if config.get('public_client') or self._inspect_scopes_wanted():
             scopes.extend(INSPECT_SCOPES)
 
         params = {
@@ -308,24 +339,69 @@ class MicrosoftGraphClient(models.AbstractModel):
             params['login_hint'] = login_hint
         if prompt:
             params['prompt'] = prompt
+        if code_challenge:
+            params['code_challenge'] = code_challenge
+            params['code_challenge_method'] = 'S256'
 
         query_string = '&'.join([f'{k}={requests.utils.quote(str(v))}' for k, v in params.items()])
         return f"{auth_url}?{query_string}"
 
     @api.model
-    def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
-        """Exchange authorization code for access and refresh tokens"""
+    def get_admin_consent_url(self, redirect_uri, state):
+        """Where a Microsoft 365 administrator approves the app for the
+        whole organization, once (the Pantalytics app only).
+
+        Asked for when a tenant does not let its users consent themselves
+        (`needs_admin_consent`). Microsoft answers on the same callback with
+        `admin_consent=True&tenant=...` or an error, and grants every
+        permission the app registration carries.
+        """
+        config = self._get_config_params()
+        if not config.get('public_client') or not config.get('client_id'):
+            raise UserError(_('Approving for the organization is for the '
+                              'Pantalytics Mail Pro app only.'))
+        params = {
+            'client_id': config['client_id'],
+            'scope': ADMIN_CONSENT_SCOPE,
+            'redirect_uri': redirect_uri,
+            'state': state,
+        }
+        query_string = '&'.join(f'{k}={requests.utils.quote(str(v), safe="")}'
+                                for k, v in params.items())
+        return f"{ADMIN_CONSENT_URL.format(tenant=PANTALYTICS_TENANT)}?{query_string}"
+
+    @api.model
+    def needs_admin_consent(self, error, description=None):
+        """Did Microsoft refuse because the tenant wants an administrator to
+        approve the app first? `consent_required`, or an AADSTS65001 /
+        AADSTS90094 in the description of an `access_denied`."""
+        if error == 'consent_required':
+            return True
+        return any(code in (description or '') for code in ADMIN_CONSENT_CODES)
+
+    @api.model
+    def _exchange_code_for_tokens(self, authorization_code, redirect_uri,
+                                  code_verifier=None):
+        """Exchange authorization code for access and refresh tokens.
+
+        The Pantalytics app is a public client: no secret, the PKCE verifier
+        of the round instead, and `redirect_uri` is the platform's callback
+        the code was issued to.
+        """
         self._refuse_when_neutralized()
         config = self._get_config_params()
         token_url = TOKEN_URL.format(tenant=config['tenant_id'])
 
         data = {
             'client_id': config['client_id'],
-            'client_secret': config['client_secret'],
             'code': authorization_code,
             'redirect_uri': redirect_uri,
             'grant_type': 'authorization_code',
         }
+        if not config.get('public_client'):
+            data['client_secret'] = config['client_secret']
+        if code_verifier:
+            data['code_verifier'] = code_verifier
 
         try:
             response = requests.post(token_url, data=data, timeout=10)
@@ -371,10 +447,13 @@ class MicrosoftGraphClient(models.AbstractModel):
 
         data = {
             'client_id': config['client_id'],
-            'client_secret': config['client_secret'],
             'refresh_token': account.refresh_token,
             'grant_type': 'refresh_token',
         }
+        # A public client refreshes with its client id alone (measured
+        # 2026-10-31 on two tenants: no secret, and not limited to 24 hours).
+        if not config.get('public_client'):
+            data['client_secret'] = config['client_secret']
 
         try:
             response = requests.post(token_url, data=data, timeout=10)
@@ -415,6 +494,11 @@ class MicrosoftGraphClient(models.AbstractModel):
             # wrong, keep the tokens.
             if error_code in ('invalid_client', 'unauthorized_client'):
                 aadsts = re.search(r'AADSTS\d+', error_description or '')
+                if config.get('public_client'):
+                    raise UserError(_(
+                        'Microsoft refused the Pantalytics Mail Pro app (%s). Your '
+                        'own connection is unchanged.') % (
+                            aadsts.group(0) if aadsts else error_code))
                 hint = AADSTS_HINTS.get(aadsts.group(0)) if aadsts else None
                 raise UserError(_(
                     'Microsoft refused the application credentials (%s). An '
@@ -1459,7 +1543,13 @@ class MicrosoftGraphClient(models.AbstractModel):
         fail on a mailbox that is not in that directory, with a 404 that
         reads like a missing right.
         """
-        expected = (self._get_config_params().get('tenant_id') or '').strip().lower()
+        config = self._get_config_params()
+        expected = (config.get('tenant_id') or '').strip().lower()
+        if config.get('public_client'):
+            # The Pantalytics app is multitenant, so the registration names
+            # no tenant. The directory the mailboxes already connected here
+            # belong to is the one this Odoo serves; the first sign-in sets it.
+            expected = self._connected_tenant()
         actual = (identity.get('tenant_id') or '').strip().lower()
         if not expected or expected in self._ANY_TENANT or not actual:
             return None
@@ -1470,6 +1560,14 @@ class MicrosoftGraphClient(models.AbstractModel):
             'is registered in tenant %(expected)s. Sign in with an account of '
             'the organization whose mailboxes Odoo should use.',
             actual=actual, expected=expected)
+
+    @api.model
+    def _connected_tenant(self):
+        """The tenant of the Microsoft sign-ins already stored here, lower
+        case, or '' before the first one."""
+        account = self.env['pan.mail.account'].sudo().with_context(active_test=False).search(
+            [('provider', '=', 'outlook'), ('tenant_id', '!=', False)], order='id', limit=1)
+        return (account.tenant_id or '').strip().lower()
 
     # -------------------------------------------------------------------------
     # Mailbox actions — contract implementation

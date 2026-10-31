@@ -507,6 +507,21 @@ OAUTH_CALLBACK_PATHS = {
 DEFAULT_PROVIDER = 'outlook'
 
 
+def pkce_pair():
+    """A PKCE verifier and its S256 challenge (RFC 7636), for one sign-in.
+
+    What stands in for a client secret when the application is a public
+    client: the challenge goes out with the authorization request, the
+    verifier with the code exchange, so only whoever started the round can
+    finish it. The verifier is kept in the session of the browser that
+    started it and nowhere else.
+    """
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode('ascii')).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
+    return verifier, challenge
+
+
 def tidy_address(address):
     """Trim and lowercase an address before it goes on the wire.
 
@@ -783,7 +798,7 @@ class MailProviderClient(models.AbstractModel):
 
     @api.model
     def get_authorization_url(self, redirect_uri, state=None, login_hint=None,
-                              prompt=None):
+                              prompt=None, code_challenge=None):
         """Return the URL to send the user to in order to grant access.
 
         `login_hint` names the address the screen opens on; `prompt` is the
@@ -791,7 +806,9 @@ class MailProviderClient(models.AbstractModel):
         trip that fails rather than asks). Both are what the Inbox's
         "confirm it's you" round uses (`verify_password` is the other half,
         for a provider with no sign-in screen); a plain connect passes
-        neither.
+        neither. `code_challenge` is the S256 half of `pkce_pair()`, passed
+        only by a sign-in through an application with no client secret (the
+        Pantalytics app, `pan.mail.provider.registration`).
         """
         raise NotImplementedError
 
@@ -807,8 +824,12 @@ class MailProviderClient(models.AbstractModel):
         return False
 
     @api.model
-    def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
+    def _exchange_code_for_tokens(self, authorization_code, redirect_uri,
+                                  code_verifier=None):
         """Trade an OAuth authorization code for tokens.
+
+        `code_verifier` is the PKCE verifier of the round, for the same
+        public-client sign-in that sent a `code_challenge`.
 
         Returns:
             dict: {'access_token', 'refresh_token', 'token_expiry'}

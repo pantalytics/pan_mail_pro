@@ -10,6 +10,7 @@ from ..models.mail_provider_client import (
     get_provider_client,
     oauth_redirect_uri,
 )
+from ..models.pan_mail_provider import MS_APP_SESSION_KEY
 
 _logger = logging.getLogger(__name__)
 
@@ -32,9 +33,14 @@ SILENT_REFUSALS = ('login_required', 'interaction_required', 'consent_required',
                    'account_selection_required')
 
 
-def _result_page(success, title, message):
+def _result_page(success, title, message, action_url=None, action_label=None):
+    """The page a sign-in round ends on. `action_url` is its one next step
+    when there is one (approving the app for the organization, connecting
+    after that approval); without it the way back is to Odoo, or the tab
+    that opened this one."""
     return request.render('pan_mail_pro.oauth_result', {
         'success': success, 'title': title, 'message': message,
+        'action_url': action_url, 'action_label': action_label,
     })
 
 
@@ -50,9 +56,11 @@ class MailProConnectController(http.Controller):
 
     @http.route('/mail_pro/connect', type='http', auth='user', website=True)
     def connect_mailbox(self, provider=None, verify=None, mailbox_id=None,
-                        back=None, **kwargs):
+                        back=None, admin_consent=None, **kwargs):
         if verify:
             return self._start_verify(mailbox_id, back, silent=True)
+        if admin_consent:
+            return self._start_admin_consent()
         # `get_provider_client` hands back a *recordset*, and an empty one is
         # falsy — so `if not client` was true for every provider that exists and
         # this route redirected everybody to the settings page instead of to the
@@ -64,8 +72,28 @@ class MailProConnectController(http.Controller):
         if not get_provider_client(request.env, provider).uses_oauth:
             return request.redirect(SETTINGS_URL)
 
-        action = request.env.user.action_connect_mailbox(provider)
+        try:
+            action = request.env.user.action_connect_mailbox(provider)
+        except UserError as error:
+            # A sentence (not connected to Pantalytics, the platform said no)
+            # on the page the round would have ended on, not a traceback.
+            return _result_page(False, _('Connection Failed'), str(error))
         return request.redirect(action['url'], local=False)
+
+    @staticmethod
+    def _start_admin_consent():
+        """Send a Microsoft 365 administrator to approve the Pantalytics app
+        for the whole organization: the one step a tenant that does not let
+        its users consent needs, once. Offered by the result page that says
+        so; the answer comes back on `/mail_pro/microsoft/return`."""
+        row = request.env['pan.mail.provider']._pantalytics_row('outlook')
+        if not row or request.env.user.share:
+            return request.redirect(SETTINGS_URL)
+        try:
+            url, _state = row._pantalytics_sign_in(admin_consent=True)
+        except UserError as error:
+            return _result_page(False, _('Approval not started'), str(error))
+        return request.redirect(url, local=False)
 
     @staticmethod
     def _safe_back(back):
@@ -92,14 +120,26 @@ class MailProConnectController(http.Controller):
             # A password provider is confirmed from the Inbox itself.
             return request.redirect(back)
         account = Conversation._live_account(mailbox)
-        state = client.generate_oauth_state()
+        prompt = 'none' if silent else ''
+        app_row = request.env['pan.mail.provider']._pantalytics_row(mailbox.provider)
+        if app_row:
+            # Through the Pantalytics app the platform issues the state, and
+            # Microsoft answers on its redirect URI, which hands the round to
+            # `/mail_pro/microsoft/return` and from there to the callback.
+            try:
+                url, state = app_row._pantalytics_sign_in(
+                    login_hint=account.email, prompt=prompt)
+            except UserError as error:
+                return _result_page(False, _('Not confirmed'), str(error))
+        else:
+            state = client.generate_oauth_state()
+            url = client.get_authorization_url(
+                oauth_redirect_uri(request.env, mailbox.provider), state=state,
+                login_hint=account.email, prompt=prompt)
         request.session[VERIFY_SESSION_KEY] = {
             'state': state, 'mailbox_id': mailbox.id, 'back': back,
             'silent': bool(silent), 'provider': mailbox.provider,
         }
-        url = client.get_authorization_url(
-            oauth_redirect_uri(request.env, mailbox.provider), state=state,
-            login_hint=account.email, prompt='none' if silent else '')
         return request.redirect(url, local=False)
 
 
@@ -125,7 +165,49 @@ class MailProOAuthController(http.Controller):
     def google_callback(self, **kwargs):
         return self._handle_callback('gmail', **kwargs)
 
-    def _handle_callback(self, provider, **kwargs):
+    @http.route('/mail_pro/microsoft/return', type='http', auth='user', website=True)
+    def microsoft_return(self, **kwargs):
+        """Microsoft's answer to a sign-in through the Pantalytics app.
+
+        Microsoft answers on the platform's redirect URI, which sends the
+        browser on here with only code, state, error, error_description,
+        admin_consent and tenant. The state has to be the one this session
+        started (`MS_APP_SESSION_KEY`) and is good once; after that it is
+        the same callback as every other sign-in, with the platform's
+        redirect URI and this session's PKCE verifier in place of a secret.
+        """
+        pending = request.session.get(MS_APP_SESSION_KEY) or {}
+        state = kwargs.get('state')
+        if not state or not pending.get('state') or state != pending['state']:
+            _logger.error('[OAuth] Pantalytics app state validation failed for user %s',
+                          request.env.user.id)
+            return _result_page(False, _('Connection Failed'),
+                                _('Security validation failed. Please try connecting again.'))
+        del request.session[MS_APP_SESSION_KEY]
+        if pending.get('admin_consent'):
+            return self._admin_consent_answer(kwargs)
+        return self._handle_callback('outlook', sign_in=pending, **kwargs)
+
+    @staticmethod
+    def _admin_consent_answer(kwargs):
+        """What an administrator's approval for the organization came back as."""
+        if kwargs.get('error') or str(kwargs.get('admin_consent')).lower() != 'true':
+            _logger.warning('[OAuth] The organization approval was not given: %s - %s',
+                            kwargs.get('error'), kwargs.get('error_description'))
+            return _result_page(False, _('Not approved'), _(
+                'Microsoft did not approve Mail Pro for your organization: %s')
+                % (kwargs.get('error_description') or kwargs.get('error') or _('no answer')))
+        _logger.info('[OAuth] Mail Pro approved for Microsoft tenant %s', kwargs.get('tenant'))
+        return _result_page(True, _('Approved'), _(
+            'Mail Pro is approved for your organization. Everybody can connect '
+            'their mailbox now.'), action_url='/mail_pro/connect',
+            action_label=_('Connect your mailbox'))
+
+    def _handle_callback(self, provider, sign_in=None, **kwargs):
+        """`sign_in` is the session's record of a round through the
+        Pantalytics app, already matched on its state by `microsoft_return`:
+        its redirect URI and PKCE verifier stand in for the registered
+        callback and the client secret."""
         user = request.env.user
         client = get_provider_client(request.env, provider)
 
@@ -143,23 +225,37 @@ class MailProOAuthController(http.Controller):
         if pending and kwargs.get('state') and kwargs['state'] == pending.get('state') \
                 and pending.get('provider') == provider:
             del request.session[VERIFY_SESSION_KEY]
-            return self._finish_verify(provider, client, pending, kwargs)
+            return self._finish_verify(provider, client, pending, kwargs, sign_in)
 
         error = kwargs.get('error')
         if error:
             _logger.error('[OAuth] %s returned %s - %s',
                           provider, error, kwargs.get('error_description'))
+            if sign_in and client.needs_admin_consent(error, kwargs.get('error_description')):
+                # The tenant wants an administrator to approve the app first.
+                # Once, for everybody: the page offers that step rather than
+                # Microsoft's code.
+                return _result_page(False, _('Approval needed'), _(
+                    'Your Microsoft 365 organization asks an administrator to '
+                    'approve Mail Pro once. Are you that administrator? Approve '
+                    'it now. If not, ask them to sign in to Odoo and press '
+                    'Connect, then approve.'),
+                    action_url='/mail_pro/connect?admin_consent=1',
+                    action_label=_('Approve for the organization'))
             return _result_page(False, _('Connection Failed'),
                                 f"{error}: {kwargs.get('error_description')}")
 
-        # CSRF: the nonce we handed out must come back, and is good once.
-        stored_state = user.sudo().x_pan_mail_oauth_state
-        received_state = kwargs.get('state')
-        if not received_state or not stored_state or received_state != stored_state:
-            _logger.error('[OAuth] CSRF state validation failed for user %s', user.id)
-            return _result_page(False, _('Connection Failed'),
-                                _('Security validation failed. Please try connecting again.'))
-        user.sudo().write({'x_pan_mail_oauth_state': False})
+        # CSRF: the nonce we handed out must come back, and is good once. A
+        # round through the Pantalytics app was matched against the session
+        # before it got here, and never wrote a nonce on this row.
+        if not sign_in:
+            stored_state = user.sudo().x_pan_mail_oauth_state
+            received_state = kwargs.get('state')
+            if not received_state or not stored_state or received_state != stored_state:
+                _logger.error('[OAuth] CSRF state validation failed for user %s', user.id)
+                return _result_page(False, _('Connection Failed'),
+                                    _('Security validation failed. Please try connecting again.'))
+            user.sudo().write({'x_pan_mail_oauth_state': False})
 
         code = kwargs.get('code')
         if not code:
@@ -168,8 +264,7 @@ class MailProOAuthController(http.Controller):
                                 _('No authorization code received.'))
 
         try:
-            tokens = client._exchange_code_for_tokens(
-                code, oauth_redirect_uri(request.env, provider))
+            tokens = self._exchange(client, provider, code, sign_in)
             identity = client.read_user_info(
                 tokens['access_token'], id_token=tokens.get('id_token'))
             email = identity.get('email')
@@ -249,7 +344,17 @@ class MailProOAuthController(http.Controller):
             request.env['pan.mail.error']._record('oauth.callback_failed', exception)
             return _result_page(False, _('Connection Failed'), str(exception))
 
-    def _finish_verify(self, provider, client, pending, kwargs):
+    @staticmethod
+    def _exchange(client, provider, code, sign_in):
+        """The code exchange: at the registered callback with the secret, or,
+        through the Pantalytics app, at the platform's redirect URI with this
+        session's PKCE verifier. Neither the code nor the tokens are logged."""
+        if sign_in:
+            return client._exchange_code_for_tokens(
+                code, sign_in['redirect_uri'], code_verifier=sign_in.get('code_verifier'))
+        return client._exchange_code_for_tokens(code, oauth_redirect_uri(request.env, provider))
+
+    def _finish_verify(self, provider, client, pending, kwargs, sign_in=None):
         """The provider's answer to "is this the person behind the mailbox".
 
         Nothing is written to the account either way: the tokens of this
@@ -278,8 +383,7 @@ class MailProOAuthController(http.Controller):
         try:
             mailbox = Conversation._own_mailbox(pending.get('mailbox_id'), verified=False)
             account = Conversation._live_account(mailbox)
-            tokens = client._exchange_code_for_tokens(
-                code, oauth_redirect_uri(request.env, provider))
+            tokens = self._exchange(client, provider, code, sign_in)
             identity = client.read_user_info(
                 tokens['access_token'], id_token=tokens.get('id_token'))
         except Exception as exception:

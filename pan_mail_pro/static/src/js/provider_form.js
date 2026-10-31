@@ -17,7 +17,9 @@ import { useService } from "@web/core/utils/hooks";
 import { FormController } from "@web/views/form/form_controller";
 import { formView } from "@web/views/form/form_view";
 
-const REGISTRATION = ["provider", "client_id", "client_secret", "tenant_id"];
+const REGISTRATION = [
+    "provider", "registration", "client_id", "client_secret", "tenant_id",
+];
 
 export class ProviderVerifyDialog extends Component {
     static template = "pan_mail_pro.ProviderVerifyDialog";
@@ -60,6 +62,9 @@ export class ProviderVerifyDialog extends Component {
     }
 
     async signIn() {
+        // Through the Pantalytics app the answer is a same-tab URL (`target:
+        // "self"`): a tab opened after an awaited call is not the click any
+        // more, and Brave and Safari block it.
         const action = await this.orm.call(
             "pan.mail.provider", "action_connect_myself", [[this.props.resId]]);
         this.props.close();
