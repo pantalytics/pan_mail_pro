@@ -25,6 +25,16 @@ per-address by nature, so its row carries no credential fields at all.
 "Configured" for IMAP means "at least one account exists"; `credentials_set`
 says so per provider, and `pan.mail.setup` never has to know the difference.
 
+**Whose app.** Microsoft 365 signs in through the Pantalytics Mail Pro app by
+default (`registration = 'pantalytics'`): a multitenant public client that
+Pantalytics registered once, so a customer registers nothing in Azure. Its
+client id comes from our platform with every sign-in it starts
+(`pan.mail.license.microsoft_start`) and is kept here for the refresh; there
+is no secret, the round carries a PKCE verifier instead, and the redirect URI
+is the platform's, which sends the browser on to `/mail_pro/microsoft/return`.
+The customer's own app registration (`'own'`) is the advanced path and works
+exactly as before. A row created with registration fields is an own-app row.
+
 The secret is Fernet-encrypted at rest, like every other secret in the module,
 and it is never handed back to the browser once saved: `client_secret` reads
 back a placeholder, and re-saving the placeholder is a no-op rather than
@@ -34,6 +44,7 @@ import re
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
+from odoo.http import request
 
 from . import encryption_utils
 from .mail_provider_client import (
@@ -42,9 +53,30 @@ from .mail_provider_client import (
     PROVIDER_SELECTION,
     get_provider_client,
     oauth_redirect_uri,
+    pkce_pair,
 )
 
 SECRET_PLACEHOLDER = '********'
+
+# Whose application a Microsoft 365 sign-in goes through.
+REGISTRATION_SELECTION = [
+    ('pantalytics', 'Pantalytics Mail Pro app'),
+    ('own', 'Your own app registration'),
+]
+# The fields only an own app registration has. A row created with any of them
+# is an own-app row, whatever the default says.
+OWN_REGISTRATION_FIELDS = ('client_id', 'client_secret', 'tenant_id')
+
+# Where the platform sends the browser back to after Microsoft answered a
+# sign-in through the Pantalytics app. Not registered anywhere: the platform
+# is handed it as `return_url` with every start.
+MS_APP_RETURN_PATH = '/mail_pro/microsoft/return'
+# The one sign-in through the Pantalytics app in flight for this session: the
+# state the platform issued, the PKCE verifier, the redirect URI the code is
+# issued to, and whether it is an administrator's approval. In the session,
+# like the confirm-it's-you round (controllers/main.py), so only the browser
+# that started it can finish it.
+MS_APP_SESSION_KEY = 'pan_mail_ms_app'
 
 
 # What Azure accepts as the first path segment of a login URL: the directory
@@ -56,6 +88,14 @@ _GUID_RE = re.compile(r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$')
 _DOMAIN_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?'
                         r'(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$')
 TENANT_LITERALS = ('common', 'organizations', 'consumers')
+
+
+def pantalytics_not_connected():
+    """Why the Pantalytics app cannot be used right now. A function so the
+    sentence is translated in the caller's language, not at import."""
+    return _('Signing in with the Pantalytics Mail Pro app needs this Odoo '
+             'connected to Pantalytics. An administrator connects it under '
+             'Settings, Mail Pro, step 1.')
 
 
 class PanMailProvider(models.Model):
@@ -88,6 +128,19 @@ class PanMailProvider(models.Model):
     )
     tenant_id = fields.Char(string='Tenant ID', help='Microsoft 365 only.')
 
+    registration = fields.Selection(
+        REGISTRATION_SELECTION, string='Sign in through', default='pantalytics',
+        help='Microsoft 365 only. The Pantalytics app needs nothing registered '
+             'in Azure; your own app registration is for an organization that '
+             'wants its own.',
+    )
+    pantalytics_client_id = fields.Char(
+        string='Pantalytics app ID', readonly=True, copy=False,
+        help='The Pantalytics app as the platform last named it. Refreshing a '
+             'sign-in needs it.',
+    )
+    pantalytics_connected = fields.Boolean(compute='_compute_pantalytics_connected')
+
     redirect_uri = fields.Char(
         string='Callback URL', compute='_compute_redirect_uri', readonly=True,
         help='Paste this into the provider console. Sign-in fails until it matches exactly.',
@@ -118,6 +171,22 @@ class PanMailProvider(models.Model):
         'UNIQUE(provider)',
         'Each provider can only be registered once — edit the existing row.',
     )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """A row created with an app registration's fields is an own-app row.
+
+        The default is the Pantalytics app, which is right for a row created
+        from the settings page. A row that arrives with a client id, secret
+        or tenant (an import, a script, a test fixture, the seed) is somebody
+        else's registration, and making it the Pantalytics app would drop
+        what they typed.
+        """
+        for vals in vals_list:
+            if 'registration' not in vals and any(
+                    vals.get(name) for name in OWN_REGISTRATION_FIELDS):
+                vals['registration'] = 'own'
+        return super().create(vals_list)
 
     # -------------------------------------------------------------------------
     # Name
@@ -157,12 +226,13 @@ class PanMailProvider(models.Model):
         # overwrites it on its own the way a `write()` would. Force it.
         self.invalidate_recordset(['client_secret'])
 
-    @api.depends('provider')
+    @api.depends('provider', 'registration')
     def _compute_redirect_uri(self):
         for record in self:
             record.redirect_uri = (
                 oauth_redirect_uri(self.env, record.provider)
-                if record.provider in OAUTH_CALLBACK_PATHS else False
+                if record.provider in OAUTH_CALLBACK_PATHS
+                and not record.uses_pantalytics_app() else False
             )
 
     @api.depends('provider')
@@ -193,6 +263,14 @@ class PanMailProvider(models.Model):
             raise UserError(_(
                 '%s has no application registration to verify.'
             ) % client.provider_label())
+        if self.uses_pantalytics_app():
+            if not self._pantalytics_ready():
+                return {'verified': False, 'message': pantalytics_not_connected()}
+            return {
+                'verified': None,
+                'message': _('%s signs in through the Pantalytics Mail Pro app. '
+                             'Signing in is the check.') % client.provider_label(),
+            }
         if not client.supports_credential_test:
             return {
                 'verified': None,
@@ -221,7 +299,8 @@ class PanMailProvider(models.Model):
     # Status
     # -------------------------------------------------------------------------
 
-    @api.depends('provider', 'client_id', 'client_secret_encrypted', 'tenant_id')
+    @api.depends('provider', 'client_id', 'client_secret_encrypted', 'tenant_id',
+                 'registration', 'pantalytics_client_id')
     def _compute_status(self):
         for record in self:
             record.credentials_set = record._credentials_present()
@@ -241,6 +320,8 @@ class PanMailProvider(models.Model):
         the same question `pan.mail.setup` asked before this model existed.
         """
         self.ensure_one()
+        if self.uses_pantalytics_app():
+            return self._pantalytics_ready()
         if self.provider == 'outlook':
             return bool(self.client_id and self.client_secret_encrypted and self.tenant_id)
         if self.provider == 'gmail':
@@ -262,6 +343,79 @@ class PanMailProvider(models.Model):
         self.ensure_one()
         return self.env['pan.mail.account'].sudo().with_context(active_test=False).search(
             [('provider', '=', 'imap')])
+
+    # -------------------------------------------------------------------------
+    # The Pantalytics app
+    # -------------------------------------------------------------------------
+
+    def uses_pantalytics_app(self):
+        """Does this row sign in through the Pantalytics Mail Pro app?"""
+        self.ensure_one()
+        return self.provider == 'outlook' and self.registration == 'pantalytics'
+
+    @api.depends_context('uid')
+    def _compute_pantalytics_connected(self):
+        connected = self._pantalytics_connected()
+        for record in self:
+            record.pantalytics_connected = connected
+
+    @api.model
+    def _pantalytics_connected(self):
+        """Is this Odoo connected to Pantalytics, step 1, with a key our
+        platform still accepts? Starting a sign-in through the app needs
+        that key; nothing else here does."""
+        link = self.env['pan.mail.license'].current()
+        return bool(link) and bool(link.key_encrypted) and link.status not in (
+            'not_connected', 'pending', 'invalid', 'revoked')
+
+    def _pantalytics_ready(self):
+        """Usable: connected to Pantalytics, or holding the app's id from an
+        earlier sign-in, which is all a refresh needs. A lapsed connection
+        must not read as a missing registration: sending is never gated on
+        the connection (ARCHITECTURE.md §9.17), and the phase reads this."""
+        self.ensure_one()
+        return bool(self.pantalytics_client_id) or self._pantalytics_connected()
+
+    @api.model
+    def _pantalytics_row(self, provider):
+        """The row of `provider` when it signs in through the Pantalytics
+        app, or an empty recordset: the one question every sign-in start
+        asks before it picks a path."""
+        row = self.sudo().search([('provider', '=', provider)], limit=1)
+        return row if row and row.uses_pantalytics_app() else self.browse()
+
+    def _pantalytics_sign_in(self, login_hint=None, prompt=None, admin_consent=False):
+        """Start one sign-in through the Pantalytics app: ``(url, state)``.
+
+        Our platform issues the state and names the app and its redirect URI
+        (`pan.mail.license.microsoft_start`); the authorization URL is built
+        here, by the client, with a PKCE challenge whose verifier stays in
+        this session. With `admin_consent` it is the organization-wide
+        approval instead, which has no code and so no verifier.
+        """
+        self.ensure_one()
+        if not request:
+            raise UserError(_('A sign-in starts from a browser.'))
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+        answer = self.env['pan.mail.license'].microsoft_start(base_url + MS_APP_RETURN_PATH)
+        if self.pantalytics_client_id != answer['client_id']:
+            self.sudo().pantalytics_client_id = answer['client_id']
+        client = get_provider_client(self.env, self.provider)
+        verifier = False
+        if admin_consent:
+            url = client.get_admin_consent_url(answer['redirect_uri'], answer['state'])
+        else:
+            verifier, challenge = pkce_pair()
+            url = client.get_authorization_url(
+                answer['redirect_uri'], state=answer['state'], login_hint=login_hint,
+                prompt=prompt, code_challenge=challenge)
+        request.session[MS_APP_SESSION_KEY] = {
+            'state': answer['state'],
+            'code_verifier': verifier,
+            'redirect_uri': answer['redirect_uri'],
+            'admin_consent': bool(admin_consent),
+        }
+        return url, answer['state']
 
     # -------------------------------------------------------------------------
     # One row

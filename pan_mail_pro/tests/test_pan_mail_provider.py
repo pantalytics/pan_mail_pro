@@ -158,7 +158,9 @@ class TestProviderCredentials(TransactionCase):
         self.assertEqual(row.display_name, 'IMAP / SMTP')
 
     def test_oauth_providers_get_a_redirect_uri(self):
-        row = self.Provider.create({'provider': 'outlook'})
+        # An own app registration: the Pantalytics app has the platform's
+        # redirect URI and nothing to paste (tests/test_pantalytics_app.py).
+        row = self.Provider.create({'provider': 'outlook', 'registration': 'own'})
         self.assertTrue(row.uses_oauth)
         self.assertTrue(row.redirect_uri)
         self.assertIn('/microsoft_oauth/callback', row.redirect_uri)

@@ -394,7 +394,7 @@ shows (§2), and the account form's Test Connection reads the same two fields.
 | `pan.mail.mailbox` | Mailbox configuration (email, type, sync mode, routing, `provider` — inherited from `pan.mail.provider.current_code()`, never asked on the form) |
 | `pan.mail.account` | Credentials for one address on one provider (nullable `user_id`), and the identity behind them as the provider reported it at consent: its stable id, the principal name, the display name, the tenant, the scope line of the grant |
 | `pan.mail.mailbox.access` | What one sign-in may do with one mailbox, as the provider last said: `can_read`, `can_send`, each yes / no / unknown, and the provider's own sentence for a refusal. One row per (mailbox, account), written by the access check and by the send path; read by health, the checklist and the heartbeat (§2 *Verified access*) |
-| `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro |
+| `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro. For Microsoft, `registration` says whose app: the Pantalytics app (default, nothing to register, §9.20) or the customer's own |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.setup` | Setup steps 2 to 4 and the phase they add up to (abstract). Step 1, the Pantalytics account, is `pan.mail.license` |
 | `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key, who connected and when, and the last signed entitlement. One row, created on the first Connect. `sync_allowed()` gates incoming sync and new accounts (§9.17) |
@@ -2962,6 +2962,85 @@ an internal user can browse, which is all of them.
 It carries the system email, its own form hides the Sync Settings tab, and
 nothing about it is one person's preference.
 
+### 9.20 Microsoft 365 through the Pantalytics app
+
+A Microsoft 365 customer used to register an Azure app of their own: three
+values to copy, a secret that expires, a redirect URI to paste, permissions
+to grant. Since 19.0.31.0.0 the default is **Pantalytics Mail Pro**, an app
+Pantalytics registered once: multitenant (`organizations`, so work and school
+accounts only, never outlook.com), verified publisher Pantalytics BV, and a
+**public client**, so there is no secret anywhere. The own registration is
+still there, one choice deeper on the provider form, and works exactly as
+before.
+
+`pan.mail.provider.registration` says whose app it is (`pantalytics` /
+`own`, Microsoft only). A row created with any own-registration field is an
+own row (`create()`), and `migrations/19.0.31.0.0` set every existing row
+that had one to `own` before the ORM saw the field, so no upgraded database
+moves. For the Pantalytics app `credentials_set` is "this Odoo is connected
+to Pantalytics, or holds the app's id from an earlier sign-in": step 2 then
+reads done after one click (**Use Microsoft 365** on the open line), and a
+lapsed connection never reads as a missing registration, because the
+refresh needs nothing from us.
+
+One sign-in, in order:
+
+1. `pan.mail.license.microsoft_start(return_url)` posts to our platform
+   (`/api/v1/mail-pro/microsoft/start`, under the installation key the
+   heartbeat uses). It answers a single-use state (15 minutes), the app's
+   client id and the platform's redirect URI. No key, or a key the platform
+   refuses, is a sentence pointing at step 1.
+2. `pan.mail.provider._pantalytics_sign_in()` keeps the client id on the row
+   (`pantalytics_client_id`, the refresh needs it), makes a PKCE pair
+   (`mail_provider_client.pkce_pair`), and asks the Graph client for the
+   authorization URL with the platform's redirect URI, the platform's state
+   and the S256 challenge. The state, the verifier and the redirect URI go
+   into `request.session[MS_APP_SESSION_KEY]`: the proof that this browser
+   started the round, where an ACL cannot reach it (the lesson of
+   19.0.30.0.0). Nothing goes on `res.users.x_pan_mail_oauth_state`.
+3. The browser goes there in the **same tab** (`target: 'self'`): a tab
+   opened after an awaited RPC is not the click any more, and Brave and
+   Safari block it. The result page reloads `window.opener` when there is
+   one and otherwise leads back to Odoo, so it is no dead end either way.
+4. Microsoft answers on the platform's callback, which redirects to
+   `/mail_pro/microsoft/return` with only `code`, `state`, `error`,
+   `error_description`, `admin_consent` and `tenant`.
+5. The return route refuses a state this session did not start, spends it
+   once matched, and hands the rest to the one OAuth callback
+   (`_handle_callback`) with the session's record: the code is redeemed at
+   the platform's redirect URI with the verifier and no secret, and from
+   there it is the same callback as every other sign-in. The confirm-it's-you
+   round of the Inbox (`_start_verify`) takes the same road when the
+   mailbox's provider row is the Pantalytics app.
+
+The refresh is the client id alone. Measured 2026-10-31 on two real
+tenants: a public client's code is redeemed and refreshed from a server with
+only `client_id` and `code_verifier`, and the refresh token is not limited
+to 24 hours.
+
+**Scopes.** The app carries `MailboxSettings.Read` and `User.ReadBasic.All`
+on its own registration, so the Pantalytics app always asks for them: the
+rollout cost behind `pan_mail_pro.graph_inspect_scopes` (CLAUDE.md, *A scope
+in the request is a change at every customer*) is a customer's own
+registration, and there is none here. An own registration keeps the opt-in.
+
+**A tenant that wants an administrator.** Most tenants let users consent;
+a strict one answers `consent_required` or an AADSTS65001 / AADSTS90094
+(`needs_admin_consent`). The result page then offers **Approve for the
+organization**, which is `/mail_pro/connect?admin_consent=1`: a fresh
+platform state and Microsoft's `adminconsent` URL, answered on the same
+return route with `admin_consent=True&tenant=...` or an error.
+
+**Whose directory.** A multitenant app names no tenant, so
+`identity_refusal` compares against the tenant of the Microsoft sign-ins
+already stored here (`_connected_tenant`), and the first one sets it. The
+own single-tenant registration keeps comparing against its own tenant.
+
+What leaves this database for Pantalytics is the start's `return_url`, this
+Odoo's own address, and Microsoft's answer passes through the platform's
+callback on its way back. The tokens are fetched by this Odoo and stored in
+the encrypted account fields only; neither the code nor a token is logged.
+
 ## 10. Security and permissions
 
 All Microsoft permissions are **delegated** (user context, never application) —
@@ -3164,7 +3243,7 @@ eight groups:
 | Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, and the one mailbox setting a user owns |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, and that no colour lacks a dark side |
-| The outside | `test_oauth_routes.py`, `test_connect_banner.py`, `test_license.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, the Pantalytics link, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
+| The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_connect_banner.py`, `test_license.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app, the Pantalytics link, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 
 `tests/common.py` provides the shared fixture -- a notification mailbox, a
@@ -3182,16 +3261,17 @@ what CI enforces.
 
 ### The routes
 
-Four, and no more. `tests/test_oauth_routes.py` holds the same list and fails
-when a fifth arrives, because the question a new route raises is who may call
+Five, and no more. `tests/test_oauth_routes.py` holds the same list and fails
+when a sixth arrives, because the question a new route raises is who may call
 it, and the answer belongs somewhere a reviewer reads.
 
 | Route | Auth | What it does |
 |-------|------|--------------|
-| `/mail_pro/connect` | `user` | The button in the invitation mail. Sends the user straight to their provider's consent screen, or to the settings page when the provider has none (IMAP) |
+| `/mail_pro/connect` | `user` | The button in the invitation mail. Sends the user straight to their provider's consent screen, or to the settings page when the provider has none (IMAP). `?admin_consent=1` sends a Microsoft 365 administrator to approve the Pantalytics app for the organization |
 | `/microsoft_oauth/callback` | `user` | Where Microsoft returns. Validates the nonce, exchanges the code, stores the account, claims the personal mailbox |
 | `/google_oauth/callback` | `user` | The same, for Google. One implementation, two routes |
 | `/mail_pro/pantalytics/return` | `user` | Where our own approval page sends an administrator back to. Not an OAuth callback: a plain link carrying the key |
+| `/mail_pro/microsoft/return` | `user` | Where our platform sends a sign-in through the Pantalytics app back to (§9.20). Matches the state against this session's, then is the Microsoft callback with the platform's redirect URI and the PKCE verifier; also answers an administrator's approval for the organization |
 
 None of them is public. The callback writes credentials, the connect route
 reads the user's provider and the return route takes an approval key, so none

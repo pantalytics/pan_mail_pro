@@ -86,9 +86,11 @@ disconnect); the arrow on each of the other lines opens the table where it
 is answered:
 
 2. **Email provider** - where your mail is hosted (Microsoft 365, Google
-   Workspace or IMAP/SMTP), with the app registration or OAuth client that
-   goes with it. The redirect URI to paste back into the provider's console
-   is shown on that form. IMAP/SMTP has no global credential; see below.
+   Workspace or IMAP/SMTP). Microsoft 365 signs in with the Pantalytics Mail
+   Pro app, so **Use Microsoft 365** on the line is the whole step. An own
+   Azure app registration, and Google's OAuth client, go on the provider
+   form behind the arrow, which shows the redirect URI to paste back into
+   the provider's console. IMAP/SMTP has no global credential; see below.
 3. **Internal domains** - your own email domains. Required: no mailbox can sync
    until this is answered. When an admin connects their own mailbox, the
    domain of that address is filled in for you (never a public one like

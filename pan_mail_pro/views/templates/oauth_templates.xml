@@ -41,6 +41,18 @@
                         color: #5c6570;
                         font-size: 14px;
                     }
+                    .next {
+                        margin-bottom: 24px;
+                    }
+                    .button {
+                        display: inline-block;
+                        padding: 8px 16px;
+                        border-radius: 4px;
+                        background-color: #714b67;
+                        color: #ffffff;
+                        text-decoration: none;
+                        font-weight: 600;
+                    }
                 </style>
             </head>
             <body>
@@ -51,12 +63,23 @@
                     </div>
                     <div class="title" t-out="title"/>
                     <div class="message" t-out="message"/>
+                    <!-- One next step when the round has one: approving the
+                         app for the organization, or connecting after that
+                         approval. -->
+                    <div class="next" t-if="action_url">
+                        <a class="button" t-att-href="action_url" t-out="action_label"/>
+                    </div>
                     <t t-if="success">
-                        <div class="hint">You can close this tab.</div>
+                        <!-- Opened in a tab of its own (the own app
+                             registration), this page reloads the Odoo tab
+                             behind it and can be closed. Opened in the same
+                             tab (the Pantalytics app), there is nothing
+                             behind it, so it leads back instead of ending. -->
+                        <div class="hint" id="o_mailpro_oauth_back"><a href="/odoo">Back to Odoo</a></div>
                         <script>
-                            // Reload the Odoo tab to show updated status
                             if (window.opener) {
                                 window.opener.location.reload();
+                                document.getElementById('o_mailpro_oauth_back').textContent = 'You can close this tab.';
                             }
                         </script>
                     </t>

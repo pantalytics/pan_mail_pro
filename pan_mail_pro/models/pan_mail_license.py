@@ -105,6 +105,11 @@ ENV_PUBLIC_KEY = 'PAN_MAIL_PRO_LICENSE_PUBLIC_KEY'
 
 TIMEOUT = 15
 
+# Where a Microsoft sign-in through the Pantalytics app starts (pantalytics/
+# odoo-mcp-pro-admin #574): the platform issues the state, names the app and
+# its redirect URI, and later passes Microsoft's answer back to this Odoo.
+MS_START_PATH = '/api/v1/mail-pro/microsoft/start'
+
 # Where usage and billing are read: the workspace's Mail Pro page on the
 # platform, which carries the counts this heartbeat sends, so the link lands on
 # the number rather than on a home page somebody then has to navigate from.
@@ -870,6 +875,56 @@ class PanMailLicense(models.Model):
             # is the one not getting through.
             'errors': errors,
         }
+
+    # -------------------------------------------------------------------------
+    # Signing in with the Pantalytics app
+    # -------------------------------------------------------------------------
+
+    @api.model
+    def microsoft_start(self, return_url):
+        """Ask our platform to start a Microsoft sign-in through the
+        Pantalytics Mail Pro app (`pan.mail.provider.registration`).
+
+        Sent under the installation key the heartbeat uses, so only a
+        connected Odoo can start one. The answer is a single-use state (15
+        minutes), the app's client id and the platform's redirect URI, where
+        Microsoft answers and which sends the browser on to `return_url`.
+        Nothing about the person or the mailbox goes out: the address is
+        typed at Microsoft, and the code never passes through us.
+
+        Called by whoever presses Connect, admin or not; the key is read as
+        the system and never leaves this method.
+        """
+        from .pan_mail_provider import pantalytics_not_connected
+        self._refuse_when_neutralized()
+        link = self.current()
+        key = encryption_utils.decrypt_value(self.env, link.key_encrypted) \
+            if link and link.key_encrypted else False
+        if not key or link.status in ('not_connected', 'pending'):
+            raise UserError(pantalytics_not_connected())
+        code, body = link._post(MS_START_PATH, {'return_url': return_url}, key=key)
+        if code == 200 and body.get('status') == 'ok':
+            answer = {name: body.get(name) for name in ('state', 'client_id', 'redirect_uri')}
+            if all(answer.values()) and str(answer['redirect_uri']).startswith('https://'):
+                return answer
+            _logger.warning('[License] The Microsoft start answered without %s',
+                            ', '.join(name for name, value in answer.items() if not value)
+                            or 'an https redirect URI')
+            raise UserError(_('Pantalytics answered the Microsoft sign-in in a way '
+                              'this version of Mail Pro does not understand. Try '
+                              'again in a minute.'))
+        _logger.warning('[License] The Microsoft start was refused: HTTP %s %s',
+                        code, body.get('status'))
+        if code == 401:
+            raise UserError(_('Pantalytics no longer recognises the key of this '
+                              'Odoo instance, so the Pantalytics Mail Pro app '
+                              'cannot be used. An administrator reconnects it '
+                              'under Settings, Mail Pro, step 1.'))
+        if code == 503:
+            raise UserError(_('Signing in with the Pantalytics Mail Pro app is not '
+                              'available right now. Try again later.'))
+        raise UserError(_('Pantalytics could not start the Microsoft sign-in '
+                          '(HTTP %s). Try again in a minute.') % code)
 
     # -------------------------------------------------------------------------
     # Plumbing

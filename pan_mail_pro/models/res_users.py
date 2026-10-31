@@ -241,6 +241,16 @@ class ResUsers(models.Model):
             # the one order this must never happen in.
             raise UserError(License.not_allowed_error())
 
+        # Through the Pantalytics app: the platform issues the state, and the
+        # proof that this browser started the round (the state and the PKCE
+        # verifier) lives in its session, not on this row. Same tab: the
+        # browser opens a new one only on the click itself, and this answer
+        # arrives after an RPC, so Brave and Safari block a new tab here.
+        app_row = self.env['pan.mail.provider']._pantalytics_row(provider)
+        if app_row:
+            url, _state = app_row._pantalytics_sign_in()
+            return {'type': 'ir.actions.act_url', 'url': url, 'target': 'self'}
+
         state = client.generate_oauth_state()
         self.sudo().write({'x_pan_mail_oauth_state': state})
 
