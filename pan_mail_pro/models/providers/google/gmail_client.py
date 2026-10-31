@@ -197,14 +197,16 @@ class GoogleGmailClient(models.AbstractModel):
 
     @api.model
     def get_authorization_url(self, redirect_uri, state=None, login_hint=None,
-                              prompt=None):
+                              prompt=None, code_challenge=None, registration=None):
         """Build the Google consent URL.
 
         access_type=offline + prompt=consent is what makes Google return a
         refresh token; without them a re-authorizing user gets an access token
         only and the account silently stops working after an hour. A
         confirm-it's-you round passes its own `prompt` (`none`, then nothing)
-        because it wants no new grant, only the sign-in.
+        because it wants no new grant, only the sign-in. Google has one
+        application, the customer's own, so `registration` and the PKCE
+        challenge of the contract are not used.
         """
         config = self._get_config_params()
         client_id = config['client_id']
@@ -235,7 +237,8 @@ class GoogleGmailClient(models.AbstractModel):
     # Token lifecycle
     # -------------------------------------------------------------------------
     @api.model
-    def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
+    def _exchange_code_for_tokens(self, authorization_code, redirect_uri,
+                                  code_verifier=None, registration=None):
         """Trade an authorization code for access + refresh tokens."""
         self._refuse_when_neutralized()
         config = self._get_config_params()
@@ -817,7 +820,7 @@ class GoogleGmailClient(models.AbstractModel):
         return answer
 
     @api.model
-    def identity_refusal(self, identity):
+    def identity_refusal(self, identity, registration=None):
         """A consumer Google account is refused.
 
         Mail Pro on Google is a Workspace product: a shared address is a

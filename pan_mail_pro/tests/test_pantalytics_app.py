@@ -399,7 +399,7 @@ class TestMicrosoftReturn(HttpCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('Mailbox Connected', response.text)
         redeem.assert_called_once_with('authcode', PLATFORM_REDIRECT,
-                                       code_verifier='verifier-1')
+                                       code_verifier='verifier-1', registration='pantalytics')
         account = self._accounts()
         self.assertEqual(account.email, 'nora@company.test')
         self.assertEqual(account.sudo().refresh_token, 'rt')

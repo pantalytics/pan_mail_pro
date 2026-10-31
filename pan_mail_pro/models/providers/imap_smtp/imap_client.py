@@ -235,11 +235,13 @@ class ImapSmtpClient(models.AbstractModel):
         ))
 
     @api.model
-    def get_authorization_url(self, redirect_uri, state=None):
+    def get_authorization_url(self, redirect_uri, state=None, login_hint=None,
+                              prompt=None, code_challenge=None, registration=None):
         raise self._no_oauth_error()
 
     @api.model
-    def _exchange_code_for_tokens(self, authorization_code, redirect_uri):
+    def _exchange_code_for_tokens(self, authorization_code, redirect_uri,
+                                  code_verifier=None, registration=None):
         raise self._no_oauth_error()
 
     @api.model

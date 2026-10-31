@@ -31,6 +31,7 @@
                     <field name="uses_oauth" invisible="1"/>
                     <field name="credentials_set" invisible="1"/>
                     <field name="pantalytics_connected" invisible="1"/>
+                    <field name="has_own_registration" invisible="1"/>
                     <group>
                         <group>
                             <field name="provider"/>
@@ -42,8 +43,13 @@
                                  default. An own app registration is the
                                  second choice, and only then do its fields
                                  and the guide to make one appear. -->
+                            <!-- An own registration in use moves with the
+                                 switch below, which keeps its credentials
+                                 for the accounts it signed in, rather than
+                                 with the radio. -->
                             <field name="registration" widget="radio"
-                                   invisible="provider != 'outlook'"/>
+                                   invisible="provider != 'outlook'"
+                                   readonly="registration == 'own' and has_own_registration"/>
                         </group>
                     </group>
 
@@ -56,6 +62,34 @@
                          invisible="provider != 'outlook' or registration != 'pantalytics' or pantalytics_connected">
                         The Pantalytics Mail Pro app needs this Odoo connected to Pantalytics
                         first: Settings, Mail Pro, step 1.
+                    </div>
+
+                    <!-- The move off an own app registration (§9.20). The
+                         switch keeps the old credentials for the accounts
+                         that still refresh with them; the count says how
+                         many, and at zero the old app may go. -->
+                    <div class="mb-3" invisible="provider != 'outlook' or registration != 'own' or not pantalytics_connected">
+                        <button name="action_switch_to_pantalytics" type="object"
+                                string="Switch to the Pantalytics app" class="btn-link p-0"
+                                confirm="From now on Mail Pro signs in with its own Microsoft app, and your Azure app registration is no longer needed. You sign in once now. Everyone else is asked to reconnect once; until they do, their mail keeps working as it does today."/>
+                        <div class="text-muted">Nothing to register in Azure any more, and no secret that expires.</div>
+                    </div>
+                    <div class="text-muted mb-3" invisible="provider != 'outlook' or registration != 'own' or pantalytics_connected">
+                        Connect this Odoo to Pantalytics (Settings, Mail Pro, step 1) to sign in
+                        with the Pantalytics Mail Pro app instead.
+                    </div>
+                    <div class="text-muted mb-3"
+                         invisible="provider != 'outlook' or registration != 'pantalytics' or not own_account_count">
+                        <field name="own_account_count" class="d-inline" nolabel="1" readonly="1"/>
+                        connected account(s) still sign in through your own app registration.
+                        The people behind them are asked to reconnect; their mail keeps working
+                        until they do.
+                    </div>
+                    <div class="mb-3"
+                         invisible="provider != 'outlook' or registration != 'pantalytics' or not has_own_registration or own_account_count">
+                        <button name="action_remove_own_registration" type="object"
+                                string="Remove your old app registration" class="btn-link p-0"
+                                confirm="Everyone signs in through the Pantalytics app now. Remove the Client ID, secret and tenant of your own app registration from Odoo? You can delete the app in Azure afterwards."/>
                     </div>
 
                     <!-- What to do and where the steps are, before the

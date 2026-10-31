@@ -35,11 +35,21 @@ is the platform's, which sends the browser on to `/mail_pro/microsoft/return`.
 The customer's own app registration (`'own'`) is the advanced path and works
 exactly as before. A row created with registration fields is an own-app row.
 
+**Moving off an own app.** `action_switch_to_pantalytics` turns an own row
+into a Pantalytics row and keeps the own app's client id, secret and tenant
+on it: a refresh token is bound to the app that issued it, so every account
+signed in through the own app (`pan.mail.account.registration`) keeps
+refreshing with those until its person reconnects once through ours.
+`own_account_count` is how many are left; at zero the administrator may
+remove the old credentials (`action_remove_own_registration`), never before
+and never on their own.
+
 The secret is Fernet-encrypted at rest, like every other secret in the module,
 and it is never handed back to the browser once saved: `client_secret` reads
 back a placeholder, and re-saving the placeholder is a no-op rather than
 encrypting the placeholder itself.
 """
+import logging
 import re
 
 from odoo import _, api, fields, models
@@ -55,6 +65,8 @@ from .mail_provider_client import (
     oauth_redirect_uri,
     pkce_pair,
 )
+
+_logger = logging.getLogger(__name__)
 
 SECRET_PLACEHOLDER = '********'
 
@@ -140,6 +152,14 @@ class PanMailProvider(models.Model):
              'sign-in needs it.',
     )
     pantalytics_connected = fields.Boolean(compute='_compute_pantalytics_connected')
+    # The move off an own app registration (`action_switch_to_pantalytics`):
+    # whether the row still holds one, and how many connected accounts are
+    # still refreshing with it.
+    has_own_registration = fields.Boolean(compute='_compute_own_registration')
+    own_account_count = fields.Integer(
+        string='Still on your own app', compute='_compute_own_registration',
+        help='Connected accounts whose sign-in was made through your own app '
+             'registration. They keep working with it until they reconnect.')
 
     redirect_uri = fields.Char(
         string='Callback URL', compute='_compute_redirect_uri', readonly=True,
@@ -360,11 +380,13 @@ class PanMailProvider(models.Model):
             record.pantalytics_connected = connected
 
     @api.model
-    def _pantalytics_connected(self):
+    def _pantalytics_connected(self, link=None):
         """Is this Odoo connected to Pantalytics, step 1, with a key our
         platform still accepts? Starting a sign-in through the app needs
-        that key; nothing else here does."""
-        link = self.env['pan.mail.license'].current()
+        that key; nothing else here does. `link` is the row when the caller
+        already holds it (`ir.http`, once per page load)."""
+        if link is None:
+            link = self.env['pan.mail.license'].current()
         return bool(link) and bool(link.key_encrypted) and link.status not in (
             'not_connected', 'pending', 'invalid', 'revoked')
 
@@ -408,7 +430,7 @@ class PanMailProvider(models.Model):
             verifier, challenge = pkce_pair()
             url = client.get_authorization_url(
                 answer['redirect_uri'], state=answer['state'], login_hint=login_hint,
-                prompt=prompt, code_challenge=challenge)
+                prompt=prompt, code_challenge=challenge, registration='pantalytics')
         request.session[MS_APP_SESSION_KEY] = {
             'state': answer['state'],
             'code_verifier': verifier,
@@ -416,6 +438,68 @@ class PanMailProvider(models.Model):
             'admin_consent': bool(admin_consent),
         }
         return url, answer['state']
+
+    # -------------------------------------------------------------------------
+    # Moving off an own app registration
+    # -------------------------------------------------------------------------
+
+    @api.depends('provider', 'registration', 'client_id', 'client_secret_encrypted',
+                 'tenant_id')
+    def _compute_own_registration(self):
+        for record in self:
+            record.has_own_registration = record.provider == 'outlook' and any(
+                record[name] for name in ('client_id', 'client_secret_encrypted', 'tenant_id'))
+            record.own_account_count = record._own_accounts_left() \
+                if record.uses_pantalytics_app() else 0
+
+    def _own_accounts_left(self):
+        """How many connected accounts still refresh with the own app."""
+        self.ensure_one()
+        return self.env['pan.mail.account'].sudo().with_context(active_test=False).search_count([
+            ('provider', '=', self.provider), ('registration', '=', 'own'),
+            ('connected', '=', True)])
+
+    def action_switch_to_pantalytics(self):
+        """Move an own-app row to the Pantalytics app, in one click.
+
+        Needs this Odoo connected to Pantalytics, because every sign-in from
+        now on starts at our platform. The own app's client id, secret and
+        tenant stay on the row: the accounts it issued tokens to keep
+        refreshing with them, and their people are asked to reconnect once
+        (`res.users._pan_mail_should_prompt_reconnect`).
+
+        The administrator who switches signs in through the app straight
+        away, in the same transaction: a platform that cannot start the
+        round undoes the switch, and a tenant that wants an administrator to
+        approve the app says so on that first round, where the person most
+        likely to approve it is the one reading (§9.20).
+        """
+        self.ensure_one()
+        if self.provider != 'outlook' or self.registration != 'own':
+            raise UserError(_('Only a Microsoft 365 provider on its own app '
+                              'registration can switch to the Pantalytics app.'))
+        if not self._pantalytics_connected():
+            raise UserError(pantalytics_not_connected())
+        self.registration = 'pantalytics'
+        _logger.info('[OAuth] Microsoft 365 switched to the Pantalytics app by %s; %s '
+                     'account(s) still refresh with the own app',
+                     self.env.user.login, self._own_accounts_left())
+        return self.env.user.action_connect_mailbox(provider=self.provider)
+
+    def action_remove_own_registration(self):
+        """Forget the own app's client id, secret and tenant, once nothing
+        refreshes with them any more. Offered, never done unasked."""
+        self.ensure_one()
+        if not self.uses_pantalytics_app():
+            raise UserError(_('Your own app registration is still the one Mail Pro '
+                              'signs in with.'))
+        left = self._own_accounts_left()
+        if left:
+            raise UserError(_(
+                '%s connected account(s) still sign in through your own app '
+                'registration. Its credentials stay until they have reconnected.') % left)
+        self.write({'client_id': False, 'client_secret': False, 'tenant_id': False})
+        _logger.info('[OAuth] The own app registration was removed by %s', self.env.user.login)
 
     # -------------------------------------------------------------------------
     # One row

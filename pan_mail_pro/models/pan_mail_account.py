@@ -140,6 +140,19 @@ class PanMailAccount(models.Model):
     verified_date = fields.Datetime(
         string='Verified on', readonly=True, copy=False,
         help='When these credentials last answered the provider.')
+    # Whose application issued these tokens. A refresh token is bound to the
+    # client id that issued it, so this, and not the provider row's current
+    # choice, is what every refresh is made with: an account signed in
+    # through the customer's own Azure app keeps refreshing with it after the
+    # row moved to the Pantalytics app, until its person signs in once more
+    # (ARCHITECTURE.md §9.20). Written by the consent callback from the round
+    # that produced the tokens.
+    registration = fields.Selection(
+        [('pantalytics', 'Pantalytics Mail Pro app'),
+         ('own', 'Your own app registration')],
+        string='Signed in through', readonly=True, copy=False,
+        help='The application these tokens were issued to. A refresh goes '
+             'through the same one.')
 
     # -------------------------------------------------------------------------
     # IMAP / SMTP credentials
@@ -278,7 +291,7 @@ class PanMailAccount(models.Model):
 
     @api.model
     def _store_tokens(self, provider, user, email, access_token, refresh_token, token_expiry,
-                      identity=None, scopes=None):
+                      identity=None, scopes=None, registration=None):
         """Upsert the OAuth tokens for one user's account on one provider.
 
         The direct path for providers built after Phase 2 (Google): the OAuth
@@ -292,6 +305,9 @@ class PanMailAccount(models.Model):
         `identity` is the normalized identity the provider reported
         (`identity_shape`), `scopes` the scope line of the grant; both are
         kept on the row beside the tokens, as metadata about the sign-in.
+        `registration` is the application the round went through, and it
+        replaces the old value together with the tokens: a reconnect through
+        the Pantalytics app is what moves an account off the customer's own.
         """
         account = self.sudo().with_context(active_test=False).search([
             ('user_id', '=', user.id), ('provider', '=', provider),
@@ -304,6 +320,8 @@ class PanMailAccount(models.Model):
         vals.update({'connected_date': now, 'verified_date': now})
         if scopes is not None:
             vals['granted_scopes'] = scopes or False
+        if registration:
+            vals['registration'] = registration
         for key, field_name in (('provider_user_id', 'provider_user_id'),
                                 ('principal_name', 'principal_name'),
                                 ('name', 'identity_name'),
@@ -362,6 +380,15 @@ class PanMailAccount(models.Model):
         License = self.env['pan.mail.license']
         if not License.sync_allowed():
             raise UserError(License.not_allowed_error())
+        # An account made without a sign-in round (a fixture, an import)
+        # holds what the row's app issued, which is the row's choice now.
+        Provider = self.env['pan.mail.provider']
+        for vals in vals_list:
+            provider = vals.get('provider') or Provider.current_code()
+            if provider == 'outlook' and not vals.get('registration'):
+                row = Provider.sudo().search([('provider', '=', 'outlook')], limit=1)
+                if row.registration:
+                    vals['registration'] = row.registration
         return super().create(vals_list)
 
     # The two fields that say whose credentials these are.
