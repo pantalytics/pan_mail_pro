@@ -216,8 +216,9 @@ class TestIdentityCallback(HttpCase):
     def test_the_callback_stores_the_identity_and_the_scopes(self):
         exchange, me = self._grant(TENANT)
         with exchange, me:
-            response = self.url_open('/microsoft_oauth/callback?code=c&state=nonce-123')
-        self.assertIn('Mailbox Connected', response.text)
+            response = self.url_open('/microsoft_oauth/callback?code=c&state=nonce-123',
+                                     allow_redirects=False)
+        self.assertEqual(response.status_code, 303, 'a sign-in that works ends on no page')
         account = self._accounts()
         self.assertEqual(account.identity_name, 'Nora Employee')
         self.assertEqual(account.tenant_id, TENANT)

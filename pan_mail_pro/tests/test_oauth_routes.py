@@ -15,8 +15,17 @@ looks at what was written.
 import ast
 import os
 from unittest.mock import patch
+from urllib.parse import quote
 
+import odoo
 from odoo.tests import HttpCase, TransactionCase, tagged
+
+from odoo.addons.pan_mail_pro.models.res_users import (
+    INBOX_URL,
+    SETTINGS_URL,
+    SIGN_IN_BACK_KEY,
+    SIGN_IN_NOTICE_KEY,
+)
 
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.MicrosoftGraphClient'
 CONTROLLER = 'odoo.addons.pan_mail_pro.controllers.main.MailProOAuthController'
@@ -119,7 +128,16 @@ class TestOAuthCallback(HttpCase):
 
     def _callback(self, **params):
         query = '&'.join(f'{key}={value}' for key, value in params.items())
-        return self.url_open(f'/microsoft_oauth/callback?{query}')
+        return self.url_open(f'/microsoft_oauth/callback?{query}', allow_redirects=False)
+
+    def _stored(self):
+        return odoo.http.root.session_store.get(self.session.sid)
+
+    def _started_from(self, back):
+        """A sign-in in flight that started on `back`, as
+        `res.users._pan_mail_remember_back` leaves it."""
+        self.session[SIGN_IN_BACK_KEY] = back
+        odoo.http.root.session_store.save(self.session)
 
     def _accounts(self):
         return self.env['pan.mail.account'].sudo().search(
@@ -150,8 +168,9 @@ class TestOAuthCallback(HttpCase):
              patch(f'{GRAPH}.read_user_info', return_value={'email': 'nora@company.test', 'name': None}):
             response = self._callback(code='authcode', state='nonce-123')
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('Mailbox Connected', response.text)
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self._stored()[SIGN_IN_NOTICE_KEY], {
+            'type': 'success', 'message': 'Signed in as nora@company.test'})
 
         account = self._accounts()
         self.assertEqual(len(account), 1)
@@ -181,6 +200,82 @@ class TestOAuthCallback(HttpCase):
         mailbox.invalidate_recordset()
         self.assertEqual(mailbox.state, 'draft')
         self.assertFalse(mailbox.error_message)
+
+    # ----------------------------------------------------------- where it lands
+
+    def test_a_sign_in_that_works_lands_where_it_started(self):
+        """No page in between (#370): straight back to the screen the button
+        was on, which says who signed in, once."""
+        self._started_from('/odoo/action-42/7?view_type=form')
+        self._arm_state()
+        exchange, me = self._grant('nora@company.test')
+        with exchange, me:
+            response = self._callback(code='authcode', state='nonce-123')
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers['Location'].endswith(
+            '/odoo/action-42/7?view_type=form'), response.headers['Location'])
+        self.assertNotIn(SIGN_IN_BACK_KEY, self._stored(), 'good once')
+
+        info = self.make_jsonrpc_request('/web/session/get_session_info', {})
+        self.assertEqual(info['pan_mail_notice']['message'], 'Signed in as nora@company.test')
+        again = self.make_jsonrpc_request('/web/session/get_session_info', {})
+        self.assertFalse(again['pan_mail_notice'], 'shown on one page load, not every one')
+
+    def test_a_failed_sign_in_links_back_where_it_started(self):
+        self._started_from('/odoo/action-42/7')
+        self._arm_state()
+        response = self._callback(error='access_denied', error_description='User+said+no',
+                                  state='nonce-123')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Connection Failed', response.text)
+        self.assertIn('href="/odoo/action-42/7"', response.text)
+        self.assertNotIn('href="/odoo"', response.text)
+
+    def test_a_back_on_another_host_is_refused(self):
+        exchange, me = self._grant('nora@company.test')
+        for back in ('https://evil.test/odoo', '//evil.test/odoo', '/\\evil.test/odoo',
+                     'odoo/settings'):
+            with self.subTest(back=back), exchange, me:
+                self._started_from(back)
+                self._arm_state()
+                response = self._callback(code='authcode', state='nonce-123')
+                self.assertEqual(response.status_code, 303)
+                self.assertTrue(response.headers['Location'].endswith(INBOX_URL),
+                                response.headers['Location'])
+                self.assertNotIn('evil.test', response.headers['Location'])
+
+    def test_no_known_start_lands_an_administrator_on_settings(self):
+        self.authenticate('admin', 'admin')
+        self.env.ref('base.user_admin').sudo().x_pan_mail_oauth_state = 'nonce-admin'
+        exchange, me = self._grant('admin@company.test')
+        with exchange, me:
+            response = self._callback(code='authcode', state='nonce-admin')
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers['Location'].endswith(SETTINGS_URL),
+                        response.headers['Location'])
+
+    def test_the_banner_s_start_is_kept(self):
+        """`/mail_pro/connect?back=` from the banner, and the same tab."""
+        back = '/odoo/action-pan_mail_pro.action_pan_mail_conversation?mailbox=3'
+        response = self.url_open(f'/mail_pro/connect?back={quote(back, safe="")}',
+                                 allow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn('login.microsoftonline.com', response.headers['Location'])
+        self.assertEqual(self._stored()[SIGN_IN_BACK_KEY], back)
+
+    def test_a_button_s_start_is_the_screen_it_was_pressed_on(self):
+        """A button is an RPC: its Referer is the screen. Settings loses its
+        tab in a Referer, so it is named in full."""
+        for screen, kept in (('/odoo/action-42/7', '/odoo/action-42/7'),
+                             ('/odoo/settings', SETTINGS_URL)):
+            with self.subTest(screen=screen):
+                action = self.make_jsonrpc_request(
+                    '/web/dataset/call_button/res.users/action_connect_mailbox', {
+                        'model': 'res.users', 'method': 'action_connect_mailbox',
+                        'args': [[self.user.id]], 'kwargs': {}},
+                    headers={'Referer': self.base_url() + screen})
+                self.assertEqual(action['target'], 'self', 'same tab, so it can come back')
+                self.assertEqual(self._stored()[SIGN_IN_BACK_KEY], kept)
 
     # ----------------------------------------------------------------- refusal
 
@@ -292,9 +387,10 @@ class TestOAuthCallback(HttpCase):
                                  side_effect=ValueError('the constraint said no')):
             response = self._callback(code='authcode', state='nonce-123')
 
-        self.assertIn('Account Connected', response.text)
-        self.assertIn('could not be set up yet', response.text)
-        self.assertNotIn('Mailbox Connected', response.text)
+        self.assertEqual(response.status_code, 303, 'signed in all the same')
+        notice = self._stored()[SIGN_IN_NOTICE_KEY]
+        self.assertEqual(notice['type'], 'warning')
+        self.assertIn('Your mailbox is not set up yet', notice['message'])
         self.assertEqual(len(self._accounts()), 1)
         self.assertFalse(self.env['pan.mail.mailbox'].sudo().with_context(
             active_test=False).search([('owner_user_id', '=', self.user.id)]))
@@ -315,7 +411,7 @@ class TestOAuthCallback(HttpCase):
         with patch(f'{GRAPH}._exchange_code_for_tokens', return_value=tokens), \
              patch(f'{GRAPH}.read_user_info', return_value={'email': 'nora@company.test', 'name': None}):
             response = self._callback(code='authcode', state='nonce-123')
-        self.assertIn('Mailbox Connected', response.text)
+        self.assertEqual(response.status_code, 303)
         self.assertEqual(len(self._accounts()), 1)
         self.assertFalse(self.env['pan.mail.mailbox'].sudo().with_context(
             active_test=False).search([('owner_user_id', '=', self.user.id)]))

@@ -501,7 +501,8 @@ class TestReconnectThroughTheApp(HttpCase):
 
     def _own_callback(self):
         self.nora.sudo().x_pan_mail_oauth_state = 'nonce-1'
-        return self.url_open('/microsoft_oauth/callback?code=authcode&state=nonce-1')
+        return self.url_open('/microsoft_oauth/callback?code=authcode&state=nonce-1',
+                             allow_redirects=False)
 
     def _arm_app_round(self):
         self.session[MS_APP_SESSION_KEY] = {
@@ -516,7 +517,7 @@ class TestReconnectThroughTheApp(HttpCase):
         exchange, me = self._grant()
         with exchange as redeem, me:
             response = self._own_callback()
-        self.assertIn('Mailbox Connected', response.text)
+        self.assertEqual(response.status_code, 303)
         self.assertEqual(self._account().registration, 'own')
         self.assertEqual(redeem.call_args.kwargs.get('registration'), 'own')
 
@@ -533,8 +534,9 @@ class TestReconnectThroughTheApp(HttpCase):
         exchange, me = self._grant()
         with exchange as redeem, me:
             response = self.url_open(
-                '/mail_pro/microsoft/return?code=authcode&state=platform-state-1')
-        self.assertIn('Mailbox Connected', response.text)
+                '/mail_pro/microsoft/return?code=authcode&state=platform-state-1',
+                allow_redirects=False)
+        self.assertEqual(response.status_code, 303)
         redeem.assert_called_once_with('authcode', PLATFORM_REDIRECT,
                                        code_verifier='verifier-1', registration='pantalytics')
         account.invalidate_recordset()

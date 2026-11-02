@@ -373,7 +373,7 @@ class TestVerifyRoundTrip(HttpCase):
         exchange, me = self._signed_in_as('oid-nora', 'nora@company.test')
         with exchange, me:
             response = self._callback(code='authcode', state='nonce-connect')
-        self.assertIn('Connected', response.text)
+        self.assertEqual(response.status_code, 303, 'connected, and straight back')
         self.account.invalidate_recordset()
         self.assertEqual(self.account.access_token, 'at-round')
         self.assertNotIn(VERIFIED, self._stored(), 'a connect is not a confirm')

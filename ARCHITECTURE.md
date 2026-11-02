@@ -3031,8 +3031,17 @@ One sign-in, in order:
    19.0.30.0.0). Nothing goes on `res.users.x_pan_mail_oauth_state`.
 3. The browser goes there in the **same tab** (`target: 'self'`): a tab
    opened after an awaited RPC is not the click any more, and Brave and
-   Safari block it. The result page reloads `window.opener` when there is
-   one and otherwise leads back to Odoo, so it is no dead end either way.
+   Safari block it. The own registration's round goes in the same tab too.
+   Every start keeps where it was pressed in
+   `request.session[SIGN_IN_BACK_KEY]` (`res.users._pan_mail_remember_back`:
+   the banner's `back`, else the RPC's Referer, with Settings named in full
+   because a Referer has no fragment). A sign-in that works ends with **no
+   page**: a redirect to that path, checked by `_safe_back` (local paths
+   only), and a one-shot `pan_mail_notice` in the session that
+   `ir.http.session_info` hands to the webclient as "Signed in as ..."
+   (#370). One that fails keeps the result page with the reason, and its
+   Back goes to the same path. With no path known it is Settings for an
+   administrator and the Inbox for anyone else.
 4. Microsoft answers on the platform's callback, which redirects to
    `/mail_pro/microsoft/return` with only `code`, `state`, `error`,
    `error_description`, `admin_consent` and `tenant`.
