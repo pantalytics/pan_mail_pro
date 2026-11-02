@@ -438,7 +438,20 @@ class PanMailAccount(models.Model):
                         'of an email account. %(email)s stays with whoever connected it.',
                         email=account.email,
                     ))
-        return super().write(vals)
+        result = super().write(vals)
+        if self.OWN_APP_FIELDS.intersection(vals):
+            self.env['pan.mail.provider']._forget_unused_own_registration()
+        return result
+
+    # What can move the last account off an own app registration: signing in
+    # again through ours, a disconnect, an archive.
+    OWN_APP_FIELDS = frozenset({'registration', 'refresh_token', 'refresh_token_encrypted',
+                                'active', 'provider'})
+
+    def unlink(self):
+        result = super().unlink()
+        self.env['pan.mail.provider']._forget_unused_own_registration()
+        return result
 
     def _identity_changes(self, name, value):
         """Does writing `value` to `name` point this row at somebody else?

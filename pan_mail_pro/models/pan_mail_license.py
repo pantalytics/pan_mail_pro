@@ -709,6 +709,9 @@ class PanMailLicense(models.Model):
         link = self.current()
         if link:
             link._heartbeat_guarded()
+        # The net under `pan.mail.account`'s own call: an own app nobody
+        # signs in through any more goes, once a day at the latest (#369).
+        self.env['pan.mail.provider']._forget_unused_own_registration()
 
     @api.model
     def _retry_if_stuck(self):

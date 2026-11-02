@@ -59,14 +59,12 @@ class ResConfigSettings(models.TransientModel):
     # first step is done when the first account exists.
     x_setup_provider_todo = fields.Char(compute='_compute_setup_status')
     x_setup_provider_needs_account = fields.Boolean(compute='_compute_setup_status')
-    # The move off an own Azure app registration (§9.20), as fix lines on
-    # step 2: the switch while the row is on its own app, then how many
-    # people have still to reconnect, then the offer to remove the old
-    # credentials once nobody has. The first two are also step 2's amber dot:
-    # while either is set, somebody still signs in through the own app.
-    x_microsoft_switchable = fields.Boolean(compute='_compute_setup_status')
-    x_microsoft_own_left = fields.Char(compute='_compute_setup_status')
-    x_microsoft_own_removable = fields.Boolean(compute='_compute_setup_status')
+    # The move off an own Azure app registration (§9.20), as step 2 reports
+    # it: amber and one line while the row is on its own app. The move itself
+    # is on the provider form behind the arrow. Accounts still refreshing
+    # through the old app after the move are each mailbox's status and their
+    # person's nudge, not this step's (#369).
+    x_microsoft_on_own_app = fields.Boolean(compute='_compute_setup_status')
 
     # -------------------------------------------------------------------------
     # Step 3 — internal domains
@@ -268,18 +266,16 @@ class ResConfigSettings(models.TransientModel):
         if not Provider.current():
             Provider.create({'provider': 'outlook', 'registration': 'pantalytics'})
 
-    def action_switch_microsoft_app(self):
-        """Step 2's fix line on an own app registration: switch to the
-        Pantalytics app, and sign in through it (`pan.mail.provider
-        .action_switch_to_pantalytics`). As the administrator pressing it,
-        not as the system `current()` hands back."""
-        self.ensure_one()
-        return self.env['pan.mail.provider'].current().sudo(False).action_switch_to_pantalytics()
+    def action_open_provider(self):
+        """Step 2's arrow: the provider row itself, as a form.
 
-    def action_remove_own_registration(self):
-        """Step 2's last fix line of the move: forget the old app."""
+        The overview only reports; what to do about it (the move off an own
+        Azure app, who still has to sign in, the cleanup) is on the row
+        (#369). A list action opened from here could land on a new, unsaved
+        form, and saving that one is a second provider row.
+        """
         self.ensure_one()
-        self.env['pan.mail.provider'].current().sudo(False).action_remove_own_registration()
+        return self.env['pan.mail.provider'].action_open_current()
 
     # -------------------------------------------------------------------------
     # Internal domains
@@ -340,15 +336,7 @@ class ResConfigSettings(models.TransientModel):
                              _('1 mailbox'), _('%s mailboxes'))
         microsoft = active_provider if active_provider.provider == 'outlook' else \
             active_provider.browse()
-        microsoft_switchable = bool(microsoft) and microsoft.registration == 'own'
-        left = microsoft.own_account_count if microsoft else 0
-        own_left = _counted(
-            left,
-            _('1 person still has to sign in again. Their mail keeps working until they do.'),
-            _('%s people still have to sign in again. Their mail keeps working until they do.'),
-        ) if left else False
-        own_removable = bool(microsoft) and microsoft.uses_pantalytics_app() \
-            and microsoft.has_own_registration and not left
+        on_own_app = bool(microsoft) and microsoft.registration == 'own'
 
         for record in self:
             record.x_active_provider_id = active_provider
@@ -359,9 +347,7 @@ class ResConfigSettings(models.TransientModel):
             record.x_setup_provider_todo = (
                 _('IMAP/SMTP: add the first account') if needs_account
                 else _('Not set up yet'))
-            record.x_microsoft_switchable = microsoft_switchable
-            record.x_microsoft_own_left = own_left
-            record.x_microsoft_own_removable = own_removable
+            record.x_microsoft_on_own_app = on_own_app
             record.x_setup_domains_done = bool(record.x_internal_domain_ids)
             record.x_setup_notification_done = answers['mailboxes']
             record.x_notification_access_state = access_state

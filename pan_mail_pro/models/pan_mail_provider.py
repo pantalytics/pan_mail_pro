@@ -40,9 +40,10 @@ into a Pantalytics row and keeps the own app's client id, secret and tenant
 on it: a refresh token is bound to the app that issued it, so every account
 signed in through the own app (`pan.mail.account.registration`) keeps
 refreshing with those until its person reconnects once through ours.
-`own_account_count` is how many are left; at zero the administrator may
-remove the old credentials (`action_remove_own_registration`), never before
-and never on their own.
+`own_account_count` is how many are left; when the last one has signed in
+again, or left, the old credentials are cleared on their own
+(`_forget_unused_own_registration`, called when an account changes and from
+the daily heartbeat cron), never before (#369).
 
 The secret is Fernet-encrypted at rest, like every other secret in the module,
 and it is never handed back to the browser once saved: `client_secret` reads
@@ -486,20 +487,27 @@ class PanMailProvider(models.Model):
                      self.env.user.login, self._own_accounts_left())
         return self.env.user.action_connect_mailbox(provider=self.provider)
 
-    def action_remove_own_registration(self):
-        """Forget the own app's client id, secret and tenant, once nothing
-        refreshes with them any more. Offered, never done unasked."""
-        self.ensure_one()
-        if not self.uses_pantalytics_app():
-            raise UserError(_('Your own app registration is still the one Mail Pro '
-                              'signs in with.'))
-        left = self._own_accounts_left()
-        if left:
-            raise UserError(_(
-                '%s connected account(s) still sign in through your own app '
-                'registration. Its credentials stay until they have reconnected.') % left)
-        self.write({'client_id': False, 'client_secret': False, 'tenant_id': False})
-        _logger.info('[OAuth] The own app registration was removed by %s', self.env.user.login)
+    @api.model
+    def _forget_unused_own_registration(self):
+        """Clear the own app's client id, secret and tenant once nothing
+        refreshes with them any more (#369).
+
+        The row has moved to the Pantalytics app and no connected account is
+        still `own`: the last person signed in again, disconnected or was
+        removed. Nobody presses anything for this; a button that could only
+        ever be pressed at one moment is the system's to do at that moment.
+        Called by `pan.mail.account` when an account changes, and by the
+        daily heartbeat cron as the net under it. Returns whether it cleared.
+        """
+        row = self.current()
+        if not row or not row.uses_pantalytics_app() or not row.has_own_registration:
+            return False
+        if row._own_accounts_left():
+            return False
+        row.write({'client_id': False, 'client_secret': False, 'tenant_id': False})
+        _logger.info('[OAuth] Nobody signs in through the own app registration any '
+                     'more; its credentials were removed')
+        return True
 
     # -------------------------------------------------------------------------
     # One row
@@ -514,6 +522,26 @@ class PanMailProvider(models.Model):
         repeated across the module.
         """
         return self.sudo().search([], limit=1)
+
+    @api.model
+    def action_open_current(self):
+        """The row as a form, or the Providers list when there is none yet.
+
+        Settings step 2's arrow opens this. A form with `res_id` is the
+        existing row and never a new one: `current()` is the only row the
+        single-row constraint allows, and a create-mode form saved next to
+        it is refused by that same constraint after the admin typed into it.
+        """
+        action = self.env['ir.actions.act_window']._for_xml_id(
+            'pan_mail_pro.action_pan_mail_provider')
+        row = self.current()
+        if row:
+            action.update({
+                'res_id': row.id,
+                'view_mode': 'form',
+                'views': [(self.env.ref('pan_mail_pro.view_pan_mail_provider_form').id, 'form')],
+            })
+        return action
 
     @api.model
     def current_code(self):
