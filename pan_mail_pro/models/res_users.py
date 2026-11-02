@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import logging
+from urllib.parse import urlsplit
 
 from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, UserError
+from odoo.http import request
 from .neutralization import database_is_neutralized
 from .mail_provider_client import (
     get_provider_client,
@@ -10,6 +12,35 @@ from .mail_provider_client import (
 )
 
 _logger = logging.getLogger(__name__)
+
+# The Mail Pro page of Odoo's settings. The fragment is the `name` of the
+# `<app>` element in `res_config_settings_views.xml`; anything else lands on
+# the general settings page with no sign that a jump was intended.
+SETTINGS_PATH = '/odoo/settings'
+SETTINGS_URL = SETTINGS_PATH + '#pan_mail_pro'
+INBOX_URL = '/odoo/action-pan_mail_pro.action_pan_mail_conversation'
+# Where the sign-in in flight for this session started, so the callback lands
+# back on it (#370). In the session beside the round's state, so it belongs
+# to the browser that pressed the button.
+SIGN_IN_BACK_KEY = 'pan_mail_back'
+# The one line that screen shows once it is there: who signed in. Read and
+# dropped by `ir.http.session_info` on the next page load.
+SIGN_IN_NOTICE_KEY = 'pan_mail_notice'
+
+
+def _referer_path():
+    """The screen a button was pressed on: the path of the RPC's Referer,
+    on this host only. A Referer carries no fragment, and the one fragment
+    that matters is the Settings tab, so Settings is named in full."""
+    httprequest = getattr(request, 'httprequest', None)
+    if not httprequest or not httprequest.referrer:
+        return False
+    parts = urlsplit(httprequest.referrer)
+    if parts.netloc != httprequest.host:
+        return False
+    if parts.path == SETTINGS_PATH:
+        return SETTINGS_URL
+    return parts.path + (f'?{parts.query}' if parts.query else '')
 
 
 class ResUsers(models.Model):
@@ -250,6 +281,7 @@ class ResUsers(models.Model):
         # A reconnect opens on the address this user is connected as, so the
         # move off an own app registration is one click on Microsoft's side
         # too rather than an account picker.
+        self._pan_mail_remember_back()
         app_row = self.env['pan.mail.provider']._pantalytics_row(provider)
         if app_row:
             url, _state = app_row._pantalytics_sign_in(login_hint=account.email or None)
@@ -258,12 +290,29 @@ class ResUsers(models.Model):
         state = client.generate_oauth_state()
         self.sudo().write({'x_pan_mail_oauth_state': state})
 
+        # Same tab as well: the callback lands back on the screen this
+        # started from, so a tab of its own would end in a second Odoo.
         return {
             'type': 'ir.actions.act_url',
             'url': client.get_authorization_url(
                 oauth_redirect_uri(self.env, provider), state=state),
-            'target': 'new',
+            'target': 'self',
         }
+
+    def _pan_mail_remember_back(self):
+        """Keep where this sign-in started, for the callback to land on.
+
+        `/mail_pro/connect` says so in the context (the banner's `back`, or
+        nothing for the link in the invitation mail). A button press is an
+        RPC, whose Referer is the screen it was pressed on. Checked on the
+        way out (`_safe_back`), never trusted here.
+        """
+        if not request:
+            return
+        back = self.env.context.get('pan_mail_back')
+        if back is None:
+            back = _referer_path()
+        request.session[SIGN_IN_BACK_KEY] = back or False
 
     @api.depends_context('uid')
     def _compute_pan_mail_connect_blocker(self):
