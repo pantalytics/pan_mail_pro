@@ -19,6 +19,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import odoo
+from lxml import etree
 from odoo.exceptions import UserError
 from odoo.tests import HttpCase, TransactionCase, tagged
 
@@ -300,7 +301,7 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
         self.row.invalidate_recordset()
         self.assertEqual(self.row.own_account_count, 2)
         settings = self._settings()
-        self.assertIn('2 people still sign in through your own app registration',
+        self.assertIn('2 people still have to sign in again',
                       settings.x_microsoft_own_left)
         self.assertFalse(settings.x_microsoft_own_removable)
         with self.assertRaisesRegex(UserError, 'still sign in'):
@@ -309,7 +310,7 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
         self.nora_account.registration = 'pantalytics'
         self.row.invalidate_recordset()
         self.assertEqual(self.row.own_account_count, 1)
-        self.assertIn('1 person still signs in', self._settings().x_microsoft_own_left)
+        self.assertIn('1 person still has to sign in again', self._settings().x_microsoft_own_left)
 
         self.mia_account.registration = 'pantalytics'
         self.row.invalidate_recordset()
@@ -331,6 +332,39 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
         with self.assertRaises(UserError):
             self.row.with_user(self.admin).action_remove_own_registration()
         self.assertEqual(self.row.client_id, 'own-id')
+
+    def test_step_two_warns_until_nobody_is_on_the_own_app(self):
+        """The dot on step 2 is the warn one while either fix line is up:
+        the row on its own app, or people still to sign in again. Green only
+        once both are gone (#366)."""
+        def warns(settings):
+            return bool(settings.x_microsoft_switchable or settings.x_microsoft_own_left)
+
+        settings = self._settings()
+        self.assertTrue(settings.x_setup_provider_done)
+        self.assertTrue(warns(settings), 'on the own app: every sign-in goes through it')
+        self._switch()
+        self.row.invalidate_recordset()
+        self.assertTrue(warns(self._settings()), 'two people still on the own app')
+        (self.nora_account | self.mia_account).registration = 'pantalytics'
+        self.row.invalidate_recordset()
+        settings = self._settings()
+        self.assertFalse(warns(settings))
+        self.assertTrue(settings.x_setup_provider_done, 'and so the dot is green')
+
+    def test_step_two_says_microsoft_not_pantalytics_app(self):
+        """Pantalytics is not an email provider, so its app has no name on
+        the settings page: the step says Microsoft 365, and the move off the
+        own app is a Sign in with Microsoft button (#366)."""
+        arch = self.env['res.config.settings'].get_view(
+            self.env.ref('pan_mail_pro.res_config_settings_view_form').id, 'form')['arch']
+        app = etree.fromstring(arch).xpath("//app[@name='pan_mail_pro']")[0]
+        for comment in app.xpath('.//comment()'):
+            comment.getparent().remove(comment)
+        page = etree.tostring(app, encoding='unicode')
+        self.assertNotIn('Pantalytics app', page)
+        self.assertIn('Sign in with Microsoft', page)
+        self.assertIn('Your own Azure app is no longer needed.', page)
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

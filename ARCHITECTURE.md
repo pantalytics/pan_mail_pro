@@ -3088,9 +3088,15 @@ What the move guarantees is that nothing stops in between.
   row's current choice. `migrations/19.0.32.0.0` sets every existing
   Microsoft and Google account to `own`, except on a database that already
   signed in through the app on 19.0.31.0.0.
-- *The switch is one click.* **Switch to the Pantalytics app** is a fix
-  line on step 2 and a button on the provider form while the row is on its
-  own app (`pan.mail.provider.action_switch_to_pantalytics`). It needs this
+- *The switch is one click.* **Sign in with Microsoft** on step 2 of the
+  settings page and **Switch to the Pantalytics app** on the provider form,
+  while the row is on its own app (`pan.mail.provider
+  .action_switch_to_pantalytics`). Step 2 never names the Pantalytics app:
+  Pantalytics is not an email provider, so the step answers Microsoft 365
+  and says only that the own Azure app is no longer needed (19.0.33.0.1,
+  #366). Its dot is the warn one while anybody still signs in through the
+  own app, before the switch and after it until the last account has
+  signed in again, and green once nobody does. It needs this
   Odoo connected to Pantalytics, else it says so. It sets `registration`
   and keeps the own app's client id, secret and tenant on the row, because
   the accounts it signed in still refresh with them. The radio no longer

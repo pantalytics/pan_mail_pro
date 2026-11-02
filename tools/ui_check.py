@@ -171,6 +171,24 @@ class Checks:
                    for b in block.query_selector_all('button')):
                 self.fail(f'a connected database shows "{leaked}" on the checklist')
 
+        # Step 2 on the seed, an own Azure app registration (#366): the
+        # provider is still Microsoft 365, the dot warns while anybody signs
+        # in through the own app, and the move is one Sign in with Microsoft.
+        # Pantalytics is not an email provider, so its app is never named.
+        head = ' '.join(steps[1].query_selector('.o_mailpro_step_head').inner_text().split())
+        if head != '2. Email provider Microsoft 365':
+            self.fail(f'step 2 on an own app reads "{head}", not "Microsoft 365"')
+        if not steps[1].query_selector('.o_mailpro_dot_warn:visible'):
+            self.fail('step 2 on an own app registration does not show the warn dot')
+        if 'Your own Azure app is no longer needed.' not in steps[1].inner_text():
+            self.fail('step 2 on an own app does not say the Azure app is no longer needed')
+        signin = [b for b in steps[1].query_selector_all('button')
+                  if b.is_visible() and b.inner_text().strip() == 'Sign in with Microsoft']
+        if len(signin) != 1:
+            self.fail(f'step 2 on an own app shows {len(signin)} Sign in with Microsoft buttons, expected 1')
+        if 'Pantalytics app' in text:
+            self.fail('the settings page names the "Pantalytics app"')
+
         # Steps 3 and 4 answer with a count. A list of domains or addresses
         # does not fit on the line; a count always does.
         for step, noun in ((steps[2], 'domain'), (steps[3], 'mailbox')):
@@ -332,13 +350,19 @@ class Checks:
             head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
             if head != '1. Pantalytics account Disconnected':
                 self.fail(f'a refused key reads "{head}" on step 1')
+            # One short line, then the button (#366).
+            msgs = [' '.join(m.inner_text().split())
+                    for m in steps[0].query_selector_all('.o_mailpro_step_msg') if m.is_visible()]
+            if not msgs or msgs[0] != 'No longer connected to Pantalytics.':
+                self.fail(f'a refused key explains itself as {msgs[:1]}, '
+                          'not "No longer connected to Pantalytics."')
             again = [b for b in block.query_selector_all('button')
                      if b.is_visible() and b.inner_text().strip() == 'Connect again']
             if len(again) != 1:
                 self.fail(f'a refused key shows {len(again)} Connect again buttons, expected 1')
             text = block.inner_text()
             for leaked in ('2. Email provider', 'Key Refused', 'recognises',
-                           'Switch to the Pantalytics app'):
+                           'Sign in with Microsoft', 'Pantalytics app'):
                 if leaked in text:
                     self.fail(f'a refused key still shows "{leaked}"')
             self.error_free('Settings with a refused key')

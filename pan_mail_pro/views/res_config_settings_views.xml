@@ -99,8 +99,7 @@
                             <!-- The key is dead on the server: a new pairing
                                  is the whole fix, and the button does it. -->
                             <div class="o_mailpro_step_msg" invisible="x_license_status not in ('invalid', 'revoked')">
-                                This Odoo is no longer connected to Pantalytics. Connect it again and
-                                approve it in your Pantalytics account. Your mailboxes and settings stay as they are.
+                                No longer connected to Pantalytics.
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_status not in ('invalid', 'revoked')">
                                 <button name="action_license_connect" type="object"
@@ -160,10 +159,19 @@
                          action: the one step 1 names. -->
                     <div invisible="not x_setup_account_done">
                     <div class="o_mailpro_step">
+                        <!-- Warn while anybody still signs in through the
+                             customer's own Azure app: before the move (the
+                             row is on it, so every sign-in is) and after it,
+                             until the last account has signed in again. The
+                             warning wins over both other dots. -->
+                        <field name="x_microsoft_switchable" invisible="1"/>
+                        <field name="x_microsoft_own_removable" invisible="1"/>
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_provider_done"/>
+                              invisible="not x_setup_provider_done or x_microsoft_switchable or x_microsoft_own_left"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
+                              invisible="not x_microsoft_switchable and not x_microsoft_own_left"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_setup_provider_done"/>
+                              invisible="x_setup_provider_done or x_microsoft_switchable or x_microsoft_own_left"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">2. Email provider</span>
@@ -195,15 +203,20 @@
                             </div>
                             <!-- Moving an own Azure app registration to the
                                  Pantalytics app (ARCHITECTURE.md §9.20): one
-                                 fix line at a time. The switch, then who has
-                                 still to reconnect, then the old credentials
-                                 to remove once nobody signs in with them. -->
-                            <field name="x_microsoft_switchable" invisible="1"/>
-                            <field name="x_microsoft_own_removable" invisible="1"/>
+                                 fix line at a time. The deprecation and its
+                                 one button, then who has still to sign in
+                                 again, then the old credentials to remove
+                                 once nobody signs in with them. The provider
+                                 is Microsoft 365 throughout; whose app it
+                                 signs in with is not a provider, so the
+                                 words "Pantalytics app" stay off this page. -->
+                            <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_microsoft_switchable">
+                                Your own Azure app is no longer needed. Sign in with Microsoft once to move over.
+                            </div>
                             <div class="o_mailpro_step_msg" invisible="not x_microsoft_switchable">
                                 <button name="action_switch_microsoft_app" type="object"
-                                        string="Switch to the Pantalytics app" class="btn-link p-0"
-                                        confirm="From now on Mail Pro signs in with its own Microsoft app, and your Azure app registration is no longer needed. You sign in once now. Everyone else is asked to reconnect once; until they do, their mail keeps working as it does today."/>
+                                        string="Sign in with Microsoft" class="btn-primary"
+                                        confirm="Everyone else is asked to sign in once too, and their mail keeps working until they do."/>
                             </div>
                             <div class="o_mailpro_step_msg" invisible="not x_microsoft_own_left">
                                 <field name="x_microsoft_own_left" nolabel="1" readonly="1"/>
@@ -211,7 +224,7 @@
                             <div class="o_mailpro_step_msg" invisible="not x_microsoft_own_removable">
                                 <button name="action_remove_own_registration" type="object"
                                         string="Remove your old app registration" class="btn-link p-0"
-                                        confirm="Everyone signs in through the Pantalytics app now. Remove the Client ID, secret and tenant of your own app registration from Odoo? You can delete the app in Azure afterwards."/>
+                                        confirm="Nobody signs in through your own Azure app any more. Remove its Client ID, secret and tenant from Odoo? You can delete the app in Azure afterwards."/>
                             </div>
                         </div>
                         <field name="x_setup_provider_needs_account" invisible="1"/>
