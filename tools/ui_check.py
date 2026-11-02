@@ -171,6 +171,27 @@ class Checks:
                    for b in block.query_selector_all('button')):
                 self.fail(f'a connected database shows "{leaked}" on the checklist')
 
+        # Step 2 on the seed, an own Azure app registration (#366): the
+        # provider is still Microsoft 365, the dot is amber while anybody signs
+        # in through the own app, and the move is one Sign in with Microsoft.
+        # Pantalytics is not an email provider, so its app is never named.
+        head = ' '.join(steps[1].query_selector('.o_mailpro_step_head').inner_text().split())
+        if head != '2. Email provider Microsoft 365':
+            self.fail(f'step 2 on an own app reads "{head}", not "Microsoft 365"')
+        # Amber, not red: the old sign-ins keep working, nothing is broken.
+        if not steps[1].query_selector('.o_mailpro_dot_attention:visible'):
+            self.fail('step 2 on an own app registration does not show the amber attention dot')
+        if steps[1].query_selector('.o_mailpro_dot_warn:visible'):
+            self.fail('step 2 on an own app registration shows the red warn dot')
+        if 'Your own Azure app is no longer needed.' not in steps[1].inner_text():
+            self.fail('step 2 on an own app does not say the Azure app is no longer needed')
+        signin = [b for b in steps[1].query_selector_all('button')
+                  if b.is_visible() and b.inner_text().strip() == 'Sign in with Microsoft']
+        if len(signin) != 1:
+            self.fail(f'step 2 on an own app shows {len(signin)} Sign in with Microsoft buttons, expected 1')
+        if 'Pantalytics app' in text:
+            self.fail('the settings page names the "Pantalytics app"')
+
         # Steps 3 and 4 answer with a count. A list of domains or addresses
         # does not fit on the line; a count always does.
         for step, noun in ((steps[2], 'domain'), (steps[3], 'mailbox')):
@@ -332,13 +353,19 @@ class Checks:
             head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
             if head != '1. Pantalytics account Disconnected':
                 self.fail(f'a refused key reads "{head}" on step 1')
+            # One short line, then the button (#366).
+            msgs = [' '.join(m.inner_text().split())
+                    for m in steps[0].query_selector_all('.o_mailpro_step_msg') if m.is_visible()]
+            if not msgs or msgs[0] != 'No longer connected to Pantalytics.':
+                self.fail(f'a refused key explains itself as {msgs[:1]}, '
+                          'not "No longer connected to Pantalytics."')
             again = [b for b in block.query_selector_all('button')
                      if b.is_visible() and b.inner_text().strip() == 'Connect again']
             if len(again) != 1:
                 self.fail(f'a refused key shows {len(again)} Connect again buttons, expected 1')
             text = block.inner_text()
             for leaked in ('2. Email provider', 'Key Refused', 'recognises',
-                           'Switch to the Pantalytics app'):
+                           'Sign in with Microsoft', 'Pantalytics app'):
                 if leaked in text:
                     self.fail(f'a refused key still shows "{leaked}"')
             self.error_free('Settings with a refused key')
@@ -348,6 +375,48 @@ class Checks:
                 'valid_until': (datetime.datetime.now(datetime.UTC)
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
+
+    def settings_mail_limit(self):
+        """Over the month's included mails with no card on the workspace:
+        step 1 says so and offers one primary button, Add a card, and steps
+        2 to 4 stay, because the connection works and only incoming waits.
+        The answer is stood in for on the row, the way the seed stands in a
+        connected one; the signature is the test file's (test_mail_limit.py).
+        """
+        page = self.page
+        link = self.call('pan.mail.license', 'search', [])
+        self.call('pan.mail.license', 'write', link, {'entitlement_json': json.dumps(
+            {'mails_included': 500, 'mails_used_month': 512, 'card': False})})
+        try:
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step', timeout=30000)
+            page.wait_for_timeout(1200)
+            self.shot('settings-mail-limit.png')
+
+            steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
+            if len(steps) != 4:
+                self.fail(f'over the mail limit the page shows {len(steps)} setup steps, '
+                          f'expected all 4: only incoming waits')
+                return
+            head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
+            if head != '1. Pantalytics account Incoming paused':
+                self.fail(f'step 1 over the mail limit reads "{head}"')
+            text = ' '.join(steps[0].inner_text().split())
+            if '500 mails this month. Add a card to keep receiving.' not in text:
+                self.fail(f'step 1 over the mail limit does not say what to do: "{text}"')
+            if not steps[0].query_selector('.o_mailpro_dot_warn:visible'):
+                self.fail('step 1 over the mail limit is not marked for attention')
+            primary = [b.inner_text().strip()
+                       for b in steps[0].query_selector_all('button.btn-primary')
+                       if b.is_visible()]
+            if primary != ['Add a card']:
+                self.fail(f'step 1 over the mail limit offers {primary} as its primary '
+                          f'action, expected only "Add a card"')
+            self.error_free('Settings over the month\'s mails')
+        finally:
+            self.call('pan.mail.license', 'write', link, {'entitlement_json': False})
 
     def inbox_not_connected(self):
         """Without a Pantalytics account the Inbox is one button, not four panes.
@@ -3086,21 +3155,27 @@ class Checks:
             self.call('pan.mail.provider', 'write', [row_id], {'provider': 'outlook'})
             self.provider_verify(f'{self.base}/odoo/action-{action}/{row_id}')
 
-            # An own registration offers the way to the Pantalytics app: the
-            # switch on a connected Odoo, the step it waits for otherwise.
+            # An own registration says it is no longer needed and offers the
+            # move, in the words of settings step 2 (#366): Sign in with
+            # Microsoft on a connected Odoo, the step it waits for otherwise.
+            # Pantalytics is not an email provider, so its app is not named.
             text = self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
             self.shot('provider-outlook-own.png')
-            if 'Switch to the Pantalytics app' not in text \
-                    and 'with the Pantalytics Mail Pro app instead' not in text:
-                self.fail('the own registration form offers no way to the Pantalytics app')
+            if 'Your own Azure app is no longer needed.' not in text:
+                self.fail('the own registration form does not say the Azure app is no longer needed')
+            if 'Sign in with Microsoft' not in text \
+                    and 'Connect this Odoo to Pantalytics first' not in text:
+                self.fail('the own registration form offers no way to move over')
+            if 'Pantalytics app' in text or 'Switch to the' in text:
+                self.fail('the own registration form still names the Pantalytics app')
 
             # Microsoft through the Pantalytics app: nothing to register, so
             # none of Azure's fields and no Callback URL to paste.
             self.call('pan.mail.provider', 'write', [row_id], {'registration': 'pantalytics'})
             text = self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
             self.shot('provider-outlook-pantalytics.png')
-            if 'Pantalytics Mail Pro app' not in text:
-                self.fail('the Microsoft form does not offer the Pantalytics Mail Pro app')
+            if "Mail Pro's Microsoft app" not in text:
+                self.fail("the Microsoft form does not offer Mail Pro's Microsoft app")
             for hidden in self.MICROSOFT_FIELDS + ('Callback URL',):
                 if hidden in text:
                     self.fail(f'the Pantalytics app form shows "{hidden}", which is an own registration\'s')
@@ -4124,6 +4199,7 @@ def main():
         checks.settings()
         checks.settings_not_connected()
         checks.settings_key_refused()
+        checks.settings_mail_limit()
         checks.inbox_not_connected()
         checks.menus()
         checks.conversation_view()

@@ -521,11 +521,16 @@ class TestLicense(TransactionCase):
         self.assertEqual(body['mails_received_24h'], 1)
 
     def test_a_mail_from_last_week_is_not_in_todays_counts(self):
+        """Last week is when it reached Odoo (`create_date`), not the date it
+        carries: test_mail_limit.py has the mail that arrived late."""
         message = self.env['mail.message'].sudo().create({
             'message_type': 'email', 'x_direction': 'outgoing',
             'model': 'res.partner', 'res_id': self.env.user.partner_id.id,
         })
-        message.date = datetime.now() - timedelta(days=7)
+        message.flush_recordset()
+        self.env.cr.execute('UPDATE mail_message SET create_date = %s WHERE id = %s',
+                            (datetime.now() - timedelta(days=7), message.id))
+        message.invalidate_recordset()
         self.connected()
         self.assertEqual(self.calls[-1]['json']['mails_sent_24h'], 0)
 

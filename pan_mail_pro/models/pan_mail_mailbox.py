@@ -1235,6 +1235,8 @@ class PanMailMailbox(models.Model):
         License = self.env['pan.mail.license']
         if not License.sync_allowed():
             raise UserError(License.not_allowed_error())
+        if License.incoming_paused():
+            raise UserError(License.incoming_paused_error())
 
         if not self._has_working_credentials():
             raise UserError(self._no_credentials_error())
