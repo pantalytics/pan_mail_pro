@@ -334,7 +334,7 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
         self.assertEqual(self.row.client_id, 'own-id')
 
     def test_step_two_warns_until_nobody_is_on_the_own_app(self):
-        """The dot on step 2 is the warn one while either fix line is up:
+        """The dot on step 2 is the amber one while either fix line is up:
         the row on its own app, or people still to sign in again. Green only
         once both are gone (#366)."""
         def warns(settings):
@@ -363,6 +363,20 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
             comment.getparent().remove(comment)
         page = etree.tostring(app, encoding='unicode')
         self.assertNotIn('Pantalytics app', page)
+        self.assertIn('Sign in with Microsoft', page)
+        self.assertIn('Your own Azure app is no longer needed.', page)
+        self.assertIn('o_mailpro_dot_attention', page, 'amber, not the red of broken')
+
+    def test_the_provider_form_says_the_same(self):
+        """The provider form meets the same move in the same words (#366)."""
+        arch = self.env['pan.mail.provider'].get_view(
+            self.env.ref('pan_mail_pro.view_pan_mail_provider_form').id, 'form')['arch']
+        form = etree.fromstring(arch)
+        for comment in form.xpath('//comment()'):
+            comment.getparent().remove(comment)
+        page = etree.tostring(form, encoding='unicode')
+        self.assertNotIn('Pantalytics app', page)
+        self.assertNotIn('Pantalytics Mail Pro app', page)
         self.assertIn('Sign in with Microsoft', page)
         self.assertIn('Your own Azure app is no longer needed.', page)
 

@@ -334,8 +334,13 @@ border, the way a phone's Settings app lists them.
 - **Show the answer, not just the heading.** Baymard tested this on accordion
   checkouts: a collapsed step that shows only its title makes people reopen it
   to see what they picked, which is worse than not collapsing at all.
-- **One shape in three colours, always in the same place.** Green for answered,
-  red for answered-but-broken, an outlined circle for not yet. A column of
+- **One shape in four colours, always in the same place.** Green for answered,
+  red for answered-but-broken, an outlined circle for not yet, and amber
+  (`o_mailpro_dot_attention`, the brand gold `#e8a317`) for a step that works
+  and has something to do: an own Azure app the old sign-ins still use. Its
+  line under the name is `o_mailpro_msg_attention`, a darker amber on a light
+  page so the text keeps its contrast. Amber never stands in for red: if
+  something has stopped, the dot is `o_mailpro_dot_warn`. A column of
   different glyphs reads as a column of different kinds of thing; a column of
   dots reads as one status you can scan in a second. Not-done is an outline
   rather than a fill, because a setup page that opens in red reads as a product

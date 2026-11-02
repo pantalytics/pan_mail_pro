@@ -62,7 +62,7 @@ class ResConfigSettings(models.TransientModel):
     # The move off an own Azure app registration (§9.20), as fix lines on
     # step 2: the switch while the row is on its own app, then how many
     # people have still to reconnect, then the offer to remove the old
-    # credentials once nobody has. The first two are also step 2's warn dot:
+    # credentials once nobody has. The first two are also step 2's amber dot:
     # while either is set, somebody still signs in through the own app.
     x_microsoft_switchable = fields.Boolean(compute='_compute_setup_status')
     x_microsoft_own_left = fields.Char(compute='_compute_setup_status')

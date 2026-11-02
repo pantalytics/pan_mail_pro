@@ -1043,12 +1043,12 @@ class PanMailLicense(models.Model):
                         code, body.get('status'))
         if code == 401:
             raise UserError(_('Pantalytics no longer recognises the key of this '
-                              'Odoo instance, so the Pantalytics Mail Pro app '
-                              'cannot be used. An administrator reconnects it '
-                              'under Settings, Mail Pro, step 1.'))
+                              'Odoo instance, so signing in with Microsoft cannot '
+                              'start. An administrator reconnects it under '
+                              'Settings, Mail Pro, step 1.'))
         if code == 503:
-            raise UserError(_('Signing in with the Pantalytics Mail Pro app is not '
-                              'available right now. Try again later.'))
+            raise UserError(_('Signing in with Microsoft is not available right '
+                              'now. Try again later.'))
         raise UserError(_('Pantalytics could not start the Microsoft sign-in '
                           '(HTTP %s). Try again in a minute.') % code)
 

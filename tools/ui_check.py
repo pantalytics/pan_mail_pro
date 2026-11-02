@@ -172,14 +172,17 @@ class Checks:
                 self.fail(f'a connected database shows "{leaked}" on the checklist')
 
         # Step 2 on the seed, an own Azure app registration (#366): the
-        # provider is still Microsoft 365, the dot warns while anybody signs
+        # provider is still Microsoft 365, the dot is amber while anybody signs
         # in through the own app, and the move is one Sign in with Microsoft.
         # Pantalytics is not an email provider, so its app is never named.
         head = ' '.join(steps[1].query_selector('.o_mailpro_step_head').inner_text().split())
         if head != '2. Email provider Microsoft 365':
             self.fail(f'step 2 on an own app reads "{head}", not "Microsoft 365"')
-        if not steps[1].query_selector('.o_mailpro_dot_warn:visible'):
-            self.fail('step 2 on an own app registration does not show the warn dot')
+        # Amber, not red: the old sign-ins keep working, nothing is broken.
+        if not steps[1].query_selector('.o_mailpro_dot_attention:visible'):
+            self.fail('step 2 on an own app registration does not show the amber attention dot')
+        if steps[1].query_selector('.o_mailpro_dot_warn:visible'):
+            self.fail('step 2 on an own app registration shows the red warn dot')
         if 'Your own Azure app is no longer needed.' not in steps[1].inner_text():
             self.fail('step 2 on an own app does not say the Azure app is no longer needed')
         signin = [b for b in steps[1].query_selector_all('button')
@@ -3152,21 +3155,27 @@ class Checks:
             self.call('pan.mail.provider', 'write', [row_id], {'provider': 'outlook'})
             self.provider_verify(f'{self.base}/odoo/action-{action}/{row_id}')
 
-            # An own registration offers the way to the Pantalytics app: the
-            # switch on a connected Odoo, the step it waits for otherwise.
+            # An own registration says it is no longer needed and offers the
+            # move, in the words of settings step 2 (#366): Sign in with
+            # Microsoft on a connected Odoo, the step it waits for otherwise.
+            # Pantalytics is not an email provider, so its app is not named.
             text = self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
             self.shot('provider-outlook-own.png')
-            if 'Switch to the Pantalytics app' not in text \
-                    and 'with the Pantalytics Mail Pro app instead' not in text:
-                self.fail('the own registration form offers no way to the Pantalytics app')
+            if 'Your own Azure app is no longer needed.' not in text:
+                self.fail('the own registration form does not say the Azure app is no longer needed')
+            if 'Sign in with Microsoft' not in text \
+                    and 'Connect this Odoo to Pantalytics first' not in text:
+                self.fail('the own registration form offers no way to move over')
+            if 'Pantalytics app' in text or 'Switch to the' in text:
+                self.fail('the own registration form still names the Pantalytics app')
 
             # Microsoft through the Pantalytics app: nothing to register, so
             # none of Azure's fields and no Callback URL to paste.
             self.call('pan.mail.provider', 'write', [row_id], {'registration': 'pantalytics'})
             text = self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
             self.shot('provider-outlook-pantalytics.png')
-            if 'Pantalytics Mail Pro app' not in text:
-                self.fail('the Microsoft form does not offer the Pantalytics Mail Pro app')
+            if "Mail Pro's Microsoft app" not in text:
+                self.fail("the Microsoft form does not offer Mail Pro's Microsoft app")
             for hidden in self.MICROSOFT_FIELDS + ('Callback URL',):
                 if hidden in text:
                     self.fail(f'the Pantalytics app form shows "{hidden}", which is an own registration\'s')
