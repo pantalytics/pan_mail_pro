@@ -55,12 +55,12 @@
 
                     <div class="text-muted mb-3"
                          invisible="provider != 'outlook' or registration != 'pantalytics' or not pantalytics_connected">
-                        Nothing to register in Microsoft Entra. Your users sign in with the
-                        Pantalytics Mail Pro app, published by Pantalytics BV.
+                        Nothing to register in Microsoft Entra. Your users sign in with Microsoft;
+                        the consent screen names the app Pantalytics Mail Pro, published by Pantalytics BV.
                     </div>
                     <div class="text-warning mb-3"
                          invisible="provider != 'outlook' or registration != 'pantalytics' or pantalytics_connected">
-                        The Pantalytics Mail Pro app needs this Odoo connected to Pantalytics
+                        Signing in with Microsoft needs this Odoo connected to Pantalytics
                         first: Settings, Mail Pro, step 1.
                     </div>
 
@@ -68,15 +68,19 @@
                          switch keeps the old credentials for the accounts
                          that still refresh with them; the count says how
                          many, and at zero the old app may go. -->
+                    <!-- The same line and button as step 2 of the
+                         settings page, so the move reads the same wherever
+                         the admin meets it. -->
+                    <div class="text-warning mb-2" invisible="provider != 'outlook' or registration != 'own'">
+                        Your own Azure app is no longer needed. Sign in with Microsoft once to move over.
+                    </div>
                     <div class="mb-3" invisible="provider != 'outlook' or registration != 'own' or not pantalytics_connected">
                         <button name="action_switch_to_pantalytics" type="object"
-                                string="Switch to the Pantalytics app" class="btn-link p-0"
-                                confirm="From now on Mail Pro signs in with its own Microsoft app, and your Azure app registration is no longer needed. You sign in once now. Everyone else is asked to reconnect once; until they do, their mail keeps working as it does today."/>
-                        <div class="text-muted">Nothing to register in Azure any more, and no secret that expires.</div>
+                                string="Sign in with Microsoft" class="btn-primary"
+                                confirm="Everyone else is asked to sign in once too, and their mail keeps working until they do."/>
                     </div>
                     <div class="text-muted mb-3" invisible="provider != 'outlook' or registration != 'own' or pantalytics_connected">
-                        Connect this Odoo to Pantalytics (Settings, Mail Pro, step 1) to sign in
-                        with the Pantalytics Mail Pro app instead.
+                        Connect this Odoo to Pantalytics first: Settings, Mail Pro, step 1.
                     </div>
                     <div class="text-muted mb-3"
                          invisible="provider != 'outlook' or registration != 'pantalytics' or not own_account_count">
@@ -89,7 +93,7 @@
                          invisible="provider != 'outlook' or registration != 'pantalytics' or not has_own_registration or own_account_count">
                         <button name="action_remove_own_registration" type="object"
                                 string="Remove your old app registration" class="btn-link p-0"
-                                confirm="Everyone signs in through the Pantalytics app now. Remove the Client ID, secret and tenant of your own app registration from Odoo? You can delete the app in Azure afterwards."/>
+                                confirm="Nobody signs in through your own Azure app any more. Remove its Client ID, secret and tenant from Odoo? You can delete the app in Azure afterwards."/>
                     </div>
 
                     <!-- What to do and where the steps are, before the

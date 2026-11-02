@@ -373,8 +373,8 @@ class MicrosoftGraphClient(models.AbstractModel):
         """
         config = self._get_config_params('pantalytics')
         if not config.get('public_client') or not config.get('client_id'):
-            raise UserError(_('Approving for the organization is for the '
-                              'Pantalytics Mail Pro app only.'))
+            raise UserError(_('Approving for the organization only works with '
+                              "Mail Pro's Microsoft app."))
         params = {
             'client_id': config['client_id'],
             'scope': ADMIN_CONSENT_SCOPE,
@@ -513,7 +513,7 @@ class MicrosoftGraphClient(models.AbstractModel):
                 aadsts = re.search(r'AADSTS\d+', error_description or '')
                 if config.get('public_client'):
                     raise UserError(_(
-                        'Microsoft refused the Pantalytics Mail Pro app (%s). Your '
+                        "Microsoft refused Mail Pro's Microsoft app (%s). Your "
                         'own connection is unchanged.') % (
                             aadsts.group(0) if aadsts else error_code))
                 hint = AADSTS_HINTS.get(aadsts.group(0)) if aadsts else None

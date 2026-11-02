@@ -62,7 +62,8 @@ class ResConfigSettings(models.TransientModel):
     # The move off an own Azure app registration (§9.20), as fix lines on
     # step 2: the switch while the row is on its own app, then how many
     # people have still to reconnect, then the offer to remove the old
-    # credentials once nobody has.
+    # credentials once nobody has. The first two are also step 2's amber dot:
+    # while either is set, somebody still signs in through the own app.
     x_microsoft_switchable = fields.Boolean(compute='_compute_setup_status')
     x_microsoft_own_left = fields.Char(compute='_compute_setup_status')
     x_microsoft_own_removable = fields.Boolean(compute='_compute_setup_status')
@@ -343,10 +344,8 @@ class ResConfigSettings(models.TransientModel):
         left = microsoft.own_account_count if microsoft else 0
         own_left = _counted(
             left,
-            _('1 person still signs in through your own app registration. Mail Pro '
-              'asks them to reconnect; their mail keeps working until they do.'),
-            _('%s people still sign in through your own app registration. Mail Pro '
-              'asks them to reconnect; their mail keeps working until they do.'),
+            _('1 person still has to sign in again. Their mail keeps working until they do.'),
+            _('%s people still have to sign in again. Their mail keeps working until they do.'),
         ) if left else False
         own_removable = bool(microsoft) and microsoft.uses_pantalytics_app() \
             and microsoft.has_own_registration and not left

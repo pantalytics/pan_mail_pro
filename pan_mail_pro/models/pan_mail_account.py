@@ -148,7 +148,7 @@ class PanMailAccount(models.Model):
     # (ARCHITECTURE.md §9.20). Written by the consent callback from the round
     # that produced the tokens.
     registration = fields.Selection(
-        [('pantalytics', 'Pantalytics Mail Pro app'),
+        [('pantalytics', "Mail Pro's Microsoft app"),
          ('own', 'Your own app registration')],
         string='Signed in through', readonly=True, copy=False,
         help='The application these tokens were issued to. A refresh goes '

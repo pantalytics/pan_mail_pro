@@ -72,7 +72,7 @@ SECRET_PLACEHOLDER = '********'
 
 # Whose application a Microsoft 365 sign-in goes through.
 REGISTRATION_SELECTION = [
-    ('pantalytics', 'Pantalytics Mail Pro app'),
+    ('pantalytics', "Mail Pro's Microsoft app"),
     ('own', 'Your own app registration'),
 ]
 # The fields only an own app registration has. A row created with any of them
@@ -105,9 +105,9 @@ TENANT_LITERALS = ('common', 'organizations', 'consumers')
 def pantalytics_not_connected():
     """Why the Pantalytics app cannot be used right now. A function so the
     sentence is translated in the caller's language, not at import."""
-    return _('Signing in with the Pantalytics Mail Pro app needs this Odoo '
-             'connected to Pantalytics. An administrator connects it under '
-             'Settings, Mail Pro, step 1.')
+    return _('Signing in with Microsoft needs this Odoo connected to '
+             'Pantalytics. An administrator connects it under Settings, '
+             'Mail Pro, step 1.')
 
 
 class PanMailProvider(models.Model):
@@ -142,14 +142,14 @@ class PanMailProvider(models.Model):
 
     registration = fields.Selection(
         REGISTRATION_SELECTION, string='Sign in through', default='pantalytics',
-        help='Microsoft 365 only. The Pantalytics app needs nothing registered '
-             'in Azure; your own app registration is for an organization that '
+        help='Microsoft 365 only. The default needs nothing registered in '
+             'Azure; your own app registration is for an organization that '
              'wants its own.',
     )
     pantalytics_client_id = fields.Char(
-        string='Pantalytics app ID', readonly=True, copy=False,
-        help='The Pantalytics app as the platform last named it. Refreshing a '
-             'sign-in needs it.',
+        string='Microsoft app ID', readonly=True, copy=False,
+        help='The Microsoft app ID Mail Pro signs in with, as Pantalytics last '
+             'named it. Refreshing a sign-in needs it.',
     )
     pantalytics_connected = fields.Boolean(compute='_compute_pantalytics_connected')
     # The move off an own app registration (`action_switch_to_pantalytics`):
@@ -288,7 +288,7 @@ class PanMailProvider(models.Model):
                 return {'verified': False, 'message': pantalytics_not_connected()}
             return {
                 'verified': None,
-                'message': _('%s signs in through the Pantalytics Mail Pro app. '
+                'message': _('%s needs nothing registered here. '
                              'Signing in is the check.') % client.provider_label(),
             }
         if not client.supports_credential_test:
@@ -476,8 +476,8 @@ class PanMailProvider(models.Model):
         """
         self.ensure_one()
         if self.provider != 'outlook' or self.registration != 'own':
-            raise UserError(_('Only a Microsoft 365 provider on its own app '
-                              'registration can switch to the Pantalytics app.'))
+            raise UserError(_('Only a Microsoft 365 provider on its own Azure '
+                              'app moves off it.'))
         if not self._pantalytics_connected():
             raise UserError(pantalytics_not_connected())
         self.registration = 'pantalytics'
