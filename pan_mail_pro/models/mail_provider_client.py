@@ -285,6 +285,18 @@ ADDRESS_KINDS = [
     ('none', 'No mailbox'),
     ('account', 'Account'),
 ]
+
+# The Type a mailbox shows (`pan.mail.mailbox.provider_type`): what the
+# provider says the mailbox is, Personal or Shared, and nothing of Mail Pro's
+# own. An alias is one more address of one person (a Google send-as); a room
+# or equipment mailbox is the team's. A kind not listed here (`account`,
+# `none`, `unknown`) is one the provider has not typed, and the Type is empty.
+ADDRESS_KIND_TYPES = {
+    'user': 'personal',
+    'alias': 'personal',
+    'shared': 'shared',
+    'resource': 'shared',
+}
 ACCESS_ANSWERS = [('unknown', 'Not checked'), ('yes', 'Yes'), ('no', 'No')]
 
 # The identity keys, in one place: the contract's docstring, every client and

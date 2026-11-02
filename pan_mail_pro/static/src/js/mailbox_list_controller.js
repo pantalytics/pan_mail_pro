@@ -12,6 +12,17 @@ export class MailboxListController extends ListController {
     }
 
     /**
+     * Ticking Notification on one row unticks it on the other, on the
+     * server. Reload so the list shows that rather than two ticks.
+     */
+    async onRecordSaved(record, changes) {
+        await super.onRecordSaved(...arguments);
+        if (changes && "is_notification_mailbox" in changes) {
+            await this.model.load();
+        }
+    }
+
+    /**
      * Navigate back to Mail Pro settings
      */
     onBackToSettings() {
