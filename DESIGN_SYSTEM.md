@@ -337,9 +337,10 @@ border, the way a phone's Settings app lists them.
 - **One shape in four colours, always in the same place.** Green for answered,
   red for answered-but-broken, an outlined circle for not yet, and amber
   (`o_mailpro_dot_attention`, the brand gold `#e8a317`) for a step that works
-  and has something to do: an own Azure app the old sign-ins still use. Its
-  line under the name is `o_mailpro_msg_attention`, a darker amber on a light
-  page so the text keeps its contrast. Amber never stands in for red: if
+  and has something to do: a provider row still on its own Azure app. Its
+  one line under the name ("Sign in again to finish the move") is
+  `o_mailpro_msg_attention`, a darker amber on a light page so the text keeps
+  its contrast. Amber never stands in for red: if
   something has stopped, the dot is `o_mailpro_dot_warn`. A column of
   different glyphs reads as a column of different kinds of thing; a column of
   dots reads as one status you can scan in a second. Not-done is an outline
@@ -376,6 +377,24 @@ border, the way a phone's Settings app lists them.
   (`pan.mail.license`'s form) behind an arrow of its own. Only an open step
   1 keeps its button on the line, because a pairing in progress has no row
   worth opening yet.
+- **The overview reports, the page behind the arrow acts.** A step shows a
+  dot, its answer and at most one short line; the button that fixes it is
+  one level deeper, the way a phone's Settings app puts a badge on the row
+  and the action on the page it opens. Step 2 on an own Azure app was a
+  deprecation, a Sign in with Microsoft button, a count and a cleanup link
+  on the overview for one release (#369). The line and the button are on
+  the provider form now; the count went, because who still has to sign in
+  is each mailbox's status, and the cleanup happens by itself once nobody
+  needs the old app. No confirm on a button that only sends somebody to
+  sign in. The exceptions are steps with no page to open: an open step 1, and a
+  broken one, whose Connect again stays on the line. An arrow opens the row
+  itself when there is one row, never a list that can land on a new form.
+- **No choice is shown that a normal customer should not make; a legacy
+  state shows as deprecated with one action.** The provider form had a
+  "Sign in through" radio between Mail Pro's Microsoft app and an own Azure
+  app. Nobody new should pick the second, so the radio is gone; a database
+  still on it reads "deprecated", sees its old fields read-only, and gets
+  Sign in with Microsoft.
 - **A fix line lives only while it is a fix.** The domains line offers the
   domains it can read off the database, and only while the list is empty. A
   list with something in it is the admin's, and offering additions to it

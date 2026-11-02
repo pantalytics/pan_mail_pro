@@ -10,21 +10,22 @@ organization**, which a Microsoft 365 administrator presses once.
 
 ## Already on your own app registration?
 
-Step 2 of Settings, Mail Pro shows a warning: your own Azure app is no
-longer needed. Press **Sign in with Microsoft** there (it needs step 1
-done). You sign in once straight away, and that is where an organization
-that wants an administrator's approval asks for it. Everyone else sees a
-banner asking them to reconnect once; their mail keeps working through your
-own app until they do. Step 2 says how many people still have to sign in
-again, and its dot turns green when nobody does. Then it offers **Remove
-your old app registration**, after which you can delete the app in Azure.
+Step 2 of Settings, Mail Pro has a yellow dot and the line "Sign in again
+to finish the move". Open it with the arrow: the provider page says your own
+app registration is deprecated. Press **Sign in with Microsoft** there (it
+needs step 1 done). You sign in once straight away, and that is where an
+organization that wants an administrator's approval asks for it. Step 2
+turns green. Your colleagues each see a banner asking them to sign in once
+too; their mail keeps working through your own app until they do. When the
+last one has, Mail Pro removes your old app's details from Odoo by itself,
+and you can delete the app in Azure.
 
 ## Your own app registration
 
-The rest of this guide is for an organization that wants its own Microsoft
-Entra ID (Azure AD) app registration instead. Open the provider under
-Settings, Mail Pro, step 2, choose **Your own app registration**, and follow
-the steps below.
+Own app registrations are deprecated, and Mail Pro no longer offers the
+choice. If your IT department requires its own Microsoft Entra ID app,
+contact Pantalytics. The steps below are how an existing registration was
+made, kept for reference.
 
 You only need Microsoft 365 if your mail is hosted there. For Google
 Workspace see [Google Workspace Setup](google-setup.md); for any other host see

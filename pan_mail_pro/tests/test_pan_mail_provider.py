@@ -139,15 +139,15 @@ class TestProviderCredentials(TransactionCase):
         """Azure calls them Application (client) ID, Client Secret Value and
         Directory (tenant) ID. A form that renames them makes the admin
         translate while copying, which is how a secret ends up in the tenant
-        box. Google's console uses its own two names and has no tenant."""
+        box. Google's console uses its own two names and has no tenant.
+        Microsoft's three are read-only since #369 (an own Azure app is a
+        deprecated state), but they still name what the admin finds in Azure."""
         arch = self.env['pan.mail.provider'].get_view(
             self.env.ref('pan_mail_pro.view_pan_mail_provider_form').id, 'form')['arch']
         for label in ('Application (client) ID', 'Client Secret Value',
                       'Directory (tenant) ID'):
             with self.subTest(label=label):
                 self.assertIn(label, arch)
-        # And the Secret ID trap is named where it is made.
-        self.assertIn('Secret ID', arch)
 
     def test_the_name_is_the_label_not_the_code(self):
         """`_rec_name = 'provider'` showed the raw selection value everywhere a

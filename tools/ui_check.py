@@ -171,9 +171,10 @@ class Checks:
                    for b in block.query_selector_all('button')):
                 self.fail(f'a connected database shows "{leaked}" on the checklist')
 
-        # Step 2 on the seed, an own Azure app registration (#366): the
+        # Step 2 on the seed, an own Azure app registration (#366, #369): the
         # provider is still Microsoft 365, the dot is amber while anybody signs
-        # in through the own app, and the move is one Sign in with Microsoft.
+        # in through the own app, and the overview only reports it, in one
+        # line. The move itself is on the provider form behind the arrow.
         # Pantalytics is not an email provider, so its app is never named.
         head = ' '.join(steps[1].query_selector('.o_mailpro_step_head').inner_text().split())
         if head != '2. Email provider Microsoft 365':
@@ -183,12 +184,16 @@ class Checks:
             self.fail('step 2 on an own app registration does not show the amber attention dot')
         if steps[1].query_selector('.o_mailpro_dot_warn:visible'):
             self.fail('step 2 on an own app registration shows the red warn dot')
-        if 'Your own Azure app is no longer needed.' not in steps[1].inner_text():
-            self.fail('step 2 on an own app does not say the Azure app is no longer needed')
-        signin = [b for b in steps[1].query_selector_all('button')
-                  if b.is_visible() and b.inner_text().strip() == 'Sign in with Microsoft']
-        if len(signin) != 1:
-            self.fail(f'step 2 on an own app shows {len(signin)} Sign in with Microsoft buttons, expected 1')
+        msgs = [' '.join(m.inner_text().split())
+                for m in steps[1].query_selector_all('.o_mailpro_step_msg') if m.is_visible()]
+        if msgs != ['Sign in again to finish the move']:
+            self.fail(f'step 2 on an own app reads {msgs}, '
+                      'not the one line "Sign in again to finish the move"')
+        # No action on the overview: the arrow is the only button.
+        labelled = [b.inner_text().strip() for b in steps[1].query_selector_all('button')
+                    if b.is_visible() and b.inner_text().strip()]
+        if labelled:
+            self.fail(f'step 2 on an own app shows buttons {labelled}; the overview only reports')
         if 'Pantalytics app' in text:
             self.fail('the settings page names the "Pantalytics app"')
 
@@ -3115,8 +3120,11 @@ class Checks:
     # that cannot appear on Microsoft's.
     GOOGLE_ONLY = ('Client ID',)
     PROVIDER_FIELDS = {
-        'outlook': {'shows': MICROSOFT_FIELDS + ('Callback URL',),
-                    'hides': GOOGLE_ONLY + ('has no application registration',)},
+        # An own Azure app, read-only and deprecated (#369): its three
+        # fields so the admin can tell which app, nothing to paste back.
+        'outlook': {'shows': MICROSOFT_FIELDS,
+                    'hides': GOOGLE_ONLY + ('has no application registration',
+                                            'Callback URL')},
         'gmail': {'shows': GOOGLE_FIELDS + ('Callback URL',),
                   'hides': MICROSOFT_FIELDS + ('has no application registration',)},
         'imap': {'shows': ('has no application registration',),
@@ -3152,33 +3160,52 @@ class Checks:
                 for hidden in expected['hides']:
                     if hidden in text:
                         self.fail(f'the {code} form shows "{hidden}", which is not its')
-            self.call('pan.mail.provider', 'write', [row_id], {'provider': 'outlook'})
+            # Saving a changed registration verifies it. Gmail's, since the
+            # Microsoft fields are read-only (#369).
+            self.call('pan.mail.provider', 'write', [row_id], {'provider': 'gmail'})
             self.provider_verify(f'{self.base}/odoo/action-{action}/{row_id}')
+            self.call('pan.mail.provider', 'write', [row_id], {'provider': 'outlook'})
 
-            # An own registration says it is no longer needed and offers the
-            # move, in the words of settings step 2 (#366): Sign in with
-            # Microsoft on a connected Odoo, the step it waits for otherwise.
-            # Pantalytics is not an email provider, so its app is not named.
+            # Settings step 2's arrow opens this row, never a new form (#369:
+            # production landed on /action-N/new, and saving that is a second
+            # provider row).
+            self.settings_provider_arrow(row_id)
+
+            # An own registration is a deprecated state with one action
+            # (#369): the line, Sign in with Microsoft (no confirm), the
+            # credentials read-only, and no "Sign in through" choice at all.
             text = self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
             self.shot('provider-outlook-own.png')
-            if 'Your own Azure app is no longer needed.' not in text:
-                self.fail('the own registration form does not say the Azure app is no longer needed')
-            if 'Sign in with Microsoft' not in text \
-                    and 'Connect this Odoo to Pantalytics first' not in text:
-                self.fail('the own registration form offers no way to move over')
-            if 'Pantalytics app' in text or 'Switch to the' in text:
-                self.fail('the own registration form still names the Pantalytics app')
+            if 'Your own app registration is deprecated.' not in text:
+                self.fail('the own registration form does not say it is deprecated')
+            # The button on a connected Odoo; the step it waits for otherwise.
+            form = self.page.query_selector('.o_form_view')
+            signin = [b for b in form.query_selector_all('button')
+                      if b.is_visible() and b.inner_text().strip() == 'Sign in with Microsoft']
+            waits = 'Connect this Odoo to Pantalytics first' in text
+            if len(signin) != (0 if waits else 1):
+                self.fail(f'the own registration form shows {len(signin)} '
+                          'Sign in with Microsoft buttons')
+            if self.page.query_selector('.o_field_widget[name=client_id] input'):
+                self.fail("the own app's Application (client) ID is editable")
+            for gone in ('Sign in through', "Mail Pro's Microsoft app", 'Pantalytics app',
+                         'Switch to the', 'Step-by-step guide'):
+                if gone in text:
+                    self.fail(f'the own registration form still shows "{gone}"')
 
-            # Microsoft through the Pantalytics app: nothing to register, so
-            # none of Azure's fields and no Callback URL to paste.
+            # Microsoft through Mail Pro's app: nothing to register, nothing to
+            # choose, so none of Azure's fields and no Callback URL to paste.
             self.call('pan.mail.provider', 'write', [row_id], {'registration': 'pantalytics'})
             text = self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
             self.shot('provider-outlook-pantalytics.png')
-            if "Mail Pro's Microsoft app" not in text:
-                self.fail("the Microsoft form does not offer Mail Pro's Microsoft app")
-            for hidden in self.MICROSOFT_FIELDS + ('Callback URL',):
+            # Nothing about people either: who still has to sign in again
+            # is each mailbox's status, and the old app goes on its own.
+            for hidden in self.MICROSOFT_FIELDS + ('Callback URL', 'Sign in through',
+                                                   'Nothing to register', 'sign in again',
+                                                   'Remove your old app registration',
+                                                   'deprecated'):
                 if hidden in text:
-                    self.fail(f'the Pantalytics app form shows "{hidden}", which is an own registration\'s')
+                    self.fail(f'the Microsoft form shows "{hidden}"')
         finally:
             self.call('pan.mail.provider', 'write', [row_id],
                       {'provider': was, 'registration': 'own'})
@@ -3190,14 +3217,35 @@ class Checks:
             if hidden in text:
                 self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
 
+    def settings_provider_arrow(self, row_id):
+        """Step 2's arrow is the provider row's own form, by its id."""
+        page = self.page
+        page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+        page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+        page.click('a.tab[data-key=pan_mail_pro]')
+        page.wait_for_selector('.o_mailpro_step', timeout=30000)
+        arrow = page.query_selector_all('.o_mailpro_step')[1].query_selector(
+            'button.o_mailpro_step_edit:visible')
+        if not arrow:
+            self.fail('step 2 has no arrow')
+            return
+        arrow.click()
+        page.wait_for_selector('.o_form_view .o_field_widget[name=provider]', timeout=30000)
+        page.wait_for_timeout(800)
+        url = page.url
+        if url.rstrip('/').endswith('/new') or not url.rstrip('/').endswith(f'/{row_id}'):
+            self.fail(f'step 2\'s arrow opened {url}, not the provider row {row_id}')
+        self.shot('settings-provider-arrow.png')
+
     def provider_verify(self, url):
         """Saving a changed registration verifies it, in a dialog.
 
         The form used to carry Test Credentials and Sign In Myself in its
         header, even on a connected provider. Now it carries nothing, and a
         save that touches the registration opens one dialog that ends in a
-        verdict. The seed's registration is fake, so the verdict here is a
-        refusal -- which is also the case that must say what to fix.
+        verdict. Gmail's, since Microsoft's own fields are read-only (#369):
+        Google has no check that runs without a user, so the verdict is that
+        signing in is the check, and the dialog offers it.
         """
         page = self.page
         text = self.form_text(url)
@@ -3206,9 +3254,9 @@ class Checks:
                 self.fail(f'the provider form still offers "{gone}"')
         field = page.query_selector('.o_field_widget[name=client_id] input')
         if not field:
-            self.fail('the Microsoft provider form has no Application (client) ID input')
+            self.fail('the Gmail provider form has no Client ID input')
             return
-        field.fill('00000000-0000-0000-0000-000000000001')
+        field.fill('000000000001-test.apps.googleusercontent.com')
         page.click('.o_form_button_save')
         try:
             page.wait_for_selector('.o_mailpro_provider_verify', timeout=10000)
@@ -3216,15 +3264,14 @@ class Checks:
             self.fail('saving a changed registration opened no verify dialog: '
                       + (self.dialog_in_the_way() or 'nothing on screen'))
             return
-        page.wait_for_selector('.modal-footer button:not([disabled]):has-text("OK"), '
-                               '.modal-footer button:has-text("Sign in")', timeout=30000)
+        page.wait_for_selector('.modal-footer button:has-text("Later")', timeout=30000)
         self.shot('provider-verify.png')
         body = page.inner_text('.o_mailpro_provider_verify')
-        if 'Verifying credentials' not in body:
-            self.fail(f'the verify dialog never said it verified: {body!r}')
-        if page.query_selector('.modal-footer button:has-text("Sign in")'):
-            self.fail('a fake registration was verified and offered a sign-in')
-        page.click('.modal-footer button:has-text("OK")')
+        if 'checks these at sign-in' not in body:
+            self.fail(f'the verify dialog does not say signing in is the check: {body!r}')
+        if not page.query_selector('.modal-footer button:has-text("Sign in")'):
+            self.fail('the verify dialog offers no Sign in')
+        page.click('.modal-footer button:has-text("Later")')
         page.wait_for_timeout(400)
 
     # -- Status by absence ----------------------------------------------------
