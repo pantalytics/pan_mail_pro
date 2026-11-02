@@ -2810,10 +2810,15 @@ releases before 19.0.22.0.0 call, stays an alias of it.
 - **Check Approval is a button, not a poll loop.** The admin knows when they
   approved. Dropped: the page does not refresh itself.
 - **The account is step 1 of the checklist, and until it is answered the
-  page is that step and About.** Steps 2 to 4 are hidden while the state is
-  anything but connected: every one of them configures a product that will
+  page is that step and About.** Steps 2 to 4 are hidden until step 1 is
+  green (`x_setup_account_done`, an entitled link): before connecting, and
+  after the link broke. Every one of them configures a product that will
   not sync, and a checklist you cannot finish reads as the broken thing on
-  the screen. One screen, one action. Step 1 is not in `pan.mail.setup`'s
+  the screen. One screen, one action, and the action is the fix for the
+  state: Connect to Pantalytics; Connect again for a refused or revoked key
+  (`DEAD_STATUSES`, which `action_connect` clears itself, so there is no
+  Disconnect first); Choose a plan for a workspace without one; Check again
+  for an answer that lapsed (19.0.32.1.0). Step 1 is not in `pan.mail.setup`'s
   tuple: `sync_allowed()` is asked by the same callers with a refusal that
   names the exact state, which a generic "step 1 is open" would hide; the
   tuple only numbers its steps after it.
