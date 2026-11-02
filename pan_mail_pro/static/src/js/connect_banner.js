@@ -2,6 +2,7 @@
 
 import { Component, useState } from "@odoo/owl";
 import { browser } from "@web/core/browser/browser";
+import { registry } from "@web/core/registry";
 import { patch } from "@web/core/utils/patch";
 import { session } from "@web/session";
 import { WebClient } from "@web/webclient/webclient";
@@ -47,7 +48,34 @@ export class MailProConnectBanner extends Component {
         this.state.visible = false;
         browser.sessionStorage.setItem(this.dismissedKey, "1");
     }
+
+    /**
+     * The link with the screen it was pressed on, read at the click: the
+     * banner stays mounted while the screen under it changes. The sign-in
+     * lands back there.
+     */
+    onConnect(ev) {
+        const { pathname, search, hash } = browser.location;
+        ev.currentTarget.href = `/mail_pro/connect?back=${encodeURIComponent(
+            pathname + search + hash)}`;
+    }
 }
+
+/**
+ * After a sign-in the callback sends the browser straight back to where it
+ * started, with no page in between, and leaves one line in the session for
+ * that page load: "Signed in as ...". `ir.http.session_info` hands it over
+ * and drops it, so it shows once.
+ */
+registry.category("services").add("pan_mail_pro.sign_in_notice", {
+    dependencies: ["notification"],
+    start(env, { notification }) {
+        const notice = session.pan_mail_notice;
+        if (notice) {
+            notification.add(notice.message, { type: notice.type });
+        }
+    },
+});
 
 // Not `patch(WebClient, { components: ... })`. On Enterprise the class that is
 // actually mounted is `WebClientEnterprise`, whose body does

@@ -30,6 +30,7 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import get_provider_cl
 from odoo.addons.pan_mail_pro.models.pan_mail_provider import (
     MS_APP_RETURN_PATH, MS_APP_SESSION_KEY,
 )
+from odoo.addons.pan_mail_pro.models.res_users import INBOX_URL
 from odoo.addons.pan_mail_pro.tests.common import _FakeSession
 
 PLATFORM_POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
@@ -396,16 +397,15 @@ class TestMicrosoftReturn(HttpCase):
         exchange, me = self._grant()
         with exchange as redeem, me:
             response = self._return(code='authcode', state='platform-state-1')
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('Mailbox Connected', response.text)
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers['Location'].endswith(INBOX_URL),
+                        'same tab: straight back, no page in between')
         redeem.assert_called_once_with('authcode', PLATFORM_REDIRECT,
                                        code_verifier='verifier-1', registration='pantalytics')
         account = self._accounts()
         self.assertEqual(account.email, 'nora@company.test')
         self.assertEqual(account.sudo().refresh_token, 'rt')
         self.assertNotIn(MS_APP_SESSION_KEY, self._stored(), 'the state is spent')
-        self.assertIn('Back to Odoo', response.text,
-                      'same tab: the page leads back instead of ending')
 
     def test_a_state_this_session_did_not_start_is_refused(self):
         self._arm()

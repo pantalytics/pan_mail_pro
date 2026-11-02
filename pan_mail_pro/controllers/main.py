@@ -11,15 +11,14 @@ from ..models.mail_provider_client import (
     oauth_redirect_uri,
 )
 from ..models.pan_mail_provider import MS_APP_SESSION_KEY
+from ..models.res_users import (
+    INBOX_URL,
+    SETTINGS_URL,
+    SIGN_IN_BACK_KEY,
+    SIGN_IN_NOTICE_KEY,
+)
 
 _logger = logging.getLogger(__name__)
-
-# The Mail Pro page of Odoo's settings. The fragment is the `name` of the
-# `<app>` element in `res_config_settings_views.xml`; anything else lands on
-# the general settings page with no sign that a jump was intended.
-SETTINGS_URL = '/odoo/settings#pan_mail_pro'
-# Where a confirm-it's-you round lands when it was not told where to go back.
-INBOX_URL = '/odoo/action-pan_mail_pro.action_pan_mail_conversation'
 
 # The one round trip in flight for this session, under this key: the nonce
 # it must come back with, the mailbox it is for, where to land, and whether
@@ -33,14 +32,31 @@ SILENT_REFUSALS = ('login_required', 'interaction_required', 'consent_required',
                    'account_selection_required')
 
 
-def _result_page(success, title, message, action_url=None, action_label=None):
-    """The page a sign-in round ends on. `action_url` is its one next step
-    when there is one (approving the app for the organization, connecting
-    after that approval); without it the way back is to Odoo, or the tab
-    that opened this one."""
+def _safe_back(back, fallback=INBOX_URL):
+    """A path on this Odoo, or `fallback`. Never another host: no scheme,
+    no `//`, and no backslash, which a browser reads as a slash."""
+    if back and back.startswith('/') and not back.startswith('//') and '\\' not in back:
+        return back
+    return fallback
+
+
+def _sign_in_back():
+    """Where the sign-in in flight started (`res.users._pan_mail_remember_back`),
+    or, when nobody said: Settings for an administrator, the Inbox for
+    everybody else."""
+    home = SETTINGS_URL if request.env.user.has_group('base.group_system') else INBOX_URL
+    return _safe_back(request.session.get(SIGN_IN_BACK_KEY), home)
+
+
+def _result_page(success, title, message, action_url=None, action_label=None, back=None):
+    """The page a sign-in round ends on when it did not work, or needs one
+    more step. `action_url` is that step when there is one (approving the
+    app for the organization, connecting after that approval); the way back
+    is to the screen the round started from."""
     return request.render('pan_mail_pro.oauth_result', {
         'success': success, 'title': title, 'message': message,
         'action_url': action_url, 'action_label': action_label,
+        'back_url': back or _sign_in_back(),
     })
 
 
@@ -72,12 +88,18 @@ class MailProConnectController(http.Controller):
         if not get_provider_client(request.env, provider).uses_oauth:
             return request.redirect(SETTINGS_URL)
 
+        # The banner says where it was pressed; a try again from a result
+        # page keeps the start the round already had; the invitation mail
+        # says nothing, and lands on the default.
+        back = back or request.session.get(SIGN_IN_BACK_KEY) or False
         try:
-            action = request.env.user.action_connect_mailbox(provider)
+            action = request.env.user.with_context(
+                pan_mail_back=back).action_connect_mailbox(provider)
         except UserError as error:
             # A sentence (not connected to Pantalytics, the platform said no)
             # on the page the round would have ended on, not a traceback.
-            return _result_page(False, _('Connection Failed'), str(error))
+            return _result_page(False, _('Connection Failed'), str(error),
+                                back=_safe_back(back, None))
         return request.redirect(action['url'], local=False)
 
     @staticmethod
@@ -95,13 +117,6 @@ class MailProConnectController(http.Controller):
             return _result_page(False, _('Approval not started'), str(error))
         return request.redirect(url, local=False)
 
-    @staticmethod
-    def _safe_back(back):
-        """A path on this Odoo, or the Inbox. Never another host."""
-        if back and back.startswith('/') and not back.startswith('//'):
-            return back
-        return INBOX_URL
-
     @classmethod
     def _start_verify(cls, mailbox_id, back, silent):
         """Send the owner of `mailbox_id` to their provider's sign-in, to
@@ -115,7 +130,7 @@ class MailProConnectController(http.Controller):
         Conversation = request.env['pan.mail.conversation']
         mailbox = Conversation._own_mailbox(mailbox_id, verified=False)
         client = mailbox._get_client()
-        back = cls._safe_back(back)
+        back = _safe_back(back)
         if not client.uses_oauth:
             # A password provider is confirmed from the Inbox itself.
             return request.redirect(back)
@@ -338,18 +353,28 @@ class MailProOAuthController(http.Controller):
                 # that somewhere; the page says only that there is one.
                 request.env['pan.mail.error']._record(
                     'oauth.callback_failed', exception, level='warning')
-                return _result_page(True, _('Account Connected'), _(
-                    'Your email account has been connected, but its mailbox could '
-                    'not be set up yet; an administrator can add one under '
-                    'Settings, Mail Pro.'))
+                return self._signed_in('warning', _(
+                    'Signed in as %s. Your mailbox is not set up yet. An '
+                    'administrator can add it in Settings, Mail Pro.') % email)
 
-            return _result_page(True, _('Mailbox Connected'),
-                                _('Your email account has been connected successfully.'))
+            return self._signed_in('success', _('Signed in as %s') % email)
 
         except Exception as exception:
             _logger.exception('[OAuth] Failed to handle the %s callback', provider)
             request.env['pan.mail.error']._record('oauth.callback_failed', exception)
             return _result_page(False, _('Connection Failed'), str(exception))
+
+    @staticmethod
+    def _signed_in(kind, message):
+        """No page: straight back to the screen the sign-in started from,
+        which says who signed in once it has loaded (`ir.http.session_info`
+        hands the line to the webclient, `connect_banner.js` shows it). The
+        banner and the reconnect nudge are gone by then on their own, since
+        they read the account that was just stored."""
+        back = _sign_in_back()
+        request.session.pop(SIGN_IN_BACK_KEY, None)
+        request.session[SIGN_IN_NOTICE_KEY] = {'type': kind, 'message': message}
+        return request.redirect(back)
 
     @staticmethod
     def _registration(sign_in):
@@ -382,7 +407,7 @@ class MailProOAuthController(http.Controller):
         this exists for (an administrator with the owner's Odoo session and
         their own Microsoft account), and it says so with both addresses.
         """
-        back = MailProConnectController._safe_back(pending.get('back'))
+        back = _safe_back(pending.get('back'))
         error = kwargs.get('error')
         if error:
             if pending.get('silent') and error in SILENT_REFUSALS:
@@ -392,12 +417,12 @@ class MailProOAuthController(http.Controller):
                             provider, error, kwargs.get('error_description'))
             return _result_page(False, _('Not confirmed'), _(
                 '%s did not confirm the sign-in. Try again from the Inbox.')
-                % client.provider_label())
+                % client.provider_label(), back=back)
         code = kwargs.get('code')
         if not code:
             return _result_page(False, _('Not confirmed'), _(
                 '%s sent no sign-in back. Try again from the Inbox.')
-                % client.provider_label())
+                % client.provider_label(), back=back)
         Conversation = request.env['pan.mail.conversation']
         try:
             mailbox = Conversation._own_mailbox(pending.get('mailbox_id'), verified=False)
@@ -408,7 +433,7 @@ class MailProOAuthController(http.Controller):
         except Exception as exception:
             _logger.exception('[OAuth] The %s identity check broke', provider)
             request.env['pan.mail.error']._record('oauth.callback_failed', exception)
-            return _result_page(False, _('Not confirmed'), str(exception))
+            return _result_page(False, _('Not confirmed'), str(exception), back=back)
         if not self._same_sign_in(account, identity):
             _logger.warning('[OAuth] %s confirmed %s, not the %s behind mailbox %s',
                             provider, identity.get('email'), account.email, mailbox.id)
@@ -416,7 +441,7 @@ class MailProOAuthController(http.Controller):
                 'That sign-in is %(theirs)s. Sign in as %(ours)s to read this '
                 'mailbox here. Nothing changed.',
                 theirs=identity.get('email') or _('another account'),
-                ours=account.email))
+                ours=account.email), back=back)
         Conversation._mark_session_verified(account)
         _logger.info('[OAuth] %s confirmed %s for this session', provider, account.email)
         return request.redirect(back)
