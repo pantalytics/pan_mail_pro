@@ -160,8 +160,8 @@ Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow
 ### Mailbox Types
 
 The **Type** column shows what Microsoft 365 or Google says the mailbox is:
-Personal or Shared. Until the first check it follows the owner, and it stays
-empty when the provider gives no type. It is not a setting.
+Personal or Shared. When the provider has not said, it follows the owner. It
+is empty for an IMAP login or an address with no mailbox. It is not a setting.
 
 Who may send from a mailbox is a separate rule, and it follows from the owner:
 
@@ -176,7 +176,8 @@ person whose grant reads it. That does not make it theirs.
 Exactly one mailbox also has **Notification Mailbox** ticked: system emails —
 user invitations, password resets, activity reminders — go out from it, using
 its owner's credentials. Tick it straight from the mailbox list; ticking
-another mailbox moves it there. The last one cannot be unticked.
+another mailbox moves it there. The last one cannot be unticked, archived or
+deleted.
 
 ### Incoming Email Sync
 

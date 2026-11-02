@@ -475,19 +475,20 @@ class PanMailMailbox(models.Model):
             else:
                 record.mailbox_type = record._owner_rule_type()
 
-    @api.depends('address_kind', 'access_checked_date', 'owner_user_id',
+    @api.depends('address_kind', 'owner_user_id',
                  'owner_user_id.email', 'owner_user_id.login',
                  'owner_user_id.x_pan_mail_account_ids.email', 'email')
     def _compute_provider_type(self):
         """The Type on screen: what the provider said, Personal or Shared.
 
-        Empty once the provider has been asked and gave no type (an IMAP
-        login, no mailbox, a probe without the scope). Before the first
-        check the owner rule stands in. The notification flag never counts.
+        While the kind is `unknown` (not checked yet, or a grant without the
+        scope that asks) the owner rule stands in. Empty only where the
+        provider answered with no type: an IMAP login (`account`) or no
+        mailbox at all (`none`). The notification flag never counts.
         """
         for record in self:
             kind = ADDRESS_KIND_TYPES.get(record.address_kind)
-            if not kind and record.address_kind == 'unknown' and not record.access_checked_date:
+            if not kind and record.address_kind == 'unknown':
                 kind = record._owner_rule_type()
             record.provider_type = kind or False
 
@@ -1391,18 +1392,32 @@ class PanMailMailbox(models.Model):
         if others:
             super(PanMailMailbox, others).write({'is_notification_mailbox': False})
 
-    def _check_notification_kept(self, vals):
-        """Never zero: unticking the only notification mailbox is refused.
+    def _refuse_losing_notifications(self, leaving=False):
+        """Never zero: the only notification mailbox is not unticked,
+        archived or deleted. The way to move it is to tick another one.
 
-        The way to move it is to tick another one, which unticks this one.
+        `leaving` (archive, delete) lets the last mailboxes go together: with
+        none left there is nothing to pick, and that is a database back
+        before setup, not one missing its notification mailbox.
         """
-        if 'is_notification_mailbox' not in vals or vals['is_notification_mailbox']:
-            return
         if not any(self.mapped('is_notification_mailbox')):
             return
-        if not self.search_count([
-                ('is_notification_mailbox', '=', True), ('id', 'not in', self.ids)], limit=1):
-            raise UserError(_('Pick another mailbox for notifications first.'))
+        others = [('id', 'not in', self.ids)]
+        if self.search_count([('is_notification_mailbox', '=', True)] + others, limit=1):
+            return
+        if leaving and not self.search_count(others, limit=1):
+            return
+        raise UserError(_('Pick another mailbox for notifications first.'))
+
+    def _check_notification_kept(self, vals):
+        if 'is_notification_mailbox' in vals and not vals['is_notification_mailbox']:
+            self._refuse_losing_notifications()
+        if 'active' in vals and not vals['active']:
+            self._refuse_losing_notifications(leaving=True)
+
+    @api.ondelete(at_uninstall=False)
+    def _unlink_except_notification_mailbox(self):
+        self._refuse_losing_notifications(leaving=True)
 
     def write(self, vals):
         """Reset both folder cursors when sync_start_date moves earlier, and

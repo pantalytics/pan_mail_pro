@@ -1076,9 +1076,11 @@ Three properties are worth naming, because each was a bug first:
 **Notification** is not a type. Exactly one mailbox has `is_notification_mailbox`
 ticked, and system email goes out from it with its owner's credentials. The tick
 box is editable straight from the mailbox list: ticking one unticks the other
-(`_hand_over_notifications`), and unticking the last one is refused with "Pick
-another mailbox for notifications first." (`_check_notification_kept`), so
-there is never zero and never two. The settings page has no form of its own
+(`_hand_over_notifications`), and unticking, archiving or deleting the last
+one is refused with "Pick another mailbox for notifications first."
+(`_refuse_losing_notifications`), so there is never zero and never two. Only
+deleting every mailbox at once is allowed: that is a database back before
+setup. The settings page has no form of its own
 for it, it reports which mailbox carries it. It used
 to be a third Type value, which forced "personal or shared?" to be answerable
 with "neither" and made every rule about types carry an exception. As a tick box
@@ -1098,9 +1100,9 @@ with whose token reads it: the record rule, the composer's domain,
 form show `provider_type` instead, unstored: what Microsoft 365 or Google
 says the mailbox is, through `ADDRESS_KIND_TYPES` in
 `mail_provider_client.py` (user and alias are Personal, shared and
-room/equipment are Shared). Before the first access check the owner rule
-stands in; once checked, a kind with no type (an IMAP login, no mailbox, a
-grant without the scope) leaves Type empty. The notification flag never
+room/equipment are Shared). While the kind is `unknown` (not checked yet,
+or a grant without `MailboxSettings.Read`) the owner rule stands in; an IMAP
+login (`account`) or no mailbox at all (`none`) leaves Type empty. The notification flag never
 reaches it, which is how `notifications@` came to read Personal.
 
 The policy is derived, not asked (`_compute_mailbox_type`, stored). No provider
