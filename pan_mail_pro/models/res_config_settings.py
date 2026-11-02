@@ -234,6 +234,12 @@ class ResConfigSettings(models.TransientModel):
         if link:
             link.action_disconnect()
 
+    def action_license_plan(self):
+        """No Mail Pro plan on the workspace: the Pantalytics page where one
+        is chosen. Opened in a new tab, since it is not part of Odoo."""
+        return {'type': 'ir.actions.act_url', 'target': 'new',
+                'url': self.env['pan.mail.license'].dashboard_url()}
+
     def action_license_open(self):
         """The arrow on step 1: the account page."""
         return self.env['pan.mail.license'].current().action_open()

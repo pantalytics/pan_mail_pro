@@ -62,9 +62,11 @@
                                      broke: Payment failed, Revoked. -->
                                 <span class="o_mailpro_step_value" invisible="not x_setup_account_done or x_license_mail_paused">Connected</span>
                                 <span class="o_mailpro_step_value" invisible="not x_license_mail_paused">Incoming paused</span>
-                                <span class="o_mailpro_step_value" invisible="x_license_state != 'connected' or x_setup_account_done">
+                                <span class="o_mailpro_step_value"
+                                      invisible="x_license_state != 'connected' or x_setup_account_done or x_license_status in ('invalid', 'revoked')">
                                     <field name="x_license_status" nolabel="1" readonly="1" class="d-inline"/>
                                 </span>
+                                <span class="o_mailpro_step_value" invisible="x_license_status not in ('invalid', 'revoked')">Disconnected</span>
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_state != 'not_connected'">
                                 Mail Pro runs on an Odoo instance that is connected to a Pantalytics account.
@@ -89,20 +91,44 @@
                                         string="Cancel" class="btn-link"/>
                             </div>
                             <!-- A failure stays on the line it happened to,
-                                 with its fix under it. Everything else about a
-                                 connected account — who, when, the plan, usage
-                                 and billing, Disconnect — is on the account
-                                 page the arrow opens. -->
-                            <div class="o_mailpro_step_msg o_mailpro_msg_warn"
-                                 invisible="not x_license_sync_blocked or x_license_state != 'connected'">
-                                Incoming mail is not synced and no new mailbox can be connected until this
-                                Odoo instance is connected. Sending keeps working.
+                                 with the one thing to do about it under it.
+                                 Everything else about a connected account
+                                 (who, when, the plan, usage and billing,
+                                 Disconnect) is on the account page the arrow
+                                 opens. -->
+                            <!-- The key is dead on the server: a new pairing
+                                 is the whole fix, and the button does it. -->
+                            <div class="o_mailpro_step_msg" invisible="x_license_status not in ('invalid', 'revoked')">
+                                This Odoo is no longer connected to Pantalytics. Connect it again and
+                                approve it in your Pantalytics account. Your mailboxes and settings stay as they are.
                             </div>
-                            <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_license_last_error">
+                            <div class="o_mailpro_step_msg" invisible="x_license_status not in ('invalid', 'revoked')">
+                                <button name="action_license_connect" type="object"
+                                        string="Connect again" class="btn-primary"/>
+                            </div>
+                            <!-- Connected, but the workspace has no plan. -->
+                            <div class="o_mailpro_step_msg" invisible="x_license_status != 'canceled'">
+                                Your Pantalytics workspace has no Mail Pro plan. Choose one, then check again here.
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="x_license_status != 'canceled'">
+                                <button name="action_license_plan" type="object"
+                                        string="Choose a plan" class="btn-primary"/>
+                                <button name="action_license_check" type="object"
+                                        string="Check again" class="btn-link"/>
+                            </div>
+                            <!-- Connected, but the last answer lapsed: our
+                                 server or the way to it is down. -->
+                            <div class="o_mailpro_step_msg o_mailpro_msg_warn"
+                                 invisible="not x_license_sync_blocked or x_license_state != 'connected' or x_license_status in ('invalid', 'revoked', 'canceled')">
+                                Pantalytics has not confirmed this Odoo recently, so incoming mail is paused.
+                                Sending keeps working.
+                            </div>
+                            <div class="o_mailpro_step_msg o_mailpro_msg_warn"
+                                 invisible="not x_license_last_error or x_license_status in ('invalid', 'revoked', 'canceled')">
                                 <field name="x_license_last_error" nolabel="1" readonly="1"/>
                             </div>
                             <div class="o_mailpro_step_msg"
-                                 invisible="not x_license_sync_blocked or x_license_state != 'connected'">
+                                 invisible="not x_license_sync_blocked or x_license_state != 'connected' or x_license_status in ('invalid', 'revoked', 'canceled')">
                                 <button name="action_license_check" type="object"
                                         string="Check again" class="btn-link p-0"/>
                             </div>
@@ -122,15 +148,17 @@
                         <button name="action_license_open" type="object"
                                 icon="oi-chevron-right" title="Pantalytics account"
                                 class="oe_link o_mailpro_step_edit"
-                                invisible="x_license_state != 'connected'"/>
+                                invisible="x_license_state != 'connected' or x_license_status in ('invalid', 'revoked')"/>
                     </div>
 
-                    <!-- Nothing below this line exists on an instance that is
-                         not connected: every step of it configures a product
+                    <!-- Nothing below this line exists until step 1 is green:
+                         not before connecting, and not after the connection
+                         broke (a refused or revoked key, no plan, an answer
+                         that lapsed). Every step of it configures a product
                          that will not run, and a checklist you cannot finish
                          reads as the thing that is broken. One screen, one
-                         action: connect. -->
-                    <div invisible="x_license_state != 'connected'">
+                         action: the one step 1 names. -->
+                    <div invisible="not x_setup_account_done">
                     <div class="o_mailpro_step">
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
                               invisible="not x_setup_provider_done"/>
