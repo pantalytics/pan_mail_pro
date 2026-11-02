@@ -1075,9 +1075,13 @@ Three properties are worth naming, because each was a bug first:
 
 **Notification** is not a type. Exactly one mailbox has `is_notification_mailbox`
 ticked, and system email goes out from it with its owner's credentials. The tick
-box is editable straight from the mailbox list, so moving it is untick here,
-tick there — and the settings page has no form of its own for it, it reports
-which mailbox carries it. It used
+box is editable straight from the mailbox list: ticking one unticks the other
+(`_hand_over_notifications`), and unticking, archiving or deleting the last
+one is refused with "Pick another mailbox for notifications first."
+(`_refuse_losing_notifications`), so there is never zero and never two. Only
+deleting every mailbox at once is allowed: that is a database back before
+setup. The settings page has no form of its own
+for it, it reports which mailbox carries it. It used
 to be a third Type value, which forced "personal or shared?" to be answerable
 with "neither" and made every rule about types carry an exception. As a tick box
 it is a property of one mailbox, and the one exception left is explicit: the
@@ -1088,7 +1092,20 @@ Which credentials a mailbox runs on is asked of the provider
 (`resolve_sending_account` / `resolve_receiving_account`), never assumed by the
 caller: only Microsoft 365 lets one person send as another with their own token.
 
-The type is derived, not asked (`_compute_mailbox_type`, stored). No provider
+**The table above is the sending policy, not what the screen calls Type**
+(#371). `mailbox_type` (string "Sending policy", stored, never on screen) is
+the rule below, and every reader that asks who may send from a mailbox or
+with whose token reads it: the record rule, the composer's domain,
+`_is_sendable_by`, `sends_with`, the clients. The **Type** column and the
+form show `provider_type` instead, unstored: what Microsoft 365 or Google
+says the mailbox is, through `ADDRESS_KIND_TYPES` in
+`mail_provider_client.py` (user and alias are Personal, shared and
+room/equipment are Shared). While the kind is `unknown` (not checked yet,
+or a grant without `MailboxSettings.Read`) the owner rule stands in; an IMAP
+login (`account`) or no mailbox at all (`none`) leaves Type empty. The notification flag never
+reaches it, which is how `notifications@` came to read Personal.
+
+The policy is derived, not asked (`_compute_mailbox_type`, stored). No provider
 answers "personal or shared?" well enough to build a form on: Graph exposes
 `mailboxSettings.userPurpose`, but only to a token that already has rights on
 the mailbox being created and a scope the module does not request; Gmail has no
@@ -1151,8 +1168,9 @@ quotations later, while every mailbox read healthy (#266). So the question is
 asked now, and the answer is kept where every screen reads it.
 
 **Two words for one address.** `mailbox_type` stays Odoo's policy question --
-who may send from here, with whose credentials, derived from the owner.
-`address_kind` is the provider's factual one -- what is at this address --
+who may send from here, with whose credentials, derived from the owner, and
+not on screen. `address_kind` is the provider's factual one -- what is at
+this address, and what the Type column reads (`provider_type`) --
 and is written by the check, never typed: `user`, `shared`, `alias`,
 `resource`, `none`, `account` (IMAP: a login that opens a mailbox is one), or
 `unknown` until asked. Read together they name the Emovr shape: a `user`
@@ -3031,8 +3049,17 @@ One sign-in, in order:
    19.0.30.0.0). Nothing goes on `res.users.x_pan_mail_oauth_state`.
 3. The browser goes there in the **same tab** (`target: 'self'`): a tab
    opened after an awaited RPC is not the click any more, and Brave and
-   Safari block it. The result page reloads `window.opener` when there is
-   one and otherwise leads back to Odoo, so it is no dead end either way.
+   Safari block it. The own registration's round goes in the same tab too.
+   Every start keeps where it was pressed in
+   `request.session[SIGN_IN_BACK_KEY]` (`res.users._pan_mail_remember_back`:
+   the banner's `back`, else the RPC's Referer, with Settings named in full
+   because a Referer has no fragment). A sign-in that works ends with **no
+   page**: a redirect to that path, checked by `_safe_back` (local paths
+   only), and a one-shot `pan_mail_notice` in the session that
+   `ir.http.session_info` hands to the webclient as "Signed in as ..."
+   (#370). One that fails keeps the result page with the reason, and its
+   Back goes to the same path. With no path known it is Settings for an
+   administrator and the Inbox for anyone else.
 4. Microsoft answers on the platform's callback, which redirects to
    `/mail_pro/microsoft/return` with only `code`, `state`, `error`,
    `error_description`, `admin_consent` and `tenant`.
@@ -3088,21 +3115,27 @@ What the move guarantees is that nothing stops in between.
   row's current choice. `migrations/19.0.32.0.0` sets every existing
   Microsoft and Google account to `own`, except on a database that already
   signed in through the app on 19.0.31.0.0.
-- *The switch is one click.* **Sign in with Microsoft**, on step 2 of the
-  settings page and on the provider form alike, under the same line ("Your
-  own Azure app is no longer needed"), while the row is on its own app
-  (`pan.mail.provider.action_switch_to_pantalytics`). Neither screen names
+- *The switch is one click.* **Sign in with Microsoft**, on the provider
+  form, under one line ("Your own app registration is deprecated"), while
+  the row is on its own app (`pan.mail.provider.action_switch_to_pantalytics`).
+  No confirm: it only sends the administrator to Microsoft. Settings step 2
+  only reports the state (#369): an amber dot (`o_mailpro_dot_attention`,
+  not the red of broken: the old sign-ins keep working) and one line, "Sign
+  in again to finish the move", while the row is on its own app
+  (`x_microsoft_on_own_app`), green once it has moved. Accounts still
+  refreshing through the old app do not keep the step amber: that is each
+  mailbox's status and each person's own nudge. Step 2's arrow opens the
+  row itself (`pan.mail.provider.action_open_current`, a form by `res_id`),
+  never a list that could land on a new, unsaved form. Neither screen names
   the Pantalytics app: Pantalytics is not an email provider, so the step
-  answers Microsoft 365, and the radio and the account call it Mail Pro's
-  Microsoft app (19.0.33.0.1, #366). Step 2's dot is amber
-  (`o_mailpro_dot_attention`, not the red of broken: the old sign-ins keep
-  working) while anybody still signs in through the own app, before the
-  switch and after it until the last account has signed in again, and
-  green once nobody does. It needs this
-  Odoo connected to Pantalytics, else it says so. It sets `registration`
+  answers Microsoft 365 (19.0.33.0.1, #366). The switch needs this Odoo
+  connected to Pantalytics, else the form says so. It sets `registration`
   and keeps the own app's client id, secret and tenant on the row, because
-  the accounts it signed in still refresh with them. The radio no longer
-  moves an own row that has credentials; the switch does.
+  the accounts it signed in still refresh with them. The form offers no
+  choice of app (#369): the "Sign in through" radio is gone, a new row is
+  on Mail Pro's app, and an own registration is a legacy state, its three
+  fields shown read-only. `registration` stays on the model; only the
+  choice left the screen.
 - *The administrator goes first.* The same click signs the administrator in
   through the app, in the same transaction: a platform that cannot start
   the round undoes the switch, and a tenant that wants an administrator to
@@ -3118,11 +3151,13 @@ What the move guarantees is that nothing stops in between.
 - *The confirm-it's-you round* of an account still on the own app goes
   through the own app, so reading the Inbox never sends somebody to a
   consent screen for ours.
-- *Done.* Step 2 and the form say how many connected accounts are still on
-  the own app (`own_account_count`). At zero they offer **Remove your old
-  app registration** (`action_remove_own_registration`), which clears the
-  three fields; it is never done on its own, and refused while any account
-  still needs them.
+- *Done, on its own.* When no connected account is `own` any more
+  (`own_account_count` is zero: the last person signed in again, was
+  disconnected or removed), the row's client id, secret and tenant are
+  cleared (`_forget_unused_own_registration`), from `pan.mail.account`'s
+  `write` and `unlink` and from the daily heartbeat cron as the net. No
+  button and no count on any screen (#369); never before the last account
+  has left.
 
 ## 10. Security and permissions
 

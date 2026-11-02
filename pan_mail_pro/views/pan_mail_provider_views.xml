@@ -31,7 +31,6 @@
                     <field name="uses_oauth" invisible="1"/>
                     <field name="credentials_set" invisible="1"/>
                     <field name="pantalytics_connected" invisible="1"/>
-                    <field name="has_own_registration" invisible="1"/>
                     <group>
                         <group>
                             <field name="provider"/>
@@ -39,74 +38,49 @@
                                    decoration-success="status == 'connected'"
                                    decoration-warning="status == 'not_connected'"
                                    decoration-danger="status == 'not_configured'"/>
-                            <!-- Microsoft 365 signs in through our app by
-                                 default. An own app registration is the
-                                 second choice, and only then do its fields
-                                 and the guide to make one appear. -->
-                            <!-- An own registration in use moves with the
-                                 switch below, which keeps its credentials
-                                 for the accounts it signed in, rather than
-                                 with the radio. -->
-                            <field name="registration" widget="radio"
-                                   invisible="provider != 'outlook'"
-                                   readonly="registration == 'own' and has_own_registration"/>
+                            <!-- No "Sign in through" choice (#369): Microsoft
+                                 365 signs in with Mail Pro's Microsoft app.
+                                 An own app registration is a legacy state a
+                                 database can still be in, never one it can
+                                 be put in from here. The field stays on the
+                                 model; only the choice left the screen. -->
+                            <field name="registration" invisible="1"/>
                         </group>
                     </group>
 
-                    <div class="text-muted mb-3"
-                         invisible="provider != 'outlook' or registration != 'pantalytics' or not pantalytics_connected">
-                        Nothing to register in Microsoft Entra. Your users sign in with Microsoft;
-                        the consent screen names the app Pantalytics Mail Pro, published by Pantalytics BV.
-                    </div>
+                    <!-- The only thing standing between this row and a
+                         sign-in, so it is the one line said. -->
                     <div class="text-warning mb-3"
                          invisible="provider != 'outlook' or registration != 'pantalytics' or pantalytics_connected">
                         Signing in with Microsoft needs this Odoo connected to Pantalytics
                         first: Settings, Mail Pro, step 1.
                     </div>
 
-                    <!-- The move off an own app registration (§9.20). The
-                         switch keeps the old credentials for the accounts
-                         that still refresh with them; the count says how
-                         many, and at zero the old app may go. -->
-                    <!-- The same line and button as step 2 of the
-                         settings page, so the move reads the same wherever
-                         the admin meets it. -->
+                    <!-- The move off an own app registration (§9.20), the
+                         one action a deprecated state offers. The move keeps
+                         the old credentials for the accounts that still
+                         refresh with them, and clears them on its own once
+                         none does: who still has to sign in again is each
+                         mailbox's status, never this form's (#369). Settings
+                         step 2 only reports the state, as an amber dot and
+                         one line, and its arrow opens this form. -->
                     <div class="text-warning mb-2" invisible="provider != 'outlook' or registration != 'own'">
-                        Your own Azure app is no longer needed. Sign in with Microsoft once to move over.
+                        Your own app registration is deprecated. Sign in with Microsoft once to move over.
                     </div>
                     <div class="mb-3" invisible="provider != 'outlook' or registration != 'own' or not pantalytics_connected">
+                        <!-- No confirm: it only sends the admin to
+                             Microsoft, and nothing is lost on the way. -->
                         <button name="action_switch_to_pantalytics" type="object"
-                                string="Sign in with Microsoft" class="btn-primary"
-                                confirm="Everyone else is asked to sign in once too, and their mail keeps working until they do."/>
+                                string="Sign in with Microsoft" class="btn-primary"/>
                     </div>
                     <div class="text-muted mb-3" invisible="provider != 'outlook' or registration != 'own' or pantalytics_connected">
                         Connect this Odoo to Pantalytics first: Settings, Mail Pro, step 1.
                     </div>
-                    <div class="text-muted mb-3"
-                         invisible="provider != 'outlook' or registration != 'pantalytics' or not own_account_count">
-                        <field name="own_account_count" class="d-inline" nolabel="1" readonly="1"/>
-                        connected account(s) still sign in through your own app registration.
-                        The people behind them are asked to reconnect; their mail keeps working
-                        until they do.
-                    </div>
-                    <div class="mb-3"
-                         invisible="provider != 'outlook' or registration != 'pantalytics' or not has_own_registration or own_account_count">
-                        <button name="action_remove_own_registration" type="object"
-                                string="Remove your old app registration" class="btn-link p-0"
-                                confirm="Nobody signs in through your own Azure app any more. Remove its Client ID, secret and tenant from Odoo? You can delete the app in Azure afterwards."/>
-                    </div>
-
                     <!-- What to do and where the steps are, before the
-                         fields: the form alone asks for three IDs nobody has
-                         yet. The steps themselves stay in the knowledge base,
-                         one click deeper, so the form keeps its four fields. -->
-                    <div class="alert alert-info mb-3" role="status" invisible="provider != 'outlook' or registration != 'own'">
-                        Mail Pro signs in through an app registration in your Microsoft
-                        Entra admin center. Creating one takes about ten minutes; you paste
-                        three values from it here.
-                        <a href="https://odoo.pantalytics.com/knowledge/article/118" target="_blank"
-                           class="fw-bold ms-1">Step-by-step guide</a>
-                    </div>
+                         fields: the form alone asks for IDs nobody has yet.
+                         The steps themselves stay in the knowledge base, one
+                         click deeper. Gmail only: an own Azure app is no
+                         longer made, so it has no guide here. -->
                     <div class="alert alert-info mb-3" role="status" invisible="provider != 'gmail'">
                         Mail Pro signs in through an OAuth client in your Google Cloud
                         project. Creating one takes about ten minutes; you paste its Client
@@ -123,22 +97,22 @@
                                  anything else is a field the admin has to
                                  translate while copying, which is how a client
                                  secret ends up in the tenant box. -->
+                            <!-- Read-only (#369): an own Azure app is a
+                                 deprecated state, shown so the admin can
+                                 tell which app it is, not edited. -->
                             <field name="client_id" string="Application (client) ID"
-                                   invisible="provider != 'outlook'"
-                                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                                   invisible="provider != 'outlook'" readonly="1"/>
                             <field name="client_secret" string="Client Secret Value"
-                                   password="True" invisible="provider != 'outlook'"
-                                   help="Certificates &amp; secrets in Azure shows a Value and a Secret ID. Paste the Value — it is shown once, right after you create the secret. The Secret ID is not used."/>
+                                   password="True" invisible="provider != 'outlook'" readonly="1"/>
                             <field name="tenant_id" string="Directory (tenant) ID"
-                                   invisible="provider != 'outlook'"
-                                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                                   invisible="provider != 'outlook'" readonly="1"/>
                             <!-- Google's console says "Client ID" and "Client
                                  secret", and has no tenant at all. -->
                             <field name="client_id" invisible="provider == 'outlook'"/>
                             <field name="client_secret" password="True"
                                    invisible="provider == 'outlook'"/>
                         </group>
-                        <group>
+                        <group invisible="provider == 'outlook'">
                             <label for="redirect_uri"/>
                             <div>
                                 <field name="redirect_uri" nolabel="1" readonly="1" widget="CopyClipboardChar"/>

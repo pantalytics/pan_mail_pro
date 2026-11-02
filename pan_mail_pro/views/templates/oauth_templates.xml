@@ -69,26 +69,11 @@
                     <div class="next" t-if="action_url">
                         <a class="button" t-att-href="action_url" t-out="action_label"/>
                     </div>
-                    <t t-if="success">
-                        <!-- Opened in a tab of its own (the own app
-                             registration), this page reloads the Odoo tab
-                             behind it and can be closed. Opened in the same
-                             tab (the Pantalytics app), there is nothing
-                             behind it, so it leads back instead of ending. -->
-                        <div class="hint" id="o_mailpro_oauth_back"><a href="/odoo">Back to Odoo</a></div>
-                        <script>
-                            if (window.opener) {
-                                window.opener.location.reload();
-                                document.getElementById('o_mailpro_oauth_back').textContent = 'You can close this tab.';
-                            }
-                        </script>
-                    </t>
-                    <t t-else="">
-                        <!-- No timed redirect: the provider's reason is the
-                             one thing on this page worth reading, and three
-                             seconds is not enough to read or copy it. -->
-                        <div class="hint"><a href="/odoo">Back to Odoo</a></div>
-                    </t>
+                    <!-- No timed redirect: the provider's reason is the one
+                         thing on this page worth reading, and three seconds
+                         is not enough to read or copy it. Back is the screen
+                         the sign-in started from. -->
+                    <div class="hint"><a id="o_mailpro_oauth_back" t-att-href="back_url">Back to Odoo</a></div>
                 </div>
             </body>
         </html>

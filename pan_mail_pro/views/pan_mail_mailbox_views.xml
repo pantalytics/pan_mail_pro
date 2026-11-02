@@ -10,19 +10,20 @@
                   decoration-warning="health_status == 'warning'">
                 <field name="sequence" widget="handle"/>
                 <field name="email" string="Mailbox"/>
-                <field name="mailbox_type" string="Type" optional="show"/>
+                <!-- What the mailbox is at the provider. Mail Pro's own
+                     sending policy (`mailbox_type`) is not shown. -->
+                <field name="provider_type" string="Type" optional="show"/>
                 <field name="health_status" string="Status" widget="badge"
                        decoration-success="health_status == 'healthy'"
                        decoration-warning="health_status == 'warning'"
                        decoration-danger="health_status == 'error'"/>
-                <!-- Editable straight from the list: which mailbox sends the
-                     system email is one tick, and moving it is untick here,
-                     tick there. -->
+                <!-- Editable straight from the list: exactly one mailbox
+                     sends the system email, so ticking one here unticks the
+                     other, and the last one cannot be unticked. -->
                 <field name="is_notification_mailbox" string="Notification"
                        widget="boolean_toggle"/>
                 <!-- What the provider says is at the address, as the access
-                     check last found it. Odoo's policy word is the column
-                     above; this is Exchange's or Gmail's factual one. -->
+                     check last found it: the detail behind Type. -->
                 <field name="address_kind" string="Kind" optional="hide"/>
                 <field name="provider" string="Provider" optional="hide"/>
                 <field name="owner_user_id" string="Owner" optional="hide"/>
@@ -246,17 +247,9 @@
 
                             <div class="o_mailpro_card mt-4">
                                 <group class="my-0">
-                                    <!-- Derived, not asked: see _compute_mailbox_type.
-                                         The provider's own word for the address sits
-                                         beside it once the access check has asked. -->
-                                    <label for="mailbox_type" string="Type"/>
-                                    <div>
-                                        <field name="mailbox_type" nolabel="1" class="d-inline-block"/>
-                                        <span class="text-muted ms-2" invisible="address_kind == 'unknown'">
-                                            At the provider: <field name="address_kind" nolabel="1"
-                                                                   readonly="1" class="d-inline-block"/>
-                                        </span>
-                                    </div>
+                                    <!-- Read, not asked: see _compute_provider_type. -->
+                                    <field name="provider_type" string="Type"
+                                           invisible="not provider_type"/>
                                     <field name="is_notification_mailbox" string="Notification mailbox"
                                            widget="boolean_toggle"/>
                                     <field name="sync_start_date" string="Import from"

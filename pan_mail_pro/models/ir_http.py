@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Four things in the session: does this user still have to connect a
 mailbox, or reconnect it through the Pantalytics app, is this Odoo connected
-to a Pantalytics account, and may the Inbox report how it is used.
+to a Pantalytics account, and may the Inbox report how it is used. And once,
+after a sign-in, the line that says who signed in (`pan_mail_notice`).
 
 The webclient asks nothing extra for it. `session_info` is already fetched once
 per page load, so the banner knows whether to draw itself before the first
@@ -27,6 +28,8 @@ from werkzeug.exceptions import HTTPException
 from odoo import models
 from odoo.exceptions import AccessDenied, UserError
 from odoo.http import request
+
+from .res_users import SIGN_IN_NOTICE_KEY
 
 _logger = logging.getLogger(__name__)
 
@@ -58,6 +61,10 @@ class IrHttp(models.AbstractModel):
                     exc.pgerror.splitlines()[0] if exc.pgerror else exc)
                 self.env.invalidate_all()
             result.update(flags)
+            # Good once: the callback leaves it, the first page load after
+            # it takes it (connect_banner.js shows it).
+            result['pan_mail_notice'] = request.session.pop(SIGN_IN_NOTICE_KEY, False) \
+                if request else False
         return result
 
     @classmethod

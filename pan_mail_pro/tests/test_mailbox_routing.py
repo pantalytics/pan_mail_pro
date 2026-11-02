@@ -221,7 +221,11 @@ class TestMailboxRouting(MailProTestCase):
         self.assertEqual(mailbox, self.notification_mailbox)
 
     def test_no_notification_mailbox_refuses(self):
-        self.notification_mailbox.active = False
+        # The screens refuse this state (test_mailbox_type), so it is made
+        # the way an older database could have it: underneath the ORM.
+        self.env.cr.execute('UPDATE pan_mail_mailbox SET active = false WHERE id = %s',
+                            [self.notification_mailbox.id])
+        self.notification_mailbox.invalidate_recordset(['active'])
         mail = self._make_mail(author_id=self.company_partner.id)
         with self.assertRaises(RoutingError) as ctx:
             mail._resolve_route()
