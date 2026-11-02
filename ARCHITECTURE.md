@@ -397,7 +397,7 @@ shows (§2), and the account form's Test Connection reads the same two fields.
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro. For Microsoft, `registration` says whose app: the Pantalytics app (default, nothing to register, §9.20) or the customer's own |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
 | `pan.mail.setup` | Setup steps 2 to 4 and the phase they add up to (abstract). Step 1, the Pantalytics account, is `pan.mail.license` |
-| `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key, who connected and when, and the last signed entitlement. One row, created on the first Connect. `sync_allowed()` gates incoming sync and new accounts (§9.17) |
+| `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key, who connected and when, and the last signed entitlement. One row, created on the first Connect. `sync_allowed()` gates incoming sync and new accounts, `incoming_paused()` pauses incoming over the month's mails without a card (§9.17) |
 | `res.config.settings` | The setup checklist — four lines: the account, then three each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
@@ -2746,9 +2746,12 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   connected accounts, whether sync is healthy, which of setup steps 2 to 4
   are answered (`pan.mail.setup.answers()`, three booleans; step 1 is the row
   the heartbeat is sent under), and for the last 24 hours how
-  many mails were sent and received (off `mail.message.x_direction`, so one
-  message is one mail while the cap meters `mail.mail`, one per recipient:
-  this is the trend, not the meter), the
+  many mails were sent and received (`_mail_counts_since`: off
+  `mail.message.x_direction`, so one message is one mail, counted on the day
+  it reached Odoo by `create_date` whatever the routing outcome, threaded,
+  created or left on a contact (#356), and leaving out a mailbox's first
+  import, a mail dated before its mailbox existed; this is the meter the
+  platform bills the month from), the
   four link coverage counts (`pan.mail.coverage.counts_since`), per matching
   rule how often it decided and how often a person overruled it
   (`pan.mail.routing.log.rule_counts_since`, off `corrected_at`, which
@@ -2831,6 +2834,21 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   Outgoing mail is never gated: the module took over Odoo's SMTP, so stopping
   sends would hold all of the instance's email hostage. Reconnecting an
   existing account is a `write` and stays allowed.
+- **Over the month's mails, incoming waits** (19.0.33.0.0, #363, the plan
+  is odoo-mcp-pro-admin `docs/plans/mail-pro-billing.md`). The signed answer
+  may carry `mails_included` (0 is no limit), `mails_used_month` and `card`,
+  read off `entitlement_json` by `mail_usage()` rather than stored in columns
+  of their own, so the code runs before `-u`. An answer without them, from
+  an older platform, is no limit. `incoming_paused()` is true when the
+  month's included mails are used and the workspace has no card; it is asked
+  after `sync_allowed()` by the same two callers (the cron, which marks the
+  mailboxes, and Try again) with its own sentence, and by nothing else: the
+  Inbox, new accounts and sending carry on. Step 1 stays done, so steps 2 to
+  4 stay on the page, and it reads Incoming paused with "500 mails this
+  month. Add a card to keep receiving." and one primary button to
+  `dashboard_url()`. The platform lifts it (a card, the 1st of the month),
+  so while it lasts `_retry_if_stuck()` asks every `RETRY_MINUTES` and Check
+  again asks at once. The 200-a-day send cap without a card is #128.
 - **No grace period.** A trial is the server's business (a plan or a Stripe
   status), so the module asks one question. Existing customers are upgraded
   and connected in one session; incoming sync pauses for those minutes and the
@@ -3295,7 +3313,7 @@ eight groups:
 | Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, and the one mailbox setting a user owns |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, and that no colour lacks a dark side |
-| The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
+| The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 
 `tests/common.py` provides the shared fixture -- a notification mailbox, a

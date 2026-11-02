@@ -308,6 +308,48 @@ class Checks:
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
 
+    def settings_mail_limit(self):
+        """Over the month's included mails with no card on the workspace:
+        step 1 says so and offers one primary button, Add a card, and steps
+        2 to 4 stay, because the connection works and only incoming waits.
+        The answer is stood in for on the row, the way the seed stands in a
+        connected one; the signature is the test file's (test_mail_limit.py).
+        """
+        page = self.page
+        link = self.call('pan.mail.license', 'search', [])
+        self.call('pan.mail.license', 'write', link, {'entitlement_json': json.dumps(
+            {'mails_included': 500, 'mails_used_month': 512, 'card': False})})
+        try:
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step', timeout=30000)
+            page.wait_for_timeout(1200)
+            self.shot('settings-mail-limit.png')
+
+            steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
+            if len(steps) != 4:
+                self.fail(f'over the mail limit the page shows {len(steps)} setup steps, '
+                          f'expected all 4: only incoming waits')
+                return
+            head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
+            if head != '1. Pantalytics account Incoming paused':
+                self.fail(f'step 1 over the mail limit reads "{head}"')
+            text = ' '.join(steps[0].inner_text().split())
+            if '500 mails this month. Add a card to keep receiving.' not in text:
+                self.fail(f'step 1 over the mail limit does not say what to do: "{text}"')
+            if not steps[0].query_selector('.o_mailpro_dot_warn:visible'):
+                self.fail('step 1 over the mail limit is not marked for attention')
+            primary = [b.inner_text().strip()
+                       for b in steps[0].query_selector_all('button.btn-primary')
+                       if b.is_visible()]
+            if primary != ['Add a card']:
+                self.fail(f'step 1 over the mail limit offers {primary} as its primary '
+                          f'action, expected only "Add a card"')
+            self.error_free('Settings over the month\'s mails')
+        finally:
+            self.call('pan.mail.license', 'write', link, {'entitlement_json': False})
+
     def inbox_not_connected(self):
         """Without a Pantalytics account the Inbox is one button, not four panes.
 
@@ -4082,6 +4124,7 @@ def main():
         checks.call = rpc_for(args.url, args.db)
         checks.settings()
         checks.settings_not_connected()
+        checks.settings_mail_limit()
         checks.inbox_not_connected()
         checks.menus()
         checks.conversation_view()
