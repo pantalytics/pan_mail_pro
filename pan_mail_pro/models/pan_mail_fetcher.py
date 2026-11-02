@@ -188,6 +188,15 @@ class PanMailFetcher(models.AbstractModel):
             mailboxes.write({'state': 'error', 'error_message': reason})
             return
 
+        # Connected, but the month's included mails are used and the
+        # workspace has no card: the same stop with its own reason. Only
+        # incoming waits; `mail.mail` never asks this.
+        if License.incoming_paused():
+            reason = License.incoming_paused_error()
+            _logger.info('[License] %s', reason)
+            mailboxes.write({'state': 'error', 'error_message': reason})
+            return
+
         _logger.info(f"[Incoming Mail] Starting sync for {len(mailboxes)} mailbox(es)")
 
         # Under the cron, what one mailbox landed is committed before the next

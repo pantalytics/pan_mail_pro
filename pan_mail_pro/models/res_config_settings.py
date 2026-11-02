@@ -123,6 +123,11 @@ class ResConfigSettings(models.TransientModel):
     x_license_verify_url = fields.Char(string='Approve at', compute='_compute_license')
     x_license_last_error = fields.Char(compute='_compute_license')
     x_license_sync_blocked = fields.Boolean(compute='_compute_license')
+    # Connected, and the month's included mails are used with no card on the
+    # workspace: step 1 stays done (steps 2 to 4 keep working, sending too)
+    # and says what to do. pan_mail_license.incoming_paused().
+    x_license_mail_paused = fields.Boolean(compute='_compute_license')
+    x_license_mail_paused_msg = fields.Char(compute='_compute_license')
 
     # Help improve Mail Pro, as the Pantalytics workspace decided it. This
     # page can only say no: the yes lives where the contract was signed.
@@ -189,7 +194,11 @@ class ResConfigSettings(models.TransientModel):
         else:
             state = 'connected'
         blocked = not self.env['pan.mail.license'].sync_allowed()
+        paused = state == 'connected' and not blocked and link.incoming_paused()
+        paused_msg = link.incoming_paused_message() if paused else False
         for record in self:
+            record.x_license_mail_paused = paused
+            record.x_license_mail_paused_msg = paused_msg
             record.x_license_sync_blocked = blocked
             record.x_license_state = state
             record.x_setup_account_done = state == 'connected' and not blocked
@@ -234,6 +243,12 @@ class ResConfigSettings(models.TransientModel):
     def action_license_open(self):
         """The arrow on step 1: the account page."""
         return self.env['pan.mail.license'].current().action_open()
+
+    def action_license_add_card(self):
+        """Over the month's mails without a card: the Pantalytics page where
+        the card is added. A new tab, since it is not part of Odoo."""
+        return {'type': 'ir.actions.act_url', 'target': 'new',
+                'url': self.env['pan.mail.license'].dashboard_url()}
 
     # -------------------------------------------------------------------------
     # Email provider

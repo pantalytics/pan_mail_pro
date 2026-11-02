@@ -60,6 +60,14 @@ anything on an unsigned say-so, and `improve_active()` is the one question the
 browser side asks (ARCHITECTURE.md §9.17, docs/plans/analytics-flywheel.md in
 mail-pro-admin).
 
+**The month's mails ride the answer too** (pan_mail_pro#363):
+`mails_included`, `mails_used_month` and `card`, counted at Pantalytics from
+these heartbeats. Over the included mails with no card on the workspace,
+`incoming_paused()` says yes and incoming sync waits with its own reason, the
+way `sync_allowed()` stops it on an unconnected Odoo; sending never waits.
+Read off `entitlement_json` (`mail_usage()`), so an older platform that sends
+none of the three means no limit.
+
 **Trust.** An entitlement is only stored after its Ed25519 signature checks out
 against the public key this module ships and its `db_uuid` matches this
 database, so a cached answer cannot be forged by editing a response or lifted
@@ -190,6 +198,17 @@ def _sample(value):
         return min(1.0, max(0.0, float(value)))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _count(value):
+    """A count from the signed answer. Anything that is not a whole number of
+    zero or more reads as 0, which for `mails_included` means no limit."""
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def setup_signature(answers):
@@ -367,6 +386,65 @@ class PanMailLicense(models.Model):
         link = self or self.current()
         return bool(link) and link.is_entitled()
 
+    # -------------------------------------------------------------------------
+    # The month's mails (odoo-mcp-pro-admin docs/plans/mail-pro-billing.md)
+    # -------------------------------------------------------------------------
+
+    def mail_usage(self):
+        """The month's mails as the last signed answer counted them.
+
+        Three keys, read off `entitlement_json` rather than stored in columns
+        of their own: the verified payload is already on the row, and a new
+        stored field breaks every database that runs the code before `-u`
+        (Cloudpepper, #280). `mails_included` 0 means no limit, which is also
+        what an answer from an older platform without these keys means, and
+        what a value we cannot read means: the platform is what bills, so a
+        doubt here never stops somebody's mail.
+        """
+        self.ensure_one()
+        try:
+            payload = json.loads(self.entitlement_json or '{}')
+        except ValueError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return {
+            'mails_included': _count(payload.get('mails_included')),
+            'mails_used_month': _count(payload.get('mails_used_month')),
+            'card': payload.get('card') is True,
+        }
+
+    @api.model
+    def incoming_paused(self):
+        """Has this instance used the month's included mails, with no card on
+        the workspace? Then incoming sync waits; sending never does.
+
+        Asked on the model or on the row, like `sync_allowed`. It says nothing
+        about the connection: a lapsed answer is `sync_allowed`'s no, asked
+        first, and this one only adds the reason the platform gave.
+        """
+        link = self or self.current()
+        if not link or not link.entitlement_json:
+            return False
+        usage = link.mail_usage()
+        return bool(usage['mails_included']
+                    and usage['mails_used_month'] >= usage['mails_included']
+                    and not usage['card'])
+
+    @api.model
+    def incoming_paused_message(self):
+        """The sentence step 1 and the mailboxes show while incoming waits."""
+        link = self.current()
+        included = link.mail_usage()['mails_included'] if link else 0
+        return _('%s mails this month. Add a card to keep receiving.') % included
+
+    @api.model
+    def incoming_paused_error(self):
+        """Why incoming sync waits, in the shape of `not_allowed_error`."""
+        return self.incoming_paused_message() + _(
+            ' Until then incoming mail is not synced: Settings, Mail Pro. '
+            'Sending keeps working.')
+
     @api.model
     def improve_active(self, link=None):
         """May the Inbox in this browser report how it is used and record?
@@ -519,9 +597,11 @@ class PanMailLicense(models.Model):
         self.ensure_one()
         self._refuse_when_neutralized()
         self._check_admin()
-        if self.key_encrypted and self.status in ENTITLED_STATUSES and not self.is_entitled():
-            # Connected, but the answer never came (or lapsed): ask again now
-            # rather than at the next daily heartbeat.
+        if self.key_encrypted and self.status in ENTITLED_STATUSES and (
+                not self.is_entitled() or self.incoming_paused()):
+            # Connected, but the answer never came (or lapsed), or it paused
+            # incoming over the month's mails: ask again now rather than at
+            # the next daily heartbeat.
             self._heartbeat_guarded()
             return False
         token = encryption_utils.decrypt_value(self.env, self.device_token_encrypted)
@@ -634,10 +714,15 @@ class PanMailLicense(models.Model):
     def _retry_if_stuck(self):
         """Connected, key in hand, no usable answer: ask again, at most every
         RETRY_MINUTES. Called from the fetch cron, so a first heartbeat that
-        met a bad minute costs ten minutes of sync rather than a day."""
+        met a bad minute costs ten minutes of sync rather than a day.
+
+        Incoming paused over the month's mails asks again on the same clock:
+        a card added at Pantalytics, or the 1st of the month, lifts it on the
+        platform, and only an answer brings that here."""
         link = self.current()
         if (not link or not link.key_encrypted
-                or link.status not in ENTITLED_STATUSES or link.is_entitled()):
+                or link.status not in ENTITLED_STATUSES
+                or (link.is_entitled() and not link.incoming_paused())):
             return
         if link.last_check and fields.Datetime.now() - link.last_check < timedelta(
                 minutes=RETRY_MINUTES):
@@ -817,7 +902,9 @@ class PanMailLicense(models.Model):
         fortnight of, so the customer and we read the same number. They are
         counted off `mail.message.x_direction`, which is set on every mail
         this module carried and on nothing else: a note, a system log and mail
-        from before Mail Pro are all invisible to it. One message is one mail
+        from before Mail Pro are all invisible to it. `_mail_counts_since`
+        says which day a mail belongs to and why a first import is left out.
+        One message is one mail
         here, while the limit is metered per `mail.mail` (one per recipient),
         so a mail to three people counts once in this number and three times
         against the cap -- the throttle keeps its own counter for that
@@ -848,17 +935,15 @@ class PanMailLicense(models.Model):
             errors = ([{'code': 'incoming.sync_stale', 'count': stale}]
                       + errors)[:MAX_CODES_REPORTED]
         rules = self.env['pan.mail.routing.log'].rule_counts_since(since)
-        Message = self.env['mail.message'].sudo()
+        mails = self._mail_counts_since(since)
         return {
             'db_uuid': self._db_uuid(),
             'module_version': self._module_version(),
             'odoo_version': release.major_version,
             'mailboxes_connected': self.env['pan.mail.account'].sudo().search_count(
                 [('connected', '=', True)]),
-            'mails_sent_24h': Message.search_count(
-                [('x_direction', '=', 'outgoing'), ('date', '>=', since)]),
-            'mails_received_24h': Message.search_count(
-                [('x_direction', '=', 'incoming'), ('date', '>=', since)]),
+            'mails_sent_24h': mails['outgoing'],
+            'mails_received_24h': mails['incoming'],
             'sync_ok': (not stale and not Mailbox.search_count([('state', '=', 'error')])
                         if mailboxes else None),
             # The three setup steps as `pan.mail.setup` answers them, which is
@@ -882,6 +967,40 @@ class PanMailLicense(models.Model):
             # is the one not getting through.
             'errors': errors,
         }
+
+    @api.model
+    def _mail_counts_since(self, since):
+        """Mails sent and received through Mail Pro since `since`, as
+        `{'incoming': n, 'outgoing': n}`. The meter the bill is computed from
+        (odoo-mcp-pro-admin docs/plans/mail-pro-billing.md), so two rules:
+
+        - **A mail counts on the day it reached Odoo** (`create_date`), not on
+          the date it carries. Every outcome of the sync counts the same,
+          threaded, created or left on a contact (#356); and a mailbox that
+          catches up after a day offline counts its backlog on the day it
+          lands, instead of on a day whose heartbeat had already gone out.
+        - **A mailbox's first import does not count.** A mail dated before its
+          mailbox existed came in because `sync_start_date` reached back into
+          history, which is the customer bringing their past into Odoo, not
+          mail they receive. A mail with no mailbox (one that was deleted
+          since) counts, like every mail Odoo itself sent.
+        """
+        Message = self.env['mail.message'].sudo()
+        base = [('x_direction', '!=', False), ('create_date', '>=', since)]
+        scopes = [[('x_mailbox_id', '=', False)]]
+        for mailbox in self.env['pan.mail.mailbox'].sudo().with_context(
+                active_test=False).search([]):
+            # Whole seconds: `date` is stored without them and the mailbox's
+            # `create_date` with them, so a mail of the same second as its
+            # mailbox would otherwise read as older than it.
+            scopes.append([('x_mailbox_id', '=', mailbox.id),
+                           ('date', '>=', mailbox.create_date.replace(microsecond=0))])
+        counts = {'incoming': 0, 'outgoing': 0}
+        for scope in scopes:
+            for direction, count in Message._read_group(
+                    base + scope, ['x_direction'], ['__count']):
+                counts[direction] += count
+        return counts
 
     # -------------------------------------------------------------------------
     # Signing in with the Pantalytics app
