@@ -280,7 +280,7 @@ class TestSetupChecklist(TransactionCase):
                 'owner_user_id': stranger.id,
             })
 
-    def test_moving_it_is_untick_here_tick_there(self):
+    def test_ticking_another_moves_it(self):
         first = self.env['pan.mail.mailbox'].create({
             'email': 'notifications@checklist.test',
             'is_notification_mailbox': True,
@@ -293,11 +293,8 @@ class TestSetupChecklist(TransactionCase):
             'owner_user_id': self.admin.id,
         })
 
-        with self.assertRaises(ValidationError):
-            second.is_notification_mailbox = True
-
-        first.is_notification_mailbox = False
         second.is_notification_mailbox = True
+        self.assertFalse(first.is_notification_mailbox)
         self.assertEqual(self.env['mail.mail']._notification_mailbox(), second)
         self.assertEqual(self._settings().x_mailboxes_summary, '2 mailboxes')
 

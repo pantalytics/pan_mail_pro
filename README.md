@@ -159,7 +159,11 @@ Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow
 
 ### Mailbox Types
 
-The type is not a setting. It follows from the owner:
+The **Type** column shows what Microsoft 365 or Google says the mailbox is:
+Personal or Shared. Until the first check it follows the owner, and it stays
+empty when the provider gives no type. It is not a setting.
+
+Who may send from a mailbox is a separate rule, and it follows from the owner:
 
 | Type | Description |
 |------|-------------|
@@ -171,8 +175,8 @@ person whose grant reads it. That does not make it theirs.
 
 Exactly one mailbox also has **Notification Mailbox** ticked: system emails —
 user invitations, password resets, activity reminders — go out from it, using
-its owner's credentials. Tick it straight from the mailbox list; to move it,
-untick the current one first.
+its owner's credentials. Tick it straight from the mailbox list; ticking
+another mailbox moves it there. The last one cannot be unticked.
 
 ### Incoming Email Sync
 
@@ -198,7 +202,7 @@ the Sent Items of your mail app like any other mail.
 3. From the third level on, optionally **route new conversations to a team**
    (alias) so they create tickets or leads instead of landing on the sender's
    contact
-4. On the **Setup** tab: the **Type**, the **Owner** (a user with a connected
+4. On the **Setup** tab: the **Owner** (a user with a connected
    account), and optionally **Import from** for historical email
 5. Save
 

@@ -4,6 +4,7 @@ import re
 from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, ValidationError, UserError
 from .mail_provider_client import (
+    ADDRESS_KIND_TYPES,
     ADDRESS_KINDS,
     FOLDER_INBOX,
     PROVIDER_SELECTION,
@@ -202,25 +203,29 @@ class PanMailMailbox(models.Model):
         help='Uncheck to hide this mailbox from users'
     )
     # -------------------------------------------------------------------------
-    # Mailbox Type Configuration
+    # Sending policy, and the Type on screen
     # -------------------------------------------------------------------------
-    # Derived, not asked. No provider can answer "is this address personal or
-    # shared" reliably enough to build a form on: Graph needs a scope and a
-    # token with rights on the very mailbox being created, Gmail has no such
-    # thing as a shared mailbox, and IMAP has a login. What the module means by
-    # the word is a policy, who may send from here and with whose credentials,
-    # and that follows from how the mailbox came to be. A user's own address,
-    # created when they connect, is personal. Everything an admin types in by
-    # hand is the team's. Stored because every read path filters on it.
+    # `mailbox_type` is Mail Pro's own policy: who may send from here, and
+    # with whose credentials. It follows from the owner, and the notification
+    # mailbox counts as personal (it sends with its owner's token). Stored
+    # because every read path, the record rule and the composer's domain
+    # filter on it. It is not what the mailbox *is*, so it is not on screen
+    # (#371). The column keeps its technical name: renaming a stored field
+    # breaks every database that restarts on the new code before `-u`.
     mailbox_type = fields.Selection([
         ('personal', 'Personal'),
         ('shared', 'Shared'),
-    ], string='Type', compute='_compute_mailbox_type', store=True, readonly=True,
-        help='Personal: the owner\'s own address, only they send from it.\n'
-             'Shared: everyone sends from this address; which credentials are '
-             'used depends on the provider.\n'
-             'Derived from the owner: personal when the address is one the '
-             'owner signed in with.')
+    ], string='Sending policy', compute='_compute_mailbox_type', store=True, readonly=True,
+        help='Personal: only the owner sends from it, with their own sign-in. '
+             'Shared: anyone may send from it.')
+
+    # What the mailbox is at Microsoft 365 or Google, and nothing of Mail
+    # Pro's own: `address_kind` through `ADDRESS_KIND_TYPES`. Before the
+    # first check the owner rule stands in; never the notification flag.
+    provider_type = fields.Selection([
+        ('personal', 'Personal'),
+        ('shared', 'Shared'),
+    ], string='Type', compute='_compute_provider_type')
 
     # Which mailbox sends the system email is a property of a mailbox, not a
     # third kind of mailbox. It used to be a Type value, which forced the
@@ -435,37 +440,56 @@ class PanMailMailbox(models.Model):
             'target': 'current',
         }
 
-    @api.depends('owner_user_id', 'owner_user_id.email', 'owner_user_id.login',
-                 'owner_user_id.x_pan_mail_account_ids.email', 'email',
-                 'is_notification_mailbox')
-    def _compute_mailbox_type(self):
+    def _owner_rule_type(self):
         """Personal when the address is the owner's own, shared otherwise.
 
         "Own" is any address the owner has credentials for, or the one on
         their user record: the connect flow creates the account with the
         address the provider reported, so a mailbox created there always
-        matches. The notification mailbox counts as personal whatever its
-        address: it sends with its owner's credentials and is personal in
-        every respect but who may author through it (see
-        `_is_sendable_by`).
+        matches. An address with no owner cannot be anybody's, so it is
+        shared; an owner on a *different* address is the person whose token
+        reads it, which is the Microsoft shared-mailbox shape.
+        """
+        self.ensure_one()
+        owner = self.owner_user_id
+        if not owner:
+            return 'shared'
+        own = {a.email for a in owner.x_pan_mail_account_ids if a.email}
+        own.update(filter(None, (owner.email, owner.login)))
+        address = (self.email or '').strip().lower()
+        return 'personal' if address and address in {
+            a.strip().lower() for a in own} else 'shared'
 
-        An address with no owner cannot be anybody's, so it is shared; an
-        owner on a *different* address is the person whose token reads it,
-        which is the Microsoft shared-mailbox shape.
+    @api.depends('owner_user_id', 'owner_user_id.email', 'owner_user_id.login',
+                 'owner_user_id.x_pan_mail_account_ids.email', 'email',
+                 'is_notification_mailbox')
+    def _compute_mailbox_type(self):
+        """The sending policy: the owner rule, and the notification mailbox
+        personal whatever its address. It sends with its owner's credentials
+        and is personal in every respect but who may author through it (see
+        `_is_sendable_by`).
         """
         for record in self:
-            owner = record.owner_user_id
-            if not owner:
-                record.mailbox_type = 'shared'
-                continue
-            if record.is_notification_mailbox:
+            if record.owner_user_id and record.is_notification_mailbox:
                 record.mailbox_type = 'personal'
-                continue
-            own = {a.email for a in owner.x_pan_mail_account_ids if a.email}
-            own.update(filter(None, (owner.email, owner.login)))
-            address = (record.email or '').strip().lower()
-            record.mailbox_type = 'personal' if address and address in {
-                a.strip().lower() for a in own} else 'shared'
+            else:
+                record.mailbox_type = record._owner_rule_type()
+
+    @api.depends('address_kind', 'access_checked_date', 'owner_user_id',
+                 'owner_user_id.email', 'owner_user_id.login',
+                 'owner_user_id.x_pan_mail_account_ids.email', 'email')
+    def _compute_provider_type(self):
+        """The Type on screen: what the provider said, Personal or Shared.
+
+        Empty once the provider has been asked and gave no type (an IMAP
+        login, no mailbox, a probe without the scope). Before the first
+        check the owner rule stands in. The notification flag never counts.
+        """
+        for record in self:
+            kind = ADDRESS_KIND_TYPES.get(record.address_kind)
+            if not kind and record.address_kind == 'unknown' and not record.access_checked_date:
+                kind = record._owner_rule_type()
+            record.provider_type = kind or False
 
     # -------------------------------------------------------------------------
     # Sync Configuration
@@ -862,14 +886,14 @@ class PanMailMailbox(models.Model):
             else:
                 record.sends_with = _('Sends with its own account')
 
-    @api.depends('mailbox_type', 'owner_user_id', 'is_notification_mailbox')
+    @api.depends('provider_type', 'owner_user_id', 'is_notification_mailbox')
     def _compute_subtitle(self):
         """The identity in one grey line under the address: read, not filled in."""
         for record in self:
-            parts = [
-                _('Shared mailbox') if record.mailbox_type == 'shared'
-                else _('Personal mailbox'),
-            ]
+            parts = []
+            if record.provider_type:
+                parts.append(_('Shared mailbox') if record.provider_type == 'shared'
+                             else _('Personal mailbox'))
             if record.owner_user_id:
                 parts.append(record.owner_user_id.name)
             if record.is_notification_mailbox:
@@ -1287,6 +1311,8 @@ class PanMailMailbox(models.Model):
         takeover happens at the same moment routing does.
         """
         is_first = not self.sudo().with_context(active_test=False).search_count([])
+        if any(vals.get('is_notification_mailbox') for vals in vals_list):
+            self._hand_over_notifications()
         records = super().create(vals_list)
         if is_first:
             self._activate_smtp_takeover()
@@ -1353,8 +1379,37 @@ class PanMailMailbox(models.Model):
         )
         return placeholder
 
+    def _hand_over_notifications(self):
+        """Untick every other mailbox before `self` takes the system email.
+
+        Exactly one mailbox sends Odoo's notifications, so ticking one moves
+        the job rather than adding a second. Written past our own `write`,
+        so the hand-over is not mistaken for unticking the last one.
+        """
+        others = self.with_context(active_test=False).search([
+            ('is_notification_mailbox', '=', True), ('id', 'not in', self.ids)])
+        if others:
+            super(PanMailMailbox, others).write({'is_notification_mailbox': False})
+
+    def _check_notification_kept(self, vals):
+        """Never zero: unticking the only notification mailbox is refused.
+
+        The way to move it is to tick another one, which unticks this one.
+        """
+        if 'is_notification_mailbox' not in vals or vals['is_notification_mailbox']:
+            return
+        if not any(self.mapped('is_notification_mailbox')):
+            return
+        if not self.search_count([
+                ('is_notification_mailbox', '=', True), ('id', 'not in', self.ids)], limit=1):
+            raise UserError(_('Pick another mailbox for notifications first.'))
+
     def write(self, vals):
-        """Reset both folder cursors when sync_start_date moves earlier."""
+        """Reset both folder cursors when sync_start_date moves earlier, and
+        keep exactly one notification mailbox."""
+        self._check_notification_kept(vals)
+        if vals.get('is_notification_mailbox'):
+            self._hand_over_notifications()
         rewind = self.browse()
         if 'sync_start_date' in vals and vals['sync_start_date']:
             new_start = fields.Datetime.to_datetime(vals['sync_start_date'])

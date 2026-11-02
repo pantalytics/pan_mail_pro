@@ -1075,9 +1075,11 @@ Three properties are worth naming, because each was a bug first:
 
 **Notification** is not a type. Exactly one mailbox has `is_notification_mailbox`
 ticked, and system email goes out from it with its owner's credentials. The tick
-box is editable straight from the mailbox list, so moving it is untick here,
-tick there — and the settings page has no form of its own for it, it reports
-which mailbox carries it. It used
+box is editable straight from the mailbox list: ticking one unticks the other
+(`_hand_over_notifications`), and unticking the last one is refused with "Pick
+another mailbox for notifications first." (`_check_notification_kept`), so
+there is never zero and never two. The settings page has no form of its own
+for it, it reports which mailbox carries it. It used
 to be a third Type value, which forced "personal or shared?" to be answerable
 with "neither" and made every rule about types carry an exception. As a tick box
 it is a property of one mailbox, and the one exception left is explicit: the
@@ -1088,7 +1090,20 @@ Which credentials a mailbox runs on is asked of the provider
 (`resolve_sending_account` / `resolve_receiving_account`), never assumed by the
 caller: only Microsoft 365 lets one person send as another with their own token.
 
-The type is derived, not asked (`_compute_mailbox_type`, stored). No provider
+**The table above is the sending policy, not what the screen calls Type**
+(#371). `mailbox_type` (string "Sending policy", stored, never on screen) is
+the rule below, and every reader that asks who may send from a mailbox or
+with whose token reads it: the record rule, the composer's domain,
+`_is_sendable_by`, `sends_with`, the clients. The **Type** column and the
+form show `provider_type` instead, unstored: what Microsoft 365 or Google
+says the mailbox is, through `ADDRESS_KIND_TYPES` in
+`mail_provider_client.py` (user and alias are Personal, shared and
+room/equipment are Shared). Before the first access check the owner rule
+stands in; once checked, a kind with no type (an IMAP login, no mailbox, a
+grant without the scope) leaves Type empty. The notification flag never
+reaches it, which is how `notifications@` came to read Personal.
+
+The policy is derived, not asked (`_compute_mailbox_type`, stored). No provider
 answers "personal or shared?" well enough to build a form on: Graph exposes
 `mailboxSettings.userPurpose`, but only to a token that already has rights on
 the mailbox being created and a scope the module does not request; Gmail has no
@@ -1151,8 +1166,9 @@ quotations later, while every mailbox read healthy (#266). So the question is
 asked now, and the answer is kept where every screen reads it.
 
 **Two words for one address.** `mailbox_type` stays Odoo's policy question --
-who may send from here, with whose credentials, derived from the owner.
-`address_kind` is the provider's factual one -- what is at this address --
+who may send from here, with whose credentials, derived from the owner, and
+not on screen. `address_kind` is the provider's factual one -- what is at
+this address, and what the Type column reads (`provider_type`) --
 and is written by the check, never typed: `user`, `shared`, `alias`,
 `resource`, `none`, `account` (IMAP: a login that opens a mailbox is one), or
 `unknown` until asked. Read together they name the Emovr shape: a `user`

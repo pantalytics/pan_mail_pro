@@ -1,12 +1,26 @@
 # -*- coding: utf-8 -*-
-"""The mailbox type is derived from the owner, never asked.
+"""Two questions about a mailbox, and the one setting beside them.
 
-An owner on their own address makes a personal mailbox. No owner, or an owner
-on a different address (whose token reads it, on Microsoft), makes a shared
-one. The notification mailbox is personal whatever its address. A provider
-cannot answer the question reliably, so the form does not ask it.
+`mailbox_type` is the sending policy: an owner on their own address makes a
+personal mailbox, no owner or an owner on a different address (whose token
+reads it, on Microsoft) a shared one, and the notification mailbox is
+personal whatever its address. It is never shown.
+
+`provider_type` is the Type on screen: what Microsoft 365 or Google says the
+mailbox is, Personal or Shared, with the owner rule standing in until the
+first check and the notification flag never counting (#371).
+
+Notification is exactly one mailbox: ticking one moves it, unticking the
+last is refused.
 """
+from odoo import fields
+from odoo.exceptions import UserError
 from odoo.tests import tagged
+
+from odoo.addons.pan_mail_pro.models.mail_provider_client import (
+    ADDRESS_KIND_TYPES,
+    ADDRESS_KINDS,
+)
 
 from .common import MailProTestCase
 
@@ -82,3 +96,85 @@ class TestMailboxTypeIsDerived(MailProTestCase):
             'owner_user_id': user.id,
         })
         self.assertEqual(mailbox.mailbox_type, 'personal')
+
+
+@tagged('post_install', '-at_install', 'pan_mail_pro')
+class TestTypeIsTheProviders(MailProTestCase):
+
+    def test_the_mapping(self):
+        """Two values on screen, in one place, and every kind accounted for."""
+        self.assertEqual(ADDRESS_KIND_TYPES, {
+            'user': 'personal', 'alias': 'personal',
+            'shared': 'shared', 'resource': 'shared',
+        })
+        self.assertLessEqual(set(ADDRESS_KIND_TYPES), {k for k, _label in ADDRESS_KINDS})
+
+    def test_each_kind_once_checked(self):
+        mailbox = self.shared_mailbox
+        for kind, _label in ADDRESS_KINDS:
+            mailbox.write({'address_kind': kind,
+                           'access_checked_date': fields.Datetime.now()})
+            self.assertEqual(mailbox.provider_type, ADDRESS_KIND_TYPES.get(kind, False),
+                             'address_kind %s' % kind)
+
+    def test_the_owner_rule_stands_in_before_the_first_check(self):
+        self.assertEqual(self.personal_mailbox.provider_type, 'personal')
+        self.assertEqual(self.shared_mailbox.provider_type, 'shared')
+
+    def test_the_notification_flag_never_counts(self):
+        """The case seen on 2026-11-02: notifications@ read Personal."""
+        mailbox = self.notification_mailbox
+        self.assertEqual(mailbox.mailbox_type, 'personal')
+        self.assertEqual(mailbox.provider_type, 'shared')
+        mailbox.write({'address_kind': 'shared',
+                       'access_checked_date': fields.Datetime.now()})
+        self.assertEqual(mailbox.provider_type, 'shared')
+        self.assertIn('Shared mailbox', mailbox.subtitle)
+
+    def test_the_provider_wins_over_the_owner_rule(self):
+        """A person's mailbox owned in Odoo by somebody else is still Personal."""
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'support@company.test',
+            'owner_user_id': self.salesperson.id,
+        })
+        self.assertEqual(mailbox.provider_type, 'shared')
+        mailbox.write({'address_kind': 'user',
+                       'access_checked_date': fields.Datetime.now()})
+        self.assertEqual(mailbox.provider_type, 'personal')
+        self.assertEqual(mailbox.mailbox_type, 'shared')
+
+    def test_checked_without_an_answer_is_empty(self):
+        mailbox = self.personal_mailbox
+        mailbox.access_checked_date = fields.Datetime.now()
+        self.assertFalse(mailbox.provider_type)
+        self.assertNotIn('Personal mailbox', mailbox.subtitle)
+
+
+@tagged('post_install', '-at_install', 'pan_mail_pro')
+class TestExactlyOneNotificationMailbox(MailProTestCase):
+
+    def test_ticking_one_unticks_the_other(self):
+        self.shared_mailbox.write({
+            'is_notification_mailbox': True, 'owner_user_id': self.notif_owner.id})
+        self.assertTrue(self.shared_mailbox.is_notification_mailbox)
+        self.assertFalse(self.notification_mailbox.is_notification_mailbox)
+        self.assertEqual(self.env['pan.mail.mailbox'].search_count(
+            [('is_notification_mailbox', '=', True)]), 1)
+
+    def test_creating_one_unticks_the_other(self):
+        created = self.env['pan.mail.mailbox'].create({
+            'email': 'system@company.test',
+            'is_notification_mailbox': True,
+            'owner_user_id': self.notif_owner.id,
+        })
+        self.assertFalse(self.notification_mailbox.is_notification_mailbox)
+        self.assertTrue(created.is_notification_mailbox)
+
+    def test_unticking_the_last_one_is_refused(self):
+        with self.assertRaisesRegex(UserError, 'Pick another mailbox for notifications first.'):
+            self.notification_mailbox.is_notification_mailbox = False
+        self.assertTrue(self.notification_mailbox.is_notification_mailbox)
+
+    def test_unticking_an_unticked_one_is_fine(self):
+        self.shared_mailbox.is_notification_mailbox = False
+        self.assertTrue(self.notification_mailbox.is_notification_mailbox)
