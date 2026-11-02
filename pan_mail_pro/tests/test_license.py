@@ -376,6 +376,33 @@ class TestLicense(TransactionCase):
         self.assertEqual(row.level, 'error')
         self.assertIn('no longer recognises', row.message)
 
+    def test_connect_again_after_a_refused_or_revoked_key(self):
+        """Settings shows one button when the key is dead, and that button is
+        the whole fix: no Disconnect first, and a fresh pairing starts."""
+        for dead in ('invalid', 'revoked'):
+            with self.subTest(status=dead):
+                link = self.connected()
+                link.status = dead
+                with patch(POST, side_effect=self.server()):
+                    again = self.License.action_connect()
+                self.assertEqual(again, link)
+                self.assertEqual(link.status, 'pending')
+                self.assertFalse(link.key_encrypted)
+                self.assertTrue(link.user_code)
+                link.action_disconnect()
+
+    def test_settings_hide_the_rest_until_the_connection_works(self):
+        """Step 1 is done only on an entitled link; the view hides steps 2
+        to 4 on exactly that flag. Asked through the real gate, which the
+        rest of the suite stubs to yes (tests/connected.py)."""
+        link = self.connected()
+        Settings = self.env(context=dict(
+            self.env.context, pan_mail_pro_real_gate=True))['res.config.settings']
+        self.assertTrue(Settings.create({}).x_setup_account_done)
+        for broken in ('invalid', 'revoked', 'canceled'):
+            link.status = broken
+            self.assertFalse(Settings.create({}).x_setup_account_done, broken)
+
     def test_an_unreachable_server_keeps_the_cached_answer(self):
         link = self.connected()
         with patch(POST, side_effect=requests.ConnectionError('offline')):
