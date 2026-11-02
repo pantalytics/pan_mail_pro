@@ -132,6 +132,10 @@ RETRY_MINUTES = 10
 # past_due stays entitled while Stripe is still retrying the card.
 ENTITLED_STATUSES = ('active', 'trialing', 'past_due')
 
+# The key itself is gone on the server (refused, or replaced by a newer
+# pairing): the only way back is a new pairing. Settings shows Connect again.
+DEAD_STATUSES = ('invalid', 'revoked')
+
 # "Not on this Odoo instance": the local no to the workspace's yes. A config
 # parameter rather than a field on the row, so it survives Disconnect and
 # Connect, which is when the row's own answer is thrown away and re-fetched.
@@ -436,12 +440,10 @@ class PanMailLicense(models.Model):
                      'Settings, Mail Pro, Check approval.')
         elif status == 'invalid':
             head = _('Pantalytics no longer recognises the key of this Odoo '
-                     'instance: Settings, Mail Pro, Disconnect, then Connect to '
-                     'Pantalytics again.')
+                     'instance: Settings, Mail Pro, Connect again.')
         elif status == 'revoked':
             head = _('The connection to Pantalytics was replaced or revoked: '
-                     'Settings, Mail Pro, Disconnect, then Connect to Pantalytics '
-                     'again.')
+                     'Settings, Mail Pro, Connect again.')
         elif status == 'canceled':
             head = _('This Odoo instance has no Mail Pro subscription. See '
                      'Settings, Mail Pro.')
@@ -475,6 +477,11 @@ class PanMailLicense(models.Model):
         if link.is_entitled():
             raise UserError(_('This Odoo instance is already connected to Pantalytics. '
                               'Disconnect it first to connect it again.'))
+        if link.status in DEAD_STATUSES:
+            # The key is dead on the server: Connect again is the whole fix,
+            # so it forgets the old key here rather than asking for a
+            # Disconnect first. Mailboxes and settings are not touched.
+            link.action_disconnect()
         code, body = link._post('/api/v1/link/start', {
             'db_uuid': self._db_uuid(),
             'odoo_url': self.env['ir.config_parameter'].sudo().get_param('web.base.url', ''),
@@ -739,7 +746,7 @@ class PanMailLicense(models.Model):
             _logger.warning('[License] The key belongs to another Odoo database')
             reason = _('This key was issued to another Odoo database. A copy '
                        'needs its own connection: Settings, Mail Pro, '
-                       'Disconnect, then Connect to Pantalytics.')
+                       'Connect again.')
             self.write({
                 'status': 'invalid', 'last_check': now, 'last_error': reason,
                 'entitlement_json': False, 'signature': False, 'valid_until': False,

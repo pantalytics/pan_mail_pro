@@ -308,6 +308,47 @@ class Checks:
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
 
+    def settings_key_refused(self):
+        """A key Pantalytics refused is step 1 and one button, like no key.
+
+        The old page kept steps 2 to 4 under a red "Key Refused", offered a
+        Switch that could not work without a key, and named no fix. Now the
+        rest is gone until step 1 is green, and the one button is the fix.
+        """
+        page = self.page
+        link = self.call('pan.mail.license', 'search', [])
+        self.call('pan.mail.license', 'write', link, {'status': 'invalid', 'valid_until': False})
+        try:
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_timeout(1200)
+            self.shot('settings-key-refused.png')
+
+            block = page.query_selector('div.app_settings_block[data-key=pan_mail_pro]')
+            steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
+            if len(steps) != 1:
+                self.fail(f'a refused key shows {len(steps)} setup steps, expected only step 1')
+            head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
+            if head != '1. Pantalytics account Disconnected':
+                self.fail(f'a refused key reads "{head}" on step 1')
+            again = [b for b in block.query_selector_all('button')
+                     if b.is_visible() and b.inner_text().strip() == 'Connect again']
+            if len(again) != 1:
+                self.fail(f'a refused key shows {len(again)} Connect again buttons, expected 1')
+            text = block.inner_text()
+            for leaked in ('2. Email provider', 'Key Refused', 'recognises',
+                           'Switch to the Pantalytics app'):
+                if leaked in text:
+                    self.fail(f'a refused key still shows "{leaked}"')
+            self.error_free('Settings with a refused key')
+        finally:
+            self.call('pan.mail.license', 'write', link, {
+                'status': 'active',
+                'valid_until': (datetime.datetime.now(datetime.UTC)
+                                + datetime.timedelta(days=14)
+                                ).strftime('%Y-%m-%d %H:%M:%S')})
+
     def inbox_not_connected(self):
         """Without a Pantalytics account the Inbox is one button, not four panes.
 
@@ -4082,6 +4123,7 @@ def main():
         checks.call = rpc_for(args.url, args.db)
         checks.settings()
         checks.settings_not_connected()
+        checks.settings_key_refused()
         checks.inbox_not_connected()
         checks.menus()
         checks.conversation_view()
