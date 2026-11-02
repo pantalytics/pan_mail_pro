@@ -7,8 +7,7 @@ this file guards is that nothing stops in between. Each account remembers the
 app its token came from (`pan.mail.account.registration`) and refreshes with
 that one; the switch keeps the own app's credentials on the row for them;
 the people still on it are nudged to reconnect; and the old credentials go
-only when nobody uses them and an administrator says so (ARCHITECTURE.md
-§9.20).
+on their own once nobody uses them, never before (ARCHITECTURE.md §9.20).
 
 The platform is faked at `requests.post` in `pan_mail_license`, Microsoft at
 the Graph client's own methods or at its `requests.post`.
@@ -120,8 +119,9 @@ class TestTheAccountKeepsItsApp(TransactionCase):
         self.assertEqual(self.posted[0]['data']['client_id'], 'own-id')
 
     def test_an_app_account_on_a_row_switched_back_still_refreshes_through_the_app(self):
-        """The radio still goes back to the own app, and the accounts the
-        app signed in keep refreshing with it: the account decides."""
+        """A row put back on the own app (a technical write; the form has no
+        choice since #369), and the accounts the app signed in keep
+        refreshing with it: the account decides."""
         self._switch()
         account = connected_account(self.env, self.mia, registration='pantalytics')
         self.row.registration = 'own'
@@ -216,16 +216,33 @@ class TestTheSwitch(TransactionCase):
         self.row.invalidate_recordset()
         self.assertEqual(self.row.registration, 'own')
 
-    def test_the_settings_line_switches_too(self):
-        connect_to_pantalytics(self.env)
+    def test_the_step_two_arrow_opens_the_row_not_a_new_one(self):
+        """Step 2's arrow opens the existing row as a form (#369). On
+        odoo.pantalytics.com it landed on a new, unsaved provider form, and
+        saving that is a second row."""
         settings = self.env['res.config.settings'].with_user(self.admin).create({})
-        self.assertTrue(settings.x_microsoft_switchable)
-        with patch(PLATFORM_POST, return_value=_started()), \
-                a_browser(self.env(user=self.admin)):
-            action = settings.action_switch_microsoft_app()
-        self.assertEqual(urlparse(action['url']).netloc, 'login.microsoftonline.com')
-        settings = self.env['res.config.settings'].with_user(self.admin).create({})
-        self.assertFalse(settings.x_microsoft_switchable)
+        action = settings.action_open_provider()
+        self.assertEqual(action['res_model'], 'pan.mail.provider')
+        self.assertEqual(action['res_id'], self.row.id)
+        self.assertEqual(action['view_mode'], 'form')
+        self.assertEqual([kind for _view, kind in action['views']], ['form'])
+        self.assertNotIn('default_provider', action.get('context') or '')
+
+    def test_without_a_row_the_arrow_opens_the_list(self):
+        """Nothing to open yet: the Providers list, where the empty state
+        says what to add. Never a form in create mode."""
+        self.row.unlink()
+        action = self.env['res.config.settings'].with_user(self.admin).create(
+            {}).action_open_provider()
+        self.assertFalse(action.get('res_id'))
+        self.assertEqual(action['view_mode'].split(',')[0], 'list')
+
+    def test_the_providers_menu_opens_the_list(self):
+        """The XML action itself starts on the list, not on a form."""
+        action = self.env['ir.actions.act_window']._for_xml_id(
+            'pan_mail_pro.action_pan_mail_provider')
+        self.assertEqual(action['view_mode'].split(',')[0], 'list')
+        self.assertFalse(action.get('res_id'))
 
     def test_only_an_own_microsoft_row_switches(self):
         connect_to_pantalytics(self.env)
@@ -294,91 +311,123 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
                    return_value=True):
             self.assertFalse(self.nora._pan_mail_should_prompt_reconnect())
 
-    def test_the_count_and_the_cleanup(self):
-        self.assertEqual(self.row.own_account_count, 0, 'not moving yet')
-        self.assertFalse(self._settings().x_microsoft_own_left)
+    def _gone(self):
+        self.row.invalidate_recordset()
+        return not (self.row.client_id or self.row.tenant_id
+                    or self.row.sudo().client_secret_encrypted)
+
+    def test_the_old_app_goes_when_the_last_account_signs_in_again(self):
+        """No button (#369): the own app's credentials stay while anybody
+        refreshes with them, and go the moment the last one signs in again
+        through ours."""
         self._switch()
         self.row.invalidate_recordset()
         self.assertEqual(self.row.own_account_count, 2)
-        settings = self._settings()
-        self.assertIn('2 people still have to sign in again',
-                      settings.x_microsoft_own_left)
-        self.assertFalse(settings.x_microsoft_own_removable)
-        with self.assertRaisesRegex(UserError, 'still sign in'):
-            self.row.with_user(self.admin).action_remove_own_registration()
-
         self.nora_account.registration = 'pantalytics'
-        self.row.invalidate_recordset()
-        self.assertEqual(self.row.own_account_count, 1)
-        self.assertIn('1 person still has to sign in again', self._settings().x_microsoft_own_left)
-
+        self.assertFalse(self._gone(), 'Mia still refreshes with it')
         self.mia_account.registration = 'pantalytics'
-        self.row.invalidate_recordset()
-        settings = self._settings()
-        self.assertFalse(settings.x_microsoft_own_left)
-        self.assertTrue(settings.x_microsoft_own_removable)
-        self.assertTrue(self.row.client_id, 'offered, never done on its own')
-
-        settings.action_remove_own_registration()
-        self.row.invalidate_recordset()
-        self.assertFalse(self.row.client_id)
-        self.assertFalse(self.row.tenant_id)
-        self.assertFalse(self.row.sudo().client_secret_encrypted)
+        self.assertTrue(self._gone())
         self.assertFalse(self.row.has_own_registration)
-        self.assertFalse(self._settings().x_microsoft_own_removable)
         self.assertEqual(self.row.registration, 'pantalytics')
 
-    def test_an_own_row_cannot_remove_the_app_it_signs_in_with(self):
-        with self.assertRaises(UserError):
-            self.row.with_user(self.admin).action_remove_own_registration()
+    def test_a_disconnect_or_a_removal_counts_too(self):
+        """Leaving the own app is not only signing in again: an account that
+        is disconnected or removed refreshes with nothing."""
+        self._switch()
+        self.nora_account.registration = 'pantalytics'
+        self.mia.action_disconnect_mailbox()
+        self.assertTrue(self._gone())
+
+    def test_a_removed_last_account_clears_it(self):
+        self._switch()
+        self.nora_account.registration = 'pantalytics'
+        self.mia_account.unlink()
+        self.assertTrue(self._gone())
+
+    def test_the_daily_cron_is_the_net(self):
+        """A database that moved before this release, or a path that wrote
+        the account without its `write`: the heartbeat cron clears it."""
+        self._switch()
+        self.env.cr.execute(
+            "UPDATE pan_mail_account SET registration = 'pantalytics' WHERE id IN %s",
+            [tuple((self.nora_account | self.mia_account).ids)])
+        (self.nora_account | self.mia_account).invalidate_recordset()
+        self.assertFalse(self._gone(), 'nothing wrote through the ORM yet')
+        with patch.object(type(self.env['pan.mail.license']), '_heartbeat_guarded'):
+            self.env['pan.mail.license']._cron_heartbeat()
+        self.assertTrue(self._gone())
+
+    def test_an_own_row_keeps_the_app_it_signs_in_with(self):
+        self.nora_account.registration = 'pantalytics'
+        self.mia_account.registration = 'pantalytics'
+        self.assertFalse(self.env['pan.mail.provider']._forget_unused_own_registration())
         self.assertEqual(self.row.client_id, 'own-id')
 
-    def test_step_two_warns_until_nobody_is_on_the_own_app(self):
-        """The dot on step 2 is the amber one while either fix line is up:
-        the row on its own app, or people still to sign in again. Green only
-        once both are gone (#366)."""
-        def warns(settings):
-            return bool(settings.x_microsoft_switchable or settings.x_microsoft_own_left)
-
+    def test_step_two_is_amber_while_the_row_is_on_its_own_app(self):
+        """The dot on step 2 follows the row only (#369): amber while it is
+        on its own app, green once it has moved, whoever still refreshes
+        through the old app. That is each mailbox's status."""
         settings = self._settings()
         self.assertTrue(settings.x_setup_provider_done)
-        self.assertTrue(warns(settings), 'on the own app: every sign-in goes through it')
+        self.assertTrue(settings.x_microsoft_on_own_app)
         self._switch()
         self.row.invalidate_recordset()
-        self.assertTrue(warns(self._settings()), 'two people still on the own app')
-        (self.nora_account | self.mia_account).registration = 'pantalytics'
-        self.row.invalidate_recordset()
+        self.assertEqual(self.row.own_account_count, 2, 'two people still on the own app')
         settings = self._settings()
-        self.assertFalse(warns(settings))
-        self.assertTrue(settings.x_setup_provider_done, 'and so the dot is green')
+        self.assertFalse(settings.x_microsoft_on_own_app, 'and yet the step is green')
+        self.assertTrue(settings.x_setup_provider_done)
 
-    def test_step_two_says_microsoft_not_pantalytics_app(self):
-        """Pantalytics is not an email provider, so its app has no name on
-        the settings page: the step says Microsoft 365, and the move off the
-        own app is a Sign in with Microsoft button (#366)."""
-        arch = self.env['res.config.settings'].get_view(
-            self.env.ref('pan_mail_pro.res_config_settings_view_form').id, 'form')['arch']
-        app = etree.fromstring(arch).xpath("//app[@name='pan_mail_pro']")[0]
-        for comment in app.xpath('.//comment()'):
+    def _arch_text(self, model, xmlid, root_xpath=None):
+        arch = self.env[model].get_view(self.env.ref(xmlid).id, 'form')['arch']
+        root = etree.fromstring(arch)
+        if root_xpath:
+            root = root.xpath(root_xpath)[0]
+        for comment in root.xpath('.//comment()'):
             comment.getparent().remove(comment)
-        page = etree.tostring(app, encoding='unicode')
+        return root, etree.tostring(root, encoding='unicode')
+
+    def test_step_two_reports_and_does_not_act(self):
+        """The overview shows the status, the provider form holds the action
+        (#369): on an own app step 2 is an amber dot and one line, with no
+        button, no count and no cleanup. Pantalytics is not an email
+        provider, so its app has no name on the settings page (#366)."""
+        app, page = self._arch_text('res.config.settings',
+                                    'pan_mail_pro.res_config_settings_view_form',
+                                    "//app[@name='pan_mail_pro']")
         self.assertNotIn('Pantalytics app', page)
-        self.assertIn('Sign in with Microsoft', page)
-        self.assertIn('Your own Azure app is no longer needed.', page)
+        self.assertIn('Sign in again to finish the move', page)
         self.assertIn('o_mailpro_dot_attention', page, 'amber, not the red of broken')
+        for gone in ('Sign in with Microsoft', 'Remove your old app registration',
+                     'still has to sign in', 'still have to sign in', 'no longer needed'):
+            self.assertNotIn(gone, page)
+        arrows = app.xpath("//button[@name='action_open_provider']")
+        self.assertEqual(len(arrows), 1, 'the arrow opens the row through a method')
+        self.assertEqual(arrows[0].get('type'), 'object')
 
-    def test_the_provider_form_says_the_same(self):
-        """The provider form meets the same move in the same words (#366)."""
-        arch = self.env['pan.mail.provider'].get_view(
-            self.env.ref('pan_mail_pro.view_pan_mail_provider_form').id, 'form')['arch']
-        form = etree.fromstring(arch)
-        for comment in form.xpath('//comment()'):
-            comment.getparent().remove(comment)
-        page = etree.tostring(form, encoding='unicode')
+    def test_the_provider_form_holds_the_move(self):
+        """The provider form has the move and nothing to choose (#369): no
+        "Sign in through" radio, the deprecation in one line and Sign in with
+        Microsoft without a confirm. Nothing about people: who still has to
+        sign in again is each mailbox's status, and the cleanup is automatic."""
+        form, page = self._arch_text('pan.mail.provider',
+                                     'pan_mail_pro.view_pan_mail_provider_form')
         self.assertNotIn('Pantalytics app', page)
         self.assertNotIn('Pantalytics Mail Pro app', page)
-        self.assertIn('Sign in with Microsoft', page)
-        self.assertIn('Your own Azure app is no longer needed.', page)
+        self.assertNotIn('Nothing to register in Microsoft Entra', page)
+        self.assertIn('Your own app registration is deprecated.', page)
+        for gone in ('own_account_count', 'Remove your old app registration',
+                     'action_remove_own_registration', 'sign in again'):
+            self.assertNotIn(gone, page)
+        registration, = form.xpath("//field[@name='registration']")
+        self.assertEqual(registration.get('invisible'), '1', 'no choice on screen')
+        switch, = form.xpath("//button[@name='action_switch_to_pantalytics']")
+        self.assertEqual(switch.get('string'), 'Sign in with Microsoft')
+        self.assertFalse(switch.get('confirm'), 'it only sends the admin to Microsoft')
+        for name in ('client_id', 'tenant_id', 'client_secret'):
+            microsoft = [f for f in form.xpath(f"//field[@name='{name}']")
+                         if f.get('invisible') == "provider != 'outlook'"]
+            self.assertTrue(microsoft and microsoft[0].get('readonly') == '1',
+                            f"the own app's {name} is read-only")
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')

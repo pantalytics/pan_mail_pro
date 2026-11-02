@@ -159,20 +159,19 @@
                          action: the one step 1 names. -->
                     <div invisible="not x_setup_account_done">
                     <div class="o_mailpro_step">
-                        <!-- Amber while anybody still signs in through the
-                             customer's own Azure app: before the move (the
-                             row is on it, so every sign-in is) and after it,
-                             until the last account has signed in again. Not
+                        <!-- Amber while the row is on the customer's own
+                             Azure app, green once it has moved. Accounts that
+                             still refresh through the old app are each
+                             mailbox's status, not this step's (#369). Not
                              red: the old sign-ins keep working, so nothing is
                              broken. It wins over both other dots. -->
-                        <field name="x_microsoft_switchable" invisible="1"/>
-                        <field name="x_microsoft_own_removable" invisible="1"/>
+                        <field name="x_microsoft_on_own_app" invisible="1"/>
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_provider_done or x_microsoft_switchable or x_microsoft_own_left"/>
+                              invisible="not x_setup_provider_done or x_microsoft_on_own_app"/>
                         <span class="o_mailpro_dot o_mailpro_dot_attention" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="not x_microsoft_switchable and not x_microsoft_own_left"/>
+                              invisible="not x_microsoft_on_own_app"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_setup_provider_done or x_microsoft_switchable or x_microsoft_own_left"/>
+                              invisible="x_setup_provider_done or x_microsoft_on_own_app"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">2. Email provider</span>
@@ -195,42 +194,29 @@
                             </div>
                             <!-- A fix line while nothing is chosen: Microsoft 365
                                  through the Pantalytics app needs nothing typed,
-                                 so choosing it is the whole step. Every other
-                                 choice, and an own app registration, is behind
-                                 the arrow. -->
+                                 so choosing it is the whole step. Gmail and
+                                 IMAP/SMTP are behind the arrow. -->
                             <div class="o_mailpro_step_msg" invisible="x_active_provider_id">
                                 <button name="action_use_microsoft_app" type="object"
                                         string="Use Microsoft 365" class="btn-link p-0"/>
                             </div>
-                            <!-- Moving an own Azure app registration to the
-                                 Pantalytics app (ARCHITECTURE.md §9.20): one
-                                 fix line at a time. The deprecation and its
-                                 one button, then who has still to sign in
-                                 again, then the old credentials to remove
-                                 once nobody signs in with them. The provider
-                                 is Microsoft 365 throughout; whose app it
-                                 signs in with is not a provider, so the
-                                 words "Pantalytics app" stay off this page. -->
-                            <div class="o_mailpro_step_msg o_mailpro_msg_attention" invisible="not x_microsoft_switchable">
-                                Your own Azure app is no longer needed. Sign in with Microsoft once to move over.
-                            </div>
-                            <div class="o_mailpro_step_msg" invisible="not x_microsoft_switchable">
-                                <button name="action_switch_microsoft_app" type="object"
-                                        string="Sign in with Microsoft" class="btn-primary"
-                                        confirm="Everyone else is asked to sign in once too, and their mail keeps working until they do."/>
-                            </div>
-                            <div class="o_mailpro_step_msg" invisible="not x_microsoft_own_left">
-                                <field name="x_microsoft_own_left" nolabel="1" readonly="1"/>
-                            </div>
-                            <div class="o_mailpro_step_msg" invisible="not x_microsoft_own_removable">
-                                <button name="action_remove_own_registration" type="object"
-                                        string="Remove your old app registration" class="btn-link p-0"
-                                        confirm="Nobody signs in through your own Azure app any more. Remove its Client ID, secret and tenant from Odoo? You can delete the app in Azure afterwards."/>
+                            <!-- The move off an own Azure app (ARCHITECTURE.md
+                                 §9.20), as status only: one line, no button.
+                                 The move is on the provider form behind the
+                                 arrow (#369). The provider is Microsoft 365
+                                 throughout; whose app it signs in with is not
+                                 a provider, so the words "Pantalytics app"
+                                 stay off this page. -->
+                            <div class="o_mailpro_step_msg o_mailpro_msg_attention" invisible="not x_microsoft_on_own_app">
+                                Sign in again to finish the move
                             </div>
                         </div>
                         <field name="x_setup_provider_needs_account" invisible="1"/>
-                        <button type="action" name="%(action_pan_mail_provider)d"
-                                icon="oi-chevron-right" title="Providers"
+                        <!-- The row itself, never the list: a list could
+                             land on a new, unsaved form, and saving that is
+                             a second provider row. -->
+                        <button type="object" name="action_open_provider"
+                                icon="oi-chevron-right" title="Provider"
                                 class="oe_link o_mailpro_step_edit"
                                 invisible="x_setup_provider_needs_account"/>
                         <button type="action" name="%(action_pan_mail_account)d"
