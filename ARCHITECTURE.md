@@ -1065,10 +1065,13 @@ Three properties are worth naming, because each was a bug first:
   and the invite button lives on the user list, where the users are. A second
   copy in Settings was a second front door to one action. The end of the line
   below points at that list; it does not copy the button.
-- **The line has an end (#391).** Four green dots and the first incoming mail
+- **The line has an end (#391).** Four steps done and the first incoming mail
   on a record (`pan.mail.setup.up_and_running`): the checklist folds into one
-  line, "Mail Pro is up and running", with Show setup under it. A green step 4
-  alone is not the end, because a mailbox that can send has not shown that
+  line, "Mail Pro is up and running", with Show setup under it. Done is green,
+  and on step 4 amber too: a personal mailbox carrying the system email works
+  and a shared one is a recommendation (#387), so the line keeps step 4's own
+  sentence under its headline, linked to Mailboxes. Red, the open dot, or
+  another step's amber keep the checklist. A done step 4 alone is not the end, because a mailbox that can send has not shown that
   mail arrives where it belongs. "On a record" is link coverage's *linked to a
   document* (`pan.mail.coverage._linked_domain`, §7), read off `mail.message`
   rather than the routing log, which is cleaned after 90 days. The dot colours

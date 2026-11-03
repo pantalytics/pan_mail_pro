@@ -15,6 +15,12 @@
                 </svg>
                 <span class="o_mailpro_running_title">Mail Pro is up and running</span>
             </div>
+            <!-- Step 4 amber: the same status the step shows, one line,
+                 and the way to the list where a shared mailbox takes the
+                 flag (#387). -->
+            <button t-if="personalNotification" type="button"
+                    class="btn btn-link o_mailpro_running_msg o_mailpro_msg_attention"
+                    t-on-click="openMailboxes">System email from a personal mailbox</button>
             <div class="o_mailpro_running_actions">
                 <button t-if="unconnected" type="button" class="btn btn-primary o_mailpro_invite"
                         t-on-click="invite">Invite your colleagues to connect their mailbox</button>

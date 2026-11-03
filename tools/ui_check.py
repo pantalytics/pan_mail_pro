@@ -20,7 +20,7 @@ seeds it. Every assertion here is a bug this module has actually shipped:
     <the Odoo.sh host>") beside the arrow, two routes to one step, and the
     first one left the provider form stuck on "Not Connected" (#382)
   * a staging copy showed outgoing mail and said nothing about it (#379)
-  * onboarding had no end: four green dots and the first mail on a record
+  * onboarding had no end: four done steps and the first mail on a record
     now fold into "Mail Pro is up and running", with confetti once (#391)
 
     tools/ui_check.py                     # assert, and write screenshots
@@ -225,7 +225,7 @@ class Checks:
     # -- The end of onboarding (#391) ----------------------------------------
 
     def up_and_running(self):
-        """All four dots green and an incoming mail on a record: the checklist
+        """Four steps done and an incoming mail on a record: the checklist
         folds into "Mail Pro is up and running", confetti flies once per
         database and never on a reload, Show setup unfolds the four green
         steps, and the one next action opens the colleagues who have not
@@ -329,6 +329,8 @@ class Checks:
                        if b.is_visible()]
             if primary != ['Invite your colleagues to connect their mailbox']:
                 self.fail(f'the one next action reads {primary}')
+            if page.query_selector('.o_mailpro_running_msg'):
+                self.fail('a shared notification mailbox still shows the personal-mailbox line')
 
             # A reload is not a second time, and Show setup is a click away.
             again = open_settings()
@@ -352,6 +354,27 @@ class Checks:
                 if toggle.inner_text().strip() != 'Hide setup':
                     self.fail(f'the open checklist\'s button reads "{toggle.inner_text().strip()}"')
                 self.rows_only_report(steps, 'up and running, unfolded')
+
+            # Step 4 amber, a personal mailbox carrying the system email
+            # (#387): still up and running, with step 4's own line under the
+            # headline, which opens Mailboxes.
+            call('pan.mail.mailbox', 'write', [carrier['id']], {'is_notification_mailbox': True})
+            open_settings()
+            page.wait_for_timeout(500)
+            self.shot('settings-up-and-running-personal.png')
+            line = page.query_selector('.o_mailpro_running_msg')
+            if not line or not line.is_visible():
+                self.fail('up and running with a personal notification mailbox shows no line for it')
+            elif ' '.join(line.inner_text().split()) != 'System email from a personal mailbox':
+                self.fail(f'the personal-mailbox line reads "{line.inner_text().strip()}"')
+            else:
+                line.click()
+                page.wait_for_selector('.o_list_view', timeout=30000)
+                page.wait_for_timeout(800)
+                crumb = ' '.join(page.inner_text('.o_breadcrumb').split())
+                if 'Mailboxes' not in crumb:
+                    self.fail(f'the personal-mailbox line opens "{crumb}", not Mailboxes')
+            call('pan.mail.mailbox', 'write', [shared['id']], {'is_notification_mailbox': True})
 
             # Under prefers-reduced-motion the first time is still the first
             # time, and nothing moves.

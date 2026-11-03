@@ -242,6 +242,17 @@ $mailpro-window: if($mailpro-dark, #262a36, #ffffff);
         padding-left: 3rem;
     }
 
+    // Step 4's amber line, at the indent of the headline's words.
+    .o_mailpro_running_msg {
+        align-self: flex-start;
+        margin-top: -0.5rem;
+        margin-left: 3rem;
+        padding: 0;
+        font-size: 0.9em;
+        color: $mailpro-attention-text;
+        text-align: left;
+    }
+
     .o_mailpro_show_setup {
         padding-left: 0;
         padding-right: 0;

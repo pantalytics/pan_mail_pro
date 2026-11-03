@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """The end of onboarding: "Mail Pro is up and running", once (#391).
 
-It fires when all four checklist dots are green and the first incoming mail
-has landed on a record, the platform's station 4. A green step 4 alone is not
-the end. The confetti is once per database, a config parameter, and the one
+It fires when the four checklist steps are done (green, or amber on step 4,
+a personal mailbox carrying the system email) and the first incoming mail has
+landed on a record, the platform's station 4. A done step 4 alone is not the
+end. The confetti is once per database, a config parameter, and the one
 next action opens the colleagues who have not connected a mailbox yet.
 """
 from odoo.exceptions import AccessError
@@ -121,6 +122,29 @@ class TestUpAndRunning(MailProTestCase):
         linked = self.env['mail.message'].sudo().search_count(
             [('x_direction', '!=', False)] + self.env['pan.mail.coverage']._linked_domain())
         self.assertEqual(counts['linked'], linked)
+
+    def test_an_amber_step_4_is_done(self):
+        """A personal mailbox carrying the system email works; a shared one
+        is the recommendation, said under the headline, not a blocker."""
+        self.on_a_record()
+        self.personal_mailbox.is_notification_mailbox = True
+        self.assertEqual(self.Setup.step_dots()['mailboxes'], 'attention')
+        self.assertTrue(self.Setup.up_and_running())
+        settings = self.settings()
+        self.assertTrue(settings.x_up_and_running)
+        self.assertEqual(settings.x_mailboxes_dot, 'attention', 'the line reads this')
+
+    def test_red_or_open_steps_block_and_so_does_another_amber(self):
+        """Only step 4's amber is a recommendation; an own Azure app on step
+        2 still has its own line to show, so it keeps the checklist open."""
+        self.on_a_record()
+        self.provider.registration = 'own'
+        self.assertEqual(self.Setup.step_dots()['provider'], 'attention')
+        self.assertFalse(self.Setup.up_and_running())
+        self.provider.registration = 'pantalytics'
+        self.env['pan.mail.domain'].search([]).unlink()
+        self.assertEqual(self.Setup.step_dots()['domains'], 'todo')
+        self.assertFalse(self.Setup.up_and_running())
 
     def test_a_red_step_later_opens_the_checklist_again(self):
         """Not sticky: the line comes back where the red dot is."""

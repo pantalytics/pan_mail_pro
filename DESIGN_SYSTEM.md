@@ -424,11 +424,14 @@ border, the way a phone's Settings app lists them.
 
 ### The checklist has an end
 
-Four green dots and the first incoming mail on a record fold the checklist
+Four done steps and the first incoming mail on a record fold the checklist
 into one line, the way the platform's install screen ends (#391): a rocket,
 "Mail Pro is up and running", and under it the one next action, a primary
 button, Invite your colleagues to connect their mailbox, while anybody is
-left to invite. Show setup, a link, unfolds the four steps under it; the
+left to invite. Done is green, and amber on step 4: a personal mailbox
+carrying the system email is a recommendation, so step 4's own amber line,
+System email from a personal mailbox, sits under the headline and opens
+Mailboxes. Red or the open dot keep the checklist. Show setup, a link, unfolds the four steps under it; the
 fold is a click, held by the widget, never a field the settings form would
 ask to save. The confetti flies once per database and stands still under
 `prefers-reduced-motion`. No sentence explains any of it: the line is the

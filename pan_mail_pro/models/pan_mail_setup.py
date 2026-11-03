@@ -378,16 +378,21 @@ class PanMailSetup(models.AbstractModel):
 
     @api.model
     def up_and_running(self, dots=None):
-        """All four dots green and the first mail on a record (#391).
+        """Four steps done and the first mail on a record (#391).
 
-        Green step 4 alone is not the end: a mailbox that can send has not
-        yet shown that mail arrives where it belongs. Not sticky either: a
-        step that turns red later opens the checklist again, because that is
-        where the red dot is.
+        Done is green, and for step 4 amber too: a personal mailbox carrying
+        the system email works, and a shared one is a recommendation, not a
+        failure (#387). The line says so under its headline. Red or the open
+        dot blocks. Green step 4 alone is not the end: a mailbox that can
+        send has not yet shown that mail arrives where it belongs. Not sticky
+        either: a step that turns red later opens the checklist again,
+        because that is where the red dot is.
         """
         if dots is None:
             dots = self.step_dots()
-        return all(dot == 'ok' for dot in dots.values()) and self.first_mail_on_record()
+        done = all(dot == 'ok' or (step, dot) == ('mailboxes', 'attention')
+                   for step, dot in dots.items())
+        return done and self.first_mail_on_record()
 
     @api.model
     def celebrate_once(self):
