@@ -165,7 +165,8 @@ User → Odoo → Microsoft Graph API / Gmail API / IMAP+SMTP host
 The one exception is the daily heartbeat to `mcp.pantalytics.com`, the
 whole of which is: the database id, the Mail Pro and Odoo version, how many
 accounts are connected, whether sync is healthy, and the last 24 hours of link
-coverage as counts and rule names; plus the Odoo URL once, when the instance
+coverage as counts and rule names, and on a staging copy a yes that it is one;
+plus the Odoo URL once, when the instance
 is connected, so the approval page can name it. Never an address, a subject, a
 body or a name. With **Help improve Mail Pro** switched on for your workspace,
 the browser also sends named events and a masked recording of the Mail Pro

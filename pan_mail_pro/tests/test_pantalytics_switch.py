@@ -310,7 +310,7 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
 
     def test_a_copy_asks_nobody(self):
         self._switch()
-        with patch('odoo.addons.pan_mail_pro.models.res_users.database_is_neutralized',
+        with patch('odoo.addons.pan_mail_pro.models.res_users.database_is_copy',
                    return_value=True):
             self.assertFalse(self.nora._pan_mail_should_prompt_reconnect())
 

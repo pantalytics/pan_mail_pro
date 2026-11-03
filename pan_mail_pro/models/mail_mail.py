@@ -10,7 +10,7 @@ from odoo.addons.base.models.ir_mail_server import MailDeliveryException
 from odoo.exceptions import AccessError, UserError
 
 from .mail_provider_client import ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, ERROR_THROTTLED
-from .neutralization import COPY_FROM_HEADER, database_is_neutralized
+from .neutralization import COPY_FROM_HEADER, database_is_copy
 from .providers.mime_utils import odoo_headers
 
 # Set by the composer around its send: this batch is the thing the person did.
@@ -222,7 +222,7 @@ class MailMail(models.Model):
                 post_send_callback=post_send_callback,
             )
 
-        if database_is_neutralized(self.env):
+        if database_is_copy(self.env):
             return mails._send_on_staging(
                 auto_commit=auto_commit,
                 raise_exception=raise_exception,

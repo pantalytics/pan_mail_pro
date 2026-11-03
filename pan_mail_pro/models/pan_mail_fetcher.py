@@ -22,7 +22,7 @@ from .mail_provider_client import (
     ThrottledError, odoo_db_marker,
 )
 from .mail_message import READ_MIRROR_CTX
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 
 _logger = logging.getLogger(__name__)
 
@@ -128,16 +128,11 @@ class PanMailFetcher(models.AbstractModel):
         Cron method to fetch emails from all enabled mailboxes.
         Called by ir.cron every 1 minute.
         """
-        # Neutralization deactivates every cron, so this normally does not run
-        # in staging at all. It still gets here by hand, from "Sync Now" on a
-        # mailbox -- and a sync is not read-only: it marks mail read and posts
-        # into chatter, which fires notifications back out.
-        if database_is_neutralized(self.env):
-            _logger.info('[Incoming Mail] Database is neutralized - skipping sync')
-            return
         # Before every other gate: during setup there are no mailboxes and the
         # setup gate returns, and setup is exactly when a first heartbeat can
         # meet a bad minute. The retry must not wait for a state it unblocks.
+        # Before the copy's return too: a copy reports in as staging (#384),
+        # and its answer lapses like any other when nobody asks again.
         License = self.env['pan.mail.license']
         License._retry_if_stuck()
         # Same reason, the other direction: the setup answers ride the
@@ -147,6 +142,14 @@ class PanMailFetcher(models.AbstractModel):
         # And a kind of failure not seen in the last day: during a beta that
         # is the thing to hear about today (pan.mail.error).
         License._report_errors_if_new()
+        # Neutralization deactivates every cron, but a later `-u` switches
+        # this one back on (ARCHITECTURE.md §9.9), and it gets here by hand
+        # from "Sync Now" too -- and a sync is not read-only: it marks mail
+        # read and posts into chatter, which fires notifications back out.
+        # A copy is also one the platform's answer calls staging (#384).
+        if database_is_copy(self.env):
+            _logger.info('[Incoming Mail] Database is a copy - skipping sync')
+            return
         # Deliberately not filtered on an owner: whether a mailbox needs one is
         # the provider's business. A Gmail or IMAP shared mailbox is its own
         # account with nobody behind it, and requiring an owner here silently

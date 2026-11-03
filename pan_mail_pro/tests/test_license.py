@@ -30,7 +30,7 @@ POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
 HEARTBEAT_FIELDS = {
     'db_uuid', 'module_version', 'odoo_version', 'mailboxes_connected',
     'mails_sent_24h', 'mails_received_24h', 'sync_ok', 'errors',
-    'coverage', 'rules', 'corrections', 'setup',
+    'coverage', 'rules', 'corrections', 'setup', 'staging',
 }
 
 
@@ -610,15 +610,6 @@ class TestLicense(TransactionCase):
         self.assertFalse(link.improve_token)
         self.assertEqual(link.replay_sample, 0.0)
 
-    def test_a_neutralized_copy_neither_connects_nor_reports(self):
-        link = self.connected()
-        self.calls.clear()
-        self.env['ir.config_parameter'].sudo().set_param('database.is_neutralized', True)
-        with patch(POST, side_effect=self.server()):
-            link._heartbeat()
-            with self.assertRaises(UserError):
-                self.License.action_connect()
-        self.assertEqual(self.calls, [])
 
 
 @tagged('post_install', '-at_install')
