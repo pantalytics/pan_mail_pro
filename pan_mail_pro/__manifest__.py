@@ -167,6 +167,7 @@
     ],
     'assets': {
         'web.assets_backend': [
+            'pan_mail_pro/static/src/compat/icons.scss',
             'pan_mail_pro/static/src/scss/setup_status.scss',
             'pan_mail_pro/static/src/scss/mailbox_form.scss',
             'pan_mail_pro/static/src/scss/conversation_view.scss',
@@ -194,6 +195,8 @@
             'pan_mail_pro/static/src/xml/chatter_door.xml',
             'pan_mail_pro/static/src/xml/conversation_view.xml',
             'pan_mail_pro/static/src/xml/link_dialog.xml',
+            # Last: it inherits templates listed above (docs/plans/multi-version.md).
+            'pan_mail_pro/static/src/compat/templates.xml',
         ],
         # Help improve Mail Pro: posthog-js (static/lib/posthog, MIT), in a
         # bundle of its own that improve.js loads only on an opted-in

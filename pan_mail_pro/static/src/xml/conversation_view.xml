@@ -1116,13 +1116,20 @@
         two unfolded mailboxes must not both claim to be showing Inbox.
     -->
     <t t-name="pan_mail_pro.ConversationFolders">
+        <!--
+            The click reads the mailbox off the button, not off `folderMailbox`:
+            the callers set that one variable in turn and Owl 3 evaluates a
+            handler when the event fires, so every folder would open the last
+            mailbox's (the splitter has the same note).
+        -->
         <t t-set="isOpenMailbox" t-value="(folderMailbox or false) === (this.state.mailboxId or false)"/>
         <button t-foreach="this.foldersFor(folderMailbox)" t-as="folder" t-key="folder.id"
                 type="button"
                 class="o_mailpro_folder d-flex align-items-center justify-content-between"
                 t-att-class="{ 'o_mailpro_folder_active': isOpenMailbox and folder.id === this.state.folder }"
                 t-att-aria-current="isOpenMailbox and folder.id === this.state.folder ? 'true' : undefined"
-                t-on-click="() => this.setFolder(folder.id, folderMailbox or null)">
+                t-att-data-mailbox="folderMailbox or ''"
+                t-on-click="(ev) => this.setFolder(folder.id, ev.currentTarget.dataset.mailbox ? Number(ev.currentTarget.dataset.mailbox) : null)">
             <span class="d-flex align-items-center gap-2 text-truncate">
                 <i t-attf-class="fa fa-fw {{ this.folderIcon(folder) }} o_mailpro_folder_icon" aria-hidden="true"/>
                 <span t-esc="folder.name"/>

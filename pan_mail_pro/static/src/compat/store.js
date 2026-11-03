@@ -2,7 +2,12 @@
 // The mail store keys its record models by class name on 18 and 19
 // (`store.Thread`) and by model name on 20 (`store["mail.thread"]`).
 export function threadModel(store) {
-    return store.Thread || store["mail.thread"];
+    return storeModel(store, "Thread", "mail.thread");
+}
+
+/** A store model by its class name (18, 19) or its model name (20). */
+export function storeModel(store, className, modelName) {
+    return store[className] || store[modelName];
 }
 
 /** Every record of a store model: an object up to 19, a Map on 20. */

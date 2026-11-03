@@ -139,6 +139,27 @@ touches:
   rather than `fetchThreadData`, and its settings onchange only computes a
   field that depends on something (`@api.depends('company_id')` on the two
   computes that had none).
+- **Three more things the browser found on 20, after the Inbox drew**: 20
+  ships no FontAwesome at all (Material Symbols and `oi`, named through a
+  `data-icon` attribute), so every `fa fa-*` in the module drew nothing and
+  the buttons made of one were 0px high; `static/src/compat/icons.scss` is
+  empty here and, in the overlay, maps each of the 35 names the module uses
+  to a Material Symbol from Odoo's own subset. Owl 3 renders a slot with
+  `t-call-slot` and ignores `t-slot`; `static/src/compat/templates.xml`
+  (empty here) swaps the one in the overlay by template inheritance, listed
+  last in the bundle. And the same event-time evaluation that broke the
+  splitter broke the folder rows: `setFolder(folder.id, folderMailbox)` read
+  the last mailbox's id, so Drafts opened in the wrong mailbox; the button
+  carries `data-mailbox` now.
+- **Open on 18 after the browser walk** (the suite is green): "picking a
+  record did not open the composer in the pane" and "after unlinking the
+  conversation is linked to the lead", both in `tools/ui_check.py`'s New
+  Email and unlink steps. Driven by hand on the same 18 (New Email, a reply
+  first then New Email, the exact cell click) the composer opens every
+  time; what differs in the check's run is not yet found. A
+  FetchRecordError for a `mail.compose.message` id shows on the failure
+  screenshot, which points at the draft's stored composer rather than at
+  the picker.
 - `migrations/` tests assert 19.0 migrations; the folder is empty on the
   `20.0` branch, so they do not apply there.
 

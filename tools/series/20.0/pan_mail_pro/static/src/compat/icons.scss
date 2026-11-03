@@ -1,0 +1,75 @@
+// The 20 version of pan_mail_pro/static/src/compat/icons.scss: every
+// FontAwesome name this module uses, drawn as the Material Symbol Odoo 20
+// ships in its subset (addons/web/tooling/icons/icons_wishlist.txt). The
+// markup stays `fa fa-<name>` on every series; only this file knows 20 has
+// no FontAwesome.
+$mailpro-icons: (
+    "times": "close",
+    "chevron-right": "chevron_forward",
+    "chevron-left": "chevron_backward",
+    "chevron-down": "expand_more",
+    "arrow-left": "arrow_back",
+    "info-circle": "info",
+    "exclamation-circle": "error",
+    "external-link": "open_in_new",
+    "trash-o": "delete",
+    "sign-in": "login",
+    "pencil-square-o": "edit",
+    "flag": "flag",
+    "flag-o": "flag",
+    "envelope": "mail",
+    "envelope-o": "mail",
+    "envelope-open-o": "drafts",
+    "circle-o-notch": "progress_activity",
+    "check": "check",
+    "archive": "archive",
+    "user": "person",
+    "user-o": "person",
+    "random": "shuffle",
+    "plug": "power",
+    "paperclip": "attach_file",
+    "paper-plane-o": "send",
+    "list-ul": "format_list_bulleted",
+    "inbox": "inbox",
+    "folder-o": "folder",
+    "expand": "fullscreen",
+    "compress": "fullscreen_exit",
+    "ellipsis-v": "more_vert",
+    "cube": "deployed_code",
+    "clock-o": "schedule",
+    "bars": "menu",
+);
+
+@each $fa, $symbol in $mailpro-icons {
+    .fa.fa-#{$fa} {
+        display: inline-block;
+        font-family: 'Material Symbols Outlined' !important;
+        font-style: normal;
+        font-weight: 400 !important;
+        line-height: 1;
+        letter-spacing: normal;
+        text-transform: none;
+        white-space: nowrap;
+        word-wrap: normal;
+        direction: ltr;
+        -webkit-font-smoothing: antialiased;
+        &::before {
+            display: inline-block;
+            content: "#{$symbol}";
+            text-rendering: geometricPrecision;
+            word-break: keep-all;
+        }
+    }
+    // The same names on a view button (`icon="fa-sign-in"` in a form view),
+    // which 20 renders as a Material Symbol element carrying the name.
+    .oi[data-icon="fa-#{$fa}"]::before {
+        content: "#{$symbol}";
+    }
+}
+.fa.fa-spin {
+    animation: oi-spin 2s infinite linear;
+}
+.fa.fa-fw {
+    width: 1.28571429em;
+    text-align: center;
+}

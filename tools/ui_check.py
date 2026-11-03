@@ -49,7 +49,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WIDE = 2000
 # Odoo's own record picker (`SelectCreateDialog`), which step two of the
 # link picker and New Email open: the modal that holds its list.
-ODOO_PICKER = '.modal:has(.o_select_create_dialog_content)'
+# Odoo's own record picker: 19 and 20 mark its content, 18 does not, and a
+# list with rows inside a dialog is the picker on all three.
+ODOO_PICKER = '.modal:has(.o_select_create_dialog_content), .modal:has(.o_list_view)'
 # A step is a name, an answer and the way to change it. Wider than this and it
 # stops being one line the eye can cross.
 MAX_STEP_WIDTH = 800
@@ -81,6 +83,14 @@ class Checks:
         # collected before that are the ones that say why.
         print(f'  - {message}', flush=True)
         self.failures.append(message)
+        # The screen as it was when the assertion failed, beside the ones the
+        # steps take on purpose: a failure read from the artifact needs it.
+        if self.out and getattr(self, 'page', None):
+            try:
+                self.page.screenshot(
+                    path=os.path.join(self.out, f'fail-{len(self.failures):02d}.png'), full_page=True)
+            except Exception:
+                pass
 
     def dialog_in_the_way(self):
         """The text of an Odoo error dialog over the screen, and close it.
@@ -3743,7 +3753,14 @@ class Checks:
         if 'Vandermolen' not in unlink.inner_text():
             self.fail('the unlink row does not name the contact: %r' % unlink.inner_text())
         unlink.click()
-        page.wait_for_timeout(2500)
+        # The chips follow one request; wait for them rather than for a clock.
+        try:
+            page.wait_for_function(
+                "() => [...document.querySelectorAll('.o_mailpro_chip_button')]"
+                ".some(el => el.innerText.includes('Vandermolen'))", timeout=15000)
+        except Exception:
+            pass
+        page.wait_for_timeout(500)
         self.error_free('unlinking with the follower list open')
         if page.query_selector('.o_mailpro_link_dialog') or page.query_selector(ODOO_PICKER):
             self.fail('the unlink row opened step two instead of answering both steps')
@@ -3888,8 +3905,18 @@ class Checks:
                     break
             if self.out:
                 page.screenshot(path=os.path.join(self.out, 'inbox-improve.png'), full_page=True)
-            if page.query_selector('.o_error_dialog, .o_dialog_error'):
-                self.fail('the Inbox with Help improve Mail Pro on opened an error dialog')
+            dialog = page.query_selector('.o_error_dialog, .o_dialog_error')
+            if dialog:
+                # The technical details name the line; the dialog's own text
+                # names nothing.
+                details = dialog.query_selector('a:has-text("technical details"), button:has-text("technical details")')
+                if details:
+                    details.click()
+                    page.wait_for_timeout(300)
+                text = ' '.join(dialog.inner_text().split())
+                cause = text[text.find('Caused by'):][:400] if 'Caused by' in text else ''
+                self.fail('the Inbox with Help improve Mail Pro on opened an error dialog: %r %s'
+                          % (text[:300], cause))
             # Now break something on purpose, with the seeded secrets in the
             # message. Odoo's error service shows its dialog for it, which is
             # right and why this comes after the dialog assertion above.

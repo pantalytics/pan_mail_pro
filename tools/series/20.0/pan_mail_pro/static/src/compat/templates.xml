@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Owl 3 (Odoo 20) version of pan_mail_pro/static/src/compat/templates.xml. -->
+<templates xml:space="preserve">
+    <!-- Owl 3 renders a slot with t-call-slot; t-slot is a no-op there. -->
+    <t t-name="pan_mail_pro.OdooRecordPane" t-inherit="pan_mail_pro.OdooRecordPane" t-inherit-mode="extension">
+        <xpath expr="//t[@t-slot='link']" position="replace">
+            <t t-call-slot="link"/>
+        </xpath>
+    </t>
+</templates>

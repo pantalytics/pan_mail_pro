@@ -37,7 +37,7 @@ import { SearchBar } from "@web/search/search_bar/search_bar";
 import { View } from "@web/views/view";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { defineProps } from "@pan_mail_pro/compat/owl";
-import { fetchFollowers, storeRecords, threadModel } from "@pan_mail_pro/compat/store";
+import { fetchFollowers, storeModel, storeRecords, threadModel } from "@pan_mail_pro/compat/store";
 // The wrapper Odoo's own navbar puts around every systray item, for the
 // same reason it does: this bar is the only one on the screen, and one
 // broken counter must not take the whole Inbox with it.
@@ -2343,7 +2343,7 @@ export class ConversationView extends Component {
      */
     get files() {
         return this.fileIds
-            .map((id) => this.mailStore["ir.attachment"].get(id))
+            .map((id) => storeModel(this.mailStore, "Attachment", "ir.attachment").get(id))
             .filter(Boolean);
     }
 
@@ -2448,7 +2448,7 @@ export class ConversationView extends Component {
     /** The store records behind this conversation's activities, soonest first. */
     get activities() {
         const ids = new Set(this.state.activityIds);
-        return storeRecords(this.mailStore["mail.activity"])
+        return storeRecords(storeModel(this.mailStore, "Activity", "mail.activity"))
             .filter((activity) => ids.has(activity.id))
             .sort((a, b) => compareDatetime(a.date_deadline, b.date_deadline) || a.id - b.id);
     }
