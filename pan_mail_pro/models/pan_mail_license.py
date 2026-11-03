@@ -37,9 +37,10 @@ connected in the same session; incoming sync pauses for those minutes and the
 per-folder cursor catches up afterwards, so no mail is lost.
 
 **What leaves the database** is `_heartbeat_body()`, and the whole list is in
-that one method: the database id, two version strings, how many accounts are
-connected, whether sync is healthy, which of the three setup steps are
-answered, and for the last 24 hours how many mails were sent and received, the
+that one method: the database id, two version strings, where it runs (one of
+`sh`, `cloudpepper`, `self_hosted`), how many accounts are connected, whether
+sync is healthy, which of the three setup steps are answered, and for the last
+24 hours how many mails were sent and received, the
 four link coverage counts, per matching rule how often it decided and how often
 a person overruled it, and how many conversations were linked by hand. Counts,
 flags and rule names. No address, subject, body or name.
@@ -77,9 +78,9 @@ secret here.
 
 **A copy connects too** (pan_mail_pro#384). On a copy (`neutralization.
 database_is_copy`) Connect, Check approval and the heartbeat run as anywhere
-else, and on a neutralized database the start call and every heartbeat
-carry `staging: true` (what the database sees, never an echo of the
-answer). The
+else, and on a neutralized database or an Odoo.sh staging or dev branch the
+start call and every heartbeat carry `staging: true` (what the database
+sees, never an echo of the answer). The
 platform asks on its approval page which production this is a copy of, links
 it as "staging of" that one, and answers with `staging: true` in the signed
 entitlement, no monthly mails and no bill. That answer keeps the copy a copy
@@ -97,7 +98,7 @@ import hmac
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 import requests
 
@@ -106,7 +107,8 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
 from . import encryption_utils
-from .neutralization import database_is_copy, database_is_neutralized
+from .hosting import hosting
+from .neutralization import database_is_copy, database_sees_a_copy
 from .pan_mail_error import MAX_CODES_REPORTED
 from .res_users import _referer_path
 
@@ -153,6 +155,12 @@ SETUP_PUSH_SECONDS = 60
 # A connected instance whose entitlement has not arrived asks again this often
 # (from the fetch cron), instead of waiting for the daily heartbeat.
 RETRY_MINUTES = 10
+
+# The UTC days every heartbeat restates, today included (odoo-mcp-pro-admin
+# docs/plans/mail-pro-usage-count.md). The platform sets each day it is sent
+# rather than adding to it, so a heartbeat after a week's outage still closes
+# the days it missed. The platform refuses more.
+MAIL_DAYS = 7
 
 # Stripe's statuses that keep a customer entitled, as the server decides them.
 # past_due stays entitled while Stripe is still retrying the card.
@@ -627,7 +635,7 @@ class PanMailLicense(models.Model):
             'odoo_url': self.env['ir.config_parameter'].sudo().get_param('web.base.url', ''),
             'module_version': self._module_version(),
         }
-        if database_is_neutralized(self.env):
+        if database_sees_a_copy(self.env):
             start['staging'] = True
         code, body = link._post('/api/v1/link/start', start)
         if code == 429:
@@ -1031,8 +1039,16 @@ class PanMailLicense(models.Model):
         Get started line at Pantalytics can tick what is done instead of
         asking the customer to tell it twice.
 
+        **`hosting` is one word from a fixed list** (odoo-mcp-pro-admin#598):
+        `sh` when Odoo.sh set `ODOO_STAGE`, `cloudpepper` when the config
+        file is Cloudpepper's `/var/odoo/<name>/odoo.conf`, `self_hosted`
+        otherwise. The platform stores it as the instance's hosting with the
+        highest trust, because only the app stands on the machine. Never a
+        host name, a path or the stage itself.
+
         **`staging` is one boolean, and only a copy sends it** (#384): `true`
-        on a database Odoo neutralized, so the platform counts none of its
+        on a database Odoo neutralized or Odoo.sh runs as a staging or dev
+        branch, so the platform counts none of its
         mails and bills nothing. It says what this database sees, never what
         the last answer said: echoing a staging answer back would keep a
         database staging for as long as it asked, after the platform had
@@ -1067,6 +1083,10 @@ class PanMailLicense(models.Model):
                 [('connected', '=', True)]),
             'mails_sent_24h': mails['outgoing'],
             'mails_received_24h': mails['incoming'],
+            # The meter (#599): whole UTC days, which a second heartbeat on
+            # the same day restates. The two 24h numbers above stay for a
+            # platform from before them.
+            'mails_by_day': self._mails_by_day(),
             'sync_ok': (not stale and not Mailbox.search_count([('state', '=', 'error')])
                         if mailboxes else None),
             # The three setup steps as `pan.mail.setup` answers them, which is
@@ -1089,15 +1109,43 @@ class PanMailLicense(models.Model):
             # here rather than recorded, because the cron that would record it
             # is the one not getting through.
             'errors': errors,
+            # Where this Odoo runs: `sh`, `cloudpepper` or `self_hosted`,
+            # read from the environment (`hosting.hosting`, odoo-mcp-pro-
+            # admin#598). One word from a fixed list; the platform refuses
+            # any other, and no host name or path ever rides with it.
+            'hosting': hosting(),
         }
-        if database_is_neutralized(self.env):
+        if database_sees_a_copy(self.env):
             body['staging'] = True
         return body
 
     @api.model
     def _mail_counts_since(self, since):
-        """Mails sent and received through Mail Pro since `since`, as
-        `{'incoming': n, 'outgoing': n}`. The meter the bill is computed from
+        """`_mail_counts_between` from `since` until now."""
+        return self._mail_counts_between(since, None)
+
+    @api.model
+    def _mails_by_day(self, now=None):
+        """The last MAIL_DAYS UTC calendar days, today included, as
+        `[{'day': 'YYYY-MM-DD', 'sent': n, 'received': n}]`, newest first.
+
+        Each day is `[00:00, next 00:00)` in UTC with explicit bounds.
+        `create_date` is stored in UTC, and a `read_group` on
+        `create_date:day` would group in the user's timezone instead.
+        """
+        today = datetime.combine((now or fields.Datetime.now()).date(), time.min)
+        days = []
+        for back in range(MAIL_DAYS):
+            start = today - timedelta(days=back)
+            counts = self._mail_counts_between(start, start + timedelta(days=1))
+            days.append({'day': start.date().isoformat(),
+                         'sent': counts['outgoing'], 'received': counts['incoming']})
+        return days
+
+    @api.model
+    def _mail_counts_between(self, start, end):
+        """Mails sent and received through Mail Pro from `start` up to `end`
+        (open-ended when None), as `{'incoming': n, 'outgoing': n}`. The meter the bill is computed from
         (odoo-mcp-pro-admin docs/plans/mail-pro-billing.md), so two rules:
 
         - **A mail counts on the day it reached Odoo** (`create_date`), not on
@@ -1112,7 +1160,9 @@ class PanMailLicense(models.Model):
           since) counts, like every mail Odoo itself sent.
         """
         Message = self.env['mail.message'].sudo()
-        base = [('x_direction', '!=', False), ('create_date', '>=', since)]
+        base = [('x_direction', '!=', False), ('create_date', '>=', start)]
+        if end is not None:
+            base.append(('create_date', '<', end))
         scopes = [[('x_mailbox_id', '=', False)]]
         for mailbox in self.env['pan.mail.mailbox'].sudo().with_context(
                 active_test=False).search([]):

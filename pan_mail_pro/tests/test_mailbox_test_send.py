@@ -17,14 +17,15 @@ from odoo.tests import tagged
 
 from .common import MailProTestCase
 
-SUBJECT = 'Mail Pro test email'
+# Every test mail's subject starts so; the mailbox's address follows.
+SUBJECT = 'Mail Pro works for '
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestMailboxTestSend(MailProTestCase):
 
     def _mails(self):
-        return self.env['mail.mail'].search([('subject', '=', SUBJECT)])
+        return self.env['mail.mail'].search([('subject', '=like', SUBJECT + '%')])
 
     # ------------------------------------------------------------------ #
     # The happy path

@@ -4,7 +4,7 @@ This guide walks you through creating a Google Cloud OAuth client so Mail Pro
 can send and receive through the Gmail API.
 
 You only need this if your mail is hosted at Google Workspace. For Microsoft 365
-see [Azure Setup](azure-setup.md); for any other host see
+see [Microsoft 365 Setup](azure-setup.md); for any other host see
 [IMAP/SMTP Setup](imap-setup.md).
 
 ## Step 1: Create a Google Cloud project
