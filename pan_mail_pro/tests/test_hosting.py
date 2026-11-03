@@ -116,6 +116,19 @@ class TestHostingOnTheDatabase(TransactionCase):
         self.assertNotIn('mailpro-dev', sent)
         self.assertNotIn('/var/odoo', sent)
 
+    def test_the_heartbeat_carries_the_edition_from_inside(self):
+        """`web_enterprise` installed is Enterprise, else Community. CI runs
+        the community image, so the Enterprise branch is the module row
+        marked installed."""
+        self.assertEqual(self.body()['edition'], 'community')
+        web_enterprise = self.env['ir.module.module'].search(
+            [('name', '=', 'web_enterprise')], limit=1
+        ) or self.env['ir.module.module'].create(
+            {'name': 'web_enterprise', 'state': 'uninstalled'}
+        )
+        web_enterprise.state = 'installed'
+        self.assertEqual(self.body()['edition'], 'enterprise')
+
     def test_odoo_sh_staging_makes_the_database_a_copy(self):
         secret = encryption_utils.encrypt_value(self.env, 'refresh-token')
         for stage in ('staging', 'dev'):
