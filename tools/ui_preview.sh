@@ -17,9 +17,13 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 NET=pan_ui_net; DB=pan_ui_db; ODOO=pan_ui_odoo; DBNAME=ui_db
 SERIES=$(python3 -c "import ast;print('.'.join(ast.literal_eval(open('$REPO/pan_mail_pro/__manifest__.py').read())['version'].split('.')[:2]))")
 MODE=${1:-boot}
+# The CI-only addons, copied out of tools/ci_addons/ with their manifest under
+# the name Odoo reads; in the repository it is `__manifest__.ci`, so no host
+# offers them in Apps (tools/ci_addons_stage.sh says why).
+CI_ADDONS=${PAN_UI_CI_ADDONS:-${TMPDIR:-/tmp}/pan_ui_ci_addons}
 
 odoo_cli() {
-    docker run --rm --network "$NET" -v "$REPO:/mnt/extra-addons:ro" -v "$REPO/tools/ci_addons:/mnt/ci-addons:ro" \
+    docker run --rm --network "$NET" -v "$REPO:/mnt/extra-addons:ro" -v "$CI_ADDONS:/mnt/ci-addons:ro" \
         --entrypoint odoo "odoo:${SERIES}" -d "$DBNAME" \
         --db_host="$DB" --db_port=5432 --db_user=odoo --db_password=odoo \
         --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons,/mnt/ci-addons \
@@ -29,11 +33,13 @@ odoo_cli() {
 if [ "$MODE" = "--stop" ]; then
     docker rm -f "$ODOO" "$DB" >/dev/null 2>&1 || true
     docker network rm "$NET" >/dev/null 2>&1 || true
+    rm -rf "$CI_ADDONS"
     echo "stopped."
     exit 0
 fi
 
 if [ "$MODE" = "--update" ]; then
+    "$REPO/tools/ci_addons_stage.sh" "$CI_ADDONS"
     odoo_cli -u pan_mail_pro
     docker restart "$ODOO" >/dev/null
     echo "updated — reload http://localhost:8069"
@@ -41,6 +47,7 @@ if [ "$MODE" = "--update" ]; then
 fi
 
 docker rm -f "$ODOO" "$DB" >/dev/null 2>&1 || true
+"$REPO/tools/ci_addons_stage.sh" "$CI_ADDONS"
 docker network create "$NET" >/dev/null 2>&1 || true
 docker run -d --name "$DB" --network "$NET" \
     -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo -e POSTGRES_DB=postgres postgres:16 >/dev/null
@@ -57,7 +64,7 @@ echo " ready."
 # says so; tools/ci_addons/pan_mail_pro_ci_platform/ says why.
 odoo_cli -i pan_mail_pro,pan_mail_pro_ci_dark,pan_mail_pro_ci_platform --without-demo=all
 docker run -d --name "$ODOO" --network "$NET" -p 8069:8069 \
-    -v "$REPO:/mnt/extra-addons:ro" -v "$REPO/tools/ci_addons:/mnt/ci-addons:ro" --entrypoint odoo "odoo:${SERIES}" \
+    -v "$REPO:/mnt/extra-addons:ro" -v "$CI_ADDONS:/mnt/ci-addons:ro" --entrypoint odoo "odoo:${SERIES}" \
     -d "$DBNAME" --db_host="$DB" --db_port=5432 --db_user=odoo --db_password=odoo \
     --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons,/mnt/ci-addons \
     --max-cron-threads=0 --log-level=warn --dev=xml >/dev/null

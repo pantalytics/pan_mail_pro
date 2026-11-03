@@ -41,10 +41,16 @@ if [ "$SERIES" != "$MANIFEST_SERIES" ]; then
     echo "Measuring against Odoo $SERIES on a copy cut for it; not a release verdict."
 fi
 
+# The CI-only addons, staged out of the tree with their manifest under the
+# name Odoo reads (tools/ci_addons_stage.sh); from the cut tree, so their
+# version names the series too.
+CI_ADDONS=$(mktemp -d)
+"$TREE/tools/ci_addons_stage.sh" "$CI_ADDONS"
+
 odoo_cli() {
     python3 "$ODOO/odoo-bin" -d "$DB" --db_user="$DB_USER" --db_password="$DB_PASS" --db_host=127.0.0.1 \
         --data-dir="$WORK/data-ui-$SERIES" \
-        --addons-path="$ODOO/addons,$TREE,$TREE/tools/ci_addons" \
+        --addons-path="$ODOO/addons,$TREE,$CI_ADDONS" \
         --max-cron-threads=0 --log-level=warn "$@"
 }
 
@@ -56,6 +62,7 @@ cleanup() {
         pkill -f "odoo-bin -d $DB " 2>/dev/null || true
     fi
     [ "$TREE" != "$REPO" ] && [ -z "${KEEP_UI:-}" ] && rm -rf "$TREE"
+    [ -z "${KEEP_UI:-}" ] && rm -rf "$CI_ADDONS"
     return 0
 }
 trap cleanup EXIT

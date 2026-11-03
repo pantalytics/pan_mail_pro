@@ -19,8 +19,10 @@ OVERLAY="$REPO/tools/series/$SERIES"
 [ -d "$OVERLAY" ] || { echo "no tools/series/$SERIES: not a series this repository knows" >&2; exit 2; }
 
 FROM=$(python3 -c "import ast;print('.'.join(ast.literal_eval(open('$TREE/pan_mail_pro/__manifest__.py').read())['version'].split('.')[:2]))")
-for manifest in "$TREE/pan_mail_pro/__manifest__.py" "$TREE"/tools/ci_addons/*/__manifest__.py; do
-    sed -i "s/'version': '${FROM}\./'version': '${SERIES}./" "$manifest"
+# The module's manifest and the CI-only addons' (kept as __manifest__.ci in
+# the repository, tools/ci_addons_stage.sh says why).
+for manifest in "$TREE/pan_mail_pro/__manifest__.py" "$TREE"/tools/ci_addons/*/__manifest__.ci; do
+    [ -f "$manifest" ] && sed -i "s/'version': '${FROM}\./'version': '${SERIES}./" "$manifest"
 done
 if [ -f "$OVERLAY/REMOVE" ]; then
     while read -r path; do

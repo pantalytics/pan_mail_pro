@@ -51,6 +51,8 @@ export class LinkDialog extends Component {
         // What the dialog is for, when it is not linking an existing
         // conversation. New Email asks the same two questions.
         title: { type: String, optional: true },
+        // New Email: no sender behind it, so a contact may be made here too.
+        newMail: { type: Boolean, optional: true },
         onSelect: Function,
         close: Function,
     };
@@ -126,6 +128,7 @@ export class LinkDialog extends Component {
             scope = await this.orm.call("pan.mail.conversation", "link_scope", [], {
                 model: target.model,
                 partner_id: this.props.partnerId || false,
+                new_mail: Boolean(this.props.newMail),
             });
         } catch {
             // No head start, then: the picker still opens on the whole list.

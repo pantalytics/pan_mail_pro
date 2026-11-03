@@ -37,7 +37,7 @@ git -C "$REPO" archive HEAD | tar -x -C "$WORK/head"
 # The version's last three numbers may differ (the branch bumps on its own);
 # compare the manifests with the version line taken out.
 for side in base head; do
-    sed -i "/'version': '/d" "$WORK/$side/pan_mail_pro/__manifest__.py" "$WORK/$side/tools/ci_addons/pan_mail_pro_ci_dark/__manifest__.py"
+    sed -i "/'version': '/d" "$WORK/$side/pan_mail_pro/__manifest__.py" "$WORK/$side"/tools/ci_addons/*/__manifest__.ci
 done
 if diff -r "$WORK/base" "$WORK/head" > "$WORK/diff.txt"; then
     echo "OK: this $SERIES branch is $BASE cut for $SERIES, byte for byte."

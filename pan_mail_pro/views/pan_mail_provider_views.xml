@@ -7,7 +7,10 @@
         <field name="name">pan.mail.provider.list</field>
         <field name="model">pan.mail.provider</field>
         <field name="arch" type="xml">
-            <list string="Providers">
+            <!-- No New, here or on the form: there is one row, made by
+                 Settings step 2, and a second one is refused by the
+                 constraint after the admin typed into it. -->
+            <list string="Providers" create="0">
                 <field name="provider"/>
                 <field name="status" widget="badge"
                        decoration-success="status == 'connected'"
@@ -28,13 +31,14 @@
                  Settings step 2 only reports; this is where it is acted on.
                  Saving a changed own registration (Google's client, never
                  Mail Pro's Microsoft app) also opens the verify dialog
-                 (pan_mail_provider_form). A connected provider has nothing
-                 to press. -->
-            <form string="Provider" js_class="pan_mail_provider_form">
+                 (pan_mail_provider_form). A connected provider offers
+                 Disconnect, secondary, to whoever is signed in. -->
+            <form string="Provider" js_class="pan_mail_provider_form" create="0">
                 <sheet>
                     <field name="uses_oauth" invisible="1"/>
                     <field name="credentials_set" invisible="1"/>
                     <field name="pantalytics_connected" invisible="1"/>
+                    <field name="my_account_connected" invisible="1"/>
                     <group>
                         <group>
                             <field name="provider"/>
@@ -68,6 +72,15 @@
                          invisible="provider != 'gmail' or not credentials_set or status == 'connected'">
                         <button name="action_connect_myself" type="object"
                                 string="Sign in with Google" class="btn-primary o_mailpro_provider_sign_in"/>
+                    </div>
+                    <!-- Connected: the way out, for the reader's own sign-in
+                         only (My Preferences' Disconnect). A colleague's
+                         sign-in is theirs, so a reader without one gets no
+                         button and the badge stays Connected. -->
+                    <div class="mb-3" invisible="status != 'connected' or not my_account_connected">
+                        <button name="action_disconnect_myself" type="object"
+                                string="Disconnect" class="btn-secondary o_mailpro_provider_disconnect"
+                                confirm="Mailboxes that send or sync with your sign-in stop until someone signs in again."/>
                     </div>
 
                     <!-- The move off an own app registration (§9.20), the
@@ -160,12 +173,10 @@
         <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
-                Add a provider
+                No provider yet
             </p>
             <p>
-                Microsoft 365 and Gmail need an application registration here first;
-                IMAP/SMTP needs none — just add an account. Mail Pro runs on one
-                provider: change this row to move to another one.
+                Settings, Mail Pro, step 2 sets it up.
             </p>
         </field>
     </record>
