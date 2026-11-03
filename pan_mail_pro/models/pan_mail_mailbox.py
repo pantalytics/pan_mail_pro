@@ -119,6 +119,12 @@ class PanMailMailbox(models.Model):
         Shared mailboxes are shared on purpose.
         """
         self.ensure_one()
+        # Read as the system: the question is whether `user` may send from
+        # this mailbox, and a user who may not even read it (18 enforces the
+        # owner-only rule on this very read; 19 happens to answer from the
+        # cache) must get "no" rather than an AccessError. Nothing but a
+        # boolean leaves this method.
+        self = self.sudo()
         if not self.active:
             return False
         # The notification mailbox is personal in every other respect — it has

@@ -364,7 +364,7 @@ class PanMailConversation(models.AbstractModel):
             return base + [('id', '=', int(message_id))]
         # `= 0` does not match a NULL res_id, so a conversation linked to
         # nothing, asked for by key rather than by message, has to say False.
-        return base + [('model', '=', False), ('res_id', '=', False)]
+        return base + [('model', '=', False), ('res_id', 'in', (False, 0))]
 
     # ------------------------------------------------------------------
     # Public read methods, the whole API the client has

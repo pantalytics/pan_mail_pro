@@ -5,7 +5,8 @@
 # imports the name from here and reads the same on every branch.
 import inspect
 
-from odoo import models
+from odoo import api, models
+from odoo.addons.base.models import ir_config_parameter as _icp
 from odoo.addons.mail.models.mail_mail import MailMail
 from odoo.addons.mail.models.mail_thread import MailThread
 
@@ -40,6 +41,34 @@ def notification_status(mail):
         "exception": "exception",
         "cancel": "canceled",
     }.get(mail.state, "ready")
+
+
+# The definition class is IrConfigParameter on 18 and 19, IrConfig_Parameter
+# on 20, so the model is found by what it is rather than by its class name.
+_CONFIG_PARAMETER_HAS_GET_PARAM = any(
+    hasattr(cls, "get_param") for cls in vars(_icp).values() if isinstance(cls, type)
+)
+
+if not _CONFIG_PARAMETER_HAS_GET_PARAM:
+    # 20 replaced get_param/set_param with typed getters and setters
+    # (get_str, set_str, ...). The module reads and writes its parameters
+    # through the old pair in 86 places; until those move to the typed
+    # calls on every branch, 20 gets the pair back with the 19 semantics:
+    # a string or the default, and a falsy value removes the row.
+    class IrConfigParameterParams(models.Model):
+        _inherit = "ir.config_parameter"
+
+        @api.model
+        def get_param(self, key, default=False):
+            return self.get_str(key, default=default)
+
+        @api.model
+        def set_param(self, key, value):
+            if value is False or value is None:
+                old = self.get_str(key, default=False)
+                self.sudo().search([("key", "=", key)]).unlink()
+                return old
+            return self.set_str(key, value)
 
 
 def partner_ids_from_emails(record, emails):

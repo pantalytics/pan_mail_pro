@@ -723,6 +723,11 @@ class TestConversationApi(TransactionCase):
             'res_id': self.lead.id,
             'message_type': message_type,
             'is_internal': is_internal,
+            # Given, not computed: 18's mail.message.create looks the reply-to
+            # up on the record for every type but user_notification, and for
+            # that one it asks an empty recordset for the lead's id (KeyError).
+            # Odoo's own notify path hands the value in, so this does the same.
+            'reply_to': False,
             'subject': subject,
             'body': '<p>De levertijd is drie weken.</p>',
             'x_direction': 'outgoing',

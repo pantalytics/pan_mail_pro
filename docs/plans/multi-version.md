@@ -47,6 +47,28 @@ supported, please define models.Constraint"), so 19 and 20 share that form
 and 18 is the odd one. 31 of the 32 Inbox imports exist; `@mail/chatter/
 web_portal/chatter` moved to `@mail/chatter/web_portal_project/chatter`.
 
+**The whole Python delta for 18, measured by running the suite** (same day,
+`tools/odoo_local.sh --series=18.0`, from "registry does not load" to 1314
+tests running). Five things in `compat.py`: `models.Constraint` (a
+`__set_name__` that appends to `_sql_constraints` does it, so the seven model
+files are untouched), `fields.Domain` (a list with `AND` and `OR`),
+`_postprocess_sent_message`'s `success_emails`, `_partner_find_from_emails_single`
+(18: `_mail_find_partner_from_emails`), `_get_notification_status` (18 has
+none; the table is copied from 20). One view anchor (`page_security` does
+not exist on 18; the notebook does). Two behaviours, not names: 18 stores a
+missing `res_id` as `0` and matches `= False` as `IS NULL` only, so every
+"linked to nothing" domain now says `in (False, 0)`; and 18 enforces the
+owner-only mailbox rule on the read inside `_is_sendable_by`, where 19 was
+answering from the cache, so the boundary reads as the system and returns a
+boolean. On the test side: `group_ids` (58 lines), `enter_registry_test_mode`,
+`_commit_progress` and `_disable_send` (19-only, patched with `create=True`
+or by the 18 switch), `_connect__` (18: `connect`), a `mail.message.create`
+of a `user_notification` with a `res_id` (18 looks the reply-to up on an
+empty recordset: the fixture hands `reply_to` in), and demo data (CI installs
+`--without-demo=all`; the runner now does too). No cron progress on 18: the
+fetcher's commit-per-mailbox is a 19 feature, 18 runs the sync in one
+transaction.
+
 **What the suite costs per series.** 70 test files, 24k lines, about 80
 seconds per full run once Odoo is installed. CI already derives the series
 from the manifest (`tools/ci_odoo.sh`, `tools/ci_lint.sh`), so a branch whose
@@ -88,18 +110,16 @@ those paths is not empty. A series that needs a change outside the list
 widens the list in the same PR and says why in this file; the check exists so
 that this is a decision and not drift.
 
-Whether the seam can hold everything is the bet of this plan, and two parts
-of it are unmeasured and therefore spikes, not decisions:
+Whether the seam can hold everything is the bet of this plan. One part of it
+is still unmeasured and therefore a spike, not a decision:
 
-- **Constraints.** 18 wants `_sql_constraints = [(name, sql, msg)]` on the
-  class; 19 and 20 want `models.Constraint` attributes and warn on the old
-  form. If a table in `models/constraints.py` can be applied to the model
-  classes *after* their definition (setting `_sql_constraints` on 18, setting
-  `Constraint` attributes on 19 and 20) then the seven model files are
-  identical across branches and the seam is one file. If the registry reads
-  them earlier than that, the seven lines live in the model files and the
-  drift list widens by those files. Spike: apply both ways on 18 and 20 and
-  see which the registry picks up.
+- **Constraints: measured, closed.** 18 wants `_sql_constraints = [(name,
+  sql, msg)]` on the class; 19 and 20 want `models.Constraint` attributes
+  and warn on the old form. `compat.Constraint` is `models.Constraint` where
+  it exists; on 18 it is a small class whose `__set_name__` appends to the
+  owner's `_sql_constraints`, which 18 reads off the class only when the
+  registry is built. The seven model files write `_x = Constraint(...)` and
+  are the same bytes on every branch.
 - **The 20 access model.** Whether an `ir.access.csv` can express all seven
   rules as they stand (a rule with a domain on `owner_user_id` and
   `mailbox_type`, a rule for personal drafts) and whether `ir.access` rows
@@ -167,8 +187,8 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] `tools/odoo_local.sh`: clone a series, install requirements, run the suite, assert it ran
 - [x] `release.yml` tags on push to `18.0`, `19.0` and `20.0`; the release note names the series from the manifest
 - [ ] `tools/ci_port_drift.sh` and a CI job that runs it on a series branch
-- [ ] `tests/common.py`: one helper for a user's groups, so `group_ids` vs `groups_id` is one line (58 lines in 24 files today)
-- [ ] Spike: constraints applied after class definition, measured on 18 and 20 (§2)
+- [x] `tests/common.py`: `groups_field()` and `registry_test_mode()`, so no test spells a series (58 lines in 24 files replaced, 2026-11-03)
+- [x] Constraints: measured 2026-11-03, no spike needed. `compat.Constraint` is `models.Constraint` where it exists and a `__set_name__` that appends to `_sql_constraints` on 18; the seven model files are identical on every branch
 - [ ] `tools/ci_lint.sh`: the "Odoo 19 checklist" greps read the series from the manifest where a rule is series-specific
 - [ ] CLAUDE.md *Branches* paragraph and the Cloudpepper table: one row per series
 - [ ] TESTPLAN.md: the Enterprise checks get a column per series
@@ -176,9 +196,10 @@ Mark a box in the PR that does the work, with the version or the date.
 ### Step 2. The `18.0` branch
 
 - [ ] Branch cut from `main`; manifest `18.0.<x.y.z>`; `migrations/` emptied; drift check green
-- [ ] Registry loads: constraints seam in place
-- [ ] Installs: views, data and security load (unknown until the registry loads)
-- [ ] Suite green on `tools/odoo_local.sh --series=18.0`, then on CI's `odoo:18.0`
+- [x] Registry loads on 18 (2026-11-03, `compat.py`: Constraint, Domain, three mail.mail/mail.thread names)
+- [x] Installs on 18 (2026-11-03): one view anchor moved to the notebook; `security/` loads unchanged
+- [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03: 1314 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file)
+- [ ] Suite green on CI's `odoo:18.0` (needs the branch)
 - [ ] UI job green: the Inbox renders on 18's `@mail`, every `tools/ui_check.py` assertion
 - [ ] Upgrade job: skips cleanly while no `v18.0.*` tag exists, runs once one does
 - [ ] Enterprise column walked on an 18 Enterprise instance

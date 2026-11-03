@@ -54,6 +54,11 @@ PUBLIC_MAIL_DOMAINS = frozenset({
     'protonmail.com', 'yahoo.co.uk', 'yahoo.com', 'ymail.com', 'zoho.com',
 })
 
+# RFC 2606 reserves these for documentation, and Odoo seeds placeholders on
+# them: OdooBot is odoobot@example.com on every database, and 18 ships the
+# admin as admin@example.com before any demo data. Never a company's domain.
+RESERVED_DOMAINS = frozenset({'example.com', 'example.net', 'example.org'})
+
 
 class PanMailDomain(models.Model):
     _name = 'pan.mail.domain'
@@ -270,6 +275,6 @@ class PanMailDomain(models.Model):
         # user's mail marked internal and dropped.
         return [
             domain for domain in self._parse(', '.join(filter(None, candidates)))
-            if domain not in PUBLIC_MAIL_DOMAINS
+            if domain not in PUBLIC_MAIL_DOMAINS and domain not in RESERVED_DOMAINS
         ]
 

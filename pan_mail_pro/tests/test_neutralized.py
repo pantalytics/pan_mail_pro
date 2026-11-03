@@ -52,7 +52,9 @@ class TestNeutralizedDatabase(MailProTestCase):
         else:
             # 18 reads the test flag itself, inside send_email.
             stack.enter_context(patch.object(odoo.modules.module, 'current_test', False))
-        stack.enter_context(patch.object(mail_server, '_connect__', return_value=MagicMock()))
+        # The SMTP session opener is `_connect__` on 19 and 20, `connect` on 18.
+        connect = '_connect__' if hasattr(mail_server, '_connect__') else 'connect'
+        stack.enter_context(patch.object(mail_server, connect, return_value=MagicMock()))
         send_one = stack.enter_context(patch.object(type(mail), '_send_one', autospec=True))
         send_email = stack.enter_context(patch.object(
             mail_server, 'send_email', autospec=True, return_value='<staging@example.com>'))

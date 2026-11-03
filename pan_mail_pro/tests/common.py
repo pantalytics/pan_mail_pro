@@ -349,8 +349,17 @@ def proven_session(env, accounts=(), uid=None, session=None):
     # a request raises here, which is the right answer: the live read must
     # not depend on more of the request than a session.
     fake = types.SimpleNamespace(session=session, env=env, cookies={})
-    http._request_stack.push(fake)
-    try:
-        yield session
-    finally:
-        http._request_stack.pop()
+    if hasattr(http, '_request_stack'):
+        # 18 and 19: a werkzeug LocalStack behind `http.request`.
+        http._request_stack.push(fake)
+        try:
+            yield session
+        finally:
+            http._request_stack.pop()
+    else:
+        # 20: a contextvar.
+        token = http.request_var.set(fake)
+        try:
+            yield session
+        finally:
+            http.request_var.reset(token)

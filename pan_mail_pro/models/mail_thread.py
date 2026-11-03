@@ -39,7 +39,9 @@ IMPORT_FLAG = 'pan_mail_imported'
 class MailThread(models.AbstractModel):
     _inherit = 'mail.thread'
 
-    def _notify_thread(self, message, msg_vals=False, **kwargs):
+    def _notify_thread(self, message, *args, **kwargs):
+        # `msg_vals` is passed through untouched: 18 and 19 hand it over as the
+        # second positional argument, 20 has dropped it and refuses it by name.
         """Skip the whole notification pass for anything the sync imported.
 
         Returning an empty recipient list is the same shape Odoo produces for a
@@ -64,4 +66,4 @@ class MailThread(models.AbstractModel):
                 message.id if message else '?',
             )
             return []
-        return super()._notify_thread(message, msg_vals=msg_vals, **kwargs)
+        return super()._notify_thread(message, *args, **kwargs)

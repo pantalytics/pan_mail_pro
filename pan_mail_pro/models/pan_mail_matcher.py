@@ -433,7 +433,7 @@ class PanMailMatcher(models.AbstractModel):
         legacy = self.env['mail.message'].sudo().search([
             ('x_provider_thread_id', 'in', list(thread_keys)),
             ('model', '!=', False),
-            ('res_id', '!=', False),
+            ('res_id', 'not in', (False, 0)),  # 18 stores a missing res_id as 0
             ('date', '>=', cutoff),
         # Newest, not oldest: the original implementation took `order='id asc'`
         # and threaded replies onto whatever record first touched the
@@ -589,7 +589,7 @@ class PanMailMatcher(models.AbstractModel):
         messages = self.env['mail.message'].sudo().search([
             ('subject', 'ilike', subject),
             ('model', '!=', False),
-            ('res_id', '!=', False),
+            ('res_id', 'not in', (False, 0)),  # 18 stores a missing res_id as 0
             ('date', '>=', cutoff),
             '|',
             ('author_id', '=', partner.id),

@@ -999,6 +999,9 @@ pan_mail_pro/
 │   ├── ir_http.py                 # The session flags the browser reads
 │   ├── res_users.py / res_partner.py / res_config_settings.py
 │   └── encryption_utils.py        # Fernet encryption
+├── compat.py                      # The Odoo series seam: every name 18, 19 or 20 spells
+│                                  # differently, resolved once against the running Odoo
+│                                  # (docs/plans/multi-version.md). Model files import from here
 ├── controllers/main.py            # /mail_pro/connect, the two OAuth callbacks (one handler),
 │                                  # /mail_pro/pantalytics/return -- see §12, The routes
 ├── migrations/                    # One folder per schema-changing release -- see migrations/

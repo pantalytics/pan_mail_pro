@@ -104,6 +104,8 @@ DB="pan_local_${SERIES//./_}"
 LOG="$LOG_DIR/odoo-local-$SERIES.log"
 su postgres -c "dropdb --if-exists $DB" >/dev/null
 
+# --test-enable starts the HTTP server whatever --no-http says (HttpCase
+# needs it), so each series gets its own port and two can run side by side.
 echo "Odoo $SERIES, database $DB, log $LOG"
 set +e
 python3 "$ODOO/odoo-bin" -d "$DB" \
@@ -111,7 +113,8 @@ python3 "$ODOO/odoo-bin" -d "$DB" \
     --data-dir="$WORK/data-$SERIES" \
     --addons-path="$ODOO/addons,$TREE" \
     -i pan_mail_pro,sale,mass_mailing --without-demo=all --test-enable --test-tags=pan_mail_pro \
-    --stop-after-init --no-http --log-level=warn \
+    --stop-after-init --http-port=$((8000 + ${SERIES%%.*})) \
+    --log-level=warn --log-handler=odoo.tests:INFO \
     "${EXTRA[@]}" > "$LOG" 2>&1
 STATUS=$?
 set -e
