@@ -271,6 +271,11 @@ class PanMailLicense(models.Model):
     # pan_mail_license_views.xml`): one label, whichever of the two the
     # server named.
     connected_by_name = fields.Char(string='Connected by', compute='_compute_connected_by_name')
+    # What the account page acts on, now that step 1 of the checklist only
+    # reports it (#382): incoming waiting on a card, and whether Check again
+    # has a question to ask (the same test `action_check_approval` makes).
+    mail_paused = fields.Boolean(compute='_compute_attention')
+    check_again = fields.Boolean(compute='_compute_attention')
 
     # Which setup steps the last heartbeat carried, as `setup_signature()`
     # writes them. Compared, never read for its own sake: it is how the module
@@ -327,6 +332,14 @@ class PanMailLicense(models.Model):
     def _compute_connected_by_name(self):
         for link in self:
             link.connected_by_name = link.connected_by()
+
+    def _compute_attention(self):
+        for link in self:
+            paused = link.incoming_paused()
+            link.mail_paused = paused
+            link.check_again = bool(
+                link.sudo().key_encrypted and link.status in ENTITLED_STATUSES
+                and (not link.is_entitled() or paused))
 
     @api.depends('status')
     def _compute_display_name(self):

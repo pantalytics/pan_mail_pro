@@ -2,9 +2,9 @@
 
 Most organizations need nothing from this page. Mail Pro signs in with the
 **Pantalytics Mail Pro** app (verified publisher Pantalytics BV): once this
-Odoo is connected to Pantalytics, press **Use Microsoft 365** on step 2 of
-Settings, Mail Pro, and everybody connects their mailbox with their own
-Microsoft sign-in. If your organization does not let users approve apps
+Odoo is connected to Pantalytics, open step 2 of Settings, Mail Pro and
+press **Sign in with Microsoft**. Everybody else connects their mailbox with
+their own Microsoft sign-in. If your organization does not let users approve apps
 themselves, the first person to connect is offered **Approve for the
 organization**, which a Microsoft 365 administrator presses once.
 

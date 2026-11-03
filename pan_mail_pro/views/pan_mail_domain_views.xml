@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- One row per domain, edited in place. Same shape as the mailbox list:
-         a table of things you add and remove, not a setting you retype. -->
+         a table of things you add and remove, not a setting you retype.
+         Settings step 3 opens it; while it is empty, the domains read off
+         the database are one button beside New (pan_mail_domain_list). -->
     <record id="view_pan_mail_domain_list" model="ir.ui.view">
         <field name="name">pan.mail.domain.list</field>
         <field name="model">pan.mail.domain</field>
         <field name="arch" type="xml">
-            <list string="Internal domains" editable="bottom">
+            <list string="Internal domains" editable="bottom" js_class="pan_mail_domain_list">
                 <field name="name" placeholder="company.com"/>
             </list>
         </field>

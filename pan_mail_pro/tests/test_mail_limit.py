@@ -295,7 +295,11 @@ class TestMailLimit(TransactionCase):
         self.assertEqual(settings.x_license_state, 'connected')
         self.assertTrue(settings.x_setup_account_done)
         self.assertFalse(settings.x_license_sync_blocked)
-        action = settings.action_license_add_card()
+        # Step 1 only reports it (#382): Add a card and Check again are on
+        # the account page its arrow opens.
+        self.assertTrue(self.link.mail_paused)
+        self.assertTrue(self.link.check_again)
+        action = self.link.action_open_dashboard()
         self.assertEqual(action['url'], self.License.dashboard_url())
         self.assertEqual(action['target'], 'new')
 
