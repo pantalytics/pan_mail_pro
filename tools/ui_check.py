@@ -16,6 +16,10 @@ seeds it. Every assertion here is a bug this module has actually shipped:
     a wrong xpath breaks every screen and nothing server-side can see it
   * the same banner was registered in `WebClient.components`, which Enterprise
     has already copied by then -- every Enterprise screen went white
+  * the checklist carried shortcuts on its rows ("Use Microsoft 365", "Add
+    <the Odoo.sh host>") beside the arrow, two routes to one step, and the
+    first one left the provider form stuck on "Not Connected" (#382)
+  * a staging copy showed outgoing mail and said nothing about it (#379)
 
     tools/ui_check.py                     # assert, and write screenshots
     tools/ui_check.py --out=ui-screenshots
@@ -206,6 +210,8 @@ class Checks:
             if not any(re.fullmatch(rf'\d+ {noun}(s|es)?', v) for v in values):
                 self.fail(f'the {noun}s line reads {values}, not a count')
 
+        self.rows_only_report(steps, 'a connected database')
+
         # Help improve Mail Pro is the workspace's yes; the seed says no, so
         # the switch that could only refuse it is not on the page at all.
         if self.improve_toggle(block):
@@ -213,6 +219,36 @@ class Checks:
 
         # Last, because it leaves the settings page.
         self.settings_account(steps[0])
+
+    def rows_only_report(self, steps, where):
+        """The overview is status only (#382): a row with an arrow holds no
+        other button and no link, and the whole row is the way in, so a
+        click on its name lands on the arrow. Step 1 before it is connected
+        has no arrow and keeps its buttons; it is not asked here."""
+        for index, step in enumerate(steps, start=1):
+            arrow = step.query_selector('button.o_mailpro_step_edit')
+            if not arrow or not arrow.is_visible():
+                continue
+            others = [' '.join((c.inner_text() or c.get_attribute('title') or '').split())
+                      for c in step.query_selector_all('button, a')
+                      if c.is_visible() and c != arrow
+                      and not c.evaluate('e => e.classList.contains("o_mailpro_step_edit")')]
+            if others:
+                self.fail(f'{where}: step {index} carries {others} beside its arrow; '
+                          'the overview reports, the page behind the row acts')
+            box = step.query_selector('.o_mailpro_step_name').bounding_box()
+            hit = self.page.evaluate(
+                '([x, y]) => !!document.elementFromPoint(x, y)?.closest(".o_mailpro_step_edit")',
+                [box['x'] + box['width'] / 2, box['y'] + box['height'] / 2])
+            if not hit:
+                self.fail(f'{where}: a click on step {index}\'s name does not open its page; '
+                          'the whole row is the way in')
+
+    def click_row(self, step):
+        """Click a checklist row on its name, the way a person does: by the
+        mouse at that point, so what answers is whatever covers it."""
+        box = step.query_selector('.o_mailpro_step_name').bounding_box()
+        self.page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
 
     def settings_account(self, step):
         """The arrow on step 1: the account page, where the line's detail
@@ -390,8 +426,11 @@ class Checks:
         """
         page = self.page
         link = self.call('pan.mail.license', 'search', [])
-        self.call('pan.mail.license', 'write', link, {'entitlement_json': json.dumps(
-            {'mails_included': 500, 'mails_used_month': 512, 'card': False})})
+        # A key, as a paused instance has one: Check again on the account page
+        # only shows while it could ask. Never decrypted here.
+        self.call('pan.mail.license', 'write', link, {
+            'key_encrypted': 'ui-check', 'entitlement_json': json.dumps(
+                {'mails_included': 500, 'mails_used_month': 512, 'card': False})})
         try:
             page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
             page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
@@ -413,31 +452,121 @@ class Checks:
                 self.fail(f'step 1 over the mail limit does not say what to do: "{text}"')
             if not steps[0].query_selector('.o_mailpro_dot_warn:visible'):
                 self.fail('step 1 over the mail limit is not marked for attention')
-            primary = [b.inner_text().strip()
-                       for b in steps[0].query_selector_all('button.btn-primary')
+            # Status only (#382): Add a card and Check again are on the
+            # account page the row opens, one primary there.
+            self.rows_only_report(steps, 'over the mail limit')
+            self.click_row(steps[0])
+            page.wait_for_selector('.o_field_widget[name=connected_by_name]', timeout=30000)
+            page.wait_for_timeout(800)
+            self.shot('settings-mail-limit-account.png')
+            form = page.query_selector('.o_form_view')
+            primary = [b.inner_text().strip() for b in form.query_selector_all('button.btn-primary')
                        if b.is_visible()]
             if primary != ['Add a card']:
-                self.fail(f'step 1 over the mail limit offers {primary} as its primary '
-                          f'action, expected only "Add a card"')
+                self.fail(f'the account page over the mail limit offers {primary} as its '
+                          f'primary action, expected only "Add a card"')
+            if not any(b.is_visible() and b.inner_text().strip() == 'Check again'
+                       for b in form.query_selector_all('button')):
+                self.fail('the account page over the mail limit offers no Check again')
             self.error_free('Settings over the month\'s mails')
         finally:
-            self.call('pan.mail.license', 'write', link, {'entitlement_json': False})
+            self.call('pan.mail.license', 'write', link,
+                      {'entitlement_json': False, 'key_encrypted': False})
+
+    def copy_marker(self):
+        """A copy says so in one line, on the settings page and in the Inbox.
+
+        pan_mail_pro#379: on a neutralized database outgoing mail goes to the
+        host's catcher and nothing is read, and a person testing on staging
+        must not take that for the product. The line is absent on this
+        database as seeded, and present once it is a copy: the flag Odoo's
+        neutralization writes is set here and taken away again after. In the
+        Inbox it sits above the bar, never over a pane.
+        """
+        page = self.page
+        text = 'This is a copy. Mail is shown, not sent.'
+
+        def open_settings():
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step', timeout=30000)
+            page.wait_for_timeout(800)
+            return [m for m in page.query_selector_all('.o_mailpro_copy_marker')
+                    if m.is_visible()]
+
+        if open_settings():
+            self.fail('the settings page says "this is a copy" on a database that is not one')
+        self.call('ir.config_parameter', 'set_param', 'database.is_neutralized', 'True')
+        try:
+            markers = open_settings()
+            self.shot('settings-copy.png')
+            if len(markers) != 1:
+                self.fail(f'a copy shows {len(markers)} copy lines on the settings page, expected 1')
+            elif ' '.join(markers[0].inner_text().split()) != text:
+                self.fail(f'the settings copy line reads "{markers[0].inner_text()}"')
+            self.error_free('Settings on a copy')
+
+            action = dict(module_menu_actions(self.call)).get('Inbox')
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            try:
+                page.wait_for_selector('.o_mailpro_inbox .o_mailpro_copy_marker', timeout=30000)
+                page.wait_for_selector('.o_mailpro_topbar', timeout=30000)
+            except Exception:
+                self.fail('the Inbox on a copy does not say it is a copy')
+                return
+            page.wait_for_timeout(1500)
+            self.shot('inbox-copy.png')
+            marker = page.query_selector('.o_mailpro_inbox .o_mailpro_copy_marker')
+            if ' '.join(marker.inner_text().split()) != text:
+                self.fail(f'the Inbox copy line reads "{marker.inner_text()}"')
+            line, bar = marker.bounding_box(), page.query_selector('.o_mailpro_topbar').bounding_box()
+            if not line or not bar or line['y'] + line['height'] > bar['y'] + 1:
+                self.fail('the Inbox copy line is not above the bar')
+            elif line['width'] < bar['width'] - 1:
+                # The settings page caps its own line at the checklist's
+                # width; that rule once reached the Inbox too.
+                self.fail(f"the Inbox copy line is {line['width']:.0f}px wide, "
+                          f"the bar under it {bar['width']:.0f}px")
+            self.error_free('Inbox on a copy')
+        finally:
+            self.call('ir.config_parameter', 'set_param', 'database.is_neutralized', False)
 
     def inbox_not_connected(self):
-        """Without a Pantalytics account the Inbox is one button, not four panes.
+        """Without a Pantalytics account the Inbox is one button, and the
+        button connects (#380).
 
         The read layer refuses on an unconnected instance, so panes drawn over
         that refusal would be a product that looks finished and is not. What
         this asserts: no folder list, exactly one Connect button, and that the
-        button lands on the Settings tab where connecting happens.
+        button starts the pairing itself and opens the approval page in this
+        tab. Approve there comes back to the Inbox, open, with nothing more to
+        press. It used to open Settings, where a second Connect button and
+        "Not connected" read as if the first click had failed.
+
+        Both halves of the platform are stood in. The approval page at the
+        network (`page.route`, one Approve link to the return route, which is
+        what the real page's 303 does), the pairing start in the Odoo server
+        by `tools/ci_addons/pan_mail_pro_ci_platform`, and the key the poll
+        would hand over on the row, the way the seed stands in a connected
+        instance; collecting it is `tests/test_inbox_gate.py`'s.
         """
         action = dict(module_menu_actions(self.call)).get('Inbox')
         if not action:
             self.fail('there is no Inbox menu')
             return
         page = self.page
-        link = self.call('pan.mail.license', 'search', [])
-        self.call('pan.mail.license', 'unlink', link)
+        approval = 'https://pantalytics.test/admin/link'
+        back = f'{self.base}/mail_pro/pantalytics/return'
+
+        def approval_page(route):
+            route.fulfill(status=200, content_type='text/html', body=(
+                '<!doctype html><title>Pantalytics</title>'
+                f'<a id="approve" href="{back}">Approve</a>'))
+
+        self.call('pan.mail.license', 'unlink', self.call('pan.mail.license', 'search', []))
+        self.call('ir.config_parameter', 'set_param', 'pan_mail_pro_ci.platform_stub', approval)
+        page.route(f'{approval}**', approval_page)
         try:
             page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
             try:
@@ -454,17 +583,61 @@ class Checks:
             if len(connect) != 1:
                 self.fail(f'the Inbox gate shows {len(connect)} Connect buttons, expected 1')
                 return
+            inbox_path = urllib.parse.urlsplit(page.url).path
             connect[0].click()
-            # A full navigation to /odoo/settings#pan_mail_pro, the hash
-            # selecting the tab: the block is visible without a click here.
             try:
-                page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
-                page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
-                                       timeout=30000)
+                page.wait_for_url(f'{approval}**', timeout=30000)
             except Exception:
-                self.fail('the Inbox gate does not land on the Mail Pro settings')
-            self.error_free('Inbox without a Pantalytics account')
+                self.fail(f'Connect on the Inbox gate does not open the approval page '
+                          f'in this tab; it is on {page.url}')
+                return
+            if 'code=UICK-0380' not in page.url:
+                self.fail(f'the approval page opens without the code in it: {page.url}')
+            link = self.call('pan.mail.license', 'search_read', [],
+                             fields=['status', 'user_code'])
+            if not link or link[0]['status'] != 'pending':
+                self.fail(f'Connect on the Inbox gate started no pairing: {link}')
+                return
+            # What Approve and the poll leave on the row.
+            self.call('pan.mail.license', 'write', [link[0]['id']], {
+                'status': 'active',
+                'user_code': False, 'verify_url': False, 'device_token_encrypted': False,
+                'connected_account': 'seed@pantalytics.test',
+                'connected_on': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
+                'valid_until': (datetime.datetime.now(datetime.UTC)
+                                + datetime.timedelta(days=14)
+                                ).strftime('%Y-%m-%d %H:%M:%S')})
+            page.click('#approve')
+            try:
+                page.wait_for_selector('.o_mailpro_folder', timeout=60000)
+            except Exception:
+                self.fail(f'Approve does not land back in an open Inbox; it is on {page.url}')
+                return
+            page.wait_for_timeout(800)
+            self.shot('inbox-connected-from-the-gate.png')
+            if urllib.parse.urlsplit(page.url).path != inbox_path:
+                self.fail(f'Approve lands on {page.url}, not on the Inbox it started from')
+            if page.query_selector('.o_mailpro_gate'):
+                self.fail('the Inbox gate is still there after Approve')
+            self.error_free('Inbox connected from its gate')
+
+            # A key the answer said no to (no plan): a new pairing is not the
+            # fix, so the same button opens Settings, which says what is.
+            self.call('pan.mail.license', 'write', [link[0]['id']], {'status': 'canceled'})
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            page.wait_for_selector('.o_mailpro_gate button', timeout=30000)
+            page.click('.o_mailpro_gate button')
+            try:
+                page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
+                                       timeout=60000)
+            except Exception:
+                self.fail('the Inbox gate on a workspace with no plan does not open '
+                          'the Mail Pro settings')
+            self.error_free('Inbox gate with no plan')
         finally:
+            page.unroute(f'{approval}**')
+            self.call('ir.config_parameter', 'set_param', 'pan_mail_pro_ci.platform_stub', False)
+            self.call('pan.mail.license', 'unlink', self.call('pan.mail.license', 'search', []))
             self.call('pan.mail.license', 'create', {
                 'status': 'active',
                 'connected_account': 'seed@pantalytics.test',
@@ -3217,6 +3390,163 @@ class Checks:
             if hidden in text:
                 self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
 
+    def settings_provider_first(self):
+        """Step 2 with no provider yet (#382, 3 Nov on Odoo.sh): the overview
+        offered "Use Microsoft 365", which landed on `/new` and a dialog, and
+        closing the dialog left "Microsoft 365, Not Connected" with nothing to
+        press. Now the row is the one route: a click makes the row and saves
+        it, the form opens on it with no unsaved-record icons and no dialog,
+        and its one primary button, Sign in with Microsoft, reaches Microsoft
+        in this tab. The platform's start call is the server's (and
+        test_pantalytics_app.py's); the browser's answer from that button is
+        stood in for at the network, and so is Microsoft.
+        """
+        page = self.page
+        fields = ['provider', 'client_id', 'client_secret_encrypted', 'tenant_id',
+                  'registration']
+        rows = self.call('pan.mail.provider', 'search_read', [], fields=fields)
+        link = self.call('pan.mail.license', 'search', [])
+        # Connected to Pantalytics as far as the page can tell: a key on the
+        # row. It is never decrypted here, because the button's answer is
+        # stood in for below.
+        self.call('pan.mail.license', 'write', link, {'key_encrypted': 'ui-check'})
+        self.call('pan.mail.provider', 'unlink', [r['id'] for r in rows])
+        # A fresh database: nobody signed in on Microsoft yet, or the form
+        # has nothing left to offer. The seed's tokens are put back after.
+        accounts = self.call('pan.mail.account', 'search_read',
+                             [('provider', '=', 'outlook')],
+                             fields=['refresh_token_encrypted'],
+                             context={'active_test': False})
+        self.call('pan.mail.account', 'write', [a['id'] for a in accounts],
+                  {'refresh_token_encrypted': False})
+        sent = []
+
+        def answer(route):
+            request_id = (route.request.post_data_json or {}).get('id')
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({
+                'jsonrpc': '2.0', 'id': request_id, 'result': {
+                    'type': 'ir.actions.act_url', 'target': 'self',
+                    'url': 'https://login.microsoftonline.com/organizations/oauth2/v2.0/'
+                           'authorize?client_id=ui-check&response_type=code'}}))
+
+        def microsoft(route):
+            sent.append(route.request.url)
+            route.fulfill(status=200, content_type='text/html',
+                          body='<title>Microsoft (stood in for)</title>')
+
+        try:
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step', timeout=30000)
+            page.wait_for_timeout(800)
+            steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
+            self.shot('settings-no-provider.png')
+            if len(steps) != 4:
+                self.fail(f'with no provider the page shows {len(steps)} steps, expected 4')
+                return
+            self.rows_only_report(steps, 'with no provider')
+            if 'Use Microsoft 365' in steps[1].inner_text():
+                self.fail('step 2 with no provider still offers "Use Microsoft 365" on the row')
+            # The row, by its name: not the arrow.
+            self.click_row(steps[1])
+            page.wait_for_selector('.o_form_view .o_field_widget[name=provider]', timeout=30000)
+            page.wait_for_timeout(1200)
+            self.shot('provider-first.png')
+            made = self.call('pan.mail.provider', 'search_read', [],
+                             fields=['provider', 'registration'])
+            if [(r['provider'], r['registration']) for r in made] != [('outlook', 'pantalytics')]:
+                self.fail(f'the step 2 row made {made}, not one Microsoft 365 row '
+                          'through the app')
+                return
+            if not page.url.rstrip('/').endswith(f'/{made[0]["id"]}'):
+                self.fail(f'the step 2 row opened {page.url}, not the saved row')
+            if page.query_selector('.o_form_button_save:visible, .o_form_button_cancel:visible'):
+                self.fail('the provider form opened with an unsaved record\'s save icons')
+            if page.query_selector('.modal:visible'):
+                self.fail('the provider form opened a dialog: '
+                          + (self.dialog_in_the_way() or ''))
+            form = page.query_selector('.o_form_view')
+            primary = [b.inner_text().strip() for b in form.query_selector_all('button.btn-primary')
+                       if b.is_visible()]
+            if primary != ['Sign in with Microsoft']:
+                self.fail(f'the new provider form offers {primary}, '
+                          'expected one primary "Sign in with Microsoft"')
+                return
+            page.route('**/web/dataset/call_button/pan.mail.provider/action_connect_myself',
+                       answer)
+            page.route('**/login.microsoftonline.com/**', microsoft)
+            try:
+                with page.expect_request('**/login.microsoftonline.com/**', timeout=30000):
+                    page.click('.o_form_view button:has-text("Sign in with Microsoft")')
+                page.wait_for_timeout(500)
+            except Exception:
+                self.fail('Sign in with Microsoft on the provider form did not reach Microsoft')
+            if sent and not page.url.startswith('https://login.microsoftonline.com/'):
+                self.fail(f'Sign in with Microsoft left this tab on {page.url}; '
+                          'the sign-in goes in the same tab')
+        finally:
+            page.unroute('**/web/dataset/call_button/pan.mail.provider/action_connect_myself')
+            page.unroute('**/login.microsoftonline.com/**')
+            for account in accounts:
+                self.call('pan.mail.account', 'write', [account['id']],
+                          {'refresh_token_encrypted': account['refresh_token_encrypted']})
+            self.call('pan.mail.provider', 'unlink',
+                      self.call('pan.mail.provider', 'search', []))
+            for row in rows:
+                self.call('pan.mail.provider', 'create',
+                          {name: row[name] for name in fields})
+            self.call('pan.mail.license', 'write', link, {'key_encrypted': False})
+
+    def domain_suggestion(self):
+        """Step 3's row reports; the Internal domains list it opens offers
+        what can be read off the database, one button beside New, only while
+        the list is empty, and never the Odoo host: Odoo.sh puts its alias
+        domain on `<database>.odoo.com`, and the overview used to offer
+        exactly that as the company's domain (#382)."""
+        page = self.page
+        was = self.call('pan.mail.domain', 'get_domains')
+        # One of the sources, standing in for Odoo.sh's alias domain: an
+        # address on the database's own odoo.com host.
+        company = self.call('res.company', 'search_read', [], fields=['email'], limit=1)[0]
+        self.call('res.company', 'write', [company['id']],
+                  {'email': 'info@ui-check-db.odoo.com'})
+        self.call('pan.mail.domain', 'unlink', self.call('pan.mail.domain', 'search', []))
+        try:
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step', timeout=30000)
+            page.wait_for_timeout(800)
+            steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
+            self.rows_only_report(steps, 'with no internal domains')
+            if 'example.com' in steps[2].inner_text():
+                self.fail('step 3 still names a domain to add on the overview')
+            self.click_row(steps[2])
+            page.wait_for_selector('.o_list_view', timeout=30000)
+            page.wait_for_timeout(1200)
+            self.shot('domains-empty.png')
+            add = page.query_selector('button.o_mailpro_add_suggested')
+            if not add or not add.is_visible():
+                self.fail('the empty Internal domains list offers no suggested domains')
+                return
+            label = ' '.join(add.inner_text().split())
+            if 'example.com' not in label:
+                self.fail(f'the suggestion reads "{label}", without the mailboxes\' domain')
+            if 'odoo.com' in label:
+                self.fail(f'the suggestion offers the Odoo host: "{label}"')
+            add.click()
+            page.wait_for_timeout(1500)
+            if 'example.com' not in self.call('pan.mail.domain', 'get_domains'):
+                self.fail('Add on the Internal domains list added nothing')
+            if page.query_selector('button.o_mailpro_add_suggested'):
+                self.fail('the suggestion stays on a list that is no longer empty')
+            self.error_free('the Internal domains list')
+        finally:
+            self.call('pan.mail.domain', 'unlink', self.call('pan.mail.domain', 'search', []))
+            self.call('pan.mail.domain', 'create', [{'name': name} for name in was])
+            self.call('res.company', 'write', [company['id']], {'email': company['email']})
+
     def settings_provider_arrow(self, row_id):
         """Step 2's arrow is the provider row's own form, by its id."""
         page = self.page
@@ -4247,6 +4577,7 @@ def main():
         checks.settings_not_connected()
         checks.settings_key_refused()
         checks.settings_mail_limit()
+        checks.copy_marker()
         checks.inbox_not_connected()
         checks.menus()
         checks.conversation_view()
@@ -4257,6 +4588,8 @@ def main():
         checks.read_state()
         checks.improve()
         checks.provider_form()
+        checks.settings_provider_first()
+        checks.domain_suggestion()
         checks.mailbox_status()
         checks.connect_banner()
         checks.preferences()

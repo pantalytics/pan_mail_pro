@@ -392,6 +392,11 @@ export class ConversationView extends Component {
             // layer refuses anyway, and four empty panes over a refusal is a
             // product that looks finished and is not.
             connected: true,
+            // Whether the gate's Connect starts a pairing (`inbox_gate`), and
+            // whether one is being asked for, so a second press does not
+            // start a second.
+            gatePairs: true,
+            connecting: false,
             error: "",
             // The banner says what broke, not only that something did, and
             // what to do about it when the server can name it.
@@ -479,9 +484,16 @@ export class ConversationView extends Component {
             // The session's answer is a page load old. When it says no, ask
             // once more: an admin who connected in Settings a minute ago and
             // came here has not reloaded anything, and must not meet the
-            // gate again.
-            this.state.connected = !!session.pan_mail_connected
-                || (await this.orm.call("pan.mail.license", "sync_allowed", []));
+            // gate again. The same call collects a key that was approved and
+            // not picked up yet, so coming back from the approval page by
+            // any road opens the Inbox with nothing to press.
+            if (session.pan_mail_connected) {
+                this.state.connected = true;
+            } else {
+                const gate = await this.orm.call("pan.mail.license", "inbox_gate", []);
+                this.state.connected = gate.connected;
+                this.state.gatePairs = gate.pairs;
+            }
             if (!this.state.connected) {
                 this.state.loading = false;
                 return;
@@ -541,10 +553,44 @@ export class ConversationView extends Component {
         return user.isAdmin;
     }
 
-    /** The one place connecting happens: Settings, Mail Pro, where the code
-     *  and Check Approval live. The gate does not copy that flow. The same
-     *  URL the OAuth controller and the mailbox list send people to: the
-     *  hash is what selects the tab. */
+    /** A neutralized copy (staging, a restore): mail is shown in the host's
+     *  catcher, never sent, and nothing is read. The session says so, the way
+     *  `neutralization.py` detects it; there is no switch to read. */
+    get isCopy() {
+        return !!session.pan_mail_copy;
+    }
+
+    /** Connect from the gate itself (#380): the pairing starts here and the
+     *  approval page opens in this tab. After Approve the platform sends the
+     *  browser to `/mail_pro/pantalytics/return`, which collects the key and
+     *  lands back on this screen, the place it was pressed on. Before, the
+     *  button opened Settings, where a second Connect button and "Not
+     *  connected" read as if the first click had failed.
+     *
+     *  A link holding a key the answer said no to (no plan, a lapsed
+     *  answer) is not fixed by a new pairing: Settings says what is. */
+    async connectPantalytics() {
+        if (!this.state.gatePairs) {
+            this.openConnectSettings();
+            return;
+        }
+        if (this.state.connecting) {
+            return;
+        }
+        this.state.connecting = true;
+        const { pathname, search, hash } = browser.location;
+        try {
+            const action = await this.orm.call("pan.mail.license", "action_connect_open", [], {
+                context: { pan_mail_back: pathname + search + hash },
+            });
+            await this.action.doAction(action);
+        } finally {
+            this.state.connecting = false;
+        }
+    }
+
+    /** Settings, Mail Pro: the same URL the OAuth controller and the mailbox
+     *  list send people to, the hash selecting the tab. */
     openConnectSettings() {
         this.action.doAction({
             type: "ir.actions.act_url",

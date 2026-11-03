@@ -13,11 +13,14 @@ is broken. Steps 2 to 4, and the rule that turns them into a phase, live in
 
 Steps 2 to 4 are tables — providers, internal domains, mailboxes — so this
 page only shows the answer and a way to reach the table where it is actually
-edited. Nothing is typed here any more. Step 1 is the exception only while it
-is open: its answer is then a button, because the thing it edits is a pairing
+edited. Nothing is typed here, and nothing is done here either: a row is a
+dot, a name, one line and its answer, and the whole row opens the page where
+the action is (one route, #369 and #382). Step 1 is the exception only while
+it has no page to open: not connected, waiting for approval, or a key that
+died, where its answer is a button because the thing it edits is a pairing
 with our server, not a row. Once it is connected it is a line like the other
 three — "Connected" and an arrow — and who connected it, the plan, usage and
-billing and Disconnect are on the account page the arrow opens
+billing, Check again and Disconnect are on the account page the arrow opens
 (`pan.mail.license.action_open`).
 
 An answer is one word or one number, never a list: the domains line counts
@@ -32,6 +35,7 @@ import logging
 from odoo import _, api, fields, models
 
 from .mail_provider_client import get_provider_client
+from .neutralization import database_is_neutralized
 from .pan_mail_license import IMPROVE_REFUSED_PARAM, STATUS_SELECTION
 
 _logger = logging.getLogger(__name__)
@@ -78,9 +82,9 @@ class ResConfigSettings(models.TransientModel):
         string='Internal domains',
         help='Your own email domains. Mail between them is never synced into Odoo.',
     )
-    # The count, not the list: "3 domains".
+    # The count, not the list: "3 domains". What can be suggested is on the
+    # Internal domains list the arrow opens (`pan.mail.domain.action_add_suggested`).
     x_internal_domains_summary = fields.Char(compute='_compute_internal_domains_status')
-    x_internal_domains_suggested = fields.Char(compute='_compute_internal_domains_status')
 
     # -------------------------------------------------------------------------
     # Step 4 — the mailboxes. Done when one of them is ticked as the
@@ -142,6 +146,17 @@ class ResConfigSettings(models.TransientModel):
         string='Help improve Mail Pro',
         compute='_compute_improve', inverse='_inverse_improve',
     )
+
+    # -------------------------------------------------------------------------
+    # A copy (pan_mail_pro#379): one line above the checklist, no switch. The
+    # copy is detected, never declared, the way `neutralization.py` does it.
+    # -------------------------------------------------------------------------
+    x_is_copy = fields.Boolean(compute='_compute_is_copy')
+
+    def _compute_is_copy(self):
+        is_copy = database_is_neutralized(self.env)
+        for record in self:
+            record.x_is_copy = is_copy
 
     # -------------------------------------------------------------------------
     # About
@@ -218,12 +233,9 @@ class ResConfigSettings(models.TransientModel):
             record.x_improve_refused = not record.x_improve
 
     def action_license_connect(self):
-        link = self.env['pan.mail.license'].action_connect()
-        # Same tab: Odoo opens a new one only after this call answers, which
-        # is no longer the click, so Brave and Safari block it. The approval
-        # page sends the admin back to /mail_pro/pantalytics/return, which
-        # collects the key, so there is nothing left to press afterwards.
-        return {'type': 'ir.actions.act_url', 'url': link.verify_url, 'target': 'self'}
+        # The approval page in this tab, and back to Settings after Approve
+        # (the Referer of this call is what `_remember_back` keeps).
+        return self.env['pan.mail.license'].action_connect_open()
 
     def action_license_check(self):
         return self.env['pan.mail.license'].current().action_check_approval()
@@ -233,46 +245,21 @@ class ResConfigSettings(models.TransientModel):
         if link:
             link.action_disconnect()
 
-    def action_license_plan(self):
-        """No Mail Pro plan on the workspace: the Pantalytics page where one
-        is chosen. Opened in a new tab, since it is not part of Odoo."""
-        return {'type': 'ir.actions.act_url', 'target': 'new',
-                'url': self.env['pan.mail.license'].dashboard_url()}
-
     def action_license_open(self):
         """The arrow on step 1: the account page."""
         return self.env['pan.mail.license'].current().action_open()
-
-    def action_license_add_card(self):
-        """Over the month's mails without a card: the Pantalytics page where
-        the card is added. A new tab, since it is not part of Odoo."""
-        return {'type': 'ir.actions.act_url', 'target': 'new',
-                'url': self.env['pan.mail.license'].dashboard_url()}
 
     # -------------------------------------------------------------------------
     # Email provider
     # -------------------------------------------------------------------------
 
-    def action_use_microsoft_app(self):
-        """Step 2 in one click: Microsoft 365 through the Pantalytics app.
-
-        The one provider that needs nothing typed, so the open step offers it
-        on the line. Gmail, IMAP/SMTP and an own Azure app registration are
-        on the Providers table behind the arrow. Returns nothing, so the page
-        redraws with the step answered.
-        """
-        self.ensure_one()
-        Provider = self.env['pan.mail.provider']
-        if not Provider.current():
-            Provider.create({'provider': 'outlook', 'registration': 'pantalytics'})
-
     def action_open_provider(self):
         """Step 2's arrow: the provider row itself, as a form.
 
-        The overview only reports; what to do about it (the move off an own
-        Azure app, who still has to sign in, the cleanup) is on the row
-        (#369). A list action opened from here could land on a new, unsaved
-        form, and saving that one is a second provider row.
+        The overview only reports; what to do about it (choosing one, the
+        move off an own Azure app) is on the row (#369, #382). A list action
+        opened from here could land on a new, unsaved form, and saving that
+        one is a second provider row.
         """
         self.ensure_one()
         return self.env['pan.mail.provider'].action_open_current()
@@ -283,35 +270,10 @@ class ResConfigSettings(models.TransientModel):
 
     @api.depends('x_internal_domain_ids')
     def _compute_internal_domains_status(self):
-        """The list as a count, and what is left to suggest.
-
-        Both read the record's own selection rather than the stored rows: the
-        admin may have just clicked "Add" and the line has to follow along
-        without a save.
-        """
-        suggested = self.env['pan.mail.domain'].suggest_domains()
+        """The list as a count, read off the record's own selection."""
         for record in self:
-            selected = record.x_internal_domain_ids.mapped('name')
             record.x_internal_domains_summary = _counted(
-                len(selected), _('1 domain'), _('%s domains'))
-            record.x_internal_domains_suggested = ', '.join(
-                d for d in suggested if d not in selected)
-
-    def action_apply_suggested_internal_domains(self):
-        """Add every domain we can derive from the database to the list.
-
-        The click is the confirmation: the domains are rows, so this creates
-        them and the settings page has nothing left to save. Returns nothing on
-        purpose — the client re-reads this same transient record, so the line
-        redraws with the new domains on it.
-        """
-        self.ensure_one()
-        Domain = self.env['pan.mail.domain']
-        names = Domain.suggest_domains()
-        existing = Domain.sudo().search([('name', 'in', names)])
-        missing = [n for n in names if n not in existing.mapped('name')]
-        self.x_internal_domain_ids |= existing | Domain.sudo().create(
-            [{'name': n} for n in missing])
+                len(record.x_internal_domain_ids), _('1 domain'), _('%s domains'))
 
     # -------------------------------------------------------------------------
     # Checklist

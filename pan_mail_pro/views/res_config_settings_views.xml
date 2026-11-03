@@ -27,7 +27,10 @@
                          Four steps, in one shape: a coloured dot on the left,
                          the name, the answer, and the way to the place you
                          change it. Steps 2 to 4 are tables, so that way is a
-                         link to the table — nothing is typed on this page.
+                         link to the table — nothing is typed on this page,
+                         and nothing is done on it either: no button or link
+                         on a row that has an arrow, and the whole row is the
+                         way in (one route, #369 and #382).
                          Step 1 is a pairing with our server, so while it is
                          open its way is a button on the line itself; once it
                          is connected the line reads "Connected" and its arrow
@@ -36,8 +39,15 @@
                          Anything longer than an answer — a warning, a fix —
                          goes on its own line under the name, never beside it,
                          so the column of dots and names stays a column. -->
+                    <!-- A copy (staging, a restore): outgoing mail goes to
+                         the host's catcher and nothing is read. One line, no
+                         switch: Odoo's neutralization decided, not a person. -->
+                    <field name="x_is_copy" invisible="1"/>
                     <h2>Setup</h2>
                     <div class="row mt-3 o_settings_container">
+                    <div class="col-12 o_setting_box o_mailpro_copy_marker" role="status" invisible="not x_is_copy">
+                        This is a copy. Mail is shown, not sent.
+                    </div>
                     <div class="col-12 o_setting_box o_mailpro_steps">
 
                     <!-- Step 1. One primary action per state, and the code is
@@ -105,15 +115,10 @@
                                 <button name="action_license_connect" type="object"
                                         string="Connect again" class="btn-primary"/>
                             </div>
-                            <!-- Connected, but the workspace has no plan. -->
+                            <!-- Connected, but the workspace has no plan.
+                                 Choose a plan is on the account page. -->
                             <div class="o_mailpro_step_msg" invisible="x_license_status != 'canceled'">
-                                Your Pantalytics workspace has no Mail Pro plan. Choose one, then check again here.
-                            </div>
-                            <div class="o_mailpro_step_msg" invisible="x_license_status != 'canceled'">
-                                <button name="action_license_plan" type="object"
-                                        string="Choose a plan" class="btn-primary"/>
-                                <button name="action_license_check" type="object"
-                                        string="Check again" class="btn-link"/>
+                                Your Pantalytics workspace has no Mail Pro plan.
                             </div>
                             <!-- Connected, but the last answer lapsed: our
                                  server or the way to it is down. -->
@@ -126,22 +131,12 @@
                                  invisible="not x_license_last_error or x_license_status in ('invalid', 'revoked', 'canceled')">
                                 <field name="x_license_last_error" nolabel="1" readonly="1"/>
                             </div>
-                            <div class="o_mailpro_step_msg"
-                                 invisible="not x_license_sync_blocked or x_license_state != 'connected' or x_license_status in ('invalid', 'revoked', 'canceled')">
-                                <button name="action_license_check" type="object"
-                                        string="Check again" class="btn-link p-0"/>
-                            </div>
                             <!-- Connected, and the month's included mails are
                                  used with no card on the workspace. Only
-                                 incoming waits, so steps 2 to 4 stay. -->
+                                 incoming waits, so steps 2 to 4 stay. Add a
+                                 card and Check again are on the account page. -->
                             <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_license_mail_paused">
                                 <field name="x_license_mail_paused_msg" nolabel="1" readonly="1"/>
-                            </div>
-                            <div class="o_mailpro_step_msg" invisible="not x_license_mail_paused">
-                                <button name="action_license_add_card" type="object"
-                                        string="Add a card" class="btn-primary"/>
-                                <button name="action_license_check" type="object"
-                                        string="Check again" class="btn-link"/>
                             </div>
                         </div>
                         <button name="action_license_open" type="object"
@@ -192,14 +187,6 @@
                             <div class="o_mailpro_step_msg" invisible="not x_setup_provider_needs_account">
                                 Each IMAP/SMTP address is an account with its own server, login and password.
                             </div>
-                            <!-- A fix line while nothing is chosen: Microsoft 365
-                                 through the Pantalytics app needs nothing typed,
-                                 so choosing it is the whole step. Gmail and
-                                 IMAP/SMTP are behind the arrow. -->
-                            <div class="o_mailpro_step_msg" invisible="x_active_provider_id">
-                                <button name="action_use_microsoft_app" type="object"
-                                        string="Use Microsoft 365" class="btn-link p-0"/>
-                            </div>
                             <!-- The move off an own Azure app (ARCHITECTURE.md
                                  §9.20), as status only: one line, no button.
                                  The move is on the provider form behind the
@@ -214,7 +201,9 @@
                         <field name="x_setup_provider_needs_account" invisible="1"/>
                         <!-- The row itself, never the list: a list could
                              land on a new, unsaved form, and saving that is
-                             a second provider row. -->
+                             a second provider row. With no row yet the
+                             method makes one, so the form opens saved, on
+                             its Sign in with Microsoft button (#382). -->
                         <button type="object" name="action_open_provider"
                                 icon="oi-chevron-right" title="Provider"
                                 class="oe_link o_mailpro_step_edit"
@@ -241,18 +230,10 @@
                             <div class="o_mailpro_step_msg" invisible="x_setup_domains_done">
                                 The domains your company owns. Email between them is never copied into Odoo.
                             </div>
-                            <!-- Only while the list is empty: the domains can be
-                                 read off the addresses already in the database,
-                                 so nobody has to type them on day one. A list
-                                 that has something in it is the admin's, and
-                                 offering additions to it forever would read as
-                                 a complaint about a deliberate choice. -->
-                            <div class="o_mailpro_step_msg"
-                                 invisible="x_setup_domains_done or not x_internal_domains_suggested">
-                                <button name="action_apply_suggested_internal_domains" type="object"
-                                        class="btn-link btn-sm p-0 me-1" string="Add"/>
-                                <field name="x_internal_domains_suggested" class="d-inline" readonly="1" nolabel="1"/>
-                            </div>
+                            <!-- What can be read off the database is offered
+                                 on the list the arrow opens, while it is
+                                 empty (pan.mail.domain.action_add_suggested),
+                                 not here: this row only reports (#382). -->
                         </div>
                         <button type="action" name="%(action_pan_mail_domain)d"
                                 icon="oi-chevron-right" title="Internal domains"

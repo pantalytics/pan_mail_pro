@@ -142,15 +142,18 @@ class TestPantalyticsAppRow(TransactionCase):
         answer = row.verify_registration()
         self.assertIsNone(answer['verified'], 'signing in is the check')
 
-    def test_step_2_is_one_click_from_the_settings_page(self):
+    def test_step_2_s_row_makes_the_provider_and_opens_it_saved(self):
+        """No row yet: the step 2 row makes Microsoft 365 through the app,
+        saved, and opens its form on it rather than on `/new` (3 Nov, #382)."""
         connect_to_pantalytics(self.env)
         settings = self.env['res.config.settings'].create({})
-        settings.action_use_microsoft_app()
+        action = settings.action_open_provider()
         row = self.Provider.current()
         self.assertEqual((row.provider, row.registration), ('outlook', 'pantalytics'))
+        self.assertEqual((action['res_id'], action['view_mode']), (row.id, 'form'))
         settings = self.env['res.config.settings'].create({})
         self.assertTrue(settings.x_setup_provider_done)
-        settings.action_use_microsoft_app()
+        settings.action_open_provider()
         self.assertEqual(self.Provider.search_count([]), 1, 'a second click adds nothing')
 
 

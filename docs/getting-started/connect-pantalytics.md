@@ -27,9 +27,9 @@ workspace afterwards, under **Members**.
 Came back without approving? The Settings page shows the code and a link to
 the Pantalytics page. Approved but
 Odoo still says it is waiting? Press **Check approval**. Connected, but the
-page still says incoming mail is not synced? Press **Check again**: the
-instance asks Pantalytics once more, which it also does by itself every ten
-minutes.
+page still says incoming mail is not synced? Open step 1 and press **Check
+again** on the account page: the instance asks Pantalytics once more, which
+it also does by itself every ten minutes.
 
 Only an administrator of the Pantalytics workspace can approve. If the page
 says the Odoo instance is already connected to a workspace you do not

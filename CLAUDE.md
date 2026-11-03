@@ -71,7 +71,9 @@ Docs, `tools/` and CI sit at the repository root around it (ARCHITECTURE.md
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, whether to nudge them, and the one mailbox setting they own: the sync level of their own address, on My Preferences |
 | `models/res_config_settings.py` | The Settings page: the four checklist steps |
 | `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
-| `models/ir_http.py` | Three session flags: does this user still have to connect a mailbox, is this Odoo connected to Pantalytics, and may the Inbox report how it is used |
+| `models/ir_http.py` | The session flags: does this user still have to connect a mailbox, is this Odoo connected to Pantalytics, may the Inbox report how it is used, and is this database a copy (`pan_mail_copy`) |
+| `models/ir_mail_server.py` | A copy's outgoing From, put in place where Odoo builds the message (ARCHITECTURE.md §9.9) |
+| `tests/test_copy.py` | A copy routes as production, hands the mail to Odoo's mail server with the From and threading it would have had, never asks a provider, never writes to a live mailbox, and says so in one line |
 | `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, the errors the Inbox meets as `$exception` with the message scrubbed (`scrubExceptionEvent`), a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
 | `static/lib/posthog/` | posthog-js, vendored (MIT), pinned so the masking check in `tools/ui_check.py` proves the version that ships |
 | `tests/test_improve.py` | What the session carries once the workspace said yes: a host, a token, a pseudonym, nothing that names anyone |
@@ -374,7 +376,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, not zero tests, and no `bad query` / `ReadOnlySqlTransaction` line in the log |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user beside the address they are connected as, the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal, and the Inbox in dark mode: every pane dark and no line of text below 3:1 (dark mode is Enterprise; `tools/ci_addons/pan_mail_pro_ci_dark` stands it in on the community image) |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user beside the address they are connected as, the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal, and the Inbox in dark mode: every pane dark and no line of text below 3:1 (dark mode is Enterprise; `tools/ci_addons/pan_mail_pro_ci_dark` stands it in on the community image), and the Inbox's gate connecting and landing back in an open Inbox (the platform's pairing start stood in by `tools/ci_addons/pan_mail_pro_ci_platform`) |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
@@ -618,6 +620,84 @@ registry.category("views").add("my_list", myListView);
 After every `/compact`, update the **Lessons Learned** section below with new insights from the session (gotchas, errors, solutions). This ensures continuity across context compactions.
 
 ## Lessons Learned
+
+### A button that sends you to another button (19.0.33.1.2)
+
+- **The gate's Connect opened Settings, and Settings had its own Connect.**
+  The click worked, and the screen it landed on said "Not connected" under a
+  second button with the same words: it read as a click that failed. A
+  button does what it says on the screen it is on, or it says where it goes.
+  The gate starts the pairing itself now (`action_connect_open`, the same
+  call Settings' button makes) and opens the approval page in this tab.
+- **Read the other side before planning a fallback.** The plan had a poll
+  loop for "if the platform cannot send the browser back yet". It already
+  did: `link_page.approve` 303s to `RETURN_PATHS['mail_pro']` on the host
+  the Odoo gave, and that route already collected the key. What was missing
+  was one session key saying where Connect was pressed, the same shape as
+  #370's Microsoft way back. No platform change, no timer.
+- **A path the platform fixes is a place the session remembers.** The
+  return URL is scheme, host and one fixed path, so nothing the Odoo puts in
+  the start call survives the trip. `CONNECT_BACK_KEY` holds the screen,
+  `_safe_back` checks it on the way out, and it is popped, so a second visit
+  to the return route lands on Settings again.
+- **A new pairing is not the fix for every closed gate.** The gate shows on
+  any instance whose answer is not yes, including a workspace with no plan.
+  Connect there would pair again and get the same no; `inbox_gate()` says
+  `pairs: false` and the button opens Settings, which names the fix.
+- **The server half of a browser flow needs its own stand-in.** `page.route`
+  stands in the approval page; the pairing start is a call from the Odoo
+  server, which no browser route sees. `tools/ci_addons/pan_mail_pro_ci_platform`
+  answers it while `pan_mail_pro_ci.platform_stub` is set and refuses every
+  other platform call meanwhile, so nothing from the check reaches a real
+  server.
+- **A TestCase imported by name runs twice.** The loader collects every
+  TestCase on a test module, imported ones included. Borrow helpers through
+  the module (`test_license.TestLicense.server`), not `from ... import
+  TestLicense`.
+
+### A shortcut is a second route, and it gets the second-best test (19.0.33.1.1)
+
+- **The checklist reports; the row opens the page that acts.** "Use
+  Microsoft 365" and "Add <domain>" on the overview were one-click
+  shortcuts beside an arrow to the same step, and both were wrong on the
+  first real database (Odoo.sh, 3 Nov): one ended on a provider form with
+  nothing to press once its dialog was closed, the other offered the
+  database's own `*.odoo.com` host as the company's mail domain. Nobody had
+  walked them because the arrow was the tested route. One route, and
+  `tools/ui_check.py`'s `rows_only_report` fails on any button or link
+  beside an arrow. A whole-row hit area is the chevron's `::after`, so
+  Playwright's `click()` on the name refuses ("intercepts pointer events");
+  click by mouse at the point, which is what a person does.
+- **Make the record before opening its form.** An arrow onto `/new`
+  shows an unsaved record's icons and asks "did this save?". A row with one
+  sensible default is created and saved by the method the arrow calls.
+
+### A copy shows mail and sends none (19.0.33.1.0)
+
+- **Check what is already there before building what the issue asks for.**
+  #379 read as "a copy cannot show outgoing mail", and #338 had been handing
+  a copy's mail to Odoo's SMTP since 19.0.30.1.0. What was missing was the
+  route: the catcher showed Odoo's From, so a test on staging could not tell
+  which mailbox would have sent. The gap was one decision, not a feature.
+- **Route on a copy the way production routes, minus only what a copy cannot
+  have.** `_resolve_route(on_copy=True)` is the same ladder with archived
+  mailboxes allowed and no account looked for. A copy that sends a mail
+  production would refuse tests nothing, so the refusals and their
+  sentences stay.
+- **`email_from` on a `mail.mail` is the `mail.message`'s.** `_inherits`
+  delegates it, and a notification shares its message with the person who
+  wrote it, so writing the copy's From there would rewrite the chatter for
+  every recipient. Odoo's `_send` reads the From off the record and every
+  other value off `_prepare_outgoing_list`'s dicts; the From travels as a
+  header and `ir.mail_server._build_email__` puts it in place.
+- **`EmailMessage` refuses a second From.** `msg['From'] = x` on a message
+  that has one raises "There may be at most 1 From headers", so a From in
+  Odoo's `headers` dict is not an override, it is a crash at send.
+- **A copy that may read is a copy that may write.** One grant reads, marks
+  read, moves and sends on every provider. The only promise that holds is no
+  usable credential, which three layers already make true; the test puts the
+  credentials back and watches every transport instead of trusting their
+  absence.
 
 ### The module ships alone (19.0.33.0.5)
 

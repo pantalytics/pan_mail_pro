@@ -991,6 +991,7 @@ pan_mail_pro/
 │   ├── pan_mail_draft.py          # The saved composer, private to its author
 │   ├── pan_mail_error.py          # One row per failure the module caught (§7)
 │   ├── neutralization.py          # Is this database a copy?
+│   ├── ir_mail_server.py          # A copy's outgoing From, put in place where Odoo builds the message (§9.9)
 │   ├── mail_mail.py               # Outgoing override + route resolution
 │   ├── mail_message.py            # Threading keys + communication lens
 │   ├── mail_thread.py             # A message the sync imported notifies nobody
@@ -1336,8 +1337,9 @@ and nobody to protect.
 admin's call: a mailbox on a domain they left off is treated as external, which
 is the setting doing its job. `suggest_domains()` reads the domains this
 database can demonstrate belong to the company — its mailboxes and its internal
-users' own addresses — and offers them with one click while the list is still
-empty, so nobody has to type them on day one. The users are the source that
+users' own addresses — and offers them as one button beside New on the
+Internal domains list while it is still empty (`action_add_suggested`;
+settings step 3 only reports, #382), so nobody has to type them on day one. The users are the source that
 matters: a company that acquired another has colleagues on its domain long
 before it has mailboxes on it.
 
@@ -1353,7 +1355,11 @@ recoverable in one field. The reverse error is none of those.
 This used to read `mail.alias.domain`, where "no domains configured" meant
 "nothing is internal" — so a database that never set it up synced every
 internal email into Odoo. Fail-closed, because the failure mode is a data leak.
-Alias domains still feed `suggest_domains()`; they no longer decide anything.
+Alias domains still feed `suggest_domains()`; they no longer decide anything,
+and neither the Odoo host (`web.base.url`) nor anything under `odoo.com` is
+ever suggested (`_is_hosting_domain`): Odoo.sh puts the alias domain on
+`<database>.odoo.com`, and a fresh database offered exactly that as the
+company's domain (3 Nov, #382).
 
 **The filter has no off switch.** Not globally and not per mailbox -- see
 §9.12. The one exception is not a switch: the mailbox owner may add a single
@@ -2400,31 +2406,135 @@ each ask directly, so the refusal says *neutralized* instead of "account not
 connected". Only a caller that knows what it was attempting can say why it
 stopped.
 
-Incoming sync refuses outright: there is nothing to preserve, and reading a
-customer's live mailbox from a test copy is the thing being prevented.
+**On a copy, mail is shown, not sent** (pan_mail_pro#379). Staging is where
+the recommended install starts, and a person testing there wants to see what
+Mail Pro would do before it touches the real database and the real mailboxes.
 
-Outgoing mail is different, because staging is where the *flow* gets tested,
-and the tester wants to read the email that went out. `mail.mail.send()` hands
-the batch to Odoo's own SMTP path (`_send_on_staging`), exactly as it does
-before any mailbox exists. Neutralizing leaves one active `ir_mail_server`, and
-each host already decides where that leads: Cloudpepper catches staging mail in
-MailHog, odoo.sh shows it on the build's Mails tab, and a bare restore fails at
-the invalid host Odoo inserted. The module inherits that answer rather than
-writing its own; an earlier version recorded the mail as sent and delivered it
-nowhere, which hid the one thing the tester came to look at.
+**Outgoing: routed as here, built and sent by Odoo.** `mail.mail.send()` hands
+a copy's batch to `_send_on_staging`. Every mail is routed the way production
+would route it, `_resolve_route(on_copy=True)`: the same rules in the same
+order, with the two things a copy cannot have taken out. `data/neutralize.sql`
+archived every mailbox, so an archived one still answers; it dropped every
+credential, so no account is looked for. A mail production would refuse (no
+default mailbox, a colleague's personal mailbox, no notification mailbox) is
+refused here with the same sentence and never reaches the catcher, because a
+copy that shows what production refuses tests nothing. The rest goes to Odoo's
+own `ir_mail_server` path, exactly as before any mailbox exists. Neutralizing
+leaves one active server, and each host already decides where that leads:
+Odoo.sh shows staging mail on the build's Mails tab, Cloudpepper or your own
+server catch it in whatever the copy's SMTP is (MailHog, Mailpit), and a bare
+restore fails at the invalid host Odoo inserted. An earlier version recorded
+the mail as sent and delivered it nowhere, which hid the one thing the tester
+came to look at; the version after that sent it with Odoo's From, which showed
+the mail but not the route.
 
-Never a provider. `_send_on_staging` asks no mailbox, no account and no client,
-so Graph, Gmail and the module's own IMAP/SMTP client are out of reach by
-construction, and the three layers underneath still refuse on their own. The
-check sits after the mailbox count, so switching a mailbox back on in staging
-changes nothing. What it trusts is the database's `ir_mail_server` rows, which
-is Odoo's own contract for a neutralized copy.
+What survives the handoff, header by header:
+
+| Header | On a copy | Where it comes from |
+|---|---|---|
+| From | The mailbox it would have left from | `ir.mail_server._build_email__` reads it off `X-Mail-Pro-Mailbox` (see below) |
+| Reply-To | The same address | Odoo writes the From when the mail has no Reply-To of its own; a provider send has none either |
+| `X-Mail-Pro-Mailbox` | The mailbox | Only on a copy. Still names the route when a host's mail server rewrites the From to its own address (one with a from filter does) |
+| In-Reply-To, References | The chain a provider send carries | `_build_reply_context`, from the database only. Odoo's own References when there is no chain, as `mime_utils.build_message` falls back |
+| X-Odoo-Model, -Record-Id, -Mail-Id, -Message-Id, X-Odoo-Db | As on every provider send | `mime_utils.odoo_headers`, the list the incoming sync's loop guard reads |
+| To, Cc, Subject, body, attachments | Odoo's | Odoo's own build |
+| Message-ID | Odoo's, not one a provider minted | Nothing on a copy indexes the sent mail, so nothing needs the provider's id |
+
+Two things do not survive, on purpose. **To**: Odoo sends one message per
+recipient partner, where a provider send puts everyone the sender addressed in
+one To line (`_one_mail_for_the_addressees`); the catcher shows the same
+recipients, one message each. **The lens**: nothing stamps `x_direction` or
+`x_mailbox_id` on the message, and no thread link or ref row is written,
+because nothing carried the mail.
+
+The From is put in place where the message is built rather than on the record.
+Odoo reads the From off the `mail.mail`, which delegates it to the
+`mail.message`, and a notification shares that message with the person who
+wrote it: rewriting it there would change what the chatter says for every
+other recipient. So `_prepare_outgoing_list` (under the `pan_mail_on_copy`
+context key that `_send_on_staging` sets) carries the mailbox in a header, and
+`ir.mail_server._build_email__` (`models/ir_mail_server.py`) swaps it in under
+the same key. Every other mail Odoo builds is untouched.
+
+**What a real Cloudpepper copy looks like**, measured on 2026-11-03 against
+`staging-mailpro-dev.cloudpepper.site`, a clone of `mailpro-dev` on 19.0.33.0.5,
+read-only through Cloudpepper's API (odoo.conf, the installed modules, the last
+955 lines of `odoo-server.log`); nothing was deployed or changed there:
+
+- `neutralization.py` sees a copy: the fetch cron logs `[Incoming Mail]
+  Database is neutralized - skipping sync` on every run, so
+  `database.is_neutralized` is set.
+- Cloudpepper rewrites the copy's odoo.conf: `smtp_port = 1025` is added and
+  no `smtp_server`, so Odoo's command-line fallback is `localhost:1025`, the
+  MailHog convention. Production's odoo.conf has neither line.
+- Odoo's own `neutralize.sql` also inserts an active `ir_mail_server` named
+  "neutralization - disable emails" on host `invalid`, port 1025, and an
+  active row wins over the command-line fallback. Whether Cloudpepper leaves
+  that row, points it at its catcher or deletes it is not visible from the
+  API, and the log shows no outgoing mail at all in that window. So where a
+  copy's mail lands on Cloudpepper, a catcher or a refusal at `invalid`, is
+  still to be measured with a real send after release.
+- Crons are not all stopped. Mail Pro's fetch cron and Connector Pro's three
+  run every minute; Odoo's mail queue does not appear once in 2h45m of log.
+  That is what a later `-u` of a module does when its cron records are
+  `noupdate="0"` with `active=True`, as `data/ir_cron_data.xml` is: the
+  neutralization stopped them and the upgrade switched them back on. A
+  stopped cron is therefore not something a copy can rely on, and every
+  Mail Pro cron asks the flag itself.
+
+Never a provider. `_send_on_staging` asks no account and no client, so Graph,
+Gmail and the module's own IMAP/SMTP client are out of reach by construction,
+and the three layers underneath still refuse on their own. The check sits
+after the mailbox count, so switching a mailbox back on in staging changes
+nothing. What it trusts is the database's `ir_mail_server` rows, which is
+Odoo's own contract for a neutralized copy.
+
+**Incoming: a copy reads nothing.** The sync cron returns before it opens a
+mailbox, Sync Now refuses with a sentence, and the live read behind the Inbox
+meets the same refusal in the client. Decided on 2026-11-03, against the
+alternative of a copy that may read but not write: a credential that reads is
+a credential that writes. Microsoft's `Mail.ReadWrite` and `Mail.Send` ride
+one grant, Gmail's modify scope marks read and moves, an IMAP login can do
+everything, and the module's own read path marks read and archives
+(`pan.mail.conversation.live_mark`, `pan.mail.mailbox.push_read_state`). The
+only promise that holds that a copy never marks mail read, moves it or files a
+draft in somebody's real mailbox is that the copy holds no credential it may
+use, which is what the three layers above already make true. Reading would
+also put a second sync on the same mailbox, with its own cursor, filing the
+same mail into a database nobody keeps. What a test wants to see of linking is
+there anyway: the copy carries production's mail as it was synced, and linking
+a conversation by hand (`pan.mail.thread.link`) is a database write that needs
+no provider at all. `tests/test_copy.py` drives every write the contract has
+(mark read, flag, move, delete, the folders, the drafts) on every provider
+with live credentials put back, and asserts that none reaches a transport.
+
+**One line says so**, on the settings page above the checklist
+(`res.config.settings.x_is_copy`) and in the Inbox above everything, the gate
+included (`session_info()['pan_mail_copy']`): "This is a copy. Mail is shown,
+not sent." No switch: the copy is detected the way `neutralization.py` detects
+it, because the person who could flip a switch is the one who restored the
+dump. On a copy the Inbox's gate offers no Connect button, since the license
+refuses to connect a copy.
+
+**Pairing a copy is refused.** `pan.mail.license` refuses Connect, Check
+approval and the heartbeat on a copy, so a copy never reports in and never
+counts towards the month's mails. A copy of a connected production carries
+production's signed answer until it lapses, and the Inbox opens until then; a
+fresh install on staging cannot be connected at all, so its Inbox is the gate
+and steps 2 to 4 stay hidden. Pairing a copy as "staging of" a production,
+billed nothing, is what Connector Pro does on the platform
+(`odoo-mcp-pro-admin`, `apps/link_page.py`, `owner.py`), and it is not open
+to Mail Pro yet: `link_api.py` refuses `staging` for every app but Connector
+Pro, and the Mail Pro heartbeat has no staging key to keep out of the mail
+count. That is a change on both sides, not here alone.
 
 The composer says so, once. On a copy every mailbox is archived and every
 credential gone, so the real Send From would be an empty list and the connect
 warning would ask for something that cannot work. On `x_on_test_instance` both
 are hidden, and a read-only Send From reading "Test inbox" takes the dropdown's
-place, with one line under it saying why it cannot be changed.
+place, with one line under it saying why it cannot be changed. The mail then
+leaves from the author's default mailbox or the notification mailbox, by the
+routing above.
 
 ---
 
@@ -2854,8 +2964,12 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   the screen. One screen, one action, and the action is the fix for the
   state: Connect to Pantalytics; Connect again for a refused or revoked key
   (`DEAD_STATUSES`, which `action_connect` clears itself, so there is no
-  Disconnect first); Choose a plan for a workspace without one; Check again
-  for an answer that lapsed (19.0.32.1.0). Step 1 is not in `pan.mail.setup`'s
+  Disconnect first). Those two, and Check approval while pending, stay on
+  the line because there is no page to open yet. A connected link with
+  something wrong (no plan, an answer that lapsed, the month's mails used)
+  only reports it on the line; Choose a plan, Add a card and Check again
+  are on the account page its row opens (`mail_paused`, `check_again`,
+  #382). Step 1 is not in `pan.mail.setup`'s
   tuple: `sync_allowed()` is asked by the same callers with a refusal that
   names the exact state, which a generic "step 1 is open" would hide; the
   tuple only numbers its steps after it.
@@ -2884,8 +2998,9 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   mailboxes, and Try again) with its own sentence, and by nothing else: the
   Inbox, new accounts and sending carry on. Step 1 stays done, so steps 2 to
   4 stay on the page, and it reads Incoming paused with "500 mails this
-  month. Add a card to keep receiving." and one primary button to
-  `dashboard_url()`. The platform lifts it (a card, the 1st of the month),
+  month. Add a card to keep receiving."; the row opens the account page,
+  whose one primary button is Add a card to `dashboard_url()` (#382). The
+  platform lifts it (a card, the 1st of the month),
   so while it lasts `_retry_if_stuck()` asks every `RETRY_MINUTES` and Check
   again asks at once. The 200-a-day send cap without a card is #128.
 - **No grace period.** A trial is the server's business (a plan or a Stripe
@@ -3044,9 +3159,14 @@ own row (`create()`), and `migrations/19.0.31.0.0` set every existing row
 that had one to `own` before the ORM saw the field, so no upgraded database
 moves. For the Pantalytics app `credentials_set` is "this Odoo is connected
 to Pantalytics, or holds the app's id from an earlier sign-in": step 2 then
-reads done after one click (**Use Microsoft 365** on the open line), and a
-lapsed connection never reads as a missing registration, because the
-refresh needs nothing from us.
+reads done once the row exists, and a lapsed connection never reads as a
+missing registration, because the refresh needs nothing from us. With no
+row yet, step 2's row makes one (`action_open_current`: Microsoft 365
+through the app, saved) and opens its form, whose one primary button is
+**Sign in with Microsoft** while the provider is not connected (Sign in with
+Google for a Gmail row with its client). The verify dialog is for an own
+registration only: on the app there is nothing typed to verify, and closing
+the dialog used to leave a form with nothing to press (3 Nov, #382).
 
 One sign-in, in order:
 
@@ -3377,7 +3497,7 @@ eight groups:
 | Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, and the one mailbox setting a user owns |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, and that no colour lacks a dark side |
-| The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider, the error ledger, and what leaves for PostHog |
+| The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, the error ledger, and what leaves for PostHog |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 
 `tests/common.py` provides the shared fixture -- a notification mailbox, a
@@ -3404,7 +3524,7 @@ it, and the answer belongs somewhere a reviewer reads.
 | `/mail_pro/connect` | `user` | The button in the invitation mail. Sends the user straight to their provider's consent screen, or to the settings page when the provider has none (IMAP). `?admin_consent=1` sends a Microsoft 365 administrator to approve the Pantalytics app for the organization |
 | `/microsoft_oauth/callback` | `user` | Where Microsoft returns. Validates the nonce, exchanges the code, stores the account, claims the personal mailbox |
 | `/google_oauth/callback` | `user` | The same, for Google. One implementation, two routes |
-| `/mail_pro/pantalytics/return` | `user` | Where our own approval page sends an administrator back to. Not an OAuth callback: a plain link carrying the key |
+| `/mail_pro/pantalytics/return` | `user` | Where our own approval page sends an administrator after Approve. Not an OAuth callback: it collects the key with this Odoo's own device token and lands where Connect was pressed (the Inbox's gate or Settings), as the session remembers it (#380) |
 | `/mail_pro/microsoft/return` | `user` | Where our platform sends a sign-in through the Pantalytics app back to (§9.20). Matches the state against this session's, then is the Microsoft callback with the platform's redirect URI and the PKCE verifier; also answers an administrator's approval for the organization |
 
 None of them is public. The callback writes credentials, the connect route

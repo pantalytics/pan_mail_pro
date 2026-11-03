@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """This database's link to a Pantalytics account.
 
-The admin presses **Connect to Pantalytics** on the settings page. Odoo asks
-our server for a pairing and opens its page in a new tab, with the code already
-in the link. The admin signs in with their Pantalytics account, checks that the
-page names this Odoo, and approves; the button back to their Odoo lands on
-`/mail_pro/pantalytics/return`, which collects the key. Nobody types a code or
+The admin presses **Connect to Pantalytics**, on the settings page or on the
+Inbox's gate. Odoo asks our server for a pairing and opens its page in the
+same tab, with the code already in the link. The admin signs in with their
+Pantalytics account, checks that the page names this Odoo, and approves; our
+server then sends the browser to `/mail_pro/pantalytics/return`, which
+collects the key and lands where Connect was pressed. Nobody types a code or
 copies a key, and there is still no redirect URI to register per customer:
 the way back is an ordinary link to this Odoo, not an OAuth redirect.
 **Check approval** on the settings page does the same collection by hand.
@@ -87,10 +88,12 @@ import requests
 
 from odoo import _, api, fields, models, release, tools
 from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.http import request
 
 from . import encryption_utils
 from .neutralization import database_is_neutralized
 from .pan_mail_error import MAX_CODES_REPORTED
+from .res_users import _referer_path
 
 _logger = logging.getLogger(__name__)
 
@@ -143,6 +146,18 @@ ENTITLED_STATUSES = ('active', 'trialing', 'past_due')
 # The key itself is gone on the server (refused, or replaced by a newer
 # pairing): the only way back is a new pairing. Settings shows Connect again.
 DEAD_STATUSES = ('invalid', 'revoked')
+
+# The statuses a new pairing is the fix for: never connected, a pairing nobody
+# finished, a dead key. Anything else holds a key whose answer said no (no
+# plan, a lapsed answer), and connecting again does not change that answer.
+PAIRING_STATUSES = ('not_connected', 'pending') + DEAD_STATUSES
+
+# Where Connect was pressed, for the way back from the approval page to land
+# on (#380). The platform sends every approval to one fixed path on this
+# Odoo's address (`/mail_pro/pantalytics/return`) and carries nothing else
+# back, so the place lives in the session of the browser that pressed the
+# button, the way a Microsoft sign-in's does (#370).
+CONNECT_BACK_KEY = 'pan_mail_pantalytics_back'
 
 # "Not on this Odoo instance": the local no to the workspace's yes. A config
 # parameter rather than a field on the row, so it survives Disconnect and
@@ -271,6 +286,11 @@ class PanMailLicense(models.Model):
     # pan_mail_license_views.xml`): one label, whichever of the two the
     # server named.
     connected_by_name = fields.Char(string='Connected by', compute='_compute_connected_by_name')
+    # What the account page acts on, now that step 1 of the checklist only
+    # reports it (#382): incoming waiting on a card, and whether Check again
+    # has a question to ask (the same test `action_check_approval` makes).
+    mail_paused = fields.Boolean(compute='_compute_attention')
+    check_again = fields.Boolean(compute='_compute_attention')
 
     # Which setup steps the last heartbeat carried, as `setup_signature()`
     # writes them. Compared, never read for its own sake: it is how the module
@@ -327,6 +347,14 @@ class PanMailLicense(models.Model):
     def _compute_connected_by_name(self):
         for link in self:
             link.connected_by_name = link.connected_by()
+
+    def _compute_attention(self):
+        for link in self:
+            paused = link.incoming_paused()
+            link.mail_paused = paused
+            link.check_again = bool(
+                link.sudo().key_encrypted and link.status in ENTITLED_STATUSES
+                and (not link.is_entitled() or paused))
 
     @api.depends('status')
     def _compute_display_name(self):
@@ -597,7 +625,53 @@ class PanMailLicense(models.Model):
             'pairing_expires_at': _naive_utc(body.get('expires_at')),
             'last_error': False,
         })
+        self._remember_back()
         return link
+
+    @api.model
+    def action_connect_open(self):
+        """Connect, then the approval page in this tab: Settings' button and
+        the Inbox's gate both press this one.
+
+        The same tab, because a new one opened after this call answers is no
+        longer the click, and Brave and Safari block it. Approve on that page
+        sends the browser back to `/mail_pro/pantalytics/return`, which
+        collects the key and lands where Connect was pressed, so there is
+        nothing left to press afterwards."""
+        link = self.action_connect()
+        return {'type': 'ir.actions.act_url', 'url': link.verify_url, 'target': 'self'}
+
+    def _remember_back(self):
+        """Keep where Connect was pressed, for the return route to land on.
+
+        The Inbox's gate says so in the context (`pan_mail_back`); Settings'
+        button is an RPC whose Referer is Settings. Checked on the way out
+        (`_safe_back`), never trusted here."""
+        if not request:
+            return
+        back = self.env.context.get('pan_mail_back')
+        if back is None:
+            back = _referer_path()
+        request.session[CONNECT_BACK_KEY] = back or False
+
+    @api.model
+    def inbox_gate(self):
+        """What the Inbox's gate needs, when the page load said not connected.
+
+        `connected`: whether the Inbox opens. An administrator whose pairing
+        is still pending gets the key collected here first, the same
+        collection the return route makes: whoever approved and reached the
+        Inbox by another way than the link back finds it open, with nothing
+        to press. `pairs`: whether Connect, a new pairing, is the fix. On a
+        link holding a key the answer said no to, it is not, and the gate's
+        button opens Settings, which says what is."""
+        link = self.current()
+        if link:
+            link.collect_on_return()
+        return {
+            'connected': bool(link) and link.sync_allowed(),
+            'pairs': not link or link.status in PAIRING_STATUSES,
+        }
 
     def action_check_approval(self):
         """Collect the key once the admin has approved in their browser.
