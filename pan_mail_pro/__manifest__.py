@@ -139,7 +139,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.34.0.0',
+    'version': '20.0.34.0.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm', 'web_tour'],
     'external_dependencies': {
@@ -147,7 +147,7 @@
     },
     'data': [
         'security/pan_mail_pro_security.xml',
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'data/ir_cron_data.xml',
         'data/mail_server_data.xml',
         'data/mail_template_data.xml',

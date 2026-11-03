@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
-    <!-- 18 and 19: a list of attachments and one unlink at a time. -->
+    <!-- 20: groups of one attachment and its duplicates, unlinked as a list. -->
     <t t-name="pan_mail_pro.AttachmentList">
-        <AttachmentList t-props="this.listProps"/>
+        <AttachmentList attachmentGroups="this.groups"
+                        unlinkAttachments.bind="this.unlinkMany"/>
     </t>
 </templates>

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-    The template half of the series seam (docs/plans/multi-version.md): a
-    directive one Owl spells differently is swapped here by template
-    inheritance, so the templates themselves read the same on every branch.
-    18 and 19 (Owl 2) need nothing; tools/series/20.0 carries the Owl 3
-    version of this file.
--->
+<!-- The Owl 3 (Odoo 20) version of pan_mail_pro/static/src/compat/templates.xml. -->
 <templates xml:space="preserve">
+    <!-- Owl 3 renders a slot with t-call-slot; t-slot is a no-op there. -->
+    <t t-name="pan_mail_pro.OdooRecordPane" t-inherit="pan_mail_pro.OdooRecordPane" t-inherit-mode="extension">
+        <xpath expr="//t[@t-slot='link']" position="replace">
+            <t t-call-slot="link"/>
+        </xpath>
+    </t>
 </templates>

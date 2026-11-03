@@ -1,6 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='UTF-8'?>
 <odoo>
-    <data noupdate="0">
+    <!-- 20: the rules live in ir.access.csv, with the ACL rows; this file keeps the groups. --><data noupdate="0">
 
         <!--
             Mailbox manager.
@@ -37,26 +37,6 @@
             Shared and notification mailboxes stay visible to everyone: they are
             company addresses and the composer needs to offer them.
         -->
-        <record id="rule_mailbox_personal_own" model="ir.rule">
-            <field name="name">Mailbox: personal mailboxes are visible to their owner only</field>
-            <field name="model_id" ref="model_pan_mail_mailbox"/>
-            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
-            <field name="perm_read" eval="True"/>
-            <field name="perm_write" eval="True"/>
-            <field name="perm_create" eval="True"/>
-            <field name="perm_unlink" eval="True"/>
-            <field name="domain_force">
-                ['|', ('mailbox_type', '!=', 'personal'), ('owner_user_id', '=', user.id)]
-            </field>
-        </record>
-
-        <record id="rule_mailbox_manager_all" model="ir.rule">
-            <field name="name">Mailbox: managers see all mailboxes</field>
-            <field name="model_id" ref="model_pan_mail_mailbox"/>
-            <field name="groups" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
-            <field name="domain_force">[(1, '=', 1)]</field>
-        </record>
-
         <!--
             An account is a set of credentials. Even with the token fields
             themselves restricted to base.group_system, the row discloses who
@@ -64,43 +44,11 @@
             account (user_id unset) belongs to the company and is what makes a
             Gmail shared mailbox work, so it stays readable.
         -->
-        <record id="rule_mail_account_own" model="ir.rule">
-            <field name="name">Mail account: users see their own accounts</field>
-            <field name="model_id" ref="model_pan_mail_account"/>
-            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
-            <field name="perm_read" eval="True"/>
-            <field name="perm_write" eval="True"/>
-            <field name="perm_create" eval="True"/>
-            <field name="perm_unlink" eval="True"/>
-            <field name="domain_force">[('user_id', 'in', [user.id, False])]</field>
-        </record>
-
         <!--
             An access row names a sign-in and what it may do on a mailbox.
             Same shape as the account rule: a user reads the rows of their
             own sign-in and of the service accounts; a manager reads all.
         -->
-        <record id="rule_mailbox_access_own" model="ir.rule">
-            <field name="name">Mailbox access: users see their own sign-in's rows</field>
-            <field name="model_id" ref="model_pan_mail_mailbox_access"/>
-            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
-            <field name="domain_force">[('account_id.user_id', 'in', [user.id, False])]</field>
-        </record>
-
-        <record id="rule_mailbox_access_manager_all" model="ir.rule">
-            <field name="name">Mailbox access: managers see all rows</field>
-            <field name="model_id" ref="model_pan_mail_mailbox_access"/>
-            <field name="groups" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
-            <field name="domain_force">[(1, '=', 1)]</field>
-        </record>
-
-        <record id="rule_mail_account_manager_all" model="ir.rule">
-            <field name="name">Mail account: managers see all accounts</field>
-            <field name="model_id" ref="model_pan_mail_account"/>
-            <field name="groups" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
-            <field name="domain_force">[(1, '=', 1)]</field>
-        </record>
-
         <!--
             The three tables that record what happened to mail are mailbox
             managers only, with no base.group_user access row at all.
@@ -124,16 +72,5 @@
             four operations, every internal user - an administrator's own
             drafts are the only ones they see here.
         -->
-        <record id="rule_mail_draft_own" model="ir.rule">
-            <field name="name">Draft: your own drafts, and nobody else's</field>
-            <field name="model_id" ref="model_pan_mail_draft"/>
-            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
-            <field name="perm_read" eval="True"/>
-            <field name="perm_write" eval="True"/>
-            <field name="perm_create" eval="True"/>
-            <field name="perm_unlink" eval="True"/>
-            <field name="domain_force">[('user_id', '=', user.id)]</field>
-        </record>
-
-    </data>
+        </data>
 </odoo>

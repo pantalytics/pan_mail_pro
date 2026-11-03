@@ -13,7 +13,7 @@
 # tools/ci_addons_stage.sh copies it out under the name Odoo reads.
 {
     'name': 'Mail Pro CI: dark mode',
-    'version': '19.0.1.0.0',
+    'version': '20.0.1.0.0',
     'depends': ['web'],
     'author': 'Pantalytics',
     'license': 'LGPL-3',
