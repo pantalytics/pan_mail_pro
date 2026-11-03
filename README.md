@@ -87,14 +87,16 @@ is answered:
 
 2. **Email provider** - where your mail is hosted (Microsoft 365, Google
    Workspace or IMAP/SMTP). Microsoft 365 signs in with the Pantalytics Mail
-   Pro app, so **Use Microsoft 365** on the line is the whole step. An own
-   Azure app registration, and Google's OAuth client, go on the provider
-   form behind the arrow, which shows the redirect URI to paste back into
+   Pro app: open the step and press **Sign in with Microsoft**. To use
+   Google Workspace or IMAP/SMTP, change the Provider on that form. Google's
+   OAuth client goes on the same provider form, which shows the redirect URI to paste back into
    the provider's console. IMAP/SMTP has no global credential; see below.
 3. **Internal domains** - your own email domains. Required: no mailbox can sync
    until this is answered. When an admin connects their own mailbox, the
    domain of that address is filled in for you (never a public one like
-   gmail.com). Add a second domain or change it on the same line.
+   gmail.com). An empty list offers the domains it can read off the
+   database (never the Odoo host) beside New. Add a second domain or change
+   it on the list.
 4. **Mailboxes** - the admin's own mailbox, once connected, becomes the
    notification mailbox if none is ticked yet. Pick another one from the
    mailbox list whenever you like.
@@ -209,8 +211,9 @@ the Sent Items of your mail app like any other mail.
 
 **Sync behavior:**
 - Internal domains must be configured in Settings → Mail Pro before any mailbox
-  can sync. Add one tag per domain; Odoo suggests them from your mailboxes,
-  company email and alias domains. Email between those domains is never synced.
+  can sync. Add one row per domain; an empty list suggests them from your
+  mailboxes, colleagues, company email and alias domains, never the Odoo
+  host. Email between those domains is never synced.
 - There is no way to switch this off, globally or per mailbox. A mail with any
   outside recipient is correspondence and is still logged, so "internal" means
   every party is one of your own domains

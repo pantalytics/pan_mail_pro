@@ -319,10 +319,8 @@ border, the way a phone's Settings app lists them.
             </span>
             <span class="o_mailpro_step_value" invisible="x_setup_domains_done">Not set yet</span>
         </div>
-        <div class="o_mailpro_step_msg" invisible="x_setup_domains_done or not x_internal_domains_suggested">
-            <button name="action_apply_suggested_internal_domains" type="object"
-                    class="btn-link btn-sm p-0" string="Add"/>
-            <field name="x_internal_domains_suggested" class="d-inline" readonly="1" nolabel="1"/>
+        <div class="o_mailpro_step_msg" invisible="x_setup_domains_done">
+            The domains your company owns. Email between them is never copied into Odoo.
         </div>
     </div>
     <button type="action" name="%(action_pan_mail_domain)d"
@@ -389,14 +387,28 @@ border, the way a phone's Settings app lists them.
   sign in. The exceptions are steps with no page to open: an open step 1, and a
   broken one, whose Connect again stays on the line. An arrow opens the row
   itself when there is one row, never a list that can land on a new form.
+- **One route: a row with an arrow holds nothing else, and the whole row is
+  the way in** (#382). The overview still carried shortcuts after #369:
+  "Use Microsoft 365" under step 2, "Add <domain>" under step 3, Choose a
+  plan, Add a card and Check again under step 1. Two routes to one step, and
+  the shortcut was the worse one: "Use Microsoft 365" ended on a form with
+  nothing to press, and "Add" offered the Odoo.sh host as the company's
+  domain. The chevron's hit area covers the row (`::after`), so the dot, the
+  name and the answer all open the same page, and that page has the one
+  primary button: Sign in with Microsoft on the provider form (the row is
+  made and saved first when there is none), Add <domains> beside New on an
+  empty Internal domains list, Choose a plan, Add a card or Check again on
+  the account page. `tools/ui_check.py` (`rows_only_report`) fails on a
+  button or link beside an arrow and on a row whose name does not land on
+  it.
 - **No choice is shown that a normal customer should not make; a legacy
   state shows as deprecated with one action.** The provider form had a
   "Sign in through" radio between Mail Pro's Microsoft app and an own Azure
   app. Nobody new should pick the second, so the radio is gone; a database
   still on it reads "deprecated", sees its old fields read-only, and gets
   Sign in with Microsoft.
-- **A fix line lives only while it is a fix.** The domains line offers the
-  domains it can read off the database, and only while the list is empty. A
+- **A fix lives only while it is a fix.** The Internal domains list offers
+  the domains it can read off the database, and only while it is empty. A
   list with something in it is the admin's, and offering additions to it
   forever would read as a complaint about a deliberate choice.
 

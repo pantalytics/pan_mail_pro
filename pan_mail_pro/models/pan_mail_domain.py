@@ -22,6 +22,7 @@ just no longer decide anything by themselves.
 """
 import logging
 import re
+from urllib.parse import urlparse
 
 from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
@@ -52,6 +53,15 @@ PUBLIC_MAIL_DOMAINS = frozenset({
     'mac.com', 'me.com', 'msn.com', 'outlook.com', 'pm.me', 'proton.me',
     'protonmail.com', 'yahoo.co.uk', 'yahoo.com', 'ymail.com', 'zoho.com',
 })
+
+# Domains that are Odoo's hosting rather than a company's mail. Odoo.sh names
+# every database `<name>.odoo.com` and creates its alias domain on that host,
+# so on Odoo.sh the alias source alone suggested the database's own address
+# as "your domain" (3 Nov, on a test database). Nobody's mail lives there,
+# and an Odoo S.A. consultant with an odoo.com login is not a colleague.
+# The instance's own host (`web.base.url`) is refused the same way, wherever
+# it runs: the address Odoo answers on is not a domain the company mails from.
+HOSTED_ODOO_DOMAINS = ('odoo.com',)
 
 
 class PanMailDomain(models.Model):
@@ -250,11 +260,30 @@ class PanMailDomain(models.Model):
         return [address for address in addresses if self._parse(address)]
 
     @api.model
+    def _odoo_host(self):
+        """The host this Odoo answers on, lowercase, or ''."""
+        url = self.env['ir.config_parameter'].sudo().get_param('web.base.url') or ''
+        return (urlparse(url).hostname or '').lower().strip('.')
+
+    @api.model
+    def _is_hosting_domain(self, domain, host=None):
+        """Is this the Odoo instance's own address rather than a mail domain?
+
+        `host` is `_odoo_host()` as the caller already read it.
+        """
+        if host is None:
+            host = self._odoo_host()
+        return domain == host or any(
+            domain == hosted or domain.endswith('.' + hosted)
+            for hosted in HOSTED_ODOO_DOMAINS)
+
+    @api.model
     def suggest_domains(self):
         """Domains we can derive from what is already in the database.
 
         The company's own addresses first (see `_own_addresses`), then the
-        companies' own email addresses and Odoo's alias domains.
+        companies' own email addresses and Odoo's alias domains. Never a
+        public mail domain and never the Odoo host (`_is_hosting_domain`).
         """
         candidates = list(self._own_addresses())
 
@@ -266,9 +295,28 @@ class PanMailDomain(models.Model):
 
         # Filtered once, at the end, so every source passes through it: a
         # company whose own address is on gmail.com must not have every Gmail
-        # user's mail marked internal and dropped.
+        # user's mail marked internal and dropped, and an alias domain on the
+        # Odoo.sh host is not where anybody's mail lives.
+        host = self._odoo_host()
         return [
             domain for domain in self._parse(', '.join(filter(None, candidates)))
             if domain not in PUBLIC_MAIL_DOMAINS
+            and not self._is_hosting_domain(domain, host)
         ]
+
+    @api.model
+    def action_add_suggested(self):
+        """Add every suggested domain that is not on the list yet.
+
+        The Add button on the Internal domains list, which only shows it
+        while the list is empty: the settings checklist reports step 3 and
+        this page is where it is answered. A mailbox manager's act, for the
+        reason `set_domains` gives.
+        """
+        if not self.env.su and not self.env.user.has_group(
+                'pan_mail_pro.group_mail_mailbox_manager'):
+            raise AccessError(_('Only a mailbox manager can change the internal domains.'))
+        have = set(self.get_domains())
+        return self.sudo().create(
+            [{'name': d} for d in self.suggest_domains() if d not in have]).ids
 
