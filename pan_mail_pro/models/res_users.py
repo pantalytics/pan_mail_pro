@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, UserError
 from odoo.http import request
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 from .mail_provider_client import (
     get_provider_client,
     oauth_redirect_uri,
@@ -381,7 +381,7 @@ class ResUsers(models.Model):
         self.ensure_one()
         if not self._is_internal() or self.x_pan_mail_connected:
             return False
-        if database_is_neutralized(self.env):
+        if database_is_copy(self.env):
             return False
         return not self._pan_mail_connect_blocker(link=link, sync_allowed=sync_allowed)
 
@@ -398,7 +398,7 @@ class ResUsers(models.Model):
         connected to Pantalytics" is a nudge towards an error.
         """
         self.ensure_one()
-        if not self._is_internal() or database_is_neutralized(self.env):
+        if not self._is_internal() or database_is_copy(self.env):
             return False
         account = self.sudo().x_pan_mail_account_ids.filtered(
             lambda account: account.registration == 'own' and account.connected)

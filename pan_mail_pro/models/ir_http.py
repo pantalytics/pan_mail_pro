@@ -31,7 +31,7 @@ from odoo import models
 from odoo.exceptions import AccessDenied, UserError
 from odoo.http import request
 
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 from .res_users import SIGN_IN_NOTICE_KEY
 
 _logger = logging.getLogger(__name__)
@@ -64,9 +64,11 @@ class IrHttp(models.AbstractModel):
                     exc.pgerror.splitlines()[0] if exc.pgerror else exc)
                 self.env.invalidate_all()
             result.update(flags)
-            # A config parameter Odoo's own neutralization writes, so it can
-            # neither be behind the code nor fail; outside the savepoint.
-            result['pan_mail_copy'] = database_is_neutralized(self.env)
+            # A config parameter Odoo's own neutralization writes, and one
+            # column of the link read with SQL that asks for the table first
+            # (`neutralization.entitlement_says_staging`), so it can neither
+            # be behind the code nor fail; outside the savepoint.
+            result['pan_mail_copy'] = database_is_copy(self.env)
             # Good once: the callback leaves it, the first page load after
             # it takes it (connect_banner.js shows it).
             result['pan_mail_notice'] = request.session.pop(SIGN_IN_NOTICE_KEY, False) \

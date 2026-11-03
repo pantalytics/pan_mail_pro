@@ -41,12 +41,13 @@
                 <img src="/pan_mail_pro/static/description/icon.png" alt="" class="o_mailpro_gate_icon"/>
                 <h2 class="o_mailpro_gate_title">Connect this Odoo to Pantalytics</h2>
                 <p class="o_mailpro_gate_text">Mail Pro works on an Odoo instance that is connected to a Pantalytics account. The Inbox opens once it is.</p>
-                <!-- A copy cannot be connected (pan.mail.license refuses), so
-                     neither the button nor the way to an administrator. -->
-                <button t-if="isAdmin and !isCopy" type="button" class="btn btn-primary o_mailpro_gate_connect"
+                <!-- On a copy too (#384): the same button pairs it as
+                     staging, and the approval page asks which production it
+                     is a copy of. The line above already says it is one. -->
+                <button t-if="isAdmin" type="button" class="btn btn-primary o_mailpro_gate_connect"
                         t-att-disabled="state.connecting"
                         t-on-click="connectPantalytics">Connect to Pantalytics</button>
-                <p t-elif="!isCopy" class="o_mailpro_gate_text">Ask an administrator to connect it: Settings, Mail Pro.</p>
+                <p t-else="" class="o_mailpro_gate_text">Ask an administrator to connect it: Settings, Mail Pro.</p>
                 <a class="o_mailpro_gate_back" href="/odoo">Back to Odoo</a>
             </div>
             <t t-else="">
