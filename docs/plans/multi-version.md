@@ -407,5 +407,5 @@ Mark a box in the PR that does the work, with the version or the date.
 
 ### Step 4. The routine
 
-- [ ] First port of a 19.0 release into 18.0 and 20.0 done by the recipe in §4
-- [ ] After ten ports: how many conflicted outside the allowed paths, written here
+- [x] First port of a 19.0 release into 18.0 and 20.0 done by the recipe in §4 (2026-11-03: main 19.0.34.1.0, #400, then 19.0.34.1.1, #405; `18.0` at 38223ea, `20.0` at 6329f2e). Only the manifest conflicted, both times, resolved as the recipe says. The suite was green on both ports and the browser was red on both: the up-and-running line was off the Owl seam (nothing drawn on 20) and its compute had no `@api.depends` (no dots on 18). Fixed on main first, with `tools/check_owl_seam.py` in the lint job so the next component cannot step off the seam; the branches were pushed only with the fix in. Lesson for the routine: run `tools/ui_local.sh --series=` on the port before pushing, the suite alone does not see the browser
+- [ ] After ten ports: how many conflicted outside the allowed paths, written here (1 of 10: none outside, 2 bugs found by the browser)
