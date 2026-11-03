@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        The Inbox's tour (#393), as Odoo records every tour: one row whose
+        `user_consumed_ids` is who has seen it. The steps are the registry's,
+        in static/src/js/conversation_view/inbox_tour.js; the row only gives
+        "once per user" somewhere to live. Last in Odoo's own Onboarding
+        order, and without a rainbow man: a mail client does not congratulate
+        anybody for reading four sentences.
+    -->
+    <record id="inbox_tour" model="web_tour.tour">
+        <field name="name">pan_mail_pro_inbox_tour</field>
+        <field name="sequence">3000</field>
+        <field name="url">/odoo/action-pan_mail_pro.action_pan_mail_conversation</field>
+        <field name="rainbow_man_message" eval="False"/>
+    </record>
+</odoo>

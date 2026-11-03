@@ -9,6 +9,8 @@
 # says so (`pan_mail_pro_ci.platform_stub`), and lets nothing else leave.
 #
 # Installed by tools/ui_preview.sh only. Never shipped, never a dependency.
+# Kept as __manifest__.ci so no host offers it in Apps (pan_mail_pro#395):
+# tools/ci_addons_stage.sh copies it out under the name Odoo reads.
 {
     'name': 'Mail Pro CI: platform stand-in',
     'version': '19.0.1.0.0',
