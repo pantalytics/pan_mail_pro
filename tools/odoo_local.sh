@@ -9,12 +9,13 @@
 #   tools/odoo_local.sh                 # the series the manifest names
 #   tools/odoo_local.sh --series=18.0   # another series, see below
 #   tools/odoo_local.sh -- -u pan_mail_pro --test-tags=.test_drafts
+#   tools/odoo_local.sh --series=20.0 --prepare-only   # for tools/ui_local.sh
 #
 # --series= other than the manifest's copies the tree to a temporary folder
-# and rewrites the manifest's series there, because the loader refuses a
-# module whose version names another series ("incompatible version, setting
-# installable=False"). That copy exists to find out what a port is up against;
-# a green run on it is a measurement, not a release.
+# and cuts it for that series (tools/cut_series.sh: manifests, the files in
+# tools/series/<series>/), because the loader refuses a module whose version
+# names another series. A green run on the copy is what the series branch
+# will get, since the branch is main cut the same way.
 #
 # Env:
 #   ODOO_LOCAL_DIR   where the clones live (default: ~/.cache/pan_mail_pro/odoo)
@@ -35,10 +36,12 @@ print(".".join(manifest['version'].split('.')[:2]))
 PY
 )
 SERIES=$MANIFEST_SERIES
+PREPARE_ONLY=
 EXTRA=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --series=*) SERIES="${1#--series=}"; shift ;;
+        --prepare-only) PREPARE_ONLY=1; shift ;;  # clone, requirements, Postgres; no run
         --) shift; EXTRA=("$@"); break ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -85,6 +88,11 @@ if [ ! -f "$ODOO/.requirements-installed" ]; then
     touch "$ODOO/.requirements-installed"
 fi
 
+if [ -n "$PREPARE_ONLY" ]; then
+    echo "Odoo $SERIES ready in $ODOO"
+    exit 0
+fi
+
 # ---------------------------------------------------------------------------
 # The tree. The repository itself is the addons path entry, as on Cloudpepper
 # and Odoo.sh; for another series a copy with the manifest's series rewritten.
@@ -96,8 +104,8 @@ if [ "$SERIES" != "$MANIFEST_SERIES" ]; then
     # The whole checkout, not only the module: tests read ARCHITECTURE.md and
     # tools/rename_to_mail_pro.sql relative to the module folder.
     git -C "$REPO" ls-files -z --cached --others --exclude-standard | (cd "$REPO" && xargs -0 cp --parents -t "$TREE")
-    sed -i "s/'version': '${MANIFEST_SERIES}\./'version': '${SERIES}./" "$TREE/pan_mail_pro/__manifest__.py"
-    echo "Measuring against Odoo $SERIES with the manifest rewritten from $MANIFEST_SERIES; not a release verdict."
+    "$REPO/tools/cut_series.sh" "$SERIES" "$TREE"
+    echo "Measuring against Odoo $SERIES on a copy cut for it (tools/cut_series.sh); not a release verdict."
 fi
 
 DB="pan_local_${SERIES//./_}"

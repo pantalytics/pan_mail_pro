@@ -20,6 +20,7 @@ import re
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models import encryption_utils
+from .common import on_series
 
 _MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 _MIGRATION = os.path.join(_MODULE, 'migrations', '19.0.6.0.0')
@@ -38,6 +39,7 @@ def _load(script):
     return module
 
 
+@on_series('19.0')
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestRenameMigration(TransactionCase):
 

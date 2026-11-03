@@ -195,7 +195,10 @@ fi
 # ---------------------------------------------------------------------------
 step "Migration folder is not above the manifest version"
 VERSION=$(python3 -c "import ast,pathlib;print(ast.literal_eval(pathlib.Path('pan_mail_pro/__manifest__.py').read_text())['version'])")
-LATEST=$(ls "$M/migrations" 2>/dev/null | sort -V | tail -1)
+# Only this series' folders: a 19.0.x folder on the 18.0 or 20.0 branch is
+# a script Odoo never runs there (docs/plans/multi-version.md), not a mistake.
+SERIES=$(echo "$VERSION" | cut -d. -f1,2)
+LATEST=$(ls "$M/migrations" 2>/dev/null | grep "^$SERIES\." | sort -V | tail -1)
 if [ -n "$LATEST" ]; then
     HIGHEST=$(printf '%s\n%s\n' "$VERSION" "$LATEST" | sort -V | tail -1)
     if [ "$HIGHEST" != "$VERSION" ]; then

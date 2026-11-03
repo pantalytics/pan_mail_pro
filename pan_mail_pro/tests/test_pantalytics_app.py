@@ -16,7 +16,6 @@ here leaves the test process.
 import base64
 import contextlib
 import hashlib
-import types
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -32,7 +31,7 @@ from odoo.addons.pan_mail_pro.models.pan_mail_provider import (
 from odoo.addons.pan_mail_pro.models.res_users import INBOX_URL
 from odoo.addons.pan_mail_pro.tests.common import _FakeSession
 from .common import groups_field
-from .common import push_request, session_store
+from .common import fake_request, push_request, session_store
 
 PLATFORM_POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
 GRAPH_POST = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.post'
@@ -75,7 +74,7 @@ def a_browser(env):
     start writes to (tests/common.py `proven_session` is the same idea)."""
     session = _FakeSession()
     session.uid = env.user.id
-    with push_request(types.SimpleNamespace(session=session, env=env, cookies={})):
+    with push_request(fake_request(session, env)):
         yield session
 
 

@@ -78,6 +78,25 @@ jobs:
           tools/ci_version_bump.sh FETCH_HEAD
 
   # ---------------------------------------------------------------------------
+  # A series branch (18.0, 20.0) is main with tools/cut_series.sh applied and
+  # nothing else; this fails the moment it is not. On main and on branches of
+  # main's own series there is nothing to compare and it passes.
+  # Local equivalent: tools/ci_port_drift.sh
+  # ---------------------------------------------------------------------------
+  port-drift:
+    name: Series branch is main cut for its series
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compare with main cut for this series
+        run: |
+          git fetch --no-tags --depth=200 origin "${{ github.event.repository.default_branch }}"
+          tools/ci_port_drift.sh "origin/${{ github.event.repository.default_branch }}"
+
+  # ---------------------------------------------------------------------------
   # Install the module into a real Odoo of the matching series and run the
   # module's own test suite. Uses the official community image; the module only
   # depends on mail/base/crm, which all ship there. Enterprise-only tests

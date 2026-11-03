@@ -174,6 +174,7 @@
             'pan_mail_pro/static/src/js/mailbox_list_controller.js',
             'pan_mail_pro/static/src/js/provider_form.js',
             'pan_mail_pro/static/src/js/connect_banner.js',
+            'pan_mail_pro/static/src/compat/chatter.js',
             'pan_mail_pro/static/src/js/chatter_door.js',
             'pan_mail_pro/static/src/js/improve.js',
             'pan_mail_pro/static/src/js/wallet_noise.js',

@@ -24,7 +24,7 @@
  * and the check in tools/ci_lint.sh that keeps it that way.
  */
 
-import { Chatter } from "@mail/chatter/web_portal/chatter";
+import { Chatter } from "@pan_mail_pro/compat/chatter";
 import { patch } from "@web/core/utils/patch";
 import { session } from "@web/session";
 import { useService } from "@web/core/utils/hooks";

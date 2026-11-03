@@ -80,6 +80,38 @@ def config_bool(env, key):
     return bool(params.get_param(key))
 
 
+def tracking_values(message):
+    """The tracked field changes a message carries. 18 and 19 keep them on
+    mail.message.tracking_value_ids; 20 moved mail.tracking.value into an
+    addon of its own, so a message there carries none unless it is installed."""
+    if "tracking_value_ids" in message._fields:
+        return message.tracking_value_ids
+    return []
+
+
+def attachment_bytes(attachment):
+    """An attachment's content as bytes. `raw` is bytes on 18 and 19 and a
+    BinaryValue (a buffer) on 20; bytes() reads both."""
+    return bytes(attachment.raw) if attachment.raw else b""
+
+
+def attachments_store_payload(attachments):
+    """The ir.attachment store payload Odoo's own AttachmentList renders.
+
+    18 and 19: Store().add(records) with the model's default fields and
+    get_result(). 20: add() wants the fields, which for an attachment is the
+    model's own _store_attachment_fields, and the result is as_dict().
+    """
+    from odoo.addons.mail.tools.discuss import Store
+
+    store = Store()
+    if "fields" in inspect.signature(Store.add).parameters and not hasattr(store, "get_result"):
+        store.add(attachments, "_store_attachment_fields")
+        return store.as_dict()
+    store.add(attachments)
+    return store.get_result()
+
+
 def partner_ids_from_emails(record, emails):
     """The partners for these addresses, created when missing, as ids.
 

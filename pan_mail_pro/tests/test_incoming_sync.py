@@ -23,6 +23,7 @@ from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import FETCH_BATCH_SIZE, o
 from odoo.addons.pan_mail_pro.models.providers.microsoft import graph_client as graph_mod
 
 from .common import MailProTestCase
+from odoo.addons.pan_mail_pro.compat import attachment_bytes
 
 GRAPH = 'https://graph.microsoft.com/v1.0'
 MSG_ID = 'AAMkAGI2_fake_graph_id'
@@ -416,7 +417,7 @@ class TestIncomingSync(MailProTestCase):
 
         message = self._messages_on(self.external_partner)
         self.assertEqual(message.attachment_ids.mapped('name'), ['invoice.pdf'])
-        self.assertEqual(base64.b64decode(message.attachment_ids.datas), b'%PDF-1.4 fake')
+        self.assertEqual(attachment_bytes(message.attachment_ids), b'%PDF-1.4 fake')
 
     def test_inline_image_becomes_web_image_url(self):
         """Inline attachments go in as 3-tuples so Odoo rewrites cid: to /web/image/."""

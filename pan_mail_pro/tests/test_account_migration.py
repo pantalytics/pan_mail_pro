@@ -27,6 +27,7 @@ import os
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models import encryption_utils
+from .common import on_series
 
 _MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 _MIGRATIONS = os.path.join(_MODULE, 'migrations')
@@ -62,6 +63,7 @@ def _load_cleanup_migration():
     return _load('19.0.5.0.0', 'pan_cleanup_post_migrate')
 
 
+@on_series('19.0')
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestAccountMigration(TransactionCase):
 

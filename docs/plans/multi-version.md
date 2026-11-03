@@ -128,26 +128,34 @@ every PR.
 
 ### 2. The port is a seam, not a fork
 
-The three branches differ in as few files as possible, and the list of
-files that may differ is written down and checked. Allowed to differ:
+The three branches differ in as few files as possible, and the difference
+is written down on `main` and applied by a script, never typed on the branch:
 
-| Path | Why |
-|---|---|
-| `pan_mail_pro/__manifest__.py` | the series in the version, and `data` where the security file's name differs |
-| `pan_mail_pro/security/` | 18 and 19: `ir.model.access.csv` + rules XML; 20: `ir.access.csv` |
-| `pan_mail_pro/compat.py` | the Python differences, each one a named thing with the series it is for |
-| `pan_mail_pro/static/src/compat/` | the JS re-exports whose path or name moved |
-| `pan_mail_pro/migrations/` | series-prefixed by construction; 18.0 and 20.0 start empty |
-| `tools/ci_port_drift.sh`'s own list | so widening it is a diff someone reads |
+- **`pan_mail_pro/compat.py`** holds every Python name one series spells
+  differently, resolved once against the running Odoo. The model files
+  import from it and are the same bytes on every branch.
+- **`pan_mail_pro/static/src/compat/`** does the same for JS: a file per
+  name whose path moved, re-exported, imported by the module as
+  `@pan_mail_pro/compat/...`.
+- **`tools/series/<series>/`** is what a series needs beyond that: files
+  laid over the tree (20.0: `security/ir.access.csv` and the groups-only
+  security XML, the 20 path of the chatter), a `REMOVE` list (20.0: the
+  ACL csv), a `MANIFEST.sed` (20.0: the security file's name in `data`).
+  18.0 needs nothing.
+- **`tools/cut_series.sh <series>`** turns a checkout of `main` into the
+  series branch: the two manifests' series (the module and the dark-mode CI
+  addon), the overlay, the removals, the manifest edits. Cutting a branch
+  is running it once on `main`; `tools/odoo_local.sh --series=` and
+  `tools/ui_local.sh --series=` run it on a copy, so what they measure is
+  what the branch gets.
+- **`tools/ci_port_drift.sh`**, a CI job on every branch, archives `main`,
+  cuts it for the branch's series and fails on any byte of difference
+  (the version's last three numbers aside). So a series branch *is* `main`
+  cut, and a change that belongs to one series goes into `tools/series/`
+  on `main`, where the next cut and the next merge both see it.
 
-Everything else is byte for byte the same as `main`. `tools/ci_port_drift.sh`
-fetches `origin/main` and fails on a series branch when the diff outside
-those paths is not empty. A series that needs a change outside the list
-widens the list in the same PR and says why in this file; the check exists so
-that this is a decision and not drift.
-
-Whether the seam can hold everything is the bet of this plan. One part of it
-is still unmeasured and therefore a spike, not a decision:
+Whether the seam can hold everything is the bet of this plan. What was still
+unmeasured when it was written:
 
 - **Constraints: measured, closed.** 18 wants `_sql_constraints = [(name,
   sql, msg)]` on the class; 19 and 20 want `models.Constraint` attributes
@@ -203,9 +211,12 @@ delta and are still moving on the `20.0` branch.
 - **Odoo 17 and below.** Nobody asked, and the Inbox is built on 18+'s
   `@mail` store.
 - **Enterprise in CI.** No source on the runner. Hand-walked per release.
-- **Migrations on 18.0 and 20.0 at launch.** A fresh series has no customer
-  database to migrate; the folder starts empty there and the 19.0 scripts
-  stay on `main` and `19.0`.
+- **A `migrations/` folder per series.** The 19.0 scripts stay on every
+  branch: Odoo never runs a folder of another series (above the target on
+  18, below the installed version on 20), the lint check only looks at the
+  manifest's own series, and the tests that drive those scripts carry
+  `@on_series('19.0')` and skip elsewhere. A fresh series has no customer
+  database to migrate, so it starts without folders of its own.
 
 ## Checklist
 
@@ -222,16 +233,16 @@ Mark a box in the PR that does the work, with the version or the date.
 
 - [x] `tools/odoo_local.sh`: clone a series, install requirements, run the suite, assert it ran
 - [x] `release.yml` tags on push to `18.0`, `19.0` and `20.0`; the release note names the series from the manifest
-- [ ] `tools/ci_port_drift.sh` and a CI job that runs it on a series branch
+- [x] `tools/ci_port_drift.sh` and the `port-drift` CI job (2026-11-03); `tools/cut_series.sh` and `tools/series/` with it
 - [x] `tests/common.py`: `groups_field()` and `registry_test_mode()`, so no test spells a series (58 lines in 24 files replaced, 2026-11-03)
 - [x] Constraints: measured 2026-11-03, no spike needed. `compat.Constraint` is `models.Constraint` where it exists and a `__set_name__` that appends to `_sql_constraints` on 18; the seven model files are identical on every branch
-- [ ] `tools/ci_lint.sh`: the "Odoo 19 checklist" greps read the series from the manifest where a rule is series-specific
+- [x] `tools/ci_lint.sh`: the migration-folder check reads the manifest's series (2026-11-03); the checklist greps are the same on every series
 - [ ] CLAUDE.md *Branches* paragraph and the Cloudpepper table: one row per series
 - [ ] TESTPLAN.md: the Enterprise checks get a column per series
 
 ### Step 2. The `18.0` branch
 
-- [ ] Branch cut from `main`; manifest `18.0.<x.y.z>`; `migrations/` emptied; drift check green
+- [ ] Branch cut from `main`; manifest `18.0.<x.y.z>` (module and CI dark addon); drift check green
 - [x] Registry loads on 18 (2026-11-03, `compat.py`: Constraint, Domain, three mail.mail/mail.thread names)
 - [x] Installs on 18 (2026-11-03): one view anchor moved to the notebook; `security/` loads unchanged
 - [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03: 1314 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file)
@@ -245,12 +256,12 @@ Mark a box in the PR that does the work, with the version or the date.
 
 ### Step 3. The `20.0` branch
 
-- [ ] Branch cut from `main`; manifest `20.0.<x.y.z>`; `migrations/` emptied; drift check green
+- [ ] Branch cut from `main`; manifest `20.0.<x.y.z>` (module and CI dark addon); `security/ir.access.csv`; drift check green
 - [x] Spike: `ir.access.csv` holds all 17 ACL rows and 7 rules (2026-11-03, 16 rows, `scripts/`-less: the file is written by hand on the branch); the permission tests that ran pass, the three Inbox access tests are the design question above
 - [ ] The mail.message visibility lesson re-measured against `res_access_read`; the "Linked to nothing" folder behaves as on 19; `_search` raising instead of filtering decided
-- [ ] `static/src/compat/`: the chatter import
+- [x] `static/src/compat/chatter.js`, the 20 path in `tools/series/20.0` (2026-11-03)
 - [x] `compat.py`: `get_param`/`set_param` and `config_bool`; `_notify_thread` positional; the two test helpers (2026-11-03)
-- [ ] Tracking rows without `mail.tracking.value`; `user_writeable=True` on the `res.users` fields; the attachment test patch targets
+- [x] Tracking rows without `mail.tracking.value`, `user_writeable=True` on the `res.users` fields, `ir.attachment` without `datas` (`compat.attachment_bytes`, fixtures on `raw`), the Files tab's store payload, `odoo.http` moves in the tests (2026-11-03)
 - [ ] Installs; suite green locally, then on CI's `odoo:20.0`
 - [ ] UI job green
 - [ ] Enterprise column walked on a 20 Enterprise instance

@@ -83,6 +83,7 @@ class ResUsers(models.Model):
     )
     x_default_mailbox_id = fields.Many2one(
         'pan.mail.mailbox',
+        user_writeable=True,
         string='Default mailbox',
         help='The mailbox this user sends from unless they pick another one in the composer.',
     )
@@ -112,6 +113,7 @@ class ResUsers(models.Model):
     )
 
     x_pan_mail_sync_level = fields.Selection(
+        user_writeable=True,
         selection=lambda self: self.env['pan.mail.mailbox']._fields['sync_level'].selection,
         string='Sync level',
         compute='_compute_pan_mail_sync_level',
@@ -128,6 +130,13 @@ class ResUsers(models.Model):
         compute='_compute_pan_mail_connect_blocker',
         help='What has to happen before this user can connect a mailbox.',
     )
+
+    @api.model
+    def _valid_field_parameter(self, field, name):
+        # `user_writeable` is how 20 marks a field a user may set on their own
+        # record; 18 and 19 read the two lists below instead and would log an
+        # unknown-parameter warning for it without this.
+        return name == 'user_writeable' or super()._valid_field_parameter(field, name)
 
     @property
     def SELF_READABLE_FIELDS(self):

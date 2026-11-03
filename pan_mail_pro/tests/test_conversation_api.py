@@ -661,7 +661,7 @@ class TestConversationApi(TransactionCase):
         tab reads as a bug."""
         attachment = self.env['ir.attachment'].create({
             'name': 'offerte.pdf',
-            'datas': b'JVBERi0=',
+            'raw': b'%PDF-',
         })
         self._mail().write({'attachment_ids': [(6, 0, attachment.ids)]})
         self.env['mail.activity'].create({
@@ -693,7 +693,7 @@ class TestConversationApi(TransactionCase):
         self._mail()
         attachment = self.env['ir.attachment'].create({
             'name': 'tekening.pdf',
-            'datas': b'JVBERi0=',
+            'raw': b'%PDF-',
             'res_model': 'crm.lead',
             'res_id': self.lead.id,
         })
@@ -915,13 +915,13 @@ class TestConversationApi(TransactionCase):
         read is a conversation you cannot mark.
         """
         attachment = self.env['ir.attachment'].create({
-            'name': 'vertrouwelijk.pdf', 'datas': b'JVBERi0=',
+            'name': 'vertrouwelijk.pdf', 'raw': b'%PDF-',
         })
         message = self._mail(subject='Not for Sam')
         message.write({'attachment_ids': [(6, 0, attachment.ids)],
                        'x_is_read': False})
         self.env['ir.attachment'].create({
-            'name': 'tekening.pdf', 'datas': b'JVBERi0=',
+            'name': 'tekening.pdf', 'raw': b'%PDF-',
             'res_model': 'crm.lead', 'res_id': self.lead.id,
         })
         reader = self._mailbox_manager('sam.doors@company.test')

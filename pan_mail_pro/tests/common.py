@@ -15,14 +15,24 @@ Provides:
 - A `mock_graph` context manager that patches all outbound HTTP
   calls in microsoft_graph_client and records what was sent.
 """
-import base64
 import contextlib
+import pathlib
 import types
+import unittest
 from unittest.mock import patch, MagicMock
 
 from odoo import http
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase
+
+
+def fake_request(session, env):
+    """A request with a session and nothing else: what a sign-in start and
+    the live read write to. `httprequest` carries what 20 reads of it (the
+    caller's address on a group change, the referrer)."""
+    return types.SimpleNamespace(
+        session=session, env=env, cookies={},
+        httprequest=types.SimpleNamespace(remote_addr='127.0.0.1', environ={}, referrer=None))
 
 
 @contextlib.contextmanager
@@ -50,6 +60,20 @@ def session_store():
         return http.root.session_store
     from odoo.http.session import session_store as store
     return store()
+
+
+def manifest_series():
+    """The Odoo series this checkout is for, from the manifest: '19.0'."""
+    import ast
+    manifest = ast.literal_eval((pathlib.Path(__file__).parents[1] / '__manifest__.py').read_text())
+    return '.'.join(manifest['version'].split('.')[:2])
+
+
+def on_series(series):
+    """Skip a test class on any other series. For the migration tests: a
+    migration belongs to the series it was written for and its scripts
+    never run on another, so neither should the tests that drive them."""
+    return unittest.skipUnless(manifest_series() == series, f'a {series} migration')
 
 
 def groups_field(env):
@@ -338,7 +362,7 @@ class MailProTestCase(TransactionCase):
         raw = b'\x00' * size_bytes
         return self.env['ir.attachment'].create({
             'name': name,
-            'datas': base64.b64encode(raw),
+            'raw': raw,
             'mimetype': mimetype,
         })
 
@@ -375,6 +399,5 @@ def proven_session(env, accounts=(), uid=None, session=None):
     # every create that happens under a request. Anything else Odoo asks of
     # a request raises here, which is the right answer: the live read must
     # not depend on more of the request than a session.
-    fake = types.SimpleNamespace(session=session, env=env, cookies={})
-    with push_request(fake):
+    with push_request(fake_request(session, env)):
         yield session
