@@ -51,8 +51,9 @@ https://github.com/user-attachments/assets/91bb494e-696d-4ede-85b5-4ac5cc826e5c
 
 Create a Pantalytics account at
 [mcp.pantalytics.com/admin/mail-pro](https://mcp.pantalytics.com/admin/mail-pro)
-(free up to 100 mails a day per Odoo instance), then add the module, branch
-`19.0`, to your Odoo. The full guide per host is
+(free up to 100 mails a day per Odoo instance), then add the module to your
+Odoo from the branch of your Odoo series: `18.0`, `19.0` or `20.0`, Community
+or Enterprise. The examples below say `19.0`; use yours. The full guide per host is
 [docs/getting-started/installation.md](docs/getting-started/installation.md).
 
 **Odoo.sh**: open a branch → **Submodule** → **Run on Odoo.sh** → `git@github.com:pantalytics/pan_mail_pro.git`,

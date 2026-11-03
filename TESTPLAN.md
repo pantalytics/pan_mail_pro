@@ -83,6 +83,21 @@ derdepartij-`helpdesk_community` helpt dus niet.
 
 ---
 
+## Enterprise per serie
+
+Same code op drie series (`18.0`, `19.0`, `20.0`; docs/plans/multi-version.md).
+CI draait op het community-image, dus de Enterprise-paden worden per release
+met de hand gelopen op de Enterprise-instance van die serie. Geen
+Enterprise-instance voor een serie betekent: die serie wordt niet gereleased.
+
+| Controle | 18.0 | 19.0 | 20.0 |
+|---|---|---|---|
+| Instance om op te lopen | geen 18-server op Cloudpepper | lokale Docker (Enterprise-source) | `odoo-20-enterprise-demo.cloudpepper.site` (module nog niet aangekoppeld) |
+| Dark mode: elk paneel donker, geen tekst onder 3:1 (`tools/ui_check.py` doet dit op community met `pan_mail_pro_ci_dark`) | [ ] | [ ] | [ ] |
+| `WebClientEnterprise`: geen wit scherm, de connect-banner tekent (19.0.7.7.1) | [ ] | [ ] | [ ] |
+| Helpdesk-routing: `x_route_to_team`, alias naar `helpdesk.team`, ticket via `message_new()` (A3) | [ ] | [ ] | [ ] |
+| Inbox: vier panelen, reply in het paneel, de tour | [ ] | [ ] | [ ] |
+
 ## Fase A′ — Functioneel op de CloudPepper-testinstance
 
 Instance: **https://mailpro-dev.cloudpepper.site** — nieuw aangemaakt, niet
@@ -97,6 +112,13 @@ als `CLOUDPEPPER_MAILPRO_DEV_ADMIN_PASSWORD` (project `prod`).
 - [ ] Bijwerken naar 19.0.26.0.0. Een push herstart, maar upgradet niet
       (issue #134): na een merge met versiebump Apps → Mail Pro → Upgrade, en
       daarna in `ir_module_module` controleren dat de nieuwe versie er staat.
+
+Per serie één instance (CLAUDE.md, *Cloudpepper dev instances*):
+`mailpro-dev` volgt `19.0`, `mailpro-dev-20` (https://mailpro-dev-20.cloudpepper.site,
+server `Pantalytics Demo v20`, community) volgt `20.0` sinds 03-11, module
+`20.0.34.1.1`; wachtwoord `CLOUDPEPPER_MAILPRO_DEV_20_ADMIN_PASSWORD`, nog in
+Bitwarden te zetten. Nog niet gekoppeld aan een workspace, dus de Inbox toont
+daar nog de connect-gate. Een 18-instance wacht op een 18-server.
 
 Voordelen t.o.v. lokaal: echte https-URL (geen localhost-uitzonderingen in
 Azure/Google), bereikbaar vanuit cloud-sessies, en de omgeving lijkt op wat

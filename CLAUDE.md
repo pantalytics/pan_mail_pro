@@ -9,7 +9,8 @@ it".
 ## Module Overview
 
 **pan_mail_pro** - Microsoft 365, Google Workspace and IMAP/SMTP email
-integration for Odoo 19.0, Community or Enterprise.
+integration for Odoo 18.0, 19.0 and 20.0, Community or Enterprise (one
+branch per series, `main` is the source; docs/plans/multi-version.md).
 
 Send and receive emails via the Microsoft Graph API, the Gmail API (both OAuth
 2.0 delegated) or plain IMAP/SMTP with a server, login and password.
