@@ -20,12 +20,14 @@ import re
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models import encryption_utils
-from .common import on_series
+from .common import on_series, repo_file
 
 _MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 _MIGRATION = os.path.join(_MODULE, 'migrations', '19.0.6.0.0')
-# The repository's, one folder above the module.
-_RENAME_SQL = os.path.join(_MODULE, '..', 'tools', 'rename_to_mail_pro.sql')
+# The rename SQL is the repository's (tools/), not the module's: it runs with
+# Odoo stopped, before this module exists. `repo_file` finds it, or skips in a
+# module-only checkout.
+_RENAME_SQL = ('tools', 'rename_to_mail_pro.sql')
 
 _STALE = 'Outlook Pro - Microsoft 365 Email Integration'
 
@@ -193,7 +195,7 @@ class TestRenameMigration(TransactionCase):
         committing here would escape the rollback every other test relies on.
         Everything that touches a row still runs exactly as shipped.
         """
-        with open(_RENAME_SQL) as handle:
+        with open(repo_file(self, *_RENAME_SQL)) as handle:
             script = handle.read()
         script = re.sub(r'(?im)^\s*(BEGIN|COMMIT)\s*;\s*$', '', script)
         self.env.cr.execute(script)

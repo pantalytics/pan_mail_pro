@@ -1,8 +1,9 @@
 # Mail Pro on Odoo 18, 19 and 20
 
-Status: **step 1 in progress**, 2026-11-03. 18 passes the whole suite from
-`main` through the seam (no branch yet); 20 installs and runs the suite with
-the items below still open. The checklist at the end is the state; update it in the same PR as
+Status: **step 1 in progress**, 2026-11-03. 18 and 20 both pass the whole
+suite from `main` cut by `tools/cut_series.sh` (1314 tests, 0 failed, 0
+errors, re-measured after main's 19.0.33.0.5 was merged in); no series
+branch exists yet. The checklist at the end is the state; update it in the same PR as
 the work, never in chat.
 
 ## What is asked
@@ -73,8 +74,9 @@ transaction.
 **Odoo 20, after the first seams** (same day, `tree20` in the scratch
 runner: the checkout with `security/` in the `ir.access.csv` shape, 16 rows
 built from the 17 ACL rows and the 7 rules). It installs, and 1314 tests
-run: 9 failed and 11 errors at the end of the day, down from 412 errors
-after the first seam. What the suite found, in the order of how much it
+run: 9 failed and 11 errors mid-day, down from 412 errors after the
+first seam, and 0 and 0 by the end of it (every item below is seamed).
+What the suite found, in the order of how much it
 touches:
 
 - `ir.config_parameter` lost `get_param` and `set_param` (typed
@@ -223,10 +225,23 @@ After a release to `19.0`:
 
 1. `git merge main` into `18.0`, then into `20.0`. A merge, not a
    cherry-pick: with the seam holding, the only conflicts are inside the
-   allowed paths, and `git rerere` replays the ones that repeat.
-2. Bump the manifest on that branch (`18.0.<same x.y.z>`), run
-   `tools/ci.sh`, push. `release.yml` tags `v18.0.x.y.z` on push to `18.0`.
+   allowed paths, and `git rerere` replays the ones that repeat. The
+   module manifest's version line conflicts on every port (measured
+   2026-11-03 on a simulated cut); it is resolved by taking main's and
+   cutting again, which is idempotent:
+   `git checkout --theirs pan_mail_pro/__manifest__.py && tools/cut_series.sh 18.0 && git add -A`.
+   That leaves `18.0.<main's x.y.z>`, the bump this step needs.
+2. Run `tools/ci.sh`, push. `release.yml` tags `v18.0.x.y.z` on push to `18.0`.
 3. Walk the Enterprise column for that series.
+
+What CI says on a series branch: `port-drift` compares the branch with
+the main it last merged (the merge base, not main's tip, so a branch that
+is merely behind is not drifted), cut for its series. `version-bump`
+compares the last three numbers with that same main and fails when they
+are lower; the series numbers differ by design. The upgrade row pinned to
+a `v19.0.*` tag passes saying it is another series, and the
+previous-release row passes saying there is no `v18.0.*` tag yet, until
+the first one exists.
 
 One PR becomes one PR plus two merges, and the measure of whether the seam
 holds is how often step 1 conflicts outside the allowed paths. That number
@@ -283,7 +298,8 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03: 1314 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file)
 - [ ] Suite green on CI's `odoo:18.0` (needs the branch)
 - [ ] UI job green: the Inbox renders on 18's `@mail`, every `tools/ui_check.py` assertion
-- [ ] Upgrade job: skips cleanly while no `v18.0.*` tag exists, runs once one does
+- [x] Upgrade job: skips cleanly while no `v18.0.*` tag exists (and on the pinned `v19.0.*` row), runs once one does (2026-11-03, `tools/ci_odoo.sh`)
+- [x] `version-bump` and `port-drift` read a series branch right: last three numbers and the merged main, not main's tip (2026-11-03, measured on a simulated `18.0` and `20.0` cut and port)
 - [ ] Enterprise column walked on an 18 Enterprise instance
 - [ ] A Cloudpepper dev instance on an 18 server (servers are pinned per major) with OAuth redirect URIs registered
 - [ ] Knowledge base page says which series are supported
@@ -297,7 +313,8 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] `static/src/compat/chatter.js`, the 20 path in `tools/series/20.0` (2026-11-03)
 - [x] `compat.py`: `get_param`/`set_param` and `config_bool`; `_notify_thread` positional; the two test helpers (2026-11-03)
 - [x] Tracking rows without `mail.tracking.value`, `user_writeable=True` on the `res.users` fields, `ir.attachment` without `datas` (`compat.attachment_bytes`, fixtures on `raw`), the Files tab's store payload, `odoo.http` moves in the tests (2026-11-03)
-- [ ] Installs; suite green locally, then on CI's `odoo:20.0`
+- [x] Installs; suite green locally (2026-11-03: 1314 tests, 0 failed, 0 errors through `tools/odoo_local.sh --series=20.0`)
+- [ ] Suite green on CI's `odoo:20.0` (needs the branch)
 - [ ] UI job green
 - [ ] Enterprise column walked on a 20 Enterprise instance
 - [ ] Cloudpepper dev instance on a 20 server

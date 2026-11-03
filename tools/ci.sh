@@ -7,6 +7,7 @@
 #   tools/ci.sh                 # everything
 #   tools/ci.sh lint            # static checks only (seconds)
 #   tools/ci.sh test            # fresh install + suite
+#   tools/ci.sh module-only     # the same with only pan_mail_pro/ deployed (Odoo.sh)
 #   tools/ci.sh upgrade         # upgrade from the last release + suite
 #   tools/ci.sh ui              # boot a seeded Odoo and check the pages read
 #
@@ -20,13 +21,15 @@ WHAT=${1:-all}
 case "$WHAT" in
     lint)    tools/ci_lint.sh ;;
     test)    tools/ci_odoo.sh --mode=fresh ;;
+    module-only) tools/ci_odoo.sh --mode=module-only ;;
     upgrade) tools/ci_odoo.sh --mode=upgrade ;;
     ui)      tools/ci_ui.sh ;;
     all)
         tools/ci_lint.sh
         tools/ci_odoo.sh --mode=fresh
+        tools/ci_odoo.sh --mode=module-only
         tools/ci_odoo.sh --mode=upgrade
         tools/ci_ui.sh
         ;;
-    *) echo "usage: tools/ci.sh [all|lint|test|upgrade|ui]" >&2; exit 2 ;;
+    *) echo "usage: tools/ci.sh [all|lint|test|module-only|upgrade|ui]" >&2; exit 2 ;;
 esac

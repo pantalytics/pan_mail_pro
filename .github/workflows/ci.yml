@@ -124,6 +124,31 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
+  # The same suite with only the pan_mail_pro/ folder on the addons path: what
+  # Odoo.sh's "Deploy on Odoo.sh" and the Apps store hand a customer. The
+  # suite once read ARCHITECTURE.md and tools/ from one folder up, and the
+  # first customer-style build on Odoo.sh stopped at five FileNotFoundErrors.
+  # Local equivalent: tools/ci.sh module-only
+  # ---------------------------------------------------------------------------
+  module-only:
+    name: Tests, module folder only
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fresh install from the module folder alone and run the suite
+        run: tools/ci_odoo.sh --mode=module-only
+
+      - name: Upload Odoo log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: odoo-module-only-log
+          path: odoo-module-only.log
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
   # The `test` job installs fresh. Every customer database instead *upgrades*,
   # which is a different code path: it runs the scripts in migrations/, and it
   # runs the test suite against columns and records that already existed. Until
