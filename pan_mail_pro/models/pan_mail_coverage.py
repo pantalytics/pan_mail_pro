@@ -46,7 +46,7 @@ class PanMailCoverage(models.TransientModel):
         `res_id` must be set, or the message is linked to nothing and belongs in that
         row instead — the three rows have to stay disjoint.
         """
-        return [('model', '=', 'res.partner'), ('res_id', '!=', False)]
+        return [('model', '=', 'res.partner'), ('res_id', 'not in', (False, 0))]
 
     def _period_domain(self):
         self.ensure_one()
@@ -70,7 +70,7 @@ class PanMailCoverage(models.TransientModel):
         domain = list(domain)
         total = Message.search_count(domain)
         unlinked = Message.search_count(
-            domain + ['|', ('model', '=', False), ('res_id', '=', False)]
+            domain + ['|', ('model', '=', False), ('res_id', 'in', (False, 0))]
         )
         contact_only = Message.search_count(domain + self._contact_only_domain())
         # The three rows are disjoint and sum to the total: a message is
@@ -115,7 +115,7 @@ class PanMailCoverage(models.TransientModel):
 
     def action_view_unlinked(self):
         return self._open_lens(
-            ['|', ('model', '=', False), ('res_id', '=', False)],
+            ['|', ('model', '=', False), ('res_id', 'in', (False, 0))],
             _('Mail linked to nothing'),
         )
 

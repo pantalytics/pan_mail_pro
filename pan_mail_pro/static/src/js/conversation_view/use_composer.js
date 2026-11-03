@@ -29,11 +29,13 @@
  *   no business thinking it is in a dialog.
  */
 
-import { Component, useState, useSubEnv, onMounted, onWillDestroy } from "@odoo/owl";
+import { Component, onMounted, onWillDestroy } from "@odoo/owl";
+import { useState, useSubEnv, useProps } from "@pan_mail_pro/compat/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
 import { formView } from "@web/views/form/form_view";
+import { defineProps } from "@pan_mail_pro/compat/owl";
 
 const INLINE_FORM = "pan_mail_pro.mail_compose_message_inline_form";
 
@@ -95,13 +97,14 @@ registry.category("views").add("pan_mail_inline_composer_form", {
 export class ComposerForm extends Component {
     static template = "pan_mail_pro.ComposerForm";
     static components = { View };
-    static props = {
+    static propsSchema = {
         viewProps: Object,
         handle: Object,
         close: Function,
     };
 
     setup() {
+        this.props = useProps();
         useSubEnv({
             // Where the form's controller leaves itself, for Send to find.
             mailproComposer: this.props.handle,
@@ -125,6 +128,7 @@ export class ComposerForm extends Component {
         });
     }
 }
+defineProps(ComposerForm);
 
 /**
  * @param {Object} options

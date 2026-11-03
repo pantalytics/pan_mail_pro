@@ -29,6 +29,7 @@ from odoo.tools import mute_logger
 from odoo.addons.pan_mail_pro.models.mail_mail import RoutingError
 
 from .common import MailProTestCase
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -264,7 +265,7 @@ class TestMailboxPermission(MailProTestCase):
         `base.group_system` on the credential fields exists for."""
         return self.env['res.users'].with_context(no_reset_password=True).create({
             'name': login, 'login': login, 'email': login,
-            'group_ids': [(6, 0, [
+            groups_field(self.env): [(6, 0, [
                 self.env.ref('base.group_user').id,
                 self.env.ref('pan_mail_pro.group_mail_mailbox_manager').id])],
         })

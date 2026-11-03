@@ -40,11 +40,13 @@ import logging
 import re
 from datetime import datetime
 
-from odoo import models, api, fields, tools, _
+from odoo import models, api, fields, _
 from odoo.exceptions import AccessError, UserError
-from odoo.fields import Domain
+from ..compat import (
+    Domain, activities_store_payload, attachments_store_payload, ormcache,
+    partner_ids_from_emails, tracking_values,
+)
 from odoo.http import request
-from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import email_split, html2plaintext
 from odoo.tools.mail import html_sanitize, plaintext2html
 from odoo.tools.translate import LazyTranslate
@@ -355,6 +357,17 @@ class PanMailConversation(models.AbstractModel):
             return [('x_direction', '=', 'outgoing')]
         return []
 
+    def _may_read_model(self, model):
+        """Whether the reader may read records of `model` at all.
+
+        A conversation pinned to a model the reader has no access to is a
+        closed door: no message, no chip, no count. 18 and 19 answered that
+        by filtering the search; 20's mail.message search raises an
+        AccessError for the model instead, so the question is asked first and
+        the closed answer is built without touching the model.
+        """
+        return model in self.env and self.env[model].has_access('read')
+
     def _conversation_domain(self, model, res_id, message_id=None,
                              mailbox_id=None):
         """The mail of one conversation, however the caller named it.
@@ -365,12 +378,14 @@ class PanMailConversation(models.AbstractModel):
         """
         base = self._base_domain(mailbox_id)
         if model:
+            if not self._may_read_model(model):
+                return [(0, '=', 1)]
             return base + [('model', '=', model), ('res_id', '=', res_id)]
         if message_id:
             return base + [('id', '=', int(message_id))]
         # `= 0` does not match a NULL res_id, so a conversation linked to
         # nothing, asked for by key rather than by message, has to say False.
-        return base + [('model', '=', False), ('res_id', '=', False)]
+        return base + [('model', '=', False), ('res_id', 'in', (False, 0))]
 
     # ------------------------------------------------------------------
     # Public read methods, the whole API the client has
@@ -880,7 +895,7 @@ class PanMailConversation(models.AbstractModel):
             ('model', '=', model),
             ('res_id', '=', res_id),
         ]
-        here_count = Message.search_count(base)
+        here_count = Message.search_count(base) if self._may_read_model(model) else 0
         if not here_count:
             return {'conversations': 0, 'threads': 0, 'here': 0, 'elsewhere': 0,
                     'partner_id': False, 'partner_name': ''}
@@ -1701,7 +1716,7 @@ class PanMailConversation(models.AbstractModel):
         by hiding the row, and that is the answer this screen wants too.
         """
         rows = []
-        for value in message.tracking_value_ids:
+        for value in tracking_values(message):
             rows.append({
                 'field': value.field_id.field_description or value.field_id.name or '',
                 'old': self._tracking_text(value, 'old'),
@@ -1749,7 +1764,9 @@ class PanMailConversation(models.AbstractModel):
             if record and record.has_access('read') and hasattr(
                     record, '_get_mail_thread_data_attachments'):
                 attachments |= record._get_mail_thread_data_attachments().sudo()
-        if model:
+        if model and not self._may_read_model(model):
+            source = self.env['mail.message']
+        elif model:
             source = self.env['mail.message'].search(
                 [('model', '=', model), ('res_id', '=', res_id),
                  ('attachment_ids', '!=', False)],
@@ -1765,8 +1782,18 @@ class PanMailConversation(models.AbstractModel):
         attachments = attachments.sorted('id', reverse=True)[:FILE_PAGE]
         return {
             'ids': attachments.ids,
-            'store': Store().add(attachments).get_result() if attachments else {},
+            'store': attachments_store_payload(attachments) if attachments else {},
         }
+
+    @api.model
+    def activity_store(self, ids):
+        """The store payload for these activities, the ones the reader may
+        read. One name for the Activities tab on every series: the method
+        Odoo's own list called is `activity_format` up to 19 and a Store
+        field list on 20 (compat.activities_store_payload)."""
+        self._check_caller()
+        activities = self.env['mail.activity'].search([('id', 'in', list(ids))])
+        return activities_store_payload(activities) if activities else {}
 
     def _activities_for(self, records):
         """What is still open on the records this conversation touched.
@@ -1861,7 +1888,7 @@ class PanMailConversation(models.AbstractModel):
             return False
         return '/%s/static/description/icon.png' % module
 
-    @tools.ormcache('model_name')
+    @ormcache('model_name')
     def _app_icon_by_menu(self, model_name):
         """The `web_icon` of the first app whose menu opens `model_name`, or False.
 
@@ -2234,8 +2261,8 @@ class PanMailConversation(models.AbstractModel):
         if defaults['partner_ids']:
             return defaults['partner_ids']
         if defaults['email_to']:
-            return record._partner_find_from_emails_single(
-                defaults['email_to'].split(',')).ids
+            return partner_ids_from_emails(
+                record, defaults['email_to'].split(','))
         return []
 
     def _link_model(self, model):

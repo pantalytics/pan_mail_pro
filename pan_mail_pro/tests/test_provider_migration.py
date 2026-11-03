@@ -14,6 +14,7 @@ import importlib.util
 import os
 
 from odoo.tests import TransactionCase, tagged
+from .common import on_series
 
 _MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 _MIGRATION = os.path.join(_MODULE, 'migrations', '19.0.6.5.0')
@@ -30,6 +31,7 @@ def _load(script, folder=_MIGRATION):
     return module
 
 
+@on_series('19.0')
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestProviderMigration(TransactionCase):
 
@@ -137,6 +139,7 @@ class TestProviderMigration(TransactionCase):
         self.assertEqual(row.client_id, 'changed-by-admin')
 
 
+@on_series('19.0')
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestProviderCollapse(TransactionCase):
     """19.0.7.2.0: several rows and an `in_use` toggle become one row.

@@ -23,6 +23,7 @@ from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import FETCH_BATCH_SIZE, o
 from odoo.addons.pan_mail_pro.models.providers.microsoft import graph_client as graph_mod
 
 from .common import MailProTestCase
+from odoo.addons.pan_mail_pro.compat import attachment_bytes
 
 GRAPH = 'https://graph.microsoft.com/v1.0'
 MSG_ID = 'AAMkAGI2_fake_graph_id'
@@ -38,13 +39,17 @@ class TestCronProgress(MailProTestCase):
     number, because the re-run it would buy starts from the top."""
 
     def _run(self, context, seconds_left=3.0):
+        # `create=True`: 18 has no _commit_progress and no cron progress at
+        # all, so there the fetcher never enters its `in_cron` branch in
+        # production; the test forces the context and stands the method in.
         fetcher = self.env['pan.mail.fetcher'].with_context(**context)
         Cron = type(self.env['ir.cron'])
         with patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=True), \
                 patch.object(type(self.env['pan.mail.mailbox']), '_has_working_credentials',
                              return_value=True), \
                 patch.object(type(fetcher), '_process_mailbox', return_value=None) as process, \
-                patch.object(Cron, '_commit_progress', return_value=seconds_left) as progress:
+                patch.object(Cron, '_commit_progress', create=True,
+                             return_value=seconds_left) as progress:
             fetcher._cron_fetch_incoming_mail()
         return process, progress
 
@@ -412,7 +417,7 @@ class TestIncomingSync(MailProTestCase):
 
         message = self._messages_on(self.external_partner)
         self.assertEqual(message.attachment_ids.mapped('name'), ['invoice.pdf'])
-        self.assertEqual(base64.b64decode(message.attachment_ids.datas), b'%PDF-1.4 fake')
+        self.assertEqual(attachment_bytes(message.attachment_ids), b'%PDF-1.4 fake')
 
     def test_inline_image_becomes_web_image_url(self):
         """Inline attachments go in as 3-tuples so Odoo rewrites cid: to /web/image/."""

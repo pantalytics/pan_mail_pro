@@ -13,6 +13,8 @@ from odoo.tests import HttpCase, TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models import encryption_utils
 from odoo.addons.pan_mail_pro.models.pan_mail_license import IMPROVE_REFUSED_PARAM
+from .common import groups_field
+from odoo.addons.pan_mail_pro.compat import config_bool
 
 
 def _with_key(env):
@@ -57,7 +59,7 @@ class TestImproveConfig(TransactionCase):
     def test_two_users_are_two_ids_and_one_user_is_one_id(self):
         other = self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         mine = self.License.improve_config()['user']
         theirs = self.License.with_user(other).improve_config()['user']
@@ -107,13 +109,13 @@ class TestImproveConfig(TransactionCase):
         settings.x_improve = False
         self.assertTrue(settings.x_improve_refused)
         settings.execute()
-        self.assertTrue(self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM))
+        self.assertTrue(config_bool(self.env, IMPROVE_REFUSED_PARAM))
         self.assertFalse(self.License.improve_config())
         settings = self.env['res.config.settings'].create({})
         self.assertFalse(settings.x_improve)
         settings.x_improve = True
         settings.execute()
-        self.assertFalse(self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM))
+        self.assertFalse(config_bool(self.env, IMPROVE_REFUSED_PARAM))
         self.assertTrue(self.License.improve_config())
         self.link.write({'improve': False})
         settings = self.env['res.config.settings'].create({})
@@ -136,7 +138,7 @@ class TestImproveSession(HttpCase):
         self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
             'password': 'nora@company.test', 'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.authenticate('nora@company.test', 'nora@company.test')
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
@@ -148,7 +150,7 @@ class TestImproveSession(HttpCase):
         self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
             'password': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.authenticate('nora@company.test', 'nora@company.test')
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})

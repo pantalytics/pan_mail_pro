@@ -30,6 +30,7 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
 )
 from odoo.addons.pan_mail_pro.models.providers.http_utils import MAX_RETRIES
 from odoo.addons.pan_mail_pro.models.providers.google import gmail_client as gmail_mod
+from .common import groups_field, registry_test_mode
 
 # Patch requests.post specifically, not the whole module — the client catches
 # requests.exceptions.RequestException, which must stay a real class.
@@ -753,7 +754,7 @@ class TestGoogleProvider(TransactionCase):
             access_token='stale', refresh_token='revoked',
             token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         self.assertTrue(account.connected)
-        with self.enter_registry_test_mode(), \
+        with registry_test_mode(self), \
                 patch(GMAIL_POST, side_effect=self._http_error({'error': 'invalid_grant'})):
             try:
                 self.client.get_valid_token(account)
@@ -799,7 +800,7 @@ class TestGmailMailboxIsUsableEndToEnd(TransactionCase):
         cls.user = cls.env['res.users'].create({
             'name': 'Gmail Only', 'login': 'gmail_only@test.local',
             'email': 'gmail_only@test.local',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_user').id])],
         })
         # Connected to Google and *only* Google — the case that used to break.
         cls.account = cls.Account.create({

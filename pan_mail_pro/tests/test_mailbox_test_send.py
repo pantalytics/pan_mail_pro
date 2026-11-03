@@ -16,6 +16,7 @@ from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from .common import MailProTestCase
+from .common import groups_field
 
 # Every test mail's subject starts so; the mailbox's address follows.
 SUBJECT = 'Mail Pro works for '
@@ -133,7 +134,7 @@ class TestMailboxSetupCheck(MailProTestCase):
             self.shared_mailbox.with_user(self.salesperson).action_check_mailbox()
         check.assert_not_called()
 
-        self.salesperson.group_ids += self.env.ref('pan_mail_pro.group_mail_mailbox_manager')
+        self.salesperson.write({groups_field(self.env): [(4, self.env.ref('pan_mail_pro.group_mail_mailbox_manager').id)]})
         with patch.object(Mailbox, '_verify_all_access') as check, self.mock_graph():
             self.shared_mailbox.with_user(self.salesperson).action_check_mailbox()
         check.assert_called_once()

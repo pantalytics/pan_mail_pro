@@ -10,6 +10,7 @@ from odoo.addons.base.models.ir_mail_server import MailDeliveryException
 from odoo.exceptions import AccessError, UserError
 
 from .mail_provider_client import ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, ERROR_THROTTLED
+from ..compat import notification_status, postprocess_sent_message
 from .neutralization import COPY_FROM_HEADER, database_is_copy
 from .providers.mime_utils import odoo_headers
 
@@ -537,7 +538,7 @@ class MailMail(models.Model):
         mails._raise_batch_failures(failures, delivered, auto_commit, raise_exception)
         return True
 
-    def _prepare_outgoing_list(self, mail_server=False, doc_to_followers=None):
+    def _prepare_outgoing_list(self, mail_server=False, **kwargs):
         """On a copy, dress Odoo's message the way the mailbox would have.
 
         Odoo builds one message per recipient here; everything it reads off
@@ -548,8 +549,9 @@ class MailMail(models.Model):
         place (models/ir_mail_server.py). Outside `_send_on_staging` this is
         Odoo's method untouched.
         """
-        results = super()._prepare_outgoing_list(
-            mail_server=mail_server, doc_to_followers=doc_to_followers)
+        # The second argument is `recipients_follower_status` on 18 and
+        # `doc_to_followers` on 19 and 20; it is passed through unread.
+        results = super()._prepare_outgoing_list(mail_server=mail_server, **kwargs)
         if not self.env.context.get(ON_COPY):
             return results
         try:
@@ -697,7 +699,7 @@ class MailMail(models.Model):
         ])
         if notifications:
             notifications.write({
-                'notification_status': self._get_notification_status(),
+                'notification_status': notification_status(self),
             })
 
     def _fail(self, reason, code='outgoing.send_failed', error=None, mailbox=None):
@@ -716,7 +718,8 @@ class MailMail(models.Model):
         """
         self.ensure_one()
         self.write({'state': 'exception', 'failure_reason': reason})
-        self._postprocess_sent_message(
+        postprocess_sent_message(
+            self,
             success_pids=self.env['res.partner'],
             success_emails=[],
             failure_reason=reason,
@@ -786,7 +789,8 @@ class MailMail(models.Model):
         # Both were skipped on this path, so every provider-sent chatter mail
         # showed as pending forever and stayed in mail_mail forever.
         self._sync_notifications()
-        self._postprocess_sent_message(
+        postprocess_sent_message(
+            self,
             success_pids=self.recipient_ids,
             success_emails=tools.email_split(self.email_to or ''),
         )

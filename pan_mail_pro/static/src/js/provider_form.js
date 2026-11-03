@@ -15,12 +15,14 @@
  * Sign in with Microsoft button instead.
  */
 
-import { Component, onWillStart, useState } from "@odoo/owl";
+import { Component, onWillStart } from "@odoo/owl";
+import { useState, useProps } from "@pan_mail_pro/compat/owl";
 import { Dialog } from "@web/core/dialog/dialog";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { FormController } from "@web/views/form/form_controller";
 import { formView } from "@web/views/form/form_view";
+import { defineProps } from "@pan_mail_pro/compat/owl";
 
 const REGISTRATION = [
     "provider", "registration", "client_id", "client_secret", "tenant_id",
@@ -29,9 +31,10 @@ const REGISTRATION = [
 export class ProviderVerifyDialog extends Component {
     static template = "pan_mail_pro.ProviderVerifyDialog";
     static components = { Dialog };
-    static props = { resId: Number, label: String, close: Function };
+    static propsSchema = { resId: Number, label: String, close: Function };
 
     setup() {
+        this.props = useProps();
         this.orm = useService("orm");
         this.action = useService("action");
         // connecting -> verifying -> verified | unverifiable | rejected
@@ -76,6 +79,7 @@ export class ProviderVerifyDialog extends Component {
         await this.action.doAction(action);
     }
 }
+defineProps(ProviderVerifyDialog);
 
 export class ProviderFormController extends FormController {
     setup() {

@@ -195,11 +195,13 @@ class TestProviderCapabilities(TransactionCase):
         """A mailbox its provider cannot service must fail at config time,
         not at send time."""
         Mailbox = self.env['pan.mail.mailbox']
-        original = type(self.client).supported_mailbox_types
-        type(self.client).supported_mailbox_types = ('personal',)
-        self.addCleanup(
-            setattr, type(self.client), 'supported_mailbox_types', original
-        )
+        # patch.object rather than setattr plus a cleanup that sets it back:
+        # the attribute lives on the definition class, so setting it on the
+        # registry class adds a key that "restoring" leaves behind, and
+        # Odoo 18's harness fails the test for the attribute it finds there.
+        patcher = patch.object(type(self.client), 'supported_mailbox_types', ('personal',))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         # Not a tuple: Odoo's assertRaises override calls issubclass() on the
         # argument, which raises TypeError on a tuple. ValidationError
         # subclasses UserError anyway, so this still covers both.
@@ -411,7 +413,6 @@ class TestGraphNormalization(TransactionCase):
         send — just unthreaded, which is the failure mode it exists to fix.
         """
         Client = type(self.client)
-        original = Client.send_email_via_graph
         seen = {}
 
         def fake_send(self_, mail_record, mailbox, account, reply_context=None):
@@ -425,8 +426,9 @@ class TestGraphNormalization(TransactionCase):
                 'draft_id': 'draft-1',
             }
 
-        Client.send_email_via_graph = fake_send
-        self.addCleanup(setattr, Client, 'send_email_via_graph', original)
+        patcher = patch.object(Client, 'send_email_via_graph', fake_send)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
         result = self.client.send_message(
             mail_record=None, mailbox=None, account=None,

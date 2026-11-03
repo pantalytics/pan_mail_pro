@@ -24,11 +24,22 @@
  * and the check in tools/ci_lint.sh that keeps it that way.
  */
 
-import { Chatter } from "@mail/chatter/web_portal/chatter";
+import { Chatter } from "@pan_mail_pro/compat/chatter";
 import { patch } from "@web/core/utils/patch";
 import { session } from "@web/session";
 import { useService } from "@web/core/utils/hooks";
-import { useEffect, useState } from "@odoo/owl";
+import { useEffect, useState } from "@pan_mail_pro/compat/owl";
+
+/**
+ * The record a Chatter shows, as [model, id]. Up to 19 they are props; on 20
+ * the Chatter keeps them as prop signals (`this.threadModel()`).
+ */
+function chatterThread(chatter) {
+    if (typeof chatter.threadModel === "function") {
+        return [chatter.threadModel(), chatter.threadId()];
+    }
+    return [chatter.props.threadModel, chatter.props.threadId];
+}
 
 patch(Chatter.prototype, {
     setup() {
@@ -42,7 +53,7 @@ patch(Chatter.prototype, {
             (model, threadId) => {
                 this.loadMailProDoor(model, threadId);
             },
-            () => [this.props.threadModel, this.props.threadId]
+            () => chatterThread(this)
         );
     },
 
@@ -57,7 +68,7 @@ patch(Chatter.prototype, {
                 "pan.mail.conversation", "record_conversations", [model, threadId]);
             // The record may have changed while this was out: the pager's
             // next record must not wear the previous one's count.
-            if (model !== this.props.threadModel || threadId !== this.props.threadId) {
+            if (String([model, threadId]) !== String(chatterThread(this))) {
                 return;
             }
             this.mailPro.threads = door.here ? door.threads || 1 : 0;
@@ -71,8 +82,8 @@ patch(Chatter.prototype, {
     openInMail() {
         this.action.doAction("pan_mail_pro.action_pan_mail_conversation", {
             additionalContext: {
-                pan_mail_model: this.props.threadModel,
-                pan_mail_res_id: this.props.threadId,
+                pan_mail_model: chatterThread(this)[0],
+                pan_mail_res_id: chatterThread(this)[1],
                 pan_mail_select: this.mailPro.threads <= 1,
             },
         });

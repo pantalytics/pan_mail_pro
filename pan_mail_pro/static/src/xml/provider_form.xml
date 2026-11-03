@@ -1,29 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="pan_mail_pro.ProviderVerifyDialog">
-        <Dialog title="props.label" size="'md'">
+        <Dialog title="this.props.label" size="'md'">
             <div class="o_mailpro_provider_verify">
                 <!-- The icons carry the state for the eye; the hidden word
                      after each label carries it for a screen reader, and the
                      live region reads it out as the phase moves on. -->
                 <div role="status" aria-live="polite">
                     <div class="d-flex align-items-center gap-2 mb-2">
-                        <i t-if="state.phase === 'connecting'" class="fa fa-circle-o-notch fa-spin" aria-hidden="true"/>
+                        <i t-if="this.state.phase === 'connecting'" class="fa fa-circle-o-notch fa-spin" aria-hidden="true"/>
                         <i t-else="" class="fa fa-check text-success" aria-hidden="true"/>
-                        <span t-att-class="{'text-muted': state.phase !== 'connecting'}">
-                            Connecting to <t t-esc="props.label"/>
+                        <span t-att-class="{'text-muted': this.state.phase !== 'connecting'}">
+                            Connecting to <t t-esc="this.props.label"/>
                         </span>
-                        <span t-if="state.phase === 'connecting'" class="visually-hidden">in progress</span>
+                        <span t-if="this.state.phase === 'connecting'" class="visually-hidden">in progress</span>
                         <span t-else="" class="visually-hidden">done</span>
                     </div>
                     <div class="d-flex align-items-center gap-2 mb-2"
-                         t-if="state.phase !== 'connecting' and state.phase !== 'unverifiable'">
-                        <i t-if="state.phase === 'verifying'" class="fa fa-circle-o-notch fa-spin" aria-hidden="true"/>
-                        <i t-elif="state.phase === 'verified'" class="fa fa-check text-success" aria-hidden="true"/>
+                         t-if="this.state.phase !== 'connecting' and this.state.phase !== 'unverifiable'">
+                        <i t-if="this.state.phase === 'verifying'" class="fa fa-circle-o-notch fa-spin" aria-hidden="true"/>
+                        <i t-elif="this.state.phase === 'verified'" class="fa fa-check text-success" aria-hidden="true"/>
                         <i t-else="" class="fa fa-times text-danger" aria-hidden="true"/>
-                        <span t-att-class="{'text-muted': state.phase !== 'verifying'}">Verifying credentials</span>
-                        <span t-if="state.phase === 'verifying'" class="visually-hidden">in progress</span>
-                        <span t-elif="state.phase === 'verified'" class="visually-hidden">done</span>
+                        <span t-att-class="{'text-muted': this.state.phase !== 'verifying'}">Verifying credentials</span>
+                        <span t-if="this.state.phase === 'verifying'" class="visually-hidden">in progress</span>
+                        <span t-elif="this.state.phase === 'verified'" class="visually-hidden">done</span>
                         <span t-else="" class="visually-hidden">failed</span>
                     </div>
                     <!-- The reason, inside the live region and always
@@ -32,19 +32,19 @@
                          change it is sure to read out. The text comes and
                          goes; the element stays. -->
                     <div style="white-space: pre-line" t-att-class="{
-                            'mt-3': !busy,
-                            'alert alert-danger mb-0': state.phase === 'rejected',
-                            'text-muted': !busy and state.phase !== 'rejected'}"
-                         t-esc="busy ? '' : state.message"/>
+                            'mt-3': !this.busy,
+                            'alert alert-danger mb-0': this.state.phase === 'rejected',
+                            'text-muted': !this.busy and this.state.phase !== 'rejected'}"
+                         t-esc="this.busy ? '' : this.state.message"/>
                 </div>
             </div>
             <t t-set-slot="footer">
-                <t t-if="state.phase === 'verified' or state.phase === 'unverifiable'">
-                    <button class="btn btn-primary" t-on-click="signIn">Sign in</button>
-                    <button class="btn btn-secondary" t-on-click="props.close">Later</button>
+                <t t-if="this.state.phase === 'verified' or this.state.phase === 'unverifiable'">
+                    <button class="btn btn-primary" t-on-click="this.signIn">Sign in</button>
+                    <button class="btn btn-secondary" t-on-click="this.props.close">Later</button>
                 </t>
-                <button t-elif="state.phase === 'rejected'" class="btn btn-primary"
-                        t-on-click="props.close">OK</button>
+                <button t-elif="this.state.phase === 'rejected'" class="btn btn-primary"
+                        t-on-click="this.props.close">OK</button>
                 <button t-else="" class="btn btn-secondary" disabled="disabled">Verifying</button>
             </t>
         </Dialog>

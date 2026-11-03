@@ -13,10 +13,11 @@
  * clicked, not tabbed to, because the arrows already move the slider.
  */
 
-import { Component, onWillUnmount, useState } from "@odoo/owl";
+import { Component, onWillUnmount } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
+import { defineProps, useProps, useState } from "@pan_mail_pro/compat/owl";
 
 // What each stop adds, as the name under it. Same order as the selection.
 const STOPS = [
@@ -60,9 +61,10 @@ let nextId = 0;
 
 export class SyncLevelField extends Component {
     static template = "pan_mail_pro.SyncLevelField";
-    static props = { ...standardFieldProps };
+    static propsSchema = { ...standardFieldProps };
 
     setup() {
+        this.props = useProps();
         this.id = `o_mailpro_sync_level_${nextId++}`;
         this.stops = STOPS;
         this.rows = ROWS;
@@ -130,6 +132,8 @@ export class SyncLevelField extends Component {
         this.state.open[index] = !this.state.open[index];
     }
 }
+
+defineProps(SyncLevelField);
 
 export const syncLevelField = {
     component: SyncLevelField,

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    The template half of the series seam (docs/plans/multi-version.md): a
+    directive one Owl spells differently is swapped here by template
+    inheritance, so the templates themselves read the same on every branch.
+    18 and 19 (Owl 2) need nothing; tools/series/20.0 carries the Owl 3
+    version of this file.
+-->
+<templates xml:space="preserve">
+</templates>

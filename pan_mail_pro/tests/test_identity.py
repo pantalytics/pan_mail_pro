@@ -24,6 +24,7 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     get_provider_client,
     identity_shape,
 )
+from .common import groups_field
 
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client'
 GMAIL = 'odoo.addons.pan_mail_pro.models.providers.google.gmail_client'
@@ -193,7 +194,7 @@ class TestIdentityCallback(HttpCase):
         self.user = self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
             'password': 'nora@company.test', 'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])]})
         self.authenticate('nora@company.test', 'nora@company.test')
         self.user.sudo().x_pan_mail_oauth_state = 'nonce-123'
 

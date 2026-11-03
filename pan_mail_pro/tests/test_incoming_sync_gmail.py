@@ -23,6 +23,7 @@ from odoo.tests import tagged
 from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import odoo_db_marker
 
 from .common import MailProTestCase
+from .common import groups_field
 
 GMAIL_ID = 'gmail_msg_0001'
 INTERNET_ID = '<inbound-gmail-001@example.com>'
@@ -44,7 +45,7 @@ class TestGmailIncomingSync(MailProTestCase):
             'name': 'Gmail Sync User',
             'login': 'gmail_sync@test.local',
             'email': 'gmail_sync@test.local',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         Account.create({
             'email': 'gmail_sync@test.local',

@@ -31,7 +31,7 @@ import logging
 
 from odoo import models, fields, api, _
 from odoo.exceptions import AccessError, UserError
-from odoo.fields import Domain
+from ..compat import Domain
 
 _logger = logging.getLogger(__name__)
 

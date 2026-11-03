@@ -1,11 +1,13 @@
 /** @odoo-module */
 
-import { Component, useState } from "@odoo/owl";
+import { Component } from "@odoo/owl";
+import { useState, useProps } from "@pan_mail_pro/compat/owl";
 import { browser } from "@web/core/browser/browser";
 import { registry } from "@web/core/registry";
 import { patch } from "@web/core/utils/patch";
 import { session } from "@web/session";
 import { WebClient } from "@web/webclient/webclient";
+import { defineProps } from "@pan_mail_pro/compat/owl";
 
 // Dismissal lives in sessionStorage rather than a stored field: "not now" is
 // not a preference worth a column, and a banner that never comes back is a
@@ -29,9 +31,10 @@ const RECONNECT_DISMISSED_KEY = "pan_mail_pro.reconnect_banner_dismissed";
  */
 export class MailProConnectBanner extends Component {
     static template = "pan_mail_pro.ConnectBanner";
-    static props = {};
+    static propsSchema = {};
 
     setup() {
+        this.props = useProps();
         this.reconnect =
             !session.pan_mail_connect_prompt && Boolean(session.pan_mail_reconnect_prompt);
         const asked = Boolean(session.pan_mail_connect_prompt) || this.reconnect;
@@ -60,6 +63,7 @@ export class MailProConnectBanner extends Component {
             pathname + search + hash)}`;
     }
 }
+defineProps(MailProConnectBanner);
 
 /**
  * After a sign-in the callback sends the browser straight back to where it
