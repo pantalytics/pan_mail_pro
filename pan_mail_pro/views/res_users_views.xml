@@ -117,7 +117,10 @@
         <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
         <field name="priority">20</field>
         <field name="arch" type="xml">
-            <xpath expr="//page[@name='page_security']" position="after">
+            <!-- Inside the notebook rather than after a named page: the last
+                 page is page_security on 19 and 20 and page_devices on 18, and
+                 the notebook is the one anchor all three have. -->
+            <xpath expr="//notebook" position="inside">
                 <page string="Mail Pro" name="mail_pro">
                     <field name="x_pan_mail_connected" invisible="1"/>
 

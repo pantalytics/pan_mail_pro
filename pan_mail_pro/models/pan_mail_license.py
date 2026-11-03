@@ -95,6 +95,7 @@ the copy pairs it as staging. Signing a mailbox in still stops on a copy
 import base64
 import hashlib
 import hmac
+from ..compat import config_bool, ormcache
 import json
 import logging
 import os
@@ -102,7 +103,7 @@ from datetime import datetime, time, timedelta, timezone
 
 import requests
 
-from odoo import _, api, fields, models, release, tools
+from odoo import _, api, fields, models, release
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
@@ -513,7 +514,7 @@ class PanMailLicense(models.Model):
         link = self.current() if link is None else link
         if not link or not link.improve or not link.improve_host or not link.improve_token:
             return False
-        if self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM):
+        if config_bool(self.env, IMPROVE_REFUSED_PARAM):
             return False
         return not database_is_copy(self.env)
 
@@ -1266,7 +1267,7 @@ class PanMailLicense(models.Model):
         return self.env['ir.config_parameter'].sudo().get_param('database.uuid', '')
 
     @api.model
-    @tools.ormcache()
+    @ormcache()
     def _module_version(self):
         """The version of the module that is running, as the manifest says.
 

@@ -2,14 +2,14 @@
 <templates xml:space="preserve">
 
     <t t-name="pan_mail_pro.ConnectBanner">
-        <div t-if="state.visible" class="o_mailpro_connect_banner" role="status">
-            <t t-if="reconnect">
+        <div t-if="this.state.visible" class="o_mailpro_connect_banner" role="status">
+            <t t-if="this.reconnect">
                 <span class="o_mailpro_connect_text">
                     Mail Pro now signs in with its own Microsoft app. Reconnect
                     once; your mail keeps working until you do.
                 </span>
                 <a class="btn btn-primary btn-sm" href="/mail_pro/connect"
-                   t-on-click="onConnect">Reconnect</a>
+                   t-on-click="this.onConnect">Reconnect</a>
             </t>
             <t t-else="">
                 <span class="o_mailpro_connect_text">
@@ -17,7 +17,7 @@
                     and receives mail from your own address.
                 </span>
                 <a class="btn btn-primary btn-sm" href="/mail_pro/connect"
-                   t-on-click="onConnect">Connect my mailbox</a>
+                   t-on-click="this.onConnect">Connect my mailbox</a>
             </t>
             <button type="button" class="btn btn-link btn-sm o_mailpro_connect_close"
                     title="Hide until next sign-in" t-on-click="() => this.onDismiss()">
@@ -35,7 +35,7 @@
          loaded. See connect_banner.js. -->
     <t t-name="pan_mail_pro.WebClient" t-inherit="web.WebClient" t-inherit-mode="extension">
         <xpath expr="//ActionContainer" position="before">
-            <t t-component="MailProConnectBanner"/>
+            <t t-component="this.MailProConnectBanner"/>
         </xpath>
     </t>
 

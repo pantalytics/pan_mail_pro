@@ -19,6 +19,7 @@ from email.message import EmailMessage
 from email.utils import formataddr, getaddresses, make_msgid, parseaddr
 
 from ..mail_provider_client import DB_MARKER_HEADER, odoo_db_marker, tidy_address
+from ...compat import attachment_bytes
 
 
 def collect_recipient_pairs(raw_list, partners=None):
@@ -166,7 +167,7 @@ def odoo_headers(mail_record, env):
 
 def attach_files(msg, attachments):
     for attachment in attachments:
-        content = attachment.raw  # decoded bytes, not base64
+        content = attachment_bytes(attachment)  # decoded bytes, not base64
         if not content:
             continue
         content_type = (attachment.mimetype

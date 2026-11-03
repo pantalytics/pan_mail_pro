@@ -11,6 +11,7 @@ fires immediately in test mode.
 from odoo.tests import tagged
 
 from .common import MailProTestCase
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -68,7 +69,7 @@ class TestSystemNotifications(MailProTestCase):
             'name': 'No Email User',
             'login': 'no_email@test.local',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.assertFalse(no_email_user.partner_id.email)
 
@@ -112,7 +113,7 @@ class TestSystemNotifications(MailProTestCase):
             'name': 'Also No Email',
             'login': 'also_no_email@test.local',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         message = self.external_partner.sudo().message_post(
             body='<p>Something happened</p>',

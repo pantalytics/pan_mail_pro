@@ -1,6 +1,7 @@
 /** @odoo-module */
 
-import { onWillStart, useState } from "@odoo/owl";
+import { onWillStart } from "@odoo/owl";
+import { useState } from "@pan_mail_pro/compat/owl";
 import { ListController } from "@web/views/list/list_controller";
 import { listView } from "@web/views/list/list_view";
 import { registry } from "@web/core/registry";

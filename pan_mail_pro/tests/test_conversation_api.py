@@ -16,6 +16,7 @@ from lxml import etree
 
 from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, tagged
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -67,7 +68,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Mira Manager',
             'login': 'mira@company.test',
             'email': 'mira@company.test',
-            'group_ids': [(6, 0, [
+            groups_field(self.env): [(6, 0, [
                 self.env.ref('base.group_user').id, self.manager_group.id])],
         })
         gated = self.Conversation.with_user(manager).with_context(
@@ -586,7 +587,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Buitenstaander',
             'login': 'outsider@company.test',
             'email': 'outsider@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         self._mail()
         with self.assertRaises(AccessError):
@@ -660,7 +661,7 @@ class TestConversationApi(TransactionCase):
         tab reads as a bug."""
         attachment = self.env['ir.attachment'].create({
             'name': 'offerte.pdf',
-            'datas': b'JVBERi0=',
+            'raw': b'%PDF-',
         })
         self._mail().write({'attachment_ids': [(6, 0, attachment.ids)]})
         self.env['mail.activity'].create({
@@ -685,6 +686,23 @@ class TestConversationApi(TransactionCase):
             self.assertEqual([a['summary'] for a in thread['activities']],
                              ['Levertijd navragen'], scope)
 
+    def test_the_activities_tab_reads_the_store_payload_through_one_name(self):
+        """The Activities tab hands the ids back and asks for Odoo's own store
+        payload. The method Odoo's list called is `activity_format` up to 19
+        and a Store field list on 20, so the tab asks this model, which knows
+        the series, and gets the same shape on every one of them."""
+        activity = self.env['mail.activity'].create({
+            'res_model_id': self.env['ir.model']._get_id('crm.lead'),
+            'res_id': self.lead.id,
+            'activity_type_id': self.env.ref('mail.mail_activity_data_todo').id,
+            'summary': 'Levertijd navragen',
+            'user_id': self.env.user.id,
+        })
+        payload = self.Conversation.activity_store(activity.ids)
+        self.assertEqual([a['summary'] for a in payload['mail.activity']],
+                         ['Levertijd navragen'])
+        self.assertEqual(self.Conversation.activity_store([]), {})
+
     def test_a_file_on_the_record_and_not_on_a_message_is_still_on_the_tab(self):
         """The tab lists what the chatter's file box lists: the record's own
         attachments. Reading only the messages made a file somebody attached
@@ -692,7 +710,7 @@ class TestConversationApi(TransactionCase):
         self._mail()
         attachment = self.env['ir.attachment'].create({
             'name': 'tekening.pdf',
-            'datas': b'JVBERi0=',
+            'raw': b'%PDF-',
             'res_model': 'crm.lead',
             'res_id': self.lead.id,
         })
@@ -722,6 +740,11 @@ class TestConversationApi(TransactionCase):
             'res_id': self.lead.id,
             'message_type': message_type,
             'is_internal': is_internal,
+            # Given, not computed: 18's mail.message.create looks the reply-to
+            # up on the record for every type but user_notification, and for
+            # that one it asks an empty recordset for the lead's id (KeyError).
+            # Odoo's own notify path hands the value in, so this does the same.
+            'reply_to': False,
             'subject': subject,
             'body': '<p>De levertijd is drie weken.</p>',
             'x_direction': 'outgoing',
@@ -844,7 +867,7 @@ class TestConversationApi(TransactionCase):
             'name': login,
             'login': login,
             'email': login,
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id,
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id,
                                   self.manager_group.id])],
         })
 
@@ -860,7 +883,7 @@ class TestConversationApi(TransactionCase):
             'name': 'plain@company.test',
             'login': 'plain@company.test',
             'email': 'plain@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
 
         as_reader = self.Conversation.with_user(reader)
@@ -909,13 +932,13 @@ class TestConversationApi(TransactionCase):
         read is a conversation you cannot mark.
         """
         attachment = self.env['ir.attachment'].create({
-            'name': 'vertrouwelijk.pdf', 'datas': b'JVBERi0=',
+            'name': 'vertrouwelijk.pdf', 'raw': b'%PDF-',
         })
         message = self._mail(subject='Not for Sam')
         message.write({'attachment_ids': [(6, 0, attachment.ids)],
                        'x_is_read': False})
         self.env['ir.attachment'].create({
-            'name': 'tekening.pdf', 'datas': b'JVBERi0=',
+            'name': 'tekening.pdf', 'raw': b'%PDF-',
             'res_model': 'crm.lead', 'res_id': self.lead.id,
         })
         reader = self._mailbox_manager('sam.doors@company.test')
@@ -956,7 +979,7 @@ class TestConversationApi(TransactionCase):
         return owner, mailbox
 
     def _may_read_every_lead(self, user):
-        user.write({'group_ids': [
+        user.write({groups_field(self.env): [
             (4, self.env.ref('sales_team.group_sale_salesman_all_leads').id)]})
 
     def test_a_colleague_s_mailbox_shows_its_linked_mail_and_nothing_else(self):
@@ -1092,7 +1115,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Nina Nobody',
             'login': 'nina@company.test',
             'email': 'nina@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).search_conversations()
@@ -1127,7 +1150,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Nils Nobody',
             'login': 'nils@company.test',
             'email': 'nils@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).failure_remedy()
@@ -1359,7 +1382,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Nina Nobody',
             'login': 'nina.to@company.test',
             'email': 'nina.to@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).new_mail_recipients(
@@ -1379,7 +1402,7 @@ class TestConversationApi(TransactionCase):
         would create the contact for it on the way.
         """
         reader = self._mailbox_manager('sam.sales@company.test')
-        reader.write({'group_ids': [(4, self.env.ref('sales_team.group_sale_salesman').id)]})
+        reader.write({groups_field(self.env): [(4, self.env.ref('sales_team.group_sale_salesman').id)]})
         theirs = self.env['crm.lead'].create({
             'name': 'Koelinstallatie',
             'email_from': 'Piet de Vries <piet@devries.test>',

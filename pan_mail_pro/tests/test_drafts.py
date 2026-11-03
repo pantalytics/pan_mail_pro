@@ -16,6 +16,7 @@ back empty -- in the browser, with an empty server log.
 """
 from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, tagged
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -60,7 +61,7 @@ class TestDrafts(TransactionCase):
             'name': login,
             'login': login,
             'email': login,
-            'group_ids': [(6, 0, [
+            groups_field(cls.env): [(6, 0, [
                 cls.env.ref('base.group_user').id,
                 cls.env.ref('sales_team.group_sale_salesman').id,
                 cls.env.ref('sales_team.group_sale_salesman_all_leads').id,

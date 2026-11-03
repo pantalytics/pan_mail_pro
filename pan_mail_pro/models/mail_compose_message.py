@@ -60,6 +60,11 @@ class MailComposeMessage(models.TransientModel):
         return super(MailComposeMessage, self.with_context(
             **{INTERACTIVE_SEND: True}))._action_send_mail(auto_commit=auto_commit)
 
+    # A dependency so the web client's first onchange computes it: 18 fills
+    # every field of the form with its default and recomputes only what
+    # depends on a field that had one. composition_mode always has one;
+    # 19 and 20 compute the rest as well.
+    @api.depends('composition_mode')
     def _compute_on_test_instance(self):
         """On staging, Send From is filled in and fixed: the test inbox.
 

@@ -13,6 +13,7 @@ from odoo import fields
 from odoo.addons.pan_mail_pro.controllers.main import SETTINGS_URL
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import HttpCase, TransactionCase, tagged
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -26,7 +27,7 @@ class TestConnectBanner(TransactionCase):
             'name': 'Nora Employee',
             'login': 'nora@company.test',
             'email': 'nora@company.test',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_user').id])],
         })
 
     def _set_up_provider(self, provider='gmail', **overrides):
@@ -125,7 +126,7 @@ class TestConnectBanner(TransactionCase):
         portal = self.env['res.users'].create({
             'name': 'Customer',
             'login': 'customer-connect@example.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         self._set_up_provider()
         with self.assertRaises(AccessError):
@@ -135,7 +136,7 @@ class TestConnectBanner(TransactionCase):
         portal = self.env['res.users'].create({
             'name': 'Customer',
             'login': 'customer@example.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         self._set_up_provider()
         self.assertFalse(portal._pan_mail_should_prompt_connect())
@@ -173,7 +174,7 @@ class TestConnectBannerSession(HttpCase):
             'login': 'nora@company.test',
             'password': 'nora@company.test',
             'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.authenticate('nora@company.test', 'nora@company.test')
 
@@ -191,7 +192,7 @@ class TestConnectBannerSession(HttpCase):
             'login': 'mira@company.test',
             'password': 'mira@company.test',
             'email': 'mira@company.test',
-            'group_ids': [(6, 0, [
+            groups_field(self.env): [(6, 0, [
                 self.env.ref('base.group_user').id,
                 self.env.ref('pan_mail_pro.group_mail_mailbox_manager').id,
             ])],
@@ -241,7 +242,7 @@ class TestSessionFlagsCost(TransactionCase):
             'name': 'Nora Employee',
             'login': 'nora@company.test',
             'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.env = self.env(user=user)
 
@@ -306,7 +307,7 @@ class TestConnectRoute(HttpCase):
             'login': 'nora@company.test',
             'password': 'nora@company.test',
             'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.authenticate('nora@company.test', 'nora@company.test')
 
@@ -362,13 +363,13 @@ class TestConnectInvites(TransactionCase):
             'name': 'Nora Employee',
             'login': 'nora@company.test',
             'email': 'nora@company.test',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_user').id])],
         })
         cls.connected = cls.env['res.users'].create({
             'name': 'Sam Connected',
             'login': 'sam@company.test',
             'email': 'sam@company.test',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_user').id])],
         })
         cls.env['pan.mail.account'].create({
             'provider': 'gmail',

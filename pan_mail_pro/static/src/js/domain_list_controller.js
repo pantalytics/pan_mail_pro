@@ -9,8 +9,9 @@
  * as a complaint about a deliberate choice.
  */
 
-import { onWillStart, useState } from "@odoo/owl";
+import { onWillStart } from "@odoo/owl";
 import { registry } from "@web/core/registry";
+import { useState } from "@pan_mail_pro/compat/owl";
 import { useService } from "@web/core/utils/hooks";
 import { ListController } from "@web/views/list/list_controller";
 import { listView } from "@web/views/list/list_view";

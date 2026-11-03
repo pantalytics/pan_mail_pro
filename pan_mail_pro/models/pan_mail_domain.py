@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 
 from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
+from ..compat import Constraint
 
 _logger = logging.getLogger(__name__)
 
@@ -54,6 +55,13 @@ PUBLIC_MAIL_DOMAINS = frozenset({
     'protonmail.com', 'yahoo.co.uk', 'yahoo.com', 'ymail.com', 'zoho.com',
 })
 
+# RFC 2606 reserves these for documentation, and Odoo seeds placeholders on
+# them: OdooBot is odoobot@example.com on every database, and 18 ships the
+# admin as admin@example.com before any demo data. A user's address there is
+# Odoo's placeholder, not the company's domain; a mailbox configured on one
+# is a deliberate choice (a test database) and counts.
+RESERVED_DOMAINS = frozenset({'example.com', 'example.net', 'example.org'})
+
 # Domains that are Odoo's hosting rather than a company's mail. Odoo.sh names
 # every database `<name>.odoo.com` and creates its alias domain on that host,
 # so on Odoo.sh the alias source alone suggested the database's own address
@@ -78,7 +86,7 @@ class PanMailDomain(models.Model):
              'domains is never synced into Odoo.',
     )
 
-    _name_unique = models.Constraint(
+    _name_unique = Constraint(
         'UNIQUE(name)',
         'That domain is already on the list.',
     )
@@ -253,9 +261,9 @@ class PanMailDomain(models.Model):
             ('share', '=', False),
             ('id', '!=', SUPERUSER_ID),
         ])
-        addresses = [
-            address for address in mailboxes.mapped('email') + users.mapped('email')
-            if address
+        addresses = [address for address in mailboxes.mapped('email') if address] + [
+            address for address in users.mapped('email')
+            if address and not set(self._parse(address)) & RESERVED_DOMAINS
         ]
         return [address for address in addresses if self._parse(address)]
 

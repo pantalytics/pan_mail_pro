@@ -7,7 +7,6 @@ Verifies the Graph API client picks the right upload strategy:
 - ≥ 3MB → POST /createUploadSession + PUT chunks
 - Inline images (cid:) → bundled with isInline=true
 """
-import base64
 from unittest.mock import patch
 
 from odoo.tests import tagged
@@ -85,7 +84,7 @@ class TestAttachments(MailProTestCase):
         )
         image = self.env['ir.attachment'].create({
             'name': 'logo.png',
-            'datas': base64.b64encode(png_bytes),
+            'raw': png_bytes,
             'mimetype': 'image/png',
             'res_model': 'mail.mail',
         })

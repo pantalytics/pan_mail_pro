@@ -1,0 +1,6 @@
+// The icon half of the series seam (docs/plans/multi-version.md). 18 and 19
+// ship FontAwesome 4, which every icon in this module names (`fa fa-times`).
+// 20 ships Material Symbols and nothing of FontAwesome, so there a bare
+// `fa-times` draws nothing and a button made of one is 0px high. The 20
+// version of this file (tools/series/20.0) gives each name this module uses
+// its Material Symbol; here there is nothing to map.

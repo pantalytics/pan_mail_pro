@@ -64,7 +64,8 @@
  * carries.
  */
 
-import { onWillDestroy, useState } from "@odoo/owl";
+import { onWillDestroy } from "@odoo/owl";
+import { useState } from "@pan_mail_pro/compat/owl";
 import { browser } from "@web/core/browser/browser";
 import { _t } from "@web/core/l10n/translation";
 
@@ -320,6 +321,17 @@ export function usePanes() {
         state[name] = clamp(width, PANES[name].min, ceiling(name, total));
     }
 
+    // Whatever is positioned against a pane is told the layout moved. Odoo's
+    // tour pointer measures its target on a scroll or a resize and on
+    // nothing else on 20 (18 and 19 follow the target), so after a fold it
+    // stayed where the button had been. Once the next frame has laid the
+    // panes out, and once more when the fold's transition is over.
+    function layoutMoved() {
+        const nudge = () => document.dispatchEvent(new Event("scroll"));
+        browser.requestAnimationFrame(nudge);
+        browser.setTimeout(nudge, 350);
+    }
+
     // The window's shape, kept current by the browser rather than polled.
     // A phone rotated into landscape crosses `small` without a reload, and
     // the drawer must not stay open over a mailbox list that is now a pane.
@@ -485,14 +497,31 @@ export function usePanes() {
             handle.setPointerCapture?.(ev.pointerId);
             handle.classList.add("o_mailpro_split_dragging");
 
+            // While the pointer is down the width goes straight onto the
+            // pane; the state is written once, on release. A state write
+            // re-renders the whole Inbox, which takes longer than the gap
+            // between two pointer events, and Owl 3 renders every write
+            // rather than the last one (measured on 20: a 90px drag drawn
+            // a step at a time for two seconds after the pointer let go).
+            const panes = handle.closest(".o_mailpro_panes");
+            const el = panes?.querySelector(`.o_mailpro_${pane}`);
+            // No easing while the pointer is down (the stylesheet reads it).
+            panes?.classList.add("o_mailpro_dragging");
+            let width = startWidth;
             const onMove = (move) => {
-                resize(pane, startWidth + (move.clientX - startX), total);
+                width = clamp(startWidth + (move.clientX - startX), PANES[pane].min,
+                              ceiling(pane, total));
+                if (el) {
+                    el.style.flexBasis = `${width}px`;
+                }
             };
             const stop = () => {
                 handle.removeEventListener("pointermove", onMove);
                 handle.removeEventListener("pointerup", stop);
                 handle.removeEventListener("pointercancel", stop);
                 handle.classList.remove("o_mailpro_split_dragging");
+                panes?.classList.remove("o_mailpro_dragging");
+                state[pane] = width;
                 save();
             };
             handle.addEventListener("pointermove", onMove);
@@ -569,6 +598,7 @@ export function usePanes() {
          * out, so the slide continues from there.
          */
         toggleZoom(from, swipedFrom = 0) {
+            layoutMoved();
             if (state.zoom) {
                 state.swipeFrom = swipedFrom;
                 state.zoom = false;
@@ -603,6 +633,7 @@ export function usePanes() {
             if (!COLLAPSIBLE.includes(name)) {
                 return;
             }
+            layoutMoved();
             if (name === "odoo_record" && state.narrow && !state.small) {
                 state.stage = state.stage === "odoo_record" ? "conversation" : "odoo_record";
                 return;
@@ -613,6 +644,7 @@ export function usePanes() {
 
         /** The mailbox list: a drawer over the screen on a phone, a pane elsewhere. */
         toggleMailboxList() {
+            layoutMoved();
             if (state.small) {
                 state.mailboxListOpen = !state.mailboxListOpen;
             } else {
@@ -631,6 +663,7 @@ export function usePanes() {
          * to look at, whichever pane had the column before.
          */
         showConversation() {
+            layoutMoved();
             if (state.stage !== "conversation") {
                 state.slide = "forward";
             }
@@ -665,6 +698,7 @@ export function usePanes() {
             const pane = dragged(name);
             state[pane] = PANES[pane].start;
             state.collapsed[name] = false;
+            layoutMoved();
             save();
         },
     };

@@ -78,6 +78,25 @@ jobs:
           tools/ci_version_bump.sh FETCH_HEAD
 
   # ---------------------------------------------------------------------------
+  # A series branch (18.0, 20.0) is main with tools/cut_series.sh applied and
+  # nothing else; this fails the moment it is not. On main and on branches of
+  # main's own series there is nothing to compare and it passes.
+  # Local equivalent: tools/ci_port_drift.sh
+  # ---------------------------------------------------------------------------
+  port-drift:
+    name: Series branch is main cut for its series
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compare with main cut for this series
+        run: |
+          git fetch --no-tags --depth=200 origin "${{ github.event.repository.default_branch }}"
+          tools/ci_port_drift.sh "origin/${{ github.event.repository.default_branch }}"
+
+  # ---------------------------------------------------------------------------
   # Install the module into a real Odoo of the matching series and run the
   # module's own test suite. Uses the official community image; the module only
   # depends on mail/base/crm, which all ship there. Enterprise-only tests
@@ -102,6 +121,40 @@ jobs:
         with:
           name: odoo-test-log
           path: odoo-test.log
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # The same suite on the other two series, from this very checkout: the tree
+  # is cut for the series inside the runner (tools/cut_series.sh), which is
+  # byte for byte what the series branch will carry, against the official
+  # odoo:<series> image. So a change to main is measured on 18 and 20 before
+  # it is ported, not after (docs/plans/multi-version.md).
+  # Local equivalent: tools/ci_odoo.sh --series=20.0, or without Docker
+  # tools/odoo_local.sh --series=20.0
+  # ---------------------------------------------------------------------------
+  series:
+    name: Tests on Odoo ${{ matrix.series }}
+    runs-on: ubuntu-latest
+    needs: lint
+    # On a series branch the Tests job already runs on that series, and
+    # cutting it for another one measures nothing: the job is main's.
+    if: ${{ !contains(fromJSON('["18.0", "19.0", "20.0"]'), github.ref_name) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        series: ['18.0', '20.0']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cut the checkout for the series, fresh install, run the suite
+        run: tools/ci_odoo.sh --mode=fresh --series=${{ matrix.series }}
+
+      - name: Upload Odoo log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: odoo-test-log-${{ matrix.series }}
+          path: odoo-test-${{ matrix.series }}.log
           retention-days: 7
 
   # ---------------------------------------------------------------------------

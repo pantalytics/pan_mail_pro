@@ -17,11 +17,12 @@ browser, what the callback writes on a yes, and the three ways it says no.
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
-import odoo.http
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import HttpCase, TransactionCase, new_test_user, tagged
 
 from .common import proven_session
+from .common import groups_field
+from .common import session_store
 
 CLIENT = 'imap.smtp.client'
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.MicrosoftGraphClient'
@@ -202,7 +203,7 @@ class TestVerifyRoundTrip(HttpCase):
         self.user = self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
             'password': 'nora@company.test', 'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])]})
         self.account = self.env['pan.mail.account'].create({
             'email': 'nora@company.test', 'provider': 'outlook', 'user_id': self.user.id,
             'refresh_token': 'rt-before', 'access_token': 'at-before',
@@ -217,14 +218,14 @@ class TestVerifyRoundTrip(HttpCase):
 
     def _stored(self):
         """The session as the server saved it after the last request."""
-        return odoo.http.root.session_store.get(self.session.sid)
+        return session_store().get(self.session.sid)
 
     def _arm(self, silent=True, back='/odoo/action-1#inbox'):
         """A round trip in flight, as `_start_verify` leaves it."""
         self.session[PENDING] = {
             'state': 'nonce-v', 'mailbox_id': self.mailbox.id, 'back': back,
             'silent': silent, 'provider': 'outlook'}
-        odoo.http.root.session_store.save(self.session)
+        session_store().save(self.session)
 
     def _start(self, **params):
         query = '&'.join(f'{key}={value}' for key, value in params.items())
@@ -269,7 +270,7 @@ class TestVerifyRoundTrip(HttpCase):
     def test_a_colleague_s_mailbox_cannot_be_started(self):
         other = self.env['res.users'].create({
             'name': 'Sanne', 'login': 'sanne@company.test', 'email': 'sanne@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])]})
         self.env['pan.mail.account'].create({
             'email': 'sanne@company.test', 'provider': 'outlook', 'user_id': other.id,
             'refresh_token': 'rt', 'access_token': 'at'})

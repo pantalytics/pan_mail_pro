@@ -15,12 +15,15 @@ Provides:
 - A `mock_graph` context manager that patches all outbound HTTP
   calls in microsoft_graph_client and records what was sent.
 """
-import base64
 import contextlib
 import os
+import pathlib
 import types
+import unittest
 from unittest.mock import patch, MagicMock
 
+import odoo
+from odoo import http
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase
 
@@ -48,6 +51,106 @@ def repo_file(test, *parts):
     if os.environ.get(REPO_REQUIRED_ENV):
         test.fail('%s is missing, and %s says the repository is mounted' % (where, REPO_REQUIRED_ENV))
     test.skipTest('%s ships with the repository, not the module' % where)
+
+
+def fake_request(session, env):
+    """A request with a session and nothing else: what a sign-in start and
+    the live read write to. `httprequest` carries what 20 reads of it (the
+    caller's address on a group change, the referrer)."""
+    return types.SimpleNamespace(
+        session=session, env=env, cookies={},
+        httprequest=types.SimpleNamespace(remote_addr='127.0.0.1', environ={}, referrer=None))
+
+
+@contextlib.contextmanager
+def push_request(fake):
+    """Make `odoo.http.request` answer `fake` for the duration: the werkzeug
+    LocalStack on 18 and 19, the contextvar on 20."""
+    if hasattr(http, '_request_stack'):
+        http._request_stack.push(fake)
+        try:
+            yield
+        finally:
+            http._request_stack.pop()
+    else:
+        token = http.request_var.set(fake)
+        try:
+            yield
+        finally:
+            http.request_var.reset(token)
+
+
+def session_store():
+    """The HTTP session store: `odoo.http.root.session_store` on 18 and 19,
+    a function on `odoo.http.session` on 20."""
+    if hasattr(http, 'root'):
+        return http.root.session_store
+    from odoo.http.session import session_store as store
+    return store()
+
+
+def manifest_series():
+    """The Odoo series this checkout is for, from the manifest: '19.0'."""
+    import ast
+    manifest = ast.literal_eval((pathlib.Path(__file__).parents[1] / '__manifest__.py').read_text())
+    return '.'.join(manifest['version'].split('.')[:2])
+
+
+def on_series(series):
+    """Skip a test class on any other series. For the migration tests: a
+    migration belongs to the series it was written for and its scripts
+    never run on another, so neither should the tests that drive them."""
+    return unittest.skipUnless(manifest_series() == series, f'a {series} migration')
+
+
+def groups_field(env):
+    """The groups field on res.users and ir.ui.menu: group_ids on 19 and 20,
+    groups_id on 18 (docs/plans/multi-version.md)."""
+    return 'group_ids' if 'group_ids' in env['res.users']._fields else 'groups_id'
+
+
+@contextlib.contextmanager
+def registry_test_mode(case):
+    """Test cursors for code that opens its own (the error ledger, a token
+    refresh): `registry_test_mode` on 20, `enter_registry_test_mode` on 19,
+    and the registry's own enter/leave pair on 18."""
+    if hasattr(case, 'registry_test_mode'):
+        with case.registry_test_mode():
+            yield
+    elif hasattr(case, 'enter_registry_test_mode'):
+        with case.enter_registry_test_mode():
+            yield
+    else:
+        case.registry.enter_test_mode(case.cr, True)
+        try:
+            yield
+        finally:
+            case.registry.leave_test_mode()
+
+
+def let_smtp_send(stack, env):
+    """Let Odoo's SMTP path run under the test runner, with the session stood
+    in for: `send_email` is then reached and can be patched by the caller.
+
+    `_disable_send` is 19's and 20's test-mode switch; 18 reads the test
+    flag itself inside `send_email`. The session opener is `_connect__` on
+    19 and 20, `connect` on 18.
+    """
+    mail_server = type(env['ir.mail_server'])
+    if hasattr(mail_server, '_disable_send'):
+        stack.enter_context(patch.object(mail_server, '_disable_send', return_value=False))
+    else:
+        stack.enter_context(patch.object(odoo.modules.module, 'current_test', False))
+    connect = '_connect__' if hasattr(mail_server, '_connect__') else 'connect'
+    stack.enter_context(patch.object(mail_server, connect, return_value=MagicMock()))
+    return mail_server
+
+
+def build_email(server, **kwargs):
+    """`ir.mail_server`'s message builder: `_build_email__` on 19 and 20,
+    `build_email` on 18."""
+    build = getattr(server, '_build_email__', None) or server.build_email
+    return build(**kwargs)
 
 
 def send_and_capture(mails):
@@ -112,28 +215,28 @@ class MailProTestCase(TransactionCase):
             'login': 'notif_owner@test.local',
             'email': 'notif_owner@test.local',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [internal_group])],
+            groups_field(cls.env): [(6, 0, [internal_group])],
         })
         cls.salesperson = User.create({
             'name': 'Sales Person',
             'login': 'sales@test.local',
             'email': 'sales@test.local',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [internal_group])],
+            groups_field(cls.env): [(6, 0, [internal_group])],
         })
         cls.other_user = User.create({
             'name': 'Other User',
             'login': 'other@test.local',
             'email': 'other@test.local',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [internal_group])],
+            groups_field(cls.env): [(6, 0, [internal_group])],
         })
         cls.inbox_user = User.create({
             'name': 'Inbox Only User',
             'login': 'inbox@test.local',
             'email': 'inbox@test.local',
             'notification_type': 'inbox',
-            'group_ids': [(6, 0, [internal_group])],
+            groups_field(cls.env): [(6, 0, [internal_group])],
         })
         # A customer who can log into the portal. Has a res.users row like any
         # employee, but `share=True` — the distinction issue #39 turned on.
@@ -142,7 +245,7 @@ class MailProTestCase(TransactionCase):
             'login': 'portal@example.com',
             'email': 'portal@example.com',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_portal').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_portal').id])],
         })
         assert cls.portal_user.share, (
             "Test setup error: the portal fixture must be a share user"
@@ -311,7 +414,7 @@ class MailProTestCase(TransactionCase):
         raw = b'\x00' * size_bytes
         return self.env['ir.attachment'].create({
             'name': name,
-            'datas': base64.b64encode(raw),
+            'raw': raw,
             'mimetype': mimetype,
         })
 
@@ -333,7 +436,6 @@ def proven_session(env, accounts=(), uid=None, session=None):
     is whose proof it is (the caller's by default); `session` lets a test
     hand in its own mapping and look at what the round trip wrote into it.
     """
-    from odoo import http
     from odoo.addons.pan_mail_pro.models.pan_mail_conversation import PanMailConversation
 
     if session is None:
@@ -349,9 +451,5 @@ def proven_session(env, accounts=(), uid=None, session=None):
     # every create that happens under a request. Anything else Odoo asks of
     # a request raises here, which is the right answer: the live read must
     # not depend on more of the request than a session.
-    fake = types.SimpleNamespace(session=session, env=env, cookies={})
-    http._request_stack.push(fake)
-    try:
+    with push_request(fake_request(session, env)):
         yield session
-    finally:
-        http._request_stack.pop()

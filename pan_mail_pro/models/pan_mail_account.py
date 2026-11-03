@@ -6,6 +6,7 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 
 from . import encryption_utils
 from .mail_provider_client import PROVIDER_SELECTION, get_provider_client
+from ..compat import Constraint
 
 _logger = logging.getLogger(__name__)
 
@@ -237,7 +238,7 @@ class PanMailAccount(models.Model):
         copy=False,
     )
 
-    _unique_user_provider = models.Constraint(
+    _unique_user_provider = Constraint(
         'UNIQUE(user_id, provider)',
         'A user can only have one account per provider.',
     )

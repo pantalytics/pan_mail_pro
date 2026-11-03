@@ -36,6 +36,7 @@ import logging
 from odoo import models, fields, api
 
 from .mail_provider_client import PROVIDER_SELECTION
+from ..compat import Constraint
 
 _logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ class PanMailMessageRef(models.Model):
              'both the same.',
     )
 
-    _unique_ref = models.Constraint(
+    _unique_ref = Constraint(
         'UNIQUE(message_id, mail_message_id)',
         'This Message-ID is already indexed for this message.',
     )
@@ -213,7 +214,7 @@ class PanMailThreadLink(models.Model):
         index=True,
     )
 
-    _unique_thread = models.Constraint(
+    _unique_thread = Constraint(
         'UNIQUE(provider, mailbox_id, thread_id)',
         'This thread is already linked for this mailbox.',
     )
