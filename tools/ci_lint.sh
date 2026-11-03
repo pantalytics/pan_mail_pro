@@ -241,6 +241,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Owl 3 (Odoo 20) throws on `static props`, hands props out only through
+# useProps(), and reads a bare name in a template as a template local, so a
+# component typed the Owl 2 way is green in the suite and draws nothing on
+# 20 (the up-and-running line, 2026-11-03). tools/check_owl_seam.py reads
+# every component and template on main and in the series overlays.
+# ---------------------------------------------------------------------------
+step "Every component and template is on the Owl seam"
+python3 tools/check_owl_seam.py || fail "A component or template is off the Owl seam; see static/src/compat/owl.js."
+
+# ---------------------------------------------------------------------------
 # Odoo 20 ships no FontAwesome: tools/series/20.0's icons.scss draws each
 # `fa fa-<name>` the module uses as a Material Symbol, and a name missing
 # from that map is an invisible icon on 20 and a 0px button around it

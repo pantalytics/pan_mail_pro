@@ -19,11 +19,12 @@
  * stands still; the moment is spent all the same.
  */
 
-import { Component, onMounted, useRef, useState } from "@odoo/owl";
+import { Component, onMounted } from "@odoo/owl";
 import { browser } from "@web/core/browser/browser";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { standardWidgetProps } from "@web/views/widgets/standard_widget_props";
+import { defineProps, useProps, useRef, useState } from "@pan_mail_pro/compat/owl";
 
 // The brand accent and the checklist's own dot colours, the platform's
 // confetti (odoo-mcp-pro-admin #595) in this page's palette.
@@ -71,9 +72,10 @@ export function confetti(x, y, count, spread) {
 
 export class UpAndRunning extends Component {
     static template = "pan_mail_pro.UpAndRunning";
-    static props = standardWidgetProps;
+    static propsSchema = { ...standardWidgetProps };
 
     setup() {
+        this.props = useProps();
         this.orm = useService("orm");
         this.action = useService("action");
         this.rocket = useRef("rocket");
@@ -124,6 +126,8 @@ export class UpAndRunning extends Component {
         this.state.open = !this.state.open;
     }
 }
+
+defineProps(UpAndRunning);
 
 registry.category("view_widgets").add("mailpro_up_and_running", {
     component: UpAndRunning,

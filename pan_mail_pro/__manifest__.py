@@ -139,7 +139,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '20.0.34.1.0',
+    'version': '20.0.34.1.1',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm', 'web_tour'],
     'external_dependencies': {
