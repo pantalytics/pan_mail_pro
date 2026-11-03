@@ -541,6 +541,13 @@ export class ConversationView extends Component {
         return user.isAdmin;
     }
 
+    /** A neutralized copy (staging, a restore): mail is shown in the host's
+     *  catcher, never sent, and nothing is read. The session says so, the way
+     *  `neutralization.py` detects it; there is no switch to read. */
+    get isCopy() {
+        return !!session.pan_mail_copy;
+    }
+
     /** The one place connecting happens: Settings, Mail Pro, where the code
      *  and Check Approval live. The gate does not copy that flow. The same
      *  URL the OAuth controller and the mailbox list send people to: the

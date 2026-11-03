@@ -64,6 +64,22 @@ takes a few minutes.
 > ⚠️ On Odoo.sh, merging into production does not install the module there.
 > Open **Apps** on production and install Mail Pro once more.
 
+### On a staging copy
+
+A staging branch, or any restored copy of your database, is a copy as far as
+Mail Pro is concerned. Settings and the Inbox say so in one line: "This is a
+copy. Mail is shown, not sent."
+
+- **Outgoing mail** leaves through your copy's own mail server, never through
+  Microsoft 365, Gmail or your mail host. On Odoo.sh it lands on the branch's
+  **Mails** tab; elsewhere it lands in whatever catches the copy's mail, such
+  as Mailpit or MailHog. Each mail shows the address it would have been sent
+  from, and replies keep their thread.
+- **Incoming mail** is not read. A copy never marks mail as read or moves it
+  in a real mailbox.
+- **Connecting to Pantalytics** does not work on a copy yet, so step 3 happens
+  on production.
+
 ## Step 3: Connect to Pantalytics
 
 **Settings → Mail Pro → Connect to Pantalytics**. Pantalytics opens in the

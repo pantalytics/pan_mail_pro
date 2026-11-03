@@ -21,6 +21,7 @@ from . import pan_mail_fetcher
 from . import mail_alias
 from . import mail_compose_message
 from . import mail_mail
+from . import ir_mail_server
 from . import mail_message
 from . import mail_thread
 from . import pan_mail_coverage
