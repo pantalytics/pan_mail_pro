@@ -220,6 +220,27 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Every host reads the checkout the same way: a folder holding a
+# __manifest__.py is a module, and Odoo.sh puts each folder of a submodule
+# that holds one on the addons path and offers it in Apps. The CI-only addons
+# in tools/ci_addons/ were installable on customer databases that way (#395),
+# so they keep their manifest as __manifest__.ci and tools/ci_addons_stage.sh
+# restores the name in a folder outside the repository. The module's own
+# manifest is the only one a checkout may hold. Tracked and untracked files,
+# not ignored ones: an Odoo source clone in .local/ is not ours to ship.
+step "No Odoo module outside pan_mail_pro/"
+STRAY=$(git ls-files -co --exclude-standard 2>/dev/null \
+        | grep -E '(^|/)__(manifest|openerp)__\.py$' | grep -vxF "$M/__manifest__.py")
+if [ -n "$STRAY" ]; then
+    echo "$STRAY" | while read -r f; do
+        echo "::error file=$f::a manifest Odoo reads, outside $M/__manifest__.py"
+    done
+    fail "Odoo.sh offers every folder with a __manifest__.py in Apps. Name a CI addon's manifest __manifest__.ci (tools/ci_addons_stage.sh)."
+else
+    echo "OK: $M/__manifest__.py is the only manifest in the checkout."
+fi
+
+# ---------------------------------------------------------------------------
 step "Every test file is imported by tests/__init__.py"
 # Odoo collects tests through tests/__init__.py. A file on disk that nothing
 # imports does not exist as far as the runner is concerned: it lints clean, it
