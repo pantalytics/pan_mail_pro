@@ -441,6 +441,9 @@ layout bug, and that is the width the complaint arrives from.
 **Branches:** `main` is the source; `19.0` is a release branch. Every PR goes
 to `main`. A release is a PR from `main` into `19.0`, which Cloudpepper and
 Odoo.sh deploy from and `release.yml` tags. Nobody commits to `19.0` directly.
+`18.0` and `20.0` are the same kind of branch for the other series, kept in
+step with `main` by a merge after each release; what may differ between them
+and how they are ported is [docs/plans/multi-version.md](docs/plans/multi-version.md).
 The full loop without a desktop:
 
 ```bash
