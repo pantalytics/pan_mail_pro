@@ -1,7 +1,8 @@
 # Mail Pro on Odoo 18, 19 and 20
 
-Status: **step 0 done, step 1 in progress**, 2026-11-03. Nothing runs on 18
-or 20 yet. The checklist at the end is the state; update it in the same PR as
+Status: **step 1 in progress**, 2026-11-03. 18 passes the whole suite from
+`main` through the seam (no branch yet); 20 installs and runs the suite with
+the items below still open. The checklist at the end is the state; update it in the same PR as
 the work, never in chat.
 
 ## What is asked
@@ -68,6 +69,41 @@ empty recordset: the fixture hands `reply_to` in), and demo data (CI installs
 `--without-demo=all`; the runner now does too). No cron progress on 18: the
 fetcher's commit-per-mailbox is a 19 feature, 18 runs the sync in one
 transaction.
+
+**Odoo 20, after the first seams** (same day, `tree20` in the scratch
+runner: the checkout with `security/` in the `ir.access.csv` shape, 16 rows
+built from the 17 ACL rows and the 7 rules). It installs, and 1314 tests
+run: 9 failed and 11 errors at the end of the day, down from 412 errors
+after the first seam. What the suite found, in the order of how much it
+touches:
+
+- `ir.config_parameter` lost `get_param` and `set_param` (typed
+  `get_str`/`get_bool`/`set_str`/... instead). 86 call sites in 29 files.
+  `compat.py` gives the pair back on the series that lacks it; booleans
+  are the catch, because 20's settings page stores `'False'` and reads it
+  typed, so a boolean parameter is read through `compat.config_bool`.
+- `mail.thread._notify_thread` lost `msg_vals`: the override passes it
+  through positionally and names nothing.
+- `odoo.http._request_stack` is a contextvar (`http.request_var`) and
+  `odoo.http.root.session_store` a function on `odoo.http.session`: two
+  helpers in `tests/common.py`, nine call sites.
+- `mail.tracking.value` left the `mail` module for an addon of its own
+  (`mail_tracking`); the Inbox's tracking rows read a field that may not
+  exist. Not seamed yet.
+- `res.users.SELF_READABLE_FIELDS` / `SELF_WRITEABLE_FIELDS` are gone;
+  20 marks a field `user_writeable=True` at its definition. The module's
+  `x_` fields on `res.users` fail with an AccessError until they carry it
+  (18 and 19 log an unknown-parameter warning and keep the lists). Not
+  seamed yet.
+- `mail.message._search` on 20 raises an AccessError for a model the
+  reader may not open (`_search_res_access` calls `check_access`); on 18
+  and 19 the row is filtered out. Three Inbox tests state the old
+  behaviour. A design question, not a rename: decide whether the Inbox
+  catches it or the tests change.
+- `ir.attachment` internals (`_check_contents`, `LocalBinaryFile`): the
+  attachment tests patch something that moved. Not read yet.
+- `migrations/` tests assert 19.0 migrations; the folder is empty on the
+  `20.0` branch, so they do not apply there.
 
 **What the suite costs per series.** 70 test files, 24k lines, about 80
 seconds per full run once Odoo is installed. CI already derives the series
@@ -210,9 +246,11 @@ Mark a box in the PR that does the work, with the version or the date.
 ### Step 3. The `20.0` branch
 
 - [ ] Branch cut from `main`; manifest `20.0.<x.y.z>`; `migrations/` emptied; drift check green
-- [ ] Spike: `ir.access.csv` holds all 17 ACL rows and 7 rules; permission tests green (§2)
-- [ ] The mail.message visibility lesson re-measured against `res_access_read`; the "Linked to nothing" folder behaves as on 19
+- [x] Spike: `ir.access.csv` holds all 17 ACL rows and 7 rules (2026-11-03, 16 rows, `scripts/`-less: the file is written by hand on the branch); the permission tests that ran pass, the three Inbox access tests are the design question above
+- [ ] The mail.message visibility lesson re-measured against `res_access_read`; the "Linked to nothing" folder behaves as on 19; `_search` raising instead of filtering decided
 - [ ] `static/src/compat/`: the chatter import
+- [x] `compat.py`: `get_param`/`set_param` and `config_bool`; `_notify_thread` positional; the two test helpers (2026-11-03)
+- [ ] Tracking rows without `mail.tracking.value`; `user_writeable=True` on the `res.users` fields; the attachment test patch targets
 - [ ] Installs; suite green locally, then on CI's `odoo:20.0`
 - [ ] UI job green
 - [ ] Enterprise column walked on a 20 Enterprise instance

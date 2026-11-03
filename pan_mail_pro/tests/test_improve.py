@@ -12,6 +12,7 @@ from odoo.tests import HttpCase, TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models.pan_mail_license import IMPROVE_REFUSED_PARAM
 from .common import groups_field
+from odoo.addons.pan_mail_pro.compat import config_bool
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -83,13 +84,13 @@ class TestImproveConfig(TransactionCase):
         settings.x_improve = False
         self.assertTrue(settings.x_improve_refused)
         settings.execute()
-        self.assertTrue(self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM))
+        self.assertTrue(config_bool(self.env, IMPROVE_REFUSED_PARAM))
         self.assertFalse(self.License.improve_config())
         settings = self.env['res.config.settings'].create({})
         self.assertFalse(settings.x_improve)
         settings.x_improve = True
         settings.execute()
-        self.assertFalse(self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM))
+        self.assertFalse(config_bool(self.env, IMPROVE_REFUSED_PARAM))
         self.assertTrue(self.License.improve_config())
         self.link.write({'improve': False})
         settings = self.env['res.config.settings'].create({})

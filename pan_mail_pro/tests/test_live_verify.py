@@ -17,12 +17,12 @@ browser, what the callback writes on a yes, and the three ways it says no.
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
-import odoo.http
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import HttpCase, TransactionCase, new_test_user, tagged
 
 from .common import proven_session
 from .common import groups_field
+from .common import session_store
 
 CLIENT = 'imap.smtp.client'
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.MicrosoftGraphClient'
@@ -218,14 +218,14 @@ class TestVerifyRoundTrip(HttpCase):
 
     def _stored(self):
         """The session as the server saved it after the last request."""
-        return odoo.http.root.session_store.get(self.session.sid)
+        return session_store().get(self.session.sid)
 
     def _arm(self, silent=True, back='/odoo/action-1#inbox'):
         """A round trip in flight, as `_start_verify` leaves it."""
         self.session[PENDING] = {
             'state': 'nonce-v', 'mailbox_id': self.mailbox.id, 'back': back,
             'silent': silent, 'provider': 'outlook'}
-        odoo.http.root.session_store.save(self.session)
+        session_store().save(self.session)
 
     def _start(self, **params):
         query = '&'.join(f'{key}={value}' for key, value in params.items())

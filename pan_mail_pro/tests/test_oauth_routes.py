@@ -17,7 +17,6 @@ import os
 from unittest.mock import patch
 from urllib.parse import quote
 
-import odoo
 from odoo.tests import HttpCase, TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models.res_users import (
@@ -27,6 +26,7 @@ from odoo.addons.pan_mail_pro.models.res_users import (
     SIGN_IN_NOTICE_KEY,
 )
 from .common import groups_field
+from .common import session_store
 
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.MicrosoftGraphClient'
 CONTROLLER = 'odoo.addons.pan_mail_pro.controllers.main.MailProOAuthController'
@@ -132,13 +132,13 @@ class TestOAuthCallback(HttpCase):
         return self.url_open(f'/microsoft_oauth/callback?{query}', allow_redirects=False)
 
     def _stored(self):
-        return odoo.http.root.session_store.get(self.session.sid)
+        return session_store().get(self.session.sid)
 
     def _started_from(self, back):
         """A sign-in in flight that started on `back`, as
         `res.users._pan_mail_remember_back` leaves it."""
         self.session[SIGN_IN_BACK_KEY] = back
-        odoo.http.root.session_store.save(self.session)
+        session_store().save(self.session)
 
     def _accounts(self):
         return self.env['pan.mail.account'].sudo().search(

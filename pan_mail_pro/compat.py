@@ -71,6 +71,15 @@ if not _CONFIG_PARAMETER_HAS_GET_PARAM:
             return self.set_str(key, value)
 
 
+def config_bool(env, key):
+    """A boolean config parameter. 20 stores one as 'True'/'False' and reads
+    it back typed (get_bool); 18 and 19 store a truthy string or no row."""
+    params = env["ir.config_parameter"].sudo()
+    if hasattr(params, "get_bool"):
+        return params.get_bool(key)
+    return bool(params.get_param(key))
+
+
 def partner_ids_from_emails(record, emails):
     """The partners for these addresses, created when missing, as ids.
 

@@ -20,7 +20,6 @@ import types
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
-import odoo
 from odoo import fields
 from odoo.exceptions import UserError
 from odoo.tests import HttpCase, TransactionCase, tagged
@@ -33,6 +32,7 @@ from odoo.addons.pan_mail_pro.models.pan_mail_provider import (
 from odoo.addons.pan_mail_pro.models.res_users import INBOX_URL
 from odoo.addons.pan_mail_pro.tests.common import _FakeSession
 from .common import groups_field
+from .common import push_request, session_store
 
 PLATFORM_POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
 GRAPH_POST = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.post'
@@ -75,11 +75,8 @@ def a_browser(env):
     start writes to (tests/common.py `proven_session` is the same idea)."""
     session = _FakeSession()
     session.uid = env.user.id
-    odoo.http._request_stack.push(types.SimpleNamespace(session=session, env=env, cookies={}))
-    try:
+    with push_request(types.SimpleNamespace(session=session, env=env, cookies={})):
         yield session
-    finally:
-        odoo.http._request_stack.pop()
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -367,14 +364,14 @@ class TestMicrosoftReturn(HttpCase):
     # ------------------------------------------------------------------ helpers
 
     def _stored(self):
-        return odoo.http.root.session_store.get(self.session.sid)
+        return session_store().get(self.session.sid)
 
     def _arm(self, state='platform-state-1', admin_consent=False):
         """A round in flight, as `_pantalytics_sign_in` leaves it."""
         self.session[MS_APP_SESSION_KEY] = {
             'state': state, 'code_verifier': False if admin_consent else 'verifier-1',
             'redirect_uri': PLATFORM_REDIRECT, 'admin_consent': admin_consent}
-        odoo.http.root.session_store.save(self.session)
+        session_store().save(self.session)
 
     def _return(self, **params):
         query = '&'.join(f'{key}={value}' for key, value in params.items())

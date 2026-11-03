@@ -78,6 +78,7 @@ backup does not phone home and does not carry the licence with it.
 import base64
 import hashlib
 import hmac
+from ..compat import config_bool
 import json
 import logging
 import os
@@ -462,7 +463,7 @@ class PanMailLicense(models.Model):
         link = self.current() if link is None else link
         if not link or not link.improve or not link.improve_host or not link.improve_token:
             return False
-        if self.env['ir.config_parameter'].sudo().get_param(IMPROVE_REFUSED_PARAM):
+        if config_bool(self.env, IMPROVE_REFUSED_PARAM):
             return False
         return not database_is_neutralized(self.env)
 

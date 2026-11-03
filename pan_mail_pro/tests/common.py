@@ -20,8 +20,36 @@ import contextlib
 import types
 from unittest.mock import patch, MagicMock
 
+from odoo import http
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase
+
+
+@contextlib.contextmanager
+def push_request(fake):
+    """Make `odoo.http.request` answer `fake` for the duration: the werkzeug
+    LocalStack on 18 and 19, the contextvar on 20."""
+    if hasattr(http, '_request_stack'):
+        http._request_stack.push(fake)
+        try:
+            yield
+        finally:
+            http._request_stack.pop()
+    else:
+        token = http.request_var.set(fake)
+        try:
+            yield
+        finally:
+            http.request_var.reset(token)
+
+
+def session_store():
+    """The HTTP session store: `odoo.http.root.session_store` on 18 and 19,
+    a function on `odoo.http.session` on 20."""
+    if hasattr(http, 'root'):
+        return http.root.session_store
+    from odoo.http.session import session_store as store
+    return store()
 
 
 def groups_field(env):
@@ -332,7 +360,6 @@ def proven_session(env, accounts=(), uid=None, session=None):
     is whose proof it is (the caller's by default); `session` lets a test
     hand in its own mapping and look at what the round trip wrote into it.
     """
-    from odoo import http
     from odoo.addons.pan_mail_pro.models.pan_mail_conversation import PanMailConversation
 
     if session is None:
@@ -349,17 +376,5 @@ def proven_session(env, accounts=(), uid=None, session=None):
     # a request raises here, which is the right answer: the live read must
     # not depend on more of the request than a session.
     fake = types.SimpleNamespace(session=session, env=env, cookies={})
-    if hasattr(http, '_request_stack'):
-        # 18 and 19: a werkzeug LocalStack behind `http.request`.
-        http._request_stack.push(fake)
-        try:
-            yield session
-        finally:
-            http._request_stack.pop()
-    else:
-        # 20: a contextvar.
-        token = http.request_var.set(fake)
-        try:
-            yield session
-        finally:
-            http.request_var.reset(token)
+    with push_request(fake):
+        yield session
