@@ -36,8 +36,17 @@ signed answer then says `staging: true` back, and that is the second way
 never sends through a provider and never reads a mailbox, neutralized or
 not, because nobody pays for it. The license reads its own two secrets past
 the gate (`encryption_utils.decrypt_link_secret`); they reach no mailbox.
+
+**The host can say so too** (odoo-mcp-pro-admin#598). Odoo.sh sets
+`ODOO_STAGE` on every branch, and a `staging` or `dev` branch runs on a copy
+of production's database (`hosting.host_says_copy`). That is the third way
+`database_is_copy` answers yes, and like the neutralization flag it is
+something this database sees, so the start call and the heartbeat say
+`staging: true` on it (`database_sees_a_copy`).
 """
 import json
+
+from .hosting import host_says_copy
 
 # The mailbox a copy's outgoing mail would have left from, on the message the
 # catcher shows. `ir.mail_server` reads the From back from it, and it is what
@@ -51,6 +60,14 @@ def database_is_neutralized(env):
     The flag alone. What Mail Pro does differently on a copy asks
     `database_is_copy`, which also hears the platform."""
     return bool(env['ir.config_parameter'].sudo().get_param('database.is_neutralized'))
+
+
+def database_sees_a_copy(env):
+    """True when this database can tell from where it stands that it is a
+    copy: Odoo neutralized it, or the host runs it as a staging or dev
+    branch. What the start call and the heartbeat report as `staging`; never
+    an echo of the platform's answer."""
+    return database_is_neutralized(env) or host_says_copy()
 
 
 def entitlement_says_staging(env):
@@ -85,7 +102,9 @@ def database_is_copy(env):
     """True when Mail Pro behaves as on a copy: outgoing mail goes to Odoo's
     own mail server, nothing is read, no credential is decrypted.
 
-    Odoo neutralized it, or the platform's signed answer says it is staging.
-    The second matters where the first is missing: a copy the platform bills
-    nothing must not send as production does, whatever its host left set."""
-    return database_is_neutralized(env) or entitlement_says_staging(env)
+    Odoo neutralized it, the host runs it as a staging or dev branch, or the
+    platform's signed answer says it is staging. The last two matter where
+    the first is missing: a copy the platform bills nothing, or an Odoo.sh
+    branch that is not production, must not send as production does,
+    whatever its host left set."""
+    return database_sees_a_copy(env) or entitlement_says_staging(env)
