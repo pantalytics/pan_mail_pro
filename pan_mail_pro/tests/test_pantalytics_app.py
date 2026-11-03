@@ -32,6 +32,7 @@ from odoo.addons.pan_mail_pro.models.pan_mail_provider import (
 )
 from odoo.addons.pan_mail_pro.models.res_users import INBOX_URL
 from odoo.addons.pan_mail_pro.tests.common import _FakeSession
+from .common import groups_field
 
 PLATFORM_POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
 GRAPH_POST = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.requests.post'
@@ -360,7 +361,7 @@ class TestMicrosoftReturn(HttpCase):
         self.user = self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
             'password': 'nora@company.test', 'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])]})
         self.authenticate('nora@company.test', 'nora@company.test')
 
     # ------------------------------------------------------------------ helpers

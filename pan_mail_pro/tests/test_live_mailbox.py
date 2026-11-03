@@ -21,6 +21,7 @@ from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, new_test_user, tagged
 
 from .common import proven_session
+from .common import groups_field
 
 CLIENT = 'imap.smtp.client'
 
@@ -441,7 +442,7 @@ class TestLiveMailbox(TransactionCase):
         matcher's first rule, so the mail lands there and not on the sender's
         contact, the routing log says why, and the conversation is linked to
         that record for the next reply."""
-        self.owner.group_ids |= self.env.ref('sales_team.group_sale_salesman')
+        self.owner.write({groups_field(self.env): [(4, self.env.ref('sales_team.group_sale_salesman').id)]})
         lead = self.env['crm.lead'].create({
             'name': 'Levertijd Vandermolen', 'user_id': self.owner.id})
         search, get = self._serving([self._message()])

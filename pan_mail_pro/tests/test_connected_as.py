@@ -13,6 +13,7 @@ from odoo.tests import tagged
 from odoo.tools import mute_logger
 
 from .common import MailProTestCase
+from .common import groups_field
 
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')
@@ -46,7 +47,7 @@ class TestConnectedAs(MailProTestCase):
         manager = self.env['res.users'].with_context(no_reset_password=True).create({
             'name': 'Manager', 'login': 'manager@company.test',
             'email': 'manager@company.test',
-            'group_ids': [(6, 0, [
+            groups_field(self.env): [(6, 0, [
                 self.env.ref('base.group_user').id,
                 self.env.ref('pan_mail_pro.group_mail_mailbox_manager').id])],
         })

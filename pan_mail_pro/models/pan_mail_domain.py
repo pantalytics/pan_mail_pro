@@ -25,6 +25,7 @@ import re
 
 from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
+from ..compat import Constraint
 
 _logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class PanMailDomain(models.Model):
              'domains is never synced into Odoo.',
     )
 
-    _name_unique = models.Constraint(
+    _name_unique = Constraint(
         'UNIQUE(name)',
         'That domain is already on the list.',
     )

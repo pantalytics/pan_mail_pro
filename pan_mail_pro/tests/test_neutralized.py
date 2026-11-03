@@ -14,6 +14,7 @@ import os
 from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 
+import odoo.modules.module
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -46,7 +47,11 @@ class TestNeutralizedDatabase(MailProTestCase):
         """
         mail_server = type(self.env['ir.mail_server'])
         stack = ExitStack()
-        stack.enter_context(patch.object(mail_server, '_disable_send', return_value=False))
+        if hasattr(mail_server, '_disable_send'):
+            stack.enter_context(patch.object(mail_server, '_disable_send', return_value=False))
+        else:
+            # 18 reads the test flag itself, inside send_email.
+            stack.enter_context(patch.object(odoo.modules.module, 'current_test', False))
         stack.enter_context(patch.object(mail_server, '_connect__', return_value=MagicMock()))
         send_one = stack.enter_context(patch.object(type(mail), '_send_one', autospec=True))
         send_email = stack.enter_context(patch.object(

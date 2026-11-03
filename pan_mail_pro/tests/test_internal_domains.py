@@ -21,6 +21,7 @@ from psycopg2 import IntegrityError
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 from odoo.tools import mute_logger
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -67,7 +68,7 @@ class TestInternalDomainGate(TransactionCase):
         cls.Mailbox = cls.env['pan.mail.mailbox']
         cls.user = cls.env['res.users'].create({
             'name': 'Gate Owner', 'login': 'gate@test.local', 'email': 'gate@test.local',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_user').id])],
         })
         cls.env['pan.mail.account'].sudo().create({
             'email': 'gate@test.local', 'provider': 'outlook', 'user_id': cls.user.id,
@@ -274,7 +275,7 @@ class TestInternalDomainSuggestion(TransactionCase):
             'name': 'Colleague On Another Domain',
             'login': 'wvb@second.test',
             'email': 'wvb@second.test',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_user').id])],
         })
 
     def test_a_colleagues_domain_is_suggested(self):
@@ -291,7 +292,7 @@ class TestInternalDomainSuggestion(TransactionCase):
             'name': 'Customer With Portal Access',
             'login': 'buyer@customer.test',
             'email': 'buyer@customer.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         self.assertTrue(portal.share, "fixture must be a share user to prove this")
         self.assertNotIn('customer.test', self.Domains.suggest_domains())
@@ -314,7 +315,7 @@ class TestInternalDomainSuggestion(TransactionCase):
             'name': 'Colleague Who Left',
             'login': 'gone@third.test',
             'email': 'gone@third.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         archived.action_archive()
         self.assertNotIn('third.test', self.Domains.suggest_domains())
@@ -339,7 +340,7 @@ class TestInternalDomainSuggestion(TransactionCase):
             'name': 'Colleague With A Personal Login',
             'login': 'someone@gmail.com',
             'email': 'someone@gmail.com',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
 
         self.assertNotIn('gmail.com', self.Domains.suggest_domains())

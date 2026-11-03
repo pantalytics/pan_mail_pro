@@ -11,6 +11,7 @@ from odoo.exceptions import AccessError, UserError
 
 from .mail_provider_client import ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, ERROR_THROTTLED
 from .neutralization import database_is_neutralized
+from ..compat import notification_status, postprocess_sent_message
 
 # Set by the composer around its send: this batch is the thing the person did.
 INTERACTIVE_SEND = 'pan_mail_interactive_send'
@@ -600,7 +601,7 @@ class MailMail(models.Model):
         ])
         if notifications:
             notifications.write({
-                'notification_status': self._get_notification_status(),
+                'notification_status': notification_status(self),
             })
 
     def _fail(self, reason, code='outgoing.send_failed', error=None, mailbox=None):
@@ -619,7 +620,8 @@ class MailMail(models.Model):
         """
         self.ensure_one()
         self.write({'state': 'exception', 'failure_reason': reason})
-        self._postprocess_sent_message(
+        postprocess_sent_message(
+            self,
             success_pids=self.env['res.partner'],
             success_emails=[],
             failure_reason=reason,
@@ -689,7 +691,8 @@ class MailMail(models.Model):
         # Both were skipped on this path, so every provider-sent chatter mail
         # showed as pending forever and stayed in mail_mail forever.
         self._sync_notifications()
-        self._postprocess_sent_message(
+        postprocess_sent_message(
+            self,
             success_pids=self.recipient_ids,
             success_emails=tools.email_split(self.email_to or ''),
         )

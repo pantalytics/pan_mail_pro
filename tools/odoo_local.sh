@@ -93,7 +93,9 @@ TREE=$REPO
 if [ "$SERIES" != "$MANIFEST_SERIES" ]; then
     TREE=$(mktemp -d)
     trap 'rm -rf "$TREE"' EXIT
-    cp -r "$REPO/pan_mail_pro" "$TREE/"
+    # The whole checkout, not only the module: tests read ARCHITECTURE.md and
+    # tools/rename_to_mail_pro.sql relative to the module folder.
+    git -C "$REPO" ls-files -z --cached --others --exclude-standard | (cd "$REPO" && xargs -0 cp --parents -t "$TREE")
     sed -i "s/'version': '${MANIFEST_SERIES}\./'version': '${SERIES}./" "$TREE/pan_mail_pro/__manifest__.py"
     echo "Measuring against Odoo $SERIES with the manifest rewritten from $MANIFEST_SERIES; not a release verdict."
 fi
@@ -108,7 +110,7 @@ python3 "$ODOO/odoo-bin" -d "$DB" \
     --db_user="$DB_USER" --db_password="$DB_PASS" --db_host=127.0.0.1 \
     --data-dir="$WORK/data-$SERIES" \
     --addons-path="$ODOO/addons,$TREE" \
-    -i pan_mail_pro,sale,mass_mailing --test-enable --test-tags=pan_mail_pro \
+    -i pan_mail_pro,sale,mass_mailing --without-demo=all --test-enable --test-tags=pan_mail_pro \
     --stop-after-init --no-http --log-level=warn \
     "${EXTRA[@]}" > "$LOG" 2>&1
 STATUS=$?

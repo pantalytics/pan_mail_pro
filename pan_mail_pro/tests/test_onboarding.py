@@ -27,6 +27,7 @@ from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import (
     SMTP_PLACEHOLDER_VALUES,
     SMTP_PLACEHOLDER_XMLID,
 )
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -151,7 +152,7 @@ class TestNotificationGapQueuesMail(TransactionCase):
         cls.colleague = cls.env['res.users'].create({
             'name': 'Colleague', 'login': 'colleague@gap.test',
             'email': 'colleague@gap.test', 'notification_type': 'email',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_user').id])],
         })
         # Mail Pro is switched on (a mailbox exists) but notifications@ is not
         # configured yet — exactly the state an admin is in halfway through.

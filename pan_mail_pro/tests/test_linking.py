@@ -21,6 +21,7 @@ from odoo.exceptions import AccessError, UserError
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models.pan_mail_matcher import RULE_THREAD_LINK_LEGACY
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -45,7 +46,7 @@ class TestLinkTo(TransactionCase):
             'partner_id': cls.customer.id,
         })
         cls.manager_group = cls.env.ref('pan_mail_pro.group_mail_mailbox_manager')
-        cls.env.user.sudo().write({'group_ids': [(4, cls.manager_group.id)]})
+        cls.env.user.sudo().write({groups_field(cls.env): [(4, cls.manager_group.id)]})
 
     # ------------------------------------------------------------------ #
     # Helpers
@@ -211,7 +212,7 @@ class TestLinkTo(TransactionCase):
         stranger = self.env['res.users'].create({
             'name': 'Buitenstaander',
             'login': 'linking-stranger',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
 
         with self.assertRaises(AccessError):
@@ -347,7 +348,7 @@ class TestLinkPicker(TransactionCase):
         cls.not_theirs = cls.env['crm.lead'].create({
             'name': 'Asafdichtingen', 'partner_id': cls.other.id,
         })
-        cls.env.user.sudo().write({'group_ids': [
+        cls.env.user.sudo().write({groups_field(cls.env): [
             (4, cls.env.ref('pan_mail_pro.group_mail_mailbox_manager').id)]})
 
     # ------------------------------------------------------- step one: model
@@ -377,7 +378,7 @@ class TestLinkPicker(TransactionCase):
         picker, and what it offers is bounded by `has_access('write')`."""
         stranger = self.env['res.users'].create({
             'name': 'Buitenstaander', 'login': 'picker-stranger',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).link_targets()

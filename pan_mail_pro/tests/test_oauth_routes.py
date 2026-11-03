@@ -26,6 +26,7 @@ from odoo.addons.pan_mail_pro.models.res_users import (
     SIGN_IN_BACK_KEY,
     SIGN_IN_NOTICE_KEY,
 )
+from .common import groups_field
 
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.MicrosoftGraphClient'
 CONTROLLER = 'odoo.addons.pan_mail_pro.controllers.main.MailProOAuthController'
@@ -118,7 +119,7 @@ class TestOAuthCallback(HttpCase):
             'login': 'nora@company.test',
             'password': 'nora@company.test',
             'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.authenticate('nora@company.test', 'nora@company.test')
 
@@ -422,7 +423,7 @@ class TestOAuthCallback(HttpCase):
             'name': 'Customer',
             'login': 'customer@example.test',
             'password': 'customer@example.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         portal.sudo().x_pan_mail_oauth_state = 'nonce-portal'
         self.authenticate('customer@example.test', 'customer@example.test')

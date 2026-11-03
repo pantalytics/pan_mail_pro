@@ -66,6 +66,7 @@ from .mail_provider_client import (
     oauth_redirect_uri,
     pkce_pair,
 )
+from ..compat import Constraint
 
 _logger = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ class PanMailProvider(models.Model):
         ('connected', 'Connected'),
     ], compute='_compute_status')
 
-    _provider_uniq = models.Constraint(
+    _provider_uniq = Constraint(
         'UNIQUE(provider)',
         'Each provider can only be registered once — edit the existing row.',
     )

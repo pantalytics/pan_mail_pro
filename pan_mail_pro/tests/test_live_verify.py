@@ -22,6 +22,7 @@ from odoo.exceptions import AccessError, UserError
 from odoo.tests import HttpCase, TransactionCase, new_test_user, tagged
 
 from .common import proven_session
+from .common import groups_field
 
 CLIENT = 'imap.smtp.client'
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client.MicrosoftGraphClient'
@@ -202,7 +203,7 @@ class TestVerifyRoundTrip(HttpCase):
         self.user = self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
             'password': 'nora@company.test', 'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])]})
         self.account = self.env['pan.mail.account'].create({
             'email': 'nora@company.test', 'provider': 'outlook', 'user_id': self.user.id,
             'refresh_token': 'rt-before', 'access_token': 'at-before',
@@ -269,7 +270,7 @@ class TestVerifyRoundTrip(HttpCase):
     def test_a_colleague_s_mailbox_cannot_be_started(self):
         other = self.env['res.users'].create({
             'name': 'Sanne', 'login': 'sanne@company.test', 'email': 'sanne@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])]})
         self.env['pan.mail.account'].create({
             'email': 'sanne@company.test', 'provider': 'outlook', 'user_id': other.id,
             'refresh_token': 'rt', 'access_token': 'at'})

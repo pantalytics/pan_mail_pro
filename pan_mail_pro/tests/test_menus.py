@@ -23,6 +23,7 @@ import os
 from odoo.tests import tagged
 
 from .common import MailProTestCase
+from .common import groups_field
 
 MODULE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -82,7 +83,7 @@ class TestMenus(MailProTestCase):
         user = self.env.ref('base.group_user')
         for xmlid in ('menu_pan_mail_app', 'menu_pan_mail_conversation'):
             menu = self.env.ref('pan_mail_pro.%s' % xmlid)
-            self.assertEqual(menu.group_ids, user, xmlid)
+            self.assertEqual(menu[groups_field(self.env)], user, xmlid)
 
     def test_the_inbox_is_fullscreen_and_keeps_its_way_back(self):
         """Fullscreen takes Odoo's navbar off the screen. Both halves, or none.
@@ -138,9 +139,9 @@ class TestMenus(MailProTestCase):
                       'menu_pan_mail_routing_log',
                       'menu_communication_domains'):
             menu = self.env.ref('pan_mail_pro.%s' % xmlid)
-            self.assertIn(manager, menu.group_ids, xmlid)
+            self.assertIn(manager, menu[groups_field(self.env)], xmlid)
         for xmlid in ('menu_pan_mail_account', 'menu_pan_mail_provider'):
             menu = self.env.ref('pan_mail_pro.%s' % xmlid)
             self.assertEqual(
-                menu.group_ids, system,
+                menu[groups_field(self.env)], system,
                 "%s holds credentials and stays administrator-only" % xmlid)

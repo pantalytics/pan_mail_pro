@@ -42,7 +42,7 @@ from datetime import datetime
 
 from odoo import models, api, fields, tools, _
 from odoo.exceptions import AccessError, UserError
-from odoo.fields import Domain
+from ..compat import Domain, partner_ids_from_emails
 from odoo.http import request
 from odoo.addons.mail.tools.discuss import Store
 from odoo.tools import email_split, html2plaintext
@@ -2206,8 +2206,8 @@ class PanMailConversation(models.AbstractModel):
         if defaults['partner_ids']:
             return defaults['partner_ids']
         if defaults['email_to']:
-            return record._partner_find_from_emails_single(
-                defaults['email_to'].split(',')).ids
+            return partner_ids_from_emails(
+                record, defaults['email_to'].split(','))
         return []
 
     def _link_model(self, model):

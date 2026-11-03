@@ -30,6 +30,7 @@ from odoo.addons.pan_mail_pro.tests.test_pantalytics_app import (
     APP_ID, GRAPH, GRAPH_POST, PLATFORM_POST, PLATFORM_REDIRECT, _response, _started,
     a_browser, connect_to_pantalytics,
 )
+from .common import groups_field
 
 OWN_TENANT = '11111111-2222-3333-4444-555555555555'
 OTHER_TENANT = '99999999-8888-7777-6666-555555555555'
@@ -50,7 +51,7 @@ def make_user(env, login, admin=False):
         groups.append(env.ref('base.group_system').id)
     return env['res.users'].create({
         'name': login.split('@')[0].title(), 'login': login, 'password': login,
-        'email': login, 'group_ids': [(6, 0, groups)]})
+        'email': login, groups_field(env): [(6, 0, groups)]})
 
 
 def connected_account(env, user, **values):

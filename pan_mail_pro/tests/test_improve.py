@@ -11,6 +11,7 @@ from unittest.mock import patch
 from odoo.tests import HttpCase, TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models.pan_mail_license import IMPROVE_REFUSED_PARAM
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -40,7 +41,7 @@ class TestImproveConfig(TransactionCase):
     def test_two_users_are_two_ids_and_one_user_is_one_id(self):
         other = self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         mine = self.License.improve_config()['user']
         theirs = self.License.with_user(other).improve_config()['user']
@@ -110,7 +111,7 @@ class TestImproveSession(HttpCase):
         self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
             'password': 'nora@company.test', 'email': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.authenticate('nora@company.test', 'nora@company.test')
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
@@ -122,7 +123,7 @@ class TestImproveSession(HttpCase):
         self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
             'password': 'nora@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.authenticate('nora@company.test', 'nora@company.test')
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})

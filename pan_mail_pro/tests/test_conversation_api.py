@@ -16,6 +16,7 @@ from lxml import etree
 
 from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, tagged
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -67,7 +68,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Mira Manager',
             'login': 'mira@company.test',
             'email': 'mira@company.test',
-            'group_ids': [(6, 0, [
+            groups_field(self.env): [(6, 0, [
                 self.env.ref('base.group_user').id, self.manager_group.id])],
         })
         gated = self.Conversation.with_user(manager).with_context(
@@ -586,7 +587,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Buitenstaander',
             'login': 'outsider@company.test',
             'email': 'outsider@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         self._mail()
         with self.assertRaises(AccessError):
@@ -844,7 +845,7 @@ class TestConversationApi(TransactionCase):
             'name': login,
             'login': login,
             'email': login,
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id,
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id,
                                   self.manager_group.id])],
         })
 
@@ -860,7 +861,7 @@ class TestConversationApi(TransactionCase):
             'name': 'plain@company.test',
             'login': 'plain@company.test',
             'email': 'plain@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
 
         as_reader = self.Conversation.with_user(reader)
@@ -956,7 +957,7 @@ class TestConversationApi(TransactionCase):
         return owner, mailbox
 
     def _may_read_every_lead(self, user):
-        user.write({'group_ids': [
+        user.write({groups_field(self.env): [
             (4, self.env.ref('sales_team.group_sale_salesman_all_leads').id)]})
 
     def test_a_colleague_s_mailbox_shows_its_linked_mail_and_nothing_else(self):
@@ -1092,7 +1093,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Nina Nobody',
             'login': 'nina@company.test',
             'email': 'nina@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).search_conversations()
@@ -1127,7 +1128,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Nils Nobody',
             'login': 'nils@company.test',
             'email': 'nils@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_portal').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_portal').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).failure_remedy()
@@ -1359,7 +1360,7 @@ class TestConversationApi(TransactionCase):
             'name': 'Nina Nobody',
             'login': 'nina.to@company.test',
             'email': 'nina.to@company.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         with self.assertRaises(AccessError):
             self.Conversation.with_user(stranger).new_mail_recipients(
@@ -1379,7 +1380,7 @@ class TestConversationApi(TransactionCase):
         would create the contact for it on the way.
         """
         reader = self._mailbox_manager('sam.sales@company.test')
-        reader.write({'group_ids': [(4, self.env.ref('sales_team.group_sale_salesman').id)]})
+        reader.write({groups_field(self.env): [(4, self.env.ref('sales_team.group_sale_salesman').id)]})
         theirs = self.env['crm.lead'].create({
             'name': 'Koelinstallatie',
             'email_from': 'Piet de Vries <piet@devries.test>',

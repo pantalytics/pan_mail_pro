@@ -39,6 +39,7 @@ from odoo.tests import tagged
 
 from ..models.mail_provider_client import FOLDER_INBOX, FOLDER_SENT
 from .common import MailProTestCase
+from .common import groups_field
 
 GRAPH_MSG_ID = 'AAMkAGI2_fake_graph_id'
 INTERNET_ID = '<quiet-sync-001@example.com>'
@@ -263,7 +264,7 @@ class TestGmailSyncSendsNothing(MailProTestCase, QuietSyncMixin):
             'name': 'Gmail Sync User',
             'login': 'gmail_quiet@test.local',
             'email': 'gmail_quiet@test.local',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.env['pan.mail.account'].create({
             'email': 'gmail_quiet@test.local',

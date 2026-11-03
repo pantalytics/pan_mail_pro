@@ -24,6 +24,31 @@ from odoo.exceptions import UserError
 from odoo.tests import TransactionCase
 
 
+def groups_field(env):
+    """The groups field on res.users and ir.ui.menu: group_ids on 19 and 20,
+    groups_id on 18 (docs/plans/multi-version.md)."""
+    return 'group_ids' if 'group_ids' in env['res.users']._fields else 'groups_id'
+
+
+@contextlib.contextmanager
+def registry_test_mode(case):
+    """Test cursors for code that opens its own (the error ledger, a token
+    refresh): `registry_test_mode` on 20, `enter_registry_test_mode` on 19,
+    and the registry's own enter/leave pair on 18."""
+    if hasattr(case, 'registry_test_mode'):
+        with case.registry_test_mode():
+            yield
+    elif hasattr(case, 'enter_registry_test_mode'):
+        with case.enter_registry_test_mode():
+            yield
+    else:
+        case.registry.enter_test_mode(case.cr, True)
+        try:
+            yield
+        finally:
+            case.registry.leave_test_mode()
+
+
 def send_and_capture(mails):
     """Send `mails` and hand back the UserError instead of unwinding the test.
 
@@ -86,28 +111,28 @@ class MailProTestCase(TransactionCase):
             'login': 'notif_owner@test.local',
             'email': 'notif_owner@test.local',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [internal_group])],
+            groups_field(cls.env): [(6, 0, [internal_group])],
         })
         cls.salesperson = User.create({
             'name': 'Sales Person',
             'login': 'sales@test.local',
             'email': 'sales@test.local',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [internal_group])],
+            groups_field(cls.env): [(6, 0, [internal_group])],
         })
         cls.other_user = User.create({
             'name': 'Other User',
             'login': 'other@test.local',
             'email': 'other@test.local',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [internal_group])],
+            groups_field(cls.env): [(6, 0, [internal_group])],
         })
         cls.inbox_user = User.create({
             'name': 'Inbox Only User',
             'login': 'inbox@test.local',
             'email': 'inbox@test.local',
             'notification_type': 'inbox',
-            'group_ids': [(6, 0, [internal_group])],
+            groups_field(cls.env): [(6, 0, [internal_group])],
         })
         # A customer who can log into the portal. Has a res.users row like any
         # employee, but `share=True` — the distinction issue #39 turned on.
@@ -116,7 +141,7 @@ class MailProTestCase(TransactionCase):
             'login': 'portal@example.com',
             'email': 'portal@example.com',
             'notification_type': 'email',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_portal').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_portal').id])],
         })
         assert cls.portal_user.share, (
             "Test setup error: the portal fixture must be a share user"
