@@ -40,11 +40,11 @@
                          the host's catcher and nothing is read. One line, no
                          switch: Odoo's neutralization decided, not a person. -->
                     <field name="x_is_copy" invisible="1"/>
-                    <div class="o_mailpro_copy_marker mt-3" role="status" invisible="not x_is_copy">
-                        This is a copy. Mail is shown, not sent.
-                    </div>
                     <h2>Setup</h2>
                     <div class="row mt-3 o_settings_container">
+                    <div class="col-12 o_setting_box o_mailpro_copy_marker" role="status" invisible="not x_is_copy">
+                        This is a copy. Mail is shown, not sent.
+                    </div>
                     <div class="col-12 o_setting_box o_mailpro_steps">
 
                     <!-- Step 1. One primary action per state, and the code is

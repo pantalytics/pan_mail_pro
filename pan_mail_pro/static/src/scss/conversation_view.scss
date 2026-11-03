@@ -277,6 +277,10 @@ $mailpro-band-gutter: 3.5rem;
     // rather than as something that broke.
     .o_mailpro_copy_marker {
         flex: 0 0 auto;
+        // The whole width, whatever the action container aligns its
+        // children to: a band, not a label.
+        align-self: stretch;
+        width: 100%;
         padding: 0.25rem 1.25rem;
         background: rgba($mailpro-attention, 0.12);
         color: $mailpro-attention-text;

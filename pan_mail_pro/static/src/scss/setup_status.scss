@@ -169,6 +169,7 @@ $mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
 // about the database, and the checklist under it is still the status.
 .o_mailpro_copy_marker {
     max-width: 46rem;
+    margin-bottom: 0.75rem;
     font-weight: 600;
     color: $mailpro-attention-text;
 }
