@@ -4822,7 +4822,17 @@ class Checks:
             page.fill('input[name=password]', login)
             page.click('button[type=submit]')
             page.wait_for_selector('.o_main_navbar', timeout=60000)
-            page.click('.o_main_navbar .o_user_menu')
+            # The user menu is drawn before it listens (Owl 3 on 20 mounts
+            # the navbar's dropdowns a beat after the bar): a click that
+            # opened nothing is clicked again.
+            for _ in range(4):
+                page.click('.o_main_navbar .o_user_menu')
+                try:
+                    page.wait_for_selector(
+                        '.o-dropdown--menu .dropdown-item:has-text("Preferences")', timeout=4000)
+                    break
+                except Exception:
+                    page.wait_for_timeout(500)
             page.click('.o-dropdown--menu .dropdown-item:has-text("Preferences")')
             page.wait_for_selector('.modal .o_form_view', timeout=30000)
             # A tab is an <a> up to 19 and a <button> on 20.
