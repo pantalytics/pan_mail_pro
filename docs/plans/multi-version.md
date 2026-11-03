@@ -102,6 +102,41 @@ touches:
   catches it or the tests change.
 - `ir.attachment` internals (`_check_contents`, `LocalBinaryFile`): the
   attachment tests patch something that moved. Not read yet.
+- **20 ships Owl 3**, and that is the one change that reaches every
+  screen. Measured in a real browser (`tools/ui_local.sh --series=20.0`):
+  a component with a `static props` throws at construction ("Owl 3
+  ignores ... declare the props schema through useProps"), and a template
+  expression resolves a bare name to template locals only (the render
+  context is `{this: component}` where Owl 2's was `Object.create(component)`),
+  so `state.x`, `props.x`, `onClick` and every other component member read
+  `undefined` and the web client never mounts. Both have a form that Owl 2
+  and Owl 3 both accept: the schema is `static propsSchema` and
+  `defineProps(Class)` in `static/src/compat/owl.js` copies it to `props`
+  where Owl still validates; the templates say `this.` for every member
+  (325 attributes rewritten, by a script keyed on the components' own
+  member names, comments and object keys untouched). `t-ref` on a
+  component is refused by Owl 3; the module has none.
+- **What the browser found after that**, on 20 and on 18, through
+  `tools/ui_local.sh` (the suite is green on both and saw none of it):
+  Owl 3 hands a component its props only through `useProps()`, so every
+  setup starts with `this.props = useProps()` (a no-op read on Owl 2);
+  `useState`, `useRef` and `useEffect(fn, deps)` are gone from Owl 3
+  (`proxy`, a ref signal passed to `t-ref` as an expression, `useOnChange`)
+  and `useSubEnv` lives in Odoo's compatibility layer, so those four come
+  from `static/src/compat/owl.js`, whose 20 version is in the overlay; an
+  event handler on Owl 3 evaluates its expression when the event fires, so
+  a `t-set` variable the three splitter calls overwrite in turn made every
+  divider answer for the last one (the handlers read `data-divider` off the
+  element now); the mail store keys its models by model name on 20
+  (`store["mail.thread"]`) and keeps records in a Map; `AttachmentList`
+  takes `attachmentGroups` and `unlinkAttachments` on 20; the Chatter keeps
+  its thread as prop signals; `mail.activity.activity_format` is gone (the
+  Activities tab asks `pan.mail.conversation.activity_store`, one name for
+  three series). 18 in turn has no `tree_processor` service, no
+  `discussDropdownMenuClass`, pages followers with `message_get_followers`
+  rather than `fetchThreadData`, and its settings onchange only computes a
+  field that depends on something (`@api.depends('company_id')` on the two
+  computes that had none).
 - `migrations/` tests assert 19.0 migrations; the folder is empty on the
   `20.0` branch, so they do not apply there.
 

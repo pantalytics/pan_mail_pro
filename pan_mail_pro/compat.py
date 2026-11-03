@@ -112,6 +112,21 @@ def attachments_store_payload(attachments):
     return store.get_result()
 
 
+def activities_store_payload(activities):
+    """The mail.activity store payload Odoo's own activity list renders.
+
+    18 and 19: mail.activity.activity_format(). 20: Store().add() with the
+    model's own _store_activity_fields, read back with as_dict().
+    """
+    if hasattr(activities, "activity_format"):
+        return activities.activity_format()
+    from odoo.addons.mail.tools.discuss import Store
+
+    store = Store()
+    store.add(activities, "_store_activity_fields")
+    return store.as_dict()
+
+
 def partner_ids_from_emails(record, emails):
     """The partners for these addresses, created when missing, as ids.
 

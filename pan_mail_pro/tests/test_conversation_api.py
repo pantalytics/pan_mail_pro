@@ -686,6 +686,23 @@ class TestConversationApi(TransactionCase):
             self.assertEqual([a['summary'] for a in thread['activities']],
                              ['Levertijd navragen'], scope)
 
+    def test_the_activities_tab_reads_the_store_payload_through_one_name(self):
+        """The Activities tab hands the ids back and asks for Odoo's own store
+        payload. The method Odoo's list called is `activity_format` up to 19
+        and a Store field list on 20, so the tab asks this model, which knows
+        the series, and gets the same shape on every one of them."""
+        activity = self.env['mail.activity'].create({
+            'res_model_id': self.env['ir.model']._get_id('crm.lead'),
+            'res_id': self.lead.id,
+            'activity_type_id': self.env.ref('mail.mail_activity_data_todo').id,
+            'summary': 'Levertijd navragen',
+            'user_id': self.env.user.id,
+        })
+        payload = self.Conversation.activity_store(activity.ids)
+        self.assertEqual([a['summary'] for a in payload['mail.activity']],
+                         ['Levertijd navragen'])
+        self.assertEqual(self.Conversation.activity_store([]), {})
+
     def test_a_file_on_the_record_and_not_on_a_message_is_still_on_the_tab(self):
         """The tab lists what the chatter's file box lists: the record's own
         attachments. Reading only the messages made a file somebody attached

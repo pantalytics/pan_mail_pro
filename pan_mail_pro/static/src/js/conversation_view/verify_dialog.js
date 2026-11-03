@@ -10,14 +10,16 @@
  * field, not an error dialog; the password itself goes nowhere else.
  */
 
-import { Component, useState, useRef, onMounted } from "@odoo/owl";
+import { Component, onMounted } from "@odoo/owl";
+import { useState, useRef, useProps } from "@pan_mail_pro/compat/owl";
 import { Dialog } from "@web/core/dialog/dialog";
 import { _t } from "@web/core/l10n/translation";
+import { defineProps } from "@pan_mail_pro/compat/owl";
 
 export class VerifyDialog extends Component {
     static template = "pan_mail_pro.VerifyDialog";
     static components = { Dialog };
-    static props = {
+    static propsSchema = {
         // The address whose password is asked for, named on the field.
         email: String,
         // (password) => Promise<boolean>: the one call that tries it.
@@ -28,7 +30,8 @@ export class VerifyDialog extends Component {
     };
 
     setup() {
-        this.inputRef = useRef("password");
+        this.props = useProps();
+        this.inputRef = useRef("inputRef");
         this.state = useState({ busy: false, wrong: false, error: "" });
         onMounted(() => this.inputRef.el?.focus());
     }
@@ -70,3 +73,4 @@ export class VerifyDialog extends Component {
         }
     }
 }
+defineProps(VerifyDialog);

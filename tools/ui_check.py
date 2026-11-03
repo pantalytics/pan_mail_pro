@@ -110,6 +110,13 @@ class Checks:
         self.page.wait_for_timeout(400)
         return text
 
+    def groups_field(self):
+        """The groups field on res.users: group_ids on 19 and 20, groups_id on 18."""
+        if not hasattr(self, '_groups_field'):
+            fields = self.call('res.users', 'fields_get', [], attributes=['type'])
+            self._groups_field = 'group_ids' if 'group_ids' in fields else 'groups_id'
+        return self._groups_field
+
     def shot(self, name):
         if self.out:
             self.page.screenshot(path=os.path.join(self.out, name), full_page=True)
@@ -2432,11 +2439,18 @@ class Checks:
             self.fail('the mailbox list has no Drafts folder')
             return
         drafts_folder.click()
-        page.wait_for_timeout(1500)
-        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
-        if not rows:
+        # Wait for the row, not for a clock: the list is one request away
+        # and the request takes what the box gives it.
+        # The row that carries what was typed, not any row: the list the
+        # folder replaces is still on screen while the new one loads.
+        try:
+            page.wait_for_selector(
+                f'.o_mailpro_conversation_list .o_mailpro_item:has-text("{marker}")', timeout=15000)
+        except Exception:
             self.fail('the Drafts folder is empty after saving a draft')
             return
+        page.wait_for_timeout(300)
+        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
         # One click on a draft is "carry on writing it", so the composer opens
         # with the conversation behind it rather than a list row to click again.
         rows[0].click()
@@ -3426,7 +3440,7 @@ class Checks:
         if not found:
             self.call('res.users', 'create', {
                 'name': 'Not Connected Yet', 'login': login, 'password': login,
-                'group_ids': [(6, 0, self.call(
+                self.groups_field(): [(6, 0, self.call(
                     'ir.model.data', 'check_object_reference', 'base', 'group_user')[1:])],
             })
 
@@ -3967,7 +3981,7 @@ class Checks:
             uid = self.call('res.users', 'create', {
                 'name': 'Personal Mailbox', 'login': login, 'password': login,
                 'email': login,
-                'group_ids': [(6, 0, self.call(
+                self.groups_field(): [(6, 0, self.call(
                     'ir.model.data', 'check_object_reference', 'base', 'group_user')[1:])],
             })
             self.call('pan.mail.account', 'create', {

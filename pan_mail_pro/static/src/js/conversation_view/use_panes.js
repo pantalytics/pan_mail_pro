@@ -64,7 +64,8 @@
  * carries.
  */
 
-import { onWillDestroy, useState } from "@odoo/owl";
+import { onWillDestroy } from "@odoo/owl";
+import { useState } from "@pan_mail_pro/compat/owl";
 import { browser } from "@web/core/browser/browser";
 import { _t } from "@web/core/l10n/translation";
 

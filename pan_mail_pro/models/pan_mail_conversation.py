@@ -42,7 +42,10 @@ from datetime import datetime
 
 from odoo import models, api, fields, tools, _
 from odoo.exceptions import AccessError, UserError
-from ..compat import Domain, attachments_store_payload, partner_ids_from_emails, tracking_values
+from ..compat import (
+    Domain, activities_store_payload, attachments_store_payload, partner_ids_from_emails,
+    tracking_values,
+)
 from odoo.http import request
 from odoo.tools import email_split, html2plaintext
 from odoo.tools.mail import html_sanitize, plaintext2html
@@ -1758,6 +1761,16 @@ class PanMailConversation(models.AbstractModel):
             'ids': attachments.ids,
             'store': attachments_store_payload(attachments) if attachments else {},
         }
+
+    @api.model
+    def activity_store(self, ids):
+        """The store payload for these activities, the ones the reader may
+        read. One name for the Activities tab on every series: the method
+        Odoo's own list called is `activity_format` up to 19 and a Store
+        field list on 20 (compat.activities_store_payload)."""
+        self._check_caller()
+        activities = self.env['mail.activity'].search([('id', 'in', list(ids))])
+        return activities_store_payload(activities) if activities else {}
 
     def _activities_for(self, records):
         """What is still open on the records this conversation touched.

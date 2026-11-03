@@ -28,17 +28,19 @@
  * same `onSelected` a picked row goes through.
  */
 
-import { Component, useState, useRef, onWillStart } from "@odoo/owl";
+import { Component, onWillStart } from "@odoo/owl";
+import { useState, useRef, useProps } from "@pan_mail_pro/compat/owl";
 import { Dialog } from "@web/core/dialog/dialog";
 import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 import { useService } from "@web/core/utils/hooks";
 import { useDebounced } from "@web/core/utils/timing";
 import { _t } from "@web/core/l10n/translation";
+import { defineProps } from "@pan_mail_pro/compat/owl";
 
 export class LinkDialog extends Component {
     static template = "pan_mail_pro.LinkDialog";
     static components = { Dialog };
-    static props = {
+    static propsSchema = {
         // The correspondent, for the head start on step two. Both optional:
         // a conversation with no contact behind it still has to be linkable.
         partnerId: { type: [Number, Boolean], optional: true },
@@ -54,9 +56,10 @@ export class LinkDialog extends Component {
     };
 
     setup() {
+        this.props = useProps();
         this.orm = useService("orm");
         this.dialog = useService("dialog");
-        this.searchRef = useRef("search");
+        this.searchRef = useRef("searchRef");
         this.state = useState({
             search: "",
             rows: [],
@@ -152,3 +155,4 @@ export class LinkDialog extends Component {
         this.props.close();
     }
 }
+defineProps(LinkDialog);

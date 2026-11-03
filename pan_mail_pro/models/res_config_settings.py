@@ -152,6 +152,9 @@ class ResConfigSettings(models.TransientModel):
         help='The version of Mail Pro this Odoo instance is running.',
     )
 
+    # `depends` on a defaulted field: 18's onchange on a new settings record
+    # only computes what depends on something, 19 computes the rest as well.
+    @api.depends('company_id')
     def _compute_module_version(self):
         """The version the database is actually on, not the one in the source.
 
@@ -184,6 +187,7 @@ class ResConfigSettings(models.TransientModel):
     # Pantalytics account
     # -------------------------------------------------------------------------
 
+    @api.depends('company_id')
     def _compute_license(self):
         link = self.env['pan.mail.license'].current()
         if not link or link.status == 'not_connected':
