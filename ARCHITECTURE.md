@@ -1117,10 +1117,32 @@ Three properties are worth naming, because each was a bug first:
   after the fact is worse than being asked in order. The provider comes first
   because it is the one every mailbox needs — you cannot create a mailbox on a
   provider nobody has chosen.
-- **Inviting the team is not on this page at all.** Mail flows with one
-  connected account, so a colleague who has not signed in is a rollout task,
-  not a gate — and the invite button already lives on the user list, where the
-  users are. A second copy in Settings was a second front door to one action.
+- **Inviting the team is not a step.** Mail flows with one connected
+  account, so a colleague who has not signed in is a rollout task, not a gate,
+  and the invite button lives on the user list, where the users are. A second
+  copy in Settings was a second front door to one action. The end of the line
+  below points at that list; it does not copy the button.
+- **The line has an end (#391).** Four steps done and the first incoming mail
+  on a record (`pan.mail.setup.up_and_running`): the checklist folds into one
+  line, "Mail Pro is up and running", with Show setup under it. Done is green,
+  and on step 4 amber too: a personal mailbox carrying the system email works
+  and a shared one is a recommendation (#387), so the line keeps step 4's own
+  sentence under its headline, linked to Mailboxes. Red, the open dot, or
+  another step's amber keep the checklist. A done step 4 alone is not the end, because a mailbox that can send has not shown that
+  mail arrives where it belongs. "On a record" is link coverage's *linked to a
+  document* (`pan.mail.coverage._linked_domain`, §7), read off `mail.message`
+  rather than the routing log, which is cleaned after 90 days. The dot colours
+  are decided once, in `pan.mail.setup.step_dots`; the view draws the word and
+  the end of the line asks whether all four are `ok`, so the two cannot
+  disagree. Not sticky: a step that turns red later unfolds the checklist,
+  because that is where the red dot is. The confetti is once per database
+  (`pan_mail_pro.up_and_running_at`, spent by `celebrate_once` from the page
+  that first draws the line) and never under `prefers-reduced-motion`. The one
+  next action, Invite your colleagues to connect their mailbox, opens the
+  internal users with no mailbox connected on Odoo's own user list, where Send
+  Mail Pro invite already is. Beside it, secondary, Take the tour opens the
+  Inbox with `pan_mail_tour` in the context, and the Inbox starts its tour
+  (#393) once the list has mail, as its "?" would, recorded as seen.
 
 ---
 
@@ -3660,7 +3682,7 @@ eight groups:
 | Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_imap_live.py`, `test_pan_mail_provider.py`, `test_mail_account.py` | Wire-level behaviour per vendor, the application registration, and the credential rows behind them |
 | Pipeline | `test_incoming_sync.py`, `test_incoming_sync_gmail.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_internal_domains.py`, `test_mail_matcher.py`, `test_thread_drift.py`, `test_reply_sync.py`, `test_attachments.py`, `test_routing_log.py`, `test_mail_coverage.py`, `test_sync_sends_nothing.py` | Fetch → filter → match → post, the reply that comes back to its record, and the one invariant of the sync's outbound side |
 | Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
-| Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_sync_level_slider.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, the one mailbox setting a user owns, and the slider that sets it, held to the gates |
+| Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_up_and_running.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_sync_level_slider.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding and its end, where the screens live, the one mailbox setting a user owns, and the slider that sets it, held to the gates |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_inbox_tour.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, the tour's row and its sentences, and that no colour lacks a dark side |
 | The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_staging.py`, `test_hosting.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, and connects as staging of its production, where the Odoo runs and that an Odoo.sh staging branch is a copy, the error ledger, and what leaves for PostHog |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |

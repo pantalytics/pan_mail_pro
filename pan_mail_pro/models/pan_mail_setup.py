@@ -48,11 +48,16 @@ error after the fact is worse than being asked in order.
 """
 import logging
 
-from odoo import _, api, models
+from odoo import _, api, fields, models
+from odoo.exceptions import AccessError
 
 from .pan_mail_domain import PUBLIC_MAIL_DOMAINS
 
 _logger = logging.getLogger(__name__)
+
+# When the settings page first said "Mail Pro is up and running" on this
+# database (#391). Set once; the confetti plays only while it is empty.
+CELEBRATED_PARAM = 'pan_mail_pro.up_and_running_at'
 
 PHASE_SETUP = 'setup'
 PHASE_SYNCING = 'syncing'
@@ -291,6 +296,142 @@ class PanMailSetup(models.AbstractModel):
         mailboxes = self.env['pan.mail.mailbox'].sudo().search([('state', '!=', 'error')])
         return mailboxes.filtered(
             lambda m: (m._access_problem() or (None,))[0] == 'error')
+
+    # -------------------------------------------------------------------------
+    # The dots, and the end of the line
+    # -------------------------------------------------------------------------
+    #
+    # What each step's dot on the settings page shows, decided here once: the
+    # view draws the word, `up_and_running` asks whether all four are `ok`, so
+    # the line that says "up and running" cannot disagree with the four dots
+    # it replaces.
+
+    @api.model
+    def step_dots(self):
+        """One word per step: `ok`, `attention` (amber), `warn` (red) or `todo`.
+
+        Keyed `account`, `provider`, `domains`, `mailboxes`, in the order the
+        page numbers them. Each rule is the one the settings page used to spell
+        out in `invisible` expressions, and the docstrings of
+        `res_config_settings.py` say why each colour is that colour.
+        """
+        return {
+            'account': self._account_dot(),
+            'provider': self._provider_dot(),
+            'domains': 'ok' if self.env['pan.mail.domain'].is_configured() else 'todo',
+            'mailboxes': self._mailboxes_dot(),
+        }
+
+    @api.model
+    def _account_dot(self):
+        """Step 1: red once it was connected and broke, or while incoming
+        is paused for want of a card; the open dot before it was connected."""
+        License = self.env['pan.mail.license']
+        link = License.current()
+        if not link or link.status in ('not_connected', 'pending'):
+            return 'todo'
+        if not License.sync_allowed() or link.incoming_paused():
+            return 'warn'
+        return 'ok'
+
+    @api.model
+    def _provider_dot(self):
+        """Step 2: the provider row's own status, amber while nobody signed
+        in or while the row is still on an own Azure app (#369)."""
+        provider = self.env['pan.mail.provider'].current()
+        # Fresh, not cached: `status` reads `pan.mail.account`, which its
+        # compute cannot declare.
+        provider.invalidate_recordset(['status', 'connected', 'credentials_set'])
+        status = provider.status or 'not_configured'
+        on_own_app = provider.provider == 'outlook' and provider.registration == 'own'
+        if on_own_app or status == 'not_connected':
+            return 'attention'
+        return 'ok' if status == 'connected' else 'todo'
+
+    @api.model
+    def _mailboxes_dot(self):
+        """Step 4: red when a mailbox stopped or the provider refused, amber
+        while a personal mailbox carries the system email (#387), green once
+        the owner's sign-in was seen to read and send from a shared one."""
+        access, _sentence = self.notification_mailbox_verified()
+        if self.mailbox_alert() or access == 'broken':
+            return 'warn'
+        if not self.notification_mailbox_usable():
+            return 'todo'
+        if self.env['mail.mail']._notification_mailbox().provider_type == 'personal':
+            return 'attention'
+        return 'ok' if access == 'ok' else 'todo'
+
+    @api.model
+    def first_mail_on_record(self):
+        """Has an incoming mail landed on a record that is not a contact?
+
+        The platform's station 4 (docs/plans/onboarding-flow.md), read the
+        way link coverage reads "linked to a document" (ARCHITECTURE.md §7):
+        a `mail.message` Mail Pro received, on a model other than a contact.
+        Off the messages rather than the routing log, because the log is
+        cleaned after 90 days and a mail linked by hand is on a record too.
+        """
+        domain = [('x_direction', '=', 'incoming')] + \
+            self.env['pan.mail.coverage']._linked_domain()
+        return bool(self.env['mail.message'].sudo().search(domain, limit=1))
+
+    @api.model
+    def up_and_running(self, dots=None):
+        """Four steps done and the first mail on a record (#391).
+
+        Done is green, and for step 4 amber too: a personal mailbox carrying
+        the system email works, and a shared one is a recommendation, not a
+        failure (#387). The line says so under its headline. Red or the open
+        dot blocks. Green step 4 alone is not the end: a mailbox that can
+        send has not yet shown that mail arrives where it belongs. Not sticky
+        either: a step that turns red later opens the checklist again,
+        because that is where the red dot is.
+        """
+        if dots is None:
+            dots = self.step_dots()
+        done = all(dot == 'ok' or (step, dot) == ('mailboxes', 'attention')
+                   for step, dot in dots.items())
+        return done and self.first_mail_on_record()
+
+    @api.model
+    def celebrate_once(self):
+        """True the first time the end of the line is shown on this database.
+
+        The confetti is once per database, not per person and not per page
+        load, so the moment is a config parameter. Asked by the settings page
+        when it draws "Mail Pro is up and running"; it answers False when the
+        database is not there, so a call from anywhere else cannot spend it.
+        """
+        if not self.env.user.has_group('base.group_system'):
+            raise AccessError(_('Only an administrator can open the Mail Pro settings.'))
+        Params = self.env['ir.config_parameter'].sudo()
+        if Params.get_param(CELEBRATED_PARAM) or not self.up_and_running():
+            return False
+        Params.set_param(CELEBRATED_PARAM, fields.Datetime.to_string(fields.Datetime.now()))
+        _logger.info('[Mail Pro] Up and running')
+        return True
+
+    @api.model
+    def action_invite_colleagues(self):
+        """The one next action once Mail Pro runs: the internal users who
+        have not connected a mailbox, on Odoo's own user list, where Send
+        Mail Pro invite already mails each of them the connect link."""
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Invite your colleagues'),
+            'res_model': 'res.users',
+            'views': [(self.env.ref('base.view_users_tree').id, 'list'),
+                      (self.env.ref('base.view_users_form').id, 'form')],
+            'search_view_id': [self.env.ref('base.view_users_search').id],
+            'domain': self._unconnected_colleagues_domain(),
+            'context': {'is_action_res_users': True},
+            'target': 'current',
+        }
+
+    @api.model
+    def _unconnected_colleagues_domain(self):
+        return [('share', '=', False), ('x_pan_mail_connected', '=', False)]
 
     @api.model
     def not_ready_error(self):
