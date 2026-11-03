@@ -521,10 +521,10 @@ class PanMailMailbox(models.Model):
     # (the contact? a lead? an opportunity?) and the module is not in a position
     # to guess. `_gate_wanted` is where each rung is enforced.
     sync_level = fields.Selection([
-        ('replies', 'Replies, in Odoo only'),
-        ('both', 'Replies, in Odoo and your mail app'),
-        ('contacts', 'Replies and new email, existing contacts only'),
-        ('everyone', 'Replies and new email, everyone'),
+        ('replies', 'Replies'),
+        ('both', 'Replies and Sent Items'),
+        ('contacts', 'Replies, Sent Items and known contacts'),
+        ('everyone', 'Replies, Sent Items, known and new contacts'),
     ], string='Sync level', default='replies', required=True,
         help='How much of this mailbox Odoo reads back. Replies to mail Odoo '
              'sent always land on their record; each level adds one more kind '
@@ -1091,11 +1091,10 @@ class PanMailMailbox(models.Model):
                 # `message_post`). The sender boundary is the check above and
                 # `_mailbox_route`'s, not this ACL.
                 mail = self.env['mail.mail'].sudo().create({
-                    'subject': _('Mail Pro test email'),
+                    'subject': _('Mail Pro works for %(mailbox)s', mailbox=self.email),
                     'body_html': _(
-                        '<p>This is a test email from Odoo, sent through '
-                        '<strong>%(mailbox)s</strong>.</p>'
-                        '<p>You are reading it, so this mailbox can send.</p>',
+                        '<p>Mail Pro sent this test from <strong>%(mailbox)s</strong>. '
+                        'The mailbox works, and you can delete this email.</p>',
                         mailbox=self.email,
                     ),
                     'email_from': self.email,

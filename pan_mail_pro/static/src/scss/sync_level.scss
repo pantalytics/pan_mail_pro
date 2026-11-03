@@ -1,0 +1,212 @@
+// The sync level slider and what lands where under it (#390), on the
+// mailbox form and on My Preferences.
+//
+// The slider is Bootstrap's `form-range`, so its thumb, track and focus ring
+// are the theme's in both colour schemes. What is ours is the stop names
+// under it and the grid: a 1px rule for depth, green only for "lands here".
+
+// Light and dark: Odoo compiles this file once per colour scheme, see the
+// palette at the top of conversation_view.scss.
+$mailpro-dark: if(global-variable-exists(o-webclient-color-scheme),
+                  $o-webclient-color-scheme == dark, false);
+$mailpro-ink: if($mailpro-dark, #fff, #001d21);
+// The done dot's green, the one colour that means the same in both schemes.
+$mailpro-sync-yes: #1f9d63;
+$mailpro-sync-yes-ink: if($mailpro-dark, #5cc996, #157a4b);
+
+// Bootstrap's thumb is this wide; its centre travels from half of it to the
+// track's length minus half of it, and the stop names follow the centre.
+$mailpro-sync-thumb: 1rem;
+$mailpro-sync-flash: 0.4s;
+
+.o_mailpro_sync_level {
+    max-width: 36rem;
+    width: 100%;
+
+    .o_mailpro_sync_slider {
+        padding-top: 0.25rem;
+    }
+
+    .o_mailpro_sync_range {
+        display: block;
+    }
+
+    .o_mailpro_sync_stops {
+        position: relative;
+        height: 1.5rem;
+        margin: 0 ($mailpro-sync-thumb * 0.5);
+    }
+
+    .o_mailpro_sync_stop {
+        position: absolute;
+        top: 0;
+        left: calc(var(--mailpro-stop) * 100%);
+        transform: translateX(-50%);
+        padding: 0 0.25rem;
+        border: 0;
+        background: none;
+        white-space: nowrap;
+        font-size: 0.82rem;
+        line-height: 1.5rem;
+        color: inherit;
+        opacity: 0.75;
+        cursor: pointer;
+
+        // The ends sit flush with the track rather than half past it.
+        &:first-child {
+            transform: translateX(-($mailpro-sync-thumb * 0.5));
+            padding-left: 0;
+        }
+
+        &:last-child {
+            transform: translateX(calc(-100% + #{$mailpro-sync-thumb * 0.5}));
+            padding-right: 0;
+        }
+
+        &.o_mailpro_sync_stop_on {
+            opacity: 1;
+            font-weight: 600;
+        }
+
+        &:focus-visible {
+            outline: 2px solid $primary;
+            outline-offset: 2px;
+            border-radius: 0.25rem;
+        }
+
+        &:disabled {
+            cursor: default;
+        }
+    }
+
+    .o_mailpro_sync_grid {
+        width: 100%;
+        margin-top: 1rem;
+        border-collapse: separate;
+        border-spacing: 0;
+        border: 1px solid rgba($mailpro-ink, 0.12);
+        border-radius: 0.5rem;
+
+        th, td {
+            border-top: 1px solid rgba($mailpro-ink, 0.12);
+            vertical-align: middle;
+        }
+
+        thead th, thead td {
+            border-top: 0;
+        }
+    }
+
+    .o_mailpro_sync_col {
+        width: 6.5rem;
+        padding: 0.5rem 0.25rem;
+        text-align: center;
+        font-size: 0.82rem;
+        font-weight: 400;
+
+        .fa {
+            display: block;
+            margin-bottom: 0.15rem;
+            font-size: 1rem;
+        }
+    }
+
+    .o_mailpro_sync_what {
+        padding: 0.6rem 0.75rem;
+        font-weight: 400;
+        line-height: 1.35;
+        transition: box-shadow $mailpro-sync-flash;
+    }
+
+    .o_mailpro_sync_info {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1rem;
+        height: 1rem;
+        margin-left: 0.35rem;
+        padding: 0;
+        border: 1.5px solid currentColor;
+        border-radius: 50%;
+        background: none;
+        color: inherit;
+        opacity: 0.6;
+        font-family: Georgia, serif;
+        font-size: 0.65rem;
+        font-style: italic;
+        font-weight: 700;
+        line-height: 1;
+        vertical-align: 0.1rem;
+        cursor: pointer;
+
+        &:hover, &[aria-expanded="true"] {
+            opacity: 1;
+            color: $primary;
+        }
+
+        &:focus-visible {
+            opacity: 1;
+            outline: 2px solid $primary;
+            outline-offset: 2px;
+        }
+    }
+
+    .o_mailpro_sync_detail {
+        max-width: 32rem;
+        margin-top: 0.3rem;
+        font-size: 0.82rem;
+        line-height: 1.45;
+    }
+
+    .o_mailpro_sync_cell {
+        text-align: center;
+        padding: 0.4rem 0.25rem;
+    }
+
+    .o_mailpro_sync_mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.6rem;
+        height: 1.6rem;
+        border-radius: 50%;
+        font-size: 0.8rem;
+    }
+
+    .o_mailpro_sync_on {
+        background: rgba($mailpro-sync-yes, 0.16);
+        color: $mailpro-sync-yes-ink;
+    }
+
+    .o_mailpro_sync_off {
+        border: 1.5px dashed rgba($mailpro-ink, 0.35);
+    }
+
+    // A row whose Odoo mark just changed: a bar at its start and the mark
+    // swelling once, as long as the field keeps the class.
+    .o_mailpro_sync_flash {
+        .o_mailpro_sync_what {
+            box-shadow: inset 3px 0 0 $primary;
+        }
+
+        .o_mailpro_sync_odoo .o_mailpro_sync_mark {
+            animation: mailpro-sync-flip $mailpro-sync-flash ease-out;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .o_mailpro_sync_what {
+            transition: none;
+        }
+
+        .o_mailpro_sync_flash .o_mailpro_sync_odoo .o_mailpro_sync_mark {
+            animation: none;
+        }
+    }
+}
+
+@keyframes mailpro-sync-flip {
+    0% { transform: scale(0.6); }
+    60% { transform: scale(1.18); }
+    100% { transform: scale(1); }
+}
