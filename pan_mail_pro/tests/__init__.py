@@ -77,3 +77,4 @@ from . import test_staging
 from . import test_hosting
 from . import test_personal_notification_mailbox
 from . import test_sync_level_slider
+from . import test_inbox_tour

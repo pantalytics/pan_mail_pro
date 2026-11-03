@@ -223,6 +223,59 @@ conversations and half messages cannot be paged.
 The mailbox and the folder are not filters. They are pane 1, and a filter
 saying the same thing twice is two controls that can disagree.
 
+### The tour
+
+Four sentences on how mail and Odoo records are linked (#393), in Odoo's own
+tour framework rather than an overlay of ours: a tour in the
+`web_tour.tours` registry (`conversation_view/inbox_tour.js`), run by
+`tour_service` in its interactive mode, and a `web_tour.tour` row
+(`data/web_tour_tour.xml`) whose `user_consumed_ids` is "once per user".
+
+| Step | Points at | Says |
+|---|---|---|
+| 1 | The Odoo record pane's head | Every conversation sits on an Odoo record. Your reply lands in its chatter. |
+| 2 | Change link, beside the Linked-to chip | Wrong record? Link it to another one. The rest of the conversation follows. |
+| 3 | The filter menu on the search bar | Mail that matched no record lands on the sender's contact. Find it under **On a contact only**. |
+| 4 | The search box | Search this folder by sender, subject or a word in the mail. |
+
+Each sentence was checked against the code it describes. The reply is a
+`message_post` on the conversation's record. `link_to` moves the whole
+conversation and repoints its thread link, so the next mail follows; it is for
+mailbox managers, and so is step 2. Mail the matcher could not place lands on
+the sender's contact (§3), which is a filter in the search view and not a
+folder. The search view searches sender, subject, contact and body within the
+open folder, and never the record.
+
+What 19.0's framework is decides the rest:
+
+- **A step moves on when the reader does what it points at.** There is no
+  Next; a step with nothing to run is skipped. So every step points at a
+  control whose click is harmless and on topic. The pointer's own Stop Tour
+  is the skip, and the last step's click is done.
+- **When it runs.** The first time the list holds mail in Odoo (a live row is
+  on no record), and recorded as seen when it starts, so a skip stays a skip.
+  The "?" beside the search starts it again.
+- **Only on the Inbox.** `tour_service` starts tours by itself too: it resumes
+  the running one on every page load for somebody with Onboarding on, and it
+  starts the next of Odoo's own when one ends. Both happen before the Inbox is
+  mounted or on another screen, where every step's `isActive` fails, and a
+  tour that skips every step counts as done. So `steps()` returns none until
+  the Inbox is on screen; `tour_service` then leaves the tour current and does
+  nothing, and the Inbox starts it when it mounts.
+- **Onboarding stays the person's.** A tour started by hand switches the
+  user's Onboarding on, and one that ends starts the next of Odoo's own
+  (`consume` returns it). `start()` switches it back off for somebody who had
+  it off, so the Inbox does not enrol everyone in the CRM and Sales tours. For
+  somebody who has it on, the row is last in the order (`sequence` 3000).
+- **The shape of the screen picks the steps** (`isActive` on the root's
+  classes). A tablet has the record pane folded behind the conversation, so
+  step 1 points at the divider button that swaps it in, and the same button
+  is the way back to the conversation before step 2. A phone opens on the list, where the
+  bar is: steps 4 and 3 first (tapping the search box opens Odoo's filter
+  menu on a phone, so the filter step follows with its filter in sight), then
+  the row's record, the way over to it, and step 2 on the record screen,
+  where the link lives on a phone.
+
 ### Provider abstraction
 
 Everything wire-specific — how a mail is sent, how remote messages are listed
@@ -3605,7 +3658,7 @@ eight groups:
 | Pipeline | `test_incoming_sync.py`, `test_incoming_sync_gmail.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_internal_domains.py`, `test_mail_matcher.py`, `test_thread_drift.py`, `test_reply_sync.py`, `test_attachments.py`, `test_routing_log.py`, `test_mail_coverage.py`, `test_sync_sends_nothing.py` | Fetch → filter → match → post, the reply that comes back to its record, and the one invariant of the sync's outbound side |
 | Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_sync_level_slider.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, the one mailbox setting a user owns, and the slider that sets it, held to the gates |
-| The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, and that no colour lacks a dark side |
+| The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_inbox_tour.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, the tour's row and its sentences, and that no colour lacks a dark side |
 | The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_staging.py`, `test_hosting.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, and connects as staging of its production, where the Odoo runs and that an Odoo.sh staging branch is a copy, the error ledger, and what leaves for PostHog |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 
