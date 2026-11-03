@@ -261,22 +261,27 @@ cd .local
 docker-compose build odoo && docker-compose up -d
 ```
 
-### Cloudpepper dev instance
+### Cloudpepper dev instances
 
-| | |
-|---|---|
-| URL | https://mailpro-dev.cloudpepper.site |
-| Server | `Pantalytics Demo` (Odoo 19.0 **community**), shared with the demo instances |
-| Tracks | branch `19.0`: a push pulls the code and restarts Odoo. It has never run `-u` (issue #134), so a version bump lands via Apps → Mail Pro → Upgrade |
-| Login | `admin` / secret `CLOUDPEPPER_MAILPRO_DEV_ADMIN_PASSWORD`, project `prod` in Bitwarden Secrets Manager |
+One per series, on a server pinned to that major. Cloudpepper servers are
+pinned per Odoo major, so an 18 instance needs an 18 server, which does not
+exist yet.
+
+| | 19.0 | 20.0 |
+|---|---|---|
+| URL | https://mailpro-dev.cloudpepper.site | https://mailpro-dev-20.cloudpepper.site |
+| Server | `Pantalytics Demo` (Odoo 19.0 **community**), shared with the demo instances | `Pantalytics Demo v20` (Odoo 20.0 **community**), shared with the two 20 demo instances |
+| Tracks | branch `19.0`: a push pulls the code and restarts Odoo. It has never run `-u` (issue #134), so a version bump lands via Apps → Mail Pro → Upgrade | branch `20.0`: webhook and auto-upgrade on since 2026-11-03 (first install `20.0.34.0.0`). Whether a push really runs `-u` here is not measured yet; assume #134 and upgrade via Apps after a bump |
+| Login | `admin` / secret `CLOUDPEPPER_MAILPRO_DEV_ADMIN_PASSWORD`, project `prod` in Bitwarden Secrets Manager | `admin` / secret `CLOUDPEPPER_MAILPRO_DEV_20_ADMIN_PASSWORD`, same project |
+| OAuth redirect URIs | registered at Azure and Google | not registered yet |
 
 Only `pan_mail_pro` and its dependencies (`mail`, `base`, `crm`) are installed, so
-this is the closest thing to what CI builds — with a public HTTPS URL in front of it.
+each is the closest thing to what CI builds — with a public HTTPS URL in front of it.
 
-**What it is for:** OAuth. Azure and Google redirect URIs here have the same shape
-as production, which `localhost:8069` never does. A push to `19.0` is live in about
-a minute, so the round trip from merge to clicking through a real consent screen is
-short.
+**What they are for:** OAuth. Azure and Google redirect URIs here have the same shape
+as production, which `localhost:8069` never does. A push to the series branch is live
+in about a minute, so the round trip from merge to clicking through a real consent
+screen is short.
 
 **What it is not for:**
 - **The test suite.** `--test-enable` is a local-Docker / CI thing; there is no way
