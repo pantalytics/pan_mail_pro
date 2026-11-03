@@ -55,7 +55,21 @@ const ROW_RECORD = ".o_mailpro_item .o_mailpro_chip:not(.o_mailpro_chip_live)";
 const FILTER_MENU = ".o_mailpro_topbar .o_searchview_dropdown_toggler";
 const SEARCH_BOX = ".o_mailpro_topbar .o_searchview_input";
 
+/**
+ * The steps, or none while the Inbox is not on screen.
+ *
+ * `tour_service` also starts a tour on its own: it resumes the running one
+ * when a page loads, for somebody with Onboarding on, and it starts the next
+ * one of Odoo's own when one ends. Both happen before the Inbox is mounted, or
+ * on another screen altogether, and every step here waits on the Inbox's root
+ * classes: the tour would skip all of them and count as done, seen by nobody.
+ * With no steps `tour_service` leaves it current and does nothing, and the
+ * Inbox starts it once it is on screen (`offer()`).
+ */
 function steps() {
+    if (!document.querySelector(".o_mailpro_inbox")) {
+        return [];
+    }
     const record = _t("Every conversation sits on an Odoo record. Your reply lands in its chatter.");
     const link = _t("Wrong record? Link it to another one. The rest of the conversation follows.");
     const contact = markup(_t(
@@ -159,9 +173,10 @@ registry.category("web_tour.tours").add(INBOX_TOUR, {
 // Whether this page is running the tour. Module state rather than the
 // component's: the tour outlives an Inbox that is left and opened again
 // without a reload. `tourState` alone cannot say it, because it is
-// localStorage and another tab writes it too. A person with Onboarding on had
-// it resumed by `tour_service` when this page loaded.
-let running = Boolean(session.tour_enabled) && tourState.getCurrentTour() === INBOX_TOUR;
+// localStorage and another tab writes it too, and because a tour
+// `tour_service` started before the Inbox was on screen is current there and
+// running nowhere (`steps()`).
+let running = false;
 
 function runningHere() {
     return running && tourState.getCurrentTour() === INBOX_TOUR;
@@ -190,14 +205,22 @@ export function useInboxTour() {
      * The first time this person sees an Inbox with mail in it. Recorded as
      * seen when it starts, not when it ends: Stop Tour is a skip, and a tour
      * that came back after a skip would not be a skip.
+     *
+     * Also the tour `tour_service` started while the Inbox was not on screen:
+     * Odoo's Onboarding reaching it, a reload in the middle of it, or
+     * Settings > Technical > Tours. It is current and waiting for this.
      */
     async function offer() {
         if (offered) {
             return;
         }
         offered = true;
-        if (runningHere() || (session.tour_enabled && tourState.getCurrentTour() === INBOX_TOUR)) {
-            running = true;
+        if (runningHere()) {
+            return;
+        }
+        if (tourState.getCurrentTour() === INBOX_TOUR) {
+            await orm.call("web_tour.tour", "consume", [INBOX_TOUR]);
+            await start();
             return;
         }
         const seen = await orm.searchCount("web_tour.tour", [

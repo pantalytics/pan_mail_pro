@@ -98,6 +98,21 @@ class TestInboxTour(TransactionCase):
         for step in steps:
             self.assertIn('run: "click"', step)
 
+    def test_no_steps_off_the_inbox(self):
+        """A tour `tour_service` starts before the Inbox is on screen waits.
+
+        It resumes the running tour on every page load for somebody with
+        Onboarding on, before any action is mounted. Every step's `isActive`
+        fails there, and a tour that skips every step counts as done: the
+        first browser run found it consumed and never shown. No steps makes
+        `tour_service` leave it current; the Inbox starts it once mounted.
+        """
+        body = self.js.split('function steps() {', 1)[1]
+        self.assertTrue(body.lstrip().startswith(
+            'if (!document.querySelector(".o_mailpro_inbox")) {\n        return [];'))
+        offer = self.js.split('async function offer()', 1)[1]
+        self.assertIn('tourState.getCurrentTour() === INBOX_TOUR', offer)
+
     def test_linking_is_only_taught_to_who_may_link(self):
         """`link_to` is for mailbox managers, and so is the step about it."""
         taught = [step for step in self.steps() if 'content: link,' in step]

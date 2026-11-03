@@ -255,6 +255,13 @@ What 19.0's framework is decides the rest:
 - **When it runs.** The first time the list holds mail in Odoo (a live row is
   on no record), and recorded as seen when it starts, so a skip stays a skip.
   The "?" beside the search starts it again.
+- **Only on the Inbox.** `tour_service` starts tours by itself too: it resumes
+  the running one on every page load for somebody with Onboarding on, and it
+  starts the next of Odoo's own when one ends. Both happen before the Inbox is
+  mounted or on another screen, where every step's `isActive` fails, and a
+  tour that skips every step counts as done. So `steps()` returns none until
+  the Inbox is on screen; `tour_service` then leaves the tour current and does
+  nothing, and the Inbox starts it when it mounts.
 - **Onboarding stays the person's.** A tour started by hand switches the
   user's Onboarding on, and one that ends starts the next of Odoo's own
   (`consume` returns it). `start()` switches it back off for somebody who had
