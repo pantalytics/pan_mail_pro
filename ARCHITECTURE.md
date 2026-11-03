@@ -2732,6 +2732,16 @@ all three read, so whether to list in the store stays the licence decision
 above and never becomes a repository change. The repository around the module
 (docs, `tools/`, CI, this file) stays at the root and does not ship with it.
 
+That includes the suite's view of the world. Odoo.sh runs `--test-enable` on
+whatever it deployed, and "Deploy on Odoo.sh" from the store deploys the
+module folder alone, so a test that opens `../ARCHITECTURE.md` or `../tools/`
+errors there and halts the build (19.0.33.0.5). A check on the repository's
+own files is `tools/ci_lint.sh`'s; the one that has to stay in the suite (the
+rename SQL against real jsonb columns) goes through `tests/common.py`'s
+`repo_file`, which skips in a module-only checkout and fails where
+`PAN_TEST_REPO_REQUIRED` says the repository is mounted. CI's `module-only`
+job (`tools/ci_odoo.sh --mode=module-only`) runs the suite in that shape.
+
 ### 9.17 Connecting to Pantalytics, and working only when connected
 
 Settings → Mail Pro → Pantalytics Account. The admin presses **Connect to
@@ -2803,7 +2813,8 @@ releases before 19.0.22.0.0 call, stays an alias of it.
 - **The browser side is `static/src/js/improve.js`**, and it is off unless
   `ir.http.session_info` carries `pan_mail_improve` (`improve_config()`: the
   host, the token, a `u:<hmac>` pseudonym under the encryption key, the
-  sample). Then the Inbox, and only the Inbox, loads posthog-js from the lazy
+  sample; nothing while the database holds no key, because `session_info`
+  is a read-only request in 19.0 and never mints one). Then the Inbox, and only the Inbox, loads posthog-js from the lazy
   bundle `pan_mail_pro.assets_improve`, sends five named events
   (`inbox_opened`, `conversation_opened`, `tab_opened`, `reply_sent`,
   `conversation_linked`, with a folder, a tab, a mode, a `via` or a

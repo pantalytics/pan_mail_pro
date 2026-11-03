@@ -6,6 +6,9 @@
 #
 #   tools/ci_odoo.sh                # fresh install + tests
 #   tools/ci_odoo.sh --mode=upgrade # install the last release, upgrade, test
+#   tools/ci_odoo.sh --mode=module-only  # fresh install with only pan_mail_pro/
+#                                        # on the addons path, as Odoo.sh and
+#                                        # the Apps store deploy it
 #
 # Env:
 #   KEEP_DB=1      leave the Postgres container running afterwards
@@ -99,17 +102,24 @@ for _ in $(seq 1 60); do
     sleep 1
 done
 
+# 1 while the mount is the whole repository: a test that reads a repository
+# file (tests/common.py's repo_file) then fails when it is missing rather than
+# skipping. The module-only mode turns it off, because there it must skip.
+REPO_REQUIRED=1
+
 odoo_run() {
     # $1 = a checkout of the repository on the host, $2 = database, rest = odoo arguments
     local tree=$1 db=$2
     shift 2
+    local repo_env=()
+    [ "$REPO_REQUIRED" = 1 ] && repo_env=(-e PAN_TEST_REPO_REQUIRED=1)
     # The checkout itself is the addons path entry, the way Cloudpepper and
     # Odoo.sh use it: Odoo finds pan_mail_pro/ inside. A release before
     # 19.0.30.2.1 has the module at the root and a relative `pan_mail_pro -> .`
     # symlink, which resolves inside the mount too, so both shapes load.
     docker run --rm --network "$NET" \
         -v "${tree}:/mnt/extra-addons:ro" \
-        -e PAN_TEST_IMAP_HOST="$MAIL" \
+        -e PAN_TEST_IMAP_HOST="$MAIL" "${repo_env[@]}" \
         --entrypoint odoo "odoo:${SERIES}" \
         -d "$db" \
         --db_host="$DB" --db_port=5432 --db_user=odoo --db_password=odoo \
@@ -131,12 +141,31 @@ trap cleanup_all EXIT
 # covered by TESTPLAN.md.
 MODULES=pan_mail_pro,sale,mass_mailing
 
-if [ "$MODE" = "fresh" ]; then
+# ---------------------------------------------------------------------------
+# Module-only: the shape Odoo.sh's "Deploy on Odoo.sh" and the Apps store
+# produce -- the pan_mail_pro/ folder in an addons path with nothing around it.
+# The suite once read ARCHITECTURE.md and tools/ from one folder up, and on
+# Odoo.sh that was five FileNotFoundErrors and a halted build. A copy, not a
+# symlink: Path.resolve() follows a symlink straight back into the repository.
+# ---------------------------------------------------------------------------
+TREE=$REPO
+if [ "$MODE" = "module-only" ]; then
+    BASE_ADDONS=$(mktemp -d)
+    cp -R "$REPO/pan_mail_pro" "$BASE_ADDONS/"
+    find "$BASE_ADDONS" -name '__pycache__' -prune -exec rm -rf {} +
+    chmod -R a+rX "$BASE_ADDONS"
+    TREE=$BASE_ADDONS
+    REPO_REQUIRED=0
+    echo "Addons path holds only: $(ls "$BASE_ADDONS")"
+fi
+
+if [ "$MODE" = "fresh" ] || [ "$MODE" = "module-only" ]; then
     LOG="$LOG_DIR/odoo-test.log"
+    [ "$MODE" = "module-only" ] && LOG="$LOG_DIR/odoo-module-only.log"
     set -o pipefail
     # --log-handler=odoo.tools.convert:DEBUG turns "Invalid view <name>
     # definition" with an empty context into a real traceback.
-    odoo_run "$REPO" ci_test \
+    odoo_run "$TREE" ci_test \
         -i "$MODULES" --test-enable --test-tags=pan_mail_pro \
         --without-demo=all --log-level=info \
         --log-handler=odoo.tools.convert:DEBUG 2>&1 | tee "$LOG"
@@ -158,7 +187,7 @@ if [ "$MODE" = "fresh" ]; then
 fi
 
 if [ "$MODE" != "upgrade" ]; then
-    echo "unknown mode: $MODE (expected fresh or upgrade)" >&2
+    echo "unknown mode: $MODE (expected fresh, module-only or upgrade)" >&2
     exit 2
 fi
 

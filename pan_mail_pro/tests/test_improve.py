@@ -6,11 +6,27 @@ The consent chain is tested in test_license.py (`improve_active`). This asks
 what reaches the browser once it says yes: a host, a token, a pseudonymous
 person, and nothing that names anyone.
 """
+import os
 from unittest.mock import patch
 
 from odoo.tests import HttpCase, TransactionCase, tagged
 
+from odoo.addons.pan_mail_pro.models import encryption_utils
 from odoo.addons.pan_mail_pro.models.pan_mail_license import IMPROVE_REFUSED_PARAM
+
+
+def _with_key(env):
+    """The key connecting to Pantalytics mints: `action_connect` encrypts the
+    device token, so every link that can say yes to improving has one."""
+    encryption_utils.get_encryption_key(env)
+
+
+def _without_key(env):
+    """A fresh database: no key under either name, none from the environment."""
+    params = env['ir.config_parameter'].sudo()
+    params.set_param(encryption_utils.AUTO_KEY_PARAM, False)
+    params.set_param(encryption_utils.LEGACY_KEY_PARAM, False)
+    return patch.dict(os.environ, {encryption_utils.ENV_KEY_VAR: ''})
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -26,6 +42,7 @@ class TestImproveConfig(TransactionCase):
             'improve_token': 'phc_test',
             'replay_sample': 0.5,
         })
+        _with_key(self.env)
 
     def test_the_session_config_names_the_proxy_and_a_pseudonym(self):
         config = self.License.improve_config()
@@ -52,11 +69,10 @@ class TestImproveConfig(TransactionCase):
         for it once: the answer changes with the code, which is a restart
         or an upgrade, and both start the cache over."""
         Module = self.env['ir.module.module']
-        # The first `improve_config` on a fresh database mints the encryption
-        # key, and a config-parameter write clears the registry cache. Warm
-        # it before counting, so what is counted is the lookup and not the
-        # key: the upgrade job met exactly that order and read "searched
-        # again" on a cache the key had just emptied.
+        # A config-parameter write clears the registry cache, and setUp wrote
+        # the key. Warm it before counting, so what is counted is the lookup
+        # and not the key: the upgrade job met exactly that order and read
+        # "searched again" on a cache the key had just emptied.
         self.License.improve_config()
         version = self.License._module_version()
         self.assertEqual(version, Module.sudo().search(
@@ -67,6 +83,15 @@ class TestImproveConfig(TransactionCase):
             self.assertEqual(self.License._module_version(), version)
             self.assertEqual(self.License.improve_config()['version'], version)
         search.assert_not_called()
+
+    def test_no_key_means_no_pseudonym_and_no_write(self):
+        """`improve_config` is read inside `get_session_info`, a read-only
+        request in 19.0. It used to mint the key there, which failed with
+        an ERROR in the log on every fresh database before Odoo retried."""
+        with _without_key(self.env):
+            self.assertFalse(self.License.improve_config())
+            self.assertFalse(self.env['ir.config_parameter'].sudo().get_param(
+                encryption_utils.AUTO_KEY_PARAM))
 
     def test_a_refusal_here_empties_the_session(self):
         self.env['ir.config_parameter'].sudo().set_param(IMPROVE_REFUSED_PARAM, True)
@@ -107,6 +132,7 @@ class TestImproveSession(HttpCase):
             'improve_host': 'https://mcp.pantalytics.test/i/7-abc',
             'improve_token': 'phc_test', 'replay_sample': 1.0,
         })
+        _with_key(self.env)
         self.env['res.users'].create({
             'name': 'Nora Employee', 'login': 'nora@company.test',
             'password': 'nora@company.test', 'email': 'nora@company.test',
@@ -127,3 +153,20 @@ class TestImproveSession(HttpCase):
         self.authenticate('nora@company.test', 'nora@company.test')
         info = self.make_jsonrpc_request('/web/session/get_session_info', {})
         self.assertFalse(info['pan_mail_improve'])
+
+    def test_a_fresh_database_serves_the_session_without_a_write(self):
+        """The read-only request stays read-only: no "bad query", no retry
+        on a read/write cursor, and still no key afterwards."""
+        self.env['pan.mail.license'].sudo().create({
+            'status': 'active', 'improve': True,
+            'improve_host': 'https://mcp.pantalytics.test/i/7-abc',
+            'improve_token': 'phc_test', 'replay_sample': 1.0,
+        })
+        self.authenticate('admin', 'admin')
+        with _without_key(self.env), \
+                self.assertNoLogs('odoo.sql_db', level='ERROR'), \
+                self.assertNoLogs('odoo.http', level='WARNING'):
+            info = self.make_jsonrpc_request('/web/session/get_session_info', {})
+        self.assertFalse(info['pan_mail_improve'])
+        self.assertFalse(self.env['ir.config_parameter'].sudo().get_param(
+            encryption_utils.AUTO_KEY_PARAM))
