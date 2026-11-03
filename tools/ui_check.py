@@ -16,6 +16,7 @@ seeds it. Every assertion here is a bug this module has actually shipped:
     a wrong xpath breaks every screen and nothing server-side can see it
   * the same banner was registered in `WebClient.components`, which Enterprise
     has already copied by then -- every Enterprise screen went white
+  * a staging copy showed outgoing mail and said nothing about it (#379)
 
     tools/ui_check.py                     # assert, and write screenshots
     tools/ui_check.py --out=ui-screenshots
@@ -422,6 +423,65 @@ class Checks:
             self.error_free('Settings over the month\'s mails')
         finally:
             self.call('pan.mail.license', 'write', link, {'entitlement_json': False})
+
+    def copy_marker(self):
+        """A copy says so in one line, on the settings page and in the Inbox.
+
+        pan_mail_pro#379: on a neutralized database outgoing mail goes to the
+        host's catcher and nothing is read, and a person testing on staging
+        must not take that for the product. The line is absent on this
+        database as seeded, and present once it is a copy: the flag Odoo's
+        neutralization writes is set here and taken away again after. In the
+        Inbox it sits above the bar, never over a pane.
+        """
+        page = self.page
+        text = 'This is a copy. Mail is shown, not sent.'
+
+        def open_settings():
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step', timeout=30000)
+            page.wait_for_timeout(800)
+            return [m for m in page.query_selector_all('.o_mailpro_copy_marker')
+                    if m.is_visible()]
+
+        if open_settings():
+            self.fail('the settings page says "this is a copy" on a database that is not one')
+        self.call('ir.config_parameter', 'set_param', 'database.is_neutralized', 'True')
+        try:
+            markers = open_settings()
+            self.shot('settings-copy.png')
+            if len(markers) != 1:
+                self.fail(f'a copy shows {len(markers)} copy lines on the settings page, expected 1')
+            elif ' '.join(markers[0].inner_text().split()) != text:
+                self.fail(f'the settings copy line reads "{markers[0].inner_text()}"')
+            self.error_free('Settings on a copy')
+
+            action = dict(module_menu_actions(self.call)).get('Inbox')
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            try:
+                page.wait_for_selector('.o_mailpro_inbox .o_mailpro_copy_marker', timeout=30000)
+                page.wait_for_selector('.o_mailpro_topbar', timeout=30000)
+            except Exception:
+                self.fail('the Inbox on a copy does not say it is a copy')
+                return
+            page.wait_for_timeout(1500)
+            self.shot('inbox-copy.png')
+            marker = page.query_selector('.o_mailpro_inbox .o_mailpro_copy_marker')
+            if ' '.join(marker.inner_text().split()) != text:
+                self.fail(f'the Inbox copy line reads "{marker.inner_text()}"')
+            line, bar = marker.bounding_box(), page.query_selector('.o_mailpro_topbar').bounding_box()
+            if not line or not bar or line['y'] + line['height'] > bar['y'] + 1:
+                self.fail('the Inbox copy line is not above the bar')
+            elif line['width'] < bar['width'] - 1:
+                # The settings page caps its own line at the checklist's
+                # width; that rule once reached the Inbox too.
+                self.fail(f"the Inbox copy line is {line['width']:.0f}px wide, "
+                          f"the bar under it {bar['width']:.0f}px")
+            self.error_free('Inbox on a copy')
+        finally:
+            self.call('ir.config_parameter', 'set_param', 'database.is_neutralized', False)
 
     def inbox_not_connected(self):
         """Without a Pantalytics account the Inbox is one button, and the
@@ -4311,6 +4371,7 @@ def main():
         checks.settings_not_connected()
         checks.settings_key_refused()
         checks.settings_mail_limit()
+        checks.copy_marker()
         checks.inbox_not_connected()
         checks.menus()
         checks.conversation_view()

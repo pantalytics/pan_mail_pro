@@ -553,6 +553,13 @@ export class ConversationView extends Component {
         return user.isAdmin;
     }
 
+    /** A neutralized copy (staging, a restore): mail is shown in the host's
+     *  catcher, never sent, and nothing is read. The session says so, the way
+     *  `neutralization.py` detects it; there is no switch to read. */
+    get isCopy() {
+        return !!session.pan_mail_copy;
+    }
+
     /** Connect from the gate itself (#380): the pairing starts here and the
      *  approval page opens in this tab. After Approve the platform sends the
      *  browser to `/mail_pro/pantalytics/return`, which collects the key and

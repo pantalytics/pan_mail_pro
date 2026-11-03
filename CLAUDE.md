@@ -71,7 +71,9 @@ Docs, `tools/` and CI sit at the repository root around it (ARCHITECTURE.md
 | `models/res_users.py` | A user's accounts, their connected flag, connect / disconnect, whether to nudge them, and the one mailbox setting they own: the sync level of their own address, on My Preferences |
 | `models/res_config_settings.py` | The Settings page: the four checklist steps |
 | `models/encryption_utils.py` | Fernet at rest for every credential, and where the key comes from |
-| `models/ir_http.py` | Three session flags: does this user still have to connect a mailbox, is this Odoo connected to Pantalytics, and may the Inbox report how it is used |
+| `models/ir_http.py` | The session flags: does this user still have to connect a mailbox, is this Odoo connected to Pantalytics, may the Inbox report how it is used, and is this database a copy (`pan_mail_copy`) |
+| `models/ir_mail_server.py` | A copy's outgoing From, put in place where Odoo builds the message (ARCHITECTURE.md §9.9) |
+| `tests/test_copy.py` | A copy routes as production, hands the mail to Odoo's mail server with the From and threading it would have had, never asks a provider, never writes to a live mailbox, and says so in one line |
 | `static/src/js/improve.js` | Help improve Mail Pro, the browser side: loads posthog-js from its own lazy bundle only when the session says so, five named events, the errors the Inbox meets as `$exception` with the message scrubbed (`scrubExceptionEvent`), a wireframe recording of the Inbox and nothing else, sent to our proxy, never to PostHog |
 | `static/lib/posthog/` | posthog-js, vendored (MIT), pinned so the masking check in `tools/ui_check.py` proves the version that ships |
 | `tests/test_improve.py` | What the session carries once the workspace said yes: a host, a token, a pseudonym, nothing that names anyone |
@@ -619,7 +621,7 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 
 ## Lessons Learned
 
-### A button that sends you to another button (19.0.33.0.6)
+### A button that sends you to another button (19.0.33.1.2)
 
 - **The gate's Connect opened Settings, and Settings had its own Connect.**
   The click worked, and the screen it landed on said "Not connected" under a
@@ -652,6 +654,33 @@ After every `/compact`, update the **Lessons Learned** section below with new in
   TestCase on a test module, imported ones included. Borrow helpers through
   the module (`test_license.TestLicense.server`), not `from ... import
   TestLicense`.
+
+### A copy shows mail and sends none (19.0.33.1.0)
+
+- **Check what is already there before building what the issue asks for.**
+  #379 read as "a copy cannot show outgoing mail", and #338 had been handing
+  a copy's mail to Odoo's SMTP since 19.0.30.1.0. What was missing was the
+  route: the catcher showed Odoo's From, so a test on staging could not tell
+  which mailbox would have sent. The gap was one decision, not a feature.
+- **Route on a copy the way production routes, minus only what a copy cannot
+  have.** `_resolve_route(on_copy=True)` is the same ladder with archived
+  mailboxes allowed and no account looked for. A copy that sends a mail
+  production would refuse tests nothing, so the refusals and their
+  sentences stay.
+- **`email_from` on a `mail.mail` is the `mail.message`'s.** `_inherits`
+  delegates it, and a notification shares its message with the person who
+  wrote it, so writing the copy's From there would rewrite the chatter for
+  every recipient. Odoo's `_send` reads the From off the record and every
+  other value off `_prepare_outgoing_list`'s dicts; the From travels as a
+  header and `ir.mail_server._build_email__` puts it in place.
+- **`EmailMessage` refuses a second From.** `msg['From'] = x` on a message
+  that has one raises "There may be at most 1 From headers", so a From in
+  Odoo's `headers` dict is not an override, it is a crash at send.
+- **A copy that may read is a copy that may write.** One grant reads, marks
+  read, moves and sends on every provider. The only promise that holds is no
+  usable credential, which three layers already make true; the test puts the
+  credentials back and watches every transport instead of trusting their
+  absence.
 
 ### The module ships alone (19.0.33.0.5)
 
