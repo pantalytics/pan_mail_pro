@@ -483,17 +483,32 @@ class PanMailLicense(models.Model):
         link = self.current() if link is None else link
         if not self.improve_active(link=link):
             return False
+        user = self._improve_user_id()
+        if not user:
+            return False
         return {
             'host': link.improve_host,
             'token': link.improve_token,
-            'user': self._improve_user_id(),
+            'user': user,
             'sample': link.replay_sample,
             'version': self._module_version(),
         }
 
     @api.model
     def _improve_user_id(self):
-        key = encryption_utils.get_encryption_key(self.env)
+        """The pseudonym, or None while the database holds no key.
+
+        Read on every page load inside `get_session_info`, which 19.0 serves
+        on a read-only cursor, so it never mints the key: that write logged
+        "cannot execute INSERT in a read-only transaction" on every fresh
+        database. No key costs nothing real. Connecting to Pantalytics
+        encrypts the device token, so a link that can say yes to improving
+        already has one; without it there is nothing stable to hash with,
+        and the session reports nothing rather than a pseudonym that changes.
+        """
+        key = encryption_utils.get_encryption_key(self.env, generate=False)
+        if key is None:
+            return None
         digest = hmac.new(
             key, f'{self._db_uuid()}:{self.env.uid}'.encode(), hashlib.sha256,
         ).hexdigest()

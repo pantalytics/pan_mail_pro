@@ -1,0 +1,7 @@
+# The manifest's external_dependencies, for hosts that install Python
+# requirements from the repository root (Odoo.sh, Cloudpepper's "Install
+# Python requirements on update"). Unpinned: Odoo 19 already ships both, and a
+# pin here would fight the host's own. tools/ci_lint.sh keeps this list and
+# the manifest in step.
+cryptography
+requests

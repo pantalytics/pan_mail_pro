@@ -349,6 +349,7 @@ scripts:
 ```bash
 tools/ci.sh lint                  # ruff, XML, the Odoo 19 checklist, boundaries (seconds)
 tools/ci.sh test                  # fresh install + full suite in a real Odoo (~4 min)
+tools/ci.sh module-only           # the same with only pan_mail_pro/ deployed, as on Odoo.sh
 tools/ci.sh upgrade               # install last release, upgrade, run the suite
 tools/ci.sh ui                    # the browser checks against a seeded instance
 tools/ci.sh                       # all four, in CI's order
@@ -369,8 +370,8 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci.sh` | Entry point. `lint`, `test`, `upgrade` or all three |
 | `tools/ci_lint.sh` | Every static check the lint job runs, including that every `tests/test_*.py` is imported by `tests/__init__.py` — a file that is not on that list never runs, and nothing else can see that |
 | `tools/ci_version_bump.sh` | The manifest version bump, against a base ref |
-| `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh` or `--mode=upgrade` |
-| `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, and not zero tests |
+| `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh`, `--mode=module-only` (only `pan_mail_pro/` on the addons path, the way Odoo.sh and the Apps store deploy it) or `--mode=upgrade` |
+| `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, not zero tests, and no `bad query` / `ReadOnlySqlTransaction` line in the log |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
 | `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user beside the address they are connected as, the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal, and the Inbox in dark mode: every pane dark and no line of text below 3:1 (dark mode is Enterprise; `tools/ci_addons/pan_mail_pro_ci_dark` stands it in on the community image) |
@@ -620,6 +621,35 @@ registry.category("views").add("my_list", myListView);
 After every `/compact`, update the **Lessons Learned** section below with new insights from the session (gotchas, errors, solutions). This ensures continuity across context compactions.
 
 ## Lessons Learned
+
+### The module ships alone (19.0.33.0.5)
+
+- **Odoo.sh tests what it deployed, and the store deploys one folder.**
+  "Deploy on Odoo.sh" copies `pan_mail_pro/` into a fresh project and runs
+  `--test-enable` there. Six tests opened `../ARCHITECTURE.md`, four
+  `../tools/rename_to_mail_pro.sql`, and the build stopped at five
+  FileNotFoundErrors. Every run here had the repository around the module,
+  so none of them could see it. A check on the repository's files is
+  `tools/ci_lint.sh`'s; one that needs a database goes through
+  `tests/common.py`'s `repo_file`, which skips without the repository and
+  fails where `PAN_TEST_REPO_REQUIRED` says it is there, so CI cannot go
+  green on a check it quietly stopped running.
+- **A symlinked module is not a module-only checkout.** `Path(__file__)
+  .resolve()` follows the link back into the repository, so a test that
+  climbs out of the module passes. `tools/ci_odoo.sh --mode=module-only`
+  copies the folder.
+- **`get_session_info` is a read-only request in 19.0.** The Help improve
+  pseudonym minted the encryption key there, and every fresh database
+  logged `cannot execute INSERT in a read-only transaction` before Odoo
+  retried on a read/write cursor. It worked, and it read as broken to
+  anyone who opens the log. A read never mints the key now
+  (`generate=False`): a link that can say yes to improving was connected,
+  and connecting encrypts the device token, so the key is already there.
+  No hook, no migration, no state for an env-var key to disagree with.
+- **An ERROR in the log is not in the summary.** The retry made the test
+  pass, so the summary said 0 errors. `tools/ci_assert_tests.sh` now fails
+  on `bad query` and `ReadOnlySqlTransaction`; the two tests that run a bad
+  query on purpose catch it with `assertLogs('odoo.sql_db', 'ERROR')`.
 
 ### An Odoo session is not a person (19.0.30.0.0)
 

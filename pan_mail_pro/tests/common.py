@@ -16,6 +16,7 @@ Provides:
   calls in microsoft_graph_client and records what was sent.
 """
 import contextlib
+import os
 import pathlib
 import types
 import unittest
@@ -24,6 +25,31 @@ from unittest.mock import patch, MagicMock
 from odoo import http
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase
+
+# The module folder. Odoo.sh and the Apps store deploy this folder and nothing
+# around it, so a test may not count on the repository one level up.
+MODULE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Set by tools/ci_odoo.sh when it mounts the whole repository: from then on a
+# repository file that is missing is a failure, not a skip.
+REPO_REQUIRED_ENV = 'PAN_TEST_REPO_REQUIRED'
+
+
+def repo_file(test, *parts):
+    """The path of a file the repository keeps beside the module.
+
+    In a module-only checkout (Odoo.sh, the Apps store) the file is not there
+    and the test skips, saying so. Where `PAN_TEST_REPO_REQUIRED` is set the
+    repository has to be there, so a missing file fails: CI must not go green
+    on a check it quietly stopped running.
+    """
+    path = os.path.join(os.path.dirname(MODULE_DIR), *parts)
+    if os.path.isfile(path):
+        return path
+    where = '/'.join(parts)
+    if os.environ.get(REPO_REQUIRED_ENV):
+        test.fail('%s is missing, and %s says the repository is mounted' % (where, REPO_REQUIRED_ENV))
+    test.skipTest('%s ships with the repository, not the module' % where)
 
 
 def fake_request(session, env):

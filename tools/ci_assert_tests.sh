@@ -56,13 +56,30 @@ if [ "$TOTAL" -lt 1 ]; then
     exit 1
 fi
 
+# A query the database refused is an ERROR in the log and nothing in the
+# summary: Odoo retries a read-only request on a read/write cursor and the
+# test passes. 19.0.33 minted the encryption key inside the read-only
+# `get_session_info` and logged "cannot execute INSERT in a read-only
+# transaction" on every fresh database, which Odoo.sh and customers read as
+# broken. Tests that run a bad query on purpose catch it with assertLogs.
+BAD=$(grep -cE 'odoo\.sql_db: bad query|ReadOnlySqlTransaction' "$LOG" || true)
+if [ "${BAD:-0}" -gt 0 ]; then
+    echo "::error::The log has ${BAD} refused query line(s). A test that means it wraps it in assertLogs('odoo.sql_db', 'ERROR')."
+    grep -nE -B2 'odoo\.sql_db: bad query|ReadOnlySqlTransaction' "$LOG" | cut -c1-300 | head -30
+    exit 1
+fi
+
 # Skips are not failures, but they are invisible in the summary and this repo
 # has real ones (Enterprise-only paths). Printing them keeps "green" honest.
-SKIPPED=$(grep -icE 'odoo\.tests[^:]*: .*\bskip' "$LOG" || true)
+# Both shapes: `odoo.tests.suite: skipped setUpClass ...` and a single test's
+# `odoo.addons.pan_mail_pro.tests.test_x: skipped Class.test ...`, which the
+# first pattern here used to miss.
+SKIP_RE='\.tests(\.[a-z_]+)*: skipped '
+SKIPPED=$(grep -cE "$SKIP_RE" "$LOG" || true)
 echo "Ran ${TOTAL} test(s), ${SKIPPED} skipped, 0 failed, 0 errors."
 if [ "${SKIPPED:-0}" -gt 0 ]; then
     echo "Skipped tests:"
-    grep -iE 'odoo\.tests[^:]*: .*\bskip' "$LOG" | sed 's/^/  /' | head -20
+    grep -E "$SKIP_RE" "$LOG" | sed -E 's/^.*\.tests(\.[a-z_]+)*: skipped /  /' | cut -c1-200 | head -30
 fi
 
 grep -E 'odoo\.tests\.stats' "$LOG" | tail -1 || true
