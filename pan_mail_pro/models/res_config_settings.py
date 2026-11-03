@@ -153,6 +153,7 @@ class ResConfigSettings(models.TransientModel):
     # -------------------------------------------------------------------------
     x_is_copy = fields.Boolean(compute='_compute_is_copy')
 
+    @api.depends('company_id')
     def _compute_is_copy(self):
         is_copy = database_is_copy(self.env)
         for record in self:

@@ -173,6 +173,25 @@ touches:
   hand by that much on every series). With those, `tools/ui_local.sh` on 20
   reports only the two "19.0.34.0.0" lines, which are the rewritten manifest
   of the measuring copy, not a failure.
+- **Porting main 19.0.33.2.0 (#381 to #386) onto the seam, 2026-11-03**,
+  the first port, done on this branch rather than on a series branch: five
+  conflicts, all in the files the seam names, and six things the merge
+  brought that a series disagreed on. `ir.mail_server`'s builder is
+  `_build_email__` on 19 and 20 and `build_email` on 18 (the override wears
+  the running name, `compat.MAIL_SERVER_BUILD`); `_prepare_outgoing_list`'s
+  second argument is `recipients_follower_status` on 18 and
+  `doc_to_followers` after, passed through as `**kwargs`; a settings compute
+  without depends (`x_is_copy`) is not computed by 18's first onchange; a
+  test spelling `group_ids` is a test for one series (`groups_field`); the
+  SMTP switches a test flips (`_disable_send` and `_connect__`, or 18's
+  `current_test` and `connect`) are one helper, `tests/common.let_smtp_send`;
+  and `tools/cut_series.sh` rewrites every CI addon's manifest, not a named
+  one. The domain suggestion keeps RFC 2606 names out of what a *user's*
+  address says (18 ships `admin@example.com`) and in what a mailbox says, so
+  a seeded test database still gets its suggestion. In the browser: a
+  notebook tab is a `<button>` on 20, `<a>` before, and a login on 20 lands
+  on the Inbox, whose own bar wears `o_main_navbar`, so the banner is
+  measured on Discuss.
 - `migrations/` tests assert 19.0 migrations; the folder is empty on the
   `20.0` branch, so they do not apply there.
 

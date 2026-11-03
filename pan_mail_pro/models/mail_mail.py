@@ -538,7 +538,7 @@ class MailMail(models.Model):
         mails._raise_batch_failures(failures, delivered, auto_commit, raise_exception)
         return True
 
-    def _prepare_outgoing_list(self, mail_server=False, doc_to_followers=None):
+    def _prepare_outgoing_list(self, mail_server=False, **kwargs):
         """On a copy, dress Odoo's message the way the mailbox would have.
 
         Odoo builds one message per recipient here; everything it reads off
@@ -549,8 +549,9 @@ class MailMail(models.Model):
         place (models/ir_mail_server.py). Outside `_send_on_staging` this is
         Odoo's method untouched.
         """
-        results = super()._prepare_outgoing_list(
-            mail_server=mail_server, doc_to_followers=doc_to_followers)
+        # The second argument is `recipients_follower_status` on 18 and
+        # `doc_to_followers` on 19 and 20; it is passed through unread.
+        results = super()._prepare_outgoing_list(mail_server=mail_server, **kwargs)
         if not self.env.context.get(ON_COPY):
             return results
         try:

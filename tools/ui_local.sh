@@ -62,7 +62,7 @@ trap cleanup EXIT
 
 su postgres -c "dropdb --if-exists $DB" >/dev/null
 echo "Installing into $DB"
-odoo_cli -i pan_mail_pro,pan_mail_pro_ci_dark --without-demo=all --stop-after-init --no-http
+odoo_cli -i pan_mail_pro,pan_mail_pro_ci_dark,pan_mail_pro_ci_platform --without-demo=all --stop-after-init --no-http
 
 odoo_cli --http-port="$PORT" --dev=xml > "$WORK/ui-$SERIES.log" 2>&1 &
 SERVER=$!

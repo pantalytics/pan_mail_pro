@@ -19,7 +19,7 @@ OVERLAY="$REPO/tools/series/$SERIES"
 [ -d "$OVERLAY" ] || { echo "no tools/series/$SERIES: not a series this repository knows" >&2; exit 2; }
 
 FROM=$(python3 -c "import ast;print('.'.join(ast.literal_eval(open('$TREE/pan_mail_pro/__manifest__.py').read())['version'].split('.')[:2]))")
-for manifest in "$TREE/pan_mail_pro/__manifest__.py" "$TREE/tools/ci_addons/pan_mail_pro_ci_dark/__manifest__.py"; do
+for manifest in "$TREE/pan_mail_pro/__manifest__.py" "$TREE"/tools/ci_addons/*/__manifest__.py; do
     sed -i "s/'version': '${FROM}\./'version': '${SERIES}./" "$manifest"
 done
 if [ -f "$OVERLAY/REMOVE" ]; then

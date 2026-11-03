@@ -3892,6 +3892,12 @@ class Checks:
             page.fill('input[name=password]', login)
             page.click('button[type=submit]')
             page.wait_for_selector('.o_main_navbar', timeout=60000)
+            # On a screen with Odoo's navbar. Where a login lands depends on
+            # the menu order, and the Inbox hides that navbar for a bar of
+            # its own (which borrows the class), so the measurement is taken
+            # on Discuss, which every series has.
+            page.goto(f'{self.base}/odoo/discuss', wait_until='domcontentloaded')
+            page.wait_for_selector('nav.o_main_navbar', timeout=60000)
             page.wait_for_timeout(1500)
             banner = page.query_selector('.o_mailpro_connect_banner')
             if not banner:
@@ -3900,7 +3906,7 @@ class Checks:
             if self.out:
                 page.screenshot(path=os.path.join(self.out, 'connect-banner.png'))
             box = banner.bounding_box()
-            navbar = page.query_selector('.o_main_navbar').bounding_box()
+            navbar = page.query_selector('nav.o_main_navbar').bounding_box()
             if box['y'] < navbar['y'] + navbar['height'] - 1:
                 self.fail('the connect banner covers the navbar instead of sitting under it')
             content = page.query_selector('.o_action_manager, .o_content').bounding_box()
@@ -4473,7 +4479,8 @@ class Checks:
             page.click('.o_main_navbar .o_user_menu')
             page.click('.o-dropdown--menu .dropdown-item:has-text("Preferences")')
             page.wait_for_selector('.modal .o_form_view', timeout=30000)
-            tab = page.query_selector('.modal .o_notebook a:has-text("Mail Pro")')
+            # A tab is an <a> up to 19 and a <button> on 20.
+            tab = page.query_selector('.modal .o_notebook .nav-link:has-text("Mail Pro")')
             if not tab:
                 self.fail('My Preferences has no Mail Pro tab')
                 return

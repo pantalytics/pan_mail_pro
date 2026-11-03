@@ -57,7 +57,9 @@ PUBLIC_MAIL_DOMAINS = frozenset({
 
 # RFC 2606 reserves these for documentation, and Odoo seeds placeholders on
 # them: OdooBot is odoobot@example.com on every database, and 18 ships the
-# admin as admin@example.com before any demo data. Never a company's domain.
+# admin as admin@example.com before any demo data. A user's address there is
+# Odoo's placeholder, not the company's domain; a mailbox configured on one
+# is a deliberate choice (a test database) and counts.
 RESERVED_DOMAINS = frozenset({'example.com', 'example.net', 'example.org'})
 
 # Domains that are Odoo's hosting rather than a company's mail. Odoo.sh names
@@ -259,9 +261,9 @@ class PanMailDomain(models.Model):
             ('share', '=', False),
             ('id', '!=', SUPERUSER_ID),
         ])
-        addresses = [
-            address for address in mailboxes.mapped('email') + users.mapped('email')
-            if address
+        addresses = [address for address in mailboxes.mapped('email') if address] + [
+            address for address in users.mapped('email')
+            if address and not set(self._parse(address)) & RESERVED_DOMAINS
         ]
         return [address for address in addresses if self._parse(address)]
 
@@ -306,7 +308,7 @@ class PanMailDomain(models.Model):
         host = self._odoo_host()
         return [
             domain for domain in self._parse(', '.join(filter(None, candidates)))
-            if domain not in PUBLIC_MAIL_DOMAINS and domain not in RESERVED_DOMAINS
+            if domain not in PUBLIC_MAIL_DOMAINS
             and not self._is_hosting_domain(domain, host)
         ]
 

@@ -7,6 +7,7 @@ import inspect
 
 from odoo import api, models
 from odoo.addons.base.models import ir_config_parameter as _icp
+from odoo.addons.base.models import ir_mail_server as _ims
 from odoo.addons.mail.models.mail_mail import MailMail
 from odoo.addons.mail.models.mail_thread import MailThread
 
@@ -76,6 +77,18 @@ try:
     from odoo.api import ormcache as ormcache
 except ImportError:
     from odoo.tools import ormcache as ormcache  # 18 and 19
+
+
+# ir.mail_server builds its message in `_build_email__` on 19 and 20 and in
+# `build_email` on 18; the class is IrMailServer there and IrMail_Server on
+# 20, so the method is looked for on whatever the module defines.
+MAIL_SERVER_BUILD = (
+    "_build_email__"
+    if any(
+        hasattr(cls, "_build_email__") for cls in vars(_ims).values() if isinstance(cls, type)
+    )
+    else "build_email"
+)
 
 
 def config_bool(env, key):

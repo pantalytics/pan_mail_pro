@@ -12,14 +12,13 @@ staging catcher (MailHog, odoo.sh's Mails tab) shows what was sent.
 """
 import os
 from contextlib import ExitStack
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import odoo.modules.module
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from ..models import encryption_utils
-from .common import MailProTestCase, send_and_capture
+from .common import MailProTestCase, let_smtp_send, send_and_capture
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -45,16 +44,8 @@ class TestNeutralizedDatabase(MailProTestCase):
         `_disable_send` is Odoo's own test-mode switch, which skips the send
         "unless monkeypatched".
         """
-        mail_server = type(self.env['ir.mail_server'])
         stack = ExitStack()
-        if hasattr(mail_server, '_disable_send'):
-            stack.enter_context(patch.object(mail_server, '_disable_send', return_value=False))
-        else:
-            # 18 reads the test flag itself, inside send_email.
-            stack.enter_context(patch.object(odoo.modules.module, 'current_test', False))
-        # The SMTP session opener is `_connect__` on 19 and 20, `connect` on 18.
-        connect = '_connect__' if hasattr(mail_server, '_connect__') else 'connect'
-        stack.enter_context(patch.object(mail_server, connect, return_value=MagicMock()))
+        mail_server = let_smtp_send(stack, self.env)
         send_one = stack.enter_context(patch.object(type(mail), '_send_one', autospec=True))
         send_email = stack.enter_context(patch.object(
             mail_server, 'send_email', autospec=True, return_value='<staging@example.com>'))

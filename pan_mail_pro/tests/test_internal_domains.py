@@ -369,7 +369,7 @@ class TestInternalDomainSuggestion(TransactionCase):
     def test_only_a_mailbox_manager_adds_the_suggestion(self):
         clerk = self.env['res.users'].with_context(no_reset_password=True).create({
             'name': 'Clerk', 'login': 'clerk@first.test',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         with self.assertRaises(AccessError):
             self.Domains.with_user(clerk).action_add_suggested()

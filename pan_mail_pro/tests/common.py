@@ -22,6 +22,7 @@ import types
 import unittest
 from unittest.mock import patch, MagicMock
 
+import odoo
 from odoo import http
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase
@@ -125,6 +126,31 @@ def registry_test_mode(case):
             yield
         finally:
             case.registry.leave_test_mode()
+
+
+def let_smtp_send(stack, env):
+    """Let Odoo's SMTP path run under the test runner, with the session stood
+    in for: `send_email` is then reached and can be patched by the caller.
+
+    `_disable_send` is 19's and 20's test-mode switch; 18 reads the test
+    flag itself inside `send_email`. The session opener is `_connect__` on
+    19 and 20, `connect` on 18.
+    """
+    mail_server = type(env['ir.mail_server'])
+    if hasattr(mail_server, '_disable_send'):
+        stack.enter_context(patch.object(mail_server, '_disable_send', return_value=False))
+    else:
+        stack.enter_context(patch.object(odoo.modules.module, 'current_test', False))
+    connect = '_connect__' if hasattr(mail_server, '_connect__') else 'connect'
+    stack.enter_context(patch.object(mail_server, connect, return_value=MagicMock()))
+    return mail_server
+
+
+def build_email(server, **kwargs):
+    """`ir.mail_server`'s message builder: `_build_email__` on 19 and 20,
+    `build_email` on 18."""
+    build = getattr(server, '_build_email__', None) or server.build_email
+    return build(**kwargs)
 
 
 def send_and_capture(mails):

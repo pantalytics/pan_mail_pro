@@ -19,7 +19,7 @@ import imaplib
 import os
 import smtplib
 from contextlib import ExitStack
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import requests
 
@@ -29,7 +29,7 @@ from odoo.tests import HttpCase, tagged
 from ..models.mail_mail import ON_COPY
 from ..models.mail_provider_client import PROVIDER_CLIENTS, get_provider_client
 from ..models.neutralization import COPY_FROM_HEADER
-from .common import MailProTestCase, send_and_capture
+from .common import MailProTestCase, build_email, let_smtp_send, send_and_capture
 
 MARKER = 'This is a copy. Mail is shown, not sent.'
 MODULE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -110,9 +110,7 @@ class TestCopyOutgoing(MailProTestCase):
         `send_email` and is kept for the assertions.
         """
         stack = ExitStack()
-        mail_server = type(self.env['ir.mail_server'])
-        stack.enter_context(patch.object(mail_server, '_disable_send', return_value=False))
-        stack.enter_context(patch.object(mail_server, '_connect__', return_value=MagicMock()))
+        mail_server = let_smtp_send(stack, self.env)
         sent = []
 
         def send_email(server, message, *args, **kwargs):
@@ -218,13 +216,13 @@ class TestCopyOutgoing(MailProTestCase):
         Server = self.env['ir.mail_server']
         build = dict(email_to=['b@example.com'], subject='s', body='b',
                      headers={COPY_FROM_HEADER: 'info@company.test'})
-        self.assertEqual(Server._build_email__(email_from='odoo@company.test', **build)['From'],
+        self.assertEqual(build_email(Server, email_from='odoo@company.test', **build)['From'],
                          'odoo@company.test')
         on_copy = Server.with_context(**{ON_COPY: True})
-        self.assertEqual(on_copy._build_email__(email_from='odoo@company.test', **build)['From'],
+        self.assertEqual(build_email(on_copy, email_from='odoo@company.test', **build)['From'],
                          'info@company.test')
-        self.assertEqual(on_copy._build_email__(
-            email_from='odoo@company.test', email_to=['b@example.com'], subject='s',
+        self.assertEqual(build_email(
+            on_copy, email_from='odoo@company.test', email_to=['b@example.com'], subject='s',
             body='b')['From'], 'odoo@company.test')
 
 
@@ -324,7 +322,7 @@ class TestCopyMarker(MailProTestCase):
                   encoding='utf-8') as handle:
             template = handle.read()
         marker = template.index(MARKER)
-        self.assertIn('t-if="isCopy"', template[template.rindex('<div', 0, marker):marker])
+        self.assertIn('t-if="this.isCopy"', template[template.rindex('<div', 0, marker):marker])
         self.assertLess(marker, template.index('o_mailpro_gate'),
                         'the line has to come before the gate, or a copy that is not '
                         'connected never shows it')
