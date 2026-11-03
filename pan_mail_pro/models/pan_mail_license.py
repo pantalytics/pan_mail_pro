@@ -108,7 +108,7 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
 from . import encryption_utils
-from .hosting import hosting
+from .hosting import edition, hosting
 from .neutralization import database_is_copy, database_sees_a_copy
 from .pan_mail_error import MAX_CODES_REPORTED
 from .res_users import _referer_path
@@ -1047,6 +1047,10 @@ class PanMailLicense(models.Model):
         highest trust, because only the app stands on the machine. Never a
         host name, a path or the stage itself.
 
+        **`edition` is `community` or `enterprise`**, whether `web_enterprise`
+        is installed, read from inside like the hosting and said daily, so an
+        Odoo that changed edition is right at the platform the next day.
+
         **`staging` is one boolean, and only a copy sends it** (#384): `true`
         on a database Odoo neutralized or Odoo.sh runs as a staging or dev
         branch, so the platform counts none of its
@@ -1115,6 +1119,10 @@ class PanMailLicense(models.Model):
             # admin#598). One word from a fixed list; the platform refuses
             # any other, and no host name or path ever rides with it.
             'hosting': hosting(),
+            # Community or Enterprise, read from inside: whether
+            # `web_enterprise` is installed (`hosting.edition`). Said daily,
+            # so an Odoo that changed edition is right the next day.
+            'edition': edition(self.env),
         }
         if database_sees_a_copy(self.env):
             body['staging'] = True

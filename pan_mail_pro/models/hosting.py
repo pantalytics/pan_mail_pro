@@ -20,6 +20,13 @@ name, no path, no stage name.
 Nothing is probed: no request to the host, no file read. The platform takes no
 other value (a 400), so `hosting()` can return no other.
 
+The edition rides beside it (`edition(env)`): `enterprise` when
+`web_enterprise` is installed, `community` otherwise. That module is what
+Enterprise is on every host; Odoo's own `version_info` only carries the `e`
+on a packaged Enterprise build, not on source with the Enterprise addons on
+the path (Cloudpepper's shape). Said on every heartbeat, so an Odoo that
+moved between the two is right at the platform the next day.
+
 The same variable says whether an Odoo.sh database is a copy: a `staging` or
 `dev` branch is one, whatever the neutralization left set
 (`host_says_copy`, read by `neutralization.database_is_copy`).
@@ -55,6 +62,17 @@ def hosting(environ=None, config_path=None):
     if CLOUDPEPPER_CONFIG.match(str(config_path)):
         return 'cloudpepper'
     return 'self_hosted'
+
+
+EDITION_VALUES = ('community', 'enterprise')
+
+
+def edition(env):
+    """`enterprise` when `web_enterprise` is installed, else `community`."""
+    enterprise = env['ir.module.module'].sudo().search_count(
+        [('name', '=', 'web_enterprise'), ('state', '=', 'installed')], limit=1
+    )
+    return 'enterprise' if enterprise else 'community'
 
 
 def host_says_copy(environ=None):
