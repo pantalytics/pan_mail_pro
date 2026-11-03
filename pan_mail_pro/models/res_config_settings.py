@@ -35,6 +35,7 @@ import logging
 from odoo import _, api, fields, models
 
 from .mail_provider_client import get_provider_client
+from .neutralization import database_is_neutralized
 from .pan_mail_license import IMPROVE_REFUSED_PARAM, STATUS_SELECTION
 
 _logger = logging.getLogger(__name__)
@@ -145,6 +146,17 @@ class ResConfigSettings(models.TransientModel):
         string='Help improve Mail Pro',
         compute='_compute_improve', inverse='_inverse_improve',
     )
+
+    # -------------------------------------------------------------------------
+    # A copy (pan_mail_pro#379): one line above the checklist, no switch. The
+    # copy is detected, never declared, the way `neutralization.py` does it.
+    # -------------------------------------------------------------------------
+    x_is_copy = fields.Boolean(compute='_compute_is_copy')
+
+    def _compute_is_copy(self):
+        is_copy = database_is_neutralized(self.env)
+        for record in self:
+            record.x_is_copy = is_copy
 
     # -------------------------------------------------------------------------
     # About
