@@ -13,6 +13,13 @@ $mailpro-ink: if($mailpro-dark, #fff, #001d21);
 // The done dot's green, the one colour that means the same in both schemes.
 $mailpro-sync-yes: #1f9d63;
 $mailpro-sync-yes-ink: if($mailpro-dark, #5cc996, #157a4b);
+// The Inbox's muted grey and accent text (conversation_view.scss): both clear
+// 4.5:1 on either scheme's page, which the theme's primary does not in dark.
+$mailpro-sync-muted: if($mailpro-dark, #99a5a6, #5c6570);
+$mailpro-sync-accent: if($mailpro-dark, #b5b4ff, #4340b4);
+$mailpro-sync-track: rgba($mailpro-ink, 0.14);
+$mailpro-sync-fill: if(global-variable-exists(form-range-thumb-bg),
+                       $form-range-thumb-bg, $mailpro-sync-accent);
 
 // Bootstrap's thumb is this wide; its centre travels from half of it to the
 // track's length minus half of it, and the stop names follow the centre.
@@ -27,8 +34,38 @@ $mailpro-sync-flash: 0.4s;
         padding-top: 0.25rem;
     }
 
+    // The track filled up to the thumb in the thumb's own colour, and an
+    // empty part that shows on a dark page too (the theme's track is the
+    // secondary background, which is the page there). The theme's focus is a
+    // 1px ring; the keyboard gets a wider one.
     .o_mailpro_sync_range {
         display: block;
+
+        &::-webkit-slider-runnable-track {
+            background: linear-gradient(to right,
+                $mailpro-sync-fill 0 var(--mailpro-fill, 0%),
+                $mailpro-sync-track var(--mailpro-fill, 0%) 100%);
+        }
+
+        &::-moz-range-track {
+            background: $mailpro-sync-track;
+        }
+
+        &::-moz-range-progress {
+            height: 0.5rem;
+            border-radius: 1rem;
+            background: $mailpro-sync-fill;
+        }
+
+        &:focus-visible {
+            &::-webkit-slider-thumb {
+                box-shadow: 0 0 0 0.2rem rgba($mailpro-sync-accent, 0.5);
+            }
+
+            &::-moz-range-thumb {
+                box-shadow: 0 0 0 0.2rem rgba($mailpro-sync-accent, 0.5);
+            }
+        }
     }
 
     .o_mailpro_sync_stops {
@@ -48,8 +85,7 @@ $mailpro-sync-flash: 0.4s;
         white-space: nowrap;
         font-size: 0.82rem;
         line-height: 1.5rem;
-        color: inherit;
-        opacity: 0.75;
+        color: $mailpro-sync-muted;
         cursor: pointer;
 
         // The ends sit flush with the track rather than half past it.
@@ -64,12 +100,12 @@ $mailpro-sync-flash: 0.4s;
         }
 
         &.o_mailpro_sync_stop_on {
-            opacity: 1;
+            color: inherit;
             font-weight: 600;
         }
 
         &:focus-visible {
-            outline: 2px solid $primary;
+            outline: 2px solid $mailpro-sync-accent;
             outline-offset: 2px;
             border-radius: 0.25rem;
         }
@@ -129,8 +165,7 @@ $mailpro-sync-flash: 0.4s;
         border: 1.5px solid currentColor;
         border-radius: 50%;
         background: none;
-        color: inherit;
-        opacity: 0.6;
+        color: $mailpro-sync-muted;
         font-family: Georgia, serif;
         font-size: 0.65rem;
         font-style: italic;
@@ -140,13 +175,11 @@ $mailpro-sync-flash: 0.4s;
         cursor: pointer;
 
         &:hover, &[aria-expanded="true"] {
-            opacity: 1;
-            color: $primary;
+            color: $mailpro-sync-accent;
         }
 
         &:focus-visible {
-            opacity: 1;
-            outline: 2px solid $primary;
+            outline: 2px solid $mailpro-sync-accent;
             outline-offset: 2px;
         }
     }
@@ -186,7 +219,7 @@ $mailpro-sync-flash: 0.4s;
     // swelling once, as long as the field keeps the class.
     .o_mailpro_sync_flash {
         .o_mailpro_sync_what {
-            box-shadow: inset 3px 0 0 $primary;
+            box-shadow: inset 3px 0 0 $mailpro-sync-accent;
         }
 
         .o_mailpro_sync_odoo .o_mailpro_sync_mark {

@@ -9,6 +9,7 @@
                        t-att-id="props.id or id"
                        min="0" t-att-max="max" step="1"
                        t-att-value="index"
+                       t-attf-style="--mailpro-fill: {{ position(index) * 100 }}%"
                        t-att-aria-valuetext="valueText"
                        t-att-disabled="props.readonly"
                        t-on-input="onInput"/>

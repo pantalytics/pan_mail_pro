@@ -4873,6 +4873,15 @@ class Checks:
             }""", root)
 
         def expect(stop, why):
+            # The click updates the record; the field draws on the next
+            # render, so wait for the label a screen reader would hear.
+            try:
+                page.wait_for_function(
+                    "([root, text]) => document.querySelector(root + ' input[type=range]')"
+                    ".getAttribute('aria-valuetext') === text",
+                    arg=[root, self.SYNC_LABELS[stop]], timeout=3000)
+            except Exception:
+                pass
             state = grid()
             if state['value'] != str(stop):
                 self.fail(f'{where}: {why}, the slider is at {state["value"]}, expected {stop}')
