@@ -739,6 +739,106 @@ class Checks:
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
 
+    def inbox_gate_on_copy(self):
+        """On a copy the gate's Connect pairs it as staging (#384).
+
+        A fresh install on staging used to meet a gate with no button: the
+        license refused to connect a copy. Now the copy line sits above the
+        gate, the one Connect button starts a pairing whose start call says
+        `staging: true` (read back from the platform stand-in, which records
+        it), and Approve lands in an open Inbox that still says it is a copy.
+        The signed answer the poll and heartbeat would bring is stood in on
+        the row, `staging` in it, the way `inbox_not_connected` stands in a
+        production's.
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            self.fail('there is no Inbox menu')
+            return
+        page = self.page
+        approval = 'https://pantalytics.test/admin/link'
+        back = f'{self.base}/mail_pro/pantalytics/return'
+        start_param = 'pan_mail_pro_ci.platform_stub_start'
+
+        def approval_page(route):
+            route.fulfill(status=200, content_type='text/html', body=(
+                '<!doctype html><title>Pantalytics</title>'
+                f'<a id="approve" href="{back}">Link</a>'))
+
+        self.call('pan.mail.license', 'unlink', self.call('pan.mail.license', 'search', []))
+        self.call('ir.config_parameter', 'set_param', 'database.is_neutralized', 'True')
+        self.call('ir.config_parameter', 'set_param', 'pan_mail_pro_ci.platform_stub', approval)
+        self.call('ir.config_parameter', 'set_param', start_param, False)
+        page.route(f'{approval}**', approval_page)
+        try:
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            try:
+                page.wait_for_selector('.o_mailpro_gate', timeout=30000)
+                page.wait_for_selector('.o_mailpro_inbox .o_mailpro_copy_marker', timeout=30000)
+            except Exception:
+                self.fail('a copy that is not connected does not show the gate under its copy line')
+                return
+            page.wait_for_timeout(800)
+            self.shot('inbox-copy-not-connected.png')
+            connect = [b for b in page.query_selector_all('.o_mailpro_gate button')
+                       if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
+            if len(connect) != 1:
+                self.fail(f'the Inbox gate on a copy shows {len(connect)} Connect buttons, expected 1')
+                return
+            inbox_path = urllib.parse.urlsplit(page.url).path
+            connect[0].click()
+            try:
+                page.wait_for_url(f'{approval}**', timeout=30000)
+            except Exception:
+                self.fail(f'Connect on a copy\'s gate does not open the approval page; '
+                          f'it is on {page.url}')
+                return
+            start = json.loads(self.call('ir.config_parameter', 'get_param', start_param) or '{}')
+            if start.get('staging') is not True:
+                self.fail(f'Connect on a copy did not say staging: {start}')
+            link = self.call('pan.mail.license', 'search_read', [], fields=['status'])
+            if not link or link[0]['status'] != 'pending':
+                self.fail(f'Connect on a copy started no pairing: {link}')
+                return
+            # What Link and the poll leave on the row: a staging answer.
+            self.call('pan.mail.license', 'write', [link[0]['id']], {
+                'status': 'active',
+                'user_code': False, 'verify_url': False, 'device_token_encrypted': False,
+                'connected_account': 'seed@pantalytics.test',
+                'entitlement_json': json.dumps({'staging': True, 'status': 'active'}),
+                'connected_on': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
+                'valid_until': (datetime.datetime.now(datetime.UTC)
+                                + datetime.timedelta(days=14)
+                                ).strftime('%Y-%m-%d %H:%M:%S')})
+            page.click('#approve')
+            try:
+                page.wait_for_selector('.o_mailpro_topbar', timeout=60000)
+            except Exception:
+                self.fail(f'Link on a copy does not land back in an open Inbox; it is on {page.url}')
+                return
+            page.wait_for_timeout(800)
+            self.shot('inbox-copy-connected.png')
+            if urllib.parse.urlsplit(page.url).path != inbox_path:
+                self.fail(f'Link on a copy lands on {page.url}, not on the Inbox it started from')
+            if page.query_selector('.o_mailpro_gate'):
+                self.fail('the Inbox gate on a copy is still there after Link')
+            if not page.query_selector('.o_mailpro_inbox .o_mailpro_copy_marker'):
+                self.fail('a connected copy no longer says it is a copy')
+            self.error_free('Inbox on a copy connected from its gate')
+        finally:
+            page.unroute(f'{approval}**')
+            self.call('ir.config_parameter', 'set_param', 'pan_mail_pro_ci.platform_stub', False)
+            self.call('ir.config_parameter', 'set_param', start_param, False)
+            self.call('ir.config_parameter', 'set_param', 'database.is_neutralized', False)
+            self.call('pan.mail.license', 'unlink', self.call('pan.mail.license', 'search', []))
+            self.call('pan.mail.license', 'create', {
+                'status': 'active',
+                'connected_account': 'seed@pantalytics.test',
+                'connected_on': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
+                'valid_until': (datetime.datetime.now(datetime.UTC)
+                                + datetime.timedelta(days=14)
+                                ).strftime('%Y-%m-%d %H:%M:%S')})
+
     # -- Every menu this module adds -----------------------------------------
 
     def menus(self):
@@ -4911,6 +5011,7 @@ def main():
         checks.settings_mail_limit()
         checks.copy_marker()
         checks.inbox_not_connected()
+        checks.inbox_gate_on_copy()
         checks.inbox_no_mailbox()
         checks.menus()
         checks.conversation_view()

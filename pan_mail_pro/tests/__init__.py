@@ -73,4 +73,5 @@ from . import test_session_schema_behind
 from . import test_dark_mode
 from . import test_setup_defaults
 from . import test_copy
+from . import test_staging
 from . import test_personal_notification_mailbox

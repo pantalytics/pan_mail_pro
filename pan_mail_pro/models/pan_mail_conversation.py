@@ -50,6 +50,7 @@ from odoo.tools.mail import html_sanitize, plaintext2html
 from odoo.tools.translate import LazyTranslate
 
 from .mail_message import READ_MIRROR_CTX
+from .neutralization import database_is_neutralized
 from .mail_provider_client import (
     FOLDER_ARCHIVE, FOLDER_INBOX, FOLDER_SENT, FOLDER_TRASH, interactive,
 )
@@ -469,7 +470,11 @@ class PanMailConversation(models.AbstractModel):
         personal mailbox is still a mailbox, and "none yet" would be false.
         """
         self._check_caller()
-        return bool(self.env['pan.mail.mailbox'].sudo().search_count([], limit=1))
+        # A copy archived every mailbox it came with (`data/neutralize.sql`)
+        # and still shows their mail: those count.
+        Mailbox = self.env['pan.mail.mailbox'].sudo().with_context(
+            active_test=not database_is_neutralized(self.env))
+        return bool(Mailbox.search_count([], limit=1))
 
     @api.model
     def inbox_search_view_id(self):

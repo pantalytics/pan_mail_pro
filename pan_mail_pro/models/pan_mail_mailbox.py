@@ -14,7 +14,7 @@ from .mail_provider_client import (
     ThrottledError,
 )
 from .mail_message import READ_MIRROR_CTX
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 
 _logger = logging.getLogger(__name__)
 
@@ -1299,7 +1299,7 @@ class PanMailMailbox(models.Model):
         self.ensure_one()
         self._check_manager()
 
-        if database_is_neutralized(self.env):
+        if database_is_copy(self.env):
             raise UserError(_(
                 'This Odoo instance is neutralized (a staging or test copy). Syncing '
                 'would read live mail and post notifications back out, so it is '

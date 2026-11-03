@@ -558,9 +558,11 @@ export class ConversationView extends Component {
         return user.isAdmin;
     }
 
-    /** A neutralized copy (staging, a restore): mail is shown in the host's
-     *  catcher, never sent, and nothing is read. The session says so, the way
-     *  `neutralization.py` detects it; there is no switch to read. */
+    /** A copy (staging, a restore, or what the platform's answer calls
+     *  staging): mail is shown in the host's catcher, never sent, and nothing
+     *  is read. The session says so, the way `neutralization.py` detects it;
+     *  there is no switch to read. The gate's Connect works on it as
+     *  anywhere, and pairs it as staging (#384). */
     get isCopy() {
         return !!session.pan_mail_copy;
     }

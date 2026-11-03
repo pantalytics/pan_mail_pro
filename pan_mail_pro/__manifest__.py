@@ -113,7 +113,8 @@
           matching rule how often it decided and how often a person
           overruled it, how many conversations were linked by hand, and
           which kinds of failure happened how often (a fixed list of error
-          codes such as "outgoing.send_failed", with a count each).
+          codes such as "outgoing.send_failed", with a count each). A
+          staging or restored copy also says that it is one (a yes/no).
           Counts, rule names and error codes. Never an address, subject,
           body, name, exception text or traceback.
         - Signing in with the Pantalytics Mail Pro app asks Pantalytics to
@@ -135,7 +136,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.33.1.3',
+    'version': '19.0.33.2.1',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
