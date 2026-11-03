@@ -75,5 +75,5 @@ echo " ready."
 
 python3 "$REPO/tools/ui_seed.py" "$DB" "http://localhost:$PORT"
 mkdir -p "$OUT"
-"$REPO/tools/ui_check.py" --url="http://localhost:$PORT" --db="$DB" --out="$OUT"
+PAN_UI_TREE="$TREE" "$REPO/tools/ui_check.py" --url="http://localhost:$PORT" --db="$DB" --out="$OUT"
 echo "Screenshots in $OUT"

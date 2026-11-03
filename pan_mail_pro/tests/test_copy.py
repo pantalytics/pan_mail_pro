@@ -316,6 +316,23 @@ class TestCopyMarker(MailProTestCase):
         self.assertIn(MARKER, arch)
         self.assertIn('invisible="not x_is_copy"', arch)
 
+    def test_the_first_onchange_fills_the_copy_fields(self):
+        """The web client opens a form with one onchange over every field,
+        and 18 computes only the fields that depend on something there (19
+        and 20 compute the rest as well). The settings page's copy line and
+        the composer's fixed Send From are both answered by that call."""
+        self.env['ir.config_parameter'].sudo().set_param('database.is_neutralized', 'True')
+        # The call the web client makes: no values, every field of the form
+        # in the spec. 18 gives each a default and recomputes what depends
+        # on a field that had one, so the dependency has to be in the form.
+        for model, field, trigger in (
+                ('res.config.settings', 'x_is_copy', 'company_id'),
+                ('mail.compose.message', 'x_on_test_instance', 'composition_mode')):
+            with self.subTest(model=model):
+                answer = self.env[model].onchange({}, [], {field: {}, trigger: {}})
+                self.assertTrue(answer.get('value', {}).get(field),
+                                f'{model}.{field} is not computed by the first onchange')
+
     def test_the_inbox_says_it_whatever_state_it_is_in(self):
         """Above the gate and the panes alike, read off the session."""
         with open(os.path.join(MODULE, 'static', 'src', 'xml', 'conversation_view.xml'),

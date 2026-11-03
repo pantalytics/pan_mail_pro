@@ -64,8 +64,13 @@ MAX_STEP_WIDTH = 800
 PROVIDER_CODES = ('outlook', 'gmail', 'imap')
 
 
+# The tree the instance runs: the repository, or a copy cut for another
+# series (tools/ui_local.sh --series=), whose manifest says what About shows.
+TREE = os.environ.get('PAN_UI_TREE', REPO)
+
+
 def manifest_version():
-    manifest = ast.literal_eval(open(f'{REPO}/pan_mail_pro/__manifest__.py').read())
+    manifest = ast.literal_eval(open(f'{TREE}/pan_mail_pro/__manifest__.py').read())
     return manifest['version']
 
 
