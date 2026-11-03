@@ -379,6 +379,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
 | `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user beside the address they are connected as, the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal, and the Inbox in dark mode: every pane dark and no line of text below 3:1 (dark mode is Enterprise; `tools/ci_addons/pan_mail_pro_ci_dark` stands it in on the community image), and the Inbox's gate connecting and landing back in an open Inbox, on a copy too, where the start call says `staging` (the platform's pairing start stood in, and recorded, by `tools/ci_addons/pan_mail_pro_ci_platform`) |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
+| `tools/ci_addons_stage.sh` | Copies the CI-only addons in `tools/ci_addons/` into a folder outside the repository and gives their manifest its real name there. In the repository it is `__manifest__.ci`, so Odoo.sh never offers them in a customer's Apps (#395); `tools/ci_lint.sh` fails on any `__manifest__.py` but the module's. Point a no-Docker run's addons path at the folder it fills, never at `tools/ci_addons` |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
 
@@ -621,6 +622,19 @@ registry.category("views").add("my_list", myListView);
 After every `/compact`, update the **Lessons Learned** section below with new insights from the session (gotchas, errors, solutions). This ensures continuity across context compactions.
 
 ## Lessons Learned
+
+### A folder with a manifest is a module to every host (19.0.33.2.2)
+
+- **Odoo.sh offered our CI addons in a customer's Apps.** It puts every folder
+  of a submodule that holds a module on the addons path, so
+  `tools/ci_addons/` came along with the module, and `pan_mail_pro_ci_platform`
+  (which answers the pairing start in place of the platform) was one click
+  from installed. Nothing in the repository looked wrong, because every run
+  here put that folder on the path on purpose. In the repository the manifest
+  is `__manifest__.ci`; `tools/ci_addons_stage.sh` copies the addons out and
+  renames it, and `tools/ci_lint.sh` fails on any other `__manifest__.py`.
+  The check reads the files, not a list of known folders, so the next helper
+  addon cannot repeat it.
 
 ### A copy connects, and its answer keeps it a copy (19.0.33.2.0)
 
