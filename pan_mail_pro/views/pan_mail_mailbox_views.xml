@@ -128,23 +128,13 @@
                              system email. Hiding this left its owner unable
                              to set sync on their own address. -->
                         <page string="Sync settings" name="sync">
-                            <!-- Sending is stated, not asked. Whether this
-                                 address is used is decided per message, in the
-                                 composer's Send From. One sentence: the brand
-                                 allows no more under a heading. -->
-                            <p class="text-muted o_mailpro_mailbox_lead">
-                                Mail you send from Odoo with this address under Send From
-                                leaves from it and lands in your Sent Items.
-                            </p>
-
                             <!-- Rows, label left and value right, in Odoo's own
-                                 group: the label used to run straight into the
-                                 first radio. One ladder; each answer keeps
-                                 strictly more of the mailbox than the one above
-                                 it, so the widest is three deliberate clicks
-                                 from the default and says out loud what it does. -->
+                                 group. One ladder, drawn as a slider with what
+                                 lands where under it (#390): each stop keeps
+                                 strictly more of the mailbox than the one
+                                 before, and the grid shows which row it adds. -->
                             <group class="o_mailpro_mailbox_rows">
-                                <field name="sync_level" string="Sync level" widget="radio"/>
+                                <field name="sync_level" string="Sync level" widget="mailpro_sync_level"/>
                                 <!-- Where a new conversation lands only matters
                                      once new conversations come in, so it
                                      appears with the rung that lets them in. -->
@@ -167,7 +157,7 @@
                                  invisible="sync_level != 'everyone'">
                                 Every sender becomes a contact in Odoo, newsletters
                                 and private email included. Pick this only for an
-                                address that exists to hear from strangers.
+                                address that exists to hear from new contacts.
                             </div>
                         </page>
 

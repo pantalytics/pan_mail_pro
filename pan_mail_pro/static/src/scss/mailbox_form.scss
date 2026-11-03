@@ -1,7 +1,7 @@
 // The mailbox form, as the brand's overview page (brand.pantalytics.com/product-ui):
 // the address, one grey line that opens with its status, then the
 // rows. Depth from a 1px rule, never a shadow. Colour is only status; the
-// tabs and the radios keep the theme's own, so this form does not become the
+// tabs and the slider keep the theme's own, so this form does not become the
 // one screen in Odoo that looks different from the rest.
 
 // Light and dark: Odoo compiles this file once per colour scheme, see the
@@ -45,11 +45,6 @@ $mailpro-ink: if($mailpro-dark, #fff, #001d21);
         .o_field_widget {
             width: auto;
         }
-    }
-
-    .o_mailpro_mailbox_lead {
-        max-width: 42rem;
-        margin: 0.5rem 0 1rem;
     }
 
     .o_mailpro_mailbox_rows {

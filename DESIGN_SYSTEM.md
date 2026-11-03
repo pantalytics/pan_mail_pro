@@ -434,6 +434,11 @@ the name explains it better than any sentence, and the line goes away.
   acceptable only because the switch is answerable from its label alone.
   Never for a control the reader has to understand before answering; the
   lint exempts this one switch by its label.
+- **A row in a picture may fold its line away.** The sync level grid
+  (#390) has four rows under a slider; four sentences under them would be
+  the paragraph the picture replaces. Each row carries an info dot, a real
+  button with `aria-expanded`, that unfolds its one muted line under the
+  label and folds it again. Click, not hover, so it works on touch.
 - **Still on screen, in `text-warning`**: a consequence somebody is about to
   walk into — a confidential-mail warning, a step that is blocking. One short
   line, not an `alert` box.

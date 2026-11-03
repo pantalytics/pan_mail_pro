@@ -4255,11 +4255,12 @@ class Checks:
             self.fail('the connect banner is registered in WebClient.components, '
                       'which Enterprise has already snapshotted — it will white-screen there')
 
-    # Every visible line of text in the Inbox, with the colour it is drawn in
-    # and the colour it actually sits on: the background of the nearest
-    # ancestor that paints one, translucent layers composited on the way up.
-    # Returns the lines below `min` contrast, worst first.
-    LOW_CONTRAST_JS = """(min) => {
+    # Every visible line of text under `root` (the Inbox unless said
+    # otherwise), with the colour it is drawn in and the colour it actually
+    # sits on: the background of the nearest ancestor that paints one,
+    # translucent layers composited on the way up. Returns the lines below
+    # `min` contrast, worst first.
+    LOW_CONTRAST_JS = """([min, rootSelector]) => {
         const rgba = (value) => {
             const m = value.match(/rgba?\\(([^)]+)\\)/);
             if (!m) return null;
@@ -4291,7 +4292,8 @@ class Checks:
             const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
             return (hi + 0.05) / (lo + 0.05);
         };
-        const root = document.querySelector('.o_mailpro_inbox');
+        const root = document.querySelector(rootSelector || '.o_mailpro_inbox');
+        if (!root) return [{text: 'nothing to check', cls: rootSelector, ratio: 0}];
         const low = [];
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
         const seen = new Set();
@@ -4374,7 +4376,7 @@ class Checks:
 
             # 3:1, WCAG's floor for anything on screen. The palette's own
             # muted grey clears 4.5; a colour with no dark side lands near 1.
-            low = page.evaluate(self.LOW_CONTRAST_JS, 3)
+            low = page.evaluate(self.LOW_CONTRAST_JS, [3, '.o_mailpro_inbox'])
             if low:
                 lines = '; '.join(f"{item['text']!r} ({item['cls']}) {item['ratio']}:1"
                                   for item in low[:8])
@@ -4717,7 +4719,7 @@ class Checks:
 
         It is the mailbox's own `sync_level` on a second screen, and that
         screen is a dialog no Python test renders: a field that lands outside
-        its group, a radio that draws one option, or a save that writes
+        its group, a slider that draws no stops, or a save that writes
         nothing are all invisible to the suite. The save is the half that
         cannot be faked -- `pan.mail.mailbox` is write-only to mailbox
         managers, and this user is not one, so an inverse that forgot its
@@ -4768,12 +4770,6 @@ class Checks:
                 page.screenshot(path=os.path.join(self.out, 'preferences-mail-pro.png'))
 
             text = page.inner_text('.modal .o_form_view')
-            for rung in ('Replies, in Odoo only',
-                         'Replies, in Odoo and your mail app',
-                         'Replies and new email, existing contacts only',
-                         'Replies and new email, everyone'):
-                if rung not in text:
-                    self.fail(f'My Preferences does not offer "{rung}"')
             # A group's title is drawn in capitals (innerText keeps the
             # transform), so the sections are matched without case.
             for section in ('Connected account', 'Default mailbox', 'Personal mailbox'):
@@ -4783,13 +4779,11 @@ class Checks:
             if login not in text:
                 self.fail('My Preferences does not say which address the user is connected as')
 
-            widest = page.query_selector(
-                '.modal .o_form_view label:has-text("Replies and new email, everyone")')
-            if not widest:
-                self.fail('the sync ladder is not a radio in My Preferences')
+            # The same slider as the mailbox form, every stop clicked; it
+            # ends on the widest.
+            if not self.sync_slider_walk(page, '.modal .o_form_view',
+                                         'x_pan_mail_sync_level', 'My Preferences'):
                 return
-            widest.click()
-            page.wait_for_timeout(300)
             if 'newsletters' not in page.inner_text('.modal .o_form_view'):
                 self.fail('the widest rung is picked without saying what it lets in')
             page.click('.modal button[name=preference_save]')
@@ -4803,6 +4797,226 @@ class Checks:
                 self.fail(f'My Preferences saved, the mailbox still reads {level}')
         finally:
             page.context.close()
+
+    # The four stops, their names under the slider and the full labels a
+    # screen reader hears (`sync_level`'s selection).
+    SYNC_STOPS = ('Replies', '+ Sent Items', '+ known contacts', '+ new contacts')
+    SYNC_LABELS = ('Replies', 'Replies and Sent Items',
+                   'Replies, Sent Items and known contacts',
+                   'Replies, Sent Items, known and new contacts')
+
+    def sync_slider_walk(self, page, scope, field, where, shots=None):
+        """Click every stop of the sync level slider under `scope` and read
+        the grid back: the mail app column always on, the Odoo column on for
+        rows 0..stop, the row a stop adds marked for a moment, the full label
+        in `aria-valuetext`. Then the arrows, and each row's info dot opening
+        and closing its line. Leaves the slider on the last stop.
+
+        `shots` maps a stop to a screenshot name, taken of the widget's row.
+        Returns False when the slider is not there at all.
+        """
+        root = f'{scope} .o_field_widget[name="{field}"] .o_mailpro_sync_level'
+        try:
+            page.wait_for_selector(root, timeout=15000)
+        except Exception:
+            self.fail(f'{where}: the sync level is not the slider')
+            return False
+        if page.query_selector(f'{scope} .o_field_widget[name="{field}"] .o_radio_input'):
+            self.fail(f'{where}: the sync level is still a radio')
+
+        # Each name under its own stop, on one line, none over its neighbour.
+        geometry = page.evaluate("""(root) => {
+            const el = document.querySelector(root);
+            const range = el.querySelector('input[type=range]').getBoundingClientRect();
+            const track = el.querySelector('.o_mailpro_sync_stops').getBoundingClientRect();
+            return [...el.querySelectorAll('.o_mailpro_sync_stop')].map((b) => {
+                const r = b.getBoundingClientRect();
+                return {text: b.textContent.trim(), left: r.left, right: r.right,
+                        height: r.height, line: parseFloat(getComputedStyle(b).lineHeight),
+                        rangeLeft: range.left, rangeRight: range.right,
+                        trackLeft: track.left, trackWidth: track.width};
+            });
+        }""", root)
+        names = tuple(stop['text'] for stop in geometry)
+        if names != self.SYNC_STOPS:
+            self.fail(f'{where}: the stops read {names}, expected {self.SYNC_STOPS}')
+        for i, stop in enumerate(geometry):
+            if stop['height'] > stop['line'] * 1.5:
+                self.fail(f'{where}: "{stop["text"]}" breaks onto two lines')
+            if i and stop['left'] < geometry[i - 1]['right']:
+                self.fail(f'{where}: "{stop["text"]}" runs into "{geometry[i - 1]["text"]}"')
+            frac = i / (len(geometry) - 1)
+            at = stop['trackLeft'] + frac * stop['trackWidth']
+            if i == 0:
+                off = stop['left'] - stop['rangeLeft']
+            elif i == len(geometry) - 1:
+                off = stop['right'] - stop['rangeRight']
+            else:
+                off = (stop['left'] + stop['right']) / 2 - at
+            if abs(off) > 3:
+                self.fail(f'{where}: "{stop["text"]}" sits {off:.0f}px off its stop')
+
+        def grid():
+            return page.evaluate("""(root) => {
+                const el = document.querySelector(root);
+                const input = el.querySelector('input[type=range]');
+                return {
+                    value: input.value,
+                    text: input.getAttribute('aria-valuetext'),
+                    app: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
+                        (r) => !!r.querySelector('.o_mailpro_sync_app .o_mailpro_sync_on')),
+                    odoo: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
+                        (r) => !!r.querySelector('.o_mailpro_sync_odoo .o_mailpro_sync_on')),
+                    flash: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
+                        (r) => r.classList.contains('o_mailpro_sync_flash')),
+                };
+            }""", root)
+
+        def expect(stop, why):
+            # The click updates the record; the field draws on the next
+            # render, so wait for the label a screen reader would hear.
+            try:
+                page.wait_for_function(
+                    "([root, text]) => document.querySelector(root + ' input[type=range]')"
+                    ".getAttribute('aria-valuetext') === text",
+                    arg=[root, self.SYNC_LABELS[stop]], timeout=3000)
+            except Exception:
+                pass
+            state = grid()
+            if state['value'] != str(stop):
+                self.fail(f'{where}: {why}, the slider is at {state["value"]}, expected {stop}')
+            if state['text'] != self.SYNC_LABELS[stop]:
+                self.fail(f'{where}: {why}, aria-valuetext is {state["text"]!r}')
+            if state['app'] != [True] * 4:
+                self.fail(f'{where}: {why}, the mail app column reads {state["app"]}')
+            wanted = [row <= stop for row in range(4)]
+            if state['odoo'] != wanted:
+                self.fail(f'{where}: {why}, the Odoo column reads {state["odoo"]}, '
+                          f'expected {wanted}')
+            return state
+
+        page.click(f'{root} .o_mailpro_sync_stop[data-stop="0"]')
+        page.wait_for_timeout(500)
+        expect(0, 'on Replies')
+        for stop in range(4):
+            page.click(f'{root} .o_mailpro_sync_stop[data-stop="{stop}"]')
+            state = expect(stop, f'after clicking "{self.SYNC_STOPS[stop]}"')
+            # The row this stop adds is the one that is marked, and only it.
+            if stop and state['flash'] != [row == stop for row in range(4)]:
+                self.fail(f'{where}: moving to stop {stop} marked rows {state["flash"]}')
+            page.wait_for_timeout(500)
+            if shots and stop in shots and self.out:
+                page.locator(f'{scope} .o_field_widget[name="{field}"]').screenshot(
+                    path=os.path.join(self.out, shots[stop]))
+
+        # The keyboard: the arrows move the slider, one stop at a time.
+        page.focus(f'{root} input[type=range]')
+        page.keyboard.press('ArrowLeft')
+        page.wait_for_timeout(200)
+        expect(2, 'after ArrowLeft from the last stop')
+        page.keyboard.press('ArrowRight')
+        page.wait_for_timeout(200)
+        expect(3, 'after ArrowRight')
+        focused = page.evaluate(
+            "(root) => document.activeElement === document.querySelector(root + ' input[type=range]')",
+            root)
+        if not focused:
+            self.fail(f'{where}: the slider loses focus to the arrows')
+
+        # Every row's info dot opens one muted line and closes it again.
+        for row in range(4):
+            dot = f'{root} .o_mailpro_sync_row[data-row="{row}"] .o_mailpro_sync_info'
+            line = f'{root} .o_mailpro_sync_row[data-row="{row}"] .o_mailpro_sync_detail'
+            page.click(dot)
+            page.wait_for_timeout(150)
+            if page.get_attribute(dot, 'aria-expanded') != 'true' \
+                    or not page.is_visible(line) or len(page.inner_text(line)) < 20:
+                self.fail(f'{where}: the info dot of row {row} does not open its line')
+            page.click(dot)
+            page.wait_for_timeout(150)
+            if page.get_attribute(dot, 'aria-expanded') != 'false' or page.query_selector(line):
+                self.fail(f'{where}: the info dot of row {row} does not close its line')
+        return True
+
+    def sync_slider(self):
+        """The sync level on the mailbox form is a slider over what lands
+        where (#390), in light and in dark.
+
+        Every stop is clicked and the grid read back, the widest is saved and
+        lands on the row, and in dark mode every line of it, each row's
+        detail opened, clears 3:1. The slider at its two ends is screenshot
+        in both schemes for the review.
+        """
+        action = dict(module_menu_actions(self.call)).get('Mailboxes')
+        rows = self.call('pan.mail.mailbox', 'search_read',
+                         [('is_notification_mailbox', '=', False)],
+                         fields=['sync_level', 'state'], limit=1)
+        if not action or not rows:
+            self.fail('no mailbox to show the sync level slider on')
+            return
+        mailbox, was = rows[0]['id'], rows[0]
+        url = f'{self.base}/odoo/action-{action}/{mailbox}'
+        page = self.page
+        try:
+            page.goto(url, wait_until='domcontentloaded')
+            page.wait_for_selector('.o_form_view .o_notebook', timeout=30000)
+            page.click('.o_notebook .nav-link:has-text("Sync settings")')
+            page.wait_for_timeout(600)
+            if not self.sync_slider_walk(
+                    page, '.o_form_view', 'sync_level', 'the mailbox form',
+                    shots={0: 'sync-slider-stop0-light.png',
+                           3: 'sync-slider-stop3-light.png'}):
+                return
+            self.shot('mailbox-sync-slider.png')
+            if 'newsletters' not in page.inner_text('.o_form_view .o_notebook'):
+                self.fail('the widest stop is picked without saying what it lets in')
+            page.click('.o_form_button_save')
+            page.wait_for_timeout(1500)
+            self.error_free('saving the sync level slider')
+            level = self.call('pan.mail.mailbox', 'read', [mailbox],
+                              fields=['sync_level'])[0]['sync_level']
+            if level != 'everyone':
+                self.fail(f'the mailbox form saved the last stop, the mailbox reads {level}')
+        finally:
+            self.call('pan.mail.mailbox', 'write', [mailbox],
+                      {'sync_level': was['sync_level'], 'state': was['state']})
+
+        context = self.browser.new_context(viewport={'width': WIDE, 'height': 1100})
+        host = urllib.parse.urlparse(self.base).hostname
+        context.add_cookies([{'name': 'color_scheme', 'value': 'dark',
+                              'domain': host, 'path': '/'}])
+        dark = context.new_page()
+        root = '.o_form_view .o_field_widget[name="sync_level"]'
+        try:
+            login(dark, self.base)
+            dark.goto(url, wait_until='domcontentloaded')
+            dark.wait_for_selector('.o_form_view .o_notebook', timeout=30000)
+            dark.click('.o_notebook .nav-link:has-text("Sync settings")')
+            dark.wait_for_selector(f'{root} .o_mailpro_sync_level', timeout=15000)
+            scheme = dark.evaluate("() => getComputedStyle(document.documentElement)"
+                                   ".getPropertyValue('--o-webclient-color-scheme').trim()")
+            if scheme != 'dark':
+                self.fail(f'the dark bundle did not load for the slider ({scheme!r})')
+                return
+            for stop, name in ((0, 'sync-slider-stop0-dark.png'),
+                               (3, 'sync-slider-stop3-dark.png')):
+                dark.click(f'{root} .o_mailpro_sync_stop[data-stop="{stop}"]')
+                dark.wait_for_timeout(600)
+                if self.out:
+                    dark.locator(root).screenshot(path=os.path.join(self.out, name))
+            for dot in dark.query_selector_all(f'{root} .o_mailpro_sync_info'):
+                dot.click()
+            dark.wait_for_timeout(300)
+            if self.out:
+                dark.locator(root).screenshot(
+                    path=os.path.join(self.out, 'sync-slider-details-dark.png'))
+            low = dark.evaluate(self.LOW_CONTRAST_JS, [3, f'{root} .o_mailpro_sync_level'])
+            if low:
+                lines = '; '.join(f"{item['text']!r} ({item['cls']}) {item['ratio']}:1"
+                                  for item in low[:8])
+                self.fail(f'dark mode: {len(low)} line(s) of the sync slider below 3:1 -- {lines}')
+        finally:
+            context.close()
 
     def error_free(self, where):
         dialog = self.page.query_selector('.o_error_dialog, .o_dialog_error')
@@ -5036,6 +5250,7 @@ def main():
         checks.step4_personal_notification()
         checks.domain_suggestion()
         checks.mailbox_status()
+        checks.sync_slider()
         checks.connect_banner()
         checks.preferences()
         checks.dark_mode()
