@@ -229,7 +229,8 @@ class Checks:
         folds into "Mail Pro is up and running", confetti flies once per
         database and never on a reload, Show setup unfolds the four green
         steps, and the one next action opens the colleagues who have not
-        connected a mailbox. The seed is mid-setup on purpose (an own Azure
+        connected a mailbox, with Take the tour beside it, which opens the
+        Inbox on its tour. The seed is mid-setup on purpose (an own Azure
         app, two stopped mailboxes, a personal notification mailbox), so the
         walk stands the green in for itself and puts the seed back after.
         Its mail on a lead is the mail on a record.
@@ -331,6 +332,11 @@ class Checks:
                 self.fail(f'the one next action reads {primary}')
             if page.query_selector('.o_mailpro_running_msg'):
                 self.fail('a shared notification mailbox still shows the personal-mailbox line')
+            secondary = [b.inner_text().strip()
+                         for b in block.query_selector_all('.o_mailpro_running .btn-secondary')
+                         if b.is_visible()]
+            if secondary != ['Take the tour']:
+                self.fail(f'beside the invite: {secondary}, expected "Take the tour"')
 
             # A reload is not a second time, and Show setup is a click away.
             again = open_settings()
@@ -403,6 +409,29 @@ class Checks:
             crumb = ' '.join(page.inner_text('.o_breadcrumb').split())
             if 'Invite your colleagues' not in crumb:
                 self.fail(f'the invite list is titled "{crumb}"')
+
+            # Take the tour: the Inbox, and the tour its "?" starts (#393),
+            # walked to the end so the tour's own check starts clean.
+            admin = call('res.users', 'search', [('login', '=', 'admin')])
+            tour = call('web_tour.tour', 'search', [('name', '=', self.TOUR)])
+            call('web_tour.tour', 'write', tour, {'user_consumed_ids': [(3, admin[0])]})
+            open_settings()
+            page.click('button.o_mailpro_take_tour')
+            page.wait_for_selector('.o_mailpro_inbox .o_mailpro_item', timeout=30000)
+            where = 'Take the tour from Settings'
+            if (self.tour_step(page, self.TOUR_RECORD, 'record',
+                               'up-and-running-tour-1-record.png', where)
+                    and self.tour_step(page, self.TOUR_LINK, 'link',
+                                       'up-and-running-tour-2-link.png', where)):
+                self.tour_close_dialog(page, where)
+                if (self.tour_step(page, self.TOUR_FILTERS, 'contact',
+                                   'up-and-running-tour-3-contact.png', where)
+                        and self.tour_step(page, self.TOUR_SEARCH, 'search',
+                                           'up-and-running-tour-4-search.png', where)):
+                    self.tour_over(page, where)
+            if not call('web_tour.tour', 'search_count',
+                        [('name', '=', self.TOUR), ('user_consumed_ids', 'in', admin)]):
+                self.fail('the tour taken from Settings is not recorded as seen')
         finally:
             page.emulate_media(reduced_motion='no-preference')
             call('ir.config_parameter', 'set_param', param, False)

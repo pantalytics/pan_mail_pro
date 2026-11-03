@@ -24,6 +24,8 @@
             <div class="o_mailpro_running_actions">
                 <button t-if="unconnected" type="button" class="btn btn-primary o_mailpro_invite"
                         t-on-click="invite">Invite your colleagues to connect their mailbox</button>
+                <button type="button" class="btn btn-secondary o_mailpro_take_tour"
+                        t-on-click="takeTour">Take the tour</button>
                 <button type="button" class="btn btn-link o_mailpro_show_setup"
                         t-att-aria-expanded="state.open ? 'true' : 'false'" t-on-click="toggle">
                     <t t-if="state.open">Hide setup</t>

@@ -1137,7 +1137,9 @@ Three properties are worth naming, because each was a bug first:
   that first draws the line) and never under `prefers-reduced-motion`. The one
   next action, Invite your colleagues to connect their mailbox, opens the
   internal users with no mailbox connected on Odoo's own user list, where Send
-  Mail Pro invite already is.
+  Mail Pro invite already is. Beside it, secondary, Take the tour opens the
+  Inbox with `pan_mail_tour` in the context, and the Inbox starts its tour
+  (#393) once the list has mail, as its "?" would, recorded as seen.
 
 ---
 

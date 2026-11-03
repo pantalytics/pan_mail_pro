@@ -10,6 +10,9 @@
  * here rather than in a field, so it is a click and never a change for the
  * settings form to save. The stylesheet hides the steps while it is folded.
  *
+ * Beside the invite, Take the tour: the Inbox, starting the tour its "?"
+ * starts (#393), through the action's context (`pan_mail_tour`).
+ *
  * Confetti once per database: the first page that draws the line asks the
  * server to spend the moment (`celebrate_once`), and only that page
  * celebrates. Under prefers-reduced-motion nothing flies and the rocket
@@ -108,6 +111,13 @@ export class UpAndRunning extends Component {
     async invite() {
         const action = await this.orm.call("pan.mail.setup", "action_invite_colleagues", []);
         await this.action.doAction(action);
+    }
+
+    /** The Inbox, starting its tour the way its "?" does (#393). */
+    takeTour() {
+        return this.action.doAction("pan_mail_pro.action_pan_mail_conversation", {
+            additionalContext: { pan_mail_tour: true },
+        });
     }
 
     toggle() {

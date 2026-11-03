@@ -428,7 +428,8 @@ Four done steps and the first incoming mail on a record fold the checklist
 into one line, the way the platform's install screen ends (#391): a rocket,
 "Mail Pro is up and running", and under it the one next action, a primary
 button, Invite your colleagues to connect their mailbox, while anybody is
-left to invite. Done is green, and amber on step 4: a personal mailbox
+left to invite, and beside it a secondary one, Take the tour, which opens
+the Inbox on its tour. Done is green, and amber on step 4: a personal mailbox
 carrying the system email is a recommendation, so step 4's own amber line,
 System email from a personal mailbox, sits under the headline and opens
 Mailboxes. Red or the open dot keep the checklist. Show setup, a link, unfolds the four steps under it; the
