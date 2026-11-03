@@ -1,1 +1,5 @@
-18.0 needs no file of its own: the seam in `pan_mail_pro/compat.py` covers it. The folder exists so `tools/cut_series.sh 18.0` has a series to name.
+What the `18.0` branch carries beyond `main`: one file, the tour state's
+import path (`pan_mail_pro/static/src/compat/tour.js`, which 18 keeps under
+`@web_tour/tour_service/tour_state`). Everything else 18 needs is in the seam
+on `main` (`pan_mail_pro/compat.py`, `static/src/compat/`). Applied by
+`tools/cut_series.sh 18.0`.

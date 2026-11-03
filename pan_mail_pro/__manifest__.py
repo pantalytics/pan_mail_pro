@@ -141,7 +141,7 @@
     'category': 'Discuss',
     'version': '19.0.34.0.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
-    'depends': ['mail', 'base', 'crm'],
+    'depends': ['mail', 'base', 'crm', 'web_tour'],
     'external_dependencies': {
         'python': ['cryptography', 'requests'],
     },
@@ -151,6 +151,7 @@
         'data/ir_cron_data.xml',
         'data/mail_server_data.xml',
         'data/mail_template_data.xml',
+        'data/web_tour_tour.xml',
         'views/pan_mail_menus.xml',
         'views/pan_mail_conversation_views.xml',
         'views/pan_mail_mailbox_views.xml',
@@ -185,6 +186,7 @@
             'pan_mail_pro/static/src/compat/owl.js',
             'pan_mail_pro/static/src/compat/chatter.js',
             'pan_mail_pro/static/src/compat/store.js',
+            'pan_mail_pro/static/src/compat/tour.js',
             'pan_mail_pro/static/src/compat/attachment_list.js',
             'pan_mail_pro/static/src/compat/attachment_list.xml',
             'pan_mail_pro/static/src/js/chatter_door.js',
@@ -195,6 +197,7 @@
             'pan_mail_pro/static/src/js/conversation_view/swipe.js',
             'pan_mail_pro/static/src/js/conversation_view/link_dialog.js',
             'pan_mail_pro/static/src/js/conversation_view/verify_dialog.js',
+            'pan_mail_pro/static/src/js/conversation_view/inbox_tour.js',
             'pan_mail_pro/static/src/js/conversation_view/conversation_view.js',
             'pan_mail_pro/static/src/xml/mailbox_list_view.xml',
             'pan_mail_pro/static/src/xml/domain_list_view.xml',

@@ -157,6 +157,17 @@
                         what you search.
                     -->
                     <SearchBar autofocus="false"/>
+                    <!--
+                        The tour again (#393). It runs by itself once, the
+                        first time there is mail here; this is the way back to
+                        it. Beside the search rather than in the systray, so
+                        a phone, which draws no systray, has it too.
+                    -->
+                    <button type="button" class="o_mailpro_tour_start flex-shrink-0"
+                            aria-label="Take the tour" title="Take the tour"
+                            t-on-click="() => this.tour.start()">
+                        <i class="fa fa-question" aria-hidden="true"/>
+                    </button>
                 </div>
                 <!--
                     The systray: the activity and message counters, the

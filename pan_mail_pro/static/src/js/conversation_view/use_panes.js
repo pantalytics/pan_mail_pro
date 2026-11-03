@@ -321,6 +321,17 @@ export function usePanes() {
         state[name] = clamp(width, PANES[name].min, ceiling(name, total));
     }
 
+    // Whatever is positioned against a pane is told the layout moved. Odoo's
+    // tour pointer measures its target on a scroll or a resize and on
+    // nothing else on 20 (18 and 19 follow the target), so after a fold it
+    // stayed where the button had been. Once the next frame has laid the
+    // panes out, and once more when the fold's transition is over.
+    function layoutMoved() {
+        const nudge = () => document.dispatchEvent(new Event("scroll"));
+        browser.requestAnimationFrame(nudge);
+        browser.setTimeout(nudge, 350);
+    }
+
     // The window's shape, kept current by the browser rather than polled.
     // A phone rotated into landscape crosses `small` without a reload, and
     // the drawer must not stay open over a mailbox list that is now a pane.
@@ -587,6 +598,7 @@ export function usePanes() {
          * out, so the slide continues from there.
          */
         toggleZoom(from, swipedFrom = 0) {
+            layoutMoved();
             if (state.zoom) {
                 state.swipeFrom = swipedFrom;
                 state.zoom = false;
@@ -621,6 +633,7 @@ export function usePanes() {
             if (!COLLAPSIBLE.includes(name)) {
                 return;
             }
+            layoutMoved();
             if (name === "odoo_record" && state.narrow && !state.small) {
                 state.stage = state.stage === "odoo_record" ? "conversation" : "odoo_record";
                 return;
@@ -631,6 +644,7 @@ export function usePanes() {
 
         /** The mailbox list: a drawer over the screen on a phone, a pane elsewhere. */
         toggleMailboxList() {
+            layoutMoved();
             if (state.small) {
                 state.mailboxListOpen = !state.mailboxListOpen;
             } else {
@@ -649,6 +663,7 @@ export function usePanes() {
          * to look at, whichever pane had the column before.
          */
         showConversation() {
+            layoutMoved();
             if (state.stage !== "conversation") {
                 state.slide = "forward";
             }
@@ -683,6 +698,7 @@ export function usePanes() {
             const pane = dragged(name);
             state[pane] = PANES[pane].start;
             state.collapsed[name] = false;
+            layoutMoved();
             save();
         },
     };

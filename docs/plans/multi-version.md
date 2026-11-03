@@ -192,6 +192,23 @@ touches:
   notebook tab is a `<button>` on 20, `<a>` before, and a login on 20 lands
   on the Inbox, whose own bar wears `o_main_navbar`, so the banner is
   measured on Discuss.
+- **The Inbox tour (#398) on three series.** The tour state's import path
+  is the one thing the series spell differently (`@web_tour/js/tour_state`
+  on 19, `tour_service/tour_state` on 18, `tour_state` on 20):
+  `static/src/compat/tour.js`, with a file in both overlays, so 18 has a
+  file of its own now. The model, `tour_service.startTour` and the
+  `current_tour` storage key are the same on all three. What 20 does
+  differently is the pointer: it is placed once, when a step opens, and
+  re-measured on a scroll or a resize only, where 18 and 19 follow the
+  trigger. A fold button that moves after the step opened (the record
+  swap at 1280px, the record sliding in on a phone) left 20's pointer
+  beside nothing, so `use_panes.js` tells positioned things the layout
+  moved (`layoutMoved`: a scroll event after the next frame and after the
+  fold), and the Inbox's `o_mailpro_touring` class turns the pane
+  transitions off while the tour runs. The browser check reads 20's
+  sentence from the popover the pointer's tip opens and hovers without
+  Playwright's stability wait, which never ends for 20's filter button on
+  a phone.
 - **A name main gains is a name 20 lacks**: #397's slider brought
   `fa-file-text-o`, which the 20 icon map did not have. `tools/ci_lint.sh`
   now fails on any `fa fa-<name>` in the module that is not in
