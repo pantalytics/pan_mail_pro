@@ -78,6 +78,7 @@ class TestUserSyncLevel(MailProTestCase):
             self.env['pan.mail.mailbox'].sudo().search_count([]), before)
 
     def test_the_notification_mailbox_is_not_a_personal_setting(self):
-        """It carries the system email; its own form hides Sync Settings."""
+        """A `notifications@` its owner merely owns is not their own address,
+        so it is not their personal setting (#387: their own address is)."""
         self.assertFalse(
             self.notif_owner.x_pan_mail_personal_mailbox_id)

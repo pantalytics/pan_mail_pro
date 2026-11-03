@@ -3,7 +3,7 @@ from odoo import fields, models, api, _
 from odoo.exceptions import ValidationError
 
 from .mail_mail import INTERACTIVE_SEND
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 
 
 class MailComposeMessage(models.TransientModel):
@@ -69,7 +69,7 @@ class MailComposeMessage(models.TransientModel):
         person testing still sees a Send From with an answer in it, and one
         line saying why they cannot change it (`mail.mail._send_on_staging`).
         """
-        on_test = database_is_neutralized(self.env)
+        on_test = database_is_copy(self.env)
         for record in self:
             record.x_on_test_instance = on_test
             record.x_test_send_from = _('Test inbox') if on_test else False

@@ -35,8 +35,9 @@ import logging
 from odoo import _, api, fields, models
 
 from .mail_provider_client import get_provider_client
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 from .pan_mail_license import IMPROVE_REFUSED_PARAM, STATUS_SELECTION
+from .pan_mail_provider import PROVIDER_STATUS_SELECTION
 
 _logger = logging.getLogger(__name__)
 
@@ -58,6 +59,14 @@ class ResConfigSettings(models.TransientModel):
         compute='_compute_setup_status', readonly=True,
     )
     x_setup_provider_done = fields.Boolean(compute='_compute_setup_status')
+    # What step 2's dot and answer show: the provider row's own `status`,
+    # the one its form's badge shows, read off the row and never worked out
+    # a second time here. Green once somebody signed in, amber while the
+    # registration is there and nobody has, the open dot before that. The
+    # phase is not this: it reads the credentials (`x_setup_provider_done`,
+    # `pan.mail.setup.answers`), so sync is not held up for a sign-in.
+    x_provider_status = fields.Selection(
+        PROVIDER_STATUS_SELECTION, compute='_compute_setup_status')
     # What the open step says, and whether its arrow points at the accounts
     # list rather than the provider form: IMAP/SMTP has no registration, its
     # first step is done when the first account exists.
@@ -108,6 +117,15 @@ class ResConfigSettings(models.TransientModel):
         [('ok', 'Verified'), ('open', 'Not yet'), ('broken', 'Refused')],
         compute='_compute_setup_status')
     x_notification_access_msg = fields.Char(compute='_compute_setup_status')
+    # The notification mailbox's own Type (`provider_type`, what the provider
+    # says it is, the owner rule until it has), read off the row (#387). Not
+    # `mailbox_type`: the sending policy makes every notification mailbox
+    # personal.
+    # Personal is amber on step 4: password resets and follower mail go out
+    # from a person's address, and their replies land in that person's inbox.
+    # A shared mailbox carrying the flag turns it green.
+    x_notification_mailbox_type = fields.Selection(
+        [('personal', 'Personal'), ('shared', 'Shared')], compute='_compute_setup_status')
 
     # -------------------------------------------------------------------------
     # Step 1 — the Pantalytics account, see pan_mail_license.py. Done when the
@@ -154,7 +172,7 @@ class ResConfigSettings(models.TransientModel):
     x_is_copy = fields.Boolean(compute='_compute_is_copy')
 
     def _compute_is_copy(self):
-        is_copy = database_is_neutralized(self.env)
+        is_copy = database_is_copy(self.env)
         for record in self:
             record.x_is_copy = is_copy
 
@@ -293,16 +311,22 @@ class ResConfigSettings(models.TransientModel):
         alert = Setup.mailbox_alert()
         answers = Setup.answers()
         access_state, access_msg = Setup.notification_mailbox_verified()
+        notification_type = self.env['mail.mail']._notification_mailbox().provider_type or False
         active_provider = self.env['pan.mail.provider'].current()
         mailboxes = _counted(self.env['pan.mail.mailbox'].sudo().search_count([]),
                              _('1 mailbox'), _('%s mailboxes'))
         microsoft = active_provider if active_provider.provider == 'outlook' else \
             active_provider.browse()
         on_own_app = bool(microsoft) and microsoft.registration == 'own'
+        # Fresh, not cached: `status` reads `pan.mail.account`, which its
+        # compute cannot declare, and the form reads it fresh on every load.
+        active_provider.invalidate_recordset(['status', 'connected', 'credentials_set'])
+        provider_status = active_provider.status or 'not_configured'
 
         for record in self:
             record.x_active_provider_id = active_provider
             record.x_setup_provider_done = bool(active_provider) and active_provider.credentials_set
+            record.x_provider_status = provider_status
             needs_account = bool(active_provider) and not get_provider_client(
                 self.env, active_provider.provider).uses_oauth and not record.x_setup_provider_done
             record.x_setup_provider_needs_account = needs_account
@@ -314,5 +338,6 @@ class ResConfigSettings(models.TransientModel):
             record.x_setup_notification_done = answers['mailboxes']
             record.x_notification_access_state = access_state
             record.x_notification_access_msg = access_msg
+            record.x_notification_mailbox_type = notification_type
             record.x_mailboxes_summary = mailboxes
             record.x_mailboxes_alert = alert

@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, UserError
 from odoo.http import request
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 from .mail_provider_client import (
     get_provider_client,
     oauth_redirect_uri,
@@ -172,17 +172,20 @@ class ResUsers(models.Model):
         of answer: a stored compute over a searched relation needs invalidation
         written by hand, and the hand-written half is what goes stale.
 
-        The notification mailbox is excluded. It carries the system email, its
-        Sync Settings tab is hidden on its own form, and it is the workspace's
-        even when an administrator happens to own it.
+        The notification mailbox counts too when it is the owner's own
+        address (#387). The first mailbox anyone adds is their own, and it
+        becomes the notification mailbox on its own; leaving it out took its
+        owner's sync setting away from them. A `notifications@` that somebody
+        merely owns is not theirs: the sending policy calls every notification
+        mailbox personal, so the owner rule is asked instead.
         """
         Mailbox = self.env['pan.mail.mailbox'].sudo()
         for user in self:
             user.x_pan_mail_personal_mailbox_id = Mailbox.search([
                 ('owner_user_id', '=', user.id),
                 ('mailbox_type', '=', 'personal'),
-                ('is_notification_mailbox', '=', False),
-            ], limit=1)
+            ]).filtered(lambda m: not m.is_notification_mailbox
+                        or m._owner_rule_type() == 'personal')[:1]
 
     @api.depends('x_pan_mail_personal_mailbox_id')
     def _compute_pan_mail_sync_level(self):
@@ -381,7 +384,7 @@ class ResUsers(models.Model):
         self.ensure_one()
         if not self._is_internal() or self.x_pan_mail_connected:
             return False
-        if database_is_neutralized(self.env):
+        if database_is_copy(self.env):
             return False
         return not self._pan_mail_connect_blocker(link=link, sync_allowed=sync_allowed)
 
@@ -398,7 +401,7 @@ class ResUsers(models.Model):
         connected to Pantalytics" is a nudge towards an error.
         """
         self.ensure_one()
-        if not self._is_internal() or database_is_neutralized(self.env):
+        if not self._is_internal() or database_is_copy(self.env):
             return False
         account = self.sudo().x_pan_mail_account_ids.filtered(
             lambda account: account.registration == 'own' and account.connected)

@@ -10,7 +10,7 @@ import os
 from cryptography.fernet import Fernet, InvalidToken
 from odoo.exceptions import UserError
 
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 
 _logger = logging.getLogger(__name__)
 
@@ -157,10 +157,35 @@ def decrypt_value(env, encrypted_text):
     # already handles, and it leaves the account form readable in staging. The
     # sentence that says *neutralized* is raised earlier, by the callers that
     # know what they were trying to do. See models/neutralization.py.
-    if database_is_neutralized(env):
-        _logger.info("[Encryption] Database is neutralized - refusing to decrypt")
+    #
+    # A copy is a neutralized database or one the platform's signed answer
+    # calls staging (#384): either way nothing it holds reaches a provider.
+    if database_is_copy(env):
+        _logger.info("[Encryption] Database is a copy - refusing to decrypt")
         return False
+    return _decrypt(env, encrypted_text)
 
+
+def decrypt_link_secret(env, encrypted_text):
+    """The Pantalytics key, or the device token of a pairing in progress,
+    on any database, a copy included (pan_mail_pro#384).
+
+    The one read past the gate in `decrypt_value`, and the reason it is a
+    function of its own rather than a flag on that one: these two secrets
+    open the connection to Pantalytics and nothing else. No mailbox, no
+    provider, no address. A copy needs them to say it is a copy (the
+    heartbeat's `staging`) and to be linked as one. Only `pan.mail.license`
+    may call this, and `tests/test_staging.py` fails the day anything else
+    does.
+    """
+    if not encrypted_text:
+        return False
+    return _decrypt(env, encrypted_text)
+
+
+def _decrypt(env, encrypted_text):
+    """Fernet, with the key this database holds. No gate: the callers above
+    decide whether this database may read what it is asked to."""
     # Never generate here. There is ciphertext, so a key existed; a database
     # with none now has lost it (a parameter deleted by hand, an environment
     # variable that did not follow the move to a new server), and a fresh key
