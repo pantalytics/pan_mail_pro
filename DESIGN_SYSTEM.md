@@ -335,7 +335,11 @@ border, the way a phone's Settings app lists them.
 - **One shape in four colours, always in the same place.** Green for answered,
   red for answered-but-broken, an outlined circle for not yet, and amber
   (`o_mailpro_dot_attention`, the brand gold `#e8a317`) for a step that works
-  and has something to do: a provider row still on its own Azure app. Its
+  and has something to do: a provider nobody has signed in on yet (the
+  same status the provider form's amber badge shows, never a second
+  opinion of it), a personal mailbox carrying the system email (read off
+  the notification mailbox's own type; a shared one carrying the flag is
+  green), or a provider row still on its own Azure app. Its
   one line under the name ("Sign in again to finish the move") is
   `o_mailpro_msg_attention`, a darker amber on a light page so the text keeps
   its contrast. Amber never stands in for red: if

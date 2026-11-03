@@ -50,6 +50,7 @@ from odoo.tools.mail import html_sanitize, plaintext2html
 from odoo.tools.translate import LazyTranslate
 
 from .mail_message import READ_MIRROR_CTX
+from .neutralization import database_is_neutralized
 from .mail_provider_client import (
     FOLDER_ARCHIVE, FOLDER_INBOX, FOLDER_SENT, FOLDER_TRASH, interactive,
 )
@@ -326,17 +327,22 @@ class PanMailConversation(models.AbstractModel):
 
     @api.model
     def inbox_mailboxes(self):
-        """The mailbox list: active, not the notification mailbox, and
-        no colleague's personal one.
+        """The mailbox list: active, not a dedicated notification mailbox,
+        and no colleague's personal one.
 
-        The notification mailbox is the one the module sends *from*, not one
-        anybody reads: opening the Inbox on it shows an empty screen.
+        A shared notification mailbox (`notifications@`) is the one the module
+        sends *from*, not one anybody reads: opening the Inbox on it shows an
+        empty screen. A personal one is somebody's own mail that also carries
+        the system email (#387), and it syncs like any other.
         """
         self._check_caller()
-        return self.env['pan.mail.mailbox'].search_read(
-            [('is_notification_mailbox', '=', False)]
-            + self._listed_mailbox_domain(),
-            ['email', 'status_message'], limit=50, order='sequence, email')
+        mailboxes = self.env['pan.mail.mailbox'].search(
+            self._listed_mailbox_domain(), limit=50, order='sequence, email')
+        # The owner rule, not `mailbox_type`: the sending policy calls every
+        # notification mailbox personal.
+        return mailboxes.filtered(
+            lambda m: not m.is_notification_mailbox or m._owner_rule_type() == 'personal'
+        ).read(['email', 'status_message'])
 
     def _folder_domain(self, folder):
         """The extra clauses the chosen folder adds to the grouping query.
@@ -455,6 +461,23 @@ class PanMailConversation(models.AbstractModel):
         # remedy we cannot name is worse than none, because it sends the
         # reader somewhere that is not where the problem is.
         return ''
+
+    @api.model
+    def inbox_has_mailbox(self):
+        """Is there any mailbox on this database at all?
+
+        Without one the Inbox has nothing of its own to show, and what it
+        would show instead is chatter mail: OdooBot's "Welcome to Odoo!" in
+        #general, on a fresh database (3 Nov). So it shows the way to step 4
+        instead. The whole database, not the reader's list: a colleague's
+        personal mailbox is still a mailbox, and "none yet" would be false.
+        """
+        self._check_caller()
+        # A copy archived every mailbox it came with (`data/neutralize.sql`)
+        # and still shows their mail: those count.
+        Mailbox = self.env['pan.mail.mailbox'].sudo().with_context(
+            active_test=not database_is_neutralized(self.env))
+        return bool(Mailbox.search_count([], limit=1))
 
     @api.model
     def inbox_search_view_id(self):
@@ -2111,7 +2134,7 @@ class PanMailConversation(models.AbstractModel):
         return rows
 
     @api.model
-    def link_scope(self, model, partner_id=None):
+    def link_scope(self, model, partner_id=None, new_mail=False):
         """Step two: the head start for Odoo's own record picker.
 
         The picker itself is Odoo's `SelectCreateDialog` over the model's own
@@ -2138,6 +2161,10 @@ class PanMailConversation(models.AbstractModel):
         is the form's context when it opens: the correspondent, through the
         same two relations the facet is built from, so a lead made from a
         mail opens with its sender filled in and the reader types a title.
+
+        `new_mail` is New email's picker, which has no sender behind it: a
+        contact made there is the person the mail is for, not a duplicate of
+        one the fetcher made, so its New is there on contacts too (3 Nov).
         """
         self._check_caller()
         Model = self._link_model(model)
@@ -2145,7 +2172,8 @@ class PanMailConversation(models.AbstractModel):
         if partner_id:
             partner = partner.browse(int(partner_id)).exists()
         scope = {
-            'can_create': Model._name != 'res.partner' and Model.has_access('create'),
+            'can_create': (bool(new_mail) or Model._name != 'res.partner')
+                          and Model.has_access('create'),
             'defaults': self._create_defaults(Model, partner),
         }
         domain = self._candidate_domain(Model, partner)

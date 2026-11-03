@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import os
 import re
 from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, ValidationError, UserError
@@ -16,6 +17,24 @@ from .mail_message import READ_MIRROR_CTX
 from .neutralization import database_is_copy
 
 _logger = logging.getLogger(__name__)
+
+# Where an admin makes a shared mailbox, per provider (#387). Microsoft 365
+# only for now: a Google group with a collaborative inbox and IMAP get no link
+# until somebody asks for one.
+SHARED_MAILBOX_URLS = {'outlook': 'https://admin.microsoft.com/#/SharedMailbox'}
+# The "Show me" slots: a recording dropped here is shown, an empty slot has no
+# link. Named after the step, any of the three extensions.
+SHOW_ME_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'src', 'img',
+                           'show_me')
+SHOW_ME_SHARED = 'create-shared-mailbox'
+
+
+def _show_me(slot):
+    """The URL of a slot's recording, or False when the slot is empty."""
+    for ext in ('.webp', '.gif', '.png'):
+        if os.path.isfile(os.path.join(SHOW_ME_DIR, slot + ext)):
+            return f'/pan_mail_pro/static/src/img/show_me/{slot}{ext}'
+    return False
 
 # How many consecutive failed sync runs before the mailbox is called broken.
 # Below it the mailbox stays in the set the cron reads, so a 503, a timeout or
@@ -742,7 +761,7 @@ class PanMailMailbox(models.Model):
         first cron minute will clear.
         """
         self.ensure_one()
-        if self.is_notification_mailbox or not self.last_check_date:
+        if not self.last_check_date:
             return False
         age = fields.Datetime.now() - self.last_check_date
         return age.total_seconds() > STALE_AFTER_MINUTES * 60
@@ -904,6 +923,24 @@ class PanMailMailbox(models.Model):
             if record.is_notification_mailbox:
                 parts.append(_('carries the system email'))
             record.subtitle = '  \u00b7  '.join(parts)
+
+    @api.model
+    def shared_mailbox_hint(self):
+        """The Mailboxes list's one action while a personal mailbox carries
+        the system email (#387): create a shared one, `notifications@` with
+        the admin as a member, which gives the Full Access and Send As the
+        access check needs. Microsoft 365 only; Google and IMAP get the
+        amber step 4 and no link until somebody asks.
+
+        `show_me` is a file slot, the install screen's pattern: drop
+        `create-shared-mailbox.webp` (or .gif, .png) into SHOW_ME_DIR and the
+        list shows "Show me" beside the action, with no code change. An empty
+        slot has no link.
+        """
+        mailbox = self.env['mail.mail']._notification_mailbox()
+        if not (mailbox.provider_type == 'personal' and mailbox.provider == 'outlook'):
+            return {'url': False, 'show_me': False}
+        return {'url': SHARED_MAILBOX_URLS['outlook'], 'show_me': _show_me(SHOW_ME_SHARED)}
 
     def action_open_routing_log(self):
         """The routing log, filtered on this mailbox."""
@@ -1077,12 +1114,13 @@ class PanMailMailbox(models.Model):
                 'by its owner.'
             ) % self.email)
 
-        recipient = self.env.user.email
+        recipient = self._test_recipient()
         if not recipient:
             raise UserError(_(
-                'Your user has no email address, so there is nowhere to send '
-                'the test. Add one under My Preferences and try again.'
-            ))
+                'The test goes to the address you signed in with, and you have '
+                'not signed in on %s yet. Connect your mailbox under My '
+                'Preferences, then check again.'
+            ) % get_provider_client(self.env, self.provider).provider_label())
 
         try:
             with self.env.cr.savepoint():
@@ -1118,6 +1156,17 @@ class PanMailMailbox(models.Model):
               mailbox=self.email, recipient=recipient),
             'success',
         )
+
+    def _test_recipient(self):
+        """The address whoever pressed the button signed in with on this
+        provider: the one address the provider itself vouched for. Never the
+        user record's email, which a fresh Odoo.sh admin does not have
+        (3 Nov) and which may name somewhere else entirely; where the two
+        differ, "Signed in as" already says so."""
+        accounts = self.env['pan.mail.account'].sudo().with_context(active_test=False).search(
+            [('user_id', '=', self.env.uid), ('provider', '=', self.provider),
+             ('email', '!=', False)], order='connected desc, id desc')
+        return accounts[:1].email or False
 
     @staticmethod
     def _test_notification(title, message, kind, sticky=False):

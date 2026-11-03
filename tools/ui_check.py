@@ -532,6 +532,99 @@ class Checks:
         finally:
             self.call('ir.config_parameter', 'set_param', 'database.is_neutralized', False)
 
+    def inbox_no_mailbox(self):
+        """A database with no mailbox yet opens the Inbox on the way to step
+        4, one line and one button, not on chatter mail: on a fresh Odoo.sh
+        database it opened on OdooBot's "Welcome to Odoo!" (3 Nov)."""
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        page = self.page
+        mailboxes = self.call('pan.mail.mailbox', 'search', [])
+        self.call('pan.mail.mailbox', 'write', mailboxes, {'active': False})
+        try:
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            try:
+                page.wait_for_selector('.o_mailpro_gate_no_mailbox', timeout=30000)
+            except Exception:
+                self.fail('a database with no mailbox does not show the no-mailbox Inbox')
+                return
+            page.wait_for_timeout(800)
+            self.shot('inbox-no-mailbox.png')
+            if page.query_selector('.o_mailpro_item, .o_mailpro_folder'):
+                self.fail('with no mailbox the Inbox still draws conversations or folders')
+            buttons = [b.inner_text().strip() for b in
+                       page.query_selector_all('.o_mailpro_gate_no_mailbox button')
+                       if b.is_visible()]
+            if buttons != ['Add a mailbox']:
+                self.fail(f'the no-mailbox Inbox offers {buttons}, expected "Add a mailbox"')
+                return
+            page.click('.o_mailpro_gate_no_mailbox button')
+            try:
+                page.wait_for_selector('.o_list_view', timeout=30000)
+            except Exception:
+                self.fail(f'"Add a mailbox" did not open the Mailboxes list; it is on {page.url}')
+                return
+            title = ' '.join(page.inner_text('.o_control_panel .o_breadcrumb').split())
+            if 'Mailboxes' not in title:
+                self.fail(f'"Add a mailbox" opened "{title}", not Mailboxes')
+            self.error_free('the no-mailbox Inbox')
+        finally:
+            self.call('pan.mail.mailbox', 'write', mailboxes, {'active': True})
+
+    def inbox_new_email_new_contact(self):
+        """New email on a contact that does not exist yet: the picker's own
+        New makes it, and the contact saved is the one the composer opens on
+        (3 Nov: "New email on: Contact" had no New button)."""
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        page = self.page
+        name = 'Ui Check Newcontact'
+        page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+        try:
+            page.wait_for_selector('.o_mailpro_new', timeout=30000)
+            page.wait_for_timeout(1000)
+            page.click('.o_mailpro_new')
+            page.wait_for_selector('.o_mailpro_link_dialog .o_mailpro_link_row', timeout=15000)
+            rows = [r for r in page.query_selector_all('.o_mailpro_link_dialog .o_mailpro_link_row')
+                    if ' '.join(r.inner_text().split()) == 'Contact']
+            if not rows:
+                self.fail('New Email offers no Contact to write on')
+                return
+            rows[0].click()
+            page.wait_for_selector(ODOO_PICKER, timeout=15000)
+            page.wait_for_timeout(800)
+            create = page.query_selector(ODOO_PICKER + ' button.o_create_button')
+            if not create or not create.is_visible():
+                self.fail('"New email on: Contact" has no New button')
+                return
+            create.click()
+            page.wait_for_selector('.modal .o_form_view .o_field_widget[name=name] input',
+                                   timeout=15000)
+            page.fill('.modal .o_form_view .o_field_widget[name=name] input', name)
+            page.fill('.modal .o_form_view .o_field_widget[name=email] input',
+                      'newcontact@ui-check.test')
+            self.shot('inbox-new-email-new-contact.png')
+            page.click('.modal .o_form_button_save')
+            try:
+                page.wait_for_selector('.o_mailpro_composer .o_form_view', timeout=15000)
+            except Exception:
+                self.fail('the contact made in New email\'s picker did not open the composer')
+                return
+            shown = page.query_selector('.o_mailpro_odoo_record .o_mailpro_odoo_record_name')
+            if not shown or shown.inner_text().strip() != name:
+                self.fail(f'the composer opened on "{shown and shown.inner_text().strip()}", '
+                          f'not the contact just made')
+            if not page.query_selector('.o_mailpro_composer [name="partner_ids"] .o_tag'):
+                self.fail('the new contact is not in To')
+            discard = page.query_selector(
+                '.o_mailpro_conversation_head button:has-text("Discard")')
+            if discard:
+                discard.click()
+                page.wait_for_timeout(1000)
+            self.error_free('New email on a new contact')
+        finally:
+            made = self.call('res.partner', 'search', [('name', '=', name)])
+            if made:
+                self.call('res.partner', 'write', made, {'active': False})
+
     def inbox_not_connected(self):
         """Without a Pantalytics account the Inbox is one button, and the
         button connects (#380).
@@ -1069,14 +1162,20 @@ class Checks:
             self.shot('inbox-all-mailboxes.png')
 
         names = mailbox_names()
+        seeded = 0
         if len(names) < 2:
             self.fail(f'{len(names)} mailboxes in the mailbox list, expected the seeded 2')
         else:
-            if open_mailbox(1) != names[1:2]:
+            # By name, not position: the seed's notification mailbox is the
+            # admin's own address, which is listed too since #387 and sorts
+            # first.
+            seeded = next((i for i, name in enumerate(names) if name.startswith('sales@')), 0)
+            other = 1 if seeded != 1 else 0
+            if open_mailbox(other) != names[other:other + 1]:
                 self.fail('clicking a mailbox did not open it')
             # Back to the one the seeded mail is in, so everything below reads
             # the filled screen.
-            open_mailbox(0)
+            open_mailbox(seeded)
             # One mailbox is not a list that spans any: repeating the same
             # address down thirty rows is the noise this is drawn against.
             if row_mailboxes():
@@ -1098,9 +1197,9 @@ class Checks:
 
         if len(names) >= 2:
             before = folder_rows()
-            if fold(0) != before - len(self.FOLDERS):
+            if fold(seeded) != before - len(self.FOLDERS):
                 self.fail('folding a mailbox left its folders on screen')
-            if fold(0) != before:
+            if fold(seeded) != before:
                 self.fail('unfolding a mailbox did not bring its folders back')
 
         # Everything clickable is a real button, so a keyboard can reach it.
@@ -3573,6 +3672,12 @@ class Checks:
                 self.fail(f'the new provider form offers {primary}, '
                           'expected one primary "Sign in with Microsoft"')
                 return
+            # Paired, nobody signed in: Rutger's database (3 Nov, 19.0.33.1.2),
+            # where step 2 read green and this form read Not Connected.
+            form_url = page.url
+            self.status_shared('paired, nobody signed in', 'o_mailpro_dot_attention',
+                               'Not signed in')
+            self.form_text(form_url)
             page.route('**/web/dataset/call_button/pan.mail.provider/action_connect_myself',
                        answer)
             page.route('**/login.microsoftonline.com/**', microsoft)
@@ -3646,6 +3751,240 @@ class Checks:
             self.call('pan.mail.domain', 'unlink', self.call('pan.mail.domain', 'search', []))
             self.call('pan.mail.domain', 'create', [{'name': name} for name in was])
             self.call('res.company', 'write', [company['id']], {'email': company['email']})
+
+    # The badge on the provider form, as the dot step 2 must show for it.
+    BADGE_DOT = {'text-bg-success': 'o_mailpro_dot_ok',
+                 'text-bg-warning': 'o_mailpro_dot_attention',
+                 'text-bg-danger': 'o_mailpro_dot_todo'}
+
+    def provider_badge(self):
+        """The provider form on screen: the dot its Status badge stands for."""
+        badge = self.page.query_selector('.o_form_view .o_field_widget[name=status] .badge')
+        if not badge:
+            return None
+        return next((self.BADGE_DOT[c] for c in (badge.get_attribute('class') or '').split()
+                     if c in self.BADGE_DOT), None)
+
+    def no_new_provider(self, where):
+        """One row, made by step 2: a New button could only start a second."""
+        if self.page.query_selector('.o_control_panel .o_form_button_create:visible, '
+                                    '.o_control_panel .o_list_button_add:visible'):
+            self.fail(f'the provider form {where} shows a New button')
+
+    def status_shared(self, where, dot, value):
+        """Step 2 shows the provider row's status (3 Nov, "Die status moet
+        gedeeld zijn"): the dot is the badge on the form that is open now,
+        and the answer beside the name says the same thing."""
+        page = self.page
+        badge = self.provider_badge()
+        self.no_new_provider(where)
+        if badge != dot:
+            self.fail(f'{where}: the provider form\'s badge stands for {badge}, expected {dot}')
+        page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+        page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+        page.click('a.tab[data-key=pan_mail_pro]')
+        page.wait_for_selector('.o_mailpro_step_provider', timeout=30000)
+        page.wait_for_timeout(800)
+        step = page.query_selector('.o_mailpro_step_provider')
+        dots = [d.get_attribute('class') for d in step.query_selector_all('.o_mailpro_dot')
+                if d.is_visible()]
+        shown = [c for c in (dots[0].split() if len(dots) == 1 else [])
+                 if c != 'o_mailpro_dot']
+        if shown != [badge]:
+            self.fail(f'{where}: step 2\'s dot is {shown}, the provider form\'s badge {badge}')
+        values = [' '.join(v.inner_text().split())
+                  for v in step.query_selector_all('.o_mailpro_step_value') if v.is_visible()]
+        if values != [value]:
+            self.fail(f'{where}: step 2 reads {values}, expected "{value}"')
+        self.shot(f'settings-step2-{dot.rsplit("_", 1)[-1]}.png')
+
+    def provider_disconnect(self):
+        """Connected, the form's one action is Disconnect (3 Nov): secondary,
+        behind a confirm that names the consequence, and only for the
+        reader's own sign-in. After it the form reads Not Connected with
+        Sign in again, and step 2 turns amber with it."""
+        page = self.page
+        action = dict(module_menu_actions(self.call)).get('Providers')
+        fields = ['provider', 'client_id', 'client_secret_encrypted', 'tenant_id',
+                  'registration']
+        rows = self.call('pan.mail.provider', 'search_read', [], fields=fields)
+        link = self.call('pan.mail.license', 'search', [])
+        self.call('pan.mail.license', 'write', link, {'key_encrypted': 'ui-check'})
+        mine = self.call('pan.mail.account', 'search_read',
+                         [('provider', '=', 'outlook'), ('user_id.login', '=', 'admin')],
+                         fields=['refresh_token_encrypted', 'access_token_encrypted',
+                                 'token_expiry'],
+                         context={'active_test': False})
+        self.call('pan.mail.provider', 'unlink', [r['id'] for r in rows])
+        row = self.call('pan.mail.provider', 'create', {
+            'provider': 'outlook', 'registration': 'pantalytics',
+            'pantalytics_client_id': 'ui-check'})
+        try:
+            if not mine:
+                self.fail('the seed has no Microsoft sign-in of the admin\'s to disconnect')
+                return
+            self.form_text(f'{self.base}/odoo/action-{action}/{row}')
+            self.shot('provider-connected.png')
+            self.status_shared('signed in', 'o_mailpro_dot_ok', 'Microsoft 365')
+            self.form_text(f'{self.base}/odoo/action-{action}/{row}')
+            form = page.query_selector('.o_form_view')
+            buttons = [b for b in form.query_selector_all('button')
+                       if b.is_visible() and b.inner_text().strip()]
+            labels = [b.inner_text().strip() for b in buttons]
+            if labels != ['Disconnect']:
+                self.fail(f'the connected provider form offers {labels}, expected Disconnect')
+                return
+            if 'btn-primary' in (buttons[0].get_attribute('class') or ''):
+                self.fail('Disconnect is the primary button; it is the way out, not the job')
+            buttons[0].click()
+            try:
+                page.wait_for_selector('.modal:visible', timeout=10000)
+            except Exception:
+                self.fail('Disconnect runs without asking first')
+                return
+            sentence = ' '.join(page.inner_text('.modal .modal-body').split())
+            if sentence != ('Mailboxes that send or sync with your sign-in stop '
+                            'until someone signs in again.'):
+                self.fail(f'the Disconnect confirm reads "{sentence}"')
+            self.shot('provider-disconnect-confirm.png')
+            page.click('.modal .modal-footer button.btn-primary')
+            page.wait_for_timeout(2500)
+            self.form_text(f'{self.base}/odoo/action-{action}/{row}')
+            text = page.inner_text('.o_form_view')
+            if 'Sign in with Microsoft' not in text:
+                self.fail('after Disconnect the provider form does not offer Sign in again')
+            self.status_shared('after Disconnect', 'o_mailpro_dot_attention', 'Not signed in')
+        finally:
+            for account in mine:
+                self.call('pan.mail.account', 'write', [account['id']], {
+                    name: account[name] for name in
+                    ('refresh_token_encrypted', 'access_token_encrypted', 'token_expiry')})
+            self.call('pan.mail.provider', 'unlink',
+                      self.call('pan.mail.provider', 'search', []))
+            for old in rows:
+                self.call('pan.mail.provider', 'create', {name: old[name] for name in fields})
+            self.call('pan.mail.license', 'write', link, {'key_encrypted': False})
+
+    def provider_sign_in_lands_on_settings(self):
+        """A sign-in started on step 2's form ends on the checklist, not back
+        on the form with only a breadcrumb ("hoe ga ik nou terug?", 3 Nov).
+        Google's own round, since its URL is built here and needs no
+        platform: Google is stood in at the network and comes straight
+        back without a code, so the round ends on the result page, whose way
+        back is the same one a sign-in that worked is redirected to."""
+        page = self.page
+        action = dict(module_menu_actions(self.call)).get('Providers')
+        row_id, was = [(r['id'], r['provider']) for r in self.call(
+            'pan.mail.provider', 'search_read', [], fields=['provider'])][0]
+        callback = f'{self.base}/google_oauth/callback'
+
+        def google(route):
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query)
+            state = (query.get('state') or [''])[0]
+            route.fulfill(status=302, headers={
+                'Location': f'{callback}?state={urllib.parse.quote(state)}'})
+
+        self.call('pan.mail.provider', 'write', [row_id], {'provider': 'gmail'})
+        page.route('**/accounts.google.com/**', google)
+        try:
+            self.form_text(f'{self.base}/odoo/action-{action}/{row_id}')
+            self.no_new_provider('on Google')
+            page.click('.o_form_view button:has-text("Sign in with Google")')
+            try:
+                page.wait_for_selector('#o_mailpro_oauth_back', timeout=30000)
+            except Exception:
+                self.fail(f'Sign in with Google did not come back to Odoo; it is on {page.url}')
+                return
+            back = page.get_attribute('#o_mailpro_oauth_back', 'href') or ''
+            if not back.endswith('/odoo/settings#pan_mail_pro'):
+                self.fail(f'a sign-in started on step 2\'s form goes back to {back}, '
+                          'not the Settings checklist')
+                return
+            page.click('#o_mailpro_oauth_back')
+            try:
+                page.wait_for_selector('.o_mailpro_step_provider', timeout=30000)
+            except Exception:
+                self.fail(f'the way back from step 2\'s sign-in lands on {page.url}')
+        finally:
+            page.unroute('**/accounts.google.com/**')
+            self.call('pan.mail.provider', 'write', [row_id], {'provider': was})
+
+    def step4_personal_notification(self):
+        """A personal mailbox carrying the system email (#387): step 4 amber
+        with one line, the Mailboxes list it opens offering to create a
+        shared mailbox at Microsoft (no Show me while that slot is empty),
+        the mailbox's own Sync settings still there, and green again once a
+        shared mailbox carries the flag. The seed's two stopped mailboxes are
+        set going for the walk, or step 4 would be the red of broken."""
+        page = self.page
+        mailboxes = self.call('pan.mail.mailbox', 'search_read', [],
+                              fields=['email', 'state', 'is_notification_mailbox',
+                                      'provider_type'])
+        carrier = next((m for m in mailboxes if m['is_notification_mailbox']), None)
+        shared = next((m for m in mailboxes if m['provider_type'] == 'shared'
+                       and not m['is_notification_mailbox']), None)
+        if not carrier or carrier['provider_type'] != 'personal' or not shared:
+            self.fail(f'the seed has no personal notification mailbox and shared one: {mailboxes}')
+            return
+        stopped = [m['id'] for m in mailboxes if m['state'] == 'error']
+        self.call('pan.mail.mailbox', 'write', stopped, {'state': 'active'})
+
+        def step_4():
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step_mailboxes', timeout=30000)
+            page.wait_for_timeout(800)
+            step = page.query_selector('.o_mailpro_step_mailboxes')
+            dots = [d.get_attribute('class') for d in step.query_selector_all('.o_mailpro_dot')
+                    if d.is_visible()]
+            msgs = [' '.join(m.inner_text().split())
+                    for m in step.query_selector_all('.o_mailpro_step_msg') if m.is_visible()]
+            return step, dots, msgs
+
+        try:
+            step, dots, msgs = step_4()
+            self.shot('settings-step4-personal.png')
+            if len(dots) != 1 or 'o_mailpro_dot_attention' not in dots[0]:
+                self.fail(f'step 4 with a personal notification mailbox shows {dots}, not amber')
+            if 'System email from a personal mailbox' not in msgs:
+                self.fail(f'step 4 with a personal notification mailbox reads {msgs}')
+            self.click_row(step)
+            page.wait_for_selector('.o_list_view', timeout=30000)
+            page.wait_for_timeout(1200)
+            self.shot('mailboxes-create-shared.png')
+            create = page.query_selector('a.o_mailpro_create_shared')
+            if not create or not create.is_visible():
+                self.fail('the Mailboxes list offers no "Create a shared mailbox"')
+            else:
+                if create.get_attribute('href') != 'https://admin.microsoft.com/#/SharedMailbox':
+                    self.fail(f'"Create a shared mailbox" goes to {create.get_attribute("href")}')
+                if create.get_attribute('target') != '_blank':
+                    self.fail('"Create a shared mailbox" does not open a new tab')
+            if page.query_selector('.o_mailpro_show_me'):
+                self.fail('"Show me" is there while its slot is empty')
+            action = dict(module_menu_actions(self.call)).get('Mailboxes')
+            self.form_text(f'{self.base}/odoo/action-{action}/{carrier["id"]}')
+            if not page.query_selector('.o_notebook .nav-link:has-text("Sync settings")'):
+                self.fail('the notification mailbox hides its Sync settings')
+            self.shot('mailbox-notification-sync.png')
+
+            self.call('pan.mail.mailbox', 'write', [shared['id']],
+                      {'is_notification_mailbox': True})
+            step, dots, msgs = step_4()
+            if any('o_mailpro_dot_attention' in d for d in dots):
+                self.fail('step 4 stays amber once a shared mailbox carries the system email')
+            if 'System email from a personal mailbox' in msgs:
+                self.fail('step 4 still says personal once a shared mailbox carries it')
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            page.wait_for_selector('.o_list_view', timeout=30000)
+            page.wait_for_timeout(1000)
+            if page.query_selector('a.o_mailpro_create_shared'):
+                self.fail('"Create a shared mailbox" stays once a shared one carries the flag')
+        finally:
+            self.call('pan.mail.mailbox', 'write', [carrier['id']],
+                      {'is_notification_mailbox': True})
+            self.call('pan.mail.mailbox', 'write', stopped, {'state': 'error'})
 
     def settings_provider_arrow(self, row_id):
         """Step 2's arrow is the provider row's own form, by its id."""
@@ -4885,8 +5224,10 @@ def main():
         checks.copy_marker()
         checks.inbox_not_connected()
         checks.inbox_gate_on_copy()
+        checks.inbox_no_mailbox()
         checks.menus()
         checks.conversation_view()
+        checks.inbox_new_email_new_contact()
         checks.slow_network()
         checks.chatter_door()
         checks.live_folder()
@@ -4895,6 +5236,9 @@ def main():
         checks.improve()
         checks.provider_form()
         checks.settings_provider_first()
+        checks.provider_disconnect()
+        checks.provider_sign_in_lands_on_settings()
+        checks.step4_personal_notification()
         checks.domain_suggestion()
         checks.mailbox_status()
         checks.sync_slider()

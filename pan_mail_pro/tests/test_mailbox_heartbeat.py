@@ -121,12 +121,13 @@ class TestMailboxHeartbeat(MailProTestCase):
         self.assertFalse(self.mailbox._sync_is_stale())
         self.assertEqual(self.mailbox.health_status, 'healthy')
 
-    def test_notification_mailbox_never_goes_stale(self):
-        """It carries the system email and reads nothing, so it cannot fall behind."""
+    def test_notification_mailbox_goes_stale_like_any_other(self):
+        """It syncs whatever its level says (#387), so it can fall behind too.
+        It used to be exempt, on the argument that it reads nothing."""
         mailbox = self.notification_mailbox
         mailbox.last_check_date = (
             fields.Datetime.now() - timedelta(days=30))
-        self.assertFalse(mailbox._sync_is_stale())
+        self.assertTrue(mailbox._sync_is_stale())
 
     # --------------------------------------------------------------- message
 
