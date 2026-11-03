@@ -9,6 +9,8 @@
 # following the scheme, not about Odoo's exact greys.
 #
 # Installed by tools/ui_preview.sh only. Never shipped, never a dependency.
+# Kept as __manifest__.ci so no host offers it in Apps (pan_mail_pro#395):
+# tools/ci_addons_stage.sh copies it out under the name Odoo reads.
 {
     'name': 'Mail Pro CI: dark mode',
     'version': '19.0.1.0.0',

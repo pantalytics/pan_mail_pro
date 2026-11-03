@@ -2927,6 +2927,15 @@ rename SQL against real jsonb columns) goes through `tests/common.py`'s
 `PAN_TEST_REPO_REQUIRED` says the repository is mounted. CI's `module-only`
 job (`tools/ci_odoo.sh --mode=module-only`) runs the suite in that shape.
 
+The same reading makes any other manifest in the checkout a module on the
+customer's database. Odoo.sh adds every folder of a submodule that holds one,
+so the two addons the browser check needs (`tools/ci_addons/`: dark mode on
+the community image, and a stand-in for the platform's pairing start) were
+offered in Apps (#395). They keep their manifest as `__manifest__.ci`, which
+no Odoo reads; `tools/ci_addons_stage.sh` copies them to a folder outside the
+repository with the name restored, and `tools/ui_preview.sh` mounts that.
+`tools/ci_lint.sh` fails on any `__manifest__.py` but `pan_mail_pro/`'s.
+
 The one file at the root a host does read is `requirements.txt`: Odoo.sh and
 Cloudpepper ("Install Python requirements on update") install from it, Odoo
 reads the manifest's `external_dependencies`. It lists the same two packages,
