@@ -74,6 +74,8 @@ from . import test_dark_mode
 from . import test_setup_defaults
 from . import test_copy
 from . import test_staging
+from . import test_hosting
 from . import test_personal_notification_mailbox
 from . import test_sync_level_slider
+from . import test_inbox_tour
 from . import test_up_and_running

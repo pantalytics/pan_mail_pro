@@ -52,6 +52,7 @@ import { useAttachmentUploader } from "@mail/core/common/attachment_uploader_hoo
 import { FileUploader } from "@web/views/fields/file_handler";
 import { useComposer, ComposerForm } from "./use_composer";
 import { Swipe } from "./swipe";
+import { useInboxTour } from "./inbox_tour";
 // The Activities tab draws Odoo's own activity card. Borrowing the component
 // rather than restyling ours is what keeps the icons, the three state colours
 // and Mark Done / Edit / Cancel identical to the chatter, for free and
@@ -310,6 +311,9 @@ export class ConversationView extends Component {
         // Help improve Mail Pro: a no-op unless the session says otherwise.
         // Every `capture` below names a screen or a button, never content.
         this.improve = useImprove();
+        // The tour of how mail and records are linked (#393): Odoo's own
+        // `web_tour`, offered once the list has mail and on the "?" after.
+        this.tour = useInboxTour();
         // Odoo's own search model, over `mail.message`. `useSubEnv` is how
         // `SearchBar` finds it, the same way every view in the web client
         // hands it to its control panel. Everything the reader types, picks
@@ -395,6 +399,9 @@ export class ConversationView extends Component {
             // Whether the database has any mailbox. Without one the screen
             // is the way to step 4, not chatter mail (`inbox_has_mailbox`).
             hasMailbox: true,
+            // A mailbox manager, the one who may link (`link_to`). Read by
+            // the tour, which only teaches linking to somebody who can.
+            canLink: false,
             // Whether the gate's Connect starts a pairing (`inbox_gate`), and
             // whether one is being asked for, so a second press does not
             // start a second.
@@ -509,6 +516,8 @@ export class ConversationView extends Component {
                 this.orm.call("pan.mail.conversation", "inbox_has_mailbox", [])
                     .then((has) => (this.state.hasMailbox = has)),
                 this.loadMailboxes(),
+                user.hasGroup("pan_mail_pro.group_mail_mailbox_manager")
+                    .then((yes) => (this.state.canLink = yes)),
                 this.orm.call("pan.mail.conversation", "inbox_search_view_id", [])
                     .then((searchViewId) => this.searchModel.load({
                         resModel: "mail.message",
@@ -884,6 +893,12 @@ export class ConversationView extends Component {
                     keys.map((key, index) => [key, countRows[index]]));
             }
             this.state.conversations = conversations;
+            // The tour, the first time this person has mail in Odoo on
+            // screen: a live row is not on a record, and the tour is about
+            // the record. Not awaited: the list does not wait for it.
+            if (conversations.some((row) => !row.live && !row.draft_id)) {
+                this.tour.offer();
+            }
             // The live folder is the newest page and has no next one: the
             // provider contract's search takes a limit and no offset, so
             // older mail is a search term rather than a scroll.
@@ -2262,6 +2277,7 @@ export class ConversationView extends Component {
         return {
             o_mailpro_small: panes.small,
             o_mailpro_narrow: panes.narrow,
+            o_mailpro_can_link: this.state.canLink,
             // Reading on a phone: the bar with the search, the mailboxes and
             // New email belongs to the list, and the mail gets its height.
             o_mailpro_reading: panes.small && (this.conversationOpen || panes.zoom),

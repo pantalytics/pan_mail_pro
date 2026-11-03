@@ -105,7 +105,9 @@
         - Nothing is sent to Pantalytics unless an administrator links the
           database under Settings -> Mail Pro -> Pantalytics Account. Once
           linked, the database reports once a day: its database id, the
-          module and Odoo version, how many accounts are connected, whether
+          module and Odoo version, where it runs (one of three words: Odoo.sh,
+          Cloudpepper or self-hosted, read from the environment), how many
+          accounts are connected, whether
           sync is healthy, which of the three setup steps are answered, and
           for the last 24 hours how many mails were
           sent and received, how many were
@@ -115,8 +117,9 @@
           which kinds of failure happened how often (a fixed list of error
           codes such as "outgoing.send_failed", with a count each). A
           staging or restored copy also says that it is one (a yes/no).
-          Counts, rule names and error codes. Never an address, subject,
-          body, name, exception text or traceback.
+          Counts, rule names, error codes and the hosting word. Never an
+          address, subject, body, name, host name, file path, exception
+          text or traceback.
         - Signing in with the Pantalytics Mail Pro app asks Pantalytics to
           start each Microsoft sign-in, sending this Odoo's own address to
           come back to. Microsoft's answer passes through Pantalytics on its
@@ -138,7 +141,7 @@
     'category': 'Discuss',
     'version': '19.0.33.4.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
-    'depends': ['mail', 'base', 'crm'],
+    'depends': ['mail', 'base', 'crm', 'web_tour'],
     'external_dependencies': {
         'python': ['cryptography', 'requests'],
     },
@@ -148,6 +151,7 @@
         'data/ir_cron_data.xml',
         'data/mail_server_data.xml',
         'data/mail_template_data.xml',
+        'data/web_tour_tour.xml',
         'views/pan_mail_menus.xml',
         'views/pan_mail_conversation_views.xml',
         'views/pan_mail_mailbox_views.xml',
@@ -187,6 +191,7 @@
             'pan_mail_pro/static/src/js/conversation_view/swipe.js',
             'pan_mail_pro/static/src/js/conversation_view/link_dialog.js',
             'pan_mail_pro/static/src/js/conversation_view/verify_dialog.js',
+            'pan_mail_pro/static/src/js/conversation_view/inbox_tour.js',
             'pan_mail_pro/static/src/js/conversation_view/conversation_view.js',
             'pan_mail_pro/static/src/xml/mailbox_list_view.xml',
             'pan_mail_pro/static/src/xml/domain_list_view.xml',

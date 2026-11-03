@@ -184,6 +184,8 @@ $mailpro-band-gutter: 3.5rem;
 
     .o_mailpro_search_zone {
         flex: 0 1 34rem;
+        align-items: center;
+        gap: 0.25rem;
     }
 
     // The systray is Odoo's own, and so is everything that styles it: web's
@@ -246,7 +248,8 @@ $mailpro-band-gutter: 3.5rem;
     .o_mailpro_pane_toggle,
     .o_mailpro_odoo_record_zoom,
     .o_mailpro_back,
-    .o_mailpro_mailbox_list_close {
+    .o_mailpro_mailbox_list_close,
+    .o_mailpro_tour_start {
         @include mailpro-control;
     }
 
@@ -1537,6 +1540,7 @@ $mailpro-band-gutter: 3.5rem;
         .o_mailpro_pane_toggle,
         .o_mailpro_odoo_record_zoom,
         .o_mailpro_back,
+        .o_mailpro_tour_start,
         .o_mailpro_odoo_record_button,
         .o_mailpro_split,
         .o_mailpro_split_toggle,
@@ -1544,6 +1548,7 @@ $mailpro-band-gutter: 3.5rem;
 
         .o_mailpro_split_toggle:active,
         .o_mailpro_pane_toggle:active,
+        .o_mailpro_tour_start:active,
         .o_mailpro_odoo_record_zoom:active,
         .o_mailpro_back:active,
         .o_mailpro_odoo_record_button:active { transform: none; }
@@ -2073,4 +2078,16 @@ $mailpro-band-gutter: 3.5rem;
 @keyframes o_mailpro_breathe {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.55; }
+}
+
+// The tour's sentence on a phone (#393). Odoo's pointer measures its bubble
+// where it stands, so beside an anchor in the middle of a 390px screen it
+// measured the strip to the right of it: one word a line. A fixed width
+// gives it one worth measuring, narrow enough for any anchor on the screen,
+// and the pointer's own `o_expand_left` then opens it leftwards, back onto
+// the screen. Only over the Inbox on a phone; the pointer is drawn in the
+// overlay container, so this block is outside `.o_mailpro_inbox`.
+body:has(.o_mailpro_inbox.o_mailpro_small) .o_tour_pointer_content {
+    min-width: 13rem;
+    max-width: 13rem;
 }
