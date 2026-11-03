@@ -48,6 +48,12 @@ class PanMailCoverage(models.TransientModel):
         """
         return [('model', '=', 'res.partner'), ('res_id', '!=', False)]
 
+    @api.model
+    def _linked_domain(self):
+        """Linked to a document: a record, and not a contact. The third row,
+        the complement of the other two."""
+        return [('model', '!=', False), ('model', '!=', 'res.partner'), ('res_id', '!=', False)]
+
     def _period_domain(self):
         self.ensure_one()
         since = fields.Datetime.now() - relativedelta(days=int(self.period_days))
