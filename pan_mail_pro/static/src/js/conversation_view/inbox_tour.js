@@ -183,7 +183,8 @@ function runningHere() {
 }
 
 /**
- * `offer()` once the Inbox has mail on screen; `start()` from the "?".
+ * `offer()` once the Inbox has mail on screen; `start()` from the "?";
+ * `take()` from Settings' Take the tour.
  */
 export function useInboxTour() {
     const orm = useService("orm");
@@ -235,6 +236,17 @@ export function useInboxTour() {
     }
 
     /**
+     * Take the tour, from Settings once Mail Pro is up and running (#391):
+     * the "?" pressed from another screen, so it opens on the Inbox and is
+     * seen like the first run, and the Inbox does not offer it again.
+     */
+    async function take() {
+        offered = true;
+        await orm.call("web_tour.tour", "consume", [INBOX_TOUR]);
+        await start();
+    }
+
+    /**
      * Whether this tour is the current one, for the Inbox's root class:
      * the panes do not ease while it runs. 20 places its pointer once, at
      * the trigger as it stands when the step opens, so a button that is
@@ -245,5 +257,5 @@ export function useInboxTour() {
         return tourState.getCurrentTour() === INBOX_TOUR;
     }
 
-    return { start, offer, touring };
+    return { start, offer, take, touring };
 }

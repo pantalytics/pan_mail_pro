@@ -308,9 +308,9 @@ border, the way a phone's Settings app lists them.
 ```xml
 <div class="o_mailpro_step">
     <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-          invisible="not x_setup_domains_done"/>
+          invisible="x_domains_dot != 'ok'"/>
     <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-          invisible="x_setup_domains_done"/>
+          invisible="x_domains_dot != 'todo'"/>
     <div class="o_mailpro_step_body">
         <div class="o_mailpro_step_head">
             <span class="o_mailpro_step_name">2. Internal Domains</span>
@@ -415,6 +415,28 @@ border, the way a phone's Settings app lists them.
   the domains it can read off the database, and only while it is empty. A
   list with something in it is the admin's, and offering additions to it
   forever would read as a complaint about a deliberate choice.
+
+- **The colour of a dot is decided once.** Each step's dot reads one word,
+  `x_<step>_dot` (`ok`, `attention`, `warn`, `todo`), from
+  `pan.mail.setup.step_dots`. A dot written as its own `invisible` expression
+  is a second opinion of the step, and the end of the line below could not
+  ask it anything.
+
+### The checklist has an end
+
+Four done steps and the first incoming mail on a record fold the checklist
+into one line, the way the platform's install screen ends (#391): a rocket,
+"Mail Pro is up and running", and under it the one next action, a primary
+button, Invite your colleagues to connect their mailbox, while anybody is
+left to invite, and beside it a secondary one, Take the tour, which opens
+the Inbox on its tour. Done is green, and amber on step 4: a personal mailbox
+carrying the system email is a recommendation, so step 4's own amber line,
+System email from a personal mailbox, sits under the headline and opens
+Mailboxes. Red or the open dot keep the checklist. Show setup, a link, unfolds the four steps under it; the
+fold is a click, held by the widget, never a field the settings form would
+ask to save. The confetti flies once per database and stands still under
+`prefers-reduced-motion`. No sentence explains any of it: the line is the
+explanation.
 
 ### Explanation is one muted line, never a tooltip
 

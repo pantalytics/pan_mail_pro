@@ -17,6 +17,11 @@
                     <field name="x_license_state" invisible="1"/>
                     <field name="x_license_sync_blocked" invisible="1"/>
                     <field name="x_license_mail_paused" invisible="1"/>
+                    <field name="x_account_dot" invisible="1"/>
+                    <field name="x_provider_dot" invisible="1"/>
+                    <field name="x_domains_dot" invisible="1"/>
+                    <field name="x_mailboxes_dot" invisible="1"/>
+                    <field name="x_up_and_running" invisible="1"/>
 
                     <!-- The checklist sits in Odoo's own settings container so
                          it is capped and indented like every other block on this
@@ -48,6 +53,14 @@
                     <div class="col-12 o_setting_box o_mailpro_copy_marker" role="status" invisible="not x_is_copy">
                         This is a copy. Mail is shown, not sent.
                     </div>
+                    <!-- The end of the line (#391): all four dots green
+                         and the first incoming mail on a record. The four
+                         steps fold under one line and its one next action,
+                         and Show setup unfolds them again; the widget holds
+                         that fold, so it is a click and never a change to
+                         save. Confetti once per database. -->
+                    <widget name="mailpro_up_and_running" class="col-12 o_setting_box o_mailpro_running_box"
+                            invisible="not x_up_and_running"/>
                     <div class="col-12 o_setting_box o_mailpro_steps">
 
                     <!-- Step 1. One primary action per state, and the code is
@@ -57,11 +70,11 @@
                          or revoked link is a stopped step, not an open one. -->
                     <div class="o_mailpro_step">
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_account_done or x_license_mail_paused"/>
+                              invisible="x_account_dot != 'ok'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="(x_license_state != 'connected' or x_setup_account_done) and not x_license_mail_paused"/>
+                              invisible="x_account_dot != 'warn'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_license_state == 'connected'"/>
+                              invisible="x_account_dot != 'todo'"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">1. Pantalytics account</span>
@@ -171,11 +184,11 @@
                         <field name="x_provider_status" invisible="1"/>
                         <field name="x_microsoft_on_own_app" invisible="1"/>
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="x_provider_status != 'connected' or x_microsoft_on_own_app"/>
+                              invisible="x_provider_dot != 'ok'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_attention" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="x_provider_status != 'not_connected' and not x_microsoft_on_own_app"/>
+                              invisible="x_provider_dot != 'attention'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_provider_status in ('connected', 'not_connected') or x_microsoft_on_own_app"/>
+                              invisible="x_provider_dot != 'todo'"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">2. Email provider</span>
@@ -226,9 +239,9 @@
 
                     <div class="o_mailpro_step">
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_domains_done"/>
+                              invisible="x_domains_dot != 'ok'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_setup_domains_done"/>
+                              invisible="x_domains_dot != 'todo'"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">3. Internal domains</span>
@@ -261,21 +274,18 @@
                              happen. -->
                         <field name="x_notification_access_state" invisible="1"/>
                         <field name="x_notification_mailbox_type" invisible="1"/>
-                        <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_notification_done or x_mailboxes_alert or x_notification_access_state != 'ok' or x_notification_mailbox_type == 'personal'"/>
-                        <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="not x_mailboxes_alert and x_notification_access_state != 'broken'"/>
                         <!-- Amber while a personal mailbox carries the system
                              email (#387): it works, and a shared mailbox
-                             with the flag is the better way. Read off the
-                             notification mailbox's own type. -->
+                             with the flag is the better way. A step that has
+                             stopped is one dot, not two: the red wins. -->
+                        <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
+                              invisible="x_mailboxes_dot != 'ok'"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
+                              invisible="x_mailboxes_dot != 'warn'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_attention" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or not x_setup_notification_done or x_notification_mailbox_type != 'personal'"/>
-                        <!-- A step that has stopped is one dot, not two: the
-                             warning wins, and "still to do" is not additional
-                             information next to it. -->
+                              invisible="x_mailboxes_dot != 'attention'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or (x_setup_notification_done and (x_notification_access_state == 'ok' or x_notification_mailbox_type == 'personal'))"/>
+                              invisible="x_mailboxes_dot != 'todo'"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">4. Mailboxes</span>
