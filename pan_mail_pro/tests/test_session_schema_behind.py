@@ -23,7 +23,10 @@ class TestSessionSchemaBehind(HttpCase):
     def test_a_missing_table_leaves_the_session_loading(self):
         self.authenticate('admin', 'admin')
         License = type(self.env['pan.mail.license'])
+        # The bad query is the point, so it is caught here rather than left
+        # in the log: tools/ci_assert_tests.sh fails a run that logs one.
         with patch.object(License, 'current', self._missing_table), \
+                self.assertLogs('odoo.sql_db', 'ERROR'), \
                 self.assertLogs('odoo.addons.pan_mail_pro.models.ir_http', 'WARNING'):
             info = self.make_jsonrpc_request('/web/session/get_session_info')
         self.assertEqual(info['uid'], self.env.ref('base.user_admin').id)

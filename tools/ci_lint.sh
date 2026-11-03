@@ -170,6 +170,56 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# The Inbox's four pane names, where they are written outside the module.
+# tests/test_inbox_panes.py holds the module's own half (the JS, the template,
+# the SCSS); these two read ARCHITECTURE.md and tools/ui_check.py, which a
+# module deployed on its own (Odoo.sh, the Apps store) does not have, so they
+# live here and not in the suite.
+step "Pane names in ARCHITECTURE.md and the browser check"
+python3 - <<'PY' || fail "A pane name drifted; see tests/test_inbox_panes.py for the four."
+import re, sys
+PANES = ['mailbox_list', 'conversation_list', 'conversation', 'odoo_record']
+ROOT_CLASS = 'o_mailpro_inbox'
+bad = []
+architecture = open('ARCHITECTURE.md', encoding='utf-8').read()
+for name in PANES:
+    if '`o_mailpro_%s`' % name not in architecture:
+        bad.append('%s is not in the pane table in ARCHITECTURE.md' % name)
+if '`%s`' % ROOT_CLASS not in architecture:
+    bad.append('%s is not in ARCHITECTURE.md' % ROOT_CLASS)
+# Nothing errors when a selector names a pane that no longer exists:
+# `query_selector` answers None and the check reports the button as missing.
+# That is how the rename reached 19.0 red.
+ui_check = open('tools/ui_check.py', encoding='utf-8').read()
+for name in sorted(set(re.findall(r'o_mailpro_pane_toggle_([a-z_]+)', ui_check))):
+    if name not in PANES:
+        bad.append('ui_check.py looks for the toggle of "%s", which is not a pane' % name)
+for line in bad:
+    print('::error::%s' % line)
+if not bad:
+    print('OK: the four panes are documented and the browser check names only real ones.')
+sys.exit(1 if bad else 0)
+PY
+
+# ---------------------------------------------------------------------------
+# Odoo.sh and the Apps store deploy the pan_mail_pro/ folder and nothing
+# around it, then run the suite there. A test that opens a file one folder up
+# (ARCHITECTURE.md, tools/) errors in that checkout and halts the build. The
+# one that must stay -- tests/test_rename_migration.py executes the rename SQL
+# against a real database -- goes through tests/common.py's `repo_file`,
+# which skips where the repository is absent and fails where CI said it must
+# be there. `tools/ci_odoo.sh --mode=module-only` proves it end to end.
+step "No test reads outside the module folder"
+# The shapes that climb out: the module path plus '..', two '..' in a row,
+# a third .parent. One '..' from tests/ lands in the module and is fine.
+if grep -rnE "MODULE[^)]*'\.\.'|read\('\.\.'|'\.\.', *'\.\.'|\.parent\.parent\.parent|parents\[[2-9]\]" \
+        "$M/tests/" --include='*.py' | grep -v "^$M/tests/common.py:"; then
+    fail "Read repository files through tests/common.py's repo_file(), or move the check to this script."
+else
+    echo "OK: the suite reads only what ships with the module."
+fi
+
+# ---------------------------------------------------------------------------
 step "Every test file is imported by tests/__init__.py"
 # Odoo collects tests through tests/__init__.py. A file on disk that nothing
 # imports does not exist as far as the runner is concerned: it lints clean, it
@@ -221,6 +271,26 @@ if missing:
     print("\n".join(f"  - {m}" for m in missing))
     sys.exit(1)
 print("All manifest data/asset files exist.")
+PY
+
+# ---------------------------------------------------------------------------
+step "requirements.txt lists the manifest's external dependencies"
+python3 - <<'PY' || fail "requirements.txt and external_dependencies disagree."
+import ast, re, sys
+# Odoo.sh and Cloudpepper install from a root requirements.txt; Odoo itself
+# reads the manifest. Two lists of one fact, so they are compared here.
+manifest = ast.literal_eval(open('pan_mail_pro/__manifest__.py').read())
+wanted = set(manifest.get('external_dependencies', {}).get('python', []))
+listed = set()
+for line in open('requirements.txt'):
+    line = line.split('#', 1)[0].strip()
+    if line:
+        listed.add(re.split(r'[<>=!~;\[ ]', line, maxsplit=1)[0].lower())
+if wanted != listed:
+    print("missing from requirements.txt: %s" % sorted(wanted - listed))
+    print("not in the manifest: %s" % sorted(listed - wanted))
+    sys.exit(1)
+print("requirements.txt matches external_dependencies: %s" % ', '.join(sorted(wanted)))
 PY
 
 # ---------------------------------------------------------------------------

@@ -34,7 +34,10 @@ def _stored_key(env):
     key = IrConfigParameter.get_param(AUTO_KEY_PARAM)
     if not key:
         key = IrConfigParameter.get_param(LEGACY_KEY_PARAM)
-        if key:
+        # Adopting is a write, and a read-only request (19.0 serves
+        # `get_session_info` on one) refuses it with an ERROR in the log.
+        # The old name still decrypts; the next writable caller moves it.
+        if key and not env.cr.readonly:
             IrConfigParameter.set_param(AUTO_KEY_PARAM, key)
             IrConfigParameter.set_param(LEGACY_KEY_PARAM, False)
             _logger.info("[Encryption] Adopted the encryption key from its pre-19.0.6.0.0 name")
@@ -59,7 +62,10 @@ def get_encryption_key(env, generate=True):
     `generate=False` and gets None, because minting a key to decrypt with is
     the one thing that can never be right: whatever is stored was encrypted
     under a key that is gone, and the fresh one quietly orphans all of it
-    while making the next encrypt look fine.
+    while making the next encrypt look fine. Every other reader passes it
+    too, for a second reason: a read path may be a read-only request
+    (`/web/session/get_session_info` is one in 19.0), where the write that
+    stores a key fails with an ERROR in the log before Odoo retries.
 
     Args:
         env: Odoo environment
