@@ -1,8 +1,9 @@
 # Mail Pro on Odoo 18, 19 and 20
 
-Status: **step 1 in progress**, 2026-11-03. 18 passes the whole suite from
-`main` through the seam (no branch yet); 20 installs and runs the suite with
-the items below still open. The checklist at the end is the state; update it in the same PR as
+Status: **step 1 in progress**, 2026-11-03. 18 and 20 both pass the whole
+suite from `main` cut by `tools/cut_series.sh` (1314 tests, 0 failed, 0
+errors, re-measured after main's 19.0.33.0.5 was merged in); no series
+branch exists yet. The checklist at the end is the state; update it in the same PR as
 the work, never in chat.
 
 ## What is asked
@@ -73,8 +74,9 @@ transaction.
 **Odoo 20, after the first seams** (same day, `tree20` in the scratch
 runner: the checkout with `security/` in the `ir.access.csv` shape, 16 rows
 built from the 17 ACL rows and the 7 rules). It installs, and 1314 tests
-run: 9 failed and 11 errors at the end of the day, down from 412 errors
-after the first seam. What the suite found, in the order of how much it
+run: 9 failed and 11 errors mid-day, down from 412 errors after the
+first seam, and 0 and 0 by the end of it (every item below is seamed).
+What the suite found, in the order of how much it
 touches:
 
 - `ir.config_parameter` lost `get_param` and `set_param` (typed
@@ -276,7 +278,8 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] `static/src/compat/chatter.js`, the 20 path in `tools/series/20.0` (2026-11-03)
 - [x] `compat.py`: `get_param`/`set_param` and `config_bool`; `_notify_thread` positional; the two test helpers (2026-11-03)
 - [x] Tracking rows without `mail.tracking.value`, `user_writeable=True` on the `res.users` fields, `ir.attachment` without `datas` (`compat.attachment_bytes`, fixtures on `raw`), the Files tab's store payload, `odoo.http` moves in the tests (2026-11-03)
-- [ ] Installs; suite green locally, then on CI's `odoo:20.0`
+- [x] Installs; suite green locally (2026-11-03: 1314 tests, 0 failed, 0 errors through `tools/odoo_local.sh --series=20.0`)
+- [ ] Suite green on CI's `odoo:20.0` (needs the branch)
 - [ ] UI job green
 - [ ] Enterprise column walked on a 20 Enterprise instance
 - [ ] Cloudpepper dev instance on a 20 server
