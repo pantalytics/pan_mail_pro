@@ -379,6 +379,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci.sh` | Entry point. `lint`, `test`, `upgrade` or all three |
 | `tools/ci_lint.sh` | Every static check the lint job runs, including that every `tests/test_*.py` is imported by `tests/__init__.py` — a file that is not on that list never runs, and nothing else can see that |
 | `tools/ci_version_bump.sh` | The manifest version bump, against a base ref |
+| `tools/check_owl_seam.py` | Every component and template on the Owl seam (`static propsSchema` + `useProps`, the hooks from `compat/owl`, `this.` on every name a template reads): what Owl 3 refuses and the suite cannot see. Run by `tools/ci_lint.sh` |
 | `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh`, `--mode=module-only` (only `pan_mail_pro/` on the addons path, the way Odoo.sh and the Apps store deploy it) or `--mode=upgrade`; `--series=18.0` or `20.0` runs fresh or module-only on the checkout cut for that series (`tools/cut_series.sh`) against `odoo:<series>`, the `series` CI job |
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, not zero tests, and no `bad query` / `ReadOnlySqlTransaction` line in the log |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
@@ -631,6 +632,28 @@ registry.category("views").add("my_list", myListView);
 After every `/compact`, update the **Lessons Learned** section below with new insights from the session (gotchas, errors, solutions). This ensures continuity across context compactions.
 
 ## Lessons Learned
+
+### A component green in the suite and blank on 20 (19.0.34.1.1)
+
+- **The seam has to be a check, or the next component steps off it.** The
+  up-and-running line (#400) shipped `static props`, `useState` from
+  `@odoo/owl` and a template reading `state.open`: the Owl 2 way, the way
+  every Odoo example is written. 1422 tests green on 18, 19 and 20; on 20
+  the widget drew nothing, on 18 the checklist had no dots. Only the
+  browser saw it, and only on the series branches' port.
+  `tools/check_owl_seam.py` now fails the lint job on any of the three,
+  and it reads the overlays too. A rule that lives in a comment in
+  `compat/owl.js` is read once; a rule in `tools/ci.sh lint` is read on
+  every push.
+- **A settings compute with no `@api.depends` is empty on 18.** Same trap
+  as `_compute_is_copy` (19.0.34.0.0), one release later, on
+  `_compute_step_dots`: 18's first onchange computes only what depends on
+  a field that had a default. `tests/test_up_and_running.py` sends that
+  onchange now, the way `tests/test_copy.py` does.
+- **A port is the first browser run on a series.** The series job runs
+  the suite on 18 and 20 from every push to main; the browser checks run
+  there only on 19. `tools/ui_local.sh --series=` before pushing a series
+  branch is what caught both.
 
 ### A folder with a manifest is a module to every host (19.0.33.2.2)
 
