@@ -188,6 +188,11 @@ class ResConfigSettings(models.TransientModel):
     # is offered only while there is somebody to invite.
     x_unconnected_count = fields.Integer(compute='_compute_step_dots')
 
+    # A dependency so the web client's first onchange computes the dots and
+    # the line: 18 computes only what depends on a field that had a default
+    # (`_compute_is_copy` says the same). Measured 2026-11-03: without it, 18
+    # drew the checklist with no dots and never the up-and-running line.
+    @api.depends('company_id')
     def _compute_step_dots(self):
         Setup = self.env['pan.mail.setup']
         dots = Setup.step_dots()
