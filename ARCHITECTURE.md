@@ -3090,7 +3090,12 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   the platform's heartbeat takes, and it refuses the heartbeat on any other,
   so the function can return no other. No request, no file read, no host
   name. `tests/test_hosting.py` drives each branch with a patched
-  environment.
+  environment. The edition rides beside it: `hosting.edition(env)` says
+  `enterprise` when `web_enterprise` is installed, `community` otherwise,
+  on every heartbeat, so an Odoo that moved between the two is right at the
+  platform the next day. Odoo's own `version_info` only carries the `e` on a
+  packaged Enterprise build, not on source with the Enterprise addons on the
+  path.
 - **A kind of failure not seen in the last day does not wait for tomorrow
   either.** `_report_errors_if_new()` (same cron, same shape as the setup
   push) compares the set of codes of the last 24 hours with the set the last
