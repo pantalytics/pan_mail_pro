@@ -233,12 +233,9 @@ class ResConfigSettings(models.TransientModel):
             record.x_improve_refused = not record.x_improve
 
     def action_license_connect(self):
-        link = self.env['pan.mail.license'].action_connect()
-        # Same tab: Odoo opens a new one only after this call answers, which
-        # is no longer the click, so Brave and Safari block it. The approval
-        # page sends the admin back to /mail_pro/pantalytics/return, which
-        # collects the key, so there is nothing left to press afterwards.
-        return {'type': 'ir.actions.act_url', 'url': link.verify_url, 'target': 'self'}
+        # The approval page in this tab, and back to Settings after Approve
+        # (the Referer of this call is what `_remember_back` keeps).
+        return self.env['pan.mail.license'].action_connect_open()
 
     def action_license_check(self):
         return self.env['pan.mail.license'].current().action_check_approval()

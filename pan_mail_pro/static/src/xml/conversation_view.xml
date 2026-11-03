@@ -33,8 +33,9 @@
                 Odoo instance linked to a Pantalytics account, and the read
                 layer behind this screen refuses until it is. Drawing the four
                 panes over that refusal would show a product that looks
-                finished and is not. Connecting itself stays in Settings, where
-                the code, the fallback link and Check Approval already are.
+                finished and is not. The button connects right here: the
+                approval page opens in this tab, and Approve comes back to
+                this screen with the key collected (#380).
             -->
             <div t-if="!state.connected" class="o_mailpro_gate d-flex flex-column align-items-center justify-content-center h-100 text-center">
                 <img src="/pan_mail_pro/static/description/icon.png" alt="" class="o_mailpro_gate_icon"/>
@@ -43,7 +44,8 @@
                 <!-- A copy cannot be connected (pan.mail.license refuses), so
                      neither the button nor the way to an administrator. -->
                 <button t-if="isAdmin and !isCopy" type="button" class="btn btn-primary o_mailpro_gate_connect"
-                        t-on-click="openConnectSettings">Connect to Pantalytics</button>
+                        t-att-disabled="state.connecting"
+                        t-on-click="connectPantalytics">Connect to Pantalytics</button>
                 <p t-elif="!isCopy" class="o_mailpro_gate_text">Ask an administrator to connect it: Settings, Mail Pro.</p>
                 <a class="o_mailpro_gate_back" href="/odoo">Back to Odoo</a>
             </div>
