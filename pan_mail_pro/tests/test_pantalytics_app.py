@@ -527,6 +527,7 @@ class TestOneStatus(TransactionCase):
         connect_to_pantalytics(self.env)
         self.row = self.env['pan.mail.provider'].create({'provider': 'outlook'})
         self.admin = self.env.ref('base.user_admin')
+        self.admin.email = 'admin@company.test'
         self.colleague = self.env['res.users'].create({
             'name': 'Colleague', 'login': 'colleague@company.test',
             'email': 'colleague@company.test'})

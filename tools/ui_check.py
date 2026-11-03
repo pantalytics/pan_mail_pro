@@ -3803,6 +3803,82 @@ class Checks:
             page.unroute('**/accounts.google.com/**')
             self.call('pan.mail.provider', 'write', [row_id], {'provider': was})
 
+    def step4_personal_notification(self):
+        """A personal mailbox carrying the system email (#387): step 4 amber
+        with one line, the Mailboxes list it opens offering to create a
+        shared mailbox at Microsoft (no Show me while that slot is empty),
+        the mailbox's own Sync settings still there, and green again once a
+        shared mailbox carries the flag. The seed's two stopped mailboxes are
+        set going for the walk, or step 4 would be the red of broken."""
+        page = self.page
+        mailboxes = self.call('pan.mail.mailbox', 'search_read', [],
+                              fields=['email', 'state', 'is_notification_mailbox',
+                                      'mailbox_type'])
+        carrier = next((m for m in mailboxes if m['is_notification_mailbox']), None)
+        shared = next((m for m in mailboxes if m['mailbox_type'] == 'shared'), None)
+        if not carrier or carrier['mailbox_type'] != 'personal' or not shared:
+            self.fail(f'the seed has no personal notification mailbox and shared one: {mailboxes}')
+            return
+        stopped = [m['id'] for m in mailboxes if m['state'] == 'error']
+        self.call('pan.mail.mailbox', 'write', stopped, {'state': 'active'})
+
+        def step_4():
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step_mailboxes', timeout=30000)
+            page.wait_for_timeout(800)
+            step = page.query_selector('.o_mailpro_step_mailboxes')
+            dots = [d.get_attribute('class') for d in step.query_selector_all('.o_mailpro_dot')
+                    if d.is_visible()]
+            msgs = [' '.join(m.inner_text().split())
+                    for m in step.query_selector_all('.o_mailpro_step_msg') if m.is_visible()]
+            return step, dots, msgs
+
+        try:
+            step, dots, msgs = step_4()
+            self.shot('settings-step4-personal.png')
+            if len(dots) != 1 or 'o_mailpro_dot_attention' not in dots[0]:
+                self.fail(f'step 4 with a personal notification mailbox shows {dots}, not amber')
+            if 'System email from a personal mailbox' not in msgs:
+                self.fail(f'step 4 with a personal notification mailbox reads {msgs}')
+            self.click_row(step)
+            page.wait_for_selector('.o_list_view', timeout=30000)
+            page.wait_for_timeout(1200)
+            self.shot('mailboxes-create-shared.png')
+            create = page.query_selector('a.o_mailpro_create_shared')
+            if not create or not create.is_visible():
+                self.fail('the Mailboxes list offers no "Create a shared mailbox"')
+            else:
+                if create.get_attribute('href') != 'https://admin.microsoft.com/#/SharedMailbox':
+                    self.fail(f'"Create a shared mailbox" goes to {create.get_attribute("href")}')
+                if create.get_attribute('target') != '_blank':
+                    self.fail('"Create a shared mailbox" does not open a new tab')
+            if page.query_selector('.o_mailpro_show_me'):
+                self.fail('"Show me" is there while its slot is empty')
+            action = dict(module_menu_actions(self.call)).get('Mailboxes')
+            self.form_text(f'{self.base}/odoo/action-{action}/{carrier["id"]}')
+            if not page.query_selector('.o_notebook .nav-link:has-text("Sync settings")'):
+                self.fail('the notification mailbox hides its Sync settings')
+            self.shot('mailbox-notification-sync.png')
+
+            self.call('pan.mail.mailbox', 'write', [shared['id']],
+                      {'is_notification_mailbox': True})
+            step, dots, msgs = step_4()
+            if any('o_mailpro_dot_attention' in d for d in dots):
+                self.fail('step 4 stays amber once a shared mailbox carries the system email')
+            if 'System email from a personal mailbox' in msgs:
+                self.fail('step 4 still says personal once a shared mailbox carries it')
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            page.wait_for_selector('.o_list_view', timeout=30000)
+            page.wait_for_timeout(1000)
+            if page.query_selector('a.o_mailpro_create_shared'):
+                self.fail('"Create a shared mailbox" stays once a shared one carries the flag')
+        finally:
+            self.call('pan.mail.mailbox', 'write', [carrier['id']],
+                      {'is_notification_mailbox': True})
+            self.call('pan.mail.mailbox', 'write', stopped, {'state': 'error'})
+
     def settings_provider_arrow(self, row_id):
         """Step 2's arrow is the provider row's own form, by its id."""
         page = self.page
@@ -4849,6 +4925,7 @@ def main():
         checks.settings_provider_first()
         checks.provider_disconnect()
         checks.provider_sign_in_lands_on_settings()
+        checks.step4_personal_notification()
         checks.domain_suggestion()
         checks.mailbox_status()
         checks.connect_banner()

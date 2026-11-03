@@ -250,7 +250,7 @@
                                 class="oe_link o_mailpro_step_edit"/>
                     </div>
 
-                    <div class="o_mailpro_step">
+                    <div class="o_mailpro_step o_mailpro_step_mailboxes">
                         <!-- Green only once the owner's sign-in has been seen to
                              read and send from it (the access table), not once
                              the row exists with a token on it: that is the
@@ -260,15 +260,22 @@
                              dot while a probe or the test email is still to
                              happen. -->
                         <field name="x_notification_access_state" invisible="1"/>
+                        <field name="x_notification_mailbox_type" invisible="1"/>
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_notification_done or x_mailboxes_alert or x_notification_access_state != 'ok'"/>
+                              invisible="not x_setup_notification_done or x_mailboxes_alert or x_notification_access_state != 'ok' or x_notification_mailbox_type == 'personal'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
                               invisible="not x_mailboxes_alert and x_notification_access_state != 'broken'"/>
+                        <!-- Amber while a personal mailbox carries the system
+                             email (#387): it works, and a shared mailbox
+                             with the flag is the better way. Read off the
+                             notification mailbox's own type. -->
+                        <span class="o_mailpro_dot o_mailpro_dot_attention" role="img" aria-label="Attention needed" title="Attention needed"
+                              invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or not x_setup_notification_done or x_notification_mailbox_type != 'personal'"/>
                         <!-- A step that has stopped is one dot, not two: the
                              warning wins, and "still to do" is not additional
                              information next to it. -->
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or (x_setup_notification_done and x_notification_access_state == 'ok')"/>
+                              invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or (x_setup_notification_done and (x_notification_access_state == 'ok' or x_notification_mailbox_type == 'personal'))"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">4. Mailboxes</span>
@@ -297,6 +304,10 @@
                             </div>
                             <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_mailboxes_alert">
                                 <field name="x_mailboxes_alert" nolabel="1" readonly="1"/>
+                            </div>
+                            <div class="o_mailpro_step_msg o_mailpro_msg_attention"
+                                 invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or not x_setup_notification_done or x_notification_mailbox_type != 'personal'">
+                                System email from a personal mailbox
                             </div>
                         </div>
                         <button type="action" name="%(action_pan_mail_mailbox)d"

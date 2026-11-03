@@ -172,16 +172,16 @@ class ResUsers(models.Model):
         of answer: a stored compute over a searched relation needs invalidation
         written by hand, and the hand-written half is what goes stale.
 
-        The notification mailbox is excluded. It carries the system email, its
-        Sync Settings tab is hidden on its own form, and it is the workspace's
-        even when an administrator happens to own it.
+        The notification mailbox counts too (#387). The first mailbox anyone
+        adds is their own, and it becomes the notification mailbox on its own;
+        leaving it out took its owner's sync setting away from them. It syncs
+        whatever its level says, like any other.
         """
         Mailbox = self.env['pan.mail.mailbox'].sudo()
         for user in self:
             user.x_pan_mail_personal_mailbox_id = Mailbox.search([
                 ('owner_user_id', '=', user.id),
                 ('mailbox_type', '=', 'personal'),
-                ('is_notification_mailbox', '=', False),
             ], limit=1)
 
     @api.depends('x_pan_mail_personal_mailbox_id')

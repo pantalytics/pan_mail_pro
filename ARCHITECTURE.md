@@ -2695,6 +2695,16 @@ reading the credentials, because a phase that waited for a sign-in would stop
 sync on every upgraded database. The one exception on the dot is a row still on
 its own Azure app, amber whatever its status until it has moved (#369).
 
+Step 4 takes the same rule (#387): amber with "System email from a personal
+mailbox" while the notification mailbox's own `mailbox_type` is personal
+(`x_notification_mailbox_type`), green once a shared mailbox carries the flag.
+On Microsoft 365 the Mailboxes list it opens offers Create a shared mailbox
+(the admin center) with a Show me file slot (`SHOW_ME_DIR`, empty means no
+link). The flag itself hides and skips nothing any more: the first mailbox
+anyone adds is their own and carries the flag on its own, so its Sync settings,
+its owner's sync level on My Preferences, its place in the Inbox and the
+stale-sync check all follow `sync_level` like any other mailbox.
+
 **The fields carry the console's own names.** Azure's Overview page says
 Application (client) ID and Directory (tenant) ID, and Certificates & secrets
 shows a Value next to a Secret ID; Google's console says Client ID and Client

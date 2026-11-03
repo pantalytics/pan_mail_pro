@@ -326,15 +326,17 @@ class PanMailConversation(models.AbstractModel):
 
     @api.model
     def inbox_mailboxes(self):
-        """The mailbox list: active, not the notification mailbox, and
-        no colleague's personal one.
+        """The mailbox list: active, not a dedicated notification mailbox,
+        and no colleague's personal one.
 
-        The notification mailbox is the one the module sends *from*, not one
-        anybody reads: opening the Inbox on it shows an empty screen.
+        A shared notification mailbox (`notifications@`) is the one the module
+        sends *from*, not one anybody reads: opening the Inbox on it shows an
+        empty screen. A personal one is somebody's own mail that also carries
+        the system email (#387), and it syncs like any other.
         """
         self._check_caller()
         return self.env['pan.mail.mailbox'].search_read(
-            [('is_notification_mailbox', '=', False)]
+            ['|', ('is_notification_mailbox', '=', False), ('mailbox_type', '=', 'personal')]
             + self._listed_mailbox_domain(),
             ['email', 'status_message'], limit=50, order='sequence, email')
 
