@@ -124,6 +124,71 @@ class TestMailCount(MailProTestCase):
         Message.create(dict(values, date=self.mailbox.create_date - timedelta(days=90)))
         self.assertEqual(self.License._mail_counts_since(self.since)['outgoing'] - before, 1)
 
+    # -- the days the heartbeat sends (#599) --------------------------------
+
+    def _sent_at(self, when):
+        """One outgoing mail on this mailbox, stamped as reaching Odoo at
+        `when` (naive UTC, as Odoo stores it)."""
+        message = self.env['mail.message'].sudo().create({
+            'message_type': 'email', 'x_direction': 'outgoing',
+            'x_mailbox_id': self.mailbox.id,
+            'model': 'res.partner', 'res_id': self.env.user.partner_id.id,
+            'date': when})
+        message.flush_recordset()
+        self.env.cr.execute('UPDATE mail_message SET create_date = %s WHERE id = %s',
+                            (when, message.id))
+        message.invalidate_recordset()
+        self.env.cr.execute('UPDATE pan_mail_mailbox SET create_date = %s WHERE id = %s',
+                            (when - timedelta(days=30), self.mailbox.id))
+        self.mailbox.invalidate_recordset()
+        return message
+
+    def _days(self, now, user=None):
+        License = self.License.with_user(user) if user else self.License
+        return {d['day']: d['sent'] for d in License.sudo()._mails_by_day(now)}
+
+    def test_the_days_are_utc_calendar_days_around_midnight(self):
+        """23:59:59 and 00:00:00 UTC are two days, whatever the clock of the
+        heartbeat that reports them."""
+        midnight = datetime(2026, 11, 3)
+        before = self._days(midnight + timedelta(hours=8))
+        self._sent_at(midnight - timedelta(seconds=1))
+        self._sent_at(midnight)
+        after = self._days(midnight + timedelta(hours=8))
+        self.assertEqual(after['2026-11-02'] - before['2026-11-02'], 1)
+        self.assertEqual(after['2026-11-03'] - before['2026-11-03'], 1)
+
+    def test_the_admins_timezone_moves_no_mail(self):
+        midnight = datetime(2026, 11, 3)
+        self._sent_at(midnight + timedelta(minutes=30))
+        self.env.user.tz = 'UTC'
+        utc = self._days(midnight + timedelta(hours=8), self.env.user)
+        self.env.user.tz = 'Pacific/Auckland'
+        self.assertEqual(self._days(midnight + timedelta(hours=8), self.env.user), utc)
+
+    def test_a_week_newest_first_and_the_same_every_time(self):
+        now = datetime(2026, 11, 3, 20, 15)
+        self._sent_at(now - timedelta(days=6, hours=20))
+        days = self.License._mails_by_day(now)
+        self.assertEqual([d['day'] for d in days],
+                         ['2026-11-0%d' % n for n in range(3, 0, -1)]
+                         + ['2026-10-31', '2026-10-30', '2026-10-29', '2026-10-28'])
+        self.assertEqual(len(days), pan_mail_license.MAIL_DAYS)
+        self.assertTrue(all(self.License._mails_by_day(now) == days for _ in range(10)))
+
+    def test_a_first_import_is_left_out_of_its_day(self):
+        now = datetime(2026, 11, 3, 12)
+        before = self._days(now)
+        message = self._sent_at(now - timedelta(hours=2))
+        message.write({'date': self.mailbox.create_date - timedelta(days=1)})
+        self.assertEqual(self._days(now), before)
+
+    def test_the_heartbeat_carries_the_week(self):
+        body = self.License._heartbeat_body()
+        self.assertEqual(len(body['mails_by_day']), pan_mail_license.MAIL_DAYS)
+        self.assertEqual(body['mails_by_day'][0]['day'],
+                         fields.Datetime.now().date().isoformat())
+
 
 def _response(status_code, body):
     response = MagicMock()
