@@ -4719,7 +4719,7 @@ class Checks:
 
         It is the mailbox's own `sync_level` on a second screen, and that
         screen is a dialog no Python test renders: a field that lands outside
-        its group, a radio that draws one option, or a save that writes
+        its group, a slider that draws no stops, or a save that writes
         nothing are all invisible to the suite. The save is the half that
         cannot be faked -- `pan.mail.mailbox` is write-only to mailbox
         managers, and this user is not one, so an inverse that forgot its
