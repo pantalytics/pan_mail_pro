@@ -12,7 +12,10 @@ thread the matcher keys on and never a pane, and "rail" means nothing here at
 all any more.
 
 A naming rule nobody can run is a naming rule that lasts one release, so it
-is asserted here rather than left to review.
+is asserted here rather than left to review. The two halves that read files
+outside the module -- the pane table in ARCHITECTURE.md and the selectors in
+tools/ui_check.py -- are `tools/ci_lint.sh`'s ("Pane names"): a module
+deployed on its own (Odoo.sh, the Apps store) has neither file next to it.
 """
 import os
 import re
@@ -48,8 +51,6 @@ class TestInboxPanes(TransactionCase):
         self.panes_js = read('static', 'src', 'js', 'conversation_view', 'use_panes.js')
         self.template = read('static', 'src', 'xml', 'conversation_view.xml')
         self.scss = read('static', 'src', 'scss', 'conversation_view.scss')
-        # The repository's, one folder above the module.
-        self.architecture = read('..', 'ARCHITECTURE.md')
 
     def test_use_panes_knows_the_four_names(self):
         """The three lists a pane name has to be on to exist at all.
@@ -88,25 +89,6 @@ class TestInboxPanes(TransactionCase):
         for name in PANES:
             self.assertIn('o_mailpro_%s"' % name, self.template,
                           'no pane element carries o_mailpro_%s' % name)
-
-    def test_architecture_documents_the_names(self):
-        for name in PANES:
-            self.assertIn('`o_mailpro_%s`' % name, self.architecture,
-                          '%s is not in the pane table in ARCHITECTURE.md' % name)
-        self.assertIn('`%s`' % ROOT_CLASS, self.architecture)
-
-    def test_the_browser_check_names_real_panes(self):
-        """The class the top bar builds is `o_mailpro_pane_toggle_<pane>`.
-
-        Nothing errors when a selector names a pane that no longer exists:
-        `query_selector` just answers None and the check reports the button
-        as missing. That is exactly how the rename reached 19.0 red.
-        """
-        ui_check = read('..', 'tools', 'ui_check.py')
-        for name in set(re.findall(r'o_mailpro_pane_toggle_([a-z_]+)', ui_check)):
-            self.assertIn(name, PANES,
-                          'ui_check.py looks for the toggle of "%s", '
-                          'which is not a pane' % name)
 
     def test_the_old_names_are_gone(self):
         """A rename that leaves no check behind is a rename that comes back."""

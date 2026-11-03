@@ -427,10 +427,13 @@ class TestSavepointIsolation(TransactionCase):
                 self_.env.cr.execute("SELECT 1/0")
             return True
 
+        # The bad query is the point, so it is caught here rather than left
+        # in the log: tools/ci_assert_tests.sh fails a run that logs one.
         with patch.object(GraphClient, 'fetch_messages',
                           return_value=fake_messages, autospec=True), \
              patch.object(IncomingProcessor, '_process_message',
-                          fake_process_message):
+                          fake_process_message), \
+             self.assertLogs('odoo.sql_db', 'ERROR'):
             processed, _, stalled_on, _ = self.processor._fetch_folder(
                 self.mailbox, FOLDER_INBOX)
 
