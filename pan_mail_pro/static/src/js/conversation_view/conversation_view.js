@@ -392,6 +392,9 @@ export class ConversationView extends Component {
             // layer refuses anyway, and four empty panes over a refusal is a
             // product that looks finished and is not.
             connected: true,
+            // Whether the database has any mailbox. Without one the screen
+            // is the way to step 4, not chatter mail (`inbox_has_mailbox`).
+            hasMailbox: true,
             // Whether the gate's Connect starts a pairing (`inbox_gate`), and
             // whether one is being asked for, so a second press does not
             // start a second.
@@ -503,6 +506,8 @@ export class ConversationView extends Component {
             // than after them, so the screen is two round trips from the
             // click and not three.
             await Promise.all([
+                this.orm.call("pan.mail.conversation", "inbox_has_mailbox", [])
+                    .then((has) => (this.state.hasMailbox = has)),
                 this.loadMailboxes(),
                 this.orm.call("pan.mail.conversation", "inbox_search_view_id", [])
                     .then((searchViewId) => this.searchModel.load({
@@ -536,7 +541,7 @@ export class ConversationView extends Component {
         // Drawn first, each pane holds its own skeleton until its answer
         // arrives (docs/plans/smooth-inbox.md, step 1).
         onMounted(() => {
-            if (!this.state.connected) {
+            if (!this.state.connected || !this.state.hasMailbox) {
                 return;
             }
             this.refresh({ select: this.openedOn ? this.openedOn.select : true });
@@ -589,6 +594,11 @@ export class ConversationView extends Component {
         } finally {
             this.state.connecting = false;
         }
+    }
+
+    /** Step 4's page, the mailbox list, from the no-mailbox gate. */
+    openMailboxes() {
+        this.action.doAction("pan_mail_pro.action_pan_mail_mailbox");
     }
 
     /** Settings, Mail Pro: the same URL the OAuth controller and the mailbox
@@ -2783,6 +2793,7 @@ export class ConversationView extends Component {
     newEmail() {
         this.dialog.add(LinkDialog, {
             title: _t("New email on"),
+            newMail: true,
             onSelect: (model, resId, label, modelLabel) =>
                 this.composeOn(model, resId, label, modelLabel),
         });

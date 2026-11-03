@@ -74,8 +74,7 @@
                              one number that could not. It is a grey line under
                              the address now, reading the heartbeat. -->
                         <button name="action_open_routing_log" type="object"
-                                class="oe_stat_button" icon="fa-random"
-                                invisible="is_notification_mailbox">
+                                class="oe_stat_button" icon="fa-random">
                             <field name="routing_log_count" widget="statinfo" string="Routed here"/>
                         </button>
                     </div>
@@ -112,21 +111,23 @@
                             <span class="badge rounded-pill text-bg-secondary me-2"
                                   invisible="health_status != 'healthy' or access_state != 'open'">Not tested</span>
                             <field name="subtitle" readonly="1" nolabel="1" class="d-inline-block"/>
-                            <span invisible="is_notification_mailbox or not last_check_date">
+                            <span invisible="not last_check_date">
                                 · Last checked <field name="last_check_date" readonly="1" nolabel="1"
                                                            class="d-inline-block"/>
                             </span>
-                            <span invisible="is_notification_mailbox or last_check_date">
+                            <span invisible="last_check_date">
                                 · Not checked yet
                             </span>
                         </div>
                     </div>
 
                     <notebook>
-                        <!-- Hidden for the notification mailbox: it carries the
-                             system email and syncs nothing itself. -->
-                        <page string="Sync settings" name="sync"
-                              invisible="is_notification_mailbox">
+                        <!-- For the notification mailbox too (#387): it syncs
+                             whatever its level says, and the first mailbox
+                             anyone adds is their own, which then carries the
+                             system email. Hiding this left its owner unable
+                             to set sync on their own address. -->
+                        <page string="Sync settings" name="sync">
                             <!-- Sending is stated, not asked. Whether this
                                  address is used is decided per message, in the
                                  composer's Send From. One sentence: the brand
@@ -252,8 +253,7 @@
                                            invisible="not provider_type"/>
                                     <field name="is_notification_mailbox" string="Notification mailbox"
                                            widget="boolean_toggle"/>
-                                    <field name="sync_start_date" string="Import from"
-                                           invisible="is_notification_mailbox"/>
+                                    <field name="sync_start_date" string="Import from"/>
                                     <label for="provider" string="Server login"
                                            invisible="provider != 'imap'"/>
                                     <div invisible="provider != 'imap'">
@@ -274,8 +274,7 @@
                          invisible="health_status == 'healthy' or access_state == 'fix'">
                         <field name="status_message" nolabel="1" readonly="1"/>
                         <button name="action_sync_now" type="object" string="Try again"
-                                class="btn-secondary btn-sm ms-2"
-                                invisible="is_notification_mailbox"/>
+                                class="btn-secondary btn-sm ms-2"/>
                     </div>
                 </sheet>
             </form>

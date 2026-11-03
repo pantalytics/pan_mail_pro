@@ -31,7 +31,9 @@ class TestMailboxTestSend(MailProTestCase):
     # ------------------------------------------------------------------ #
 
     def test_sends_to_the_user_who_pressed_it(self):
-        """Not to the mailbox: that mail would be re-imported by the sync."""
+        """Not to the mailbox: that mail would be re-imported by the sync.
+        To the address they signed in with, which the provider vouched for,
+        not the one on their user record (3 Nov)."""
         mailbox = self.shared_mailbox.with_user(self.salesperson)
         with self.mock_graph() as calls:
             result = mailbox.action_test_send()
@@ -40,7 +42,9 @@ class TestMailboxTestSend(MailProTestCase):
             r['emailAddress']['address']
             for r in calls['draft']['toRecipients']
         ]
-        self.assertEqual(recipients, [self.salesperson.email])
+        self.assertEqual(recipients, ['sales@company.test'])
+        self.assertNotEqual(self.salesperson.email, 'sales@company.test',
+                            'the fixture keeps the two apart, so this proves which')
         self.assertNotIn(self.shared_mailbox.email, recipients)
         self.assertEqual(result['params']['type'], 'success')
 
@@ -58,9 +62,21 @@ class TestMailboxTestSend(MailProTestCase):
     # Refusals
     # ------------------------------------------------------------------ #
 
-    def test_user_without_an_email_address_is_told_why(self):
-        self.other_user.email = False
-        with self.assertRaises(UserError):
+    def test_no_email_on_the_user_still_reaches_the_signed_in_address(self):
+        """A fresh Odoo.sh admin has no email on the user (3 Nov). The test
+        never asked for it."""
+        self.salesperson.partner_id.email = False
+        mailbox = self.shared_mailbox.with_user(self.salesperson)
+        with self.mock_graph() as calls:
+            result = mailbox.action_test_send()
+        recipients = [r['emailAddress']['address'] for r in calls['draft']['toRecipients']]
+        self.assertEqual(recipients, ['sales@company.test'])
+        self.assertEqual(result['params']['type'], 'success')
+
+    def test_no_sign_in_is_told_the_fix(self):
+        self.env['pan.mail.account'].sudo().search(
+            [('user_id', '=', self.other_user.id)]).unlink()
+        with self.assertRaisesRegex(UserError, 'Connect your mailbox under My Preferences'):
             self.shared_mailbox.with_user(self.other_user).action_test_send()
 
     def test_failure_leaves_nothing_in_the_queue(self):

@@ -2714,7 +2714,35 @@ translated into the field to fix -- and ends in a verdict. On success its one
 button is the next step, **Sign in**, the only check that also covers the
 Callback URL, the granted permissions and whether the tenant allows consent.
 Google has no user-less check, so its dialog goes straight to the sign-in. A
-connected provider shows nothing to press.
+connected provider offers one secondary button, **Disconnect**, to whoever is
+signed in on it: their own sign-in, through `res.users.action_disconnect_mailbox`
+like My Preferences, behind a confirm that says the mailboxes using it stop.
+A colleague's sign-in has no button. A sign-in started on this form lands on
+Settings > Mail Pro, where the next step is, rather than back on a form with
+only a breadcrumb; every other place a sign-in starts keeps landing where it
+was pressed. The form has no New: there is one row, made by step 2.
+
+**One status, two screens.** Settings step 2 draws its dot and its answer from
+this row's `status` (`res.config.settings.x_provider_status`), the field the
+form's badge shows: green and the provider's name once somebody signed in,
+amber and "Not signed in" while the registration is there and nobody has, the
+open dot before that. It used to read `credentials_set`, which through Mail
+Pro's Microsoft app is true the moment the Odoo is paired, so the checklist
+read green "Microsoft 365" over a form that read Not Connected (3 Nov,
+19.0.33.1.2). The phase does not follow: `pan.mail.setup.answers()` keeps
+reading the credentials, because a phase that waited for a sign-in would stop
+sync on every upgraded database. The one exception on the dot is a row still on
+its own Azure app, amber whatever its status until it has moved (#369).
+
+Step 4 takes the same rule (#387): amber with "System email from a personal
+mailbox" while the notification mailbox's own Type (`provider_type`) is personal
+(`x_notification_mailbox_type`), green once a shared mailbox carries the flag.
+On Microsoft 365 the Mailboxes list it opens offers Create a shared mailbox
+(the admin center) with a Show me file slot (`SHOW_ME_DIR`, empty means no
+link). The flag itself hides and skips nothing any more: the first mailbox
+anyone adds is their own and carries the flag on its own, so its Sync settings,
+its owner's sync level on My Preferences, its place in the Inbox and the
+stale-sync check all follow `sync_level` like any other mailbox.
 
 **The fields carry the console's own names.** Azure's Overview page says
 Application (client) ID and Directory (tenant) ID, and Certificates & secrets

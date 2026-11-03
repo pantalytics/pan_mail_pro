@@ -323,6 +323,12 @@ class MailProOAuthController(http.Controller):
             )
             _logger.info('[OAuth] Connected %s account %s for Odoo user %s',
                          provider, email, user.login)
+            # A user with no address on the record (a fresh Odoo.sh admin)
+            # gets the one the provider just vouched for. One that is there
+            # stays, whatever it says: "Signed in as" shows a difference, and
+            # nothing here enforces one (3 Nov).
+            if not user.email:
+                user.sudo().email = email
 
             # Every mailbox this sign-in serves, checked now: the person who
             # just consented reads the answer on the screen they land on,

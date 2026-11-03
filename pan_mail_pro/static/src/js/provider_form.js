@@ -7,7 +7,7 @@
  * own registration opens one dialog: connecting, verifying, then the verdict.
  * On success its one button is the next step, signing in; on failure it says
  * which field to fix and closes back onto the form. A connected provider
- * offers nothing, because there is nothing left to do.
+ * offers only Disconnect, a plain button on the form itself.
  *
  * Not for Microsoft 365 through Mail Pro's app: there is nothing typed to
  * verify, so the dialog only ever said "signing in is the check", and closing

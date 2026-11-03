@@ -182,6 +182,30 @@ class TestOAuthCallback(HttpCase):
         self.assertEqual(mailbox.owner_user_id, self.user)
         self.assertEqual(self.user.sudo().x_default_mailbox_id, mailbox)
 
+    def test_a_user_with_no_email_gets_the_signed_in_address(self):
+        """A fresh Odoo.sh admin has no email on the user (3 Nov); the
+        address the provider vouched for fills it."""
+        self.user.sudo().email = False
+        self._arm_state()
+        exchange, me = self._grant('nora@company.test')
+        with exchange, me:
+            self._callback(code='authcode', state='nonce-123')
+        self.user.invalidate_recordset()
+        self.assertEqual(self.user.email, 'nora@company.test')
+
+    def test_an_email_already_there_stays(self):
+        """Different from the sign-in, and still the user's: "Signed in as"
+        shows the difference, nothing here enforces one."""
+        self.user.sudo().email = 'nora.private@elsewhere.test'
+        self._arm_state()
+        exchange, me = self._grant('nora@company.test')
+        with exchange, me:
+            response = self._callback(code='authcode', state='nonce-123')
+        self.assertEqual(response.status_code, 303)
+        self.user.invalidate_recordset()
+        self.assertEqual(self.user.email, 'nora.private@elsewhere.test')
+        self.assertEqual(self._accounts().email, 'nora@company.test')
+
     def test_a_mailbox_that_failed_for_want_of_a_token_gets_another_go(self):
         mailbox = self.env['pan.mail.mailbox'].sudo().create({
             'email': 'nora@company.test',

@@ -153,26 +153,36 @@
                          reads as the thing that is broken. One screen, one
                          action: the one step 1 names. -->
                     <div invisible="not x_setup_account_done">
-                    <div class="o_mailpro_step">
-                        <!-- Amber while the row is on the customer's own
-                             Azure app, green once it has moved. Accounts that
+                    <div class="o_mailpro_step o_mailpro_step_provider">
+                        <!-- One status, shared with the provider form: the
+                             dot is the row's own `status`, the badge on the
+                             form behind the arrow. Green once somebody signed
+                             in, amber while nobody has (the form's one button
+                             is Sign in), the open dot before the registration
+                             exists. The phase reads the credentials, not
+                             this, so sync does not wait for a sign-in.
+
+                             The one exception is the row still on the
+                             customer's own Azure app: amber whatever its
+                             status, until it has moved (#369). Accounts that
                              still refresh through the old app are each
-                             mailbox's status, not this step's (#369). Not
-                             red: the old sign-ins keep working, so nothing is
-                             broken. It wins over both other dots. -->
+                             mailbox's status, not this step's. Not red: the
+                             old sign-ins keep working, so nothing is broken. -->
+                        <field name="x_provider_status" invisible="1"/>
                         <field name="x_microsoft_on_own_app" invisible="1"/>
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_provider_done or x_microsoft_on_own_app"/>
+                              invisible="x_provider_status != 'connected' or x_microsoft_on_own_app"/>
                         <span class="o_mailpro_dot o_mailpro_dot_attention" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="not x_microsoft_on_own_app"/>
+                              invisible="x_provider_status != 'not_connected' and not x_microsoft_on_own_app"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_setup_provider_done or x_microsoft_on_own_app"/>
+                              invisible="x_provider_status in ('connected', 'not_connected') or x_microsoft_on_own_app"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">2. Email provider</span>
-                                <span class="o_mailpro_step_value" invisible="not x_setup_provider_done">
+                                <span class="o_mailpro_step_value" invisible="x_provider_status != 'connected'">
                                     <field name="x_active_provider_id" nolabel="1" readonly="1" options="{'no_open': True}"/>
                                 </span>
+                                <span class="o_mailpro_step_value" invisible="x_provider_status != 'not_connected'">Not signed in</span>
                                 <span class="o_mailpro_step_value" invisible="x_setup_provider_done">
                                     <field name="x_setup_provider_todo" nolabel="1" readonly="1"/>
                                 </span>
@@ -240,7 +250,7 @@
                                 class="oe_link o_mailpro_step_edit"/>
                     </div>
 
-                    <div class="o_mailpro_step">
+                    <div class="o_mailpro_step o_mailpro_step_mailboxes">
                         <!-- Green only once the owner's sign-in has been seen to
                              read and send from it (the access table), not once
                              the row exists with a token on it: that is the
@@ -250,15 +260,22 @@
                              dot while a probe or the test email is still to
                              happen. -->
                         <field name="x_notification_access_state" invisible="1"/>
+                        <field name="x_notification_mailbox_type" invisible="1"/>
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_notification_done or x_mailboxes_alert or x_notification_access_state != 'ok'"/>
+                              invisible="not x_setup_notification_done or x_mailboxes_alert or x_notification_access_state != 'ok' or x_notification_mailbox_type == 'personal'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
                               invisible="not x_mailboxes_alert and x_notification_access_state != 'broken'"/>
+                        <!-- Amber while a personal mailbox carries the system
+                             email (#387): it works, and a shared mailbox
+                             with the flag is the better way. Read off the
+                             notification mailbox's own type. -->
+                        <span class="o_mailpro_dot o_mailpro_dot_attention" role="img" aria-label="Attention needed" title="Attention needed"
+                              invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or not x_setup_notification_done or x_notification_mailbox_type != 'personal'"/>
                         <!-- A step that has stopped is one dot, not two: the
                              warning wins, and "still to do" is not additional
                              information next to it. -->
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or (x_setup_notification_done and x_notification_access_state == 'ok')"/>
+                              invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or (x_setup_notification_done and (x_notification_access_state == 'ok' or x_notification_mailbox_type == 'personal'))"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">4. Mailboxes</span>
@@ -287,6 +304,10 @@
                             </div>
                             <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_mailboxes_alert">
                                 <field name="x_mailboxes_alert" nolabel="1" readonly="1"/>
+                            </div>
+                            <div class="o_mailpro_step_msg o_mailpro_msg_attention"
+                                 invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or not x_setup_notification_done or x_notification_mailbox_type != 'personal'">
+                                System email from a personal mailbox
                             </div>
                         </div>
                         <button type="action" name="%(action_pan_mail_mailbox)d"
