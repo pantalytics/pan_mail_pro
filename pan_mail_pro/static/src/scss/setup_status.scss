@@ -163,3 +163,14 @@ $mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
         .o_field_widget, .o_field_widget span, .o_field_widget div { display: revert; }
     }
 }
+
+// A copy (staging, a restore): one line above the checklist, in the amber of
+// "something to know that is not broken". Not an alert box: it is a fact
+// about the database, and the checklist under it is still the status. Scoped
+// to the settings page: the Inbox's line has the same class and its own rule.
+.o_settings_container .o_mailpro_copy_marker {
+    max-width: 46rem;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+    color: $mailpro-attention-text;
+}

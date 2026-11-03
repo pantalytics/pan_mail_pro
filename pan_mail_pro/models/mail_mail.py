@@ -10,10 +10,14 @@ from odoo.addons.base.models.ir_mail_server import MailDeliveryException
 from odoo.exceptions import AccessError, UserError
 
 from .mail_provider_client import ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, ERROR_THROTTLED
-from .neutralization import database_is_neutralized
+from .neutralization import COPY_FROM_HEADER, database_is_neutralized
+from .providers.mime_utils import odoo_headers
 
 # Set by the composer around its send: this batch is the thing the person did.
 INTERACTIVE_SEND = 'pan_mail_interactive_send'
+# Set by `_send_on_staging` around Odoo's own send: this batch is a copy's
+# mail, routed by us and shown by the host's catcher.
+ON_COPY = 'pan_mail_on_copy'
 
 _logger = logging.getLogger(__name__)
 
@@ -113,7 +117,7 @@ class MailMail(models.Model):
             mailbox=mailbox.email,
         ))
 
-    def _is_awaiting_notification_mailbox(self):
+    def _is_awaiting_notification_mailbox(self, on_copy=False):
         """Is this an internal notification that Mail Pro cannot route *yet*?
 
         Onboarding has an unavoidable window: the first mailbox exists (so
@@ -130,7 +134,7 @@ class MailMail(models.Model):
         if self.x_send_from_mailbox_id or not self._is_system_notification():
             return False
         try:
-            self._notification_route()
+            self._notification_route(on_copy=on_copy)
         except RoutingError:
             return True
         return False
@@ -148,8 +152,9 @@ class MailMail(models.Model):
           fresh install working before anyone has been to Azure.
         - Internal notifications during the setup window are left queued. See
           `_is_awaiting_notification_mailbox`.
-        - A neutralized database hands every mail to Odoo's own SMTP path, so
-          the host's staging catcher gets it. See `_send_on_staging`.
+        - A neutralized database routes every mail as it would here, then
+          hands it to Odoo's own SMTP path, so the host's staging catcher
+          shows it with the From it would have had. See `_send_on_staging`.
 
         Everything else is sent by a mailbox or fails saying which one it
         wanted. It is never quietly rerouted.
@@ -280,16 +285,23 @@ class MailMail(models.Model):
         # stopped a beta tester from creating a user at all, with a raw
         # exception as the dialog. Those mails keep their reason and their
         # red envelope in the chatter, as Odoo's own path leaves them.
+        mails._raise_batch_failures(failures, delivered, auto_commit, raise_exception)
+        return True
+
+    def _raise_batch_failures(self, failures, delivered, auto_commit, raise_exception):
+        """Tell the sender, when that costs nothing; see the end of `send()`.
+
+        Shared with `_send_on_staging`, so a copy refuses exactly the mails
+        production would, with the same sentence, in the same cases.
+        """
         if failures and raise_exception:
             # The exception Odoo's own SMTP path raises, because that is the
             # one the callers who ask for it know how to catch: auth_signup
             # creates the user anyway and shows its own sentence, where a
             # UserError here killed the user along with the mail.
             raise MailDeliveryException(self._batch_failure_message(failures))
-        if failures and (auto_commit or (not delivered and mails._is_the_action())):
+        if failures and (auto_commit or (not delivered and self._is_the_action())):
             raise UserError(self._batch_failure_message(failures))
-
-        return True
 
     def _is_the_action(self):
         """Is sending these mails what the person just did, rather than a side
@@ -467,33 +479,118 @@ class MailMail(models.Model):
         )
 
     def _send_on_staging(self, auto_commit=False, raise_exception=False, post_send_callback=None):
-        """Send a neutralized database's mail the way Odoo would without us.
+        """Show a neutralized database's mail: routed as here, sent by Odoo.
 
         Staging is where the *flow* is tested, and the person testing wants to
-        read the email that went out. Every host already has an answer for
-        that, and it is SMTP-shaped: neutralizing leaves one active
-        `ir_mail_server`, and the host decides where it leads. Cloudpepper
-        catches staging mail in MailHog, odoo.sh on the build's Mails tab, and
-        a bare restore fails at the invalid host Odoo inserted. So the module
-        steps aside, as it does before any mailbox exists, and inherits each
-        host's answer instead of writing its own.
+        read the email that would have gone out. Every host already has an
+        answer for that, and it is SMTP-shaped: neutralizing leaves one active
+        `ir_mail_server`, and the host decides where it leads. Odoo.sh shows
+        staging mail on the build's Mails tab, Cloudpepper or your own server
+        catch it in whatever the copy's SMTP is (MailHog, Mailpit), and a bare
+        restore fails at the invalid host Odoo inserted. So the module does not
+        send; it inherits each host's answer instead of writing its own.
+
+        What it keeps is the decision. Every mail is routed the way production
+        would route it (`_resolve_route(on_copy=True)`: the same rules, minus
+        the credentials a copy does not have), so a mail production would
+        refuse is refused here with the same sentence, and the one it would
+        send reaches the catcher with the From, the threading and the X-Odoo
+        headers it would have carried (`_prepare_outgoing_list`). Which headers
+        survive the handoff, and which are Odoo's own, is in ARCHITECTURE.md
+        §9.9.
 
         Never a provider: no Graph, no Gmail, not the module's own IMAP/SMTP
-        client. This method asks no mailbox, account or client, and the three
-        layers underneath still refuse on their own (`data/neutralize.sql`
-        drops the credentials, `decrypt_value` reads none, every client stops
-        before its transport). What it does trust is the database's own
-        `ir_mail_server` rows, which is Odoo's contract for a neutralized copy.
+        client. This method asks no account or client, and the three layers
+        underneath still refuse on their own (`data/neutralize.sql` drops the
+        credentials, `decrypt_value` reads none, every client stops before its
+        transport). What it does trust is the database's own `ir_mail_server`
+        rows, which is Odoo's contract for a neutralized copy.
         """
-        _logger.info(
-            "[Outgoing Mail] Database is neutralized — handing %s email(s) to "
-            "Odoo's own SMTP path, never to a provider", len(self)
-        )
-        return super(MailMail, self).send(
-            auto_commit=auto_commit,
-            raise_exception=raise_exception,
-            post_send_callback=post_send_callback,
-        )
+        mails = self
+        awaiting = mails.filtered(lambda m: m._is_awaiting_notification_mailbox(on_copy=True))
+        if awaiting:
+            awaiting.write({'failure_reason': NOTIFICATION_PENDING_REASON})
+            mails -= awaiting
+
+        failures = []
+        shown = self.env['mail.mail']
+        for mail in mails:
+            try:
+                mail._resolve_route(on_copy=True)
+            except RoutingError as e:
+                failures.append(mail._fail(str(e), code='outgoing.no_route', error=e))
+                continue
+            shown |= mail
+
+        delivered = 0
+        if shown:
+            _logger.info(
+                "[Outgoing Mail] Database is neutralized: handing %s email(s) to "
+                "Odoo's own SMTP path, never to a provider", len(shown)
+            )
+            super(MailMail, shown.with_context(**{ON_COPY: True})).send(
+                auto_commit=auto_commit,
+                raise_exception=raise_exception,
+                post_send_callback=post_send_callback,
+            )
+            delivered = len(shown.filtered(lambda m: not m.exists() or m.state == 'sent'))
+        mails._raise_batch_failures(failures, delivered, auto_commit, raise_exception)
+        return True
+
+    def _prepare_outgoing_list(self, mail_server=False, doc_to_followers=None):
+        """On a copy, dress Odoo's message the way the mailbox would have.
+
+        Odoo builds one message per recipient here; everything it reads off
+        the result except the From is taken from these dicts. The From is read
+        off the record, which on a notification is the human's shared
+        `mail.message`, so it is not rewritten there: it travels in
+        `COPY_FROM_HEADER` and `ir.mail_server._build_email__` puts it in
+        place (models/ir_mail_server.py). Outside `_send_on_staging` this is
+        Odoo's method untouched.
+        """
+        results = super()._prepare_outgoing_list(
+            mail_server=mail_server, doc_to_followers=doc_to_followers)
+        if not self.env.context.get(ON_COPY):
+            return results
+        try:
+            mailbox, _account = self._resolve_route(on_copy=True)
+        except RoutingError:
+            # `_send_on_staging` already failed every mail that has no route;
+            # one that lost it since is shown as Odoo would show it.
+            return results
+        reply_context = self._build_reply_context(mailbox)
+        dressed = self._copy_headers(mailbox, reply_context)
+        # Root first, as a provider send carries it. Empty leaves Odoo's own,
+        # which is `mime_utils.build_message`'s fallback as well.
+        references = ' '.join(reply_context['references'])
+        for email in results:
+            headers = dict(email.get('headers') or {})
+            headers.update(dressed)
+            email['headers'] = headers
+            # No Reply-To of its own, as on the wire: Odoo then writes the
+            # From there, which is where a reply goes from a provider send too.
+            email['reply_to'] = False
+            if references:
+                email['references'] = references
+        return results
+
+    def _copy_headers(self, mailbox, reply_context):
+        """The headers a copy's mail carries for the mailbox it would have used.
+
+        The X-Odoo-* list every provider send carries (`odoo_headers`, the loop
+        guard the incoming sync reads), the In-Reply-To Odoo's own build never
+        writes, and the mailbox itself. The last one is what makes the route
+        survive a host whose mail server rewrites the From to its own address
+        (an `ir_mail_server` with a from filter does), and it is the header
+        `ir.mail_server` reads the From back from.
+        """
+        headers = dict(odoo_headers(self, self.env))
+        references = reply_context.get('references') or []
+        in_reply_to = reply_context.get('in_reply_to') or (references[-1] if references else None)
+        if in_reply_to:
+            headers['In-Reply-To'] = in_reply_to
+        headers[COPY_FROM_HEADER] = mailbox.email
+        return headers
 
     def _send_one(self, raise_exception=False, post_send_callback=None, batch=None):
         """Send one mail. Returns the failure reason, or None when it went out.
@@ -970,13 +1067,17 @@ class MailMail(models.Model):
     # is worse than a mail that did not go out, because nobody finds out.
     # -------------------------------------------------------------------------
 
-    def _resolve_route(self):
-        """Return (mailbox, account) for this mail, or raise RoutingError."""
-        self.ensure_one()
+    def _resolve_route(self, on_copy=False):
+        """Return (mailbox, account) for this mail, or raise RoutingError.
 
-        # A staging copy never gets this far: `send()` marks the batch sent
-        # without routing it at all. Routing here would fail for the wrong
-        # reason anyway -- `data/neutralize.sql` deactivates every mailbox.
+        `on_copy` is the question a neutralized database asks
+        (`_send_on_staging`): which mailbox *would* send this. The same rules
+        in the same order, with the two things a copy cannot have taken out:
+        `data/neutralize.sql` archives every mailbox, so an archived one still
+        answers, and it drops every credential, so no account is looked for
+        and the account is None.
+        """
+        self.ensure_one()
         author_user = self._author_user()
 
         # An explicit "Send From" choice comes first, because it is the only
@@ -990,19 +1091,19 @@ class MailMail(models.Model):
         # notifications@ while the record still named the salesperson — the
         # sender never found out (issue #39).
         if self.x_send_from_mailbox_id:
-            return self._mailbox_route(self.x_send_from_mailbox_id, author_user)
+            return self._mailbox_route(self.x_send_from_mailbox_id, author_user, on_copy)
 
         # Nobody chose, so the mail itself decides: account mail, and system
         # mail to our own employees, is what the notification mailbox is for.
         if self._is_system_notification():
-            return self._notification_route()
+            return self._notification_route(on_copy=on_copy)
 
         # Mail generated on behalf of somebody outside Odoo — an auto-reply, an
         # activity notification triggered by an incoming email — has no user to
         # send as. The notification mailbox is the answer by definition here,
         # not a fallback from a failed lookup.
         if not author_user:
-            return self._notification_route()
+            return self._notification_route(on_copy=on_copy)
 
         if not author_user.x_default_mailbox_id:
             if not author_user.x_pan_mail_connected:
@@ -1016,9 +1117,9 @@ class MailMail(models.Model):
             ) % author_user.name)
 
         return self._mailbox_route(
-            author_user.x_default_mailbox_id, author_user)
+            author_user.x_default_mailbox_id, author_user, on_copy)
 
-    def _mailbox_route(self, mailbox, author_user):
+    def _mailbox_route(self, mailbox, author_user, on_copy=False):
         """A named mailbox and the credentials it sends with, or RoutingError.
 
         Shared by the composer's explicit choice and by the author's default, so
@@ -1033,7 +1134,7 @@ class MailMail(models.Model):
         # from inside the send loop stalled every mail queued behind it; that
         # constraint is gone now that a failure is recorded per mail, so the
         # security boundary gets to be a boundary.
-        if author_user and not mailbox._is_sendable_by(author_user):
+        if author_user and not mailbox._is_sendable_by(author_user, archived_ok=on_copy):
             _logger.warning(
                 "[Outgoing Mail] Mail %s selects mailbox %s which its author %s may not use",
                 self.id, mailbox.email, author_user.login,
@@ -1044,6 +1145,8 @@ class MailMail(models.Model):
                 mailbox=mailbox.email, user=author_user.name,
             ))
 
+        if on_copy:
+            return (mailbox, None)
         account = mailbox._get_client().resolve_sending_account(
             mailbox, author_user=author_user)
         if not account.connected:
@@ -1052,14 +1155,16 @@ class MailMail(models.Model):
         _logger.info(f"[Outgoing Mail] Sending from {mailbox.email} (credentials: {account.email})")
         return (mailbox, account)
 
-    def _notification_route(self):
+    def _notification_route(self, on_copy=False):
         """The notification mailbox and the credentials it sends with."""
-        mailbox = self._notification_mailbox()
+        mailbox = self._notification_mailbox(archived_ok=on_copy)
         if not mailbox:
             raise RoutingError(_(
                 'No Notification mailbox configured. Go to Settings → Mail Pro '
                 'and create the address system emails are sent from.'
             ))
+        if on_copy:
+            return (mailbox, None)
 
         account = mailbox._get_client().resolve_sending_account(mailbox)
         if not account.connected:
@@ -1067,10 +1172,11 @@ class MailMail(models.Model):
         return (mailbox, account)
 
     @api.model
-    def _notification_mailbox(self):
-        return self.env['pan.mail.mailbox'].sudo().search([
+    def _notification_mailbox(self, archived_ok=False):
+        """`archived_ok` for a copy, where `data/neutralize.sql` archived it."""
+        return self.env['pan.mail.mailbox'].sudo().with_context(active_test=False).search([
             ('is_notification_mailbox', '=', True),
-            ('active', '=', True),
+            ('active', 'in', (True, False) if archived_ok else (True,)),
         ], limit=1)
 
     def _author_user(self):
