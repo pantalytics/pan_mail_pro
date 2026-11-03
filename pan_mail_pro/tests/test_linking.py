@@ -424,6 +424,24 @@ class TestLinkPicker(TransactionCase):
         self.assertFalse(scope['domain'])
         self.assertEqual(scope['partner'], '')
 
+    def test_new_email_may_make_the_contact_it_is_for(self):
+        """Linking never offers New on contacts: the fetcher already made
+        one for every sender. New email has no sender behind it, so the
+        contact the mail is for is made right there (3 Nov)."""
+        self.assertFalse(self.Conversation.link_scope('res.partner')['can_create'])
+        scope = self.Conversation.link_scope('res.partner', new_mail=True)
+        self.assertTrue(scope['can_create'])
+        self.assertEqual(scope['defaults'], {})
+
+    def test_the_inbox_knows_whether_there_is_a_mailbox(self):
+        """Without one the Inbox opens on the way to step 4, not on
+        chatter mail."""
+        self.env['pan.mail.mailbox'].sudo().search([]).unlink()
+        self.assertFalse(self.Conversation.inbox_has_mailbox())
+        self.env['pan.mail.mailbox'].sudo().create(
+            {'email': 'info@company.test', 'provider': 'outlook'})
+        self.assertTrue(self.Conversation.inbox_has_mailbox())
+
     def test_the_scope_refuses_a_model_mail_cannot_land_on(self):
         with self.assertRaises(AccessError):
             self.Conversation.link_scope('ir.config_parameter')

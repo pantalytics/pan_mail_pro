@@ -153,26 +153,36 @@
                          reads as the thing that is broken. One screen, one
                          action: the one step 1 names. -->
                     <div invisible="not x_setup_account_done">
-                    <div class="o_mailpro_step">
-                        <!-- Amber while the row is on the customer's own
-                             Azure app, green once it has moved. Accounts that
+                    <div class="o_mailpro_step o_mailpro_step_provider">
+                        <!-- One status, shared with the provider form: the
+                             dot is the row's own `status`, the badge on the
+                             form behind the arrow. Green once somebody signed
+                             in, amber while nobody has (the form's one button
+                             is Sign in), the open dot before the registration
+                             exists. The phase reads the credentials, not
+                             this, so sync does not wait for a sign-in.
+
+                             The one exception is the row still on the
+                             customer's own Azure app: amber whatever its
+                             status, until it has moved (#369). Accounts that
                              still refresh through the old app are each
-                             mailbox's status, not this step's (#369). Not
-                             red: the old sign-ins keep working, so nothing is
-                             broken. It wins over both other dots. -->
+                             mailbox's status, not this step's. Not red: the
+                             old sign-ins keep working, so nothing is broken. -->
+                        <field name="x_provider_status" invisible="1"/>
                         <field name="x_microsoft_on_own_app" invisible="1"/>
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="not x_setup_provider_done or x_microsoft_on_own_app"/>
+                              invisible="x_provider_status != 'connected' or x_microsoft_on_own_app"/>
                         <span class="o_mailpro_dot o_mailpro_dot_attention" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="not x_microsoft_on_own_app"/>
+                              invisible="x_provider_status != 'not_connected' and not x_microsoft_on_own_app"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_setup_provider_done or x_microsoft_on_own_app"/>
+                              invisible="x_provider_status in ('connected', 'not_connected') or x_microsoft_on_own_app"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
                                 <span class="o_mailpro_step_name">2. Email provider</span>
-                                <span class="o_mailpro_step_value" invisible="not x_setup_provider_done">
+                                <span class="o_mailpro_step_value" invisible="x_provider_status != 'connected'">
                                     <field name="x_active_provider_id" nolabel="1" readonly="1" options="{'no_open': True}"/>
                                 </span>
+                                <span class="o_mailpro_step_value" invisible="x_provider_status != 'not_connected'">Not signed in</span>
                                 <span class="o_mailpro_step_value" invisible="x_setup_provider_done">
                                     <field name="x_setup_provider_todo" nolabel="1" readonly="1"/>
                                 </span>

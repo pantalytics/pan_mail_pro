@@ -457,6 +457,19 @@ class PanMailConversation(models.AbstractModel):
         return ''
 
     @api.model
+    def inbox_has_mailbox(self):
+        """Is there any mailbox on this database at all?
+
+        Without one the Inbox has nothing of its own to show, and what it
+        would show instead is chatter mail: OdooBot's "Welcome to Odoo!" in
+        #general, on a fresh database (3 Nov). So it shows the way to step 4
+        instead. The whole database, not the reader's list: a colleague's
+        personal mailbox is still a mailbox, and "none yet" would be false.
+        """
+        self._check_caller()
+        return bool(self.env['pan.mail.mailbox'].sudo().search_count([], limit=1))
+
+    @api.model
     def inbox_search_view_id(self):
         """The search view the Inbox's search bar is built from.
 
@@ -2111,7 +2124,7 @@ class PanMailConversation(models.AbstractModel):
         return rows
 
     @api.model
-    def link_scope(self, model, partner_id=None):
+    def link_scope(self, model, partner_id=None, new_mail=False):
         """Step two: the head start for Odoo's own record picker.
 
         The picker itself is Odoo's `SelectCreateDialog` over the model's own
@@ -2138,6 +2151,10 @@ class PanMailConversation(models.AbstractModel):
         is the form's context when it opens: the correspondent, through the
         same two relations the facet is built from, so a lead made from a
         mail opens with its sender filled in and the reader types a title.
+
+        `new_mail` is New email's picker, which has no sender behind it: a
+        contact made there is the person the mail is for, not a duplicate of
+        one the fetcher made, so its New is there on contacts too (3 Nov).
         """
         self._check_caller()
         Model = self._link_model(model)
@@ -2145,7 +2162,8 @@ class PanMailConversation(models.AbstractModel):
         if partner_id:
             partner = partner.browse(int(partner_id)).exists()
         scope = {
-            'can_create': Model._name != 'res.partner' and Model.has_access('create'),
+            'can_create': (bool(new_mail) or Model._name != 'res.partner')
+                          and Model.has_access('create'),
             'defaults': self._create_defaults(Model, partner),
         }
         domain = self._candidate_domain(Model, partner)

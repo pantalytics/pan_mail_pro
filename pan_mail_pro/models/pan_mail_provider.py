@@ -102,6 +102,15 @@ _DOMAIN_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?'
                         r'(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$')
 TENANT_LITERALS = ('common', 'organizations', 'consumers')
 
+# The provider's one status. The form's badge shows it and Settings step 2
+# draws its dot from it (`res.config.settings.x_provider_status`), so the two
+# can never disagree: "Die status moet gedeeld zijn".
+PROVIDER_STATUS_SELECTION = [
+    ('not_configured', 'Not Configured'),
+    ('not_connected', 'Not Connected'),
+    ('connected', 'Connected'),
+]
+
 
 def pantalytics_not_connected():
     """Why the Pantalytics app cannot be used right now. A function so the
@@ -182,11 +191,10 @@ class PanMailProvider(models.Model):
         compute='_compute_status',
         help='Has at least one account on this provider actually signed in?',
     )
-    status = fields.Selection([
-        ('not_configured', 'Not Configured'),
-        ('not_connected', 'Not Connected'),
-        ('connected', 'Connected'),
-    ], compute='_compute_status')
+    status = fields.Selection(PROVIDER_STATUS_SELECTION, compute='_compute_status')
+    # Whether the person reading the form holds a connected account on this
+    # provider: the form's Disconnect is theirs to press, never a colleague's.
+    my_account_connected = fields.Boolean(compute='_compute_my_account_connected')
 
     _provider_uniq = models.Constraint(
         'UNIQUE(provider)',
@@ -313,10 +321,28 @@ class PanMailProvider(models.Model):
         connected account, which is what the mailbox setup needs next. The
         form's Sign in button presses it whenever the provider is not
         connected; the verify dialog offers it after an own registration was
-        saved.
+        saved. The round lands back on the checklist, not on this form
+        (`_sign_in_from_form`).
         """
         self.ensure_one()
-        return self.env.user.action_connect_mailbox(provider=self.provider)
+        return self._sign_in_from_form()
+
+    def _sign_in_from_form(self):
+        """A sign-in started on this form, landing on Settings > Mail Pro.
+
+        This form is step 2's page, and once the sign-in worked it has
+        nothing left to offer: a green badge and a breadcrumb nobody sees
+        ("hoe ga ik nou terug?", 3 Nov). The checklist is where the next step
+        is, with step 2 green on it. Every other place a sign-in starts (a
+        mailbox, My Preferences, the banner) keeps landing where it was
+        pressed (`res.users._pan_mail_remember_back`, #370).
+        """
+        self.ensure_one()
+        # Here rather than at the top: importing res_users first would move
+        # its model class ahead of the ones it points at in this module.
+        from .res_users import SETTINGS_URL
+        return self.env.user.with_context(pan_mail_back=SETTINGS_URL).action_connect_mailbox(
+            provider=self.provider)
 
     # -------------------------------------------------------------------------
     # Status
@@ -334,6 +360,20 @@ class PanMailProvider(models.Model):
                 record.status = 'not_connected'
             else:
                 record.status = 'connected'
+
+    @api.depends_context('uid')
+    def _compute_my_account_connected(self):
+        accounts = self.env['pan.mail.account'].sudo().with_context(active_test=False).search(
+            [('user_id', '=', self.env.uid), ('connected', '=', True)])
+        for record in self:
+            record.my_account_connected = record.provider in accounts.mapped('provider')
+
+    def action_disconnect_myself(self):
+        """The form's Disconnect: the reader's own sign-in on this provider,
+        the one My Preferences' Disconnect lets go of. Somebody else's stays,
+        and so does the badge while anybody is still signed in."""
+        self.ensure_one()
+        return self.env.user.action_disconnect_mailbox(provider=self.provider)
 
     def _credentials_present(self):
         """Whether this provider has what it needs to be used.
@@ -487,7 +527,7 @@ class PanMailProvider(models.Model):
         _logger.info('[OAuth] Microsoft 365 switched to the Pantalytics app by %s; %s '
                      'account(s) still refresh with the own app',
                      self.env.user.login, self._own_accounts_left())
-        return self.env.user.action_connect_mailbox(provider=self.provider)
+        return self._sign_in_from_form()
 
     @api.model
     def _forget_unused_own_registration(self):

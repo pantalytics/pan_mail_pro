@@ -49,6 +49,17 @@
                 <p t-elif="!isCopy" class="o_mailpro_gate_text">Ask an administrator to connect it: Settings, Mail Pro.</p>
                 <a class="o_mailpro_gate_back" href="/odoo">Back to Odoo</a>
             </div>
+            <!-- No mailbox on the database yet: the way to step 4, never
+                 chatter mail standing in for a mailbox (3 Nov, OdooBot's
+                 "Welcome to Odoo!" in #general). -->
+            <div t-elif="!state.hasMailbox" class="o_mailpro_gate o_mailpro_gate_no_mailbox d-flex flex-column align-items-center justify-content-center h-100 text-center">
+                <img src="/pan_mail_pro/static/description/icon.png" alt="" class="o_mailpro_gate_icon"/>
+                <h2 class="o_mailpro_gate_title">No mailbox yet</h2>
+                <button t-if="isAdmin" type="button" class="btn btn-primary o_mailpro_gate_connect"
+                        t-on-click="openMailboxes">Add a mailbox</button>
+                <p t-else="" class="o_mailpro_gate_text">Ask an administrator to add one: Settings, Mail Pro.</p>
+                <a class="o_mailpro_gate_back" href="/odoo">Back to Odoo</a>
+            </div>
             <t t-else="">
 
             <!--

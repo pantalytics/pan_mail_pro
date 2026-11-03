@@ -1077,12 +1077,13 @@ class PanMailMailbox(models.Model):
                 'by its owner.'
             ) % self.email)
 
-        recipient = self.env.user.email
+        recipient = self._test_recipient()
         if not recipient:
             raise UserError(_(
-                'Your user has no email address, so there is nowhere to send '
-                'the test. Add one under My Preferences and try again.'
-            ))
+                'The test goes to the address you signed in with, and you have '
+                'not signed in on %s yet. Connect your mailbox under My '
+                'Preferences, then check again.'
+            ) % get_provider_client(self.env, self.provider).provider_label())
 
         try:
             with self.env.cr.savepoint():
@@ -1119,6 +1120,17 @@ class PanMailMailbox(models.Model):
               mailbox=self.email, recipient=recipient),
             'success',
         )
+
+    def _test_recipient(self):
+        """The address whoever pressed the button signed in with on this
+        provider: the one address the provider itself vouched for. Never the
+        user record's email, which a fresh Odoo.sh admin does not have
+        (3 Nov) and which may name somewhere else entirely; where the two
+        differ, "Signed in as" already says so."""
+        accounts = self.env['pan.mail.account'].sudo().with_context(active_test=False).search(
+            [('user_id', '=', self.env.uid), ('provider', '=', self.provider),
+             ('email', '!=', False)], order='connected desc, id desc')
+        return accounts[:1].email or False
 
     @staticmethod
     def _test_notification(title, message, kind, sticky=False):

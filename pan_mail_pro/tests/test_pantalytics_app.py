@@ -30,7 +30,9 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import get_provider_cl
 from odoo.addons.pan_mail_pro.models.pan_mail_provider import (
     MS_APP_RETURN_PATH, MS_APP_SESSION_KEY,
 )
-from odoo.addons.pan_mail_pro.models.res_users import INBOX_URL
+from odoo.addons.pan_mail_pro.models.res_users import (
+    INBOX_URL, SETTINGS_URL, SIGN_IN_BACK_KEY,
+)
 from odoo.addons.pan_mail_pro.tests.common import _FakeSession
 
 PLATFORM_POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
@@ -261,6 +263,19 @@ class TestMicrosoftStart(TransactionCase):
         with self.platform(), self.assertRaises(UserError):
             self.row._pantalytics_sign_in()
         self.assertFalse(self.calls, 'refused before the platform is asked')
+
+    def test_a_sign_in_from_the_provider_form_lands_on_the_checklist(self):
+        """Back on the form, green and nothing else, was a page with no way
+        on ("hoe ga ik nou terug?", 3 Nov). The checklist is where step 3
+        is. Anywhere else a sign-in starts keeps its own way back (#370)."""
+        connect_to_pantalytics(self.env)
+        with self.platform(), a_browser(self.env) as session:
+            self.row.action_connect_myself()
+        self.assertEqual(session[SIGN_IN_BACK_KEY], SETTINGS_URL)
+        with self.platform(), a_browser(self.env) as session:
+            self.env.user.with_context(pan_mail_back=INBOX_URL).action_connect_mailbox(
+                'outlook')
+        self.assertEqual(session[SIGN_IN_BACK_KEY], INBOX_URL, 'the Inbox keeps its own')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -497,3 +512,75 @@ class TestMicrosoftReturn(HttpCase):
         post.assert_not_called()
         self.assertEqual(response.status_code, 200)
         self.assertIn('Settings, Mail Pro, step 1', response.text)
+
+
+@tagged('pan_mail_pro', 'post_install', '-at_install')
+class TestOneStatus(TransactionCase):
+    """Settings step 2 and the provider form show one status (3 Nov, Odoo.sh,
+    19.0.33.1.2): the checklist read green "Microsoft 365" while the form
+    behind its arrow read "Not Connected". "Die status moet gedeeld zijn."
+    The phase keeps reading the credentials, so sync never waits on this."""
+
+    def setUp(self):
+        super().setUp()
+        self.env['pan.mail.domain'].set_domains(['company.test'])
+        connect_to_pantalytics(self.env)
+        self.row = self.env['pan.mail.provider'].create({'provider': 'outlook'})
+        self.admin = self.env.ref('base.user_admin')
+        self.colleague = self.env['res.users'].create({
+            'name': 'Colleague', 'login': 'colleague@company.test',
+            'email': 'colleague@company.test'})
+
+    def sign_in(self, user):
+        return self.env['pan.mail.account'].sudo().create({
+            'email': user.email, 'provider': 'outlook', 'user_id': user.id,
+            'refresh_token': 'fake-refresh', 'access_token': 'fake-access'})
+
+    def step_2(self):
+        settings = self.env['res.config.settings'].create({})
+        self.row.invalidate_recordset()
+        return settings.x_provider_status, self.row.status
+
+    def test_paired_and_nobody_signed_in_is_amber_on_both(self):
+        self.assertEqual(self.step_2(), ('not_connected', 'not_connected'))
+        settings = self.env['res.config.settings'].create({})
+        self.assertTrue(settings.x_setup_provider_done, 'the phase still reads the credentials')
+        self.assertTrue(self.env['pan.mail.setup'].answers()['provider'])
+
+    def test_a_sign_in_turns_both_green(self):
+        self.step_2()
+        self.sign_in(self.admin)
+        self.assertEqual(self.step_2(), ('connected', 'connected'),
+                         'read fresh, not from the cache of the first look')
+
+    def test_no_row_is_the_open_dot(self):
+        self.row.unlink()
+        settings = self.env['res.config.settings'].create({})
+        self.assertEqual(settings.x_provider_status, 'not_configured')
+
+    def test_disconnect_is_the_reader_s_own_sign_in(self):
+        account = self.sign_in(self.admin)
+        row = self.row.with_user(self.admin)
+        self.assertTrue(row.my_account_connected)
+        row.action_disconnect_myself()
+        self.assertFalse(account.connected)
+        self.assertEqual(self.step_2(), ('not_connected', 'not_connected'),
+                         'Sign in with Microsoft again, and step 2 amber')
+
+    def test_a_colleague_s_sign_in_has_no_button_and_stays_connected(self):
+        self.sign_in(self.colleague)
+        row = self.row.with_user(self.admin)
+        self.assertFalse(row.my_account_connected, 'nothing of theirs to disconnect')
+        self.assertEqual(self.step_2(), ('connected', 'connected'))
+        form = self.env['pan.mail.provider'].get_view(
+            self.env.ref('pan_mail_pro.view_pan_mail_provider_form').id, 'form')['arch']
+        self.assertIn("status != 'connected' or not my_account_connected", form)
+
+    def test_there_is_no_new_provider_button(self):
+        """One row, made by step 2: New on the form or the list could only
+        start a second one, which the constraint refuses after the typing."""
+        for xmlid, view_type in (('pan_mail_pro.view_pan_mail_provider_form', 'form'),
+                                 ('pan_mail_pro.view_pan_mail_provider_list', 'list')):
+            arch = self.env['pan.mail.provider'].get_view(
+                self.env.ref(xmlid).id, view_type)['arch']
+            self.assertIn('create="0"', arch, xmlid)

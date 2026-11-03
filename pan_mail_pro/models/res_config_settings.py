@@ -37,6 +37,7 @@ from odoo import _, api, fields, models
 from .mail_provider_client import get_provider_client
 from .neutralization import database_is_neutralized
 from .pan_mail_license import IMPROVE_REFUSED_PARAM, STATUS_SELECTION
+from .pan_mail_provider import PROVIDER_STATUS_SELECTION
 
 _logger = logging.getLogger(__name__)
 
@@ -58,6 +59,14 @@ class ResConfigSettings(models.TransientModel):
         compute='_compute_setup_status', readonly=True,
     )
     x_setup_provider_done = fields.Boolean(compute='_compute_setup_status')
+    # What step 2's dot and answer show: the provider row's own `status`,
+    # the one its form's badge shows, read off the row and never worked out
+    # a second time here. Green once somebody signed in, amber while the
+    # registration is there and nobody has, the open dot before that. The
+    # phase is not this: it reads the credentials (`x_setup_provider_done`,
+    # `pan.mail.setup.answers`), so sync is not held up for a sign-in.
+    x_provider_status = fields.Selection(
+        PROVIDER_STATUS_SELECTION, compute='_compute_setup_status')
     # What the open step says, and whether its arrow points at the accounts
     # list rather than the provider form: IMAP/SMTP has no registration, its
     # first step is done when the first account exists.
@@ -299,10 +308,15 @@ class ResConfigSettings(models.TransientModel):
         microsoft = active_provider if active_provider.provider == 'outlook' else \
             active_provider.browse()
         on_own_app = bool(microsoft) and microsoft.registration == 'own'
+        # Fresh, not cached: `status` reads `pan.mail.account`, which its
+        # compute cannot declare, and the form reads it fresh on every load.
+        active_provider.invalidate_recordset(['status', 'connected', 'credentials_set'])
+        provider_status = active_provider.status or 'not_configured'
 
         for record in self:
             record.x_active_provider_id = active_provider
             record.x_setup_provider_done = bool(active_provider) and active_provider.credentials_set
+            record.x_provider_status = provider_status
             needs_account = bool(active_provider) and not get_provider_client(
                 self.env, active_provider.provider).uses_oauth and not record.x_setup_provider_done
             record.x_setup_provider_needs_account = needs_account
