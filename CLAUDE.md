@@ -308,7 +308,7 @@ Three workflows in `.github/workflows/`:
 |----------|---------|--------------|
 | `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release), and the UI checks in a real browser |
 | `gitleaks.yml` | every push + PR | secret scan |
-| `release.yml` | push to `19.0` | tags the merge commit `v<manifest version>` if that tag does not exist yet |
+| `release.yml` | push to `18.0`, `19.0` or `20.0` | tags the merge commit `v<manifest version>` if that tag does not exist yet |
 
 ### How tests run
 

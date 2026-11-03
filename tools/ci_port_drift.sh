@@ -21,6 +21,12 @@ if [ "$SERIES" = "$BASE_SERIES" ]; then
     exit 0
 fi
 
+# The main this branch last merged, not main's tip: main moves on between
+# ports, and a branch that has not taken the newest main yet is behind, not
+# drifted. A change typed on the branch shows up against either.
+MERGED=$(git -C "$REPO" merge-base "$BASE" HEAD) || { echo "::error::No merge base with $BASE."; exit 1; }
+BASE=$MERGED
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/base" "$WORK/head"

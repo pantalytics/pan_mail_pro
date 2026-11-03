@@ -188,10 +188,23 @@ After a release to `19.0`:
 
 1. `git merge main` into `18.0`, then into `20.0`. A merge, not a
    cherry-pick: with the seam holding, the only conflicts are inside the
-   allowed paths, and `git rerere` replays the ones that repeat.
-2. Bump the manifest on that branch (`18.0.<same x.y.z>`), run
-   `tools/ci.sh`, push. `release.yml` tags `v18.0.x.y.z` on push to `18.0`.
+   allowed paths, and `git rerere` replays the ones that repeat. The
+   module manifest's version line conflicts on every port (measured
+   2026-11-03 on a simulated cut); it is resolved by taking main's and
+   cutting again, which is idempotent:
+   `git checkout --theirs pan_mail_pro/__manifest__.py && tools/cut_series.sh 18.0 && git add -A`.
+   That leaves `18.0.<main's x.y.z>`, the bump this step needs.
+2. Run `tools/ci.sh`, push. `release.yml` tags `v18.0.x.y.z` on push to `18.0`.
 3. Walk the Enterprise column for that series.
+
+What CI says on a series branch: `port-drift` compares the branch with
+the main it last merged (the merge base, not main's tip, so a branch that
+is merely behind is not drifted), cut for its series. `version-bump`
+compares the last three numbers with that same main and fails when they
+are lower; the series numbers differ by design. The upgrade row pinned to
+a `v19.0.*` tag passes saying it is another series, and the
+previous-release row passes saying there is no `v18.0.*` tag yet, until
+the first one exists.
 
 One PR becomes one PR plus two merges, and the measure of whether the seam
 holds is how often step 1 conflicts outside the allowed paths. That number
@@ -248,7 +261,8 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03: 1314 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file)
 - [ ] Suite green on CI's `odoo:18.0` (needs the branch)
 - [ ] UI job green: the Inbox renders on 18's `@mail`, every `tools/ui_check.py` assertion
-- [ ] Upgrade job: skips cleanly while no `v18.0.*` tag exists, runs once one does
+- [x] Upgrade job: skips cleanly while no `v18.0.*` tag exists (and on the pinned `v19.0.*` row), runs once one does (2026-11-03, `tools/ci_odoo.sh`)
+- [x] `version-bump` and `port-drift` read a series branch right: last three numbers and the merged main, not main's tip (2026-11-03, measured on a simulated `18.0` and `20.0` cut and port)
 - [ ] Enterprise column walked on an 18 Enterprise instance
 - [ ] A Cloudpepper dev instance on an 18 server (servers are pinned per major) with OAuth redirect URIs registered
 - [ ] Knowledge base page says which series are supported

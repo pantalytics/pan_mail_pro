@@ -200,6 +200,13 @@ HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
 # is the customer who upgrades every time; a customer who skipped six releases
 # crosses six migration folders in one -u and nothing here would try that.
 TAG="${FROM_TAG:-}"
+# ci.yml pins a 19.0 tag for the customer who skipped a quarter. On the 18.0
+# or 20.0 branch that tag is another series, which this Odoo refuses to load:
+# there is no such customer there, so the row passes saying why.
+if [ -n "$TAG" ] && [ "${TAG#v${SERIES}.}" = "$TAG" ]; then
+    echo "FROM_TAG ${TAG} is not a v${SERIES}.* tag: no ${SERIES} database was ever on it, nothing to upgrade."
+    exit 0
+fi
 for t in $(git -C "$REPO" tag -l "v${SERIES}.*" --sort=-v:refname); do
     [ -n "$TAG" ] && break
     if [ "$(git -C "$REPO" rev-parse "${t}^{commit}")" != "$HEAD_SHA" ]; then
