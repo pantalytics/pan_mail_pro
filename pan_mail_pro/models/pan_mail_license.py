@@ -78,7 +78,7 @@ backup does not phone home and does not carry the licence with it.
 import base64
 import hashlib
 import hmac
-from ..compat import config_bool
+from ..compat import config_bool, ormcache
 import json
 import logging
 import os
@@ -86,7 +86,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from odoo import _, api, fields, models, release, tools
+from odoo import _, api, fields, models, release
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 from . import encryption_utils
@@ -1110,7 +1110,7 @@ class PanMailLicense(models.Model):
         return self.env['ir.config_parameter'].sudo().get_param('database.uuid', '')
 
     @api.model
-    @tools.ormcache()
+    @ormcache()
     def _module_version(self):
         """The version of the module that is running, as the manifest says.
 

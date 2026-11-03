@@ -40,11 +40,11 @@ import logging
 import re
 from datetime import datetime
 
-from odoo import models, api, fields, tools, _
+from odoo import models, api, fields, _
 from odoo.exceptions import AccessError, UserError
 from ..compat import (
-    Domain, activities_store_payload, attachments_store_payload, partner_ids_from_emails,
-    tracking_values,
+    Domain, activities_store_payload, attachments_store_payload, ormcache,
+    partner_ids_from_emails, tracking_values,
 )
 from odoo.http import request
 from odoo.tools import email_split, html2plaintext
@@ -1865,7 +1865,7 @@ class PanMailConversation(models.AbstractModel):
             return False
         return '/%s/static/description/icon.png' % module
 
-    @tools.ormcache('model_name')
+    @ormcache('model_name')
     def _app_icon_by_menu(self, model_name):
         """The `web_icon` of the first app whose menu opens `model_name`, or False.
 

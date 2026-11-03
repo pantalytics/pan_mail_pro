@@ -71,6 +71,13 @@ if not _CONFIG_PARAMETER_HAS_GET_PARAM:
             return self.set_str(key, value)
 
 
+try:
+    # 20 moved the cache decorator to odoo.api and warns on the old name.
+    from odoo.api import ormcache as ormcache
+except ImportError:
+    from odoo.tools import ormcache as ormcache  # 18 and 19
+
+
 def config_bool(env, key):
     """A boolean config parameter. 20 stores one as 'True'/'False' and reads
     it back typed (get_bool); 18 and 19 store a truthy string or no row."""

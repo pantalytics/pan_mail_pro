@@ -2,7 +2,6 @@
 <templates xml:space="preserve">
     <!-- 18 and 19: a list of attachments and one unlink at a time. -->
     <t t-name="pan_mail_pro.AttachmentList">
-        <AttachmentList attachments="this.props.attachments"
-                        unlinkAttachment.bind="this.props.unlinkAttachment"/>
+        <AttachmentList t-props="this.listProps"/>
     </t>
 </templates>

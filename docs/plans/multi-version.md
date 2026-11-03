@@ -151,15 +151,28 @@ touches:
   splitter broke the folder rows: `setFolder(folder.id, folderMailbox)` read
   the last mailbox's id, so Drafts opened in the wrong mailbox; the button
   carries `data-mailbox` now.
-- **Open on 18 after the browser walk** (the suite is green): "picking a
-  record did not open the composer in the pane" and "after unlinking the
-  conversation is linked to the lead", both in `tools/ui_check.py`'s New
-  Email and unlink steps. Driven by hand on the same 18 (New Email, a reply
-  first then New Email, the exact cell click) the composer opens every
-  time; what differs in the check's run is not yet found. A
-  FetchRecordError for a `mail.compose.message` id shows on the failure
-  screenshot, which points at the draft's stored composer rather than at
-  the picker.
+- **The last round of the browser walk (2026-11-03, both series)**. A
+  template expression cannot name a global: Owl compiles `Number(x)` to
+  `ctx['Number'](x)`, which is not a function on 18 or 20 (every live
+  folder opened an error dialog); the folder click is a component method
+  now. `tools/ui_check.py`'s picker selector was a comma list, so the
+  "`:has()` picker, then descendant" read as "either picker, or descendant
+  of the second"; it is wrapped in `:is()`. 20 moved `ormcache` to
+  `odoo.api` and warns on `odoo.tools.ormcache` (`compat.ormcache`). On 18
+  Odoo's `View` hands the controller it is replacing the new `resId` before
+  it has loaded the new model, so New Email on a contact after a lead
+  asked the lead's form for the contact's id ("records with IDs 3 cannot
+  be found"), which tore down the record pane and the composer with it;
+  the pane's `View` is keyed on `model/res_id` now, a fresh form per
+  record on every series. And a drag was a state write per pointer event:
+  Owl 2 coalesces them, Owl 3 renders every one, each a full Inbox render
+  slower than the pointer, so on 20 a 90px drag was drawn a step at a time
+  for two seconds after release. The drag writes `flex-basis` on the pane
+  and commits the state once on release, and the panes' 0.28s fold
+  transition is off while the pointer is down (it had the pane trailing the
+  hand by that much on every series). With those, `tools/ui_local.sh` on 20
+  reports only the two "19.0.34.0.0" lines, which are the rewritten manifest
+  of the measuring copy, not a failure.
 - `migrations/` tests assert 19.0 migrations; the folder is empty on the
   `20.0` branch, so they do not apply there.
 
@@ -288,6 +301,11 @@ delta and are still moving on the `20.0` branch.
   manifest's own series, and the tests that drive those scripts carry
   `@on_series('19.0')` and skip elsewhere. A fresh series has no customer
   database to migrate, so it starts without folders of its own.
+- **Follow and Unfollow in the Inbox on 18.** 18's follower list holds the
+  followers and Add Followers; the toggle is a button of the chatter's
+  own, and the Inbox has no chatter. On 18 the Followers button opens the
+  list and that is all; following a record is done on its form. 19 and 20
+  carry the toggle in the list, and the browser check asserts it there.
 
 ## Checklist
 
@@ -318,7 +336,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] Installs on 18 (2026-11-03): one view anchor moved to the notebook; `security/` loads unchanged
 - [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03: 1314 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file)
 - [ ] Suite green on CI's `odoo:18.0` (needs the branch)
-- [ ] UI job green: the Inbox renders on 18's `@mail`, every `tools/ui_check.py` assertion
+- [x] UI job green locally: the Inbox renders on 18's `@mail`, every `tools/ui_check.py` assertion (2026-11-03, `tools/ui_local.sh --series=18.0`; the CI job needs the branch)
 - [x] Upgrade job: skips cleanly while no `v18.0.*` tag exists (and on the pinned `v19.0.*` row), runs once one does (2026-11-03, `tools/ci_odoo.sh`)
 - [x] `version-bump` and `port-drift` read a series branch right: last three numbers and the merged main, not main's tip (2026-11-03, measured on a simulated `18.0` and `20.0` cut and port)
 - [ ] Enterprise column walked on an 18 Enterprise instance
@@ -336,7 +354,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] Tracking rows without `mail.tracking.value`, `user_writeable=True` on the `res.users` fields, `ir.attachment` without `datas` (`compat.attachment_bytes`, fixtures on `raw`), the Files tab's store payload, `odoo.http` moves in the tests (2026-11-03)
 - [x] Installs; suite green locally (2026-11-03: 1314 tests, 0 failed, 0 errors through `tools/odoo_local.sh --series=20.0`)
 - [ ] Suite green on CI's `odoo:20.0` (needs the branch)
-- [ ] UI job green
+- [x] UI job green locally (2026-11-03, `tools/ui_local.sh --series=20.0`: every assertion but the two version lines the measuring copy's rewritten manifest fails on purpose)
 - [ ] Enterprise column walked on a 20 Enterprise instance
 - [ ] Cloudpepper dev instance on a 20 server
 - [ ] First tag `v20.0.x.y.z`

@@ -51,7 +51,7 @@ WIDE = 2000
 # link picker and New Email open: the modal that holds its list.
 # Odoo's own record picker: 19 and 20 mark its content, 18 does not, and a
 # list with rows inside a dialog is the picker on all three.
-ODOO_PICKER = '.modal:has(.o_select_create_dialog_content), .modal:has(.o_list_view)'
+ODOO_PICKER = ':is(.modal:has(.o_select_create_dialog_content), .modal:has(.o_list_view))'
 # A step is a name, an answer and the way to change it. Wider than this and it
 # stops being one line the eye can cross.
 MAX_STEP_WIDTH = 800
@@ -3683,6 +3683,15 @@ class Checks:
         second = '.o-mail-FollowerList-followBtn' if following else '.o-mail-FollowerList-unfollowBtn'
         step = -1 if following else 1
         self.shot('inbox-followers.png')
+        if not menu.query_selector(first):
+            # 18's follower list has no Follow or Unfollow in it: that toggle
+            # is a button of the chatter's own there, and the Inbox has no
+            # chatter. The list is still the list (docs/plans/multi-version.md
+            # names the gap); the round trip is 19's and 20's.
+            if not menu.query_selector('.o-mail-Follower'):
+                self.fail('the follower list names no follower')
+            page.keyboard.press('Escape')
+            return
         menu.query_selector(first).click()
         page.wait_for_timeout(900)
         if count() != before + step:
@@ -3802,7 +3811,11 @@ class Checks:
         class names -- the moment this screen grows a file list of its own,
         this check is what says so.
         """
-        card = page.query_selector('.o_mailpro_files .o-mail-AttachmentContainer')
+        # 19 and 20 draw an AttachmentContainer; 18 a card, or an image
+        # straight on the list when the file is one.
+        card = page.query_selector(
+            '.o_mailpro_files :is(.o-mail-AttachmentContainer, .o-mail-AttachmentCard, '
+            '.o-mail-AttachmentImage)')
         if not card:
             self.fail("the Files tab draws no attachment card")
             return

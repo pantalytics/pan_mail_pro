@@ -1436,6 +1436,17 @@ $mailpro-band-gutter: 3.5rem;
                     padding $mailpro-fold, opacity $mailpro-tap 0.08s;
     }
 
+    // A drag is the one time a pane must not ease: it follows the pointer,
+    // or it trails it by the fold's 0.28s and lands after the hand let go.
+    .o_mailpro_panes.o_mailpro_dragging {
+        .o_mailpro_mailbox_list,
+        .o_mailpro_conversation_list,
+        .o_mailpro_conversation,
+        .o_mailpro_odoo_record {
+            transition: none;
+        }
+    }
+
     .o_mailpro_mailbox_list.o_mailpro_folded,
     .o_mailpro_conversation_list.o_mailpro_folded,
     .o_mailpro_conversation.o_mailpro_folded,

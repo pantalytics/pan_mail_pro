@@ -1867,6 +1867,17 @@ export class ConversationView extends Component {
     }
 
     /**
+     * The folder button's click: the mailbox is read off the button
+     * (`data-mailbox`), see the note in the template. The parse lives here
+     * because a template expression cannot name a global: Owl compiles
+     * `Number(x)` to `ctx['Number'](x)`, which is not a function.
+     */
+    folderClicked(folderId, ev) {
+        const mailbox = ev.currentTarget.dataset.mailbox;
+        return this.setFolder(folderId, mailbox ? parseInt(mailbox, 10) : null);
+    }
+
+    /**
      * Open a folder. A folder belongs to the mailbox it sits under, so
      * clicking one in a mailbox you are not in switches mailbox and folder
      * in a single read rather than two.

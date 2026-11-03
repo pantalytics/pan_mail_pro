@@ -19,6 +19,22 @@ export class MailProAttachmentList extends Component {
         this.props = useProps();
     }
 
+    /**
+     * 18's list wants the height its images are drawn at (`imagesHeight`,
+     * required; without it the image asks the server for `height=undefined`
+     * and gets a 500); 19's list has no such prop. Read off the component.
+     */
+    get listProps() {
+        const props = {
+            attachments: this.props.attachments,
+            unlinkAttachment: (attachment) => this.props.unlinkAttachment(attachment),
+        };
+        if (AttachmentList.props?.includes("imagesHeight")) {
+            props.imagesHeight = 160;
+        }
+        return props;
+    }
+
     /** 20 groups duplicates under one card; this screen has no duplicates to fold. */
     get groups() {
         return this.props.attachments.map((attachment) => ({ attachment, duplicates: [] }));

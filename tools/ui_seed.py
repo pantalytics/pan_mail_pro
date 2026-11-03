@@ -17,6 +17,13 @@ rpc = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/object')
 def call(model, method, *args, **kw):
     return rpc.execute_kw(db, uid, pwd, model, method, list(args), kw)
 # One provider row -- Mail Pro runs on one, and a second is refused.
+# No onboarding tour: on a fresh database Odoo walks the admin through the
+# screen with a pointer that sits over the page and takes the clicks the
+# check makes (20 starts one on the Inbox; a check that times out on
+# "Discard" is that pointer).
+if 'tour_enabled' in call('res.users', 'fields_get', [], attributes=['type']):
+    call('res.users', 'write', [uid], {'tour_enabled': False})
+
 call('pan.mail.provider', 'create', {
     'provider': 'outlook', 'client_id': 'demo-client', 'client_secret': 'demo-secret',
     'tenant_id': '11111111-2222-3333-4444-555555555555'})

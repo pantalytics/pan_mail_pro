@@ -514,8 +514,8 @@ class TestLiveMailbox(TransactionCase):
             'static', 'src', 'xml', 'conversation_view.xml')
         with open(path, encoding='utf-8') as handle:
             source = handle.read()
-        live = source.find('<t t-elif="state.live">')
-        selected = source.find('<t t-elif="state.selected">')
+        live = source.find('<t t-elif="this.state.live">')
+        selected = source.find('<t t-elif="this.state.selected">')
         self.assertNotEqual(live, -1, 'the live branch is gone from the Inbox')
         self.assertLess(live, selected)
 

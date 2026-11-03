@@ -486,14 +486,31 @@ export function usePanes() {
             handle.setPointerCapture?.(ev.pointerId);
             handle.classList.add("o_mailpro_split_dragging");
 
+            // While the pointer is down the width goes straight onto the
+            // pane; the state is written once, on release. A state write
+            // re-renders the whole Inbox, which takes longer than the gap
+            // between two pointer events, and Owl 3 renders every write
+            // rather than the last one (measured on 20: a 90px drag drawn
+            // a step at a time for two seconds after the pointer let go).
+            const panes = handle.closest(".o_mailpro_panes");
+            const el = panes?.querySelector(`.o_mailpro_${pane}`);
+            // No easing while the pointer is down (the stylesheet reads it).
+            panes?.classList.add("o_mailpro_dragging");
+            let width = startWidth;
             const onMove = (move) => {
-                resize(pane, startWidth + (move.clientX - startX), total);
+                width = clamp(startWidth + (move.clientX - startX), PANES[pane].min,
+                              ceiling(pane, total));
+                if (el) {
+                    el.style.flexBasis = `${width}px`;
+                }
             };
             const stop = () => {
                 handle.removeEventListener("pointermove", onMove);
                 handle.removeEventListener("pointerup", stop);
                 handle.removeEventListener("pointercancel", stop);
                 handle.classList.remove("o_mailpro_split_dragging");
+                panes?.classList.remove("o_mailpro_dragging");
+                state[pane] = width;
                 save();
             };
             handle.addEventListener("pointermove", onMove);

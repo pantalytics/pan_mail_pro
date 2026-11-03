@@ -1129,7 +1129,7 @@
                 t-att-class="{ 'o_mailpro_folder_active': isOpenMailbox and folder.id === this.state.folder }"
                 t-att-aria-current="isOpenMailbox and folder.id === this.state.folder ? 'true' : undefined"
                 t-att-data-mailbox="folderMailbox or ''"
-                t-on-click="(ev) => this.setFolder(folder.id, ev.currentTarget.dataset.mailbox ? Number(ev.currentTarget.dataset.mailbox) : null)">
+                t-on-click="(ev) => this.folderClicked(folder.id, ev)">
             <span class="d-flex align-items-center gap-2 text-truncate">
                 <i t-attf-class="fa fa-fw {{ this.folderIcon(folder) }} o_mailpro_folder_icon" aria-hidden="true"/>
                 <span t-esc="folder.name"/>
@@ -1547,7 +1547,17 @@
                     </div>
                 </div>
                 <t t-slot="link"/>
-                <View t-props="this.viewProps"/>
+                <!--
+                    Keyed on the record: another record is a fresh form, not
+                    a prop update. Odoo's View reloads itself when the model
+                    changes, but on 18 the controller it is replacing is
+                    handed the new id first and reads it as one of its own
+                    (a contact's id on a lead's form: "records with IDs 3
+                    cannot be found"), which tore down the pane and the
+                    composer New email was opening beside it.
+                -->
+                <View t-key="this.props.record.model + '/' + this.props.record.res_id"
+                      t-props="this.viewProps"/>
             </t>
             <div t-else="" class="o_mailpro_empty">
                 <h3 class="o_mailpro_empty_title" t-esc="this.props.record.name"/>
