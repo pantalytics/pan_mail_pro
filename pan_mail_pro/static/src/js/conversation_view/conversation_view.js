@@ -19,7 +19,8 @@
  * over the screen; that lives in `use_composer.js`.
  */
 
-import { Component, useState, useSubEnv, useRef, onWillStart, onMounted, onPatched, onError, markup, toRaw } from "@odoo/owl";
+import { Component, onWillStart, onMounted, onPatched, onError, markup, toRaw } from "@odoo/owl";
+import { useState, useSubEnv, useRef, useProps } from "@pan_mail_pro/compat/owl";
 import { registry } from "@web/core/registry";
 import { browser } from "@web/core/browser/browser";
 import { useBus, useService } from "@web/core/utils/hooks";
@@ -35,6 +36,8 @@ import { SearchModel } from "@web/search/search_model";
 import { SearchBar } from "@web/search/search_bar/search_bar";
 import { View } from "@web/views/view";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
+import { defineProps } from "@pan_mail_pro/compat/owl";
+import { fetchFollowers, storeModel, storeRecords, threadModel } from "@pan_mail_pro/compat/store";
 // The wrapper Odoo's own navbar puts around every systray item, for the
 // same reason it does: this bar is the only one on the screen, and one
 // broken counter must not take the whole Inbox with it.
@@ -47,7 +50,7 @@ import { usePanes } from "./use_panes";
 import { useImprove } from "../improve";
 import { LinkDialog } from "./link_dialog";
 import { VerifyDialog } from "./verify_dialog";
-import { AttachmentList } from "@mail/core/common/attachment_list";
+import { MailProAttachmentList } from "@pan_mail_pro/compat/attachment_list";
 import { useAttachmentUploader } from "@mail/core/common/attachment_uploader_hook";
 import { FileUploader } from "@web/views/fields/file_handler";
 import { useComposer, ComposerForm } from "./use_composer";
@@ -200,7 +203,7 @@ const QUOTE_MARKERS = [
 export class OdooRecordPane extends Component {
     static template = "pan_mail_pro.OdooRecordPane";
     static components = { View };
-    static props = {
+    static propsSchema = {
         record: { type: Object, optional: true },
         zoomed: { type: Boolean, optional: true },
         zoomLabel: { type: String, optional: true },
@@ -209,6 +212,7 @@ export class OdooRecordPane extends Component {
     };
 
     setup() {
+        this.props = useProps();
         this.action = useService("action");
         this.state = useState({ failed: false });
         // The form view inherits the action's `config` and names the action
@@ -246,14 +250,15 @@ export class OdooRecordPane extends Component {
         });
     }
 }
+defineProps(OdooRecordPane);
 
 export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
     static components = {
-        OdooRecordPane, ComposerForm, Activity, AttachmentList, FileUploader,
+        OdooRecordPane, ComposerForm, Activity, MailProAttachmentList, FileUploader,
         Dropdown, FollowerList, SearchBar, ErrorHandler,
     };
-    static props = ["*"];
+    static propsSchema = ["*"];
     // A client action's name in the browser tab is the component's, not the
     // action record's, and without this the tab reads "Unnamed". The
     // breadcrumb it also fed is gone with the navbar this action replaced;
@@ -261,6 +266,7 @@ export class ConversationView extends Component {
     static displayName = _t("Inbox");
 
     setup() {
+        this.props = useProps();
         this.orm = useService("orm");
         this.action = useService("action");
         this.dialog = useService("dialog");
@@ -324,16 +330,17 @@ export class ConversationView extends Component {
             field: useService("field"),
             name: useService("name"),
             dialog: this.dialog,
-            treeProcessor: useService("tree_processor"),
+            // 19 and 20 have the service; 18 has neither it nor a use for it.
+            treeProcessor: "tree_processor" in this.env.services ? useService("tree_processor") : undefined,
         });
         useSubEnv({ searchModel: this.searchModel });
         useBus(this.searchModel, "update", () => this.onSearch());
         // The pane row, so Expand can measure where the record's own pane
         // starts before it slides over the other three.
-        this.panesRef = useRef("panes");
+        this.panesRef = useRef("panesRef");
         // The whole screen, top bar included: where a focus is looked for
         // once the DOM has been redrawn.
-        this.rootRef = useRef("root");
+        this.rootRef = useRef("rootRef");
 
         // Door 1: the chatter's Open in mail names the record it came from,
         // and whether one conversation is the answer or the reader has to
@@ -1944,6 +1951,17 @@ export class ConversationView extends Component {
     }
 
     /**
+     * The folder button's click: the mailbox is read off the button
+     * (`data-mailbox`), see the note in the template. The parse lives here
+     * because a template expression cannot name a global: Owl compiles
+     * `Number(x)` to `ctx['Number'](x)`, which is not a function.
+     */
+    folderClicked(folderId, ev) {
+        const mailbox = ev.currentTarget.dataset.mailbox;
+        return this.setFolder(folderId, mailbox ? parseInt(mailbox, 10) : null);
+    }
+
+    /**
      * Open a folder. A folder belongs to the mailbox it sits under, so
      * clicking one in a mailbox you are not in switches mailbox and folder
      * in a single read rather than two.
@@ -2289,6 +2307,7 @@ export class ConversationView extends Component {
             o_mailpro_small: panes.small,
             o_mailpro_narrow: panes.narrow,
             o_mailpro_can_link: this.state.canLink,
+            o_mailpro_touring: this.tour.touring(),
             // Reading on a phone: the bar with the search, the mailboxes and
             // New email belongs to the list, and the mail gets its height.
             o_mailpro_reading: panes.small && (this.conversationOpen || panes.zoom),
@@ -2421,7 +2440,7 @@ export class ConversationView extends Component {
      */
     get files() {
         return this.fileIds
-            .map((id) => this.mailStore["ir.attachment"].get(id))
+            .map((id) => storeModel(this.mailStore, "Attachment", "ir.attachment").get(id))
             .filter(Boolean);
     }
 
@@ -2433,7 +2452,7 @@ export class ConversationView extends Component {
     get recordThread() {
         const record = this.selectedRecord;
         return record
-            ? this.mailStore.Thread.insert({ model: record.model, id: record.res_id })
+            ? threadModel(this.mailStore).insert({ model: record.model, id: record.res_id })
             : null;
     }
 
@@ -2450,7 +2469,7 @@ export class ConversationView extends Component {
      * read and write access the list needs to offer Add Followers.
      */
     loadFollowers() {
-        this.recordThread?.fetchThreadData(["followers"]);
+        fetchFollowers(this.recordThread, this.orm);
     }
 
     /** The wizard closed: whoever it added is on the list now. */
@@ -2501,7 +2520,8 @@ export class ConversationView extends Component {
      *
      * `read_conversation` answers with the rows the tab count needs; Odoo's
      * activity card needs the record the chatter draws from, which is what
-     * `activity_format` returns. It is the same call Odoo's own activity
+     * the store payload holds (`activity_store`, which asks the series'
+     * own formatter). It is the same shape Odoo's own activity
      * popover makes, ACLs and all, so the ids are the only thing we add.
      */
     async loadActivities(seq) {
@@ -2515,7 +2535,7 @@ export class ConversationView extends Component {
         if (known.length === ids.length && ids.every((id, i) => known[i] === id)) {
             return;
         }
-        const data = await this.orm.silent.call("mail.activity", "activity_format", [ids]);
+        const data = await this.orm.silent.call("pan.mail.conversation", "activity_store", [ids]);
         if (seq === this.conversationSeq) {
             this.mailStore.insert(data);
             this.state.activityIds = ids;
@@ -2525,7 +2545,7 @@ export class ConversationView extends Component {
     /** The store records behind this conversation's activities, soonest first. */
     get activities() {
         const ids = new Set(this.state.activityIds);
-        return Object.values(this.mailStore["mail.activity"].records)
+        return storeRecords(storeModel(this.mailStore, "Activity", "mail.activity"))
             .filter((activity) => ids.has(activity.id))
             .sort((a, b) => compareDatetime(a.date_deadline, b.date_deadline) || a.id - b.id);
     }
@@ -3142,5 +3162,6 @@ export class ConversationView extends Component {
         });
     }
 }
+defineProps(ConversationView);
 
 registry.category("actions").add("pan_mail_conversation_view", ConversationView);

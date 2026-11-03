@@ -1,0 +1,76 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<odoo>
+    <!-- 20: the rules live in ir.access.csv, with the ACL rows; this file keeps the groups. --><data noupdate="0">
+
+        <!--
+            Mailbox manager.
+
+            Splits "may configure mailboxes and accounts" off from
+            base.group_system, so granting it no longer means granting full
+            system administration. Implied by base.group_system, so existing
+            administrators keep every right they had before this module version.
+        -->
+        <!--
+            What it grants: configuring mailboxes, email accounts and the
+            internal domain list. (It also gated the incoming mail triage
+            queue, which 19.0.7.0.0 removed.)
+
+            Only `name` is set. Odoo 19 reworked res.groups and `category_id`
+            no longer exists on it — setting it does not warn, it fails the
+            module install outright.
+        -->
+        <record id="group_mail_mailbox_manager" model="res.groups">
+            <field name="name">Mailbox Manager</field>
+        </record>
+
+        <record id="base.group_system" model="res.groups">
+            <field name="implied_ids" eval="[(4, ref('pan_mail_pro.group_mail_mailbox_manager'))]"/>
+        </record>
+
+        <!--
+            A personal mailbox is a person's own address, and it carries the
+            owner's identity: mail sent from it is signed by the owner's
+            delegated token. Listing every colleague's personal mailbox to every
+            internal user is both an information leak and the discovery half of
+            the send-as problem that _is_sendable_by() closes.
+
+            Shared and notification mailboxes stay visible to everyone: they are
+            company addresses and the composer needs to offer them.
+        -->
+        <!--
+            An account is a set of credentials. Even with the token fields
+            themselves restricted to base.group_system, the row discloses who
+            authorized what and when. A user needs to see their own; a service
+            account (user_id unset) belongs to the company and is what makes a
+            Gmail shared mailbox work, so it stays readable.
+        -->
+        <!--
+            An access row names a sign-in and what it may do on a mailbox.
+            Same shape as the account rule: a user reads the rows of their
+            own sign-in and of the service accounts; a manager reads all.
+        -->
+        <!--
+            The three tables that record what happened to mail are mailbox
+            managers only, with no base.group_user access row at all.
+            `pan.mail.routing.log` keeps the subject, the sender and the
+            destination of every incoming mail; `pan.mail.thread.link` and
+            `pan.mail.message.ref` map correspondence onto records. None of
+            them inherit the ACL of the document they point at, so read access
+            there hands any internal user the subject lines and correspondents
+            of HR, legal and sales records they cannot open. The menu was
+            restricted to base.group_system, which is not an ACL: one
+            search_read over RPC returned the table. Every caller inside the
+            module already goes through sudo(), so the rows are gone rather
+            than narrowed.
+        -->
+
+        <!--
+            A draft is a half-written answer, and it belongs to one person
+            until they send it. No manager exception and no company-wide read:
+            the mailbox managers who may read every mail in a shared mailbox
+            still may not read what a colleague has not sent. One rule, all
+            four operations, every internal user - an administrator's own
+            drafts are the only ones they see here.
+        -->
+        </data>
+</odoo>

@@ -34,7 +34,7 @@ import { useService } from "@web/core/utils/hooks";
 import { session } from "@web/session";
 import { user } from "@web/core/user";
 import { _t } from "@web/core/l10n/translation";
-import { tourState } from "@web_tour/js/tour_state";
+import { tourState } from "@pan_mail_pro/compat/tour";
 
 /** The tour's name, here, in the registry and on its `web_tour.tour` row. */
 export const INBOX_TOUR = "pan_mail_pro_inbox_tour";
@@ -246,5 +246,16 @@ export function useInboxTour() {
         await start();
     }
 
-    return { start, offer, take };
+    /**
+     * Whether this tour is the current one, for the Inbox's root class:
+     * the panes do not ease while it runs. 20 places its pointer once, at
+     * the trigger as it stands when the step opens, so a button that is
+     * still sliding (the record swap at 1280px) leaves the pointer in the
+     * middle of nowhere; 18 and 19 follow the trigger and lose nothing.
+     */
+    function touring() {
+        return tourState.getCurrentTour() === INBOX_TOUR;
+    }
+
+    return { start, offer, take, touring };
 }

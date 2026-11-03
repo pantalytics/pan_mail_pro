@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <!-- 18 and 19: a list of attachments and one unlink at a time. -->
+    <t t-name="pan_mail_pro.AttachmentList">
+        <AttachmentList t-props="this.listProps"/>
+    </t>
+</templates>

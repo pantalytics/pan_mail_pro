@@ -1456,6 +1456,30 @@ $mailpro-band-gutter: 3.5rem;
                     padding $mailpro-fold, opacity $mailpro-tap 0.08s;
     }
 
+    // A drag is the one time a pane must not ease: it follows the pointer,
+    // or it trails it by the fold's 0.28s and lands after the hand let go.
+    .o_mailpro_panes.o_mailpro_dragging {
+        .o_mailpro_mailbox_list,
+        .o_mailpro_conversation_list,
+        .o_mailpro_conversation,
+        .o_mailpro_odoo_record {
+            transition: none;
+        }
+    }
+
+    // Nor while the tour runs (`o_mailpro_touring`, inbox_tour.js): 20's
+    // pointer is placed once, where the trigger stands when the step opens,
+    // and a fold button still sliding leaves it beside nothing.
+    &.o_mailpro_touring {
+        .o_mailpro_mailbox_list,
+        .o_mailpro_conversation_list,
+        .o_mailpro_conversation,
+        .o_mailpro_odoo_record,
+        .o_mailpro_split_toggle {
+            transition: none;
+        }
+    }
+
     .o_mailpro_mailbox_list.o_mailpro_folded,
     .o_mailpro_conversation_list.o_mailpro_folded,
     .o_mailpro_conversation.o_mailpro_folded,

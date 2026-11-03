@@ -7,6 +7,7 @@ fill an empty answer, both only for a mailbox manager, and the domain never
 comes from a public mail provider.
 """
 from odoo.tests import TransactionCase, tagged
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -23,7 +24,7 @@ class TestSetupDefaults(TransactionCase):
             'name': 'Plain User',
             'login': 'plain@acme.test',
             'email': 'plain@acme.test',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
+            groups_field(cls.env): [(6, 0, [cls.env.ref('base.group_user').id])],
         })
         # Whatever the database shipped with is not this test's starting point.
         cls.Domain.search([]).unlink()

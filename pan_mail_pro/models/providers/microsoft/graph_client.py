@@ -11,6 +11,7 @@ import time  # noqa: F401
 from datetime import datetime, timedelta
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
+from ....compat import attachment_bytes
 from ... import encryption_utils
 from .. import http_utils
 from ...mail_provider_client import (
@@ -836,14 +837,15 @@ class MicrosoftGraphClient(models.AbstractModel):
                 return match.group(0)
 
             attachment = self.env['ir.attachment'].sudo().browse(att_id)
-            if not attachment.exists() or not attachment.datas:
+            if not attachment.exists() or not attachment_bytes(attachment):
                 return match.group(0)
 
             counter[0] += 1
             content_id = f"odoo_inline_image_{counter[0]}"
 
             content_type = attachment.mimetype or mimetypes.guess_type(attachment.name or '')[0] or 'application/octet-stream'
-            att_data = attachment.datas
+            # `raw`, not `datas`: 20 has no `datas` field, and Graph wants base64.
+            att_data = base64.b64encode(attachment_bytes(attachment))
 
             inline_attachments.append({
                 '@odata.type': '#microsoft.graph.fileAttachment',
@@ -1093,7 +1095,7 @@ class MicrosoftGraphClient(models.AbstractModel):
                 content_type = (attachment.mimetype
                                 or mimetypes.guess_type(attachment.name or '')[0]
                                 or 'application/octet-stream')
-                attachment_data = attachment.datas
+                attachment_data = base64.b64encode(attachment_bytes(attachment))
                 if attachment_data:
                     regular_attachments.append({
                         '@odata.type': '#microsoft.graph.fileAttachment',

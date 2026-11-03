@@ -33,17 +33,35 @@ fi
 # pull request may have taken the next number since this branch was cut. Branch
 # protection requires the branch to be up to date, so this runs again after
 # every merge and the second of two same-numbered branches has to bump again.
-python3 - "$BASE_REF" <<'PY'
+python3 - "$BASE_REF" "$MERGE_BASE" <<'PY'
 import ast, subprocess, sys
-base = sys.argv[1]
+base, merge_base = sys.argv[1], sys.argv[2]
 
 def version_of(text):
     return tuple(int(p) for p in ast.literal_eval(text)['version'].split('.'))
 
-def show(path):
-    return subprocess.run(['git', 'show', f'{base}:{path}'], capture_output=True, text=True)
+def show(path, ref=base):
+    return subprocess.run(['git', 'show', f'{ref}:{path}'], capture_output=True, text=True)
 
 new = version_of(open('pan_mail_pro/__manifest__.py').read())
+
+# A series branch (18.0, 20.0) carries main's version under its own series:
+# 18.0.<x.y.z of the main it was cut from> (docs/plans/multi-version.md §4).
+# Comparing 18.0.34.0.0 with main's 19.0.34.0.0 says nothing, and comparing
+# with main's tip fails the moment main moves on. So the rule there is the
+# last three numbers against the main this branch last merged: never below.
+merged = show('pan_mail_pro/__manifest__.py', merge_base)
+if merged.returncode == 0:
+    merged = version_of(merged.stdout)
+    if new[:2] != merged[:2]:
+        if new[2:] < merged[2:]:
+            print(f"::error file=pan_mail_pro/__manifest__.py::This {new[0]}.{new[1]} branch is at "
+                  f"{'.'.join(map(str, new))}, below the {'.'.join(map(str, merged))} it merged. "
+                  f"Take {new[0]}.{new[1]}.{'.'.join(map(str, merged[2:]))} or higher.")
+            sys.exit(1)
+        print(f"Series branch {new[0]}.{new[1]}: {'.'.join(map(str, new))} keeps up with "
+              f"{'.'.join(map(str, merged))}, the main it merged.")
+        sys.exit(0)
 # Up to 19.0.30.2.0 the module sat at the root, with pan_mail_pro a symlink to
 # it that `git show` does not follow.
 found = show('pan_mail_pro/__manifest__.py')

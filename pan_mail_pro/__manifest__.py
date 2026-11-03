@@ -139,7 +139,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.33.5.0',
+    'version': '19.0.34.1.0',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm', 'web_tour'],
     'external_dependencies': {
@@ -172,6 +172,7 @@
     ],
     'assets': {
         'web.assets_backend': [
+            'pan_mail_pro/static/src/compat/icons.scss',
             'pan_mail_pro/static/src/scss/setup_status.scss',
             'pan_mail_pro/static/src/scss/mailbox_form.scss',
             'pan_mail_pro/static/src/scss/conversation_view.scss',
@@ -183,6 +184,12 @@
             'pan_mail_pro/static/src/js/sync_level_field.js',
             'pan_mail_pro/static/src/js/up_and_running.js',
             'pan_mail_pro/static/src/js/connect_banner.js',
+            'pan_mail_pro/static/src/compat/owl.js',
+            'pan_mail_pro/static/src/compat/chatter.js',
+            'pan_mail_pro/static/src/compat/store.js',
+            'pan_mail_pro/static/src/compat/tour.js',
+            'pan_mail_pro/static/src/compat/attachment_list.js',
+            'pan_mail_pro/static/src/compat/attachment_list.xml',
             'pan_mail_pro/static/src/js/chatter_door.js',
             'pan_mail_pro/static/src/js/improve.js',
             'pan_mail_pro/static/src/js/wallet_noise.js',
@@ -202,6 +209,8 @@
             'pan_mail_pro/static/src/xml/chatter_door.xml',
             'pan_mail_pro/static/src/xml/conversation_view.xml',
             'pan_mail_pro/static/src/xml/link_dialog.xml',
+            # Last: it inherits templates listed above (docs/plans/multi-version.md).
+            'pan_mail_pro/static/src/compat/templates.xml',
         ],
         # Help improve Mail Pro: posthog-js (static/lib/posthog, MIT), in a
         # bundle of its own that improve.js loads only on an opted-in

@@ -15,6 +15,8 @@ message that carries the header: every other mail Odoo builds is untouched.
 """
 from odoo import models
 
+from ..compat import MAIL_SERVER_BUILD
+
 from .mail_mail import ON_COPY
 from .neutralization import COPY_FROM_HEADER
 
@@ -22,8 +24,17 @@ from .neutralization import COPY_FROM_HEADER
 class IrMailServer(models.Model):
     _inherit = 'ir.mail_server'
 
-    def _build_email__(self, email_from, *args, **kwargs):  # noqa: PLW3201 - Odoo's own name
+    def _copy_from(self, email_from, kwargs):
         headers = kwargs.get('headers') or {}
         if self.env.context.get(ON_COPY) and headers.get(COPY_FROM_HEADER):
-            email_from = headers[COPY_FROM_HEADER]
-        return super()._build_email__(email_from, *args, **kwargs)
+            return headers[COPY_FROM_HEADER]
+        return email_from
+
+    # The builder is `_build_email__` on 19 and 20, `build_email` on 18
+    # (docs/plans/multi-version.md); the override wears the running name.
+    if MAIL_SERVER_BUILD == '_build_email__':
+        def _build_email__(self, email_from, *args, **kwargs):  # noqa: PLW3201 - Odoo's own name
+            return super()._build_email__(self._copy_from(email_from, kwargs), *args, **kwargs)
+    else:
+        def build_email(self, email_from, *args, **kwargs):
+            return super().build_email(self._copy_from(email_from, kwargs), *args, **kwargs)

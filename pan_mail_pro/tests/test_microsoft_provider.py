@@ -29,6 +29,7 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     ERROR_THROTTLED,
     get_provider_client,
 )
+from .common import registry_test_mode
 
 # Patch requests.post specifically, not the whole module — the client catches
 # requests.exceptions.RequestException, which must stay a real class.
@@ -219,7 +220,7 @@ class TestMicrosoftTokenLifecycle(TransactionCase):
             access_token='stale', refresh_token='revoked',
             token_expiry=fields.Datetime.now() - timedelta(minutes=1))
         self.assertTrue(account.connected)
-        with self.enter_registry_test_mode(), \
+        with registry_test_mode(self), \
                 patch(GRAPH_POST, side_effect=self._http_error({'error': 'invalid_grant'})):
             try:
                 self.client.get_valid_token(account)

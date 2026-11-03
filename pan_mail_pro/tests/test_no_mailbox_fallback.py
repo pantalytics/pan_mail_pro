@@ -16,6 +16,7 @@ from odoo.tests import TransactionCase, tagged
 from odoo.tools import mute_logger
 
 from .common import send_and_capture
+from .common import groups_field
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -60,7 +61,7 @@ class TestNoMailboxFallback(TransactionCase):
             'name': 'Welcome Test',
             'login': 'welcome_test@example.com',
             'email': 'welcome_test@example.com',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            groups_field(self.env): [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.assertTrue(user.exists())
 

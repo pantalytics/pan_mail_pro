@@ -1,0 +1,17 @@
+id,name,model_id,group_id/id,operation,domain
+access_pan_mail_mailbox_user,pan.mail.mailbox,pan.mail.mailbox,base.group_user,r,"['|', ('mailbox_type', '!=', 'personal'), ('owner_user_id', '=', user.id)]"
+access_pan_mail_mailbox_manager,pan.mail.mailbox,pan.mail.mailbox,pan_mail_pro.group_mail_mailbox_manager,crud,
+access_pan_mail_account_user,pan.mail.account,pan.mail.account,base.group_user,r,"[('user_id', 'in', [user.id, False])]"
+access_pan_mail_account_manager,pan.mail.account,pan.mail.account,pan_mail_pro.group_mail_mailbox_manager,crud,
+access_pan_mail_coverage_user,pan.mail.coverage,pan.mail.coverage,base.group_user,cru,
+access_pan_mail_message_ref_manager,pan.mail.message.ref,pan.mail.message.ref,pan_mail_pro.group_mail_mailbox_manager,crud,
+access_pan_mail_thread_link_manager,pan.mail.thread.link,pan.mail.thread.link,pan_mail_pro.group_mail_mailbox_manager,crud,
+access_pan_mail_routing_log_manager,pan.mail.routing.log,pan.mail.routing.log,pan_mail_pro.group_mail_mailbox_manager,crud,
+access_pan_mail_error_manager,pan.mail.error,pan.mail.error,pan_mail_pro.group_mail_mailbox_manager,rd,
+access_pan_mail_domain_user,pan.mail.domain,pan.mail.domain,base.group_user,r,
+access_pan_mail_domain_manager,pan.mail.domain,pan.mail.domain,pan_mail_pro.group_mail_mailbox_manager,crud,
+access_pan_mail_provider_admin,pan.mail.provider,pan.mail.provider,base.group_system,crud,
+access_pan_mail_license_system,pan.mail.license,pan.mail.license,base.group_system,crud,
+access_pan_mail_draft_user,pan.mail.draft,pan.mail.draft,base.group_user,crud,"[('user_id', '=', user.id)]"
+access_pan_mail_mailbox_access_user,pan.mail.mailbox.access,pan.mail.mailbox.access,base.group_user,r,"[('account_id.user_id', 'in', [user.id, False])]"
+access_pan_mail_mailbox_access_manager,pan.mail.mailbox.access,pan.mail.mailbox.access,pan_mail_pro.group_mail_mailbox_manager,crud,

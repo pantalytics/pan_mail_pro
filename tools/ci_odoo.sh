@@ -9,6 +9,11 @@
 #   tools/ci_odoo.sh --mode=module-only  # fresh install with only pan_mail_pro/
 #                                        # on the addons path, as Odoo.sh and
 #                                        # the Apps store deploy it
+#   tools/ci_odoo.sh --series=20.0  # another series: the checkout cut for it
+#                                   # (tools/cut_series.sh) against odoo:20.0.
+#                                   # What the series branch gets, measured
+#                                   # on main before the port. Fresh and
+#                                   # module-only; an upgrade has no tag there.
 #
 # Env:
 #   KEEP_DB=1      leave the Postgres container running afterwards
@@ -20,9 +25,11 @@ set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 MODE=fresh
+WANT_SERIES=
 for arg in "$@"; do
     case "$arg" in
         --mode=*) MODE="${arg#--mode=}" ;;
+        --series=*) WANT_SERIES="${arg#--series=}" ;;
         *) echo "unknown argument: $arg" >&2; exit 2 ;;
     esac
 done
@@ -36,6 +43,21 @@ manifest = ast.literal_eval(open(f"{sys.argv[1]}/pan_mail_pro/__manifest__.py").
 print(".".join(manifest['version'].split('.')[:2]))
 PY
 )
+# Another series than the manifest's: a copy of the checkout, cut for it,
+# stands in for the checkout from here on. The loader refuses a manifest of
+# another series, so there is no measuring 20 on a 19 tree as it stands.
+CUT_TREE=
+if [ -n "$WANT_SERIES" ] && [ "$WANT_SERIES" != "$SERIES" ]; then
+    if [ "$MODE" = "upgrade" ]; then
+        echo "--series= with --mode=upgrade: no v${WANT_SERIES}.* release was cut from this tree; nothing to upgrade from." >&2
+        exit 2
+    fi
+    CUT_TREE=$(mktemp -d)
+    git -C "$REPO" ls-files -z --cached --others --exclude-standard | (cd "$REPO" && xargs -0 cp --parents -t "$CUT_TREE")
+    "$REPO/tools/cut_series.sh" "$WANT_SERIES" "$CUT_TREE"
+    chmod -R a+rX "$CUT_TREE"
+    SERIES=$WANT_SERIES
+fi
 echo "Testing against Odoo ${SERIES} (mode: ${MODE})"
 
 NET=pan_ci_net
@@ -58,13 +80,14 @@ trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
 # Postgres. A container rather than a GitHub service so the same script works
-# where there are no service containers.
+# where there are no service containers. 16 for every series: 20 uses
+# any_value(), which Postgres added in 16, and 18 and 19 run on 16 as well.
 # ---------------------------------------------------------------------------
 docker rm -f "$DB" >/dev/null 2>&1 || true
 docker network create "$NET" >/dev/null 2>&1 || true
 docker run -d --name "$DB" --network "$NET" \
     -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo -e POSTGRES_DB=postgres \
-    postgres:15 >/dev/null
+    postgres:16 >/dev/null
 
 # Over TCP, not the unix socket: the image's entrypoint runs a temporary
 # server with listen_addresses='' while it initialises, then stops it and
@@ -93,7 +116,7 @@ docker run -d --name "$MAIL" --network "$NET" \
 # log line: a port that accepts a connection is the thing the test needs.
 echo -n "Waiting for GreenMail"
 for _ in $(seq 1 60); do
-    if docker run --rm --network "$NET" postgres:15 \
+    if docker run --rm --network "$NET" postgres:16 \
         timeout 2 bash -c "</dev/tcp/${MAIL}/3143" >/dev/null 2>&1; then
         echo " ready."
         break
@@ -131,6 +154,7 @@ BASE_ADDONS=""
 cleanup_all() {
     cleanup
     [ -n "$BASE_ADDONS" ] && rm -rf "$BASE_ADDONS"
+    [ -n "$CUT_TREE" ] && rm -rf "$CUT_TREE"
     return 0
 }
 trap cleanup_all EXIT
@@ -148,10 +172,10 @@ MODULES=pan_mail_pro,sale,mass_mailing
 # Odoo.sh that was five FileNotFoundErrors and a halted build. A copy, not a
 # symlink: Path.resolve() follows a symlink straight back into the repository.
 # ---------------------------------------------------------------------------
-TREE=$REPO
+TREE=${CUT_TREE:-$REPO}
 if [ "$MODE" = "module-only" ]; then
     BASE_ADDONS=$(mktemp -d)
-    cp -R "$REPO/pan_mail_pro" "$BASE_ADDONS/"
+    cp -R "$TREE/pan_mail_pro" "$BASE_ADDONS/"
     find "$BASE_ADDONS" -name '__pycache__' -prune -exec rm -rf {} +
     chmod -R a+rX "$BASE_ADDONS"
     TREE=$BASE_ADDONS
@@ -162,6 +186,7 @@ fi
 if [ "$MODE" = "fresh" ] || [ "$MODE" = "module-only" ]; then
     LOG="$LOG_DIR/odoo-test.log"
     [ "$MODE" = "module-only" ] && LOG="$LOG_DIR/odoo-module-only.log"
+    [ -n "$CUT_TREE" ] && LOG="${LOG%.log}-${SERIES}.log"
     set -o pipefail
     # --log-handler=odoo.tools.convert:DEBUG turns "Invalid view <name>
     # definition" with an empty context into a real traceback.
@@ -174,7 +199,7 @@ if [ "$MODE" = "fresh" ] || [ "$MODE" = "module-only" ]; then
 
     # Pins the intent: if a dependency bump stops sale or mass_mailing from
     # installing, their tests would quietly go back to skipping and stay green.
-    MISSING=$(docker run --rm --network "$NET" postgres:15 \
+    MISSING=$(docker run --rm --network "$NET" postgres:16 \
         psql "postgresql://odoo:odoo@${DB}:5432/ci_test" -tAc \
         "SELECT name FROM ir_module_module
           WHERE name IN ('sale','mass_mailing','crm') AND state <> 'installed'")
@@ -200,6 +225,13 @@ HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
 # is the customer who upgrades every time; a customer who skipped six releases
 # crosses six migration folders in one -u and nothing here would try that.
 TAG="${FROM_TAG:-}"
+# ci.yml pins a 19.0 tag for the customer who skipped a quarter. On the 18.0
+# or 20.0 branch that tag is another series, which this Odoo refuses to load:
+# there is no such customer there, so the row passes saying why.
+if [ -n "$TAG" ] && [ "${TAG#v${SERIES}.}" = "$TAG" ]; then
+    echo "FROM_TAG ${TAG} is not a v${SERIES}.* tag: no ${SERIES} database was ever on it, nothing to upgrade."
+    exit 0
+fi
 for t in $(git -C "$REPO" tag -l "v${SERIES}.*" --sort=-v:refname); do
     [ -n "$TAG" ] && break
     if [ "$(git -C "$REPO" rev-parse "${t}^{commit}")" != "$HEAD_SHA" ]; then

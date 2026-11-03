@@ -12,13 +12,13 @@ staging catcher (MailHog, odoo.sh's Mails tab) shows what was sent.
 """
 import os
 from contextlib import ExitStack
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from ..models import encryption_utils
-from .common import MailProTestCase, send_and_capture
+from .common import MailProTestCase, let_smtp_send, send_and_capture
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -44,10 +44,8 @@ class TestNeutralizedDatabase(MailProTestCase):
         `_disable_send` is Odoo's own test-mode switch, which skips the send
         "unless monkeypatched".
         """
-        mail_server = type(self.env['ir.mail_server'])
         stack = ExitStack()
-        stack.enter_context(patch.object(mail_server, '_disable_send', return_value=False))
-        stack.enter_context(patch.object(mail_server, '_connect__', return_value=MagicMock()))
+        mail_server = let_smtp_send(stack, self.env)
         send_one = stack.enter_context(patch.object(type(mail), '_send_one', autospec=True))
         send_email = stack.enter_context(patch.object(
             mail_server, 'send_email', autospec=True, return_value='<staging@example.com>'))

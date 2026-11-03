@@ -31,6 +31,7 @@ from odoo.addons.pan_mail_pro.models.pan_mail_error import (
     CODES, FLOWS, MAX_CODES_REPORTED, RETENTION_DAYS,
 )
 from odoo.addons.pan_mail_pro.models.pan_mail_license import PanMailLicense
+from .common import registry_test_mode
 
 MODULE = Path(__file__).resolve().parent.parent
 GUARDED = 'odoo.addons.pan_mail_pro.models.pan_mail_license.PanMailLicense._heartbeat_guarded'
@@ -63,7 +64,7 @@ class TestErrorLedger(TransactionCase):
     def record_for_real(self, *args, **kwargs):
         """The real `_record()`: its own cursor, which under registry test mode
         is a savepoint on this test's transaction."""
-        with self.enter_registry_test_mode():
+        with registry_test_mode(self):
             self.Error.with_context(pan_mail_pro_real_ledger=True)._record(*args, **kwargs)
 
     # --- the vocabulary ------------------------------------------------------

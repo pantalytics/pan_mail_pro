@@ -18,6 +18,7 @@ import os
 from odoo.tests import tagged
 
 from .common import MailProTestCase
+from .common import on_series
 
 _MIGRATIONS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), '..', 'migrations',
@@ -43,6 +44,7 @@ def _load(version, phase, name):
     return module
 
 
+@on_series('19.0')
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestSyncLevelMigration(MailProTestCase):
 

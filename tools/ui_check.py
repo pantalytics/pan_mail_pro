@@ -55,7 +55,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WIDE = 2000
 # Odoo's own record picker (`SelectCreateDialog`), which step two of the
 # link picker and New Email open: the modal that holds its list.
-ODOO_PICKER = '.modal:has(.o_select_create_dialog_content)'
+# Odoo's own record picker: 19 and 20 mark its content, 18 does not, and a
+# list with rows inside a dialog is the picker on all three.
+ODOO_PICKER = ':is(.modal:has(.o_select_create_dialog_content), .modal:has(.o_list_view))'
 # A step is a name, an answer and the way to change it. Wider than this and it
 # stops being one line the eye can cross.
 MAX_STEP_WIDTH = 800
@@ -64,8 +66,13 @@ MAX_STEP_WIDTH = 800
 PROVIDER_CODES = ('outlook', 'gmail', 'imap')
 
 
+# The tree the instance runs: the repository, or a copy cut for another
+# series (tools/ui_local.sh --series=), whose manifest says what About shows.
+TREE = os.environ.get('PAN_UI_TREE', REPO)
+
+
 def manifest_version():
-    manifest = ast.literal_eval(open(f'{REPO}/pan_mail_pro/__manifest__.py').read())
+    manifest = ast.literal_eval(open(f'{TREE}/pan_mail_pro/__manifest__.py').read())
     return manifest['version']
 
 
@@ -87,6 +94,14 @@ class Checks:
         # collected before that are the ones that say why.
         print(f'  - {message}', flush=True)
         self.failures.append(message)
+        # The screen as it was when the assertion failed, beside the ones the
+        # steps take on purpose: a failure read from the artifact needs it.
+        if self.out and getattr(self, 'page', None):
+            try:
+                self.page.screenshot(
+                    path=os.path.join(self.out, f'fail-{len(self.failures):02d}.png'), full_page=True)
+            except Exception:
+                pass
 
     def dialog_in_the_way(self):
         """The text of an Odoo error dialog over the screen, and close it.
@@ -115,6 +130,13 @@ class Checks:
                 break
         self.page.wait_for_timeout(400)
         return text
+
+    def groups_field(self):
+        """The groups field on res.users: group_ids on 19 and 20, groups_id on 18."""
+        if not hasattr(self, '_groups_field'):
+            fields = self.call('res.users', 'fields_get', [], attributes=['type'])
+            self._groups_field = 'group_ids' if 'group_ids' in fields else 'groups_id'
+        return self._groups_field
 
     def shot(self, name):
         if self.out:
@@ -1091,7 +1113,9 @@ class Checks:
         """
         for _ in range(240):
             anchor = next((el for el in page.query_selector_all(selector) if el.is_visible()), None)
-            pointer = page.query_selector('.o_tour_pointer')
+            # 20's open sentence wears the pointer's class too; the pointer
+            # itself is the one without the content class.
+            pointer = page.query_selector('.o_tour_pointer:not(.o_tour_pointer_content)')
             if anchor and pointer and pointer.is_visible():
                 a, b = anchor.bounding_box(), pointer.bounding_box()
                 if a and b:
@@ -1114,15 +1138,29 @@ class Checks:
         if not anchor:
             return False
         if says:
-            anchor.hover()
+            # 18 and 19 open the sentence when the anchor is hovered; 20
+            # opens it from the pointer's own tip, as a popover beside it.
+            # Forced: a mouse move to the element's centre, without
+            # Playwright's stability wait, which on 20's phone layout never
+            # ends for a filter button that is visible, still and hoverable.
+            anchor.hover(force=True)
             page.wait_for_timeout(600)
-            content = page.query_selector('.o_tour_pointer.o_open .o_tour_pointer_content')
+            content = page.query_selector('.o_tour_pointer_content')
+            if not content or not content.is_visible():
+                tip = page.query_selector('.o_tour_pointer_tip')
+                if tip:
+                    tip.hover(force=True)
+                    page.wait_for_timeout(600)
+                    content = page.query_selector('.o_tour_pointer_content')
             text = ' '.join(content.text_content().split()) if content else ''
             if not text.startswith(self.TOUR_SAYS[says]):
                 self.fail(f'{where} says "{text}", expected "{self.TOUR_SAYS[says]}"')
             if self.out:
                 page.screenshot(path=os.path.join(self.out, shot))
-        anchor.click()
+        try:
+            anchor.click(timeout=8000)
+        except Exception:
+            anchor.click(force=True)
         page.wait_for_timeout(500)
         return True
 
@@ -3240,11 +3278,18 @@ class Checks:
             self.fail('the mailbox list has no Drafts folder')
             return
         drafts_folder.click()
-        page.wait_for_timeout(1500)
-        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
-        if not rows:
+        # Wait for the row, not for a clock: the list is one request away
+        # and the request takes what the box gives it.
+        # The row that carries what was typed, not any row: the list the
+        # folder replaces is still on screen while the new one loads.
+        try:
+            page.wait_for_selector(
+                f'.o_mailpro_conversation_list .o_mailpro_item:has-text("{marker}")', timeout=15000)
+        except Exception:
             self.fail('the Drafts folder is empty after saving a draft')
             return
+        page.wait_for_timeout(300)
+        rows = page.query_selector_all('.o_mailpro_conversation_list .o_mailpro_item')
         # One click on a draft is "carry on writing it", so the composer opens
         # with the conversation behind it rather than a list row to click again.
         rows[0].click()
@@ -4631,7 +4676,7 @@ class Checks:
         if not found:
             self.call('res.users', 'create', {
                 'name': 'Not Connected Yet', 'login': login, 'password': login,
-                'group_ids': [(6, 0, self.call(
+                self.groups_field(): [(6, 0, self.call(
                     'ir.model.data', 'check_object_reference', 'base', 'group_user')[1:])],
             })
 
@@ -4643,6 +4688,12 @@ class Checks:
             page.fill('input[name=password]', login)
             page.click('button[type=submit]')
             page.wait_for_selector('.o_main_navbar', timeout=60000)
+            # On a screen with Odoo's navbar. Where a login lands depends on
+            # the menu order, and the Inbox hides that navbar for a bar of
+            # its own (which borrows the class), so the measurement is taken
+            # on Discuss, which every series has.
+            page.goto(f'{self.base}/odoo/discuss', wait_until='domcontentloaded')
+            page.wait_for_selector('nav.o_main_navbar', timeout=60000)
             page.wait_for_timeout(1500)
             banner = page.query_selector('.o_mailpro_connect_banner')
             if not banner:
@@ -4651,7 +4702,7 @@ class Checks:
             if self.out:
                 page.screenshot(path=os.path.join(self.out, 'connect-banner.png'))
             box = banner.bounding_box()
-            navbar = page.query_selector('.o_main_navbar').bounding_box()
+            navbar = page.query_selector('nav.o_main_navbar').bounding_box()
             if box['y'] < navbar['y'] + navbar['height'] - 1:
                 self.fail('the connect banner covers the navbar instead of sitting under it')
             content = page.query_selector('.o_action_manager, .o_content').bounding_box()
@@ -4866,6 +4917,15 @@ class Checks:
         second = '.o-mail-FollowerList-followBtn' if following else '.o-mail-FollowerList-unfollowBtn'
         step = -1 if following else 1
         self.shot('inbox-followers.png')
+        if not menu.query_selector(first):
+            # 18's follower list has no Follow or Unfollow in it: that toggle
+            # is a button of the chatter's own there, and the Inbox has no
+            # chatter. The list is still the list (docs/plans/multi-version.md
+            # names the gap); the round trip is 19's and 20's.
+            if not menu.query_selector('.o-mail-Follower'):
+                self.fail('the follower list names no follower')
+            page.keyboard.press('Escape')
+            return
         menu.query_selector(first).click()
         page.wait_for_timeout(900)
         if count() != before + step:
@@ -4936,7 +4996,14 @@ class Checks:
         if 'Vandermolen' not in unlink.inner_text():
             self.fail('the unlink row does not name the contact: %r' % unlink.inner_text())
         unlink.click()
-        page.wait_for_timeout(2500)
+        # The chips follow one request; wait for them rather than for a clock.
+        try:
+            page.wait_for_function(
+                "() => [...document.querySelectorAll('.o_mailpro_chip_button')]"
+                ".some(el => el.innerText.includes('Vandermolen'))", timeout=15000)
+        except Exception:
+            pass
+        page.wait_for_timeout(500)
         self.error_free('unlinking with the follower list open')
         if page.query_selector('.o_mailpro_link_dialog') or page.query_selector(ODOO_PICKER):
             self.fail('the unlink row opened step two instead of answering both steps')
@@ -4978,7 +5045,11 @@ class Checks:
         class names -- the moment this screen grows a file list of its own,
         this check is what says so.
         """
-        card = page.query_selector('.o_mailpro_files .o-mail-AttachmentContainer')
+        # 19 and 20 draw an AttachmentContainer; 18 a card, or an image
+        # straight on the list when the file is one.
+        card = page.query_selector(
+            '.o_mailpro_files :is(.o-mail-AttachmentContainer, .o-mail-AttachmentCard, '
+            '.o-mail-AttachmentImage)')
         if not card:
             self.fail("the Files tab draws no attachment card")
             return
@@ -5081,8 +5152,18 @@ class Checks:
                     break
             if self.out:
                 page.screenshot(path=os.path.join(self.out, 'inbox-improve.png'), full_page=True)
-            if page.query_selector('.o_error_dialog, .o_dialog_error'):
-                self.fail('the Inbox with Help improve Mail Pro on opened an error dialog')
+            dialog = page.query_selector('.o_error_dialog, .o_dialog_error')
+            if dialog:
+                # The technical details name the line; the dialog's own text
+                # names nothing.
+                details = dialog.query_selector('a:has-text("technical details"), button:has-text("technical details")')
+                if details:
+                    details.click()
+                    page.wait_for_timeout(300)
+                text = ' '.join(dialog.inner_text().split())
+                cause = text[text.find('Caused by'):][:400] if 'Caused by' in text else ''
+                self.fail('the Inbox with Help improve Mail Pro on opened an error dialog: %r %s'
+                          % (text[:300], cause))
             # Now break something on purpose, with the seeded secrets in the
             # message. Odoo's error service shows its dialog for it, which is
             # right and why this comes after the dialog assertion above.
@@ -5174,7 +5255,7 @@ class Checks:
             uid = self.call('res.users', 'create', {
                 'name': 'Personal Mailbox', 'login': login, 'password': login,
                 'email': login,
-                'group_ids': [(6, 0, self.call(
+                self.groups_field(): [(6, 0, self.call(
                     'ir.model.data', 'check_object_reference', 'base', 'group_user')[1:])],
             })
             self.call('pan.mail.account', 'create', {
@@ -5193,10 +5274,21 @@ class Checks:
             page.fill('input[name=password]', login)
             page.click('button[type=submit]')
             page.wait_for_selector('.o_main_navbar', timeout=60000)
-            page.click('.o_main_navbar .o_user_menu')
+            # The user menu is drawn before it listens (Owl 3 on 20 mounts
+            # the navbar's dropdowns a beat after the bar): a click that
+            # opened nothing is clicked again.
+            for _ in range(4):
+                page.click('.o_main_navbar .o_user_menu')
+                try:
+                    page.wait_for_selector(
+                        '.o-dropdown--menu .dropdown-item:has-text("Preferences")', timeout=4000)
+                    break
+                except Exception:
+                    page.wait_for_timeout(500)
             page.click('.o-dropdown--menu .dropdown-item:has-text("Preferences")')
             page.wait_for_selector('.modal .o_form_view', timeout=30000)
-            tab = page.query_selector('.modal .o_notebook a:has-text("Mail Pro")')
+            # A tab is an <a> up to 19 and a <button> on 20.
+            tab = page.query_selector('.modal .o_notebook .nav-link:has-text("Mail Pro")')
             if not tab:
                 self.fail('My Preferences has no Mail Pro tab')
                 return

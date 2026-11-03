@@ -28,6 +28,7 @@ import logging
 from odoo import api, fields, models
 
 from .mail_provider_client import ACCESS_ANSWERS
+from ..compat import Constraint
 
 _logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class PanMailMailboxAccess(models.Model):
     error = fields.Char(
         help="The provider's own reason for the last refusal, or empty.")
 
-    _unique_pair = models.Constraint(
+    _unique_pair = Constraint(
         'UNIQUE(mailbox_id, account_id)',
         'One row per mailbox and sign-in.',
     )
