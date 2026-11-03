@@ -376,7 +376,7 @@ Mark a box in the PR that does the work, with the version or the date.
 
 ### Step 2. The `18.0` branch
 
-- [ ] Branch cut from `main`; manifest `18.0.<x.y.z>` (module and CI dark addon); drift check green
+- [x] Branch cut from `main` (2026-11-03, 11a2a0d: main 9e34702 cut by `tools/cut_series.sh 18.0`, manifest `18.0.34.0.0`, drift check green byte for byte)
 - [x] Registry loads on 18 (2026-11-03, `compat.py`: Constraint, Domain, three mail.mail/mail.thread names)
 - [x] Installs on 18 (2026-11-03): one view anchor moved to the notebook; `security/` loads unchanged
 - [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03, at the head that merged main 19.0.33.2.0: 1359 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file; the same with only `pan_mail_pro/` on the addons path)
@@ -391,7 +391,7 @@ Mark a box in the PR that does the work, with the version or the date.
 
 ### Step 3. The `20.0` branch
 
-- [ ] Branch cut from `main`; manifest `20.0.<x.y.z>` (module and CI dark addon); `security/ir.access.csv`; drift check green. After this PR merges: the drift check compares a series branch with its merge base on `main` cut for the series, so a branch cut before the seam is on `main` reads as drift
+- [x] Branch cut from `main` (2026-11-03, 3b50391: main 9e34702 cut by `tools/cut_series.sh 20.0`, manifest `20.0.34.0.0`, `security/ir.access.csv`, drift check green byte for byte). Cut after #376 merged: the drift check compares a series branch with its merge base on `main` cut for the series
 - [x] Spike: `ir.access.csv` holds all 17 ACL rows and 7 rules (2026-11-03, 16 rows, `scripts/`-less: the file is written by hand on the branch); the permission tests that ran pass, the three Inbox access tests are the design question above
 - [ ] The mail.message visibility lesson re-measured against `res_access_read`; the "Linked to nothing" folder behaves as on 19; `_search` raising instead of filtering decided
 - [x] `static/src/compat/chatter.js`, the 20 path in `tools/series/20.0` (2026-11-03)
