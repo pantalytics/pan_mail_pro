@@ -371,12 +371,12 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] `tests/common.py`: `groups_field()` and `registry_test_mode()`, so no test spells a series (58 lines in 24 files replaced, 2026-11-03)
 - [x] Constraints: measured 2026-11-03, no spike needed. `compat.Constraint` is `models.Constraint` where it exists and a `__set_name__` that appends to `_sql_constraints` on 18; the seven model files are identical on every branch
 - [x] `tools/ci_lint.sh`: the migration-folder check reads the manifest's series (2026-11-03); the checklist greps are the same on every series
-- [ ] CLAUDE.md *Branches* paragraph and the Cloudpepper table: one row per series
+- [x] CLAUDE.md *Branches* paragraph (#376) and the Cloudpepper table, one column per series (2026-11-03)
 - [ ] TESTPLAN.md: the Enterprise checks get a column per series
 
 ### Step 2. The `18.0` branch
 
-- [ ] Branch cut from `main`; manifest `18.0.<x.y.z>` (module and CI dark addon); drift check green
+- [x] Branch cut from `main` (2026-11-03, 11a2a0d: main 9e34702 cut by `tools/cut_series.sh 18.0`, manifest `18.0.34.0.0`, drift check green byte for byte)
 - [x] Registry loads on 18 (2026-11-03, `compat.py`: Constraint, Domain, three mail.mail/mail.thread names)
 - [x] Installs on 18 (2026-11-03): one view anchor moved to the notebook; `security/` loads unchanged
 - [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03, at the head that merged main 19.0.33.2.0: 1359 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file; the same with only `pan_mail_pro/` on the addons path)
@@ -387,22 +387,23 @@ Mark a box in the PR that does the work, with the version or the date.
 - [ ] Enterprise column walked on an 18 Enterprise instance
 - [ ] A Cloudpepper dev instance on an 18 server (servers are pinned per major) with OAuth redirect URIs registered
 - [ ] Knowledge base page says which series are supported
-- [ ] First tag `v18.0.x.y.z`
+- [x] First tag `v18.0.34.0.0` (2026-11-03, `release.yml` on the push of 11a2a0d)
 
 ### Step 3. The `20.0` branch
 
-- [ ] Branch cut from `main`; manifest `20.0.<x.y.z>` (module and CI dark addon); `security/ir.access.csv`; drift check green. After this PR merges: the drift check compares a series branch with its merge base on `main` cut for the series, so a branch cut before the seam is on `main` reads as drift
+- [x] Branch cut from `main` (2026-11-03, 3b50391: main 9e34702 cut by `tools/cut_series.sh 20.0`, manifest `20.0.34.0.0`, `security/ir.access.csv`, drift check green byte for byte). Cut after #376 merged: the drift check compares a series branch with its merge base on `main` cut for the series
 - [x] Spike: `ir.access.csv` holds all 17 ACL rows and 7 rules (2026-11-03, 16 rows, `scripts/`-less: the file is written by hand on the branch); the permission tests that ran pass, the three Inbox access tests are the design question above
 - [ ] The mail.message visibility lesson re-measured against `res_access_read`; the "Linked to nothing" folder behaves as on 19; `_search` raising instead of filtering decided
 - [x] `static/src/compat/chatter.js`, the 20 path in `tools/series/20.0` (2026-11-03)
 - [x] `compat.py`: `get_param`/`set_param` and `config_bool`; `_notify_thread` positional; the two test helpers (2026-11-03)
 - [x] Tracking rows without `mail.tracking.value`, `user_writeable=True` on the `res.users` fields, `ir.attachment` without `datas` (`compat.attachment_bytes`, fixtures on `raw`), the Files tab's store payload, `odoo.http` moves in the tests (2026-11-03)
 - [x] Installs; suite green locally (2026-11-03, at the head that merged main 19.0.33.2.0: 1359 tests, 0 failed, 0 errors through `tools/odoo_local.sh --series=20.0`, and the same with only `pan_mail_pro/` on the addons path, the Odoo.sh shape)
-- [ ] Suite green on CI's `odoo:20.0`: the `series` job of `ci.yml` runs it from main's checkout cut for 20 on every push (added 2026-11-03, pending its first green run); the branch's own run needs the branch
+- [x] Suite green on CI's `odoo:20.0`: the `series` job of `ci.yml` on main (first green run 2026-11-03, #376's merge) and the `20.0` branch's own run at 3b50391, both green
 - [x] UI job green locally (2026-11-03, `tools/ui_local.sh --series=20.0`, every assertion; the About check reads the cut copy's manifest through `PAN_UI_TREE`)
 - [ ] Enterprise column walked on a 20 Enterprise instance (`odoo-20-enterprise-demo.cloudpepper.site` is one, once the module is on it)
-- [ ] Cloudpepper dev instance on a 20 server. The server exists (`Pantalytics Demo v20`, with `odoo-20-community-demo` and `odoo-20-enterprise-demo` on it, seen 2026-11-03); what is missing is an instance with this module attached from a `20.0` branch, which needs that branch first
-- [ ] First tag `v20.0.x.y.z`
+- [x] Cloudpepper dev instance on a 20 server: `mailpro-dev-20.cloudpepper.site` on `Pantalytics Demo v20` (Odoo 20.0 community), the module attached from `20.0` and installed at `20.0.34.0.0`, webhook and auto-upgrade on (2026-11-03). The compat line in its log names 20's spellings; Settings and the mailbox list open as admin. The CLAUDE.md table has the login
+- [ ] OAuth redirect URIs for `mailpro-dev-20` registered at Azure and Google, and one consent walked per provider
+- [x] First tag `v20.0.34.0.0` (2026-11-03, `release.yml` on the push of 3b50391)
 
 ### Step 4. The routine
 

@@ -192,3 +192,19 @@ class TestUpAndRunning(MailProTestCase):
         arch = self.env['res.users'].get_view(
             self.env.ref('base.view_users_tree').id, 'list')['arch']
         self.assertIn('action_send_connect_invite', arch)
+
+    # ---------------------------------------------------- the first onchange
+
+    def test_the_first_onchange_computes_the_dots_and_the_line(self):
+        """The web client opens Settings with one onchange over every field,
+        and 18 computes only what depends on a field that had a default
+        there (19 and 20 compute the rest as well). Measured 2026-11-03:
+        without a dependency the checklist drew no dots on 18 and the line
+        never came."""
+        self.on_a_record()
+        dots = ['x_account_dot', 'x_provider_dot', 'x_domains_dot', 'x_mailboxes_dot']
+        spec = {name: {} for name in dots + ['x_up_and_running', 'company_id']}
+        value = self.env['res.config.settings'].onchange({}, [], spec).get('value', {})
+        for name in dots:
+            self.assertIn(name, value, f'{name} is not computed by the first onchange')
+        self.assertEqual(bool(value.get('x_up_and_running')), self.Setup.up_and_running())
