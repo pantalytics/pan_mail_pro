@@ -839,6 +839,217 @@ class Checks:
                                 + datetime.timedelta(days=14)
                                 ).strftime('%Y-%m-%d %H:%M:%S')})
 
+    # -- The Inbox's tour (#393) ----------------------------------------------
+
+    TOUR = 'pan_mail_pro_inbox_tour'
+    TOUR_SAYS = {
+        'record': 'Every conversation sits on an Odoo record. Your reply lands in its chatter.',
+        'link': 'Wrong record? Link it to another one. The rest of the conversation follows.',
+        'contact': "Mail that matched no record lands on the sender's contact. "
+                   'Find it under On a contact only.',
+        'search': 'Search this folder by sender, subject or a word in the mail.',
+    }
+    TOUR_RECORD = '.o_mailpro_odoo_record:not(.o_mailpro_folded) .o_mailpro_odoo_record_head'
+    TOUR_RECORD_TOGGLE = '.o_mailpro_split_odoo_record .o_mailpro_split_toggle'
+    TOUR_LINK = ('.o_mailpro_conversation:not(.o_mailpro_folded) '
+                 '.o_mailpro_chips .o_mailpro_relink_toggle')
+    TOUR_FILTERS = '.o_mailpro_topbar .o_searchview_dropdown_toggler'
+    TOUR_SEARCH = '.o_mailpro_topbar .o_searchview_input'
+
+    def tour_pointer_at(self, page, selector, where):
+        """Odoo's tour pointer, beside the first visible `selector`.
+
+        Polled: between two steps the pointer hides, and the next one is
+        drawn once the observer has seen the anchor. A minute, because the
+        first tour on a fresh database waits for Odoo to build the
+        `web_tour.interactive` bundle.
+        """
+        for _ in range(240):
+            anchor = next((el for el in page.query_selector_all(selector) if el.is_visible()), None)
+            pointer = page.query_selector('.o_tour_pointer')
+            if anchor and pointer and pointer.is_visible():
+                a, b = anchor.bounding_box(), pointer.bounding_box()
+                if a and b:
+                    gap_x = max(a['x'] - (b['x'] + b['width']), b['x'] - (a['x'] + a['width']), 0)
+                    gap_y = max(a['y'] - (b['y'] + b['height']), b['y'] - (a['y'] + a['height']), 0)
+                    if gap_x < 60 and gap_y < 60:
+                        return anchor
+            page.wait_for_timeout(250)
+        self.fail(f'{where}: no tour pointer beside {selector}')
+        return None
+
+    def tour_step(self, page, selector, says, shot, where):
+        """One step: the pointer at its anchor, its sentence, then the click.
+
+        The sentence opens on hover, the way Odoo's pointer opens it, and the
+        step moves on when the anchor itself is clicked: there is no Next in
+        19.0's tour.
+        """
+        anchor = self.tour_pointer_at(page, selector, where)
+        if not anchor:
+            return False
+        if says:
+            anchor.hover()
+            page.wait_for_timeout(600)
+            content = page.query_selector('.o_tour_pointer.o_open .o_tour_pointer_content')
+            text = ' '.join(content.text_content().split()) if content else ''
+            if not text.startswith(self.TOUR_SAYS[says]):
+                self.fail(f'{where} says "{text}", expected "{self.TOUR_SAYS[says]}"')
+            if self.out:
+                page.screenshot(path=os.path.join(self.out, shot))
+        anchor.click()
+        page.wait_for_timeout(500)
+        return True
+
+    def tour_close_dialog(self, page, where):
+        """Change link opens the picker; the tour waits behind it."""
+        try:
+            page.wait_for_selector('.modal', timeout=10000)
+        except Exception:
+            self.fail(f'{where}: Change link opened no dialog')
+            return
+        page.wait_for_timeout(300)
+        page.keyboard.press('Escape')
+        try:
+            page.wait_for_selector('.modal', state='detached', timeout=5000)
+        except Exception:
+            self.fail(f'{where}: the link picker does not close on Escape')
+
+    def tour_over(self, page, where):
+        page.wait_for_timeout(1000)
+        current = page.evaluate("() => localStorage.getItem('current_tour')")
+        if current == self.TOUR:
+            self.fail(f'{where}: the tour is still running after its last step')
+        pointer = page.query_selector('.o_tour_pointer')
+        if pointer and pointer.is_visible():
+            self.fail(f'{where}: a tour pointer is still on the Inbox after the last step')
+
+    def inbox_tour(self):
+        """Odoo's own tour of the Inbox: once by itself, then from the "?".
+
+        Four steps on a monitor, in the issue's order: the Odoo record pane,
+        Change link beside the Linked-to chip, the filter menu that holds On a
+        contact only, the search box. It starts on its own the first time
+        there is mail, does not start a second time, and the "?" in the top
+        bar starts it again, at 1280px (the record pane folded, so step one
+        points at the open row's record) and on a phone (the bar first, then
+        into a conversation and over to its record).
+        """
+        action = dict(module_menu_actions(self.call)).get('Inbox')
+        if not action:
+            return
+        admin = self.call('res.users', 'search', [('login', '=', 'admin')])
+        tour = self.call('web_tour.tour', 'search', [('name', '=', self.TOUR)])
+        if not tour:
+            self.fail('the Inbox tour has no web_tour.tour row')
+            return
+        # Not seen yet, whatever an earlier run of this check left behind.
+        self.call('web_tour.tour', 'write', tour, {'user_consumed_ids': [(3, admin[0])]})
+        inbox = f'{self.base}/odoo/action-{action}'
+        page = self.page
+
+        page.goto(inbox, wait_until='domcontentloaded')
+        page.wait_for_selector('.o_mailpro_inbox .o_mailpro_item', timeout=30000)
+        where = 'the Inbox tour'
+        if not self.tour_step(page, self.TOUR_RECORD, 'record', 'inbox-tour-1-record.png', where):
+            return
+        if not self.tour_step(page, self.TOUR_LINK, 'link', 'inbox-tour-2-link.png', where):
+            return
+        self.tour_close_dialog(page, where)
+        if not self.tour_step(page, self.TOUR_FILTERS, 'contact', 'inbox-tour-3-contact.png', where):
+            return
+        if not self.tour_step(page, self.TOUR_SEARCH, 'search', 'inbox-tour-4-search.png', where):
+            return
+        self.tour_over(page, where)
+        seen = self.call('web_tour.tour', 'search_count',
+                         [('name', '=', self.TOUR), ('user_consumed_ids', 'in', admin)])
+        if not seen:
+            self.fail('the Inbox tour ran and is not recorded as seen')
+
+        # Once: the next visit is the Inbox and nothing else.
+        page.goto(inbox, wait_until='domcontentloaded')
+        page.wait_for_selector('.o_mailpro_inbox .o_mailpro_item', timeout=30000)
+        page.wait_for_timeout(3000)
+        pointer = page.query_selector('.o_tour_pointer')
+        if (pointer and pointer.is_visible()) or page.evaluate(
+                "() => localStorage.getItem('current_tour')") == self.TOUR:
+            self.fail('the Inbox tour started a second time')
+
+        # The "?" starts it again, here at 1280px.
+        page.set_viewport_size({'width': 1280, 'height': 900})
+        page.goto(inbox, wait_until='domcontentloaded')
+        page.wait_for_selector('.o_mailpro_inbox .o_mailpro_item', timeout=30000)
+        page.wait_for_timeout(1500)
+        where = 'the Inbox tour at 1280px'
+        try:
+            button = page.query_selector('.o_mailpro_topbar .o_mailpro_tour_start')
+            if not button or not button.is_visible():
+                self.fail('the Inbox top bar has no "?" to start the tour again')
+                return
+            button.click()
+            # The record pane waits behind the conversation here: step one
+            # is the button that swaps it in, and the same button swaps the
+            # conversation back before step two.
+            ok = (self.tour_step(page, self.TOUR_RECORD_TOGGLE, 'record',
+                                 'inbox-tour-1280-1-record.png', where)
+                  and self.tour_step(page, self.TOUR_RECORD_TOGGLE, None, None, where)
+                  and self.tour_step(page, self.TOUR_LINK, 'link',
+                                     'inbox-tour-1280-2-link.png', where))
+            if ok:
+                self.tour_close_dialog(page, where)
+                ok = (self.tour_step(page, self.TOUR_FILTERS, 'contact',
+                                     'inbox-tour-1280-3-contact.png', where)
+                      and self.tour_step(page, self.TOUR_SEARCH, 'search',
+                                         'inbox-tour-1280-4-search.png', where))
+            if ok:
+                self.tour_over(page, where)
+        finally:
+            page.set_viewport_size({'width': WIDE, 'height': 1100})
+
+        # A phone opens on the list, where the bar is.
+        context = self.browser.new_context(viewport={'width': 390, 'height': 844})
+        phone = context.new_page()
+        where = 'the Inbox tour on a phone'
+        try:
+            login(phone, self.base)
+            phone.goto(inbox, wait_until='domcontentloaded')
+            phone.wait_for_selector('.o_mailpro_inbox .o_mailpro_item', timeout=30000)
+            phone.wait_for_timeout(2500)
+            pointer = phone.query_selector('.o_tour_pointer')
+            if pointer and pointer.is_visible():
+                self.fail('the Inbox tour started again on a phone after it was seen')
+            button = phone.query_selector('.o_mailpro_topbar .o_mailpro_tour_start')
+            if not button or not button.is_visible():
+                self.fail('a phone has no "?" to start the Inbox tour')
+                return
+            button.click()
+            # The search box first: on a phone tapping it opens Odoo's filter
+            # menu, and the filter step then closes it again.
+            if not self.tour_step(phone, self.TOUR_SEARCH, 'search',
+                                  'inbox-tour-phone-1-search.png', where):
+                return
+            if not phone.query_selector('.o_filter_menu'):
+                self.fail(f'{where}: the filter step has no filter menu in sight')
+            if not self.tour_step(phone, self.TOUR_FILTERS, 'contact',
+                                  'inbox-tour-phone-2-contact.png', where):
+                return
+            if not self.tour_step(phone, '.o_mailpro_conversation_list .o_mailpro_item '
+                                  '.o_mailpro_chip:not(.o_mailpro_chip_live)', 'record',
+                                  'inbox-tour-phone-3-record.png', where):
+                return
+            if not self.tour_step(phone, '.o_mailpro_odoo_record_button', None, None, where):
+                return
+            phone.wait_for_timeout(800)
+            if not self.tour_step(phone, '.o_mailpro_odoo_record:not(.o_mailpro_folded) '
+                                  '.o_mailpro_chips .o_mailpro_relink_toggle', 'link',
+                                  'inbox-tour-phone-4-link.png', where):
+                return
+            self.tour_close_dialog(phone, where)
+            self.tour_over(phone, where)
+        finally:
+            context.close()
+
+
     # -- Every menu this module adds -----------------------------------------
 
     def menus(self):
@@ -5017,6 +5228,7 @@ def main():
         checks.settings_key_refused()
         checks.settings_mail_limit()
         checks.copy_marker()
+        checks.inbox_tour()
         checks.inbox_not_connected()
         checks.inbox_gate_on_copy()
         checks.inbox_no_mailbox()
