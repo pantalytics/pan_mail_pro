@@ -474,6 +474,11 @@ class Checks:
             line, bar = marker.bounding_box(), page.query_selector('.o_mailpro_topbar').bounding_box()
             if not line or not bar or line['y'] + line['height'] > bar['y'] + 1:
                 self.fail('the Inbox copy line is not above the bar')
+            elif line['width'] < bar['width'] - 1:
+                # The settings page caps its own line at the checklist's
+                # width; that rule once reached the Inbox too.
+                self.fail(f"the Inbox copy line is {line['width']:.0f}px wide, "
+                          f"the bar under it {bar['width']:.0f}px")
             self.error_free('Inbox on a copy')
         finally:
             self.call('ir.config_parameter', 'set_param', 'database.is_neutralized', False)
