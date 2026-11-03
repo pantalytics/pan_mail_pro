@@ -353,7 +353,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [ ] Branch cut from `main`; manifest `18.0.<x.y.z>` (module and CI dark addon); drift check green
 - [x] Registry loads on 18 (2026-11-03, `compat.py`: Constraint, Domain, three mail.mail/mail.thread names)
 - [x] Installs on 18 (2026-11-03): one view anchor moved to the notebook; `security/` loads unchanged
-- [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03: 1314 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file)
+- [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03, at the head that merged main 19.0.33.2.0: 1359 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file; the same with only `pan_mail_pro/` on the addons path)
 - [ ] Suite green on CI's `odoo:18.0` (needs the branch)
 - [x] UI job green locally: the Inbox renders on 18's `@mail`, every `tools/ui_check.py` assertion (2026-11-03, `tools/ui_local.sh --series=18.0`; the CI job needs the branch)
 - [x] Upgrade job: skips cleanly while no `v18.0.*` tag exists (and on the pinned `v19.0.*` row), runs once one does (2026-11-03, `tools/ci_odoo.sh`)
@@ -365,13 +365,13 @@ Mark a box in the PR that does the work, with the version or the date.
 
 ### Step 3. The `20.0` branch
 
-- [ ] Branch cut from `main`; manifest `20.0.<x.y.z>` (module and CI dark addon); `security/ir.access.csv`; drift check green
+- [ ] Branch cut from `main`; manifest `20.0.<x.y.z>` (module and CI dark addon); `security/ir.access.csv`; drift check green. After this PR merges: the drift check compares a series branch with its merge base on `main` cut for the series, so a branch cut before the seam is on `main` reads as drift
 - [x] Spike: `ir.access.csv` holds all 17 ACL rows and 7 rules (2026-11-03, 16 rows, `scripts/`-less: the file is written by hand on the branch); the permission tests that ran pass, the three Inbox access tests are the design question above
 - [ ] The mail.message visibility lesson re-measured against `res_access_read`; the "Linked to nothing" folder behaves as on 19; `_search` raising instead of filtering decided
 - [x] `static/src/compat/chatter.js`, the 20 path in `tools/series/20.0` (2026-11-03)
 - [x] `compat.py`: `get_param`/`set_param` and `config_bool`; `_notify_thread` positional; the two test helpers (2026-11-03)
 - [x] Tracking rows without `mail.tracking.value`, `user_writeable=True` on the `res.users` fields, `ir.attachment` without `datas` (`compat.attachment_bytes`, fixtures on `raw`), the Files tab's store payload, `odoo.http` moves in the tests (2026-11-03)
-- [x] Installs; suite green locally (2026-11-03: 1314 tests, 0 failed, 0 errors through `tools/odoo_local.sh --series=20.0`)
+- [x] Installs; suite green locally (2026-11-03, at the head that merged main 19.0.33.2.0: 1359 tests, 0 failed, 0 errors through `tools/odoo_local.sh --series=20.0`, and the same with only `pan_mail_pro/` on the addons path, the Odoo.sh shape)
 - [ ] Suite green on CI's `odoo:20.0` (needs the branch)
 - [x] UI job green locally (2026-11-03, `tools/ui_local.sh --series=20.0`: every assertion but the two version lines the measuring copy's rewritten manifest fails on purpose)
 - [ ] Enterprise column walked on a 20 Enterprise instance
