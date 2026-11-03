@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <!-- Settings > Mail Pro once onboarding is done (#391): one line where
+         the four steps were, the one next action under it, and the steps one
+         click deeper. The rocket is the platform's (odoo-mcp-pro-admin #595). -->
+    <t t-name="pan_mail_pro.UpAndRunning">
+        <div class="o_mailpro_running" t-att-class="{ o_mailpro_running_open: state.open }">
+            <div class="o_mailpro_running_line">
+                <svg t-ref="rocket" class="o_mailpro_rocket" t-att-class="{ o_mailpro_launch: state.launch }"
+                     viewBox="0 0 64 64" fill="none" aria-hidden="true">
+                    <path d="M32 6c9 6 13 16 13 27l-6 9H25l-6-9c0-11 4-21 13-27z" fill="currentColor"/>
+                    <circle class="o_mailpro_rocket_window" cx="32" cy="26" r="5"/>
+                    <path d="M19 33l-7 9 9 1M45 33l7 9-9 1" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+                    <path class="o_mailpro_rocket_flame" d="M27 46c0 6 5 10 5 12 0-2 5-6 5-12"/>
+                </svg>
+                <span class="o_mailpro_running_title">Mail Pro is up and running</span>
+            </div>
+            <!-- Step 4 amber: the same status the step shows, one line,
+                 and the way to the list where a shared mailbox takes the
+                 flag (#387). -->
+            <button t-if="personalNotification" type="button"
+                    class="btn btn-link o_mailpro_running_msg o_mailpro_msg_attention"
+                    t-on-click="openMailboxes">System email from a personal mailbox</button>
+            <div class="o_mailpro_running_actions">
+                <button t-if="unconnected" type="button" class="btn btn-primary o_mailpro_invite"
+                        t-on-click="invite">Invite your colleagues to connect their mailbox</button>
+                <button type="button" class="btn btn-secondary o_mailpro_take_tour"
+                        t-on-click="takeTour">Take the tour</button>
+                <button type="button" class="btn btn-link o_mailpro_show_setup"
+                        t-att-aria-expanded="state.open ? 'true' : 'false'" t-on-click="toggle">
+                    <t t-if="state.open">Hide setup</t>
+                    <t t-else="">Show setup</t>
+                </button>
+            </div>
+        </div>
+    </t>
+</templates>

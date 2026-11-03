@@ -347,6 +347,12 @@ export class ConversationView extends Component {
         // pick. The client action takes no params of its own, so it arrives
         // in the context. See static/src/js/chatter_door.js.
         const context = this.props.action?.context || {};
+        // Take the tour on Settings once Mail Pro is up and running (#391):
+        // the tour starts once the list has mail, the way it is offered.
+        // Taken off the context, so a way back to this Inbox is not a second
+        // tour.
+        this.takeTour = Boolean(context.pan_mail_tour);
+        delete context.pan_mail_tour;
         this.openedOn = context.pan_mail_model && context.pan_mail_res_id
             ? {
                   model: context.pan_mail_model,
@@ -904,7 +910,12 @@ export class ConversationView extends Component {
             // screen: a live row is not on a record, and the tour is about
             // the record. Not awaited: the list does not wait for it.
             if (conversations.some((row) => !row.live && !row.draft_id)) {
-                this.tour.offer();
+                if (this.takeTour) {
+                    this.takeTour = false;
+                    this.tour.take();
+                } else {
+                    this.tour.offer();
+                }
             }
             // The live folder is the newest page and has no next one: the
             // provider contract's search takes a limit and no offset, so
