@@ -193,18 +193,18 @@ terug (`sync_level`, tab Sync settings). Vier treden, elke trede houdt strikt
 meer dan de vorige. Replies op mail die Odoo al heeft komen op élke trede
 binnen; dat is geen instelling.
 
-- [ ] **Replies, in Odoo only** (standaard): een reply van een klant op een
+- [ ] **Replies** (standaard): een reply van een klant op een
       mail uit Odoo landt op het record; een nieuwe mail van dezelfde klant
       komt niet binnen; de Sent-map wordt niet gelezen
-- [ ] **Replies, in Odoo and your mail app**: een antwoord dat de eigenaar in
+- [ ] **Replies and Sent Items**: een antwoord dat de eigenaar in
       Outlook/Gmail op een Odoo-thread typt, verschijnt op het record; een
       nieuwe mail die hij vanuit zijn mailclient start blijft buiten
-- [ ] **Replies and new email, existing contacts only**: een nieuwe mail van
+- [ ] **Replies, Sent Items and known contacts**: een nieuwe mail van
       een bestaand contact komt binnen (contact-chatter, of team-alias als
       "Route new conversations to a team" aanstaat); van een onbekende
       afzender niet, en in het log staat één regel met de mailbox, de
       Message-ID en de reden
-- [ ] **Replies and new email, everyone**: dezelfde mail van de onbekende
+- [ ] **Replies, Sent Items, known and new contacts**: dezelfde mail van de onbekende
       afzender komt alsnog binnen en de afzender wordt een contact. De
       waarschuwing over nieuwsbrieven en privémail staat onder de keuze
 - [ ] Op een **bestaande** database na de upgrade: de oude keuze is op de
@@ -235,11 +235,11 @@ binnen; dat is geen instelling.
 - [ ] Na de upgrade bestaat de tegel **Communication** op het beginscherm niet
       meer; All Communication, Link Coverage, Internal Domains en Mail Routing
       staan onder Settings → Technical → Email → Mail Pro
-- [ ] Een mail van een onbekende afzender op een mailbox op trede "Replies
-      and new email, existing contacts only" wordt geweigerd. In het log
+- [ ] Een mail van een onbekende afzender op een mailbox op trede "Replies,
+      Sent Items and known contacts" wordt geweigerd. In het log
       staat één regel met de mailbox, de Message-ID en `unknown_contact`; er
       wordt niets opgeslagen
-- [ ] Zet de mailbox op "Replies and new email, everyone" en sync opnieuw:
+- [ ] Zet de mailbox op "Replies, Sent Items, known and new contacts" en sync opnieuw:
       dezelfde mail komt alsnog binnen. Dit is de vervanger van de
       triage-wachtrij
 - [ ] `pan_mail_item` bestaat niet meer als tabel, en er zijn geen

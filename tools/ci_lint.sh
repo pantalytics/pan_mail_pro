@@ -241,6 +241,26 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Odoo 20 ships no FontAwesome: tools/series/20.0's icons.scss draws each
+# `fa fa-<name>` the module uses as a Material Symbol, and a name missing
+# from that map is an invisible icon on 20 and a 0px button around it
+# (docs/plans/multi-version.md). The markup stays `fa fa-<name>` on every
+# series; this is what keeps the map complete when main gains an icon.
+step "Every FontAwesome name has a 20 icon"
+ICON_MAP=tools/series/20.0/$M/static/src/compat/icons.scss
+UNMAPPED=$(grep -rhoE 'fa fa-[a-z0-9-]+' "$M/static/src" "$M/views" \
+           | sed 's/^fa fa-//' | grep -vxE 'fw|lg|spin|pulse|[0-9]x' | sort -u \
+           | grep -vxF -f <(grep -oE '^    "[a-z0-9-]+"' "$ICON_MAP" | tr -d ' "') || true)
+if [ -n "$UNMAPPED" ]; then
+    echo "$UNMAPPED" | while read -r name; do
+        echo "::error file=$ICON_MAP::fa-$name has no Material Symbol on 20"
+    done
+    fail "Add each name to \$mailpro-icons in $ICON_MAP (Odoo 20's own subset: addons/web/tooling/icons)."
+else
+    echo "OK: every fa-* name the module uses is in $ICON_MAP."
+fi
+
+# ---------------------------------------------------------------------------
 step "Every test file is imported by tests/__init__.py"
 # Odoo collects tests through tests/__init__.py. A file on disk that nothing
 # imports does not exist as far as the runner is concerned: it lints clean, it

@@ -1264,18 +1264,26 @@ per message, in the composer's Send From.
 The question is `sync_level`: how much of this mailbox does Odoo read back? Four
 answers, and each keeps strictly more than the one above it:
 
-| `sync_level` | Label | Adds |
-|---|---|---|
-| `replies` | Replies, in Odoo only | nothing; the inbox is read for replies and that is all |
-| `both` | Replies, in Odoo and your mail app | the Sent folder, for the owner's own replies to threads Odoo already has |
-| `contacts` | Replies and new email, existing contacts only | conversations started by a known contact |
-| `everyone` | Replies and new email, everyone | conversations started by strangers, who become contacts |
+| `sync_level` | Stop | Label | Adds |
+|---|---|---|---|
+| `replies` | Replies | Replies | nothing; the inbox is read for replies and that is all |
+| `both` | + Sent Items | Replies and Sent Items | the Sent folder, for the owner's own replies to threads Odoo already has |
+| `contacts` | + known contacts | Replies, Sent Items and known contacts | conversations started by a known contact |
+| `everyone` | + new contacts | Replies, Sent Items, known and new contacts | conversations started by a new contact, who becomes one |
 
-The form shows the consequence under the choice, split by the situation the
-reader recognises rather than by the plumbing: a reply from your contact, your
-reply from your mail app, new mail from your contact, new mail from your mail
-app, new mail from a stranger. Exactly one line changes between two neighbouring
-rungs, which is what makes it a ladder rather than a menu.
+The control is a slider with four stops (`static/src/js/sync_level_field.js`,
+the `mailpro_sync_level` field widget), and under it one grid shows what lands
+where: four rows (Replies, Sent Items, New mail from a known contact, New mail
+from a new contact) against two columns, Your mail app and Odoo record. The mail
+app has every row at every stop; each stop turns on exactly one more row in the
+Odoo column, which is what makes it a ladder rather than a menu. Each row's info
+dot unfolds one muted line on what it means. The grid is a claim about the
+gates, so `tests/test_sync_level_slider.py` holds the widget's rows to
+`_reads_sent_folder`, `_syncs_new_conversations` and `_syncs_strangers`.
+
+#257 removed an earlier five-row table under the radio as repeating the labels.
+It did not: the labels say which rung, only the picture says where the mail
+ends up, and #390 brought it back in two columns instead of three.
 
 **Why one field.** 19.0.7.6.0 split a three-way `sync_mode` into two switches
 and a scope, so that asking to receive mail no longer silently copied everything
@@ -3191,8 +3199,8 @@ carries the system email -- is the workspace's, and stays under Settings with
 the mailbox managers.
 
 So the ladder appears twice and is stored once. On the mailbox form it is the
-Sync Settings tab, with the consequence table of §3. On **My Preferences → Mail
-Pro** it is the radio and the one warning that matters, next to Send from:
+Sync Settings tab. On **My Preferences → Mail Pro** it is the same slider and
+grid (§3) and the one warning that matters, next to Send from:
 `res.users.x_pan_mail_sync_level`, computed from the user's own personal
 mailbox and written back to it. The selection comes from
 `pan.mail.mailbox._fields['sync_level']`, so a rung added to the ladder cannot
@@ -3575,7 +3583,7 @@ eight groups:
 | Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_imap_live.py`, `test_pan_mail_provider.py`, `test_mail_account.py` | Wire-level behaviour per vendor, the application registration, and the credential rows behind them |
 | Pipeline | `test_incoming_sync.py`, `test_incoming_sync_gmail.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_internal_domains.py`, `test_mail_matcher.py`, `test_thread_drift.py`, `test_reply_sync.py`, `test_attachments.py`, `test_routing_log.py`, `test_mail_coverage.py`, `test_sync_sends_nothing.py` | Fetch → filter → match → post, the reply that comes back to its record, and the one invariant of the sync's outbound side |
 | Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
-| Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, and the one mailbox setting a user owns |
+| Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_sync_level_slider.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, the one mailbox setting a user owns, and the slider that sets it, held to the gates |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, and that no colour lacks a dark side |
 | The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_staging.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, and connects as staging of its production, the error ledger, and what leaves for PostHog |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |

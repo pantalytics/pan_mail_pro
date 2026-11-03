@@ -192,6 +192,10 @@ touches:
   notebook tab is a `<button>` on 20, `<a>` before, and a login on 20 lands
   on the Inbox, whose own bar wears `o_main_navbar`, so the banner is
   measured on Discuss.
+- **A name main gains is a name 20 lacks**: #397's slider brought
+  `fa-file-text-o`, which the 20 icon map did not have. `tools/ci_lint.sh`
+  now fails on any `fa fa-<name>` in the module that is not in
+  `tools/series/20.0/.../icons.scss`, so the map cannot fall behind main.
 - **20 wants Postgres 16** (measured 2026-11-03 on CI's first `series` run):
   `res.users._recompute_user_share` uses `any_value()`, which Postgres
   added in 16, and 20's `sql_db` warns below 16 at connect. The CI runner
