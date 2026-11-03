@@ -30,7 +30,7 @@ POST = 'odoo.addons.pan_mail_pro.models.pan_mail_license.requests.post'
 HEARTBEAT_FIELDS = {
     'db_uuid', 'module_version', 'odoo_version', 'mailboxes_connected',
     'mails_sent_24h', 'mails_received_24h', 'sync_ok', 'errors',
-    'coverage', 'rules', 'corrections', 'setup', 'staging',
+    'coverage', 'rules', 'corrections', 'setup', 'staging', 'hosting',
 }
 
 
@@ -422,6 +422,8 @@ class TestLicense(TransactionCase):
         body = self.calls[-1]['json']
         self.assertLessEqual(set(body), HEARTBEAT_FIELDS)
         self.assertNotIn('@', json.dumps(body))
+        # Every heartbeat says where it runs, in one of the platform's words.
+        self.assertIn(body['hosting'], ('sh', 'cloudpepper', 'self_hosted'))
 
     def test_the_heartbeat_carries_the_four_coverage_counts_and_the_rules(self):
         """Counts and rule names, the same four the Link Coverage screen shows."""

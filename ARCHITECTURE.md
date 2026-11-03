@@ -991,6 +991,7 @@ pan_mail_pro/
 │   ├── pan_mail_draft.py          # The saved composer, private to its author
 │   ├── pan_mail_error.py          # One row per failure the module caught (§7)
 │   ├── neutralization.py          # Is this database a copy?
+│   ├── hosting.py                 # Where this Odoo runs: sh, cloudpepper or self_hosted, off the environment
 │   ├── ir_mail_server.py          # A copy's outgoing From, put in place where Odoo builds the message (§9.9)
 │   ├── mail_mail.py               # Outgoing override + route resolution
 │   ├── mail_message.py            # Threading keys + communication lens
@@ -2530,8 +2531,8 @@ and it pairs the copy as staging (below).
 **A copy is connected as staging** (pan_mail_pro#384, the platform half in
 `odoo-mcp-pro-admin` #594). `pan.mail.license` runs Connect, Check approval
 and the heartbeat on a copy as on production, and says what it is: on a
-neutralized database the start call and every heartbeat carry
-`"staging": true`, a boolean and nothing else. It is what the database sees,
+neutralized database, or an Odoo.sh staging or dev branch (below), the start
+call and every heartbeat carry `"staging": true`, a boolean and nothing else. It is what the database sees,
 never an echo of the last answer, which would keep a database staging for
 as long as it asked after the platform had moved it.
 A production sends neither key, so its calls are the ones it made before the
@@ -2553,6 +2554,14 @@ Two things keep a connected copy a copy:
   inbox, the session's `pan_mail_copy`, Help improve. A database the
   platform bills nothing for must not send as production does, whatever its
   host left set, and a production answer gives production back.
+- **The host is a third way.** Odoo.sh sets `ODOO_STAGE` on every branch
+  (measured 2026-11-03 on a production branch: `ODOO_STAGE=production`), and
+  a `staging` or `dev` branch runs on a copy of production's database.
+  `hosting.host_says_copy` reads it, and `database_is_copy` answers yes on
+  it whatever the neutralization left set (odoo-mcp-pro-admin#598, which
+  #386 made the one place that asks). It is something the database sees, so
+  `database_sees_a_copy` (neutralized, or the host says so) is what the start
+  call and the heartbeat report as `staging`.
 - **Only the link reads past the gate.** The Pantalytics key and the
   pairing's device token are Fernet-encrypted like everything else, and
   `decrypt_value` refuses on a copy. They are read through
@@ -2988,10 +2997,25 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   `link_to` stamps), the number of hand-made links, and which kinds of
   failure happened how often (`pan.mail.error.codes_since`: a code from the
   fixed list in `pan_mail_error.CODES` and a count each, at most twenty, §7),
+  where it runs (`hosting`: `sh`, `cloudpepper` or `self_hosted`, below),
   and on a copy only, `staging: true` (§9.9).
-  Counts, rule names, error codes and that one flag. No address, subject, body, name,
-  exception text or traceback. The manifest's Data Disclosure says the same,
+  Counts, rule names, error codes, that one word and that one flag. No
+  address, subject, body, name, host name, path, exception text or
+  traceback. The manifest's Data Disclosure says the same,
   and has to change with it.
+- **Where it runs is read from inside, never probed** (odoo-mcp-pro-admin
+  #598). The platform keeps one hosting per Odoo instance and trusts what
+  the app reports above what it guessed from the domain or what the user
+  corrected, because only the app stands on the machine.
+  `models/hosting.py`'s `hosting()` says `sh` when Odoo.sh set
+  `ODOO_STAGE`, `cloudpepper` when the config file in use
+  (`odoo.tools.config['config']`) is `/var/odoo/<name>/odoo.conf`, the shape
+  in mailpro-dev's log (no environment variable of Cloudpepper's own has
+  been seen), and `self_hosted` otherwise. Those are the only three words
+  the platform's heartbeat takes, and it refuses the heartbeat on any other,
+  so the function can return no other. No request, no file read, no host
+  name. `tests/test_hosting.py` drives each branch with a patched
+  environment.
 - **A kind of failure not seen in the last day does not wait for tomorrow
   either.** `_report_errors_if_new()` (same cron, same shape as the setup
   push) compares the set of codes of the last 24 hours with the set the last
@@ -3420,7 +3444,7 @@ For shared mailboxes users also need **SendAs** in the Exchange Admin Center.
 | Authentication | OAuth 2.0 (Microsoft Entra ID, Google) — or login + password on IMAP |
 | Token storage | Encrypted at rest (Fernet) |
 | Token refresh | Automatic |
-| Data egress | Provider APIs, plus one daily heartbeat to Pantalytics: counts, versions and error codes from a fixed list (§9.17); the Inbox's events and errors to Pantalytics only on an opted-in workspace, messages scrubbed |
+| Data egress | Provider APIs, plus one daily heartbeat to Pantalytics: counts, versions, error codes from a fixed list and one word for where it runs (§9.17); the Inbox's events and errors to Pantalytics only on an opted-in workspace, messages scrubbed |
 
 ### Groups and rules
 
@@ -3585,7 +3609,7 @@ eight groups:
 | Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_sync_level_slider.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding, where the screens live, the one mailbox setting a user owns, and the slider that sets it, held to the gates |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, and that no colour lacks a dark side |
-| The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_staging.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, and connects as staging of its production, the error ledger, and what leaves for PostHog |
+| The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_staging.py`, `test_hosting.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, and connects as staging of its production, where the Odoo runs and that an Odoo.sh staging branch is a copy, the error ledger, and what leaves for PostHog |
 | Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 
 `tests/common.py` provides the shared fixture -- a notification mailbox, a
