@@ -386,7 +386,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] `version-bump` and `port-drift` read a series branch right: last three numbers and the merged main, not main's tip (2026-11-03, measured on a simulated `18.0` and `20.0` cut and port)
 - [ ] Enterprise column walked on an 18 Enterprise instance
 - [ ] A Cloudpepper dev instance on an 18 server (servers are pinned per major) with OAuth redirect URIs registered
-- [ ] Knowledge base page says which series are supported: docs/README.md and docs/getting-started/installation.md say 18.0, 19.0 and 20.0 (2026-11-03); the paste onto articles 116 and 117 is the open half
+- [x] Knowledge base page says which series are supported (2026-11-03: docs/README.md and docs/getting-started/installation.md say 18.0, 19.0 and 20.0, and articles 116 and 117 carry the rendered bodies, written through the Odoo connector)
 - [x] First tag `v18.0.34.0.0` (2026-11-03, `release.yml` on the push of 11a2a0d)
 
 ### Step 3. The `20.0` branch
