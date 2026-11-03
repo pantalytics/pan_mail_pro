@@ -424,20 +424,40 @@ class Checks:
             self.call('pan.mail.license', 'write', link, {'entitlement_json': False})
 
     def inbox_not_connected(self):
-        """Without a Pantalytics account the Inbox is one button, not four panes.
+        """Without a Pantalytics account the Inbox is one button, and the
+        button connects (#380).
 
         The read layer refuses on an unconnected instance, so panes drawn over
         that refusal would be a product that looks finished and is not. What
         this asserts: no folder list, exactly one Connect button, and that the
-        button lands on the Settings tab where connecting happens.
+        button starts the pairing itself and opens the approval page in this
+        tab. Approve there comes back to the Inbox, open, with nothing more to
+        press. It used to open Settings, where a second Connect button and
+        "Not connected" read as if the first click had failed.
+
+        Both halves of the platform are stood in. The approval page at the
+        network (`page.route`, one Approve link to the return route, which is
+        what the real page's 303 does), the pairing start in the Odoo server
+        by `tools/ci_addons/pan_mail_pro_ci_platform`, and the key the poll
+        would hand over on the row, the way the seed stands in a connected
+        instance; collecting it is `tests/test_inbox_gate.py`'s.
         """
         action = dict(module_menu_actions(self.call)).get('Inbox')
         if not action:
             self.fail('there is no Inbox menu')
             return
         page = self.page
-        link = self.call('pan.mail.license', 'search', [])
-        self.call('pan.mail.license', 'unlink', link)
+        approval = 'https://pantalytics.test/admin/link'
+        back = f'{self.base}/mail_pro/pantalytics/return'
+
+        def approval_page(route):
+            route.fulfill(status=200, content_type='text/html', body=(
+                '<!doctype html><title>Pantalytics</title>'
+                f'<a id="approve" href="{back}">Approve</a>'))
+
+        self.call('pan.mail.license', 'unlink', self.call('pan.mail.license', 'search', []))
+        self.call('ir.config_parameter', 'set_param', 'pan_mail_pro_ci.platform_stub', approval)
+        page.route(f'{approval}**', approval_page)
         try:
             page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
             try:
@@ -454,17 +474,61 @@ class Checks:
             if len(connect) != 1:
                 self.fail(f'the Inbox gate shows {len(connect)} Connect buttons, expected 1')
                 return
+            inbox_path = urllib.parse.urlsplit(page.url).path
             connect[0].click()
-            # A full navigation to /odoo/settings#pan_mail_pro, the hash
-            # selecting the tab: the block is visible without a click here.
             try:
-                page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
-                page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
-                                       timeout=30000)
+                page.wait_for_url(f'{approval}**', timeout=30000)
             except Exception:
-                self.fail('the Inbox gate does not land on the Mail Pro settings')
-            self.error_free('Inbox without a Pantalytics account')
+                self.fail(f'Connect on the Inbox gate does not open the approval page '
+                          f'in this tab; it is on {page.url}')
+                return
+            if 'code=UICK-0380' not in page.url:
+                self.fail(f'the approval page opens without the code in it: {page.url}')
+            link = self.call('pan.mail.license', 'search_read', [],
+                             fields=['status', 'user_code'])
+            if not link or link[0]['status'] != 'pending':
+                self.fail(f'Connect on the Inbox gate started no pairing: {link}')
+                return
+            # What Approve and the poll leave on the row.
+            self.call('pan.mail.license', 'write', [link[0]['id']], {
+                'status': 'active',
+                'user_code': False, 'verify_url': False, 'device_token_encrypted': False,
+                'connected_account': 'seed@pantalytics.test',
+                'connected_on': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'),
+                'valid_until': (datetime.datetime.now(datetime.UTC)
+                                + datetime.timedelta(days=14)
+                                ).strftime('%Y-%m-%d %H:%M:%S')})
+            page.click('#approve')
+            try:
+                page.wait_for_selector('.o_mailpro_folder', timeout=60000)
+            except Exception:
+                self.fail(f'Approve does not land back in an open Inbox; it is on {page.url}')
+                return
+            page.wait_for_timeout(800)
+            self.shot('inbox-connected-from-the-gate.png')
+            if urllib.parse.urlsplit(page.url).path != inbox_path:
+                self.fail(f'Approve lands on {page.url}, not on the Inbox it started from')
+            if page.query_selector('.o_mailpro_gate'):
+                self.fail('the Inbox gate is still there after Approve')
+            self.error_free('Inbox connected from its gate')
+
+            # A key the answer said no to (no plan): a new pairing is not the
+            # fix, so the same button opens Settings, which says what is.
+            self.call('pan.mail.license', 'write', [link[0]['id']], {'status': 'canceled'})
+            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
+            page.wait_for_selector('.o_mailpro_gate button', timeout=30000)
+            page.click('.o_mailpro_gate button')
+            try:
+                page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
+                                       timeout=60000)
+            except Exception:
+                self.fail('the Inbox gate on a workspace with no plan does not open '
+                          'the Mail Pro settings')
+            self.error_free('Inbox gate with no plan')
         finally:
+            page.unroute(f'{approval}**')
+            self.call('ir.config_parameter', 'set_param', 'pan_mail_pro_ci.platform_stub', False)
+            self.call('pan.mail.license', 'unlink', self.call('pan.mail.license', 'search', []))
             self.call('pan.mail.license', 'create', {
                 'status': 'active',
                 'connected_account': 'seed@pantalytics.test',

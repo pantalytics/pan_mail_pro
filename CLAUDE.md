@@ -374,7 +374,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, not zero tests, and no `bad query` / `ReadOnlySqlTransaction` line in the log |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
-| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user beside the address they are connected as, the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal, and the Inbox in dark mode: every pane dark and no line of text below 3:1 (dark mode is Enterprise; `tools/ci_addons/pan_mail_pro_ci_dark` stands it in on the community image) |
+| `tools/ui_check.py` | The browser assertions — checklist width, one dot per step, no selection codes on screen, every menu opens, and the Inbox: four filled panes, everything clickable a real button, Reply opening the composer in the pane and not in a dialog, one open message in a collapsed thread, the record pane stepping aside at 1280px and sliding in from the strip on its divider, the four tabs opening without a traceback, no chatter left in the record pane, the dividers dragging, folding and surviving a reload, the record taking the whole screen and giving it back, the phone showing one pane at a time with a way back from each, linking a conversation from the suggestion so the correction actually reaches the database, the sync ladder on My Preferences saving as a plain user beside the address they are connected as, the Help improve Mail Pro switch: absent until the workspace says yes, last on the page once it has, and its off saving the refusal, and the Inbox in dark mode: every pane dark and no line of text below 3:1 (dark mode is Enterprise; `tools/ci_addons/pan_mail_pro_ci_dark` stands it in on the community image), and the Inbox's gate connecting and landing back in an open Inbox (the platform's pairing start stood in by `tools/ci_addons/pan_mail_pro_ci_platform`) |
 | `tools/ui_preview.sh` | A running Odoo with the module installed and seeded, at http://localhost:8069. Not a check — the thing you look at |
 | `tools/ui_shot.py` | Screenshots a settings tab of that instance with Playwright |
 | `tools/docs_to_knowledge.py` | Renders `docs/` into the knowledge-base article bodies. Not a check: the docs live in two places and this is what keeps the published copy honest |
@@ -618,6 +618,40 @@ registry.category("views").add("my_list", myListView);
 After every `/compact`, update the **Lessons Learned** section below with new insights from the session (gotchas, errors, solutions). This ensures continuity across context compactions.
 
 ## Lessons Learned
+
+### A button that sends you to another button (19.0.33.0.6)
+
+- **The gate's Connect opened Settings, and Settings had its own Connect.**
+  The click worked, and the screen it landed on said "Not connected" under a
+  second button with the same words: it read as a click that failed. A
+  button does what it says on the screen it is on, or it says where it goes.
+  The gate starts the pairing itself now (`action_connect_open`, the same
+  call Settings' button makes) and opens the approval page in this tab.
+- **Read the other side before planning a fallback.** The plan had a poll
+  loop for "if the platform cannot send the browser back yet". It already
+  did: `link_page.approve` 303s to `RETURN_PATHS['mail_pro']` on the host
+  the Odoo gave, and that route already collected the key. What was missing
+  was one session key saying where Connect was pressed, the same shape as
+  #370's Microsoft way back. No platform change, no timer.
+- **A path the platform fixes is a place the session remembers.** The
+  return URL is scheme, host and one fixed path, so nothing the Odoo puts in
+  the start call survives the trip. `CONNECT_BACK_KEY` holds the screen,
+  `_safe_back` checks it on the way out, and it is popped, so a second visit
+  to the return route lands on Settings again.
+- **A new pairing is not the fix for every closed gate.** The gate shows on
+  any instance whose answer is not yes, including a workspace with no plan.
+  Connect there would pair again and get the same no; `inbox_gate()` says
+  `pairs: false` and the button opens Settings, which names the fix.
+- **The server half of a browser flow needs its own stand-in.** `page.route`
+  stands in the approval page; the pairing start is a call from the Odoo
+  server, which no browser route sees. `tools/ci_addons/pan_mail_pro_ci_platform`
+  answers it while `pan_mail_pro_ci.platform_stub` is set and refuses every
+  other platform call meanwhile, so nothing from the check reaches a real
+  server.
+- **A TestCase imported by name runs twice.** The loader collects every
+  TestCase on a test module, imported ones included. Borrow helpers through
+  the module (`test_license.TestLicense.server`), not `from ... import
+  TestLicense`.
 
 ### The module ships alone (19.0.33.0.5)
 

@@ -52,8 +52,10 @@ done
 echo " ready."
 
 # The second module is the dark mode Enterprise has and the community image
-# does not; tools/ci_addons/pan_mail_pro_ci_dark/ says why.
-odoo_cli -i pan_mail_pro,pan_mail_pro_ci_dark --without-demo=all
+# does not; tools/ci_addons/pan_mail_pro_ci_dark/ says why. The third answers
+# the pairing start the Inbox's gate asks the platform for, while the check
+# says so; tools/ci_addons/pan_mail_pro_ci_platform/ says why.
+odoo_cli -i pan_mail_pro,pan_mail_pro_ci_dark,pan_mail_pro_ci_platform --without-demo=all
 docker run -d --name "$ODOO" --network "$NET" -p 8069:8069 \
     -v "$REPO:/mnt/extra-addons:ro" -v "$REPO/tools/ci_addons:/mnt/ci-addons:ro" --entrypoint odoo "odoo:${SERIES}" \
     -d "$DBNAME" --db_host="$DB" --db_port=5432 --db_user=odoo --db_password=odoo \
