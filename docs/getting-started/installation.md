@@ -3,7 +3,7 @@
 Three steps and about ten minutes: add the module to your Odoo, install it,
 and connect it to your Pantalytics account.
 
-> 💡 You need Odoo 19.0, Community or Enterprise, on Odoo.sh, Cloudpepper or
+> 💡 You need Odoo 18.0, 19.0 or 20.0, Community or Enterprise, on Odoo.sh, Cloudpepper or
 > your own server. Odoo Online does not allow extra modules.
 
 **Someone else manages your Odoo, such as an Odoo partner?** Send them this
@@ -14,7 +14,8 @@ Pantalytics account.
 
 The code is on
 <a href="https://github.com/pantalytics/pan_mail_pro" target="_blank">GitHub</a>,
-branch `19.0`. How you add it depends on where your Odoo runs: Odoo.sh,
+the branch of your Odoo series: `18.0`, `19.0` or `20.0` (the examples
+below say `19.0`; use yours). How you add it depends on where your Odoo runs: Odoo.sh,
 Cloudpepper or your own server.
 
 ### Odoo.sh
@@ -25,7 +26,7 @@ Start on a staging branch, not on production.
    Odoo.sh**
 2. Repository URL: `git@github.com:pantalytics/pan_mail_pro.git` (Odoo.sh
    only takes this form, not `https://`)
-3. Branch: pick `19.0` from the list. Path: leave what Odoo.sh fills in
+3. Branch: pick your series (`19.0` for Odoo 19) from the list. Path: leave what Odoo.sh fills in
 4. Click **Add a submodule**. Odoo.sh commits it and builds the branch
 
 > 💡 The repository is public, so you need no deploy key. Odoo explains

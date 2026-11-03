@@ -372,7 +372,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] Constraints: measured 2026-11-03, no spike needed. `compat.Constraint` is `models.Constraint` where it exists and a `__set_name__` that appends to `_sql_constraints` on 18; the seven model files are identical on every branch
 - [x] `tools/ci_lint.sh`: the migration-folder check reads the manifest's series (2026-11-03); the checklist greps are the same on every series
 - [x] CLAUDE.md *Branches* paragraph (#376) and the Cloudpepper table, one column per series (2026-11-03)
-- [ ] TESTPLAN.md: the Enterprise checks get a column per series
+- [x] TESTPLAN.md: the Enterprise checks get a column per series (2026-11-03, *Enterprise per serie*, with the instance to walk each on)
 
 ### Step 2. The `18.0` branch
 
@@ -386,7 +386,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] `version-bump` and `port-drift` read a series branch right: last three numbers and the merged main, not main's tip (2026-11-03, measured on a simulated `18.0` and `20.0` cut and port)
 - [ ] Enterprise column walked on an 18 Enterprise instance
 - [ ] A Cloudpepper dev instance on an 18 server (servers are pinned per major) with OAuth redirect URIs registered
-- [ ] Knowledge base page says which series are supported
+- [ ] Knowledge base page says which series are supported: docs/README.md and docs/getting-started/installation.md say 18.0, 19.0 and 20.0 (2026-11-03); the paste onto articles 116 and 117 is the open half
 - [x] First tag `v18.0.34.0.0` (2026-11-03, `release.yml` on the push of 11a2a0d)
 
 ### Step 3. The `20.0` branch
