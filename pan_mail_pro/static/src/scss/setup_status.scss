@@ -198,3 +198,113 @@ $mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
     font-weight: 600;
     color: $mailpro-attention-text;
 }
+
+// The end of onboarding (#391): one line where the four steps were, in the
+// same rounded group, with the rocket the platform's install screen ends on
+// (odoo-mcp-pro-admin #595) in place of the dots.
+$mailpro-accent: if($mailpro-dark, #9b99ff, #7b78e6);
+$mailpro-window: if($mailpro-dark, #262a36, #ffffff);
+
+// The box is the widget's own wrapper, the `o_setting_box` the steps' box
+// also is, so the two line up edge for edge when Show setup opens the steps.
+.o_mailpro_running_box {
+    max-width: 46rem;
+    border: 1px solid rgba($mailpro-ink, 0.12);
+    border-radius: 12px;
+    margin-bottom: 0.75rem;
+}
+
+.o_mailpro_running {
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+
+    .o_mailpro_running_line {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .o_mailpro_running_title {
+        font-weight: 600;
+        font-size: 1.1em;
+        color: $mailpro-ink;
+    }
+
+    // Under the line, at the indent of its words: the next action, then the
+    // way back to the steps.
+    .o_mailpro_running_actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        padding-left: 3rem;
+    }
+
+    // Step 4's amber line, at the indent of the headline's words.
+    .o_mailpro_running_msg {
+        align-self: flex-start;
+        margin-top: -0.5rem;
+        margin-left: 3rem;
+        padding: 0;
+        font-size: 0.9em;
+        color: $mailpro-attention-text;
+        text-align: left;
+    }
+
+    .o_mailpro_show_setup {
+        padding-left: 0;
+        padding-right: 0;
+    }
+}
+
+.o_mailpro_rocket {
+    flex: 0 0 auto;
+    width: 2.25rem;
+    height: 2.25rem;
+    color: $mailpro-accent;
+    .o_mailpro_rocket_window { fill: $mailpro-window; }
+    .o_mailpro_rocket_flame { fill: $mailpro-attention; }
+}
+
+// Once, with the confetti: up from below, a small overshoot and a wobble.
+.o_mailpro_launch {
+    animation: o_mailpro_launch 1.1s cubic-bezier(.5, 0, .3, 1) both;
+}
+
+@keyframes o_mailpro_launch {
+    0% { transform: translateY(30px) scale(.7); opacity: 0; }
+    35% { transform: translateY(-8px) scale(1.08); opacity: 1; }
+    55% { transform: translateY(2px) rotate(-4deg); }
+    75% { transform: translateY(-3px) rotate(3deg); }
+    100% { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .o_mailpro_launch { animation: none; }
+}
+
+// Folded: the steps are there, one click away, and not drawn. The widget's
+// wrapper is their sibling, so the fold is a selector rather than a field
+// the settings form would ask to save.
+.o_widget_mailpro_up_and_running:has(.o_mailpro_running:not(.o_mailpro_running_open)) ~ .o_mailpro_steps {
+    display: none;
+}
+
+// Over everything, catching no clicks; the script removes it once the
+// pieces have landed.
+.o_mailpro_confetti {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    overflow: hidden;
+    pointer-events: none;
+
+    i {
+        position: absolute;
+        width: 7px;
+        height: 11px;
+        border-radius: 2px;
+    }
+}
