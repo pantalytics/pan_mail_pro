@@ -31,7 +31,7 @@ HEARTBEAT_FIELDS = {
     'db_uuid', 'module_version', 'odoo_version', 'mailboxes_connected',
     'mails_sent_24h', 'mails_received_24h', 'sync_ok', 'errors',
     'coverage', 'rules', 'corrections', 'setup', 'staging', 'hosting',
-    'mails_by_day',
+    'edition', 'mails_by_day',
 }
 
 
