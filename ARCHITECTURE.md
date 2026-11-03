@@ -1336,8 +1336,9 @@ and nobody to protect.
 admin's call: a mailbox on a domain they left off is treated as external, which
 is the setting doing its job. `suggest_domains()` reads the domains this
 database can demonstrate belong to the company — its mailboxes and its internal
-users' own addresses — and offers them with one click while the list is still
-empty, so nobody has to type them on day one. The users are the source that
+users' own addresses — and offers them as one button beside New on the
+Internal domains list while it is still empty (`action_add_suggested`;
+settings step 3 only reports, #381), so nobody has to type them on day one. The users are the source that
 matters: a company that acquired another has colleagues on its domain long
 before it has mailboxes on it.
 
@@ -1353,7 +1354,11 @@ recoverable in one field. The reverse error is none of those.
 This used to read `mail.alias.domain`, where "no domains configured" meant
 "nothing is internal" — so a database that never set it up synced every
 internal email into Odoo. Fail-closed, because the failure mode is a data leak.
-Alias domains still feed `suggest_domains()`; they no longer decide anything.
+Alias domains still feed `suggest_domains()`; they no longer decide anything,
+and neither the Odoo host (`web.base.url`) nor anything under `odoo.com` is
+ever suggested (`_is_hosting_domain`): Odoo.sh puts the alias domain on
+`<database>.odoo.com`, and a fresh database offered exactly that as the
+company's domain (3 Nov, #381).
 
 **The filter has no off switch.** Not globally and not per mailbox -- see
 §9.12. The one exception is not a switch: the mailbox owner may add a single
@@ -2854,8 +2859,12 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   the screen. One screen, one action, and the action is the fix for the
   state: Connect to Pantalytics; Connect again for a refused or revoked key
   (`DEAD_STATUSES`, which `action_connect` clears itself, so there is no
-  Disconnect first); Choose a plan for a workspace without one; Check again
-  for an answer that lapsed (19.0.32.1.0). Step 1 is not in `pan.mail.setup`'s
+  Disconnect first). Those two, and Check approval while pending, stay on
+  the line because there is no page to open yet. A connected link with
+  something wrong (no plan, an answer that lapsed, the month's mails used)
+  only reports it on the line; Choose a plan, Add a card and Check again
+  are on the account page its row opens (`mail_paused`, `check_again`,
+  #381). Step 1 is not in `pan.mail.setup`'s
   tuple: `sync_allowed()` is asked by the same callers with a refusal that
   names the exact state, which a generic "step 1 is open" would hide; the
   tuple only numbers its steps after it.
@@ -2884,8 +2893,9 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   mailboxes, and Try again) with its own sentence, and by nothing else: the
   Inbox, new accounts and sending carry on. Step 1 stays done, so steps 2 to
   4 stay on the page, and it reads Incoming paused with "500 mails this
-  month. Add a card to keep receiving." and one primary button to
-  `dashboard_url()`. The platform lifts it (a card, the 1st of the month),
+  month. Add a card to keep receiving."; the row opens the account page,
+  whose one primary button is Add a card to `dashboard_url()` (#381). The
+  platform lifts it (a card, the 1st of the month),
   so while it lasts `_retry_if_stuck()` asks every `RETRY_MINUTES` and Check
   again asks at once. The 200-a-day send cap without a card is #128.
 - **No grace period.** A trial is the server's business (a plan or a Stripe
@@ -3044,9 +3054,14 @@ own row (`create()`), and `migrations/19.0.31.0.0` set every existing row
 that had one to `own` before the ORM saw the field, so no upgraded database
 moves. For the Pantalytics app `credentials_set` is "this Odoo is connected
 to Pantalytics, or holds the app's id from an earlier sign-in": step 2 then
-reads done after one click (**Use Microsoft 365** on the open line), and a
-lapsed connection never reads as a missing registration, because the
-refresh needs nothing from us.
+reads done once the row exists, and a lapsed connection never reads as a
+missing registration, because the refresh needs nothing from us. With no
+row yet, step 2's row makes one (`action_open_current`: Microsoft 365
+through the app, saved) and opens its form, whose one primary button is
+**Sign in with Microsoft** while the provider is not connected (Sign in with
+Google for a Gmail row with its client). The verify dialog is for an own
+registration only: on the app there is nothing typed to verify, and closing
+the dialog used to leave a form with nothing to press (3 Nov, #381).
 
 One sign-in, in order:
 

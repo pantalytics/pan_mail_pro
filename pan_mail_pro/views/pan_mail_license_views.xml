@@ -5,7 +5,7 @@
          other three steps land on their tables: who connected it and when,
          what the last signed answer said, the way to usage and billing, and
          the way out. Nothing is typed on this page. The row is written by the
-         pairing and the heartbeat, so the form is read-only and its two
+         pairing and the heartbeat, so the form is read-only and its header
          buttons are the only controls. No menu: the arrow is the way in. -->
     <record id="view_pan_mail_license_form" model="ir.ui.view">
         <field name="name">pan.mail.license.form</field>
@@ -13,11 +13,30 @@
         <field name="arch" type="xml">
             <form string="Pantalytics account" create="false" edit="false" delete="false" duplicate="false">
                 <header>
+                    <field name="mail_paused" invisible="1"/>
+                    <field name="check_again" invisible="1"/>
                     <!-- Usage and the invoice live at Pantalytics. A button
                          out, not a copy of the numbers: the count that decides
-                         the invoice is the one that server kept. -->
+                         the invoice is the one that server kept. One primary
+                         at a time, named for what the settings line says is
+                         wrong: no plan, or the month's mails used without a
+                         card. Step 1 only reports those (#381); they are
+                         acted on here, all on the same Pantalytics page. -->
                     <button name="action_open_dashboard" type="object"
-                            string="Usage and billing" class="btn-primary"/>
+                            string="Choose a plan" class="btn-primary"
+                            invisible="status != 'canceled'"/>
+                    <button name="action_open_dashboard" type="object"
+                            string="Add a card" class="btn-primary"
+                            invisible="not mail_paused or status == 'canceled'"/>
+                    <button name="action_open_dashboard" type="object"
+                            string="Usage and billing" class="btn-primary"
+                            invisible="mail_paused or status == 'canceled'"/>
+                    <!-- Ask Pantalytics now rather than at the next
+                         heartbeat: only while there is something it could
+                         answer differently. -->
+                    <button name="action_check_approval" type="object"
+                            string="Check again" class="btn-secondary"
+                            invisible="not check_again"/>
                     <button name="action_disconnect" type="object"
                             string="Disconnect" class="btn-secondary"
                             confirm="This Odoo instance forgets its Pantalytics key. You can connect again at any time."/>

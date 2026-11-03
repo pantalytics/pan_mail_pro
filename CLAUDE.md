@@ -619,6 +619,22 @@ After every `/compact`, update the **Lessons Learned** section below with new in
 
 ## Lessons Learned
 
+### A shortcut is a second route, and it gets the second-best test (19.0.33.0.6)
+
+- **The checklist reports; the row opens the page that acts.** "Use
+  Microsoft 365" and "Add <domain>" on the overview were one-click
+  shortcuts beside an arrow to the same step, and both were wrong on the
+  first real database (Odoo.sh, 3 Nov): one ended on a provider form with
+  nothing to press once its dialog was closed, the other offered the
+  database's own `*.odoo.com` host as the company's mail domain. Nobody had
+  walked them because the arrow was the tested route. One route, and
+  `tools/ui_check.py`'s `rows_only_report` fails on any button or link
+  beside an arrow. A whole-row hit area is the chevron's `::after`, so
+  Playwright's `click()` on the name refuses ("intercepts pointer events");
+  click by mouse at the point, which is what a person does.
+- **Make the record before opening its form.** An arrow onto `/new`
+  shows an unsaved record's icons and asks "did this save?". A row with one
+  sensible default is created and saved by the method the arrow calls.
 ### The module ships alone (19.0.33.0.5)
 
 - **Odoo.sh tests what it deployed, and the store deploys one folder.**

@@ -311,7 +311,9 @@ class PanMailProvider(models.Model):
         the one in the provider console, that the permissions were granted, and
         that this tenant allows users to consent at all. It is also the first
         connected account, which is what the mailbox setup needs next. The
-        verify dialog offers it as its one next step.
+        form's Sign in button presses it whenever the provider is not
+        connected; the verify dialog offers it after an own registration was
+        saved.
         """
         self.ensure_one()
         return self.env.user.action_connect_mailbox(provider=self.provider)
@@ -525,22 +527,26 @@ class PanMailProvider(models.Model):
 
     @api.model
     def action_open_current(self):
-        """The row as a form, or the Providers list when there is none yet.
+        """The row as a form, made first when there is none yet.
 
-        Settings step 2's arrow opens this. A form with `res_id` is the
-        existing row and never a new one: `current()` is the only row the
-        single-row constraint allows, and a create-mode form saved next to
-        it is refused by that same constraint after the admin typed into it.
+        Settings step 2's row opens this. A form with `res_id` is the saved
+        row and never a new one: `current()` is the only row the single-row
+        constraint allows, and a create-mode form saved next to it is refused
+        by that same constraint after the admin typed into it. With no row
+        yet, one is made as `DEFAULT_PROVIDER` (Microsoft 365 through Mail
+        Pro's app, nothing to type) and saved, so the form opens on a
+        record and on its Sign in button, not on `/new` with an unsaved
+        record's icons (3 Nov, #381). The form's Provider field is the
+        choice for anybody on Google Workspace or IMAP/SMTP.
         """
         action = self.env['ir.actions.act_window']._for_xml_id(
             'pan_mail_pro.action_pan_mail_provider')
-        row = self.current()
-        if row:
-            action.update({
-                'res_id': row.id,
-                'view_mode': 'form',
-                'views': [(self.env.ref('pan_mail_pro.view_pan_mail_provider_form').id, 'form')],
-            })
+        row = self.current() or self.create({'provider': DEFAULT_PROVIDER})
+        action.update({
+            'res_id': row.id,
+            'view_mode': 'form',
+            'views': [(self.env.ref('pan_mail_pro.view_pan_mail_provider_form').id, 'form')],
+        })
         return action
 
     @api.model

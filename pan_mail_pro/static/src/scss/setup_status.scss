@@ -37,6 +37,7 @@ $mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
 // glyphs, because a column of different icons reads as a column of different
 // kinds of thing.
 .o_mailpro_step {
+    position: relative;
     display: flex;
     align-items: flex-start;
     gap: 0.7rem;
@@ -124,14 +125,37 @@ $mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
         color: $mailpro-attention-text;
     }
 
-    // The chevron at the end of the line: the way to where the step is changed.
+    // The chevron at the end of the line: the way to where the step is
+    // changed. Its hit area is the whole row (#381): the overview only
+    // reports, so a row with an arrow holds no other control, and the dot,
+    // the name and the answer all lead to the same page. A row without an
+    // arrow (step 1 before it is connected) keeps its buttons clickable,
+    // because there is no overlay to cover them.
     .o_mailpro_step_edit {
         flex: 0 0 auto;
         align-self: center;
         color: rgba($mailpro-ink, 0.35);
         padding: 0;
-        &:hover { color: rgba($mailpro-ink, 0.7); }
+        &::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+        }
+        &:focus-visible::after {
+            outline: 2px solid rgba($mailpro-ink, 0.35);
+            outline-offset: -2px;
+        }
     }
+
+    &:hover .o_mailpro_step_edit {
+        color: rgba($mailpro-ink, 0.7);
+    }
+}
+
+// The row that leads somewhere looks it, the way a phone's Settings row
+// does.
+.o_mailpro_step:has(.o_mailpro_step_edit):hover {
+    background: rgba($mailpro-ink, 0.03);
 }
 
 // About. The licence claim is a paragraph, not a field value: capped so it
