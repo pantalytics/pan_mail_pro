@@ -126,7 +126,7 @@ $mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
     }
 
     // The chevron at the end of the line: the way to where the step is
-    // changed. Its hit area is the whole row (#381): the overview only
+    // changed. Its hit area is the whole row (#382): the overview only
     // reports, so a row with an arrow holds no other control, and the dot,
     // the name and the answer all lead to the same page. A row without an
     // arrow (step 1 before it is connected) keeps its buttons clickable,

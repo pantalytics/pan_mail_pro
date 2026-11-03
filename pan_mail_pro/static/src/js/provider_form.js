@@ -11,7 +11,7 @@
  *
  * Not for Microsoft 365 through Mail Pro's app: there is nothing typed to
  * verify, so the dialog only ever said "signing in is the check", and closing
- * it left a form with no way on (3 Nov, #381). That form carries its own
+ * it left a form with no way on (3 Nov, #382). That form carries its own
  * Sign in with Microsoft button instead.
  */
 

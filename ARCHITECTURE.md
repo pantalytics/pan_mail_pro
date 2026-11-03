@@ -1338,7 +1338,7 @@ is the setting doing its job. `suggest_domains()` reads the domains this
 database can demonstrate belong to the company — its mailboxes and its internal
 users' own addresses — and offers them as one button beside New on the
 Internal domains list while it is still empty (`action_add_suggested`;
-settings step 3 only reports, #381), so nobody has to type them on day one. The users are the source that
+settings step 3 only reports, #382), so nobody has to type them on day one. The users are the source that
 matters: a company that acquired another has colleagues on its domain long
 before it has mailboxes on it.
 
@@ -1358,7 +1358,7 @@ Alias domains still feed `suggest_domains()`; they no longer decide anything,
 and neither the Odoo host (`web.base.url`) nor anything under `odoo.com` is
 ever suggested (`_is_hosting_domain`): Odoo.sh puts the alias domain on
 `<database>.odoo.com`, and a fresh database offered exactly that as the
-company's domain (3 Nov, #381).
+company's domain (3 Nov, #382).
 
 **The filter has no off switch.** Not globally and not per mailbox -- see
 §9.12. The one exception is not a switch: the mailbox owner may add a single
@@ -2864,7 +2864,7 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   something wrong (no plan, an answer that lapsed, the month's mails used)
   only reports it on the line; Choose a plan, Add a card and Check again
   are on the account page its row opens (`mail_paused`, `check_again`,
-  #381). Step 1 is not in `pan.mail.setup`'s
+  #382). Step 1 is not in `pan.mail.setup`'s
   tuple: `sync_allowed()` is asked by the same callers with a refusal that
   names the exact state, which a generic "step 1 is open" would hide; the
   tuple only numbers its steps after it.
@@ -2894,7 +2894,7 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   Inbox, new accounts and sending carry on. Step 1 stays done, so steps 2 to
   4 stay on the page, and it reads Incoming paused with "500 mails this
   month. Add a card to keep receiving."; the row opens the account page,
-  whose one primary button is Add a card to `dashboard_url()` (#381). The
+  whose one primary button is Add a card to `dashboard_url()` (#382). The
   platform lifts it (a card, the 1st of the month),
   so while it lasts `_retry_if_stuck()` asks every `RETRY_MINUTES` and Check
   again asks at once. The 200-a-day send cap without a card is #128.
@@ -3061,7 +3061,7 @@ through the app, saved) and opens its form, whose one primary button is
 **Sign in with Microsoft** while the provider is not connected (Sign in with
 Google for a Gmail row with its client). The verify dialog is for an own
 registration only: on the app there is nothing typed to verify, and closing
-the dialog used to leave a form with nothing to press (3 Nov, #381).
+the dialog used to leave a form with nothing to press (3 Nov, #382).
 
 One sign-in, in order:
 

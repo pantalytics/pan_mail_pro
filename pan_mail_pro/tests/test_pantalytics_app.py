@@ -144,7 +144,7 @@ class TestPantalyticsAppRow(TransactionCase):
 
     def test_step_2_s_row_makes_the_provider_and_opens_it_saved(self):
         """No row yet: the step 2 row makes Microsoft 365 through the app,
-        saved, and opens its form on it rather than on `/new` (3 Nov, #381)."""
+        saved, and opens its form on it rather than on `/new` (3 Nov, #382)."""
         connect_to_pantalytics(self.env)
         settings = self.env['res.config.settings'].create({})
         action = settings.action_open_provider()

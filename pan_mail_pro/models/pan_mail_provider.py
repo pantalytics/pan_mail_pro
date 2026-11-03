@@ -536,7 +536,7 @@ class PanMailProvider(models.Model):
         yet, one is made as `DEFAULT_PROVIDER` (Microsoft 365 through Mail
         Pro's app, nothing to type) and saved, so the form opens on a
         record and on its Sign in button, not on `/new` with an unsaved
-        record's icons (3 Nov, #381). The form's Provider field is the
+        record's icons (3 Nov, #382). The form's Provider field is the
         choice for anybody on Google Workspace or IMAP/SMTP.
         """
         action = self.env['ir.actions.act_window']._for_xml_id(

@@ -388,7 +388,7 @@ border, the way a phone's Settings app lists them.
   broken one, whose Connect again stays on the line. An arrow opens the row
   itself when there is one row, never a list that can land on a new form.
 - **One route: a row with an arrow holds nothing else, and the whole row is
-  the way in** (#381). The overview still carried shortcuts after #369:
+  the way in** (#382). The overview still carried shortcuts after #369:
   "Use Microsoft 365" under step 2, "Add <domain>" under step 3, Choose a
   plan, Add a card and Check again under step 1. Two routes to one step, and
   the shortcut was the worse one: "Use Microsoft 365" ended on a form with

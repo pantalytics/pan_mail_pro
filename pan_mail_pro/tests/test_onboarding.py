@@ -306,7 +306,7 @@ class TestSetupChecklist(TransactionCase):
         self.assertFalse(self._settings().x_setup_domains_done)
 
     def test_the_suggestion_is_added_on_the_list_not_the_overview(self):
-        """Step 3 only reports (#381): the domains read off the database are
+        """Step 3 only reports (#382): the domains read off the database are
         added from the Internal domains list the row opens."""
         self.env['pan.mail.mailbox'].create({
             'email': 'info@suggestme.test',

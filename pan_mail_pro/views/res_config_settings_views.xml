@@ -30,7 +30,7 @@
                          link to the table — nothing is typed on this page,
                          and nothing is done on it either: no button or link
                          on a row that has an arrow, and the whole row is the
-                         way in (one route, #369 and #381).
+                         way in (one route, #369 and #382).
                          Step 1 is a pairing with our server, so while it is
                          open its way is a button on the line itself; once it
                          is connected the line reads "Connected" and its arrow
@@ -196,7 +196,7 @@
                              land on a new, unsaved form, and saving that is
                              a second provider row. With no row yet the
                              method makes one, so the form opens saved, on
-                             its Sign in with Microsoft button (#381). -->
+                             its Sign in with Microsoft button (#382). -->
                         <button type="object" name="action_open_provider"
                                 icon="oi-chevron-right" title="Provider"
                                 class="oe_link o_mailpro_step_edit"
@@ -226,7 +226,7 @@
                             <!-- What can be read off the database is offered
                                  on the list the arrow opens, while it is
                                  empty (pan.mail.domain.action_add_suggested),
-                                 not here: this row only reports (#381). -->
+                                 not here: this row only reports (#382). -->
                         </div>
                         <button type="action" name="%(action_pan_mail_domain)d"
                                 icon="oi-chevron-right" title="Internal domains"

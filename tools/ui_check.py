@@ -18,7 +18,7 @@ seeds it. Every assertion here is a bug this module has actually shipped:
     has already copied by then -- every Enterprise screen went white
   * the checklist carried shortcuts on its rows ("Use Microsoft 365", "Add
     <the Odoo.sh host>") beside the arrow, two routes to one step, and the
-    first one left the provider form stuck on "Not Connected" (#381)
+    first one left the provider form stuck on "Not Connected" (#382)
 
     tools/ui_check.py                     # assert, and write screenshots
     tools/ui_check.py --out=ui-screenshots
@@ -220,7 +220,7 @@ class Checks:
         self.settings_account(steps[0])
 
     def rows_only_report(self, steps, where):
-        """The overview is status only (#381): a row with an arrow holds no
+        """The overview is status only (#382): a row with an arrow holds no
         other button and no link, and the whole row is the way in, so a
         click on its name lands on the arrow. Step 1 before it is connected
         has no arrow and keeps its buttons; it is not asked here."""
@@ -451,7 +451,7 @@ class Checks:
                 self.fail(f'step 1 over the mail limit does not say what to do: "{text}"')
             if not steps[0].query_selector('.o_mailpro_dot_warn:visible'):
                 self.fail('step 1 over the mail limit is not marked for attention')
-            # Status only (#381): Add a card and Check again are on the
+            # Status only (#382): Add a card and Check again are on the
             # account page the row opens, one primary there.
             self.rows_only_report(steps, 'over the mail limit')
             self.click_row(steps[0])
@@ -3267,7 +3267,7 @@ class Checks:
                 self.fail(f'a new provider, with nothing chosen yet, shows "{hidden}"')
 
     def settings_provider_first(self):
-        """Step 2 with no provider yet (#381, 3 Nov on Odoo.sh): the overview
+        """Step 2 with no provider yet (#382, 3 Nov on Odoo.sh): the overview
         offered "Use Microsoft 365", which landed on `/new` and a dialog, and
         closing the dialog left "Microsoft 365, Not Connected" with nothing to
         press. Now the row is the one route: a click makes the row and saves
@@ -3379,7 +3379,7 @@ class Checks:
         what can be read off the database, one button beside New, only while
         the list is empty, and never the Odoo host: Odoo.sh puts its alias
         domain on `<database>.odoo.com`, and the overview used to offer
-        exactly that as the company's domain (#381)."""
+        exactly that as the company's domain (#382)."""
         page = self.page
         was = self.call('pan.mail.domain', 'get_domains')
         # One of the sources, standing in for Odoo.sh's alias domain: an

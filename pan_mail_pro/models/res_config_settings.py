@@ -15,7 +15,7 @@ Steps 2 to 4 are tables — providers, internal domains, mailboxes — so this
 page only shows the answer and a way to reach the table where it is actually
 edited. Nothing is typed here, and nothing is done here either: a row is a
 dot, a name, one line and its answer, and the whole row opens the page where
-the action is (one route, #369 and #381). Step 1 is the exception only while
+the action is (one route, #369 and #382). Step 1 is the exception only while
 it has no page to open: not connected, waiting for approval, or a key that
 died, where its answer is a button because the thing it edits is a pairing
 with our server, not a row. Once it is connected it is a line like the other
@@ -248,7 +248,7 @@ class ResConfigSettings(models.TransientModel):
         """Step 2's arrow: the provider row itself, as a form.
 
         The overview only reports; what to do about it (choosing one, the
-        move off an own Azure app) is on the row (#369, #381). A list action
+        move off an own Azure app) is on the row (#369, #382). A list action
         opened from here could land on a new, unsaved form, and saving that
         one is a second provider row.
         """

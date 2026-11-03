@@ -24,7 +24,7 @@
         <field name="arch" type="xml">
             <!-- One primary button while the provider is not connected:
                  Sign in with Microsoft or Google, straight to the consent
-                 screen in this tab, and back on this form connected (#381).
+                 screen in this tab, and back on this form connected (#382).
                  Settings step 2 only reports; this is where it is acted on.
                  Saving a changed own registration (Google's client, never
                  Mail Pro's Microsoft app) also opens the verify dialog

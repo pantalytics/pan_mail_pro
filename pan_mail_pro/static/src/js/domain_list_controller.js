@@ -3,7 +3,7 @@
  * The Internal domains list, and what can be read off the database for it.
  *
  * Settings step 3 only reports the list; this is where it is answered, so
- * this is where the suggestion lives (#381). One button beside New, naming
+ * this is where the suggestion lives (#382). One button beside New, naming
  * the domains it adds, and only while the list is empty: a list that has
  * something in it is the admin's, and offering additions to it forever reads
  * as a complaint about a deliberate choice.

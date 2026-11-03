@@ -20,7 +20,7 @@
                          the invoice is the one that server kept. One primary
                          at a time, named for what the settings line says is
                          wrong: no plan, or the month's mails used without a
-                         card. Step 1 only reports those (#381); they are
+                         card. Step 1 only reports those (#382); they are
                          acted on here, all on the same Pantalytics page. -->
                     <button name="action_open_dashboard" type="object"
                             string="Choose a plan" class="btn-primary"

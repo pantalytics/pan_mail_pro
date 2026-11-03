@@ -243,7 +243,7 @@ class TestInternalDomainSuggestions(TransactionCase):
         """Odoo.sh names the database `<name>.odoo.com` and creates its alias
         domain on that host, so a fresh database offered "Add
         rutgerhofste-mail-pro-test-03.odoo.com" as its company domain (3 Nov,
-        #381). Nobody's mail lives on the host Odoo answers on, wherever it
+        #382). Nobody's mail lives on the host Odoo answers on, wherever it
         runs."""
         self.env['ir.config_parameter'].sudo().set_param(
             'web.base.url', 'https://Shop.Example-Host.test:8069')
@@ -355,7 +355,7 @@ class TestInternalDomainSuggestion(TransactionCase):
         self.assertTrue(set(suggested) <= set(self.Domains.get_domains()))
 
     def test_the_list_s_add_button_adds_what_it_named(self):
-        """The Internal domains list's Add button (#381): every suggested
+        """The Internal domains list's Add button (#382): every suggested
         domain on the list, nothing removed, nothing twice."""
         suggested = self.Domains.suggest_domains()
         before = set(self.Domains.get_domains())

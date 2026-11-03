@@ -272,7 +272,7 @@ class PanMailLicense(models.Model):
     # server named.
     connected_by_name = fields.Char(string='Connected by', compute='_compute_connected_by_name')
     # What the account page acts on, now that step 1 of the checklist only
-    # reports it (#381): incoming waiting on a card, and whether Check again
+    # reports it (#382): incoming waiting on a card, and whether Check again
     # has a question to ask (the same test `action_check_approval` makes).
     mail_paused = fields.Boolean(compute='_compute_attention')
     check_again = fields.Boolean(compute='_compute_attention')

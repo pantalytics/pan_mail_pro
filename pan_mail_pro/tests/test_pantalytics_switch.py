@@ -231,7 +231,7 @@ class TestTheSwitch(TransactionCase):
     def test_without_a_row_the_arrow_makes_one_and_opens_it(self):
         """Nothing to open yet: the row is made and saved first, so the form
         opens on a record and its Sign in button, never in create mode with
-        an unsaved record's icons (3 Nov, #381)."""
+        an unsaved record's icons (3 Nov, #382)."""
         self.row.unlink()
         action = self.env['res.config.settings'].with_user(self.admin).create(
             {}).action_open_provider()
@@ -408,7 +408,7 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
         self.assertEqual(arrows[0].get('type'), 'object')
 
     def test_the_checklist_rows_carry_no_action(self):
-        """Every action lives behind a row's arrow (#381): no Use Microsoft
+        """Every action lives behind a row's arrow (#382): no Use Microsoft
         365, no Add <domain>, no Choose a plan, Add a card or Check again on
         a row that has a page to open. Only step 1 while it has none (not
         connected, waiting, a dead key) keeps its buttons."""
@@ -426,7 +426,7 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
                                    'action_license_disconnect'})
 
     def test_the_provider_form_signs_in_whenever_it_is_not_connected(self):
-        """The provider form's one primary button (#381): closing a dialog
+        """The provider form's one primary button (#382): closing a dialog
         used to leave "Microsoft 365, Not Connected" and nothing to press."""
         form, _page = self._arch_text('pan.mail.provider',
                                       'pan_mail_pro.view_pan_mail_provider_form')
