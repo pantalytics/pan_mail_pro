@@ -274,6 +274,26 @@ print("All manifest data/asset files exist.")
 PY
 
 # ---------------------------------------------------------------------------
+step "requirements.txt lists the manifest's external dependencies"
+python3 - <<'PY' || fail "requirements.txt and external_dependencies disagree."
+import ast, re, sys
+# Odoo.sh and Cloudpepper install from a root requirements.txt; Odoo itself
+# reads the manifest. Two lists of one fact, so they are compared here.
+manifest = ast.literal_eval(open('pan_mail_pro/__manifest__.py').read())
+wanted = set(manifest.get('external_dependencies', {}).get('python', []))
+listed = set()
+for line in open('requirements.txt'):
+    line = line.split('#', 1)[0].strip()
+    if line:
+        listed.add(re.split(r'[<>=!~;\[ ]', line, maxsplit=1)[0].lower())
+if wanted != listed:
+    print("missing from requirements.txt: %s" % sorted(wanted - listed))
+    print("not in the manifest: %s" % sorted(listed - wanted))
+    sys.exit(1)
+print("requirements.txt matches external_dependencies: %s" % ', '.join(sorted(wanted)))
+PY
+
+# ---------------------------------------------------------------------------
 step "Rename SQL advertises the manifest's own name"
 python3 - <<'PY' || fail "tools/rename_to_mail_pro.sql disagrees with __manifest__.py."
 import ast, re, sys

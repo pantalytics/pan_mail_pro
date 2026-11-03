@@ -2742,6 +2742,11 @@ rename SQL against real jsonb columns) goes through `tests/common.py`'s
 `PAN_TEST_REPO_REQUIRED` says the repository is mounted. CI's `module-only`
 job (`tools/ci_odoo.sh --mode=module-only`) runs the suite in that shape.
 
+The one file at the root a host does read is `requirements.txt`: Odoo.sh and
+Cloudpepper ("Install Python requirements on update") install from it, Odoo
+reads the manifest's `external_dependencies`. It lists the same two packages,
+unpinned, and `tools/ci_lint.sh` fails when the two lists disagree.
+
 ### 9.17 Connecting to Pantalytics, and working only when connected
 
 Settings → Mail Pro → Pantalytics Account. The admin presses **Connect to
