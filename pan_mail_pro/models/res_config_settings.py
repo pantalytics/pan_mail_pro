@@ -117,7 +117,10 @@ class ResConfigSettings(models.TransientModel):
         [('ok', 'Verified'), ('open', 'Not yet'), ('broken', 'Refused')],
         compute='_compute_setup_status')
     x_notification_access_msg = fields.Char(compute='_compute_setup_status')
-    # The notification mailbox's own `mailbox_type`, read off the row (#387).
+    # The notification mailbox's own Type (`provider_type`, what the provider
+    # says it is, the owner rule until it has), read off the row (#387). Not
+    # `mailbox_type`: the sending policy makes every notification mailbox
+    # personal.
     # Personal is amber on step 4: password resets and follower mail go out
     # from a person's address, and their replies land in that person's inbox.
     # A shared mailbox carrying the flag turns it green.
@@ -308,7 +311,7 @@ class ResConfigSettings(models.TransientModel):
         alert = Setup.mailbox_alert()
         answers = Setup.answers()
         access_state, access_msg = Setup.notification_mailbox_verified()
-        notification_type = self.env['mail.mail']._notification_mailbox().mailbox_type or False
+        notification_type = self.env['mail.mail']._notification_mailbox().provider_type or False
         active_provider = self.env['pan.mail.provider'].current()
         mailboxes = _counted(self.env['pan.mail.mailbox'].sudo().search_count([]),
                              _('1 mailbox'), _('%s mailboxes'))

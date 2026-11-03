@@ -336,10 +336,13 @@ class PanMailConversation(models.AbstractModel):
         the system email (#387), and it syncs like any other.
         """
         self._check_caller()
-        return self.env['pan.mail.mailbox'].search_read(
-            ['|', ('is_notification_mailbox', '=', False), ('mailbox_type', '=', 'personal')]
-            + self._listed_mailbox_domain(),
-            ['email', 'status_message'], limit=50, order='sequence, email')
+        mailboxes = self.env['pan.mail.mailbox'].search(
+            self._listed_mailbox_domain(), limit=50, order='sequence, email')
+        # The owner rule, not `mailbox_type`: the sending policy calls every
+        # notification mailbox personal.
+        return mailboxes.filtered(
+            lambda m: not m.is_notification_mailbox or m._owner_rule_type() == 'personal'
+        ).read(['email', 'status_message'])
 
     def _folder_domain(self, folder):
         """The extra clauses the chosen folder adds to the grouping query.

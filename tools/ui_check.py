@@ -1162,14 +1162,20 @@ class Checks:
             self.shot('inbox-all-mailboxes.png')
 
         names = mailbox_names()
+        seeded = 0
         if len(names) < 2:
             self.fail(f'{len(names)} mailboxes in the mailbox list, expected the seeded 2')
         else:
-            if open_mailbox(1) != names[1:2]:
+            # By name, not position: the seed's notification mailbox is the
+            # admin's own address, which is listed too since #387 and sorts
+            # first.
+            seeded = next((i for i, name in enumerate(names) if name.startswith('sales@')), 0)
+            other = 1 if seeded != 1 else 0
+            if open_mailbox(other) != names[other:other + 1]:
                 self.fail('clicking a mailbox did not open it')
             # Back to the one the seeded mail is in, so everything below reads
             # the filled screen.
-            open_mailbox(0)
+            open_mailbox(seeded)
             # One mailbox is not a list that spans any: repeating the same
             # address down thirty rows is the noise this is drawn against.
             if row_mailboxes():
@@ -1191,9 +1197,9 @@ class Checks:
 
         if len(names) >= 2:
             before = folder_rows()
-            if fold(0) != before - len(self.FOLDERS):
+            if fold(seeded) != before - len(self.FOLDERS):
                 self.fail('folding a mailbox left its folders on screen')
-            if fold(0) != before:
+            if fold(seeded) != before:
                 self.fail('unfolding a mailbox did not bring its folders back')
 
         # Everything clickable is a real button, so a keyboard can reach it.
@@ -3913,10 +3919,11 @@ class Checks:
         page = self.page
         mailboxes = self.call('pan.mail.mailbox', 'search_read', [],
                               fields=['email', 'state', 'is_notification_mailbox',
-                                      'mailbox_type'])
+                                      'provider_type'])
         carrier = next((m for m in mailboxes if m['is_notification_mailbox']), None)
-        shared = next((m for m in mailboxes if m['mailbox_type'] == 'shared'), None)
-        if not carrier or carrier['mailbox_type'] != 'personal' or not shared:
+        shared = next((m for m in mailboxes if m['provider_type'] == 'shared'
+                       and not m['is_notification_mailbox']), None)
+        if not carrier or carrier['provider_type'] != 'personal' or not shared:
             self.fail(f'the seed has no personal notification mailbox and shared one: {mailboxes}')
             return
         stopped = [m['id'] for m in mailboxes if m['state'] == 'error']

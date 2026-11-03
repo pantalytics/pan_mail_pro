@@ -27,7 +27,7 @@ class TestPersonalNotificationMailbox(MailProTestCase):
         super().setUp()
         self.personal_mailbox.is_notification_mailbox = True
         self.assertFalse(self.notification_mailbox.is_notification_mailbox, 'one carries it')
-        self.assertEqual(self.personal_mailbox.mailbox_type, 'personal')
+        self.assertEqual(self.personal_mailbox.provider_type, 'personal')
 
     def settings(self):
         return self.env['res.config.settings'].create({})

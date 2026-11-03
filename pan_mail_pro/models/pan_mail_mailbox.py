@@ -938,7 +938,7 @@ class PanMailMailbox(models.Model):
         slot has no link.
         """
         mailbox = self.env['mail.mail']._notification_mailbox()
-        if not (mailbox.mailbox_type == 'personal' and mailbox.provider == 'outlook'):
+        if not (mailbox.provider_type == 'personal' and mailbox.provider == 'outlook'):
             return {'url': False, 'show_me': False}
         return {'url': SHARED_MAILBOX_URLS['outlook'], 'show_me': _show_me(SHOW_ME_SHARED)}
 
