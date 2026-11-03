@@ -43,7 +43,7 @@ fi
 docker rm -f "$ODOO" "$DB" >/dev/null 2>&1 || true
 docker network create "$NET" >/dev/null 2>&1 || true
 docker run -d --name "$DB" --network "$NET" \
-    -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo -e POSTGRES_DB=postgres postgres:15 >/dev/null
+    -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo -e POSTGRES_DB=postgres postgres:16 >/dev/null
 echo -n "Waiting for Postgres"
 for _ in $(seq 1 60); do
     docker exec "$DB" pg_isready -h localhost -U odoo >/dev/null 2>&1 && break

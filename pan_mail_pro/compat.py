@@ -4,8 +4,9 @@
 # running Odoo actually has, never against a version number. A model file
 # imports the name from here and reads the same on every branch.
 import inspect
+import logging
 
-from odoo import api, models
+from odoo import api, models, release
 from odoo.addons.base.models import ir_config_parameter as _icp
 from odoo.addons.base.models import ir_mail_server as _ims
 from odoo.addons.mail.models.mail_mail import MailMail
@@ -205,3 +206,22 @@ except AttributeError:
                 *owner.__dict__.get("_sql_constraints", []),
                 (name[1:], self.definition, self.message),
             ]
+
+
+_logger = logging.getLogger(__name__)
+
+# One line per process, at import: which spelling this Odoo got for each name
+# the series disagree on. The first thing to read when a customer's log says
+# a method does not exist, before guessing which series they run.
+_logger.info(
+    "[Mail Pro] Odoo %s: Constraint %s, Domain %s, config parameters %s, "
+    "_postprocess_sent_message %s success_emails, notification status %s, "
+    "mail server builds with %s",
+    release.serie,
+    "models.Constraint" if hasattr(models, "Constraint") else "_sql_constraints",
+    "a list with AND/OR" if issubclass(Domain, list) else "odoo.fields.Domain",
+    "get_param/set_param" if _CONFIG_PARAMETER_HAS_GET_PARAM else "get_str/set_str, the pair shimmed",
+    "with" if _POSTPROCESS_TAKES_EMAILS else "without",
+    "its own" if hasattr(MailMail, "_get_notification_status") else "the 18 table here",
+    MAIL_SERVER_BUILD,
+)

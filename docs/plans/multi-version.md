@@ -192,6 +192,11 @@ touches:
   notebook tab is a `<button>` on 20, `<a>` before, and a login on 20 lands
   on the Inbox, whose own bar wears `o_main_navbar`, so the banner is
   measured on Discuss.
+- **20 wants Postgres 16** (measured 2026-11-03 on CI's first `series` run):
+  `res.users._recompute_user_share` uses `any_value()`, which Postgres
+  added in 16, and 20's `sql_db` warns below 16 at connect. The CI runner
+  (`tools/ci_odoo.sh`) runs every series on `postgres:16`; 18 and 19
+  support it. Cloudpepper's v20 server has its own Postgres.
 - `migrations/` tests assert 19.0 migrations; the folder is empty on the
   `20.0` branch, so they do not apply there.
 

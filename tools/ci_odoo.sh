@@ -80,13 +80,14 @@ trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
 # Postgres. A container rather than a GitHub service so the same script works
-# where there are no service containers.
+# where there are no service containers. 16 for every series: 20 uses
+# any_value(), which Postgres added in 16, and 18 and 19 run on 16 as well.
 # ---------------------------------------------------------------------------
 docker rm -f "$DB" >/dev/null 2>&1 || true
 docker network create "$NET" >/dev/null 2>&1 || true
 docker run -d --name "$DB" --network "$NET" \
     -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo -e POSTGRES_DB=postgres \
-    postgres:15 >/dev/null
+    postgres:16 >/dev/null
 
 # Over TCP, not the unix socket: the image's entrypoint runs a temporary
 # server with listen_addresses='' while it initialises, then stops it and
@@ -115,7 +116,7 @@ docker run -d --name "$MAIL" --network "$NET" \
 # log line: a port that accepts a connection is the thing the test needs.
 echo -n "Waiting for GreenMail"
 for _ in $(seq 1 60); do
-    if docker run --rm --network "$NET" postgres:15 \
+    if docker run --rm --network "$NET" postgres:16 \
         timeout 2 bash -c "</dev/tcp/${MAIL}/3143" >/dev/null 2>&1; then
         echo " ready."
         break
@@ -198,7 +199,7 @@ if [ "$MODE" = "fresh" ] || [ "$MODE" = "module-only" ]; then
 
     # Pins the intent: if a dependency bump stops sale or mass_mailing from
     # installing, their tests would quietly go back to skipping and stay green.
-    MISSING=$(docker run --rm --network "$NET" postgres:15 \
+    MISSING=$(docker run --rm --network "$NET" postgres:16 \
         psql "postgresql://odoo:odoo@${DB}:5432/ci_test" -tAc \
         "SELECT name FROM ir_module_module
           WHERE name IN ('sale','mass_mailing','crm') AND state <> 'installed'")
