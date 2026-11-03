@@ -105,7 +105,9 @@
         - Nothing is sent to Pantalytics unless an administrator links the
           database under Settings -> Mail Pro -> Pantalytics Account. Once
           linked, the database reports once a day: its database id, the
-          module and Odoo version, how many accounts are connected, whether
+          module and Odoo version, where it runs (one of three words: Odoo.sh,
+          Cloudpepper or self-hosted, read from the environment), how many
+          accounts are connected, whether
           sync is healthy, which of the three setup steps are answered, and
           for the last 24 hours how many mails were
           sent and received, how many were
@@ -115,8 +117,9 @@
           which kinds of failure happened how often (a fixed list of error
           codes such as "outgoing.send_failed", with a count each). A
           staging or restored copy also says that it is one (a yes/no).
-          Counts, rule names and error codes. Never an address, subject,
-          body, name, exception text or traceback.
+          Counts, rule names, error codes and the hosting word. Never an
+          address, subject, body, name, host name, file path, exception
+          text or traceback.
         - Signing in with the Pantalytics Mail Pro app asks Pantalytics to
           start each Microsoft sign-in, sending this Odoo's own address to
           come back to. Microsoft's answer passes through Pantalytics on its
@@ -136,7 +139,7 @@
     'website': "https://www.pantalytics.com/apps/mail-pro/",
     'support': "support@pantalytics.com",
     'category': 'Discuss',
-    'version': '19.0.33.3.0',
+    'version': '19.0.33.3.1',
     'license': 'Other proprietary',  # Elastic License 2.0 — see LICENSE
     'depends': ['mail', 'base', 'crm'],
     'external_dependencies': {
