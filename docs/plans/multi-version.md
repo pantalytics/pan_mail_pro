@@ -354,7 +354,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] Registry loads on 18 (2026-11-03, `compat.py`: Constraint, Domain, three mail.mail/mail.thread names)
 - [x] Installs on 18 (2026-11-03): one view anchor moved to the notebook; `security/` loads unchanged
 - [x] Suite green on `tools/odoo_local.sh --series=18.0` (2026-11-03, at the head that merged main 19.0.33.2.0: 1359 tests, 0 failed, 0 errors, from `main` with the seam and no 18-specific file; the same with only `pan_mail_pro/` on the addons path)
-- [ ] Suite green on CI's `odoo:18.0` (needs the branch)
+- [ ] Suite green on CI's `odoo:18.0`: the `series` job of `ci.yml` runs it from main's checkout cut for 18 on every push (added 2026-11-03, pending its first green run); the branch's own run needs the branch
 - [x] UI job green locally: the Inbox renders on 18's `@mail`, every `tools/ui_check.py` assertion (2026-11-03, `tools/ui_local.sh --series=18.0`; the CI job needs the branch)
 - [x] Upgrade job: skips cleanly while no `v18.0.*` tag exists (and on the pinned `v19.0.*` row), runs once one does (2026-11-03, `tools/ci_odoo.sh`)
 - [x] `version-bump` and `port-drift` read a series branch right: last three numbers and the merged main, not main's tip (2026-11-03, measured on a simulated `18.0` and `20.0` cut and port)
@@ -372,10 +372,10 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] `compat.py`: `get_param`/`set_param` and `config_bool`; `_notify_thread` positional; the two test helpers (2026-11-03)
 - [x] Tracking rows without `mail.tracking.value`, `user_writeable=True` on the `res.users` fields, `ir.attachment` without `datas` (`compat.attachment_bytes`, fixtures on `raw`), the Files tab's store payload, `odoo.http` moves in the tests (2026-11-03)
 - [x] Installs; suite green locally (2026-11-03, at the head that merged main 19.0.33.2.0: 1359 tests, 0 failed, 0 errors through `tools/odoo_local.sh --series=20.0`, and the same with only `pan_mail_pro/` on the addons path, the Odoo.sh shape)
-- [ ] Suite green on CI's `odoo:20.0` (needs the branch)
+- [ ] Suite green on CI's `odoo:20.0`: the `series` job of `ci.yml` runs it from main's checkout cut for 20 on every push (added 2026-11-03, pending its first green run); the branch's own run needs the branch
 - [x] UI job green locally (2026-11-03, `tools/ui_local.sh --series=20.0`: every assertion but the two version lines the measuring copy's rewritten manifest fails on purpose)
-- [ ] Enterprise column walked on a 20 Enterprise instance
-- [ ] Cloudpepper dev instance on a 20 server
+- [ ] Enterprise column walked on a 20 Enterprise instance (`odoo-20-enterprise-demo.cloudpepper.site` is one, once the module is on it)
+- [ ] Cloudpepper dev instance on a 20 server. The server exists (`Pantalytics Demo v20`, with `odoo-20-community-demo` and `odoo-20-enterprise-demo` on it, seen 2026-11-03); what is missing is an instance with this module attached from a `20.0` branch, which needs that branch first
 - [ ] First tag `v20.0.x.y.z`
 
 ### Step 4. The routine

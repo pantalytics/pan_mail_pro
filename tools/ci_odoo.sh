@@ -9,6 +9,11 @@
 #   tools/ci_odoo.sh --mode=module-only  # fresh install with only pan_mail_pro/
 #                                        # on the addons path, as Odoo.sh and
 #                                        # the Apps store deploy it
+#   tools/ci_odoo.sh --series=20.0  # another series: the checkout cut for it
+#                                   # (tools/cut_series.sh) against odoo:20.0.
+#                                   # What the series branch gets, measured
+#                                   # on main before the port. Fresh and
+#                                   # module-only; an upgrade has no tag there.
 #
 # Env:
 #   KEEP_DB=1      leave the Postgres container running afterwards
@@ -20,9 +25,11 @@ set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 MODE=fresh
+WANT_SERIES=
 for arg in "$@"; do
     case "$arg" in
         --mode=*) MODE="${arg#--mode=}" ;;
+        --series=*) WANT_SERIES="${arg#--series=}" ;;
         *) echo "unknown argument: $arg" >&2; exit 2 ;;
     esac
 done
@@ -36,6 +43,21 @@ manifest = ast.literal_eval(open(f"{sys.argv[1]}/pan_mail_pro/__manifest__.py").
 print(".".join(manifest['version'].split('.')[:2]))
 PY
 )
+# Another series than the manifest's: a copy of the checkout, cut for it,
+# stands in for the checkout from here on. The loader refuses a manifest of
+# another series, so there is no measuring 20 on a 19 tree as it stands.
+CUT_TREE=
+if [ -n "$WANT_SERIES" ] && [ "$WANT_SERIES" != "$SERIES" ]; then
+    if [ "$MODE" = "upgrade" ]; then
+        echo "--series= with --mode=upgrade: no v${WANT_SERIES}.* release was cut from this tree; nothing to upgrade from." >&2
+        exit 2
+    fi
+    CUT_TREE=$(mktemp -d)
+    git -C "$REPO" ls-files -z --cached --others --exclude-standard | (cd "$REPO" && xargs -0 cp --parents -t "$CUT_TREE")
+    "$REPO/tools/cut_series.sh" "$WANT_SERIES" "$CUT_TREE"
+    chmod -R a+rX "$CUT_TREE"
+    SERIES=$WANT_SERIES
+fi
 echo "Testing against Odoo ${SERIES} (mode: ${MODE})"
 
 NET=pan_ci_net
@@ -131,6 +153,7 @@ BASE_ADDONS=""
 cleanup_all() {
     cleanup
     [ -n "$BASE_ADDONS" ] && rm -rf "$BASE_ADDONS"
+    [ -n "$CUT_TREE" ] && rm -rf "$CUT_TREE"
     return 0
 }
 trap cleanup_all EXIT
@@ -148,10 +171,10 @@ MODULES=pan_mail_pro,sale,mass_mailing
 # Odoo.sh that was five FileNotFoundErrors and a halted build. A copy, not a
 # symlink: Path.resolve() follows a symlink straight back into the repository.
 # ---------------------------------------------------------------------------
-TREE=$REPO
+TREE=${CUT_TREE:-$REPO}
 if [ "$MODE" = "module-only" ]; then
     BASE_ADDONS=$(mktemp -d)
-    cp -R "$REPO/pan_mail_pro" "$BASE_ADDONS/"
+    cp -R "$TREE/pan_mail_pro" "$BASE_ADDONS/"
     find "$BASE_ADDONS" -name '__pycache__' -prune -exec rm -rf {} +
     chmod -R a+rX "$BASE_ADDONS"
     TREE=$BASE_ADDONS
@@ -162,6 +185,7 @@ fi
 if [ "$MODE" = "fresh" ] || [ "$MODE" = "module-only" ]; then
     LOG="$LOG_DIR/odoo-test.log"
     [ "$MODE" = "module-only" ] && LOG="$LOG_DIR/odoo-module-only.log"
+    [ -n "$CUT_TREE" ] && LOG="${LOG%.log}-${SERIES}.log"
     set -o pipefail
     # --log-handler=odoo.tools.convert:DEBUG turns "Invalid view <name>
     # definition" with an empty context into a real traceback.

@@ -308,7 +308,7 @@ Three workflows in `.github/workflows/`:
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release), and the UI checks in a real browser |
+| `ci.yml` | every push + PR | lint (ruff), XML well-formedness, Odoo 19 checklist greps, manifest data-file check, version-bump check (PRs only), full test suite in a real Odoo (fresh install **and** upgrade from the last release, and fresh on 18 and 20 with the checkout cut for each), and the UI checks in a real browser |
 | `gitleaks.yml` | every push + PR | secret scan |
 | `release.yml` | push to `18.0`, `19.0` or `20.0` | tags the merge commit `v<manifest version>` if that tag does not exist yet |
 
@@ -353,6 +353,7 @@ tools/ci.sh lint                  # ruff, XML, the Odoo 19 checklist, boundaries
 tools/ci.sh test                  # fresh install + full suite in a real Odoo (~4 min)
 tools/ci.sh module-only           # the same with only pan_mail_pro/ deployed, as on Odoo.sh
 tools/ci.sh upgrade               # install last release, upgrade, run the suite
+tools/ci.sh series                # the suite on 18 and 20, the checkout cut for each (~8 min)
 tools/ci.sh ui                    # the browser checks against a seeded instance
 tools/ci.sh                       # all four, in CI's order
 
@@ -372,7 +373,7 @@ exists in a workflow file is a check nobody can run before pushing.
 | `tools/ci.sh` | Entry point. `lint`, `test`, `upgrade` or all three |
 | `tools/ci_lint.sh` | Every static check the lint job runs, including that every `tests/test_*.py` is imported by `tests/__init__.py` — a file that is not on that list never runs, and nothing else can see that |
 | `tools/ci_version_bump.sh` | The manifest version bump, against a base ref |
-| `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh`, `--mode=module-only` (only `pan_mail_pro/` on the addons path, the way Odoo.sh and the Apps store deploy it) or `--mode=upgrade` |
+| `tools/ci_odoo.sh` | Postgres + Odoo in Docker; `--mode=fresh`, `--mode=module-only` (only `pan_mail_pro/` on the addons path, the way Odoo.sh and the Apps store deploy it) or `--mode=upgrade`; `--series=18.0` or `20.0` runs fresh or module-only on the checkout cut for that series (`tools/cut_series.sh`) against `odoo:<series>`, the `series` CI job |
 | `tools/ci_assert_tests.sh` | Reads the Odoo summary: no failures, not zero tests, and no `bad query` / `ReadOnlySqlTransaction` line in the log |
 | `tools/ci_rename_rehearsal.sh` | The pre-rename customer path: install `pan_outlook_pro` at an old tag (or restore a customer backup with `BASE_DUMP=`), run the rename SQL, upgrade to HEAD across every migration. Not in CI — run it before a rollout |
 | `tools/ci_ui.sh` | The UI job: boots that instance, runs `ui_check.py` against it, keeps the screenshots |
