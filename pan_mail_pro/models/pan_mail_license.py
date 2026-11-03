@@ -98,7 +98,7 @@ import hmac
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 import requests
 
@@ -155,6 +155,12 @@ SETUP_PUSH_SECONDS = 60
 # A connected instance whose entitlement has not arrived asks again this often
 # (from the fetch cron), instead of waiting for the daily heartbeat.
 RETRY_MINUTES = 10
+
+# The UTC days every heartbeat restates, today included (odoo-mcp-pro-admin
+# docs/plans/mail-pro-usage-count.md). The platform sets each day it is sent
+# rather than adding to it, so a heartbeat after a week's outage still closes
+# the days it missed. The platform refuses more.
+MAIL_DAYS = 7
 
 # Stripe's statuses that keep a customer entitled, as the server decides them.
 # past_due stays entitled while Stripe is still retrying the card.
@@ -1077,6 +1083,10 @@ class PanMailLicense(models.Model):
                 [('connected', '=', True)]),
             'mails_sent_24h': mails['outgoing'],
             'mails_received_24h': mails['incoming'],
+            # The meter (#599): whole UTC days, which a second heartbeat on
+            # the same day restates. The two 24h numbers above stay for a
+            # platform from before them.
+            'mails_by_day': self._mails_by_day(),
             'sync_ok': (not stale and not Mailbox.search_count([('state', '=', 'error')])
                         if mailboxes else None),
             # The three setup steps as `pan.mail.setup` answers them, which is
@@ -1111,8 +1121,31 @@ class PanMailLicense(models.Model):
 
     @api.model
     def _mail_counts_since(self, since):
-        """Mails sent and received through Mail Pro since `since`, as
-        `{'incoming': n, 'outgoing': n}`. The meter the bill is computed from
+        """`_mail_counts_between` from `since` until now."""
+        return self._mail_counts_between(since, None)
+
+    @api.model
+    def _mails_by_day(self, now=None):
+        """The last MAIL_DAYS UTC calendar days, today included, as
+        `[{'day': 'YYYY-MM-DD', 'sent': n, 'received': n}]`, newest first.
+
+        Each day is `[00:00, next 00:00)` in UTC with explicit bounds.
+        `create_date` is stored in UTC, and a `read_group` on
+        `create_date:day` would group in the user's timezone instead.
+        """
+        today = datetime.combine((now or fields.Datetime.now()).date(), time.min)
+        days = []
+        for back in range(MAIL_DAYS):
+            start = today - timedelta(days=back)
+            counts = self._mail_counts_between(start, start + timedelta(days=1))
+            days.append({'day': start.date().isoformat(),
+                         'sent': counts['outgoing'], 'received': counts['incoming']})
+        return days
+
+    @api.model
+    def _mail_counts_between(self, start, end):
+        """Mails sent and received through Mail Pro from `start` up to `end`
+        (open-ended when None), as `{'incoming': n, 'outgoing': n}`. The meter the bill is computed from
         (odoo-mcp-pro-admin docs/plans/mail-pro-billing.md), so two rules:
 
         - **A mail counts on the day it reached Odoo** (`create_date`), not on
@@ -1127,7 +1160,9 @@ class PanMailLicense(models.Model):
           since) counts, like every mail Odoo itself sent.
         """
         Message = self.env['mail.message'].sudo()
-        base = [('x_direction', '!=', False), ('create_date', '>=', since)]
+        base = [('x_direction', '!=', False), ('create_date', '>=', start)]
+        if end is not None:
+            base.append(('create_date', '<', end))
         scopes = [[('x_mailbox_id', '=', False)]]
         for mailbox in self.env['pan.mail.mailbox'].sudo().with_context(
                 active_test=False).search([]):
