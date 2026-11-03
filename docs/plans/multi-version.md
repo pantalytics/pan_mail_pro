@@ -402,6 +402,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] UI job green locally (2026-11-03, `tools/ui_local.sh --series=20.0`, every assertion; the About check reads the cut copy's manifest through `PAN_UI_TREE`)
 - [ ] Enterprise column walked on a 20 Enterprise instance (`odoo-20-enterprise-demo.cloudpepper.site` is one, once the module is on it)
 - [x] Cloudpepper dev instance on a 20 server: `mailpro-dev-20.cloudpepper.site` on `Pantalytics Demo v20` (Odoo 20.0 community), the module attached from `20.0` and installed at `20.0.34.0.0`, webhook and auto-upgrade on (2026-11-03). The compat line in its log names 20's spellings; Settings and the mailbox list open as admin. The CLAUDE.md table has the login
+- [ ] `mailpro-dev-20` paired to a workspace (Settings > Mail Pro > Connect to Pantalytics, approved with a Zitadel sign-in; nothing in a session can do that step), then the Inbox walked there past the gate: the panes, a reply, the tour. Until then the live instance shows the gate and the panes are verified on 20 locally only
 - [ ] OAuth redirect URIs for `mailpro-dev-20` registered at Azure and Google, and one consent walked per provider
 - [x] First tag `v20.0.34.0.0` (2026-11-03, `release.yml` on the push of 3b50391)
 
