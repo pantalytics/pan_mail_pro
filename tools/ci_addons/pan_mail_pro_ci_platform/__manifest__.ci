@@ -13,7 +13,7 @@
 # tools/ci_addons_stage.sh copies it out under the name Odoo reads.
 {
     'name': 'Mail Pro CI: platform stand-in',
-    'version': '19.0.1.0.0',
+    'version': '18.0.1.0.0',
     'depends': ['pan_mail_pro'],
     'author': 'Pantalytics',
     'license': 'LGPL-3',
