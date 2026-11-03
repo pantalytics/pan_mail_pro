@@ -113,7 +113,8 @@
           matching rule how often it decided and how often a person
           overruled it, how many conversations were linked by hand, and
           which kinds of failure happened how often (a fixed list of error
-          codes such as "outgoing.send_failed", with a count each).
+          codes such as "outgoing.send_failed", with a count each). A
+          staging or restored copy also says that it is one (a yes/no).
           Counts, rule names and error codes. Never an address, subject,
           body, name, exception text or traceback.
         - Signing in with the Pantalytics Mail Pro app asks Pantalytics to
@@ -173,6 +174,7 @@
             'pan_mail_pro/static/src/scss/conversation_view.scss',
             'pan_mail_pro/static/src/scss/connect_banner.scss',
             'pan_mail_pro/static/src/js/mailbox_list_controller.js',
+            'pan_mail_pro/static/src/js/domain_list_controller.js',
             'pan_mail_pro/static/src/js/provider_form.js',
             'pan_mail_pro/static/src/js/connect_banner.js',
             'pan_mail_pro/static/src/compat/owl.js',
@@ -190,6 +192,7 @@
             'pan_mail_pro/static/src/js/conversation_view/verify_dialog.js',
             'pan_mail_pro/static/src/js/conversation_view/conversation_view.js',
             'pan_mail_pro/static/src/xml/mailbox_list_view.xml',
+            'pan_mail_pro/static/src/xml/domain_list_view.xml',
             'pan_mail_pro/static/src/xml/provider_form.xml',
             'pan_mail_pro/static/src/xml/connect_banner.xml',
             'pan_mail_pro/static/src/xml/chatter_door.xml',

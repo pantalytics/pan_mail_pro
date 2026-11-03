@@ -10,6 +10,7 @@ from ..models.mail_provider_client import (
     get_provider_client,
     oauth_redirect_uri,
 )
+from ..models.pan_mail_license import CONNECT_BACK_KEY
 from ..models.pan_mail_provider import MS_APP_SESSION_KEY
 from ..models.res_users import (
     INBOX_URL,
@@ -504,9 +505,11 @@ class MailProOAuthController(http.Controller):
 class MailProPantalyticsController(http.Controller):
     """Where the Pantalytics approval page sends the admin back to.
 
-    A plain link the admin clicks on our site after approving, so this is not an
-    OAuth callback and nothing about it is registered anywhere. It collects the
-    key and lands on the settings page, which shows the outcome.
+    A redirect from our site after Approve, so this is not an OAuth callback
+    and nothing about it is registered anywhere. It collects the key and lands
+    where Connect was pressed (`pan.mail.license._remember_back`): the Inbox
+    for its gate, Settings for Settings' button and for anybody whose session
+    does not say.
     """
 
     @http.route('/mail_pro/pantalytics/return', type='http', auth='user')
@@ -515,4 +518,5 @@ class MailProPantalyticsController(http.Controller):
             link = request.env['pan.mail.license'].current()
             if link:
                 link.collect_on_return()
-        return request.redirect(SETTINGS_URL)
+        back = request.session.pop(CONNECT_BACK_KEY, None)
+        return request.redirect(_safe_back(back, SETTINGS_URL))

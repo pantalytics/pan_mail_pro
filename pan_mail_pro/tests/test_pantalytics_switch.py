@@ -229,14 +229,17 @@ class TestTheSwitch(TransactionCase):
         self.assertEqual([kind for _view, kind in action['views']], ['form'])
         self.assertNotIn('default_provider', action.get('context') or '')
 
-    def test_without_a_row_the_arrow_opens_the_list(self):
-        """Nothing to open yet: the Providers list, where the empty state
-        says what to add. Never a form in create mode."""
+    def test_without_a_row_the_arrow_makes_one_and_opens_it(self):
+        """Nothing to open yet: the row is made and saved first, so the form
+        opens on a record and its Sign in button, never in create mode with
+        an unsaved record's icons (3 Nov, #382)."""
         self.row.unlink()
         action = self.env['res.config.settings'].with_user(self.admin).create(
             {}).action_open_provider()
-        self.assertFalse(action.get('res_id'))
-        self.assertEqual(action['view_mode'].split(',')[0], 'list')
+        row = self.env['pan.mail.provider'].current()
+        self.assertTrue(row)
+        self.assertEqual(action['res_id'], row.id)
+        self.assertEqual([kind for _view, kind in action['views']], ['form'])
 
     def test_the_providers_menu_opens_the_list(self):
         """The XML action itself starts on the list, not on a form."""
@@ -308,7 +311,7 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
 
     def test_a_copy_asks_nobody(self):
         self._switch()
-        with patch('odoo.addons.pan_mail_pro.models.res_users.database_is_neutralized',
+        with patch('odoo.addons.pan_mail_pro.models.res_users.database_is_copy',
                    return_value=True):
             self.assertFalse(self.nora._pan_mail_should_prompt_reconnect())
 
@@ -404,6 +407,36 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
         arrows = app.xpath("//button[@name='action_open_provider']")
         self.assertEqual(len(arrows), 1, 'the arrow opens the row through a method')
         self.assertEqual(arrows[0].get('type'), 'object')
+
+    def test_the_checklist_rows_carry_no_action(self):
+        """Every action lives behind a row's arrow (#382): no Use Microsoft
+        365, no Add <domain>, no Choose a plan, Add a card or Check again on
+        a row that has a page to open. Only step 1 while it has none (not
+        connected, waiting, a dead key) keeps its buttons."""
+        app, page = self._arch_text('res.config.settings',
+                                    'pan_mail_pro.res_config_settings_view_form',
+                                    "//app[@name='pan_mail_pro']")
+        for gone in ('action_use_microsoft_app', 'Use Microsoft 365',
+                     'action_apply_suggested_internal_domains', 'x_internal_domains_suggested',
+                     'action_license_plan', 'action_license_add_card'):
+            self.assertNotIn(gone, page)
+        buttons = {b.get('name') for b in app.xpath(
+            ".//div[contains(concat(' ', @class, ' '), ' o_mailpro_step ')]"
+            "//button[not(contains(@class, 'o_mailpro_step_edit'))]")}
+        self.assertEqual(buttons, {'action_license_connect', 'action_license_check',
+                                   'action_license_disconnect'})
+
+    def test_the_provider_form_signs_in_whenever_it_is_not_connected(self):
+        """The provider form's one primary button (#382): closing a dialog
+        used to leave "Microsoft 365, Not Connected" and nothing to press."""
+        form, _page = self._arch_text('pan.mail.provider',
+                                      'pan_mail_pro.view_pan_mail_provider_form')
+        signs = {b.get('string'): b for b in form.xpath(
+            "//button[@name='action_connect_myself']")}
+        self.assertEqual(set(signs), {'Sign in with Microsoft', 'Sign in with Google'})
+        for button in signs.values():
+            self.assertIn('btn-primary', button.get('class'))
+            self.assertIn("status == 'connected'", button.getparent().get('invisible'))
 
     def test_the_provider_form_holds_the_move(self):
         """The provider form has the move and nothing to choose (#369): no

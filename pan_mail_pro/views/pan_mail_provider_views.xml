@@ -22,10 +22,14 @@
         <field name="name">pan.mail.provider.form</field>
         <field name="model">pan.mail.provider</field>
         <field name="arch" type="xml">
-            <!-- No header buttons. Saving a changed registration opens the
-                 verify dialog (pan_mail_provider_form): the check runs at the
-                 moment the fields change, and signing in is the step it
-                 offers next. A connected provider has nothing to press. -->
+            <!-- One primary button while the provider is not connected:
+                 Sign in with Microsoft or Google, straight to the consent
+                 screen in this tab, and back on this form connected (#382).
+                 Settings step 2 only reports; this is where it is acted on.
+                 Saving a changed own registration (Google's client, never
+                 Mail Pro's Microsoft app) also opens the verify dialog
+                 (pan_mail_provider_form). A connected provider has nothing
+                 to press. -->
             <form string="Provider" js_class="pan_mail_provider_form">
                 <sheet>
                     <field name="uses_oauth" invisible="1"/>
@@ -54,6 +58,16 @@
                          invisible="provider != 'outlook' or registration != 'pantalytics' or pantalytics_connected">
                         Signing in with Microsoft needs this Odoo connected to Pantalytics
                         first: Settings, Mail Pro, step 1.
+                    </div>
+                    <div class="mb-3"
+                         invisible="provider != 'outlook' or registration != 'pantalytics' or not pantalytics_connected or status == 'connected'">
+                        <button name="action_connect_myself" type="object"
+                                string="Sign in with Microsoft" class="btn-primary o_mailpro_provider_sign_in"/>
+                    </div>
+                    <div class="mb-3"
+                         invisible="provider != 'gmail' or not credentials_set or status == 'connected'">
+                        <button name="action_connect_myself" type="object"
+                                string="Sign in with Google" class="btn-primary o_mailpro_provider_sign_in"/>
                     </div>
 
                     <!-- The move off an own app registration (§9.20), the

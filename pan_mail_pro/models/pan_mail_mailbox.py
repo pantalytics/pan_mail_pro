@@ -13,7 +13,7 @@ from .mail_provider_client import (
     ThrottledError,
 )
 from .mail_message import READ_MIRROR_CTX
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 
 _logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class PanMailMailbox(models.Model):
         self.ensure_one()
         return get_provider_client(self.env, self.provider)
 
-    def _is_sendable_by(self, user):
+    def _is_sendable_by(self, user, archived_ok=False):
         """Whether `user` may choose this mailbox as the sender of a mail.
 
         A personal mailbox sends with its *owner's* delegated token (see
@@ -117,6 +117,10 @@ class PanMailMailbox(models.Model):
         exempt even though it is one — see the comment on that branch.
 
         Shared mailboxes are shared on purpose.
+
+        `archived_ok` is for a neutralized copy only, where every mailbox is
+        archived by `data/neutralize.sql` and the question is which one would
+        have sent (`mail.mail._resolve_route(on_copy=True)`).
         """
         self.ensure_one()
         # Read as the system: the question is whether `user` may send from
@@ -125,7 +129,7 @@ class PanMailMailbox(models.Model):
         # cache) must get "no" rather than an AccessError. Nothing but a
         # boolean leaves this method.
         self = self.sudo()
-        if not self.active:
+        if not self.active and not archived_ok:
             return False
         # The notification mailbox is personal in every other respect — it has
         # an owner and sends with that owner's token — but every internal
@@ -1252,7 +1256,7 @@ class PanMailMailbox(models.Model):
         self.ensure_one()
         self._check_manager()
 
-        if database_is_neutralized(self.env):
+        if database_is_copy(self.env):
             raise UserError(_(
                 'This Odoo instance is neutralized (a staging or test copy). Syncing '
                 'would read live mail and post notifications back out, so it is '

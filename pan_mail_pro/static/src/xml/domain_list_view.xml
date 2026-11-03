@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- Beside New, while the list is empty and something can be suggested. -->
+    <t t-name="pan_mail_pro.DomainListButtons">
+        <button t-if="this.suggested" type="button"
+                class="btn btn-secondary o_mailpro_add_suggested"
+                t-on-click="() => this.onAddSuggested()">
+            Add <t t-esc="this.suggested"/>
+        </button>
+    </t>
+
+</templates>

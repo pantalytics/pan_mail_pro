@@ -57,6 +57,7 @@ from . import test_mailbox_test_send
 from . import test_mailbox_type
 from . import test_mailbox_heartbeat
 from . import test_license
+from . import test_inbox_gate
 from . import test_mail_limit
 from . import test_rpc_surface
 from . import test_recipient_split
@@ -71,3 +72,5 @@ from . import test_live_verify
 from . import test_session_schema_behind
 from . import test_dark_mode
 from . import test_setup_defaults
+from . import test_copy
+from . import test_staging

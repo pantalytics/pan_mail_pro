@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 from psycopg2 import IntegrityError
 
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 from odoo.tools import mute_logger
 from .common import groups_field
@@ -240,6 +240,29 @@ class TestInternalDomainSuggestions(TransactionCase):
         self.env.company.email = 'owner@gmail.com'
         self.assertNotIn('gmail.com', self.Domains.suggest_domains())
 
+    def test_the_odoo_host_is_never_suggested(self):
+        """Odoo.sh names the database `<name>.odoo.com` and creates its alias
+        domain on that host, so a fresh database offered "Add
+        rutgerhofste-mail-pro-test-03.odoo.com" as its company domain (3 Nov,
+        #382). Nobody's mail lives on the host Odoo answers on, wherever it
+        runs."""
+        self.env['ir.config_parameter'].sudo().set_param(
+            'web.base.url', 'https://Shop.Example-Host.test:8069')
+        self.env['mail.alias.domain'].sudo().create([
+            {'name': 'rutgerhofste-mail-pro-test-03.odoo.com'},
+            {'name': 'shop.example-host.test'},
+        ])
+        self.env.company.email = 'admin@odoo.com'
+        suggested = self.Domains.suggest_domains()
+        for hosting in ('rutgerhofste-mail-pro-test-03.odoo.com', 'odoo.com',
+                        'shop.example-host.test'):
+            self.assertNotIn(hosting, suggested)
+        self.assertIn('suggested.test', suggested, 'a real mail domain is still offered')
+
+    def test_a_domain_that_only_looks_like_odoo_com_is_kept(self):
+        self.env['mail.alias.domain'].sudo().create({'name': 'myodoo.com'})
+        self.assertIn('myodoo.com', self.Domains.suggest_domains())
+
     def test_a_mailbox_domain_is_suggested_whatever_is_configured(self):
         """The suggestion describes the database, not the current list: an
         admin who typed one domain still gets offered the rest."""
@@ -331,6 +354,25 @@ class TestInternalDomainSuggestion(TransactionCase):
         self.Domains.set_domains(suggested)
 
         self.assertTrue(set(suggested) <= set(self.Domains.get_domains()))
+
+    def test_the_list_s_add_button_adds_what_it_named(self):
+        """The Internal domains list's Add button (#382): every suggested
+        domain on the list, nothing removed, nothing twice."""
+        suggested = self.Domains.suggest_domains()
+        before = set(self.Domains.get_domains())
+        self.Domains.action_add_suggested()
+        self.assertEqual(set(self.Domains.get_domains()), before | set(suggested))
+        self.Domains.action_add_suggested()
+        self.assertEqual(len(self.Domains.get_domains()),
+                         len(before | set(suggested)), 'a second click adds nothing')
+
+    def test_only_a_mailbox_manager_adds_the_suggestion(self):
+        clerk = self.env['res.users'].with_context(no_reset_password=True).create({
+            'name': 'Clerk', 'login': 'clerk@first.test',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+        with self.assertRaises(AccessError):
+            self.Domains.with_user(clerk).action_add_suggested()
 
     def test_a_personal_address_does_not_drag_its_provider_in(self):
         """A colleague whose Odoo login is a personal address must not put a

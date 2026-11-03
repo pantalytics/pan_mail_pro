@@ -214,7 +214,7 @@ import secrets
 from odoo import SUPERUSER_ID, api, models, _
 from odoo.exceptions import UserError
 
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy
 
 _logger = logging.getLogger(__name__)
 
@@ -613,7 +613,7 @@ class MailProviderClient(models.AbstractModel):
         chokepoints, so guarding them covers every request the client makes.
         `tests/test_provider_contract.py` holds a new provider to the same rule.
         """
-        if database_is_neutralized(self.env):
+        if database_is_copy(self.env):
             raise UserError(_(
                 'This Odoo instance is neutralized (a staging or test copy), so Mail '
                 'Pro will not contact %s.'

@@ -27,9 +27,9 @@ workspace afterwards, under **Members**.
 Came back without approving? The Settings page shows the code and a link to
 the Pantalytics page. Approved but
 Odoo still says it is waiting? Press **Check approval**. Connected, but the
-page still says incoming mail is not synced? Press **Check again**: the
-instance asks Pantalytics once more, which it also does by itself every ten
-minutes.
+page still says incoming mail is not synced? Open step 1 and press **Check
+again** on the account page: the instance asks Pantalytics once more, which
+it also does by itself every ten minutes.
 
 Only an administrator of the Pantalytics workspace can approve. If the page
 says the Odoo instance is already connected to a workspace you do not
@@ -51,6 +51,22 @@ administer, ask an administrator of that workspace to approve instead.
   the key. You can connect again at any time; the instance keeps its place in
   the workspace.
 
+## On a staging copy
+
+A staging copy of your Odoo, or a restored backup, connects the same way:
+press **Connect to Pantalytics** on the copy. The Pantalytics page then asks
+which production it is a copy of. Pick it and press **Link**. A copy is never
+billed, and its mails never count toward the month.
+
+On a copy, Mail Pro sends nothing through Microsoft, Google or your mail
+server and reads no mailbox. Outgoing mail goes to the copy's own Odoo mail
+server, so you can look at it there. Settings and the Inbox both say "This is
+a copy. Mail is shown, not sent."
+
+A copy restored with production's connection usually has a database id of
+its own. Settings then says **No longer connected to Pantalytics**; press
+**Connect again** to link it as a copy.
+
 ## What leaves your server
 
 One request a day to `mcp.pantalytics.com`, carrying: the database
@@ -58,7 +74,8 @@ id, the Mail Pro and Odoo version, how many accounts are connected, whether
 sync is healthy, and for the last 24 hours how many mails were linked to a
 document, to a contact only, or to nothing, per matching rule how often it
 decided and how often somebody overruled it, and how many conversations were
-linked by hand. Counts and rule names. When you connect, the Odoo URL is sent
+linked by hand. A staging copy also says that it is one, as a yes or no.
+Counts and rule names. When you connect, the Odoo URL is sent
 too so the approval page can name this instance, and the email address of the
 Pantalytics account that approved is stored in Odoo, on the account page
 behind step 1 of the Settings checklist.

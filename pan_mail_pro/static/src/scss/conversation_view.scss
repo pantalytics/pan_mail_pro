@@ -32,6 +32,10 @@ $mailpro-record: if($mailpro-dark, #002328, #fafbfc);
 $mailpro-accent: if($mailpro-dark, #9b99ff, #5d5bd6);
 $mailpro-accent-ink: if($mailpro-dark, #b5b4ff, #4340b4);
 $mailpro-warn: if($mailpro-dark, #ff7a6b, #c0392b);
+// Amber, the settings page's "something to know that is not broken": the
+// copy marker (setup_status.scss has the same pair).
+$mailpro-attention: if($mailpro-dark, #f0b43c, #e8a317);
+$mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
 // A shadow is darker than what it falls on in both schemes; ink is not.
 $mailpro-shadow: if($mailpro-dark, #000, #001d21);
 
@@ -266,6 +270,19 @@ $mailpro-band-gutter: 3.5rem;
         width: 100%;
         max-width: 34rem;
         min-width: 0;
+    }
+
+    // A copy: one line above the bar, never over a pane. Amber text on a
+    // tint of the same amber, so it reads as a fact about this database
+    // rather than as something that broke.
+    .o_mailpro_copy_marker {
+        flex: 0 0 auto;
+        padding: 0.25rem 1.25rem;
+        background: rgba($mailpro-attention, 0.12);
+        color: $mailpro-attention-text;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        text-align: center;
     }
 
     .o_mailpro_error {

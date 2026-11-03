@@ -3,11 +3,16 @@
  * The provider form, verified on save.
  *
  * The form used to carry Test Credentials and Sign In Myself in its header,
- * even on a provider that was already connected. Now a save that changes the
- * registration opens one dialog: connecting, verifying, then the verdict. On
- * success its one button is the next step, signing in; on failure it says
+ * even on a provider that was already connected. Now a save that changes an
+ * own registration opens one dialog: connecting, verifying, then the verdict.
+ * On success its one button is the next step, signing in; on failure it says
  * which field to fix and closes back onto the form. A connected provider
  * offers nothing, because there is nothing left to do.
+ *
+ * Not for Microsoft 365 through Mail Pro's app: there is nothing typed to
+ * verify, so the dialog only ever said "signing in is the check", and closing
+ * it left a form with no way on (3 Nov, #382). That form carries its own
+ * Sign in with Microsoft button instead.
  */
 
 import { Component, onWillStart } from "@odoo/owl";
@@ -86,6 +91,9 @@ export class ProviderFormController extends FormController {
         await super.onRecordSaved(...arguments);
         const touched = REGISTRATION.some((name) => name in (changes || {}));
         if (!touched || !record.data.uses_oauth || !record.data.credentials_set) {
+            return;
+        }
+        if (record.data.provider === "outlook" && record.data.registration === "pantalytics") {
             return;
         }
         const field = record.fields.provider;

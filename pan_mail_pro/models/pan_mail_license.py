@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """This database's link to a Pantalytics account.
 
-The admin presses **Connect to Pantalytics** on the settings page. Odoo asks
-our server for a pairing and opens its page in a new tab, with the code already
-in the link. The admin signs in with their Pantalytics account, checks that the
-page names this Odoo, and approves; the button back to their Odoo lands on
-`/mail_pro/pantalytics/return`, which collects the key. Nobody types a code or
+The admin presses **Connect to Pantalytics**, on the settings page or on the
+Inbox's gate. Odoo asks our server for a pairing and opens its page in the
+same tab, with the code already in the link. The admin signs in with their
+Pantalytics account, checks that the page names this Odoo, and approves; our
+server then sends the browser to `/mail_pro/pantalytics/return`, which
+collects the key and lands where Connect was pressed. Nobody types a code or
 copies a key, and there is still no redirect URI to register per customer:
 the way back is an ordinary link to this Odoo, not an OAuth redirect.
 **Check approval** on the settings page does the same collection by hand.
@@ -72,8 +73,23 @@ none of the three means no limit.
 against the public key this module ships and its `db_uuid` matches this
 database, so a cached answer cannot be forged by editing a response or lifted
 from another customer. The key itself is Fernet-encrypted like every other
-secret here, which also means a neutralized copy cannot read it: a restored
-backup does not phone home and does not carry the licence with it.
+secret here.
+
+**A copy connects too** (pan_mail_pro#384). On a copy (`neutralization.
+database_is_copy`) Connect, Check approval and the heartbeat run as anywhere
+else, and on a neutralized database the start call and every heartbeat
+carry `staging: true` (what the database sees, never an echo of the
+answer). The
+platform asks on its approval page which production this is a copy of, links
+it as "staging of" that one, and answers with `staging: true` in the signed
+entitlement, no monthly mails and no bill. That answer keeps the copy a copy
+(`database_is_copy` reads it), so connecting one never turns on a provider.
+The key and the device token are read past the decryption gate
+(`encryption_utils.decrypt_link_secret`): they open the way to Pantalytics
+and to nothing else. A production key restored onto a copy whose database id
+changed meets `wrong_database` at its first heartbeat, and Connect again on
+the copy pairs it as staging. Signing a mailbox in still stops on a copy
+(`microsoft_start`), because that is a credential for a live mailbox.
 """
 import base64
 import hashlib
@@ -88,10 +104,12 @@ import requests
 
 from odoo import _, api, fields, models, release
 from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.http import request
 
 from . import encryption_utils
-from .neutralization import database_is_neutralized
+from .neutralization import database_is_copy, database_is_neutralized
 from .pan_mail_error import MAX_CODES_REPORTED
+from .res_users import _referer_path
 
 _logger = logging.getLogger(__name__)
 
@@ -144,6 +162,18 @@ ENTITLED_STATUSES = ('active', 'trialing', 'past_due')
 # The key itself is gone on the server (refused, or replaced by a newer
 # pairing): the only way back is a new pairing. Settings shows Connect again.
 DEAD_STATUSES = ('invalid', 'revoked')
+
+# The statuses a new pairing is the fix for: never connected, a pairing nobody
+# finished, a dead key. Anything else holds a key whose answer said no (no
+# plan, a lapsed answer), and connecting again does not change that answer.
+PAIRING_STATUSES = ('not_connected', 'pending') + DEAD_STATUSES
+
+# Where Connect was pressed, for the way back from the approval page to land
+# on (#380). The platform sends every approval to one fixed path on this
+# Odoo's address (`/mail_pro/pantalytics/return`) and carries nothing else
+# back, so the place lives in the session of the browser that pressed the
+# button, the way a Microsoft sign-in's does (#370).
+CONNECT_BACK_KEY = 'pan_mail_pantalytics_back'
 
 # "Not on this Odoo instance": the local no to the workspace's yes. A config
 # parameter rather than a field on the row, so it survives Disconnect and
@@ -272,6 +302,11 @@ class PanMailLicense(models.Model):
     # pan_mail_license_views.xml`): one label, whichever of the two the
     # server named.
     connected_by_name = fields.Char(string='Connected by', compute='_compute_connected_by_name')
+    # What the account page acts on, now that step 1 of the checklist only
+    # reports it (#382): incoming waiting on a card, and whether Check again
+    # has a question to ask (the same test `action_check_approval` makes).
+    mail_paused = fields.Boolean(compute='_compute_attention')
+    check_again = fields.Boolean(compute='_compute_attention')
 
     # Which setup steps the last heartbeat carried, as `setup_signature()`
     # writes them. Compared, never read for its own sake: it is how the module
@@ -328,6 +363,14 @@ class PanMailLicense(models.Model):
     def _compute_connected_by_name(self):
         for link in self:
             link.connected_by_name = link.connected_by()
+
+    def _compute_attention(self):
+        for link in self:
+            paused = link.incoming_paused()
+            link.mail_paused = paused
+            link.check_again = bool(
+                link.sudo().key_encrypted and link.status in ENTITLED_STATUSES
+                and (not link.is_entitled() or paused))
 
     @api.depends('status')
     def _compute_display_name(self):
@@ -452,7 +495,7 @@ class PanMailLicense(models.Model):
 
         Four yeses, any no wins: the workspace switched it on, the answer named
         a host and a project to send to, no administrator here refused it, and
-        this is not a neutralized copy. The host check matters on its own: an
+        this is not a copy. The host check matters on its own: an
         older server that says yes without saying where would otherwise leave
         the browser to guess.
 
@@ -465,7 +508,7 @@ class PanMailLicense(models.Model):
             return False
         if config_bool(self.env, IMPROVE_REFUSED_PARAM):
             return False
-        return not database_is_neutralized(self.env)
+        return not database_is_copy(self.env)
 
     @api.model
     def improve_config(self, link=None):
@@ -564,8 +607,12 @@ class PanMailLicense(models.Model):
 
     @api.model
     def action_connect(self):
-        """Ask our server for a code, and show it with the link."""
-        self._refuse_when_neutralized()
+        """Ask our server for a code, and show it with the link.
+
+        On a copy the call says `staging: true`, and the approval page asks
+        which production it is a copy of (#384). Only then: a production's
+        start call is the one it always was, so a platform that never heard
+        of the key would see nothing new from a production."""
         self._check_admin()
         link = self.current() or self.sudo().create({})
         if link.is_entitled():
@@ -576,11 +623,14 @@ class PanMailLicense(models.Model):
             # so it forgets the old key here rather than asking for a
             # Disconnect first. Mailboxes and settings are not touched.
             link.action_disconnect()
-        code, body = link._post('/api/v1/link/start', {
+        start = {
             'db_uuid': self._db_uuid(),
             'odoo_url': self.env['ir.config_parameter'].sudo().get_param('web.base.url', ''),
             'module_version': self._module_version(),
-        })
+        }
+        if database_is_neutralized(self.env):
+            start['staging'] = True
+        code, body = link._post('/api/v1/link/start', start)
         if code == 429:
             raise UserError(_('Too many connection attempts from this Odoo instance. '
                               'Try again in a few minutes.'))
@@ -598,7 +648,53 @@ class PanMailLicense(models.Model):
             'pairing_expires_at': _naive_utc(body.get('expires_at')),
             'last_error': False,
         })
+        self._remember_back()
         return link
+
+    @api.model
+    def action_connect_open(self):
+        """Connect, then the approval page in this tab: Settings' button and
+        the Inbox's gate both press this one.
+
+        The same tab, because a new one opened after this call answers is no
+        longer the click, and Brave and Safari block it. Approve on that page
+        sends the browser back to `/mail_pro/pantalytics/return`, which
+        collects the key and lands where Connect was pressed, so there is
+        nothing left to press afterwards."""
+        link = self.action_connect()
+        return {'type': 'ir.actions.act_url', 'url': link.verify_url, 'target': 'self'}
+
+    def _remember_back(self):
+        """Keep where Connect was pressed, for the return route to land on.
+
+        The Inbox's gate says so in the context (`pan_mail_back`); Settings'
+        button is an RPC whose Referer is Settings. Checked on the way out
+        (`_safe_back`), never trusted here."""
+        if not request:
+            return
+        back = self.env.context.get('pan_mail_back')
+        if back is None:
+            back = _referer_path()
+        request.session[CONNECT_BACK_KEY] = back or False
+
+    @api.model
+    def inbox_gate(self):
+        """What the Inbox's gate needs, when the page load said not connected.
+
+        `connected`: whether the Inbox opens. An administrator whose pairing
+        is still pending gets the key collected here first, the same
+        collection the return route makes: whoever approved and reached the
+        Inbox by another way than the link back finds it open, with nothing
+        to press. `pairs`: whether Connect, a new pairing, is the fix. On a
+        link holding a key the answer said no to, it is not, and the gate's
+        button opens Settings, which says what is."""
+        link = self.current()
+        if link:
+            link.collect_on_return()
+        return {
+            'connected': bool(link) and link.sync_allowed(),
+            'pairs': not link or link.status in PAIRING_STATUSES,
+        }
 
     def action_check_approval(self):
         """Collect the key once the admin has approved in their browser.
@@ -611,7 +707,6 @@ class PanMailLicense(models.Model):
         when something changed, so the settings page re-reads and redraws.
         """
         self.ensure_one()
-        self._refuse_when_neutralized()
         self._check_admin()
         if self.key_encrypted and self.status in ENTITLED_STATUSES and (
                 not self.is_entitled() or self.incoming_paused()):
@@ -620,7 +715,7 @@ class PanMailLicense(models.Model):
             # the next daily heartbeat.
             self._heartbeat_guarded()
             return False
-        token = encryption_utils.decrypt_value(self.env, self.device_token_encrypted)
+        token = encryption_utils.decrypt_link_secret(self.env, self.device_token_encrypted)
         if self.status != 'pending' or not token:
             return False
 
@@ -665,7 +760,7 @@ class PanMailLicense(models.Model):
         self.ensure_one()
         if not self.env.user.has_group('base.group_system'):
             return
-        if self.status == 'pending' and not database_is_neutralized(self.env):
+        if self.status == 'pending':
             try:
                 self.action_check_approval()
             except UserError as error:
@@ -809,11 +904,13 @@ class PanMailLicense(models.Model):
             self.env['pan.mail.error']._record('license.heartbeat_failed', error)
 
     def _heartbeat(self):
-        """Report in, and store the answer if, and only if, it is ours."""
+        """Report in, and store the answer if, and only if, it is ours.
+
+        A copy reports in as well, and says so (`staging` in the body, #384):
+        its key is read past the decryption gate, which keeps every mailbox
+        credential shut on it."""
         self.ensure_one()
-        if database_is_neutralized(self.env):
-            return
-        key = encryption_utils.decrypt_value(self.env, self.key_encrypted)
+        key = encryption_utils.decrypt_link_secret(self.env, self.key_encrypted)
         if not key:
             return
 
@@ -935,6 +1032,14 @@ class PanMailLicense(models.Model):
         Get started line at Pantalytics can tick what is done instead of
         asking the customer to tell it twice.
 
+        **`staging` is one boolean, and only a copy sends it** (#384): `true`
+        on a database Odoo neutralized, so the platform counts none of its
+        mails and bills nothing. It says what this database sees, never what
+        the last answer said: echoing a staging answer back would keep a
+        database staging for as long as it asked, after the platform had
+        moved it. A production leaves the key out rather than saying `false`,
+        and its heartbeat is the one it sent before the key existed.
+
         The coverage counts and the rule counts are the two numbers a decision
         does wait on: whether linking gets better per release, and which rule
         earns its place. Both are the last 24 hours, the same slice as the
@@ -955,7 +1060,7 @@ class PanMailLicense(models.Model):
                       + errors)[:MAX_CODES_REPORTED]
         rules = self.env['pan.mail.routing.log'].rule_counts_since(since)
         mails = self._mail_counts_since(since)
-        return {
+        body = {
             'db_uuid': self._db_uuid(),
             'module_version': self._module_version(),
             'odoo_version': release.major_version,
@@ -986,6 +1091,9 @@ class PanMailLicense(models.Model):
             # is the one not getting through.
             'errors': errors,
         }
+        if database_is_neutralized(self.env):
+            body['staging'] = True
+        return body
 
     @api.model
     def _mail_counts_since(self, since):
@@ -1041,9 +1149,13 @@ class PanMailLicense(models.Model):
         the system and never leaves this method.
         """
         from .pan_mail_provider import pantalytics_not_connected
-        self._refuse_when_neutralized()
+        # A copy may be connected (#384), but a sign-in is a credential for a
+        # live mailbox, and a copy holds none it may use.
+        if database_is_copy(self.env):
+            raise UserError(_('This Odoo instance is a copy (staging, a restored '
+                              'backup), so no mailbox is signed in to here.'))
         link = self.current()
-        key = encryption_utils.decrypt_value(self.env, link.key_encrypted) \
+        key = encryption_utils.decrypt_link_secret(self.env, link.key_encrypted) \
             if link and link.key_encrypted else False
         if not key or link.status in ('not_connected', 'pending'):
             raise UserError(pantalytics_not_connected())
@@ -1091,11 +1203,6 @@ class PanMailLicense(models.Model):
         except ValueError:
             body = {}
         return response.status_code, body if isinstance(body, dict) else {}
-
-    def _refuse_when_neutralized(self):
-        if database_is_neutralized(self.env):
-            raise UserError(_('This Odoo instance is a neutralized copy. It cannot be '
-                              'linked to a Pantalytics account.'))
 
     @api.model
     def dashboard_url(self):

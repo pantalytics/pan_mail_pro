@@ -306,15 +306,17 @@ class TestSetupChecklist(TransactionCase):
         self.env['pan.mail.domain'].set_domains([])
         self.assertFalse(self._settings().x_setup_domains_done)
 
-    def test_suggestion_button_fills_the_domain_field(self):
+    def test_the_suggestion_is_added_on_the_list_not_the_overview(self):
+        """Step 3 only reports (#382): the domains read off the database are
+        added from the Internal domains list the row opens."""
         self.env['pan.mail.mailbox'].create({
             'email': 'info@suggestme.test',
         })
-        settings = self._settings()
+        self.assertFalse(hasattr(self._settings(), 'action_apply_suggested_internal_domains'))
 
-        settings.action_apply_suggested_internal_domains()
+        self.env['pan.mail.domain'].action_add_suggested()
 
-        self.assertIn('suggestme.test', settings.x_internal_domain_ids.mapped('name'))
+        self.assertIn('suggestme.test', self._settings().x_internal_domain_ids.mapped('name'))
 
     def test_the_domains_line_counts_the_list(self):
         """The step shows its answer, not just its heading -- and the answer

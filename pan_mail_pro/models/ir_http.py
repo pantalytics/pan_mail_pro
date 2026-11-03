@@ -2,7 +2,9 @@
 """Four things in the session: does this user still have to connect a
 mailbox, or reconnect it through the Pantalytics app, is this Odoo connected
 to a Pantalytics account, and may the Inbox report how it is used. And once,
-after a sign-in, the line that says who signed in (`pan_mail_notice`).
+after a sign-in, the line that says who signed in (`pan_mail_notice`). And
+whether this database is a copy (`pan_mail_copy`), which the Inbox says in
+one line.
 
 The webclient asks nothing extra for it. `session_info` is already fetched once
 per page load, so the banner knows whether to draw itself before the first
@@ -29,6 +31,7 @@ from odoo import models
 from odoo.exceptions import AccessDenied, UserError
 from odoo.http import request
 
+from .neutralization import database_is_copy
 from .res_users import SIGN_IN_NOTICE_KEY
 
 _logger = logging.getLogger(__name__)
@@ -61,6 +64,11 @@ class IrHttp(models.AbstractModel):
                     exc.pgerror.splitlines()[0] if exc.pgerror else exc)
                 self.env.invalidate_all()
             result.update(flags)
+            # A config parameter Odoo's own neutralization writes, and one
+            # column of the link read with SQL that asks for the table first
+            # (`neutralization.entitlement_says_staging`), so it can neither
+            # be behind the code nor fail; outside the savepoint.
+            result['pan_mail_copy'] = database_is_copy(self.env)
             # Good once: the callback leaves it, the first page load after
             # it takes it (connect_banner.js shows it).
             result['pan_mail_notice'] = request.session.pop(SIGN_IN_NOTICE_KEY, False) \
