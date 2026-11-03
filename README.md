@@ -191,14 +191,14 @@ is picked per message, under **Send From** in the composer, and it shows up in
 the Sent Items of your mail app like any other mail.
 
 1. Open a mailbox, tab **Sync Settings**
-2. Pick a **Sync level**. Each one keeps strictly more than the one above it:
+2. Move the **Sync level** slider. Each stop keeps strictly more than the one before it, and the grid under the slider shows what lands on the Odoo record:
 
    | Level | What is read back |
    |---|---|
-   | **Replies, in Odoo only** (default) | Only replies to mail Odoo sent |
-   | **Replies, in Odoo and your mail app** | Also your own replies, read back from the Sent folder |
-   | **Replies and new email, existing contacts only** | Also new conversations started by people who are already contacts |
-   | **Replies and new email, everyone** | Also new conversations from strangers, who become contacts. Newsletters and private email included, so pick it only for an address that exists to hear from strangers |
+   | **Replies** (default) | Only replies to mail Odoo sent |
+   | **Replies and Sent Items** | Also your own replies, read back from Sent Items |
+   | **Replies, Sent Items and known contacts** | Also new conversations started by people who are already contacts |
+   | **Replies, Sent Items, known and new contacts** | Also new conversations from new contacts, who become contacts. Newsletters and private email included, so pick it only for an address that exists to hear from new contacts |
 
    Mail you start from your own mail app never enters, whatever the level:
    only your replies do.
