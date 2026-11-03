@@ -42,6 +42,12 @@ from .pan_mail_provider import PROVIDER_STATUS_SELECTION
 _logger = logging.getLogger(__name__)
 
 
+# The four colours a checklist dot can be (DESIGN_SYSTEM.md, *Every step is
+# the same line*).
+DOTS = [('ok', 'Done'), ('attention', 'Attention needed'),
+        ('warn', 'Stopped'), ('todo', 'To do')]
+
+
 def _counted(count, one, many):
     """A count as the answer on a checklist line: "1 domain", "3 domains"."""
     return one if count == 1 else many % count
@@ -164,6 +170,37 @@ class ResConfigSettings(models.TransientModel):
         string='Help improve Mail Pro',
         compute='_compute_improve', inverse='_inverse_improve',
     )
+
+    # -------------------------------------------------------------------------
+    # The four dots, and the line that replaces them (#391). The colour of
+    # each dot is decided once, in `pan.mail.setup.step_dots`; the view draws
+    # the word and "up and running" asks whether all four are green.
+    # -------------------------------------------------------------------------
+    x_account_dot = fields.Selection(DOTS, compute='_compute_step_dots')
+    x_provider_dot = fields.Selection(DOTS, compute='_compute_step_dots')
+    x_domains_dot = fields.Selection(DOTS, compute='_compute_step_dots')
+    x_mailboxes_dot = fields.Selection(DOTS, compute='_compute_step_dots')
+    # All four green and the first incoming mail on a record: the checklist
+    # folds into one line, "Mail Pro is up and running", with Show setup
+    # under it.
+    x_up_and_running = fields.Boolean(compute='_compute_step_dots')
+    # The internal users with no mailbox connected yet: the one next action
+    # is offered only while there is somebody to invite.
+    x_unconnected_count = fields.Integer(compute='_compute_step_dots')
+
+    def _compute_step_dots(self):
+        Setup = self.env['pan.mail.setup']
+        dots = Setup.step_dots()
+        running = Setup.up_and_running(dots)
+        unconnected = self.env['res.users'].sudo().search_count(
+            Setup._unconnected_colleagues_domain())
+        for record in self:
+            record.x_account_dot = dots['account']
+            record.x_provider_dot = dots['provider']
+            record.x_domains_dot = dots['domains']
+            record.x_mailboxes_dot = dots['mailboxes']
+            record.x_up_and_running = running
+            record.x_unconnected_count = unconnected
 
     # -------------------------------------------------------------------------
     # A copy (pan_mail_pro#379): one line above the checklist, no switch. The
