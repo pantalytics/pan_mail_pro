@@ -14,8 +14,7 @@ Before enabling incoming sync:
 1. Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow on step 4 of the checklist)
 2. Open a mailbox
 3. Replies to email sent from Odoo always land on the record they answer, with
-   no setting at all. On the **Sync Settings** tab, move the **Sync level**
-   slider for the rest. Each stop keeps strictly more than the one before it,
+   no setting at all. Move the **Sync level** slider for the rest. Each stop keeps strictly more than the one before it,
    and the grid under the slider shows what lands on the Odoo record:
    - **Replies** (default)
    - **Replies and Sent Items** - your own replies are read back from Sent

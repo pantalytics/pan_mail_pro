@@ -40,9 +40,8 @@ the Users list (Settings → Users & Companies → Users).
 
 ## Check it works
 
-On **My Preferences → Mail Pro**, press **Send Test Email**. It sends a message
-from your own mailbox to your own address, so a failure names the problem
-before a customer finds it. Every mailbox form has the same button.
+Send an email from any record in Odoo. If it does not go out, the email in
+the queue says why and what to do about it.
 
 ## Set your default mailbox
 

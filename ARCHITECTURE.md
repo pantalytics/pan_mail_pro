@@ -1176,7 +1176,7 @@ caller: only Microsoft 365 lets one person send as another with their own token.
 (#371). `mailbox_type` (string "Sending policy", stored, never on screen) is
 the rule below, and every reader that asks who may send from a mailbox or
 with whose token reads it: the record rule, the composer's domain,
-`_is_sendable_by`, `sends_with`, the clients. The **Type** column and the
+`_is_sendable_by`, the clients. The **Type** column and the
 form show `provider_type` instead, unstored: what Microsoft 365 or Google
 says the mailbox is, through `ADDRESS_KIND_TYPES` in
 `mail_provider_client.py` (user and alias are Personal, shared and
@@ -1233,10 +1233,12 @@ registration's, or a consumer Google account, is refused with the reason
 (`identity_refusal`, `oauth.tenant_mismatch`) rather than failing at the
 first send with a 404 that reads like a missing right.
 
-The mailbox form says the sending rule from its side: `sends_with` is
-`_resolve_sending_account` in one sentence -- the owner's sign-in and its
-address on a personal or notification mailbox, each sender's own on a
-Microsoft shared one, its own account on Gmail and IMAP.
+The mailbox form is one page (#420). On a personal mailbox, the owner rule
+(`owner_is_address`, the address is the owner's own) hides Owner: whoever
+connected it owns it, and changing that is archiving the mailbox and
+connecting again. On any other address Owner is a plain field. The test is
+the owner rule, not `mailbox_type` (which the notification flag turns
+personal) nor `provider_type` (which calls the Emovr shape personal).
 
 ### Verified access
 
@@ -1276,9 +1278,9 @@ nothing; Gmail is the one provider where Send As is a lookup
 would put an HTTP call where the ORM expects none. At the consent callback,
 for every mailbox the new sign-in serves, so the person who just consented
 sees the answer on the screen they land on. Once an hour per mailbox under
-the sync cron, in a savepoint of its own. From Check mailbox on the mailbox
-form (which then sends one email to whoever pressed it, so the
-row also holds a real send), and before the sync when Try again is pressed.
+the sync cron, in a savepoint of its own, and before the sync when Try again
+is pressed. The form asks nobody to check anything (#420): a refusal reaches
+the status line with what to do about it (`_access_sentence`).
 
 **The probes, per provider.** Microsoft: `GET /users/{address}/mailFolders/inbox`
 with the sign-in's token is the Full Access probe; `mailboxSettings/userPurpose`
@@ -2832,10 +2834,8 @@ its own Azure app, amber whatever its status until it has moved (#369).
 Step 4 takes the same rule (#387): amber with "System email from a personal
 mailbox" while the notification mailbox's own Type (`provider_type`) is personal
 (`x_notification_mailbox_type`), green once a shared mailbox carries the flag.
-On Microsoft 365 the Mailboxes list it opens offers Create a shared mailbox
-(the admin center) with a Show me file slot (`SHOW_ME_DIR`, empty means no
-link). The flag itself hides and skips nothing any more: the first mailbox
-anyone adds is their own and carries the flag on its own, so its Sync settings,
+The flag itself hides and skips nothing any more: the first mailbox
+anyone adds is their own and carries the flag on its own, so its sync level,
 its owner's sync level on My Preferences, its place in the Inbox and the
 stale-sync check all follow `sync_level` like any other mailbox.
 
@@ -2930,36 +2930,12 @@ tag and nothing mounts at all: a white screen on every screen, and no server
 log to explain it. `tools/ci_lint.sh` refuses a component tag in any template
 borrowed from another module, because CI runs community and cannot see this.
 
-### 9.15 The test email goes to the person, never to the mailbox
+### 9.15 The mailbox form asks nothing
 
-Three things can be tested about a mailbox and only two of them were:
-`pan.mail.account.action_test_connection` asks the provider whether the
-credentials still work, `pan.mail.mailbox.action_test_incoming` fetches a
-message. Sending was untested, and sending is where a mailbox fails silently —
-a send scope that was never granted, a SendAs that Exchange does not have, a
-DMARC record that rejects the address. Coming back from a consent screen proves
-none of those; only a message that arrives does.
-
-**No confirmation mail is sent when a mailbox is connected.** The provider has
-just told the user the grant succeeded, and a mail addressed *to* the mailbox
-is worse than redundant: the sync reads it straight back in, which is a routing
-log entry and possibly a record created by a self-test. `action_test_send` is a
-button somebody presses, and it sends to `env.user.email` — the person who
-pressed it, who can judge whether it arrived.
-
-That one rule covers all three mailbox types without a branch. On a personal
-mailbox the presser *is* the owner, because `_is_sendable_by` lets nobody else
-send from one; on a shared or notification mailbox it is whoever is testing.
-The button lives on the mailbox form only. My Preferences had a copy until
-19.0.20.6.0; a user whose connection works has nothing to test, and one whose
-connection fails is told so by the banner and by the mail that did not go out.
-
-Two smaller decisions hold it together. The mail is routed with
-`x_send_from_mailbox_id` rather than left to `_resolve_route`, because a test
-that silently leaves from a *different* mailbox tests nothing (§9.5). And the
-whole attempt runs in one savepoint: a failed test that left a `mail.mail`
-behind would be delivered by the queue cron minutes later, which is a test
-email arriving out of nowhere long after the reader concluded it had failed.
+There was a test email on the mailbox form, and a Check step around it, until
+19.0.35.0.0 (#420). The form asks nobody to verify anything now: the access
+check runs on its own (§2 *Verified access*), and a send that fails carries its
+own reason in `failure_reason`, saying what to do at the moment it matters.
 
 ### 9.16 Source-available, free in the Odoo Apps store, paid in the app
 
@@ -3303,7 +3279,7 @@ carries the system email -- is the workspace's, and stays under Settings with
 the mailbox managers.
 
 So the ladder appears twice and is stored once. On the mailbox form it is the
-Sync Settings tab. On **My Preferences → Mail Pro** it is the same slider and
+sync level row. On **My Preferences → Mail Pro** it is the same slider and
 grid (§3) and the one warning that matters, next to Send from:
 `res.users.x_pan_mail_sync_level`, computed from the user's own personal
 mailbox and written back to it. The selection comes from
@@ -3331,8 +3307,8 @@ fields and public methods on `res.users` are both reachable over RPC for any id
 an internal user can browse, which is all of them.
 
 **The notification mailbox is excluded**, even when an administrator owns it.
-It carries the system email, its own form hides the Sync Settings tab, and
-nothing about it is one person's preference.
+It carries the system email, and nothing about it is one person's
+preference.
 
 ### 9.20 Microsoft 365 through the Pantalytics app
 
@@ -3686,7 +3662,7 @@ eight groups:
 | Contracts | `test_provider_contract.py` | Every provider answers the contract identically |
 | Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_imap_live.py`, `test_pan_mail_provider.py`, `test_mail_account.py` | Wire-level behaviour per vendor, the application registration, and the credential rows behind them |
 | Pipeline | `test_incoming_sync.py`, `test_incoming_sync_gmail.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_internal_domains.py`, `test_mail_matcher.py`, `test_thread_drift.py`, `test_reply_sync.py`, `test_attachments.py`, `test_routing_log.py`, `test_mail_coverage.py`, `test_sync_sends_nothing.py` | Fetch → filter → match → post, the reply that comes back to its record, and the one invariant of the sync's outbound side |
-| Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
+| Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_up_and_running.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_sync_level_slider.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding and its end, where the screens live, the one mailbox setting a user owns, and the slider that sets it, held to the gates |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_inbox_tour.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, the tour's row and its sentences, and that no colour lacks a dark side |
 | The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_staging.py`, `test_hosting.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, and connects as staging of its production, where the Odoo runs and that an Odoo.sh staging branch is a copy, the error ledger, and what leaves for PostHog |
@@ -3734,8 +3710,8 @@ no endpoint to ask which mailboxes a sign-in may send as
 ([known limitation](https://learn.microsoft.com/en-us/answers/questions/1168052/)),
 and an SMTP server's 250 to MAIL FROM proves nothing. Whether a sign-in can
 *read* a mailbox is probed (§2 *Verified access*); whether it may send as the
-address is learned from the first real send, which is what the test email on
-the mailbox form is for. Gmail answers both before a send.
+address is learned from the first real send. Gmail answers both before a
+send.
 
 **IMAP `SEARCH SINCE` is date-granular**, so the cursor is asked wide and
 narrowed in Python — see §9.6.

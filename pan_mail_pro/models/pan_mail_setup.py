@@ -147,8 +147,8 @@ class PanMailSetup(models.AbstractModel):
         Returns ('ok' | 'open' | 'broken', sentence): `ok` when both answers
         are yes, `broken` with the provider's sentence when either is no,
         `open` with what is still to happen otherwise -- "not yet sent from"
-        on Microsoft and SMTP, where only a send proves Send As, and the test
-        email on the mailbox form is the way to make it happen.
+        on Microsoft and SMTP, where only a send proves Send As, so the dot
+        turns green on the first system email.
         """
         mailbox = self.env['mail.mail']._notification_mailbox()
         if not mailbox or not mailbox._has_working_credentials():
@@ -161,7 +161,7 @@ class PanMailSetup(models.AbstractModel):
         if row and row.can_read == 'yes' and row.can_send == 'yes':
             return 'ok', ''
         if row and row.can_read == 'yes':
-            return 'open', _('Not yet sent from. Send the test email on the mailbox.')
+            return 'open', _('Not yet sent from. It turns green after the first email.')
         return 'open', _('Not checked yet. The next sync run checks it.')
 
     @api.model

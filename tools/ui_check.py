@@ -4392,11 +4392,12 @@ class Checks:
 
     def step4_personal_notification(self):
         """A personal mailbox carrying the system email (#387): step 4 amber
-        with one line, the Mailboxes list it opens offering to create a
-        shared mailbox at Microsoft (no Show me while that slot is empty),
-        the mailbox's own Sync settings still there, and green again once a
-        shared mailbox carries the flag. The seed's two stopped mailboxes are
-        set going for the walk, or step 4 would be the red of broken."""
+        with one line, the Mailboxes list it opens with no way to create a
+        shared mailbox at Microsoft (#417), the mailbox's own sync level still
+        there, and green again once a shared mailbox carries the flag. The
+        seed's two stopped mailboxes are set going for the walk, or step 4
+        would be the red of broken. On the form (#420) the personal mailbox
+        names no owner and the shared one does, as a plain field."""
         page = self.page
         mailboxes = self.call('pan.mail.mailbox', 'search_read', [],
                               fields=['email', 'state', 'is_notification_mailbox',
@@ -4433,21 +4434,21 @@ class Checks:
             self.click_row(step)
             page.wait_for_selector('.o_list_view', timeout=30000)
             page.wait_for_timeout(1200)
-            self.shot('mailboxes-create-shared.png')
-            create = page.query_selector('a.o_mailpro_create_shared')
-            if not create or not create.is_visible():
-                self.fail('the Mailboxes list offers no "Create a shared mailbox"')
-            else:
-                if create.get_attribute('href') != 'https://admin.microsoft.com/#/SharedMailbox':
-                    self.fail(f'"Create a shared mailbox" goes to {create.get_attribute("href")}')
-                if create.get_attribute('target') != '_blank':
-                    self.fail('"Create a shared mailbox" does not open a new tab')
-            if page.query_selector('.o_mailpro_show_me'):
-                self.fail('"Show me" is there while its slot is empty')
+            if page.query_selector('a.o_mailpro_create_shared, .o_mailpro_show_me'):
+                self.fail('the Mailboxes list still offers "Create a shared mailbox" (#417)')
             action = dict(module_menu_actions(self.call)).get('Mailboxes')
             self.form_text(f'{self.base}/odoo/action-{action}/{carrier["id"]}')
-            if not page.query_selector('.o_notebook .nav-link:has-text("Sync settings")'):
-                self.fail('the notification mailbox hides its Sync settings')
+            if not page.query_selector('.o_form_view .o_field_widget[name="sync_level"]'):
+                self.fail('the notification mailbox hides its sync level')
+            owner = '.o_form_view .o_field_widget[name="owner_user_id"]'
+            if page.query_selector(owner):
+                self.fail('the personal mailbox shows its owner')
+            self.form_text(f'{self.base}/odoo/action-{action}/{shared["id"]}')
+            if not page.query_selector(owner):
+                self.fail('the shared mailbox does not show its owner')
+            page.goto(f'{self.base}/odoo/action-{action}/{carrier["id"]}',
+                      wait_until='domcontentloaded')
+            page.wait_for_selector('.o_form_view', timeout=30000)
             self.shot('mailbox-notification-sync.png')
 
             self.call('pan.mail.mailbox', 'write', [shared['id']],
@@ -4457,11 +4458,6 @@ class Checks:
                 self.fail('step 4 stays amber once a shared mailbox carries the system email')
             if 'System email from a personal mailbox' in msgs:
                 self.fail('step 4 still says personal once a shared mailbox carries it')
-            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
-            page.wait_for_selector('.o_list_view', timeout=30000)
-            page.wait_for_timeout(1000)
-            if page.query_selector('a.o_mailpro_create_shared'):
-                self.fail('"Create a shared mailbox" stays once a shared one carries the flag')
         finally:
             self.call('pan.mail.mailbox', 'write', [carrier['id']],
                       {'is_notification_mailbox': True})
@@ -4613,19 +4609,16 @@ class Checks:
             if 'Last checked' not in text:
                 self.fail('the mailbox form does not say when it was last checked')
 
-            # Setup is a flow: two step lines, then one card of settings. The
-            # test step says whether it works, never as a table.
-            self.page.click('.o_notebook .nav-link:has-text("Setup")')
-            self.page.wait_for_timeout(600)
-            self.shot('mailbox-setup.png')
-            steps = len(self.page.query_selector_all('.o_form_view .o_mailpro_step'))
-            if steps != 2:
-                self.fail(f'the Setup tab draws {steps} steps, expected 2')
-            if self.page.query_selector('.o_mailpro_step table'):
-                self.fail('the test step shows a table instead of an answer')
-            # Not checked yet, so the check step offers the check.
-            if not self.page.query_selector('.o_mailpro_step button.btn-primary:has-text("Check mailbox")'):
-                self.fail('an unchecked mailbox does not offer "Check mailbox"')
+            # One page (#420): no tabs, no setup steps, and nothing that asks
+            # the reader to check the mailbox.
+            self.shot('mailbox-form.png')
+            if self.page.query_selector('.o_form_view .o_notebook'):
+                self.fail('the mailbox form still has tabs')
+            if self.page.query_selector('.o_form_view .o_mailpro_step'):
+                self.fail('the mailbox form still draws setup steps')
+            for gone in ('Check mailbox', 'Not tested'):
+                if gone in text:
+                    self.fail(f'the mailbox form still says "{gone}"')
             if 'Last synced' in text:
                 self.fail('the form still labels the fetch cursor "Last synced"')
 
@@ -5487,8 +5480,8 @@ class Checks:
         page = self.page
         try:
             page.goto(url, wait_until='domcontentloaded')
-            page.wait_for_selector('.o_form_view .o_notebook', timeout=30000)
-            page.click('.o_notebook .nav-link:has-text("Sync settings")')
+            page.wait_for_selector('.o_form_view .o_field_widget[name="sync_level"]',
+                                   timeout=30000)
             page.wait_for_timeout(600)
             if not self.sync_slider_walk(
                     page, '.o_form_view', 'sync_level', 'the mailbox form',
@@ -5496,7 +5489,7 @@ class Checks:
                            3: 'sync-slider-stop3-light.png'}):
                 return
             self.shot('mailbox-sync-slider.png')
-            if 'newsletters' not in page.inner_text('.o_form_view .o_notebook'):
+            if 'newsletters' not in page.inner_text('.o_form_view .o_form_sheet'):
                 self.fail('the widest stop is picked without saying what it lets in')
             page.click('.o_form_button_save')
             page.wait_for_timeout(1500)
@@ -5518,8 +5511,6 @@ class Checks:
         try:
             login(dark, self.base)
             dark.goto(url, wait_until='domcontentloaded')
-            dark.wait_for_selector('.o_form_view .o_notebook', timeout=30000)
-            dark.click('.o_notebook .nav-link:has-text("Sync settings")')
             dark.wait_for_selector(f'{root} .o_mailpro_sync_level', timeout=15000)
             scheme = dark.evaluate("() => getComputedStyle(document.documentElement)"
                                    ".getPropertyValue('--o-webclient-color-scheme').trim()")

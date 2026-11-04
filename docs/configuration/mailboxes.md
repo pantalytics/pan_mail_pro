@@ -71,8 +71,13 @@ account.
      and Shared on Microsoft 365). The type follows from it: an owner on their
      own address is personal, no owner is shared
 3. Save
-4. On the **Setup** tab, press **Send Test Email** to prove the address
-   can actually send. The mail goes to you, not to the mailbox
+
+Once saved, a personal mailbox no longer shows its owner: whoever connected
+the address owns it. To give it to someone else, archive the mailbox and have
+them connect. A shared mailbox keeps **Owner** on its form.
+
+There is nothing to test by hand. Mail Pro checks every hour who can read and
+send from the mailbox, and if a send fails, the email says why.
 
 ## Mailbox Settings
 
@@ -81,7 +86,7 @@ account.
 | Mailbox | The address to send from, and the label in every dropdown |
 | Type | Personal or Shared, derived from the owner |
 | Notification Mailbox | Ticked on the one mailbox that sends the system email |
-| Owner | The user whose credentials are used |
+| Owner | The user whose credentials are used. Shown on a shared mailbox only |
 | Sync level | How much of the mailbox is read; replies to Odoo's own mail always are |
 | Team | Alias for routing incoming emails |
 

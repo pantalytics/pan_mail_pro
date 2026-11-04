@@ -56,32 +56,3 @@ class TestConnectedAs(MailProTestCase):
             account.with_user(manager).write({'email': 'manager@company.test'})
         self.assertEqual(self.salesperson.x_pan_mail_connected_as, 'sales@company.test')
 
-
-@tagged('post_install', '-at_install', 'pan_mail_pro')
-class TestSendsWith(MailProTestCase):
-    """`_resolve_sending_account` in one sentence on the mailbox form."""
-
-    def test_a_personal_mailbox_names_its_owner_and_their_sign_in(self):
-        self.assertEqual(
-            self.personal_mailbox.sends_with,
-            "Sends with Sales Person's sign-in, sales@company.test")
-
-    def test_the_notification_mailbox_is_the_owners_too(self):
-        self.assertEqual(
-            self.notification_mailbox.sends_with,
-            "Sends with Notification Owner's sign-in, notif_owner@test.local")
-
-    def test_an_unconnected_owner_is_said_so(self):
-        self.disconnect(self.notif_owner)
-        self.assertEqual(
-            self.notification_mailbox.sends_with,
-            "Sends with Notification Owner's sign-in, not connected yet")
-
-    def test_a_microsoft_shared_mailbox_sends_as_whoever_writes(self):
-        self.assertEqual(self.shared_mailbox.sends_with, "Sends with each sender's own sign-in")
-
-    def test_a_gmail_shared_mailbox_is_its_own_account(self):
-        mailbox = self.env['pan.mail.mailbox'].create({
-            'email': 'team@company.test', 'provider': 'gmail',
-        })
-        self.assertEqual(mailbox.sends_with, 'Sends with its own account')

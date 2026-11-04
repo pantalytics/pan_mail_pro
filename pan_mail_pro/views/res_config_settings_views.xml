@@ -270,7 +270,7 @@
                              difference between a step answered and a step that
                              works, and it was the one the Emovr checklist could
                              not tell. Red when the provider refused; the open
-                             dot while a probe or the test email is still to
+                             dot while a probe or the first email is still to
                              happen. -->
                         <field name="x_notification_access_state" invisible="1"/>
                         <field name="x_notification_mailbox_type" invisible="1"/>

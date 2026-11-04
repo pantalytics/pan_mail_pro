@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import logging
-import os
 import re
 from odoo import fields, models, api, _
 from odoo.exceptions import AccessError, ValidationError, UserError
@@ -17,24 +16,6 @@ from .mail_message import READ_MIRROR_CTX
 from .neutralization import database_is_copy
 
 _logger = logging.getLogger(__name__)
-
-# Where an admin makes a shared mailbox, per provider (#387). Microsoft 365
-# only for now: a Google group with a collaborative inbox and IMAP get no link
-# until somebody asks for one.
-SHARED_MAILBOX_URLS = {'outlook': 'https://admin.microsoft.com/#/SharedMailbox'}
-# The "Show me" slots: a recording dropped here is shown, an empty slot has no
-# link. Named after the step, any of the three extensions.
-SHOW_ME_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'src', 'img',
-                           'show_me')
-SHOW_ME_SHARED = 'create-shared-mailbox'
-
-
-def _show_me(slot):
-    """The URL of a slot's recording, or False when the slot is empty."""
-    for ext in ('.webp', '.gif', '.png'):
-        if os.path.isfile(os.path.join(SHOW_ME_DIR, slot + ext)):
-            return f'/pan_mail_pro/static/src/img/show_me/{slot}{ext}'
-    return False
 
 # How many consecutive failed sync runs before the mailbox is called broken.
 # Below it the mailbox stays in the set the cron reads, so a 503, a timeout or
@@ -280,6 +261,21 @@ class PanMailMailbox(models.Model):
              'provider needs a person\'s to do so.',
         index=True
     )
+    owner_is_address = fields.Boolean(
+        compute='_compute_owner_is_address',
+        help='The address is the owner\'s own, so whoever connected it owns it '
+             'and the form does not show the owner.')
+
+    @api.depends('owner_user_id', 'owner_user_id.email', 'owner_user_id.login',
+                 'owner_user_id.x_pan_mail_account_ids.email', 'email')
+    def _compute_owner_is_address(self):
+        """The owner rule alone (#420). Not `mailbox_type`, which turns
+        personal when the notification flag is ticked, and not
+        `provider_type`, which calls the Emovr shape personal while its owner
+        is somebody on another address: both would hide an owner the reader
+        has to be able to change."""
+        for record in self:
+            record.owner_is_address = record._owner_rule_type() == 'personal'
 
     # -------------------------------------------------------------------------
     # Verified access
@@ -301,18 +297,6 @@ class PanMailMailbox(models.Model):
     access_ids = fields.One2many(
         'pan.mail.mailbox.access', 'mailbox_id', string='Access',
         help='What each sign-in may do with this mailbox, as the provider last said.')
-    access_state = fields.Selection([
-        ('open', 'Not checked yet'),
-        ('proven', 'Works'),
-        ('fix', 'Needs a fix'),
-    ], string='Check', compute='_compute_access_state',
-        help='Works: a send from this address went through and the provider '
-             'raised nothing. Needs a fix: the provider said no, and the '
-             'sentence beside it says what to do. The last step of setting a '
-             'mailbox up.')
-    access_message = fields.Char(
-        compute='_compute_access_state',
-        help='What is wrong with access and what to do about it, in one sentence.')
     access_checked_date = fields.Datetime(
         string='Access checked', readonly=True, copy=False,
         help='When the access check last asked the provider about this mailbox.')
@@ -324,19 +308,6 @@ class PanMailMailbox(models.Model):
             return True
         age = fields.Datetime.now() - self.access_checked_date
         return age.total_seconds() > ACCESS_CHECK_INTERVAL_MINUTES * 60
-
-    def _accounts_to_verify(self):
-        """The sign-ins whose access to this mailbox is worth knowing.
-
-        The one that reads it, always; and every one that has sent through
-        it, which on a Microsoft shared mailbox is each sender in turn. A
-        sender who has not tried yet has no row and is not guessed at.
-        """
-        self.ensure_one()
-        client = self._get_client()
-        accounts = client.resolve_receiving_account(self)
-        accounts |= self.access_ids.mapped('account_id')
-        return accounts.filtered('connected')
 
     def _verify_access(self, account=None):
         """Ask the provider what this address is and what `account` may do
@@ -385,12 +356,6 @@ class PanMailMailbox(models.Model):
                      answer['can_read'], answer['can_send'])
         return row
 
-    def _verify_all_access(self):
-        """The check for every sign-in worth asking about, on each mailbox."""
-        for mailbox in self:
-            for account in mailbox._accounts_to_verify():
-                mailbox._verify_access(account)
-
     @api.model
     def _verify_for_account(self, account):
         """Every mailbox this sign-in serves, checked. Called by the consent
@@ -406,68 +371,6 @@ class PanMailMailbox(models.Model):
                       or account in mailbox.access_ids.mapped('account_id'))
             if serves:
                 mailbox._verify_access(account)
-
-    @api.depends('access_ids.can_read', 'access_ids.can_send', 'access_ids.error',
-                 'address_kind', 'mailbox_type', 'owner_user_id')
-    def _compute_access_state(self):
-        """The answer the Setup tab gives, read from the same rungs as the
-        health badge (`_access_problem`), so the step and the badge cannot
-        disagree about whether a refusal matters."""
-        for mailbox in self:
-            problem = mailbox._access_problem()
-            if problem:
-                mailbox.access_state = 'fix'
-                mailbox.access_message = ' '.join(
-                    filter(None, [problem[1], mailbox._access_fix_hint()]))
-            elif any(row.can_send == 'yes' for row in mailbox.access_ids):
-                mailbox.access_state = 'proven'
-                mailbox.access_message = False
-            else:
-                mailbox.access_state = 'open'
-                mailbox.access_message = False
-
-    def _access_fix_hint(self):
-        """What to do about a refusal, when the provider's own sentence only
-        says what went wrong. Phrased for whoever runs the mail system, since
-        the right is granted there and never in Odoo."""
-        rows = self.access_ids
-        if self.address_kind in ('none', 'resource', 'alias'):
-            return _('Use the address of a real mailbox, then check again.')
-        if any(row.can_read == 'no' for row in rows):
-            return _('Give that sign-in access to the mailbox in your mail '
-                     'admin, then check again.')
-        if any(row.can_send == 'no' for row in rows):
-            return _('Allow that sign-in to send as this address in your mail '
-                     'admin, then check again.')
-        return False
-
-    def action_check_mailbox(self):
-        """The one test of setting a mailbox up: ask the provider who may read
-        and send here, then send one email to whoever pressed it. After it the
-        access table holds a real send, so the form can say "it works" rather
-        than offer a button. The check is a manager's; anybody who may send
-        from the address gets the send. The notification reloads the form,
-        so the answer lands where the button was."""
-        self.ensure_one()
-        if self.env.su or self.env.user.has_group('pan_mail_pro.group_mail_mailbox_manager'):
-            self._verify_all_access()
-        result = self.action_test_send()
-        result['params']['next'] = {'type': 'ir.actions.client', 'tag': 'soft_reload'}
-        return result
-
-    def action_check_access(self):
-        """The check, from the form, for every sign-in on this mailbox."""
-        self.ensure_one()
-        self._check_manager()
-        self._verify_all_access()
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'pan.mail.mailbox',
-            'res_id': self.id,
-            'view_mode': 'form',
-            'views': [(False, 'form')],
-            'target': 'current',
-        }
 
     def _owner_rule_type(self):
         """Personal when the address is the owner's own, shared otherwise.
@@ -751,6 +654,27 @@ class PanMailMailbox(models.Model):
             return 'warning', own.error
         return None
 
+    def _access_fix_hint(self):
+        """What to do about a refusal, when the provider's own sentence only
+        says what went wrong. Phrased for whoever runs the mail system, since
+        the right is granted there and never in Odoo."""
+        rows = self.access_ids.sudo()
+        if self.address_kind in ('none', 'resource', 'alias'):
+            return _('Use the address of a real mailbox.')
+        if any(row.can_read == 'no' for row in rows):
+            return _('Give that sign-in access to the mailbox in your mail admin.')
+        if any(row.can_send == 'no' for row in rows):
+            return _('Allow that sign-in to send as this address in your mail admin.')
+        return False
+
+    def _access_sentence(self):
+        """The access rung's sentence and what to do about it, told where
+        the error shows (#420): the form asks nobody to check anything."""
+        problem = self._access_problem()
+        if not problem:
+            return False
+        return ' '.join(filter(None, [problem[1], self._access_fix_hint()]))
+
     def _sync_is_stale(self):
         """Has this mailbox gone quiet in the way that means nobody is reading it?
 
@@ -799,7 +723,7 @@ class PanMailMailbox(models.Model):
                     record.status_message = _('This mailbox has no usable credentials.')
             elif record.state != 'error' and record._access_problem() \
                     and record._access_problem()[0] == 'error':
-                record.status_message = record._access_problem()[1]
+                record.status_message = record._access_sentence()
             elif record.error_message:
                 record.status_message = record.error_message
             elif record._sync_is_stale():
@@ -811,7 +735,7 @@ class PanMailMailbox(models.Model):
             elif record.state == 'draft' and not record._access_problem():
                 record.status_message = _('This mailbox has not synced yet.')
             elif record._access_problem():
-                record.status_message = record._access_problem()[1]
+                record.status_message = record._access_sentence()
             else:
                 record.status_message = _('The last sync run did not finish.')
 
@@ -882,40 +806,6 @@ class PanMailMailbox(models.Model):
         for record in self:
             record.routing_log_count = counts.get(record.id, 0)
 
-    sends_with = fields.Char(
-        compute='_compute_sends_with',
-        help='Whose sign-in a mail from this address leaves with.',
-    )
-
-    @api.depends('mailbox_type', 'is_notification_mailbox', 'provider',
-                 'owner_user_id.name', 'owner_user_id.x_pan_mail_connected_as')
-    def _compute_sends_with(self):
-        """`_resolve_sending_account` in one sentence the reader can see.
-
-        A personal mailbox and the notification mailbox send with their
-        owner's token, whatever that owner is connected as -- which is the
-        address named here, because it is the one the provider has to allow.
-        A Microsoft shared mailbox sends with whoever writes; a Gmail or IMAP
-        shared address is its own account.
-        """
-        for record in self:
-            if record.mailbox_type == 'personal' or record.is_notification_mailbox:
-                owner = record.owner_user_id
-                if not owner:
-                    record.sends_with = False
-                elif owner.x_pan_mail_connected_as:
-                    record.sends_with = _(
-                        "Sends with %(owner)s's sign-in, %(address)s",
-                        owner=owner.name, address=owner.x_pan_mail_connected_as)
-                else:
-                    record.sends_with = _(
-                        "Sends with %(owner)s's sign-in, not connected yet",
-                        owner=owner.name)
-            elif record.provider and record._get_client().supports_shared_mailbox:
-                record.sends_with = _("Sends with each sender's own sign-in")
-            else:
-                record.sends_with = _('Sends with its own account')
-
     @api.depends('provider_type', 'owner_user_id', 'is_notification_mailbox')
     def _compute_subtitle(self):
         """The identity in one grey line under the address: read, not filled in."""
@@ -929,24 +819,6 @@ class PanMailMailbox(models.Model):
             if record.is_notification_mailbox:
                 parts.append(_('carries the system email'))
             record.subtitle = '  \u00b7  '.join(parts)
-
-    @api.model
-    def shared_mailbox_hint(self):
-        """The Mailboxes list's one action while a personal mailbox carries
-        the system email (#387): create a shared one, `notifications@` with
-        the admin as a member, which gives the Full Access and Send As the
-        access check needs. Microsoft 365 only; Google and IMAP get the
-        amber step 4 and no link until somebody asks.
-
-        `show_me` is a file slot, the install screen's pattern: drop
-        `create-shared-mailbox.webp` (or .gif, .png) into SHOW_ME_DIR and the
-        list shows "Show me" beside the action, with no code change. An empty
-        slot has no link.
-        """
-        mailbox = self.env['mail.mail']._notification_mailbox()
-        if not (mailbox.provider_type == 'personal' and mailbox.provider == 'outlook'):
-            return {'url': False, 'show_me': False}
-        return {'url': SHARED_MAILBOX_URLS['outlook'], 'show_me': _show_me(SHOW_ME_SHARED)}
 
     def action_open_routing_log(self):
         """The routing log, filtered on this mailbox."""
@@ -1040,153 +912,6 @@ class PanMailMailbox(models.Model):
         if not self.env.su and not self.env.user.has_group(
                 'pan_mail_pro.group_mail_mailbox_manager'):
             raise AccessError(_('Only a mailbox manager may sync a mailbox.'))
-
-    def action_test_incoming(self):
-        """Test incoming mail configuration by fetching a few messages."""
-        self.ensure_one()
-        self._check_manager()
-
-        client = self._get_client()
-
-        if not self._has_working_credentials():
-            raise UserError(self._no_credentials_error())
-
-        try:
-            # Try to fetch 1 message to test connection
-            messages = client.fetch_messages(
-                account=client.resolve_receiving_account(self),
-                mailbox=self,
-                folder=FOLDER_INBOX,
-                limit=1,
-            )
-
-            self.write({
-                'state': 'active',
-                'error_message': False,
-                'sync_failure_count': 0,
-            })
-
-            return self._test_notification(
-                _('Connection Successful'),
-                _('Successfully connected to mailbox %s. Found %d message(s) in test.') % (
-                    self.email, len(messages)),
-                'success',
-            )
-
-        except Exception as e:
-            self.write({
-                'state': 'error',
-                'error_message': str(e),
-            })
-
-            return self._test_notification(
-                _('Connection Failed'), str(e), 'danger', sticky=True)
-
-    def action_test_send(self):
-        """Prove that mail actually leaves this mailbox, by sending one.
-
-        The two tests next to this one read: `action_test_connection` asks the
-        provider whether the credentials still work, `action_test_incoming`
-        fetches a message. Neither says anything about *sending*, and sending
-        is where a mailbox fails silently — a missing send scope, a SendAs
-        permission that was never granted, an SPF or DMARC record that rejects
-        the address. A consent screen the user just came back from proves none
-        of those.
-
-        **It always goes to whoever pressed the button, never to the mailbox's
-        own address.** A mail addressed to the mailbox comes straight back in
-        through the sync, which is a routing log entry and possibly a record
-        created by a test. Sending it to the person instead also makes the
-        result a thing a human can judge: it arrived, or it did not.
-
-        On a personal mailbox that person *is* the owner, because
-        `_is_sendable_by` lets nobody else send from one. So there is no
-        per-type rule here: one recipient, and the sender boundary decides who
-        may ask.
-
-        The whole attempt is one savepoint. A failed test must not leave a
-        `mail.mail` behind in the queue, where the cron would retry it and
-        deliver a test email minutes later out of nowhere.
-        """
-        self.ensure_one()
-
-        # "You may not do this" is raised; "it did not work" is reported below.
-        # A refusal is something the reader can act on, and it is the same rule
-        # `_mailbox_route` enforces again at send time — asked here so the
-        # button says so instead of failing through the provider.
-        if not self._is_sendable_by(self.env.user):
-            raise UserError(_(
-                'You cannot send from %s. A personal mailbox can only be used '
-                'by its owner.'
-            ) % self.email)
-
-        recipient = self._test_recipient()
-        if not recipient:
-            raise UserError(_(
-                'The test goes to the address you signed in with, and you have '
-                'not signed in on %s yet. Connect your mailbox under My '
-                'Preferences, then check again.'
-            ) % get_provider_client(self.env, self.provider).provider_label())
-
-        try:
-            with self.env.cr.savepoint():
-                # sudo: an ordinary internal user has no create access on
-                # `mail.mail` (the composer creates theirs through
-                # `message_post`). The sender boundary is the check above and
-                # `_mailbox_route`'s, not this ACL.
-                mail = self.env['mail.mail'].sudo().create({
-                    'subject': _('Mail Pro works for %(mailbox)s', mailbox=self.email),
-                    'body_html': _(
-                        '<p>Mail Pro sent this test from <strong>%(mailbox)s</strong>. '
-                        'The mailbox works, and you can delete this email.</p>',
-                        mailbox=self.email,
-                    ),
-                    'email_from': self.email,
-                    'email_to': recipient,
-                    'author_id': self.env.user.partner_id.id,
-                    'x_send_from_mailbox_id': self.id,
-                })
-                # raise_exception, so the reason arrives here rather than being
-                # written to a row this savepoint is about to roll back.
-                mail.send(raise_exception=True)
-        except Exception as e:
-            _logger.warning(
-                "[Outgoing Mail] Test send from %s failed: %s", self.email, e)
-            return self._test_notification(
-                _('Test Email Failed'), str(e), 'danger', sticky=True)
-
-        return self._test_notification(
-            _('Test Email Sent'),
-            _('Sent from %(mailbox)s to %(recipient)s. If it does not arrive, '
-              'the problem is delivery rather than Odoo.',
-              mailbox=self.email, recipient=recipient),
-            'success',
-        )
-
-    def _test_recipient(self):
-        """The address whoever pressed the button signed in with on this
-        provider: the one address the provider itself vouched for. Never the
-        user record's email, which a fresh Odoo.sh admin does not have
-        (3 Nov) and which may name somewhere else entirely; where the two
-        differ, "Signed in as" already says so."""
-        accounts = self.env['pan.mail.account'].sudo().with_context(active_test=False).search(
-            [('user_id', '=', self.env.uid), ('provider', '=', self.provider),
-             ('email', '!=', False)], order='connected desc, id desc')
-        return accounts[:1].email or False
-
-    @staticmethod
-    def _test_notification(title, message, kind, sticky=False):
-        """The display_notification the test buttons hand back."""
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': title,
-                'message': message,
-                'type': kind,
-                'sticky': sticky,
-            },
-        }
 
     # -------------------------------------------------------------------------
     # Read state: the provider says, Odoo mirrors

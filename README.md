@@ -148,8 +148,7 @@ straight on the consent screen.
 Until you connect, a banner sits above every screen with a button that goes
 straight to the consent screen. It is only shown where that button would work:
 an internal user, a provider that has a consent screen, and not on a staging
-copy. Once connected there is nothing left to do: the address sends. An
-administrator who wants proof has **Send Test Email** on every mailbox form.
+copy. Once connected there is nothing left to do: the address sends.
 
 **Note:** until your account is connected and a default mailbox is set, the
 email composer shows a warning banner saying so.
