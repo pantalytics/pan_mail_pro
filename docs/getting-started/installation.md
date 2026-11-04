@@ -42,9 +42,20 @@ git commit -m "Add Mail Pro" && git push
 
 ### Cloudpepper
 
-Your instance → **Modules → Git** → add
-`https://github.com/pantalytics/pan_mail_pro`, branch `19.0` → **Restart**.
-Leave auto upgrade off on production.
+1. Open your instance and go to the **Addons** tab
+2. Click **Add Git repository**, not **Add from GitHub** or **Upload to
+   GitHub** right beside it
+3. In the **Add module** dialog: Git repository
+   `https://github.com/pantalytics/pan_mail_pro`, **Branch**: your series
+   (`18.0`, `19.0` or `20.0`, the same as your Odoo version), copy method
+   **All addons (recommended)**. Click **Add module**
+4. The repository is now a row on the **Addons** tab, with **Upload**,
+   **Settings**, **Update** and **Delete**. Click **Settings** on the
+   `pan_mail_pro` row, switch on **Install Python requirements on update**
+   and **Auto upgrade module(s) on update**, then click **Close**
+
+> 💡 Keep both switches on, on production too. With them on, Cloudpepper
+> keeps Mail Pro up to date.
 
 ### Your own server or Docker
 
@@ -97,7 +108,9 @@ Stuck? See [Connect to Pantalytics](connect-pantalytics.md).
 
 - **Odoo.sh or git:** `git submodule update --remote pantalytics/pan_mail_pro`,
   commit, push. A submodule never moves on its own, so you decide when.
-- **Cloudpepper:** pulls the release and restarts by itself.
+- **Cloudpepper:** with the two switches from step 1 on, it pulls the
+  release and restarts by itself. If **Apps → Mail Pro** still shows the old
+  version afterwards, click **Upgrade** there.
 
 A release that adds fields or screens also needs **Apps → Mail Pro →
 Upgrade**. The release notes say when.
