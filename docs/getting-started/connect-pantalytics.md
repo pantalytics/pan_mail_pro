@@ -19,8 +19,8 @@ workspace afterwards, under **Members**.
    with a short code already filled in
 3. Sign in with your Pantalytics account, or create one
 4. Check that the page names this Odoo instance, and press **Approve**
-5. You land back in Odoo. Step 1 now reads **Connected** and
-   steps 2 to 4 appear below it. The arrow on step 1 opens the account page:
+5. You land back in Odoo. Step 1 now shows the name of your Pantalytics
+   workspace (or **Connected**) and steps 2 to 5 appear below it. The arrow on step 1 opens the account page:
    who connected it and when, the plan and its valid-until date, **Usage and
    billing**, and **Disconnect**
 

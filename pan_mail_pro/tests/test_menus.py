@@ -124,10 +124,10 @@ class TestMenus(MailProTestCase):
         """The group is only worth granting if it opens something.
 
         `ir.model.access.csv` gives Mailbox Manager write on the mailbox and
-        the routing log, and `action_sync_now` / `action_test_incoming` are
-        gated on that group -- while every child menu but Internal Domains
-        asked for `base.group_system`. The only people allowed to press those
-        buttons could not open the form the buttons are on.
+        the routing log, and `action_sync_now` is gated on that group --
+        while every child menu but Internal Domains asked for
+        `base.group_system`. The only people allowed to press Try again could
+        not open the form it is on.
 
         Credentials are the deliberate exception: Email Accounts and Providers
         stay administrator-only.

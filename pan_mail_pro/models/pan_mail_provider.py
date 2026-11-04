@@ -130,8 +130,7 @@ class PanMailProvider(models.Model):
     provider = fields.Selection(
         PROVIDER_SELECTION,
         required=True,
-        help='Where your company\'s email lives. Mail Pro sends and receives '
-             'through this provider; change it here to move to another one.',
+        help='Where your company\'s email lives.',
     )
 
     client_id = fields.Char(string='Client ID')
@@ -139,7 +138,7 @@ class PanMailProvider(models.Model):
         string='Client Secret (Encrypted)',
         groups='base.group_system',
         copy=False,
-        help='Encrypted — do not edit manually',
+        help='Stored encrypted.',
     )
     client_secret = fields.Char(
         string='Client Secret',
@@ -153,14 +152,11 @@ class PanMailProvider(models.Model):
 
     registration = fields.Selection(
         REGISTRATION_SELECTION, string='Sign in through', default='pantalytics',
-        help='Microsoft 365 only. The default needs nothing registered in '
-             'Azure; your own app registration is for an organization that '
-             'wants its own.',
+        help='Microsoft 365 only. The Pantalytics app needs no setup in Azure.',
     )
     pantalytics_client_id = fields.Char(
         string='Microsoft app ID', readonly=True, copy=False,
-        help='The Microsoft app ID Mail Pro signs in with, as Pantalytics last '
-             'named it. Refreshing a sign-in needs it.',
+        help='The Microsoft app Mail Pro signs in with. Set by Pantalytics.',
     )
     pantalytics_connected = fields.Boolean(compute='_compute_pantalytics_connected')
     # The move off an own app registration (`action_switch_to_pantalytics`):
@@ -169,12 +165,11 @@ class PanMailProvider(models.Model):
     has_own_registration = fields.Boolean(compute='_compute_own_registration')
     own_account_count = fields.Integer(
         string='Still on your own app', compute='_compute_own_registration',
-        help='Connected accounts whose sign-in was made through your own app '
-             'registration. They keep working with it until they reconnect.')
+        help='Accounts still signed in through your own app. They move when they reconnect.')
 
     redirect_uri = fields.Char(
         string='Callback URL', compute='_compute_redirect_uri', readonly=True,
-        help='Paste this into the provider console. Sign-in fails until it matches exactly.',
+        help='Paste this exactly into the provider\'s redirect URIs.',
     )
     uses_oauth = fields.Boolean(compute='_compute_uses_oauth')
     # For IMAP these three read `pan.mail.account`, a different model, so

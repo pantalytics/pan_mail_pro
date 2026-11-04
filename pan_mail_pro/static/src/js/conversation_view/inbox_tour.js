@@ -73,7 +73,7 @@ function steps() {
     const record = _t("Every conversation sits on an Odoo record. Your reply lands in its chatter.");
     const link = _t("Wrong record? Link it to another one. The rest of the conversation follows.");
     const contact = markup(_t(
-        "Mail that matched no record lands on the sender's contact. Find it under <b>On a contact only</b>."
+        "Mail that matched no other record is linked to the sender's contact. Find it under <b>Linked to a contact</b>."
     ));
     const search = _t("Search this folder by sender, subject or a word in the mail.");
     return [
@@ -124,7 +124,7 @@ function steps() {
         // and over to its record, where the link lives on a phone. The search
         // box before the filters, because on a phone Odoo opens the filter
         // menu when the box is tapped: the next step then points at the
-        // caret with On a contact only in sight, and its tap closes the menu
+        // caret with Linked to a contact in sight, and its tap closes the menu
         // over the list.
         {
             isActive: [PHONE],

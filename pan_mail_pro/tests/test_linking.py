@@ -472,6 +472,9 @@ class TestLinkPicker(TransactionCase):
         self.assertEqual(unlink[0]['model'], 'res.partner')
         self.assertEqual(unlink[0]['res_id'], self.customer.id)
         self.assertIn(self.customer.display_name, unlink[0]['label'])
+        # Unlink is the word on the row: the conversation is linked to the
+        # lead, and this links it back to the contact (#422).
+        self.assertTrue(unlink[0]['label'].startswith('Unlink'), unlink[0]['label'])
 
     def test_the_unlink_row_is_absent_on_a_contact(self):
         """On a contact there is nothing to unlink; Change link is the only action."""

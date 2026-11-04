@@ -22,6 +22,12 @@ Mail Pro connects your Odoo instance to your real mailboxes, so that:
 
 A database runs on one provider.
 
+## Odoo versions
+
+Mail Pro runs on Odoo 18.0, 19.0 and 20.0, Community or Enterprise. One
+branch per series carries the same module; install from the branch that
+matches your Odoo (see [Installation](getting-started/installation.md)).
+
 ## Key Features
 
 | Feature | Description |

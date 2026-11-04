@@ -372,7 +372,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] Constraints: measured 2026-11-03, no spike needed. `compat.Constraint` is `models.Constraint` where it exists and a `__set_name__` that appends to `_sql_constraints` on 18; the seven model files are identical on every branch
 - [x] `tools/ci_lint.sh`: the migration-folder check reads the manifest's series (2026-11-03); the checklist greps are the same on every series
 - [x] CLAUDE.md *Branches* paragraph (#376) and the Cloudpepper table, one column per series (2026-11-03)
-- [ ] TESTPLAN.md: the Enterprise checks get a column per series
+- [x] TESTPLAN.md: the Enterprise checks get a column per series (2026-11-03, *Enterprise per serie*, with the instance to walk each on)
 
 ### Step 2. The `18.0` branch
 
@@ -386,7 +386,7 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] `version-bump` and `port-drift` read a series branch right: last three numbers and the merged main, not main's tip (2026-11-03, measured on a simulated `18.0` and `20.0` cut and port)
 - [ ] Enterprise column walked on an 18 Enterprise instance
 - [ ] A Cloudpepper dev instance on an 18 server (servers are pinned per major) with OAuth redirect URIs registered
-- [ ] Knowledge base page says which series are supported
+- [x] Knowledge base page says which series are supported (2026-11-03: docs/README.md and docs/getting-started/installation.md say 18.0, 19.0 and 20.0, and articles 116 and 117 carry the rendered bodies, written through the Odoo connector)
 - [x] First tag `v18.0.34.0.0` (2026-11-03, `release.yml` on the push of 11a2a0d)
 
 ### Step 3. The `20.0` branch
@@ -402,10 +402,11 @@ Mark a box in the PR that does the work, with the version or the date.
 - [x] UI job green locally (2026-11-03, `tools/ui_local.sh --series=20.0`, every assertion; the About check reads the cut copy's manifest through `PAN_UI_TREE`)
 - [ ] Enterprise column walked on a 20 Enterprise instance (`odoo-20-enterprise-demo.cloudpepper.site` is one, once the module is on it)
 - [x] Cloudpepper dev instance on a 20 server: `mailpro-dev-20.cloudpepper.site` on `Pantalytics Demo v20` (Odoo 20.0 community), the module attached from `20.0` and installed at `20.0.34.0.0`, webhook and auto-upgrade on (2026-11-03). The compat line in its log names 20's spellings; Settings and the mailbox list open as admin. The CLAUDE.md table has the login
+- [ ] `mailpro-dev-20` paired to a workspace (Settings > Mail Pro > Connect to Pantalytics, approved with a Zitadel sign-in; nothing in a session can do that step), then the Inbox walked there past the gate: the panes, a reply, the tour. Until then the live instance shows the gate and the panes are verified on 20 locally only
 - [ ] OAuth redirect URIs for `mailpro-dev-20` registered at Azure and Google, and one consent walked per provider
 - [x] First tag `v20.0.34.0.0` (2026-11-03, `release.yml` on the push of 3b50391)
 
 ### Step 4. The routine
 
-- [ ] First port of a 19.0 release into 18.0 and 20.0 done by the recipe in §4
-- [ ] After ten ports: how many conflicted outside the allowed paths, written here
+- [x] First port of a 19.0 release into 18.0 and 20.0 done by the recipe in §4 (2026-11-03: main 19.0.34.1.0, #400, then 19.0.34.1.1, #405; `18.0` at 38223ea, `20.0` at 6329f2e). Only the manifest conflicted, both times, resolved as the recipe says. The suite was green on both ports and the browser was red on both: the up-and-running line was off the Owl seam (nothing drawn on 20) and its compute had no `@api.depends` (no dots on 18). Fixed on main first, with `tools/check_owl_seam.py` in the lint job so the next component cannot step off the seam; the branches were pushed only with the fix in. Lesson for the routine: run `tools/ui_local.sh --series=` on the port before pushing, the suite alone does not see the browser
+- [ ] After ten ports: how many conflicted outside the allowed paths, written here (1 of 10: none outside, 2 bugs found by the browser)

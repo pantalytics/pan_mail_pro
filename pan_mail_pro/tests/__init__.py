@@ -53,7 +53,6 @@ from . import test_identity
 from . import test_mailbox_access
 from . import test_mailbox_health
 from . import test_imap_live
-from . import test_mailbox_test_send
 from . import test_mailbox_type
 from . import test_mailbox_heartbeat
 from . import test_license
@@ -79,3 +78,4 @@ from . import test_personal_notification_mailbox
 from . import test_sync_level_slider
 from . import test_inbox_tour
 from . import test_up_and_running
+from . import test_help_texts

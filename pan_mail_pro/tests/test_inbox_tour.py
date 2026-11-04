@@ -18,15 +18,15 @@ TOUR = 'pan_mail_pro_inbox_tour'
 
 # The four sentences, as the tour says them. Checked against the code they
 # describe: `pan.mail.routing.log.link_to` moves the whole conversation and
-# repoints its thread link; unmatched mail lands on the sender's contact
-# (`pan_mail_fetcher`), which is the "On a contact only" filter and not a
-# folder; the search view searches sender, subject, contact and body, never
+# repoints its thread link; mail the matcher could not place is linked to the
+# sender's contact (`pan_mail_fetcher`), which is the "Linked to a contact"
+# filter and not a folder; the search view searches sender, subject, contact and body, never
 # the record, and within the open folder.
 SENTENCES = [
     "Every conversation sits on an Odoo record. Your reply lands in its chatter.",
     "Wrong record? Link it to another one. The rest of the conversation follows.",
-    "Mail that matched no record lands on the sender's contact. "
-    "Find it under <b>On a contact only</b>.",
+    "Mail that matched no other record is linked to the sender's contact. "
+    "Find it under <b>Linked to a contact</b>.",
     "Search this folder by sender, subject or a word in the mail.",
 ]
 

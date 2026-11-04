@@ -6,12 +6,6 @@
         <button type="button" class="btn btn-secondary" t-on-click="() => this.onBackToSettings()">
             <i class="fa fa-arrow-left me-1" title="Back"/>Back
         </button>
-        <!-- While a personal mailbox carries the system email, on Microsoft
-             365 (#387). Show me only when its file slot holds a recording. -->
-        <a t-if="this.hint.url" t-att-href="this.hint.url" target="_blank" rel="noopener"
-           class="btn btn-secondary o_mailpro_create_shared">Create a shared mailbox</a>
-        <a t-if="this.hint.url and this.hint.show_me" t-att-href="this.hint.show_me" target="_blank" rel="noopener"
-           class="btn btn-link o_mailpro_show_me">Show me</a>
     </t>
 
 </templates>
